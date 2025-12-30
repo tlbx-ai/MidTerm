@@ -211,13 +211,20 @@ Default shell: Zsh (macOS), Pwsh (Windows), Bash (Linux)
 
 ## Release Process
 
-1. Bump `<Version>` in BOTH projects:
-   - `Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj`
-   - `Ai.Tlbx.MiddleManager.Host/Ai.Tlbx.MiddleManager.Host.csproj`
-2. Update `version.json` in repo root (web, pty, protocol versions)
-3. Update `CHANGELOG.md`
-4. Commit, push, tag: `git tag v2.x.x && git push origin v2.x.x`
-5. GitHub Actions builds both projects and creates release
+Use `release.ps1` to automate version bumping, commit, tag, and push:
+
+```powershell
+.\release.ps1 -Bump patch -Message "Fix installer issue"
+.\release.ps1 -Bump minor -Message "Add new feature"
+.\release.ps1 -Bump major -Message "Breaking change"
+```
+
+The script:
+1. Bumps version in both csproj files, version.json, and Host/Program.cs
+2. Commits all changes with message `v{version}: {Message}`
+3. Creates annotated tag
+4. Pushes to main and pushes tag
+5. GitHub Actions builds and creates release
 
 **GitHub Actions workflow** (`.github/workflows/release.yml`):
 - Triggers on `v*` tags
