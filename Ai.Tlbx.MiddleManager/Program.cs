@@ -249,17 +249,28 @@ public class Program
         app.MapGet("/api/health", () =>
         {
             var isSidecarMode = sidecarManager is not null;
-            var hostConnected = sidecarManager?.IsConnected ?? true;
+            var isConnected = sidecarManager?.IsConnected ?? true;
+            var isHealthy = sidecarManager?.IsHealthy ?? true;
             var sessionCount = sidecarManager?.GetSessionList().Sessions?.Count
                 ?? directManager?.GetSessionList().Sessions?.Count ?? 0;
 
             var client = sidecarManager?.SidecarClient;
+            string? hostError = null;
+            if (isSidecarMode && !isConnected)
+            {
+                hostError = "Cannot connect to mm-host process";
+            }
+            else if (isSidecarMode && !isHealthy)
+            {
+                hostError = "PTY host not responding (no heartbeat)";
+            }
+
             var health = new SystemHealth
             {
-                Healthy = !isSidecarMode || hostConnected,
+                Healthy = !isSidecarMode || isHealthy,
                 Mode = isSidecarMode ? "sidecar" : "direct",
-                HostConnected = hostConnected,
-                HostError = isSidecarMode && !hostConnected ? "Cannot connect to mm-host process" : null,
+                HostConnected = isHealthy,
+                HostError = hostError,
                 SessionCount = sessionCount,
                 Version = version,
                 IpcTransport = client?.TransportType,

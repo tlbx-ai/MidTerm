@@ -7,6 +7,7 @@ namespace Ai.Tlbx.MiddleManager.Services;
 public sealed class SidecarClient : IAsyncDisposable
 {
     private const int PingTimeoutMs = 15_000;
+    private const int ReadTimeoutMs = 10_000;
     private const int ReconnectInitialDelayMs = 100;
     private const int ReconnectMaxDelayMs = 5_000;
 
@@ -27,6 +28,19 @@ public sealed class SidecarClient : IAsyncDisposable
     public event Action? OnReconnected;
 
     public bool IsConnected => _connected == 1 && _transport?.IsConnected == true;
+
+    public bool IsHealthy
+    {
+        get
+        {
+            if (!IsConnected)
+            {
+                return false;
+            }
+            var elapsed = DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPingTicks);
+            return TimeSpan.FromTicks(elapsed).TotalMilliseconds <= PingTimeoutMs;
+        }
+    }
 
     // Diagnostic properties for machine room
     public string TransportType => _transport?.GetType().Name ?? "None";
@@ -117,7 +131,18 @@ public sealed class SidecarClient : IAsyncDisposable
                     break;
                 }
 
-                var frame = await _transport.ReadFrameAsync(cancellationToken).ConfigureAwait(false);
+                IpcFrame? frame;
+                try
+                {
+                    using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    readCts.CancelAfter(ReadTimeoutMs);
+                    frame = await _transport.ReadFrameAsync(readCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    continue;
+                }
+
                 if (frame is null)
                 {
                     break;

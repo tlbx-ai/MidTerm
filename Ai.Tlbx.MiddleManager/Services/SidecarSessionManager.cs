@@ -24,6 +24,7 @@ public sealed class SidecarSessionManager : IDisposable
     public SettingsService SettingsService => _settingsService;
     public SidecarClient SidecarClient => _sidecarClient;
     public bool IsConnected => _sidecarClient.IsConnected;
+    public bool IsHealthy => _sidecarClient.IsHealthy;
 
     public SidecarSessionManager(
         ShellRegistry shellRegistry,
