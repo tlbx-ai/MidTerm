@@ -249,8 +249,10 @@ function Install-AsService
     {
         # Use New-Service first, then sc.exe config to add dependency and --sidecar arg
         New-Service -Name $WebServiceName -BinaryPathName "`"$webBinaryPath`"" -DisplayName $WebDisplayName -StartupType Automatic | Out-Null
-        # Now update binPath to include --sidecar and add dependency
-        sc.exe config $WebServiceName binPath= "`"$webBinaryPath`" --sidecar" depend= $HostServiceName | Out-Null
+        # sc.exe requires very specific quoting - update binPath and depend separately
+        $binPathValue = """$webBinaryPath"" --sidecar"
+        sc.exe config $WebServiceName binPath= $binPathValue | Out-Null
+        sc.exe config $WebServiceName depend= $HostServiceName | Out-Null
     }
     else
     {
