@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## What This Is
 
-MiddleManager is a web-based terminal multiplexer. Single executable (~15MB), native AOT compiled, runs on Windows/Linux/macOS. Serves terminal sessions via browser at `http://localhost:2000`.
+MiddleManager is a web-based terminal multiplexer. Single executable (~15MB), native AOT compiled, runs on macOS/Windows/Linux. Serves terminal sessions via browser at `http://localhost:2000`.
 
 **Executable name:** `mm` (mm.exe on Windows)
 **Default port:** 2000
@@ -20,9 +20,9 @@ dotnet build Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj
 dotnet test Ai.Tlbx.MiddleManager.Tests/Ai.Tlbx.MiddleManager.Tests.csproj
 
 # AOT publish (platform-specific)
+./Ai.Tlbx.MiddleManager/build-aot-macos.sh # macOS
 Ai.Tlbx.MiddleManager/build-aot.cmd        # Windows
 ./Ai.Tlbx.MiddleManager/build-aot-linux.sh # Linux
-./Ai.Tlbx.MiddleManager/build-aot-macos.sh # macOS
 
 # Output: Ai.Tlbx.MiddleManager/publish/mm[.exe]
 ```
@@ -108,11 +108,11 @@ GET  /api/version            Server version
 
 | Platform | PTY | Shells |
 |----------|-----|--------|
+| macOS | forkpty() libSystem | Zsh, Bash |
 | Windows | ConPTY (Windows.Win32) | Pwsh, PowerShell, Cmd |
 | Linux | forkpty() libc | Bash, Zsh |
-| macOS | forkpty() libSystem | Bash, Zsh |
 
-Default shell: Pwsh (Windows), Zsh (macOS), Bash (Linux)
+Default shell: Zsh (macOS), Pwsh (Windows), Bash (Linux)
 
 ## Important Rules
 

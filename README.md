@@ -1,9 +1,9 @@
 # MiddleManager
 
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#installation)
 [![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](#installation)
 [![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](#installation)
-[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#installation)
 
 **Your terminal, anywhere.** Run AI coding agents and TUI apps on your machine, access them from any browser.
 
@@ -51,10 +51,11 @@ MiddleManager: HTTP works everywhere. Your machine, your power, your keys.
 ## Features
 
 - **Single binary** — ~15MB, no dependencies, no runtime
-- **Cross-platform** — Windows, Linux, macOS
+- **Cross-platform** — macOS, Windows, Linux
+- **Responsive UI** — Works on any screen size. That old iPad? Now it's a terminal monitor.
 - **Instant startup** — Native AOT compiled, sub-second launch
 - **Multi-session** — Multiple terminals, one WebSocket connection
-- **Any shell** — PowerShell, CMD, Bash, Zsh
+- **Any shell** — Zsh, Bash, PowerShell, CMD
 
 ## Installation
 
@@ -62,16 +63,16 @@ Download the latest release for your platform:
 
 | Platform | Download |
 |----------|----------|
-| Windows x64 | [mm-win-x64.zip](https://github.com/AiTlbx/MiddleManager/releases/latest) |
-| Linux x64 | [mm-linux-x64.tar.gz](https://github.com/AiTlbx/MiddleManager/releases/latest) |
 | macOS ARM64 | [mm-osx-arm64.tar.gz](https://github.com/AiTlbx/MiddleManager/releases/latest) |
 | macOS x64 | [mm-osx-x64.tar.gz](https://github.com/AiTlbx/MiddleManager/releases/latest) |
+| Windows x64 | [mm-win-x64.zip](https://github.com/AiTlbx/MiddleManager/releases/latest) |
+| Linux x64 | [mm-linux-x64.tar.gz](https://github.com/AiTlbx/MiddleManager/releases/latest) |
 
 ## Quick Start
 
 ```bash
 # Start MiddleManager
-./mm                    # Linux/macOS
+./mm                    # macOS/Linux
 mm.exe                  # Windows
 
 # Open in browser
@@ -85,8 +86,11 @@ That's it. Now open that same URL from any device on your network.
 
 ## Remote Access
 
-For access outside your local network, expose port 2000 via:
-- **Tailscale/ZeroTier** — Mesh VPN, easiest setup
+For access from your phone, tablet, or any device outside your local network:
+
+**[Tailscale](https://tailscale.com)** — The easiest option. Install on your Mac and phone, done. Access your terminal from anywhere via `http://your-mac:2000`. Free for personal use.
+
+Other options:
 - **Cloudflare Tunnel** — Free, no port forwarding needed
 - **Reverse proxy** — nginx/Caddy with HTTPS
 
@@ -124,9 +128,9 @@ dotnet build
 
 # AOT binary (platform-specific)
 cd Ai.Tlbx.MiddleManager
+./build-aot-macos.sh     # macOS
 ./build-aot.cmd          # Windows
 ./build-aot-linux.sh     # Linux
-./build-aot-macos.sh     # macOS
 ```
 
 ## License

@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  PROJECT_PATH: Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            rid: osx-arm64
+            artifact: mm-osx-arm64.tar.gz
+          - os: macos-13
+            rid: osx-x64
+            artifact: mm-osx-x64.tar.gz
+          - os: windows-latest
+            rid: win-x64
+            artifact: mm-win-x64.zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            artifact: mm-linux-x64.tar.gz
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Publish AOT
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
+
+      - name: Build pty_helper (macOS only)
+        if: startsWith(matrix.rid, 'osx')
+        run: |
+          clang -O2 Ai.Tlbx.MiddleManager/Pty/pty_helper.c -o Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/pty_helper
+
+      - name: Package (Windows)
+        if: matrix.rid == 'win-x64'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/mm.exe -DestinationPath ${{ matrix.artifact }}
+
+      - name: Package (Unix)
+        if: matrix.rid != 'win-x64'
+        run: |
+          cd Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish
+          if [ "${{ matrix.rid }}" = "osx-arm64" ] || [ "${{ matrix.rid }}" = "osx-x64" ]; then
+            tar -czvf ${{ github.workspace }}/${{ matrix.artifact }} mm pty_helper
+          else
+            tar -czvf ${{ github.workspace }}/${{ matrix.artifact }} mm
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s" HEAD)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s" ${PREV_TAG}..HEAD)
+          fi
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## What's Changed
+            ${{ steps.changelog.outputs.changelog }}
+          files: |
+            artifacts/mm-osx-arm64.tar.gz
+            artifacts/mm-osx-x64.tar.gz
+            artifacts/mm-win-x64.zip
+            artifacts/mm-linux-x64.tar.gz
