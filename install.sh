@@ -80,18 +80,24 @@ get_latest_release() {
 }
 
 prompt_service_mode() {
-    echo -e "  ${CYAN}Install as system service? [Y/n]${NC}"
+    echo -e "  ${CYAN}How would you like to install MiddleManager?${NC}"
     echo ""
-    echo -e "    ${GREEN}✓ Recommended: Starts automatically on boot${NC}"
-    echo -e "    ${GREEN}✓ Available even before login (great for remote access)${NC}"
-    echo -e "    ${GREEN}✓ Survives unexpected reboots${NC}"
+    echo -e "  ${CYAN}[1] System service${NC} (recommended for always-on access)"
+    echo -e "      ${GRAY}- Runs in background, starts on boot${NC}"
+    echo -e "      ${GRAY}- Available before you log in${NC}"
+    echo -e "      ${GRAY}- Installs to /usr/local/bin${NC}"
+    echo -e "      ${YELLOW}- Requires sudo privileges${NC}"
     echo ""
-    echo -e "    ${GRAY}Requires sudo privileges (will prompt)${NC}"
+    echo -e "  ${CYAN}[2] User install${NC} (no sudo required)"
+    echo -e "      ${GRAY}- You start it manually when needed${NC}"
+    echo -e "      ${GRAY}- Only available after you log in${NC}"
+    echo -e "      ${GRAY}- Installs to ~/.local/bin${NC}"
+    echo -e "      ${GREEN}- No special permissions needed${NC}"
     echo ""
 
-    read -p "  Your choice [Y/n]: " choice
+    read -p "  Your choice [1/2]: " choice
     case "$choice" in
-        n|N)
+        2)
             SERVICE_MODE=false
             ;;
         *)

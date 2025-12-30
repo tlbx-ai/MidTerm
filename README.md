@@ -74,15 +74,16 @@ curl -fsSL https://raw.githubusercontent.com/AiTlbx/MiddleManager/main/install.s
 irm https://raw.githubusercontent.com/AiTlbx/MiddleManager/main/install.ps1 | iex
 ```
 
-The installer will:
-1. Download the latest binary for your platform
-2. Ask if you want to install as a system service (recommended)
-3. Add to PATH and register for uninstall
+The installer will ask you to choose:
 
-**System service benefits:**
-- Starts automatically on boot
-- Available before login (great for headless/remote machines)
-- Auto-restarts if it crashes
+| Option | Best for | Privileges |
+|--------|----------|------------|
+| **System service** | Always-on access, headless machines, remote access before login | Requires admin/sudo |
+| **User install** | Try it out, occasional use, no admin rights | No special permissions |
+
+**System service:** Runs in background, starts on boot, survives reboots. Great for machines you access remotely.
+
+**User install:** You run `mm` when you need it. Simpler, no admin required, installs to your home folder.
 
 ### Manual Download
 

@@ -276,18 +276,24 @@ $version = $script:release.tag_name -replace "^v", ""
 Write-Host "  Latest version: $version" -ForegroundColor White
 Write-Host ""
 
-# Prompt for service mode
-Write-Host "  Install as system service? [Y/n]" -ForegroundColor White
+# Prompt for install mode
+Write-Host "  How would you like to install MiddleManager?" -ForegroundColor White
 Write-Host ""
-Write-Host "    Recommended: Starts automatically on boot" -ForegroundColor Green
-Write-Host "    Available even before login (great for remote access)" -ForegroundColor Green
-Write-Host "    Survives unexpected reboots" -ForegroundColor Green
+Write-Host "  [1] System service (recommended for always-on access)" -ForegroundColor Cyan
+Write-Host "      - Runs in background, starts on boot" -ForegroundColor Gray
+Write-Host "      - Available before you log in" -ForegroundColor Gray
+Write-Host "      - Installs to Program Files" -ForegroundColor Gray
+Write-Host "      - Requires admin privileges" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "    Requires admin privileges (will prompt)" -ForegroundColor Gray
+Write-Host "  [2] User install (no admin required)" -ForegroundColor Cyan
+Write-Host "      - You start it manually when needed" -ForegroundColor Gray
+Write-Host "      - Only available after you log in" -ForegroundColor Gray
+Write-Host "      - Installs to your AppData folder" -ForegroundColor Gray
+Write-Host "      - No special permissions needed" -ForegroundColor Green
 Write-Host ""
 
-$choice = Read-Host "  Your choice"
-$asService = ($choice -eq "" -or $choice -eq "y" -or $choice -eq "Y")
+$choice = Read-Host "  Your choice [1/2]"
+$asService = ($choice -eq "" -or $choice -eq "1")
 
 if ($asService)
 {

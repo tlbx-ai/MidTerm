@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.1] - 2025-12-30
+
+- Improve install scripts with clearer service vs user install choice
+- Update README with balanced explanation of install options
+
 ## [1.2.0] - 2025-12-30
 
 - Add system service installation (launchd, systemd, Windows Service)
