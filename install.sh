@@ -346,7 +346,7 @@ Requires=${HOST_SERVICE_NAME}.service
 
 [Service]
 Type=simple
-ExecStart=${install_dir}/mm
+ExecStart=${install_dir}/mm --sidecar
 Restart=always
 RestartSec=5
 Environment=PATH=/usr/local/bin:/usr/bin:/bin

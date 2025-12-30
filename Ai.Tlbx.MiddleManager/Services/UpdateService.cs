@@ -295,8 +295,12 @@ public sealed class UpdateService : IDisposable
 
     private static bool IsNewerVersion(string latest, string current)
     {
-        var latestParts = latest.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
-        var currentParts = current.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        // Strip +metadata suffix (e.g., "2.0.1+githash" -> "2.0.1")
+        var latestClean = latest.Split('+')[0];
+        var currentClean = current.Split('+')[0];
+
+        var latestParts = latestClean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        var currentParts = currentClean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
 
         for (int i = 0; i < Math.Max(latestParts.Length, currentParts.Length); i++)
         {
