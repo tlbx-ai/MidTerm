@@ -505,32 +505,33 @@ html, body {
     opacity: 1;
 }
 
-/* Host connection status indicator */
+/* Host connection status indicator - prominent banner */
 .host-status {
     position: fixed;
-    bottom: 8px;
-    right: 8px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    z-index: 1000;
-    opacity: 0;
-    transition: opacity 0.3s;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 20px;
+    font-size: 14px;
+    z-index: 2000;
+    text-align: center;
+    display: none;
 }
 
 .host-status.connected {
-    opacity: 0;
+    display: none;
 }
 
 .host-status.disconnected {
-    background-color: #c44;
+    display: block;
+    background-color: #b33;
     color: white;
-    opacity: 1;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-/* When both indicators are visible, stack them */
-.host-status.disconnected ~ .connection-status:not(.connected) {
-    bottom: 36px;
+/* Push content down when banner is visible */
+.host-status.disconnected ~ #app {
+    margin-top: 48px;
 }
 
 /* Scaled terminal indicator */
@@ -585,6 +586,19 @@ html, body {
 .sidebar-btn.active {
     background-color: #0e639c;
     color: white;
+}
+
+.sidebar-btn:disabled {
+    background-color: #555;
+    color: #888;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.empty-state button:disabled {
+    background-color: #555;
+    color: #888;
+    cursor: not-allowed;
 }
 
 /* Settings view */

@@ -18,6 +18,7 @@ namespace Ai.Tlbx.MiddleManager.Services;
 [JsonSerializable(typeof(UpdateType))]
 [JsonSerializable(typeof(VersionManifest))]
 [JsonSerializable(typeof(StateUpdate))]
+[JsonSerializable(typeof(SystemHealth))]
 [JsonSerializable(typeof(UserInfo))]
 [JsonSerializable(typeof(List<UserInfo>))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
@@ -30,4 +31,14 @@ public sealed class StateUpdate
     public SessionListDto? Sessions { get; init; }
     public UpdateInfo? Update { get; init; }
     public bool HostConnected { get; init; }
+}
+
+public sealed class SystemHealth
+{
+    public bool Healthy { get; init; }
+    public string Mode { get; init; } = "";
+    public bool HostConnected { get; init; }
+    public string? HostError { get; init; }
+    public int SessionCount { get; init; }
+    public string Version { get; init; } = "";
 }

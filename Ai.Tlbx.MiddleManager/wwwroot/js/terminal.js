@@ -123,6 +123,7 @@
         // Connect to server
         connectStateWebSocket();
         connectMuxWebSocket();
+        checkSystemHealth();
 
         // Setup UI
         bindEvents();
@@ -577,15 +578,42 @@
 
     function updateHostStatus() {
         var indicator = document.getElementById('host-status');
-        if (!indicator) return;
+        var newTerminalBtn = document.getElementById('btn-new-session');
+        var emptyStateBtn = document.querySelector('.empty-state button');
 
-        if (hostConnected) {
-            indicator.className = 'host-status connected';
-            indicator.textContent = '';
-        } else {
-            indicator.className = 'host-status disconnected';
-            indicator.textContent = 'Host disconnected';
+        if (indicator) {
+            if (hostConnected) {
+                indicator.className = 'host-status connected';
+                indicator.textContent = '';
+            } else {
+                indicator.className = 'host-status disconnected';
+                indicator.innerHTML = '<strong>Host Disconnected</strong> — Terminal sessions unavailable. The mm-host process may not be running.';
+            }
         }
+
+        // Disable/enable New Terminal buttons
+        if (newTerminalBtn) {
+            newTerminalBtn.disabled = !hostConnected;
+            newTerminalBtn.title = hostConnected ? '' : 'Host disconnected';
+        }
+        if (emptyStateBtn) {
+            emptyStateBtn.disabled = !hostConnected;
+        }
+    }
+
+    function checkSystemHealth() {
+        fetch('/api/health')
+            .then(function(response) { return response.json(); })
+            .then(function(health) {
+                console.log('System health:', health);
+                if (health.mode === 'sidecar' && !health.hostConnected) {
+                    hostConnected = false;
+                    updateHostStatus();
+                }
+            })
+            .catch(function(err) {
+                console.error('Health check failed:', err);
+            });
     }
 
     // ========================================================================

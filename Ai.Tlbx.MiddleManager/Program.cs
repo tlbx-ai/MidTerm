@@ -246,6 +246,25 @@ public class Program
 
         app.MapGet("/api/version", () => Results.Text(version));
 
+        app.MapGet("/api/health", () =>
+        {
+            var isSidecarMode = sidecarManager is not null;
+            var hostConnected = sidecarManager?.IsConnected ?? true;
+            var sessionCount = sidecarManager?.GetSessionList().Sessions?.Count
+                ?? directManager?.GetSessionList().Sessions?.Count ?? 0;
+
+            var health = new SystemHealth
+            {
+                Healthy = !isSidecarMode || hostConnected,
+                Mode = isSidecarMode ? "sidecar" : "direct",
+                HostConnected = hostConnected,
+                HostError = isSidecarMode && !hostConnected ? "Cannot connect to mm-host process" : null,
+                SessionCount = sessionCount,
+                Version = version
+            };
+            return Results.Json(health, AppJsonContext.Default.SystemHealth);
+        });
+
         app.MapGet("/api/version/details", () =>
         {
             var manifest = updateService.InstalledManifest;
