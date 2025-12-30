@@ -8,6 +8,7 @@ namespace Ai.Tlbx.MiddleManager.Settings
     {
         Default,
         LoadedFromFile,
+        MigratedFromOld,
         ErrorFallbackToDefault
     }
 
@@ -103,6 +104,23 @@ namespace Ai.Tlbx.MiddleManager.Settings
                     _cached = JsonSerializer.Deserialize(json, SettingsJsonContext.Default.MiddleManagerSettings)
                         ?? new MiddleManagerSettings();
                     LoadStatus = SettingsLoadStatus.LoadedFromFile;
+
+                    // Check for .old file and migrate user preferences
+                    var oldPath = _settingsPath + ".old";
+                    if (File.Exists(oldPath))
+                    {
+                        try
+                        {
+                            MigrateFromOldSettings(oldPath, _cached);
+                            Save(_cached);
+                            File.Delete(oldPath);
+                            LoadStatus = SettingsLoadStatus.MigratedFromOld;
+                        }
+                        catch
+                        {
+                            // Migration failed, continue with current settings
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -113,6 +131,33 @@ namespace Ai.Tlbx.MiddleManager.Settings
 
                 return _cached;
             }
+        }
+
+        private static void MigrateFromOldSettings(string oldPath, MiddleManagerSettings current)
+        {
+            var oldJson = File.ReadAllText(oldPath);
+            var old = JsonSerializer.Deserialize(oldJson, SettingsJsonContext.Default.MiddleManagerSettings);
+            if (old is null)
+            {
+                return;
+            }
+
+            // Migrate user preferences (keep security settings from current/installer)
+            current.DefaultShell = old.DefaultShell;
+            current.DefaultCols = old.DefaultCols;
+            current.DefaultRows = old.DefaultRows;
+            current.DefaultWorkingDirectory = old.DefaultWorkingDirectory;
+            current.FontSize = old.FontSize;
+            current.CursorStyle = old.CursorStyle;
+            current.CursorBlink = old.CursorBlink;
+            current.Theme = old.Theme;
+            current.ScrollbackLines = old.ScrollbackLines;
+            current.BellStyle = old.BellStyle;
+            current.CopyOnSelect = old.CopyOnSelect;
+            current.RightClickPaste = old.RightClickPaste;
+
+            // Note: RunAsUser/RunAsUserSid/RunAsUid/RunAsGid are NOT migrated
+            // They come from the installer which captures the current user
         }
 
         public void Save(MiddleManagerSettings settings)

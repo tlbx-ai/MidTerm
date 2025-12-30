@@ -73,27 +73,24 @@ function Write-ServiceSettings
 
     $configDir = "$env:ProgramData\MiddleManager"
     $settingsPath = Join-Path $configDir "settings.json"
+    $oldSettingsPath = Join-Path $configDir "settings.json.old"
 
     if (-not (Test-Path $configDir))
     {
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
+    # Backup existing settings for migration by the app
+    if (Test-Path $settingsPath)
+    {
+        Write-Host "  Backing up existing settings..." -ForegroundColor Gray
+        Move-Item -Path $settingsPath -Destination $oldSettingsPath -Force
+    }
+
+    # Write minimal bootstrap settings - app will migrate user preferences from .old
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
-        defaultShell = "Pwsh"
-        defaultCols = 120
-        defaultRows = 30
-        defaultWorkingDirectory = ""
-        fontSize = 14
-        cursorStyle = "bar"
-        cursorBlink = $true
-        theme = "dark"
-        scrollbackLines = 10000
-        bellStyle = "notification"
-        copyOnSelect = $false
-        rightClickPaste = $true
     }
 
     $json = $settings | ConvertTo-Json -Depth 10

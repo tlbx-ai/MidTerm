@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.6] - 2025-12-30
+
+- Add settings migration on update (backup to .old, migrate user preferences)
+- Install scripts now preserve user preferences across updates
+
 ## [1.3.5] - 2025-12-30
 
 - Fix embedded static files not loading (wrong namespace for resource lookup)

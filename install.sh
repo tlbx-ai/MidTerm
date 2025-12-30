@@ -115,33 +115,22 @@ prompt_service_mode() {
 write_service_settings() {
     local config_dir="/usr/local/etc/middlemanager"
     local settings_path="$config_dir/settings.json"
+    local old_settings_path="$config_dir/settings.json.old"
 
     mkdir -p "$config_dir"
 
-    # Determine default shell based on platform
-    if [ "$(uname -s)" = "Darwin" ]; then
-        default_shell="Zsh"
-    else
-        default_shell="Bash"
+    # Backup existing settings for migration by the app
+    if [ -f "$settings_path" ]; then
+        echo -e "  ${GRAY}Backing up existing settings...${NC}"
+        mv "$settings_path" "$old_settings_path"
     fi
 
+    # Write minimal bootstrap settings - app will migrate user preferences from .old
     cat > "$settings_path" << EOF
 {
   "runAsUser": "$INSTALLING_USER",
   "runAsUid": $INSTALLING_UID,
-  "runAsGid": $INSTALLING_GID,
-  "defaultShell": "$default_shell",
-  "defaultCols": 120,
-  "defaultRows": 30,
-  "defaultWorkingDirectory": "",
-  "fontSize": 14,
-  "cursorStyle": "bar",
-  "cursorBlink": true,
-  "theme": "dark",
-  "scrollbackLines": 10000,
-  "bellStyle": "notification",
-  "copyOnSelect": false,
-  "rightClickPaste": true
+  "runAsGid": $INSTALLING_GID
 }
 EOF
 
