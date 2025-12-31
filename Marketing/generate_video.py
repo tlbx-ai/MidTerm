@@ -85,9 +85,9 @@ def main():
         config_params["output_gcs_uri"] = gcs_bucket
 
     # Generate video using Veo
-    # Models: veo-3.0-generate-preview, veo-3.1-generate-001
+    # Models: veo-3.1-generate-001 (supports first+last frame), veo-3.0-generate-preview
     operation = client.models.generate_videos(
-        model="veo-3.0-generate-preview",
+        model="veo-3.1-generate-001",
         prompt=prompt,
         config=GenerateVideosConfig(**config_params),
     )
