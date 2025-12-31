@@ -183,15 +183,10 @@ public sealed class WindowsPtyConnection : IPtyConnection
             }
 
             var commandLine = BuildCommandLine(app, args);
-            var envBlock = BuildEnvironmentBlock(environment);
-            var envPtr = IntPtr.Zero;
-
-            if (envBlock is not null)
-            {
-                envPtr = Marshal.StringToHGlobalUni(envBlock);
-            }
 
             IntPtr userToken = IntPtr.Zero;
+            IntPtr userEnvBlock = IntPtr.Zero;
+            IntPtr customEnvPtr = IntPtr.Zero;
             try
             {
                 var startupInfo = new StartupInfoEx
@@ -208,8 +203,16 @@ public sealed class WindowsPtyConnection : IPtyConnection
                     userToken = GetUserTokenFromSession();
                 }
 
+                IntPtr envPtr;
                 if (userToken != IntPtr.Zero)
                 {
+                    // Load the user's environment (USERPROFILE, APPDATA, etc.)
+                    if (!CreateEnvironmentBlock(out userEnvBlock, userToken, false))
+                    {
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create environment block for user");
+                    }
+                    envPtr = userEnvBlock;
+
                     success = CreateProcessAsUser(
                         userToken,
                         null,
@@ -225,6 +228,13 @@ public sealed class WindowsPtyConnection : IPtyConnection
                 }
                 else
                 {
+                    var envBlock = BuildEnvironmentBlock(environment);
+                    if (envBlock is not null)
+                    {
+                        customEnvPtr = Marshal.StringToHGlobalUni(envBlock);
+                    }
+                    envPtr = customEnvPtr;
+
                     success = CreateProcess(
                         null,
                         commandLine,
@@ -253,9 +263,13 @@ public sealed class WindowsPtyConnection : IPtyConnection
                 {
                     CloseHandle(userToken);
                 }
-                if (envPtr != IntPtr.Zero)
+                if (userEnvBlock != IntPtr.Zero)
                 {
-                    Marshal.FreeHGlobal(envPtr);
+                    DestroyEnvironmentBlock(userEnvBlock);
+                }
+                if (customEnvPtr != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(customEnvPtr);
                 }
             }
 

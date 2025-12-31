@@ -115,6 +115,12 @@ internal static class ConPtyNative
     public const int SecurityImpersonation = 2;
     public const int TokenPrimary = 1;
 
+    [DllImport("userenv.dll", SetLastError = true)]
+    public static extern bool CreateEnvironmentBlock(out IntPtr lpEnvironment, IntPtr hToken, bool bInherit);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    public static extern bool DestroyEnvironmentBlock(IntPtr lpEnvironment);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct Coord
     {
