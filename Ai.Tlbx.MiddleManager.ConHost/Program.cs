@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MiddleManager.ConHost;
 
 public static class Program
 {
-    public const string Version = "2.6.13";
+    public const string Version = "2.6.14";
 
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -148,6 +148,10 @@ public static class Program
                         if (!handshakeComplete)
                         {
                             // Buffer output until handshake completes
+                            if (data.Length < 50)
+                            {
+                                Log($"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
+                            }
                             pendingOutput.Add(data.ToArray());
                             return;
                         }
@@ -156,10 +160,18 @@ public static class Program
                     if (pipe.IsConnected)
                     {
                         var msg = ConHostProtocol.CreateOutputMessage(data.Span);
+                        if (data.Length < 50)
+                        {
+                            Log($"[PIPE-OUTPUT] {BitConverter.ToString(data.ToArray())}");
+                        }
                         lock (pipe)
                         {
                             pipe.Write(msg);
                         }
+                    }
+                    else
+                    {
+                        Log($"[PIPE-OUTPUT] Pipe not connected, discarding {data.Length} bytes");
                     }
                 }
                 catch (Exception ex)
@@ -189,11 +201,12 @@ public static class Program
                 lock (outputLock)
                 {
                     handshakeComplete = true;
+                    Log($"[HANDSHAKE] Complete, pipe connected: {pipe.IsConnected}");
 
                     // Send any buffered output
                     if (pendingOutput.Count > 0)
                     {
-                        Log($"Sending {pendingOutput.Count} buffered output chunks");
+                        Log($"[HANDSHAKE] Sending {pendingOutput.Count} buffered output chunks");
                         foreach (var data in pendingOutput)
                         {
                             try
@@ -201,6 +214,10 @@ public static class Program
                                 if (pipe.IsConnected)
                                 {
                                     var msg = ConHostProtocol.CreateOutputMessage(data);
+                                    if (data.Length < 50)
+                                    {
+                                        Log($"[PIPE-OUTPUT] (buffered) {BitConverter.ToString(data)}");
+                                    }
                                     lock (pipe)
                                     {
                                         pipe.Write(msg);

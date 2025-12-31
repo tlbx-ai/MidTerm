@@ -93,6 +93,7 @@ public sealed class ConHostClient : IAsyncDisposable
     {
         if (_readTask is not null) return;
         _cts = new CancellationTokenSource();
+        DebugLogger.Log($"[READ-LOOP] {_sessionId}: Starting read loop");
         _readTask = ReadLoopWithReconnectAsync(_cts.Token);
     }
 
@@ -274,6 +275,7 @@ public sealed class ConHostClient : IAsyncDisposable
     {
         var headerBuffer = new byte[ConHostProtocol.HeaderSize];
         var payloadBuffer = new byte[ConHostProtocol.MaxPayloadSize];
+        DebugLogger.Log($"[READ-LOOP] {_sessionId}: Entered read loop, IsConnected: {IsConnected}");
 
         while (!ct.IsCancellationRequested && !_disposed)
         {
@@ -281,6 +283,7 @@ public sealed class ConHostClient : IAsyncDisposable
             {
                 if (!IsConnected)
                 {
+                    DebugLogger.Log($"[READ-LOOP] {_sessionId}: Not connected, waiting...");
                     await Task.Delay(100, ct).ConfigureAwait(false);
                     continue;
                 }
@@ -289,6 +292,7 @@ public sealed class ConHostClient : IAsyncDisposable
                 if (pipe is null) continue;
 
                 var bytesRead = await pipe.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
+                DebugLogger.Log($"[READ-LOOP] {_sessionId}: Read {bytesRead} bytes");
                 if (bytesRead == 0)
                 {
                     Log("Read returned 0 bytes - pipe closed");
@@ -342,6 +346,7 @@ public sealed class ConHostClient : IAsyncDisposable
                 }
 
                 var payload = payloadBuffer.AsMemory(0, payloadLength);
+                DebugLogger.Log($"[READ-LOOP] {_sessionId}: Processing message type {msgType}, payload {payloadLength} bytes");
                 ProcessMessage(msgType, payload);
             }
             catch (OperationCanceledException)
