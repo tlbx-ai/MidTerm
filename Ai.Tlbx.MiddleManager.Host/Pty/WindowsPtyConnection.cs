@@ -131,17 +131,50 @@ public sealed class WindowsPtyConnection : IPtyConnection
         SafeFileHandle? inputWriteHandle = null;
         SafeFileHandle? outputReadHandle = null;
         SafeFileHandle? outputWriteHandle = null;
+        IntPtr securityDescriptor = IntPtr.Zero;
 
         try
         {
-            if (!CreatePipe(out inputReadHandle, out inputWriteHandle, IntPtr.Zero, 0))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create input pipe");
-            }
+            var willRunAsUser = !string.IsNullOrEmpty(runAsUserSid) && IsRunningAsLocalSystem();
 
-            if (!CreatePipe(out outputReadHandle, out outputWriteHandle, IntPtr.Zero, 0))
+            if (willRunAsUser)
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create output pipe");
+                // Create security descriptor that grants access to SYSTEM, Admins, and Interactive Users
+                // This allows the user process to access the pseudo-console created by SYSTEM
+                const string sddl = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;IU)";
+                if (!ConvertStringSecurityDescriptorToSecurityDescriptor(sddl, SDDL_REVISION_1, out securityDescriptor, out _))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create security descriptor");
+                }
+
+                var sa = new SecurityAttributes
+                {
+                    nLength = Marshal.SizeOf<SecurityAttributes>(),
+                    lpSecurityDescriptor = securityDescriptor,
+                    bInheritHandle = false
+                };
+
+                if (!CreatePipe(out inputReadHandle, out inputWriteHandle, ref sa, 0))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create input pipe");
+                }
+
+                if (!CreatePipe(out outputReadHandle, out outputWriteHandle, ref sa, 0))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create output pipe");
+                }
+            }
+            else
+            {
+                if (!CreatePipe(out inputReadHandle, out inputWriteHandle, IntPtr.Zero, 0))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create input pipe");
+                }
+
+                if (!CreatePipe(out outputReadHandle, out outputWriteHandle, IntPtr.Zero, 0))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create output pipe");
+                }
             }
 
             _inputWriteHandle = inputWriteHandle;
@@ -198,7 +231,7 @@ public sealed class WindowsPtyConnection : IPtyConnection
                 bool success;
                 ProcessInformation processInfo;
 
-                if (!string.IsNullOrEmpty(runAsUserSid) && IsRunningAsLocalSystem())
+                if (willRunAsUser)
                 {
                     userToken = GetUserTokenFromSession();
                 }
@@ -283,6 +316,13 @@ public sealed class WindowsPtyConnection : IPtyConnection
             outputReadHandle?.Dispose();
             outputWriteHandle?.Dispose();
             throw;
+        }
+        finally
+        {
+            if (securityDescriptor != IntPtr.Zero)
+            {
+                LocalFree(securityDescriptor);
+            }
         }
     }
 

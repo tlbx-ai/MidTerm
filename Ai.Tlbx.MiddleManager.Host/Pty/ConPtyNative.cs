@@ -28,6 +28,25 @@ internal static class ConPtyNative
         uint nSize);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CreatePipe(
+        out SafeFileHandle hReadPipe,
+        out SafeFileHandle hWritePipe,
+        ref SecurityAttributes lpPipeAttributes,
+        uint nSize);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
+        string StringSecurityDescriptor,
+        uint StringSDRevision,
+        out IntPtr SecurityDescriptor,
+        out uint SecurityDescriptorSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr LocalFree(IntPtr hMem);
+
+    public const uint SDDL_REVISION_1 = 1;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool InitializeProcThreadAttributeList(
         IntPtr lpAttributeList,
         int dwAttributeCount,
@@ -171,6 +190,14 @@ internal static class ConPtyNative
         public IntPtr hThread;
         public int dwProcessId;
         public int dwThreadId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SecurityAttributes
+    {
+        public int nLength;
+        public IntPtr lpSecurityDescriptor;
+        public bool bInheritHandle;
     }
 }
 #endif
