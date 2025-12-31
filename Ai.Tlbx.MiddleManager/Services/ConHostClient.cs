@@ -14,6 +14,10 @@ public sealed class ConHostClient : IAsyncDisposable
     private Task? _readTask;
     private bool _disposed;
 
+    // For request/response coordination when ReadLoop is running
+    private TaskCompletionSource<(ConHostMessageType type, byte[] payload)>? _pendingResponse;
+    private readonly object _responseLock = new();
+
     public string SessionId => _sessionId;
     public bool IsConnected => _pipe?.IsConnected ?? false;
 
@@ -98,10 +102,20 @@ public sealed class ConHostClient : IAsyncDisposable
         try
         {
             var msg = ConHostProtocol.CreateResizeMessage(cols, rows);
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
 
-            var response = await ReadMessageAsync(ct).ConfigureAwait(false);
-            return response?.type == ConHostMessageType.ResizeAck;
+            if (_readTask is not null)
+            {
+                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
+                lock (_responseLock) { _pendingResponse = tcs; }
+                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
+                lock (_responseLock) { _pendingResponse = null; }
+                return response.type == ConHostMessageType.ResizeAck;
+            }
+
+            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
+            return directResponse?.type == ConHostMessageType.ResizeAck;
         }
         catch
         {
@@ -115,16 +129,39 @@ public sealed class ConHostClient : IAsyncDisposable
 
         try
         {
-            var msg = ConHostProtocol.CreateGetBuffer();
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+            // If ReadLoop is running, use the response routing mechanism
+            if (_readTask is not null)
+            {
+                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
+                lock (_responseLock)
+                {
+                    _pendingResponse = tcs;
+                }
 
-            var response = await ReadMessageAsync(ct).ConfigureAwait(false);
-            if (response is null || response.Value.type != ConHostMessageType.Buffer)
+                var msg = ConHostProtocol.CreateGetBuffer();
+                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+
+                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
+
+                lock (_responseLock)
+                {
+                    _pendingResponse = null;
+                }
+
+                return response.type == ConHostMessageType.Buffer ? response.payload : null;
+            }
+
+            // ReadLoop not running, use direct read
+            var reqMsg = ConHostProtocol.CreateGetBuffer();
+            await _pipe!.WriteAsync(reqMsg, ct).ConfigureAwait(false);
+
+            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
+            if (directResponse is null || directResponse.Value.type != ConHostMessageType.Buffer)
             {
                 return null;
             }
 
-            return response.Value.payload.ToArray();
+            return directResponse.Value.payload.ToArray();
         }
         catch
         {
@@ -139,10 +176,20 @@ public sealed class ConHostClient : IAsyncDisposable
         try
         {
             var msg = ConHostProtocol.CreateSetName(name);
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
 
-            var response = await ReadMessageAsync(ct).ConfigureAwait(false);
-            return response?.type == ConHostMessageType.SetNameAck;
+            if (_readTask is not null)
+            {
+                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
+                lock (_responseLock) { _pendingResponse = tcs; }
+                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
+                lock (_responseLock) { _pendingResponse = null; }
+                return response.type == ConHostMessageType.SetNameAck;
+            }
+
+            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
+            return directResponse?.type == ConHostMessageType.SetNameAck;
         }
         catch
         {
@@ -157,10 +204,20 @@ public sealed class ConHostClient : IAsyncDisposable
         try
         {
             var msg = ConHostProtocol.CreateClose();
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
 
-            var response = await ReadMessageAsync(ct).ConfigureAwait(false);
-            return response?.type == ConHostMessageType.CloseAck;
+            if (_readTask is not null)
+            {
+                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
+                lock (_responseLock) { _pendingResponse = tcs; }
+                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
+                lock (_responseLock) { _pendingResponse = null; }
+                return response.type == ConHostMessageType.CloseAck;
+            }
+
+            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
+            return directResponse?.type == ConHostMessageType.CloseAck;
         }
         catch
         {
@@ -213,6 +270,17 @@ public sealed class ConHostClient : IAsyncDisposable
 
                     case ConHostMessageType.StateChange:
                         OnStateChanged?.Invoke(_sessionId);
+                        break;
+
+                    // Response messages - route to pending request
+                    case ConHostMessageType.Buffer:
+                    case ConHostMessageType.ResizeAck:
+                    case ConHostMessageType.SetNameAck:
+                    case ConHostMessageType.CloseAck:
+                        lock (_responseLock)
+                        {
+                            _pendingResponse?.TrySetResult((msgType, payload.ToArray()));
+                        }
                         break;
                 }
             }
