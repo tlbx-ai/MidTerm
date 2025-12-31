@@ -10,8 +10,8 @@
     <PublishAot>true</PublishAot>
     <SelfContained>true</SelfContained>
 
-    <Version>2.6.10</Version>
-    <FileVersion>2.6.10.0</FileVersion>
+    <Version>2.6.11</Version>
+    <FileVersion>2.6.11.0</FileVersion>
   </PropertyGroup>
 
   <!-- Link PTY implementation from Host project -->

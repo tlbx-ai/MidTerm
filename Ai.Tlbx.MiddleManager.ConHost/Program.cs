@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MiddleManager.ConHost;
 
 public static class Program
 {
-    public const string Version = "2.6.10";
+    public const string Version = "2.6.11";
 
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -133,31 +133,33 @@ public static class Program
 
     private static async Task HandleClientAsync(TerminalSession session, NamedPipeServerStream pipe, CancellationToken ct)
     {
+        var pendingOutput = new List<byte[]>();
+        var outputLock = new object();
+        var handshakeComplete = false;
+
         try
         {
-            // Wait for GetInfo handshake before subscribing to output events
-            // This prevents Output messages from being sent before the client is ready
-            var handshakeComplete = false;
-
             void OnOutput(ReadOnlyMemory<byte> data)
             {
                 try
                 {
-                    if (!handshakeComplete)
+                    lock (outputLock)
                     {
-                        // Buffer output until handshake completes - client isn't ready yet
-                        return;
+                        if (!handshakeComplete)
+                        {
+                            // Buffer output until handshake completes
+                            pendingOutput.Add(data.ToArray());
+                            return;
+                        }
                     }
 
                     if (pipe.IsConnected)
                     {
-                        Log($"Sending output: {data.Length} bytes");
                         var msg = ConHostProtocol.CreateOutputMessage(data.Span);
-                        pipe.Write(msg);
-                    }
-                    else
-                    {
-                        Log($"Output dropped (pipe not connected): {data.Length} bytes");
+                        lock (pipe)
+                        {
+                            pipe.Write(msg);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -173,10 +175,46 @@ public static class Program
                     if (pipe.IsConnected)
                     {
                         var msg = ConHostProtocol.CreateStateChange(session.IsRunning, session.ExitCode);
-                        pipe.Write(msg);
+                        lock (pipe)
+                        {
+                            pipe.Write(msg);
+                        }
                     }
                 }
                 catch { }
+            }
+
+            void OnHandshakeComplete()
+            {
+                lock (outputLock)
+                {
+                    handshakeComplete = true;
+
+                    // Send any buffered output
+                    if (pendingOutput.Count > 0)
+                    {
+                        Log($"Sending {pendingOutput.Count} buffered output chunks");
+                        foreach (var data in pendingOutput)
+                        {
+                            try
+                            {
+                                if (pipe.IsConnected)
+                                {
+                                    var msg = ConHostProtocol.CreateOutputMessage(data);
+                                    lock (pipe)
+                                    {
+                                        pipe.Write(msg);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Buffered output write failed: {ex.Message}");
+                            }
+                        }
+                        pendingOutput.Clear();
+                    }
+                }
             }
 
             session.OnOutput += OnOutput;
@@ -184,7 +222,7 @@ public static class Program
 
             try
             {
-                await ProcessMessagesAsync(session, pipe, ct, () => handshakeComplete = true).ConfigureAwait(false);
+                await ProcessMessagesAsync(session, pipe, ct, OnHandshakeComplete).ConfigureAwait(false);
             }
             finally
             {

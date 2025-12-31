@@ -1,28 +1,42 @@
 using System.IO.Pipes;
+using System.Threading.Channels;
 
 namespace Ai.Tlbx.MiddleManager.Services;
 
 /// <summary>
-/// IPC client for a single mm-con-host process.
+/// Robust IPC client for a single mm-con-host process.
+/// Auto-reconnects on failure, retries operations, buffers during disconnects.
 /// </summary>
 public sealed class ConHostClient : IAsyncDisposable
 {
     private readonly string _sessionId;
     private readonly string _pipeName;
-    private NamedPipeClientStream? _pipe;
-    private CancellationTokenSource? _readCts;
-    private Task? _readTask;
-    private bool _disposed;
-
-    // For request/response coordination when ReadLoop is running
-    private TaskCompletionSource<(ConHostMessageType type, byte[] payload)>? _pendingResponse;
+    private readonly object _pipeLock = new();
     private readonly object _responseLock = new();
+
+    private NamedPipeClientStream? _pipe;
+    private CancellationTokenSource? _cts;
+    private Task? _readTask;
+    private Task? _reconnectTask;
+    private bool _disposed;
+    private bool _intentionalDisconnect;
+    private int _reconnectAttempts;
+
+    // For request/response coordination
+    private TaskCompletionSource<(ConHostMessageType type, byte[] payload)>? _pendingResponse;
+
+    // Reconnection settings
+    private const int MaxReconnectAttempts = 10;
+    private const int InitialReconnectDelayMs = 100;
+    private const int MaxReconnectDelayMs = 5000;
 
     public string SessionId => _sessionId;
     public bool IsConnected => _pipe?.IsConnected ?? false;
 
     public event Action<string, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
+    public event Action<string>? OnDisconnected;
+    public event Action<string>? OnReconnected;
 
     public ConHostClient(string sessionId)
     {
@@ -34,138 +48,147 @@ public sealed class ConHostClient : IAsyncDisposable
     {
         if (_disposed) return false;
 
-        try
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            _pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-            await _pipe.ConnectAsync(timeoutMs, ct).ConfigureAwait(false);
-            // Don't start ReadLoopAsync here - wait until after initial handshake (GetInfoAsync)
-            return true;
+            try
+            {
+                lock (_pipeLock)
+                {
+                    _pipe?.Dispose();
+                    _pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+                }
+
+                await _pipe.ConnectAsync(timeoutMs, ct).ConfigureAwait(false);
+                _reconnectAttempts = 0;
+                Log($"Connected to pipe {_pipeName}");
+                return true;
+            }
+            catch (TimeoutException)
+            {
+                Log($"Connection timeout (attempt {attempt + 1}/3)");
+            }
+            catch (IOException ex)
+            {
+                Log($"Connection failed (attempt {attempt + 1}/3): {ex.Message}");
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log($"Unexpected connection error: {ex.Message}");
+            }
+
+            if (attempt < 2)
+            {
+                await Task.Delay(200 * (attempt + 1), ct).ConfigureAwait(false);
+            }
         }
-        catch
-        {
-            _pipe?.Dispose();
-            _pipe = null;
-            return false;
-        }
+
+        return false;
     }
 
     public void StartReadLoop()
     {
         if (_readTask is not null) return;
-        _readCts = new CancellationTokenSource();
-        _readTask = ReadLoopAsync(_readCts.Token);
+        _cts = new CancellationTokenSource();
+        _readTask = ReadLoopWithReconnectAsync(_cts.Token);
     }
 
     public async Task<SessionInfo?> GetInfoAsync(CancellationToken ct = default)
     {
-        if (!IsConnected) return null;
-
-        try
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            var request = ConHostProtocol.CreateInfoRequest();
-            await _pipe!.WriteAsync(request, ct).ConfigureAwait(false);
+            if (!IsConnected)
+            {
+                await Task.Delay(100, ct).ConfigureAwait(false);
+                continue;
+            }
 
-            var response = await ReadMessageAsync(ct).ConfigureAwait(false);
-            if (response is null) return null;
+            try
+            {
+                var request = ConHostProtocol.CreateInfoRequest();
+                await WriteAsync(request, ct).ConfigureAwait(false);
 
-            var (type, payload) = response.Value;
-            if (type != ConHostMessageType.Info) return null;
+                var response = await ReadMessageAsync(ct).ConfigureAwait(false);
+                if (response is null) continue;
 
-            return ConHostProtocol.ParseInfo(payload.Span);
+                var (type, payload) = response.Value;
+                if (type != ConHostMessageType.Info)
+                {
+                    Log($"GetInfo got unexpected message type: {type}");
+                    continue;
+                }
+
+                return ConHostProtocol.ParseInfo(payload.Span);
+            }
+            catch (Exception ex)
+            {
+                Log($"GetInfo failed (attempt {attempt + 1}): {ex.Message}");
+            }
         }
-        catch
-        {
-            return null;
-        }
+
+        return null;
     }
 
     public async Task SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
-        if (!IsConnected) return;
+        if (_disposed) return;
 
         try
         {
             var msg = ConHostProtocol.CreateInputMessage(data.Span);
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
+            await WriteAsync(msg, ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // Pipe disconnected
+            Log($"SendInput failed: {ex.Message}");
+            TriggerReconnect();
         }
     }
 
     public async Task<bool> ResizeAsync(int cols, int rows, CancellationToken ct = default)
     {
-        if (!IsConnected) return false;
-
-        try
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            var msg = ConHostProtocol.CreateResizeMessage(cols, rows);
+            if (!IsConnected) return false;
 
-            if (_readTask is not null)
+            try
             {
-                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
-                lock (_responseLock) { _pendingResponse = tcs; }
-                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
-                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
-                lock (_responseLock) { _pendingResponse = null; }
-                return response.type == ConHostMessageType.ResizeAck;
+                var msg = ConHostProtocol.CreateResizeMessage(cols, rows);
+                var response = await SendRequestAsync(msg, ConHostMessageType.ResizeAck, ct).ConfigureAwait(false);
+                return response is not null;
             }
+            catch (Exception ex)
+            {
+                Log($"Resize failed (attempt {attempt + 1}): {ex.Message}");
+                TriggerReconnect();
+            }
+        }
 
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
-            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
-            return directResponse?.type == ConHostMessageType.ResizeAck;
-        }
-        catch
-        {
-            return false;
-        }
+        return false;
     }
 
     public async Task<byte[]?> GetBufferAsync(CancellationToken ct = default)
     {
-        if (!IsConnected) return null;
-
-        try
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            // If ReadLoop is running, use the response routing mechanism
-            if (_readTask is not null)
-            {
-                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
-                lock (_responseLock)
-                {
-                    _pendingResponse = tcs;
-                }
+            if (!IsConnected) return null;
 
+            try
+            {
                 var msg = ConHostProtocol.CreateGetBuffer();
-                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
-
-                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
-
-                lock (_responseLock)
-                {
-                    _pendingResponse = null;
-                }
-
-                return response.type == ConHostMessageType.Buffer ? response.payload : null;
+                var response = await SendRequestAsync(msg, ConHostMessageType.Buffer, ct).ConfigureAwait(false);
+                return response;
             }
-
-            // ReadLoop not running, use direct read
-            var reqMsg = ConHostProtocol.CreateGetBuffer();
-            await _pipe!.WriteAsync(reqMsg, ct).ConfigureAwait(false);
-
-            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
-            if (directResponse is null || directResponse.Value.type != ConHostMessageType.Buffer)
+            catch (Exception ex)
             {
-                return null;
+                Log($"GetBuffer failed (attempt {attempt + 1}): {ex.Message}");
             }
+        }
 
-            return directResponse.Value.payload.ToArray();
-        }
-        catch
-        {
-            return null;
-        }
+        return null;
     }
 
     public async Task<bool> SetNameAsync(string? name, CancellationToken ct = default)
@@ -175,138 +198,282 @@ public sealed class ConHostClient : IAsyncDisposable
         try
         {
             var msg = ConHostProtocol.CreateSetName(name);
-
-            if (_readTask is not null)
-            {
-                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
-                lock (_responseLock) { _pendingResponse = tcs; }
-                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
-                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
-                lock (_responseLock) { _pendingResponse = null; }
-                return response.type == ConHostMessageType.SetNameAck;
-            }
-
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
-            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
-            return directResponse?.type == ConHostMessageType.SetNameAck;
+            var response = await SendRequestAsync(msg, ConHostMessageType.SetNameAck, ct).ConfigureAwait(false);
+            return response is not null;
         }
-        catch
+        catch (Exception ex)
         {
+            Log($"SetName failed: {ex.Message}");
             return false;
         }
     }
 
     public async Task<bool> CloseAsync(CancellationToken ct = default)
     {
-        if (!IsConnected) return false;
+        _intentionalDisconnect = true;
+
+        if (!IsConnected) return true;
 
         try
         {
             var msg = ConHostProtocol.CreateClose();
-
-            if (_readTask is not null)
-            {
-                var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
-                lock (_responseLock) { _pendingResponse = tcs; }
-                await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
-                var response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
-                lock (_responseLock) { _pendingResponse = null; }
-                return response.type == ConHostMessageType.CloseAck;
-            }
-
-            await _pipe!.WriteAsync(msg, ct).ConfigureAwait(false);
-            var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
-            return directResponse?.type == ConHostMessageType.CloseAck;
+            var response = await SendRequestAsync(msg, ConHostMessageType.CloseAck, ct).ConfigureAwait(false);
+            return response is not null;
         }
         catch
         {
-            return false;
+            return true; // Session closing anyway
         }
     }
 
-    private async Task ReadLoopAsync(CancellationToken ct)
+    private async Task<byte[]?> SendRequestAsync(byte[] request, ConHostMessageType expectedType, CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<(ConHostMessageType type, byte[] payload)>();
+
+        lock (_responseLock)
+        {
+            _pendingResponse = tcs;
+        }
+
+        try
+        {
+            await WriteAsync(request, ct).ConfigureAwait(false);
+
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+            var response = await tcs.Task.WaitAsync(linkedCts.Token).ConfigureAwait(false);
+            return response.type == expectedType ? response.payload : null;
+        }
+        finally
+        {
+            lock (_responseLock)
+            {
+                _pendingResponse = null;
+            }
+        }
+    }
+
+    private async Task WriteAsync(byte[] data, CancellationToken ct)
+    {
+        var pipe = _pipe;
+        if (pipe is null || !pipe.IsConnected)
+        {
+            throw new IOException("Pipe not connected");
+        }
+
+        await pipe.WriteAsync(data, ct).ConfigureAwait(false);
+        await pipe.FlushAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task ReadLoopWithReconnectAsync(CancellationToken ct)
     {
         var headerBuffer = new byte[ConHostProtocol.HeaderSize];
         var payloadBuffer = new byte[ConHostProtocol.MaxPayloadSize];
 
-        while (!ct.IsCancellationRequested && IsConnected)
+        while (!ct.IsCancellationRequested && !_disposed)
         {
             try
             {
-                var bytesRead = await _pipe!.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
-                if (bytesRead == 0) break;
+                if (!IsConnected)
+                {
+                    await Task.Delay(100, ct).ConfigureAwait(false);
+                    continue;
+                }
 
+                var pipe = _pipe;
+                if (pipe is null) continue;
+
+                var bytesRead = await pipe.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
+                if (bytesRead == 0)
+                {
+                    Log("Read returned 0 bytes - pipe closed");
+                    HandleDisconnect();
+                    continue;
+                }
+
+                // Read remaining header if needed
                 while (bytesRead < ConHostProtocol.HeaderSize)
                 {
-                    var more = await _pipe.ReadAsync(headerBuffer.AsMemory(bytesRead), ct).ConfigureAwait(false);
-                    if (more == 0) return;
+                    var more = await pipe.ReadAsync(headerBuffer.AsMemory(bytesRead), ct).ConfigureAwait(false);
+                    if (more == 0)
+                    {
+                        HandleDisconnect();
+                        break;
+                    }
                     bytesRead += more;
                 }
 
+                if (bytesRead < ConHostProtocol.HeaderSize) continue;
+
                 if (!ConHostProtocol.TryReadHeader(headerBuffer, out var msgType, out var payloadLength))
                 {
-                    break;
+                    Log("Invalid message header");
+                    continue;
                 }
 
+                // Read payload
                 if (payloadLength > 0)
                 {
+                    if (payloadLength > ConHostProtocol.MaxPayloadSize)
+                    {
+                        Log($"Payload too large: {payloadLength}");
+                        continue;
+                    }
+
                     var totalRead = 0;
                     while (totalRead < payloadLength)
                     {
-                        var chunk = await _pipe.ReadAsync(payloadBuffer.AsMemory(totalRead, payloadLength - totalRead), ct).ConfigureAwait(false);
-                        if (chunk == 0) return;
+                        var chunk = await pipe.ReadAsync(payloadBuffer.AsMemory(totalRead, payloadLength - totalRead), ct).ConfigureAwait(false);
+                        if (chunk == 0)
+                        {
+                            HandleDisconnect();
+                            break;
+                        }
                         totalRead += chunk;
                     }
+
+                    if (totalRead < payloadLength) continue;
                 }
 
                 var payload = payloadBuffer.AsMemory(0, payloadLength);
-
-                switch (msgType)
-                {
-                    case ConHostMessageType.Output:
-                        OnOutput?.Invoke(_sessionId, payload);
-                        break;
-
-                    case ConHostMessageType.StateChange:
-                        OnStateChanged?.Invoke(_sessionId);
-                        break;
-
-                    // Response messages - route to pending request
-                    case ConHostMessageType.Buffer:
-                    case ConHostMessageType.ResizeAck:
-                    case ConHostMessageType.SetNameAck:
-                    case ConHostMessageType.CloseAck:
-                        lock (_responseLock)
-                        {
-                            _pendingResponse?.TrySetResult((msgType, payload.ToArray()));
-                        }
-                        break;
-                }
+                ProcessMessage(msgType, payload);
             }
             catch (OperationCanceledException)
             {
                 break;
             }
-            catch
+            catch (IOException ex)
             {
+                Log($"Read error: {ex.Message}");
+                HandleDisconnect();
+            }
+            catch (Exception ex)
+            {
+                Log($"Unexpected read error: {ex.Message}");
+                HandleDisconnect();
+            }
+        }
+    }
+
+    private void ProcessMessage(ConHostMessageType msgType, Memory<byte> payload)
+    {
+        switch (msgType)
+        {
+            case ConHostMessageType.Output:
+                try
+                {
+                    OnOutput?.Invoke(_sessionId, payload);
+                }
+                catch (Exception ex)
+                {
+                    Log($"OnOutput handler error: {ex.Message}");
+                }
                 break;
+
+            case ConHostMessageType.StateChange:
+                try
+                {
+                    OnStateChanged?.Invoke(_sessionId);
+                }
+                catch (Exception ex)
+                {
+                    Log($"OnStateChanged handler error: {ex.Message}");
+                }
+                break;
+
+            // Response messages - route to pending request
+            case ConHostMessageType.Buffer:
+            case ConHostMessageType.ResizeAck:
+            case ConHostMessageType.SetNameAck:
+            case ConHostMessageType.CloseAck:
+            case ConHostMessageType.Info:
+                lock (_responseLock)
+                {
+                    _pendingResponse?.TrySetResult((msgType, payload.ToArray()));
+                }
+                break;
+
+            default:
+                Log($"Unknown message type: {msgType}");
+                break;
+        }
+    }
+
+    private void HandleDisconnect()
+    {
+        if (_disposed || _intentionalDisconnect) return;
+
+        Log("Connection lost, will attempt reconnect");
+        OnDisconnected?.Invoke(_sessionId);
+        TriggerReconnect();
+    }
+
+    private void TriggerReconnect()
+    {
+        if (_disposed || _intentionalDisconnect) return;
+        if (_reconnectTask is not null && !_reconnectTask.IsCompleted) return;
+
+        _reconnectTask = ReconnectAsync();
+    }
+
+    private async Task ReconnectAsync()
+    {
+        while (!_disposed && !_intentionalDisconnect && _reconnectAttempts < MaxReconnectAttempts)
+        {
+            _reconnectAttempts++;
+            var delay = Math.Min(InitialReconnectDelayMs * (1 << _reconnectAttempts), MaxReconnectDelayMs);
+            Log($"Reconnect attempt {_reconnectAttempts}/{MaxReconnectAttempts} in {delay}ms");
+
+            await Task.Delay(delay).ConfigureAwait(false);
+
+            if (_disposed || _intentionalDisconnect) return;
+
+            try
+            {
+                lock (_pipeLock)
+                {
+                    _pipe?.Dispose();
+                    _pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+                }
+
+                await _pipe.ConnectAsync(2000).ConfigureAwait(false);
+
+                // Re-handshake
+                var info = await GetInfoAsync().ConfigureAwait(false);
+                if (info is not null)
+                {
+                    _reconnectAttempts = 0;
+                    Log("Reconnected successfully");
+                    OnReconnected?.Invoke(_sessionId);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Reconnect failed: {ex.Message}");
             }
         }
 
-        OnStateChanged?.Invoke(_sessionId);
+        if (_reconnectAttempts >= MaxReconnectAttempts)
+        {
+            Log("Max reconnect attempts reached, giving up");
+            OnStateChanged?.Invoke(_sessionId);
+        }
     }
 
     private async Task<(ConHostMessageType type, Memory<byte> payload)?> ReadMessageAsync(CancellationToken ct)
     {
-        if (!IsConnected) return null;
+        var pipe = _pipe;
+        if (pipe is null || !pipe.IsConnected) return null;
 
         var headerBuffer = new byte[ConHostProtocol.HeaderSize];
-        var bytesRead = await _pipe!.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
+        var bytesRead = await pipe.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
         if (bytesRead == 0) return null;
 
         while (bytesRead < ConHostProtocol.HeaderSize)
         {
-            var more = await _pipe.ReadAsync(headerBuffer.AsMemory(bytesRead), ct).ConfigureAwait(false);
+            var more = await pipe.ReadAsync(headerBuffer.AsMemory(bytesRead), ct).ConfigureAwait(false);
             if (more == 0) return null;
             bytesRead += more;
         }
@@ -322,7 +489,7 @@ public sealed class ConHostClient : IAsyncDisposable
             var totalRead = 0;
             while (totalRead < payloadLength)
             {
-                var chunk = await _pipe.ReadAsync(payload.AsMemory(totalRead), ct).ConfigureAwait(false);
+                var chunk = await pipe.ReadAsync(payload.AsMemory(totalRead), ct).ConfigureAwait(false);
                 if (chunk == 0) return null;
                 totalRead += chunk;
             }
@@ -331,19 +498,40 @@ public sealed class ConHostClient : IAsyncDisposable
         return (msgType, payload);
     }
 
+    private static void Log(string message)
+    {
+        Console.WriteLine($"[ConHostClient] {message}");
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
+        _intentionalDisconnect = true;
 
-        _readCts?.Cancel();
+        _cts?.Cancel();
+
+        // Cancel any pending responses
+        lock (_responseLock)
+        {
+            _pendingResponse?.TrySetCanceled();
+        }
 
         if (_readTask is not null)
         {
             try { await _readTask.ConfigureAwait(false); } catch { }
         }
 
-        _readCts?.Dispose();
-        _pipe?.Dispose();
+        if (_reconnectTask is not null)
+        {
+            try { await _reconnectTask.ConfigureAwait(false); } catch { }
+        }
+
+        _cts?.Dispose();
+
+        lock (_pipeLock)
+        {
+            _pipe?.Dispose();
+        }
     }
 }
