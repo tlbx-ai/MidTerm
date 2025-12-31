@@ -245,13 +245,19 @@ public sealed class WindowsPtyConnection : IPtyConnection
                         throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create environment block for user");
                     }
 
-                    // Merge user environment with shell config environment (TERM, etc.)
+                    // Merge user environment with only specific terminal variables from shell config
+                    // Don't copy all of shell config (it contains SYSTEM's paths like USERPROFILE)
                     var mergedEnv = ParseEnvironmentBlock(userEnvBlock);
                     if (environment is not null)
                     {
-                        foreach (var kvp in environment)
+                        // Only merge terminal-related variables, not system paths
+                        string[] terminalVars = ["TERM", "COLORTERM", "PROMPT_COMMAND", "precmd", "PS1"];
+                        foreach (var varName in terminalVars)
                         {
-                            mergedEnv[kvp.Key] = kvp.Value;
+                            if (environment.TryGetValue(varName, out var value))
+                            {
+                                mergedEnv[varName] = value;
+                            }
                         }
                     }
                     var mergedBlock = BuildEnvironmentBlock(mergedEnv);
