@@ -35,8 +35,10 @@ if ($webContent -match '<Version>(\d+)\.(\d+)\.(\d+)</Version>') {
     exit 1
 }
 
-# Build both projects (single-file self-contained)
+# Build all projects (single-file self-contained)
 Write-Host "Building..." -ForegroundColor Yellow
+$conHostCsproj = "$repoRoot\Ai.Tlbx.MiddleManager.ConHost\Ai.Tlbx.MiddleManager.ConHost.csproj"
+
 dotnet publish "$hostCsproj" -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "$repoRoot\Ai.Tlbx.MiddleManager.Host\bin\Release\net10.0\win-x64\publish" -v q
 if ($LASTEXITCODE -ne 0) { Write-Host "  mm-host build failed" -ForegroundColor Red; exit 1 }
 Write-Host "  Built mm-host.exe ($newVersion)" -ForegroundColor Gray
@@ -44,6 +46,10 @@ Write-Host "  Built mm-host.exe ($newVersion)" -ForegroundColor Gray
 dotnet publish "$webCsproj" -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "$repoRoot\Ai.Tlbx.MiddleManager\bin\Release\net10.0\win-x64\publish" -v q
 if ($LASTEXITCODE -ne 0) { Write-Host "  mm build failed" -ForegroundColor Red; exit 1 }
 Write-Host "  Built mm.exe ($newVersion)" -ForegroundColor Gray
+
+dotnet publish "$conHostCsproj" -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "$repoRoot\Ai.Tlbx.MiddleManager.ConHost\bin\Release\net10.0\win-x64\publish" -v q
+if ($LASTEXITCODE -ne 0) { Write-Host "  mm-con-host build failed" -ForegroundColor Red; exit 1 }
+Write-Host "  Built mm-con-host.exe ($newVersion)" -ForegroundColor Gray
 
 Write-Host "Stopping service..." -ForegroundColor Yellow
 Stop-Service -Name MiddleManager -Force -ErrorAction SilentlyContinue
@@ -56,13 +62,17 @@ Start-Sleep -Seconds 1
 Write-Host "Copying new binaries..." -ForegroundColor Yellow
 $srcHost = "$repoRoot\Ai.Tlbx.MiddleManager.Host\bin\Release\net10.0\win-x64\publish\mm-host.exe"
 $srcWeb = "$repoRoot\Ai.Tlbx.MiddleManager\bin\Release\net10.0\win-x64\publish\mm.exe"
+$srcConHost = "$repoRoot\Ai.Tlbx.MiddleManager.ConHost\bin\Release\net10.0\win-x64\publish\mm-con-host.exe"
 $dstHost = "C:\Program Files\MiddleManager\mm-host.exe"
 $dstWeb = "C:\Program Files\MiddleManager\mm.exe"
+$dstConHost = "C:\Program Files\MiddleManager\mm-con-host.exe"
 
 Copy-Item $srcHost $dstHost -Force
 Write-Host "  Copied mm-host.exe" -ForegroundColor Gray
 Copy-Item $srcWeb $dstWeb -Force
 Write-Host "  Copied mm.exe" -ForegroundColor Gray
+Copy-Item $srcConHost $dstConHost -Force
+Write-Host "  Copied mm-con-host.exe" -ForegroundColor Gray
 
 # Clear old logs
 $logDir = "C:\ProgramData\MiddleManager\logs"

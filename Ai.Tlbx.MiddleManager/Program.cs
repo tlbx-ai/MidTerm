@@ -138,7 +138,9 @@ public class Program
     {
         var port = DefaultPort;
         var bindAddress = DefaultBindAddress;
-        var useConHost = args.Contains("--service");
+        // --service: running as Windows service entry point
+        // --spawned: spawned by mm-host, also needs con-host mode for proper PTY
+        var useConHost = args.Contains("--service") || args.Contains("--spawned");
 
         for (int i = 0; i < args.Length; i++)
         {
