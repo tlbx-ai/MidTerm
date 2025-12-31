@@ -97,6 +97,9 @@ public sealed class WindowsPtyConnection : IPtyConnection
         IDictionary<string, string>? environment = null,
         string? runAsUserSid = null)
     {
+        // runAsUserSid is ignored - mm-host now runs as user (spawned by launcher)
+        // so ConPTY is created in the correct session automatically
+
         ArgumentException.ThrowIfNullOrWhiteSpace(app);
         ArgumentNullException.ThrowIfNull(args);
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
@@ -108,7 +111,7 @@ public sealed class WindowsPtyConnection : IPtyConnection
         var connection = new WindowsPtyConnection();
         try
         {
-            connection.StartInternal(app, args, workingDirectory, cols, rows, environment, runAsUserSid);
+            connection.StartInternal(app, args, workingDirectory, cols, rows, environment);
             return connection;
         }
         catch
@@ -124,63 +127,24 @@ public sealed class WindowsPtyConnection : IPtyConnection
         string workingDirectory,
         int cols,
         int rows,
-        IDictionary<string, string>? environment,
-        string? runAsUserSid)
+        IDictionary<string, string>? environment)
     {
         SafeFileHandle? inputReadHandle = null;
-        SafeFileHandle? inputWriteHandle = null;
-        SafeFileHandle? outputReadHandle = null;
         SafeFileHandle? outputWriteHandle = null;
-        IntPtr securityDescriptor = IntPtr.Zero;
 
         try
         {
-            var willRunAsUser = !string.IsNullOrEmpty(runAsUserSid) && IsRunningAsLocalSystem();
-
-            if (willRunAsUser)
+            if (!CreatePipe(out inputReadHandle, out var inputWriteHandle, IntPtr.Zero, 0))
             {
-                // Create security descriptor that grants access to SYSTEM, Admins, and Interactive Users
-                // This allows the user process to access the pseudo-console created by SYSTEM
-                const string sddl = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;IU)";
-                if (!ConvertStringSecurityDescriptorToSecurityDescriptor(sddl, SDDL_REVISION_1, out securityDescriptor, out _))
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create security descriptor");
-                }
-
-                var sa = new SecurityAttributes
-                {
-                    nLength = Marshal.SizeOf<SecurityAttributes>(),
-                    lpSecurityDescriptor = securityDescriptor,
-                    bInheritHandle = false
-                };
-
-                if (!CreatePipe(out inputReadHandle, out inputWriteHandle, ref sa, 0))
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create input pipe");
-                }
-
-                if (!CreatePipe(out outputReadHandle, out outputWriteHandle, ref sa, 0))
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create output pipe");
-                }
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create input pipe");
             }
-            else
-            {
-                if (!CreatePipe(out inputReadHandle, out inputWriteHandle, IntPtr.Zero, 0))
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create input pipe");
-                }
-
-                if (!CreatePipe(out outputReadHandle, out outputWriteHandle, IntPtr.Zero, 0))
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create output pipe");
-                }
-            }
-
             _inputWriteHandle = inputWriteHandle;
+
+            if (!CreatePipe(out var outputReadHandle, out outputWriteHandle, IntPtr.Zero, 0))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create output pipe");
+            }
             _outputReadHandle = outputReadHandle;
-            inputWriteHandle = null;
-            outputReadHandle = null;
 
             var size = new Coord((short)cols, (short)rows);
             var hr = CreatePseudoConsole(size, inputReadHandle, outputWriteHandle, 0, out _pseudoConsoleHandle);
@@ -217,10 +181,7 @@ public sealed class WindowsPtyConnection : IPtyConnection
 
             var commandLine = BuildCommandLine(app, args);
 
-            IntPtr userToken = IntPtr.Zero;
-            IntPtr userEnvBlock = IntPtr.Zero;
-            IntPtr customEnvPtr = IntPtr.Zero;
-            IntPtr desktopPtr = IntPtr.Zero;
+            IntPtr envPtr = IntPtr.Zero;
             try
             {
                 var startupInfo = new StartupInfoEx
@@ -229,87 +190,23 @@ public sealed class WindowsPtyConnection : IPtyConnection
                     lpAttributeList = _attributeList
                 };
 
-                bool success;
-                ProcessInformation processInfo;
-
-                if (willRunAsUser)
+                var envBlock = BuildEnvironmentBlock(environment);
+                if (envBlock is not null)
                 {
-                    userToken = GetUserTokenFromSession();
-
-                    // Set desktop to interactive station to enable user input
-                    // Without this, CreateProcessAsUser creates on non-interactive station
-                    desktopPtr = Marshal.StringToHGlobalUni("winsta0\\default");
-                    startupInfo.StartupInfo.lpDesktop = desktopPtr;
+                    envPtr = Marshal.StringToHGlobalUni(envBlock);
                 }
 
-                IntPtr envPtr;
-                if (userToken != IntPtr.Zero)
-                {
-                    // Load the user's environment (USERPROFILE, APPDATA, etc.)
-                    if (!CreateEnvironmentBlock(out userEnvBlock, userToken, false))
-                    {
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create environment block for user");
-                    }
-
-                    // Merge user environment with only specific terminal variables from shell config
-                    // Don't copy all of shell config (it contains SYSTEM's paths like USERPROFILE)
-                    var mergedEnv = ParseEnvironmentBlock(userEnvBlock);
-                    if (environment is not null)
-                    {
-                        // Only merge terminal-related variables, not system paths
-                        string[] terminalVars = [
-                            "TERM", "COLORTERM", "PROMPT_COMMAND", "precmd", "PS1",
-                            "LANG", "LC_ALL", "MSYS"
-                        ];
-                        foreach (var varName in terminalVars)
-                        {
-                            if (environment.TryGetValue(varName, out var value))
-                            {
-                                mergedEnv[varName] = value;
-                            }
-                        }
-                    }
-                    var mergedBlock = BuildEnvironmentBlock(mergedEnv);
-                    if (mergedBlock is not null)
-                    {
-                        customEnvPtr = Marshal.StringToHGlobalUni(mergedBlock);
-                    }
-                    envPtr = customEnvPtr;
-
-                    success = CreateProcessAsUser(
-                        userToken,
-                        null,
-                        commandLine,
-                        IntPtr.Zero,
-                        IntPtr.Zero,
-                        false,
-                        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                        envPtr,
-                        workingDirectory,
-                        ref startupInfo,
-                        out processInfo);
-                }
-                else
-                {
-                    var envBlock = BuildEnvironmentBlock(environment);
-                    if (envBlock is not null)
-                    {
-                        customEnvPtr = Marshal.StringToHGlobalUni(envBlock);
-                    }
-                    envPtr = customEnvPtr;
-
-                    success = CreateProcess(
-                        null,
-                        commandLine,
-                        IntPtr.Zero,
-                        IntPtr.Zero,
-                        false,
-                        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                        envPtr,
-                        workingDirectory,
-                        ref startupInfo,
-                        out processInfo);
-                }
+                var success = CreateProcess(
+                    null,
+                    commandLine,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    false,
+                    EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                    envPtr,
+                    workingDirectory,
+                    ref startupInfo,
+                    out var processInfo);
 
                 if (!success)
                 {
@@ -322,55 +219,20 @@ public sealed class WindowsPtyConnection : IPtyConnection
             }
             finally
             {
-                if (userToken != IntPtr.Zero)
+                if (envPtr != IntPtr.Zero)
                 {
-                    CloseHandle(userToken);
-                }
-                if (userEnvBlock != IntPtr.Zero)
-                {
-                    DestroyEnvironmentBlock(userEnvBlock);
-                }
-                if (customEnvPtr != IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(customEnvPtr);
-                }
-                if (desktopPtr != IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(desktopPtr);
+                    Marshal.FreeHGlobal(envPtr);
                 }
             }
 
             _writerStream = new FileStream(_inputWriteHandle, FileAccess.Write, 4096, false);
             _readerStream = new FileStream(_outputReadHandle, FileAccess.Read, 4096, false);
-
-            // Send escape sequences to configure ConPTY for better TUI compatibility:
-            // 1. Disable win32-input-mode which can cause issues with some TUI frameworks
-            // 2. Send device status report request to "prime" the input buffer
-            //    (workaround for ReadConsoleInput empty read bug)
-            // 3. Request terminal capabilities
-            var initSequences = new byte[]
-            {
-                0x1b, 0x5b, 0x3f, 0x39, 0x30, 0x30, 0x31, 0x6c,  // ESC[?9001l - disable win32-input-mode
-                0x1b, 0x5b, 0x35, 0x6e,                          // ESC[5n - device status report (priming)
-                0x1b, 0x5b, 0x63                                 // ESC[c - request terminal ID
-            };
-            _writerStream.Write(initSequences);
-            _writerStream.Flush();
         }
         catch
         {
             inputReadHandle?.Dispose();
-            inputWriteHandle?.Dispose();
-            outputReadHandle?.Dispose();
             outputWriteHandle?.Dispose();
             throw;
-        }
-        finally
-        {
-            if (securityDescriptor != IntPtr.Zero)
-            {
-                LocalFree(securityDescriptor);
-            }
         }
     }
 
@@ -417,92 +279,6 @@ public sealed class WindowsPtyConnection : IPtyConnection
         }
         sb.Append('\0');
         return sb.ToString();
-    }
-
-    private static Dictionary<string, string> ParseEnvironmentBlock(IntPtr envBlock)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (envBlock == IntPtr.Zero)
-        {
-            return result;
-        }
-
-        var offset = 0;
-        while (true)
-        {
-            var entry = Marshal.PtrToStringUni(IntPtr.Add(envBlock, offset));
-            if (string.IsNullOrEmpty(entry))
-            {
-                break;
-            }
-
-            var eqIndex = entry.IndexOf('=');
-            if (eqIndex > 0)
-            {
-                var name = entry.Substring(0, eqIndex);
-                var value = entry.Substring(eqIndex + 1);
-                result[name] = value;
-            }
-
-            offset += (entry.Length + 1) * 2; // Unicode: 2 bytes per char + null terminator
-        }
-
-        return result;
-    }
-
-    private static bool IsRunningAsLocalSystem()
-    {
-        try
-        {
-            var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-            return identity.IsSystem;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static IntPtr GetUserTokenFromSession()
-    {
-        var sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == 0xFFFFFFFF)
-        {
-            return IntPtr.Zero;
-        }
-
-        if (!WTSQueryUserToken(sessionId, out var token))
-        {
-            return IntPtr.Zero;
-        }
-
-        if (!DuplicateTokenEx(
-            token,
-            TOKEN_ALL_ACCESS,
-            IntPtr.Zero,
-            SecurityImpersonation,
-            TokenPrimary,
-            out var duplicatedToken))
-        {
-            CloseHandle(token);
-            return IntPtr.Zero;
-        }
-
-        CloseHandle(token);
-
-        // Explicitly set the session ID on the token to ensure the process
-        // starts in the user's interactive session, not Session 0
-        if (!SetTokenInformation(
-            duplicatedToken,
-            TokenSessionId,
-            ref sessionId,
-            sizeof(uint)))
-        {
-            CloseHandle(duplicatedToken);
-            return IntPtr.Zero;
-        }
-
-        return duplicatedToken;
     }
 
     public void Resize(int cols, int rows)

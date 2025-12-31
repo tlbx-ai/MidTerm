@@ -290,10 +290,10 @@ function Install-AsService
         Start-Sleep -Seconds 1
     }
 
-    # Create single service that runs mm-host.exe --service
-    # mm-host will spawn and supervise mm.exe internally
+    # Create single service that runs mm-host.exe --launcher
+    # Launcher spawns mm-host as user (for correct ConPTY session), which then spawns mm.exe
     Write-Host "Creating MiddleManager service..." -ForegroundColor Gray
-    $binPathWithService = "`"$hostBinaryPath`" --service"
+    $binPathWithService = "`"$hostBinaryPath`" --launcher"
     sc.exe create $ServiceName binPath= $binPathWithService start= auto DisplayName= "$DisplayName" | Out-Null
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
 

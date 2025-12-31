@@ -28,25 +28,6 @@ internal static class ConPtyNative
         uint nSize);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool CreatePipe(
-        out SafeFileHandle hReadPipe,
-        out SafeFileHandle hWritePipe,
-        ref SecurityAttributes lpPipeAttributes,
-        uint nSize);
-
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    public static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
-        string StringSecurityDescriptor,
-        uint StringSDRevision,
-        out IntPtr SecurityDescriptor,
-        out uint SecurityDescriptorSize);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern IntPtr LocalFree(IntPtr hMem);
-
-    public const uint SDDL_REVISION_1 = 1;
-
-    [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool InitializeProcThreadAttributeList(
         IntPtr lpAttributeList,
         int dwAttributeCount,
@@ -91,63 +72,11 @@ internal static class ConPtyNative
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr hObject);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern int GetProcessId(IntPtr hProcess);
-
     public const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
     public const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
-    public const uint INFINITE = 0xFFFFFFFF;
     public const uint WAIT_OBJECT_0 = 0;
     public const uint STILL_ACTIVE = 259;
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern uint WTSGetActiveConsoleSessionId();
-
-    [DllImport("wtsapi32.dll", SetLastError = true)]
-    public static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
-
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    public static extern bool CreateProcessAsUser(
-        IntPtr hToken,
-        string? lpApplicationName,
-        string lpCommandLine,
-        IntPtr lpProcessAttributes,
-        IntPtr lpThreadAttributes,
-        bool bInheritHandles,
-        uint dwCreationFlags,
-        IntPtr lpEnvironment,
-        string? lpCurrentDirectory,
-        ref StartupInfoEx lpStartupInfo,
-        out ProcessInformation lpProcessInformation);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    public static extern bool DuplicateTokenEx(
-        IntPtr hExistingToken,
-        uint dwDesiredAccess,
-        IntPtr lpTokenAttributes,
-        int impersonationLevel,
-        int tokenType,
-        out IntPtr phNewToken);
-
-    public const uint TOKEN_ALL_ACCESS = 0x000F01FF;
-    public const int SecurityImpersonation = 2;
-    public const int TokenPrimary = 1;
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    public static extern bool SetTokenInformation(
-        IntPtr TokenHandle,
-        int TokenInformationClass,
-        ref uint TokenInformation,
-        int TokenInformationLength);
-
-    public const int TokenSessionId = 12;
-
-    [DllImport("userenv.dll", SetLastError = true)]
-    public static extern bool CreateEnvironmentBlock(out IntPtr lpEnvironment, IntPtr hToken, bool bInherit);
-
-    [DllImport("userenv.dll", SetLastError = true)]
-    public static extern bool DestroyEnvironmentBlock(IntPtr lpEnvironment);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Coord
@@ -199,14 +128,6 @@ internal static class ConPtyNative
         public IntPtr hThread;
         public int dwProcessId;
         public int dwThreadId;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct SecurityAttributes
-    {
-        public int nLength;
-        public IntPtr lpSecurityDescriptor;
-        public bool bInheritHandle;
     }
 }
 #endif

@@ -33,7 +33,7 @@ public static class Log
 
 public static class Program
 {
-    public const string Version = "2.5.9";
+    public const string Version = "2.5.10";
 
     public static async Task<int> Main(string[] args)
     {
@@ -49,10 +49,12 @@ public static class Program
             return 0;
         }
 
+        var isLauncherMode = args.Contains("--launcher");
         var isServiceMode = args.Contains("--service");
         var (port, bindAddress) = ParseArgs(args);
 
-        Log.Write($"mm-host {Version} starting{(isServiceMode ? " (service mode)" : "")}...");
+        var modeDesc = isLauncherMode ? " (launcher mode)" : isServiceMode ? " (service mode)" : "";
+        Log.Write($"mm-host {Version} starting{modeDesc}...");
 
         try
         {
@@ -68,7 +70,7 @@ public static class Program
 #endif
 
             builder.Services.AddSingleton<SessionManager>();
-            builder.Services.AddSingleton(new SupervisorConfig(isServiceMode, port, bindAddress));
+            builder.Services.AddSingleton(new SupervisorConfig(isLauncherMode, isServiceMode, port, bindAddress));
             builder.Services.AddHostedService<SidecarHostedService>();
 
             var host = builder.Build();
@@ -114,27 +116,24 @@ public static class Program
             Options:
               -h, --help       Show this help message
               -v, --version    Show version information
+              --launcher       Windows only: run as SYSTEM, spawn mm-host as user
               --service        Service mode: spawn and supervise mm.exe
               --port <port>    Port for mm.exe web server (default: 2000)
               --bind <addr>    Bind address for mm.exe (default: 0.0.0.0)
 
-            Environment Variables:
-              MM_RUN_AS_USER       Username to run terminals as
-              MM_RUN_AS_USER_SID   Windows SID for user de-elevation
-              MM_RUN_AS_UID        Unix UID for user de-elevation
-              MM_RUN_AS_GID        Unix GID for user de-elevation
-
             IPC Endpoint:
               {IpcServerFactory.GetEndpointDescription()}
 
-            In standalone mode (default), mm-host runs the IPC server only.
-            In service mode (--service), mm-host also spawns and monitors mm.exe,
-            restarting it automatically if it crashes.
+            Modes:
+              (default)    Standalone IPC server only
+              --service    IPC server + spawn/supervise mm.exe
+              --launcher   Windows service entry point, spawns mm-host --service as user
+                           (ensures ConPTY is created in user session for TUI apps)
             """);
     }
 }
 
-public sealed record SupervisorConfig(bool IsServiceMode, int Port, string BindAddress);
+public sealed record SupervisorConfig(bool IsLauncherMode, bool IsServiceMode, int Port, string BindAddress);
 
 public sealed class SidecarHostedService : BackgroundService
 {
@@ -142,26 +141,45 @@ public sealed class SidecarHostedService : BackgroundService
     private readonly SupervisorConfig _config;
     private SidecarServer? _server;
     private WebServerSupervisor? _supervisor;
+#if WINDOWS
+    private HostLauncher? _launcher;
+#endif
 
     public SidecarHostedService(SessionManager sessionManager, SupervisorConfig config)
     {
         _sessionManager = sessionManager;
         _config = config;
 
-        _sessionManager.RunAsUser = Environment.GetEnvironmentVariable("MM_RUN_AS_USER");
-        _sessionManager.RunAsUserSid = Environment.GetEnvironmentVariable("MM_RUN_AS_USER_SID");
-        if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_UID"), out var uid))
+        // Only set RunAs properties for non-launcher mode (launcher spawns as user already)
+        if (!config.IsLauncherMode)
         {
-            _sessionManager.RunAsUid = uid;
-        }
-        if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_GID"), out var gid))
-        {
-            _sessionManager.RunAsGid = gid;
+            _sessionManager.RunAsUser = Environment.GetEnvironmentVariable("MM_RUN_AS_USER");
+            _sessionManager.RunAsUserSid = Environment.GetEnvironmentVariable("MM_RUN_AS_USER_SID");
+            if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_UID"), out var uid))
+            {
+                _sessionManager.RunAsUid = uid;
+            }
+            if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_GID"), out var gid))
+            {
+                _sessionManager.RunAsGid = gid;
+            }
         }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+#if WINDOWS
+        // Launcher mode: SYSTEM service spawns mm-host as user
+        if (_config.IsLauncherMode)
+        {
+            Log.Write("Launcher mode: spawning mm-host as interactive user...");
+            _launcher = new HostLauncher(_config.Port, _config.BindAddress);
+            await _launcher.RunAsync(stoppingToken);
+            return;
+        }
+#endif
+
+        // Service or standalone mode: run IPC server directly
         _server = new SidecarServer(_sessionManager);
         await _server.StartAsync(stoppingToken);
 
@@ -185,6 +203,13 @@ public sealed class SidecarHostedService : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         Log.Write("Shutting down...");
+
+#if WINDOWS
+        if (_launcher is not null)
+        {
+            await _launcher.DisposeAsync();
+        }
+#endif
 
         if (_supervisor is not null)
         {
