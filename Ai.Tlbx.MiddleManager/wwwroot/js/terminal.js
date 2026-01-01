@@ -844,13 +844,18 @@
             terminal.open(container);
             state.opened = true;
 
-            // Resize to server dimensions (not local fit) if known
-            if (state.serverCols > 0 && state.serverRows > 0) {
-                terminal.resize(state.serverCols, state.serverRows);
-                applyTerminalScaling(sessionId, state);
-            }
+            // Defer resize to next frame - xterm.js needs a frame to fully initialize after open()
+            requestAnimationFrame(function() {
+                if (!sessionTerminals.has(sessionId)) return; // Session was deleted
 
-            setupTerminalEvents(sessionId, terminal, container);
+                // Resize to server dimensions (not local fit) if known
+                if (state.serverCols > 0 && state.serverRows > 0) {
+                    terminal.resize(state.serverCols, state.serverRows);
+                    applyTerminalScaling(sessionId, state);
+                }
+
+                setupTerminalEvents(sessionId, terminal, container);
+            });
         });
 
         return state;
