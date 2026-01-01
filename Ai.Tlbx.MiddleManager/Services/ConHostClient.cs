@@ -121,7 +121,7 @@ public sealed class ConHostClient : IAsyncDisposable
 
                 // Before read loop starts (initial handshake), read directly
                 var requestBytes = ConHostProtocol.CreateInfoRequest();
-                await WriteAsync(requestBytes, ct).ConfigureAwait(false);
+                await WriteWithLockAsync(requestBytes, ct).ConfigureAwait(false);
 
                 var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
                 if (directResponse is null) continue;
