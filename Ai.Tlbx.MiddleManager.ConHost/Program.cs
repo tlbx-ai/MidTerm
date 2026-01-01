@@ -86,15 +86,24 @@ public static class Program
             Log($"Listening on pipe: {pipeName}");
 
             using var cts = new CancellationTokenSource();
-
-            // Start PTY read loop
-            var ptyReadTask = session.StartReadLoopAsync(cts.Token);
+            Task? ptyReadTask = null;
 
             // Accept client connections (mm.exe)
-            await AcceptClientsAsync(session, pipeName, cts.Token).ConfigureAwait(false);
+            // The read loop is started by the first client that connects
+            await AcceptClientsAsync(session, pipeName, cts.Token, () =>
+            {
+                if (ptyReadTask is null)
+                {
+                    Log("Starting PTY read loop (first client connected)");
+                    ptyReadTask = session.StartReadLoopAsync(cts.Token);
+                }
+            }).ConfigureAwait(false);
 
             cts.Cancel();
-            await ptyReadTask.ConfigureAwait(false);
+            if (ptyReadTask is not null)
+            {
+                await ptyReadTask.ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -107,8 +116,10 @@ public static class Program
     private static CancellationTokenSource? _currentClientCts;
     private static readonly object _clientLock = new();
 
-    private static async Task AcceptClientsAsync(TerminalSession session, string pipeName, CancellationToken ct)
+    private static async Task AcceptClientsAsync(TerminalSession session, string pipeName, CancellationToken ct, Action? onFirstClientSubscribed = null)
     {
+        var firstClientSubscribed = false;
+
         while (!ct.IsCancellationRequested && session.IsRunning)
         {
             try
@@ -132,8 +143,22 @@ public static class Program
                     _currentClientCts = new CancellationTokenSource();
                 }
 
+                // Start the read loop when the first client subscribes to output
+                Action? onSubscribed = null;
+                if (!firstClientSubscribed && onFirstClientSubscribed is not null)
+                {
+                    onSubscribed = () =>
+                    {
+                        if (!firstClientSubscribed)
+                        {
+                            firstClientSubscribed = true;
+                            onFirstClientSubscribed();
+                        }
+                    };
+                }
+
                 var clientCt = CancellationTokenSource.CreateLinkedTokenSource(ct, _currentClientCts!.Token).Token;
-                _ = HandleClientAsync(session, pipe, clientCt);
+                _ = HandleClientAsync(session, pipe, clientCt, onSubscribed);
             }
             catch (OperationCanceledException)
             {
@@ -148,7 +173,7 @@ public static class Program
         }
     }
 
-    private static async Task HandleClientAsync(TerminalSession session, NamedPipeServerStream pipe, CancellationToken ct)
+    private static async Task HandleClientAsync(TerminalSession session, NamedPipeServerStream pipe, CancellationToken ct, Action? onSubscribed = null)
     {
         var pendingOutput = new List<byte[]>();
         var outputLock = new object();
@@ -251,6 +276,8 @@ public static class Program
             }
 
             session.OnOutput += OnOutput;
+            onSubscribed?.Invoke(); // Notify that we're subscribed - read loop can start now
+
             // Don't subscribe to OnStateChanged until after handshake - OSC-7 during startup
             // can fire StateChange before Info response, breaking the handshake
 
