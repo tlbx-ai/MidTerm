@@ -25,8 +25,6 @@ public class Program
         var app = builder.Build();
         var version = GetVersion();
 
-        ConfigureStaticFiles(app);
-
         var settingsService = app.Services.GetRequiredService<SettingsService>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
@@ -38,6 +36,10 @@ public class Program
             DebugLogger.ClearLogs();
             DebugLogger.Log("Debug logging enabled");
         }
+
+        // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
+        AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
+        ConfigureStaticFiles(app);
 
         // Session managers
         ConHostSessionManager? conHostSessionManager = null;
@@ -62,8 +64,7 @@ public class Program
             modeDescription = "Direct (sessions lost on restart)";
         }
 
-        // Configure middleware and endpoints
-        AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
+        // Configure remaining endpoints
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         MapSystemEndpoints(app, conHostSessionManager, directSessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, conHostSessionManager, directSessionManager);

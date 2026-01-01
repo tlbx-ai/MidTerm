@@ -180,6 +180,7 @@ public static class AuthEndpoints
                path.StartsWith("/css/") ||
                path.StartsWith("/js/") ||
                path.EndsWith(".ico") ||
+               path.EndsWith(".png") ||
                path.EndsWith(".webmanifest");
     }
 }
