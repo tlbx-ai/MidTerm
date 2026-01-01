@@ -1,24 +1,26 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with this repository.
+Guidance for Claude Code when working with this repository.
 
 ## What This Is
 
 MiddleManager is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/Windows/Linux. Serves terminal sessions via browser at `http://localhost:2000`.
 
-**Executables (v2.0+):**
+**Binaries:**
 - `mm` / `mm.exe` — Web server (UI, REST API, WebSockets)
-- `mm-host` / `mm-host.exe` — PTY host (terminal sessions, persists across web restarts)
+- `mm-con-host` / `mm-con-host.exe` — ConPTY host (Windows only, spawned per terminal)
 
 **Default port:** 2000
-**Settings location:** `~/.middlemanager/settings.json`
+
+**Settings locations:**
+- Service mode: `%ProgramData%\MiddleManager\settings.json` (Win) or `/usr/local/etc/middlemanager/settings.json` (Unix)
+- User mode: `~/.middlemanager/settings.json`
 
 ## Build Commands
 
 ```bash
-# Build both projects
+# Build web server
 dotnet build Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj
-dotnet build Ai.Tlbx.MiddleManager.Host/Ai.Tlbx.MiddleManager.Host.csproj
 
 # Test
 dotnet test Ai.Tlbx.MiddleManager.Tests/Ai.Tlbx.MiddleManager.Tests.csproj
@@ -29,106 +31,76 @@ Ai.Tlbx.MiddleManager/build-aot.cmd        # Windows
 ./Ai.Tlbx.MiddleManager/build-aot-macos.sh # macOS
 ```
 
-## Architecture (v2.2+ Supervisor Model)
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Single Service (MiddleManager)                             │
-│  Entry point: mm-host --service                             │
-├─────────────────────────────────────────────────────────────┤
-│  mm-host.exe (PTY Host + Supervisor)                        │
-│  ├─ SidecarServer (IPC listener)                            │
-│  ├─ SessionManager (owns sessions, survives web restarts)   │
-│  ├─ WebServerSupervisor (spawns/monitors mm.exe)            │
-│  ├─ Heartbeat sender (Ping every 5s)                        │
-│  └─ TerminalSession (wraps PTY, buffers output)             │
-└─────────────────────────────────────────────────────────────┘
-           │ Named Pipe (Win) / Unix Socket (Unix)
-           │ ← Heartbeat (Ping/Pong) →
-           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  mm.exe (Web Server) - spawned as child process             │
-│  ├─ REST API, WebSocket handlers, Static files              │
-│  ├─ SidecarClient (connects to mm-host via IPC)             │
-│  ├─ Heartbeat responder (Pong on Ping)                      │
-│  └─ Auto-reconnect (exponential backoff 100ms → 5s)         │
+│  mm.exe (Web Server + Session Manager)                      │
+│  ├─ Kestrel HTTP server (REST API, static files)            │
+│  ├─ WebSocket handlers (/ws/mux, /ws/state)                 │
+│  ├─ SessionManager (terminal lifecycle)                     │
+│  ├─ AuthService (password auth, session cookies)            │
+│  └─ UpdateService (GitHub release check)                    │
 └─────────────────────────────────────────────────────────────┘
            │
-    Shell Processes (pwsh, bash, zsh)
+           │ Windows: spawns mm-con-host.exe per terminal
+           │ Unix: direct forkpty()
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Terminal Sessions                                          │
+│  └─ Shell processes (pwsh, bash, zsh, cmd)                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Key Benefits:**
-- Terminal sessions persist across web server restarts
-- Single service entry point (mm-host spawns and supervises mm.exe)
-- Auto-restart on crash (exponential backoff 1s → 30s)
-- Heartbeat monitoring detects frozen processes
-- Auto-reconnect if connection drops
-
-### Command-Line Flags
-
-**mm-host.exe:**
-- `--service` — Service mode: spawn and supervise mm.exe
-- (no flags) — Standalone mode: just IPC server (for debugging)
-
-**mm.exe:**
-- `--spawned` — Spawned by mm-host, use auto-reconnect
-- `--port <n>` — Listen on port (default: 2000)
-- `--bind <addr>` — Bind address (default: localhost)
-
-### Heartbeat & Recovery
-
-- mm-host sends Ping every 5s, expects Pong within 8s
-- mm.exe auto-reconnects on disconnect (exponential backoff 100ms → 5s)
-- mm-host auto-restarts mm.exe on crash (exponential backoff 1s → 30s)
-
-### Project Structure
+## Project Structure
 
 ```
 Ai.Tlbx.MiddleManager/              Web Server (mm.exe)
-├── Program.cs                      Entry point, API, WebSocket handlers
+├── Program.cs                      Entry point, API endpoints, auth middleware
 ├── Services/
-│   ├── SidecarClient               IPC client to mm-host
-│   ├── SidecarLifecycle            Spawn/connect to mm-host
-│   ├── SidecarSessionManager       Proxy to mm-host sessions
-│   ├── SidecarMuxConnectionManager WebSocket mux for sidecar mode
-│   ├── SessionManager              Direct mode (fallback, no sidecar)
-│   ├── UpdateService               GitHub release check, version comparison
-│   └── UpdateScriptGenerator       Platform-specific update scripts
-├── Ipc/                            IPC infrastructure
-│   ├── IIpcTransport               Transport interface
-│   ├── IpcFrame, IpcMessageType    Binary protocol
-│   ├── SidecarProtocol             Payload serialization
-│   └── Windows/, Unix/             Platform transports
+│   ├── AuthService.cs              Password hashing (PBKDF2), session tokens
+│   ├── SessionManager.cs           Terminal session lifecycle
+│   ├── UpdateService.cs            GitHub release check, version comparison
+│   ├── SettingsService.cs          Settings persistence
+│   └── AppJsonContext.cs           AOT-safe JSON serialization
+├── Settings/
+│   └── MiddleManagerSettings.cs    Settings model (auth, defaults, appearance)
 └── wwwroot/                        Static files (embedded)
+    ├── index.html                  Main UI
+    ├── login.html                  Login page
+    ├── js/terminal.js              Terminal logic, auth handling
+    └── css/app.css                 Styles
 
-Ai.Tlbx.MiddleManager.Host/         PTY Host (mm-host.exe)
-├── Program.cs                      Entry point, --service flag
-├── Services/
-│   ├── SidecarServer               IPC listener + heartbeat
-│   ├── WebServerSupervisor         Spawns/monitors mm.exe
-│   ├── SessionManager              Session lifecycle
-│   └── TerminalSession             PTY wrapper + output buffer
-├── Pty/                            PTY implementations
-│   ├── WindowsPtyConnection        ConPTY
-│   └── UnixPtyConnection           forkpty()
-├── Shells/                         Shell configurations
-└── Ipc/                            IPC (copy of main project)
+Ai.Tlbx.MiddleManager.ConHost/      ConPTY Host (Windows only)
+├── Program.cs                      Spawned per terminal for correct ConPTY context
+└── Services/
+    └── ConHostSession.cs           PTY wrapper
 ```
 
 ## API Endpoints
 
 ```
-GET  /api/sessions           List all sessions
-POST /api/sessions           Create session {shellType, cols, rows, workingDirectory}
-DELETE /api/sessions/{id}    Close session
-POST /api/sessions/{id}/resize   Resize {cols, rows}
-PUT  /api/sessions/{id}/name     Rename {name}
-GET  /api/shells             Available shells for platform
-GET  /api/settings           Current settings
-PUT  /api/settings           Update settings
-GET  /api/version            Server version
-GET  /api/update/check       Check for updates {available, currentVersion, latestVersion}
-POST /api/update/apply       Download update and restart
+# Authentication
+POST /api/auth/login              Login {password} → sets session cookie
+POST /api/auth/logout             Clear session cookie
+POST /api/auth/change-password    Change password {currentPassword, newPassword}
+GET  /api/auth/status             Auth status {authenticationEnabled, passwordSet}
+
+# Sessions
+GET  /api/sessions                List all sessions
+POST /api/sessions                Create session {cols, rows, shellType?, workingDirectory?}
+DELETE /api/sessions/{id}         Close session
+POST /api/sessions/{id}/resize    Resize {cols, rows}
+PUT  /api/sessions/{id}/name      Rename {name}
+
+# System
+GET  /api/shells                  Available shells for platform
+GET  /api/settings                Current settings
+PUT  /api/settings                Update settings
+GET  /api/version                 Server version string
+GET  /api/health                  Health check
+GET  /api/update/check            Check for updates
+POST /api/update/apply            Download update and restart
 ```
 
 ## WebSocket Endpoints
@@ -136,14 +108,20 @@ POST /api/update/apply       Download update and restart
 - `/ws/mux` — Multiplexed terminal I/O (binary protocol)
 - `/ws/state` — Session state changes (JSON, for sidebar sync)
 
-## Features (Already Implemented)
+## Authentication
 
-- Cross-platform PTY (Windows ConPTY, Unix forkpty)
-- Multiple shells (Pwsh, PowerShell, Cmd, Bash, Zsh)
-- WebSocket multiplexing, session rename, resize, OSC-7 directory tracking
-- Auto-update from GitHub releases
-- Install scripts with service registration (launchd, systemd, Windows Service)
-- Embedded static files (AOT compatible), JSON source generators
+- **PBKDF2** password hashing (100K iterations, SHA256, 32-byte salt)
+- **HMAC-SHA256** session tokens (format: `timestamp:signature`)
+- **3-week** session validity with sliding expiration
+- **Rate limiting**: 5 failures = 30s lockout, 10 failures = 5min lockout
+- Password set during install (mandatory), changeable in Settings > Security
+
+## Terminal Resize
+
+- **No auto-resize** — terminals maintain their dimensions
+- **New sessions** created at optimal size for current screen
+- **Manual resize** via sidebar button (⤢) fits terminal to current screen
+- Each terminal has independent dimensions
 
 ## Code Style
 
@@ -158,13 +136,34 @@ POST /api/update/apply       Download update and restart
 
 ## Platform-Specific
 
-| Platform | PTY | Shells |
-|----------|-----|--------|
-| macOS | forkpty() libSystem | Zsh, Bash |
-| Windows | ConPTY (Windows.Win32) | Pwsh, PowerShell, Cmd |
-| Linux | forkpty() libc | Bash, Zsh |
+| Platform | PTY | Shells | Default |
+|----------|-----|--------|---------|
+| Windows | ConPTY (via mm-con-host) | Pwsh, PowerShell, Cmd | Pwsh |
+| macOS | forkpty() libSystem | Zsh, Bash | Zsh |
+| Linux | forkpty() libc | Bash, Zsh | Bash |
 
-Default shell: Zsh (macOS), Pwsh (Windows), Bash (Linux)
+## Release Process
+
+```powershell
+.\release.ps1 -Bump patch -Message "Fix bug"
+.\release.ps1 -Bump minor -Message "Add feature"
+.\release.ps1 -Bump major -Message "Breaking change"
+```
+
+The script bumps version in all csproj files and version.json, commits, tags, and pushes. GitHub Actions builds releases for all platforms.
+
+## Install System
+
+**Scripts:** `install.ps1` (Windows), `install.sh` (macOS/Linux)
+
+**Flow:**
+1. Choose system service or user install
+2. Set password (mandatory, with security disclaimer)
+3. Download and extract binaries
+4. Write settings with password hash
+5. Register service (if system install)
+
+**Password preservation:** Install scripts check for existing `passwordHash` in settings and preserve it during updates.
 
 ## Important Rules
 
@@ -173,47 +172,4 @@ Default shell: Zsh (macOS), Pwsh (Windows), Bash (Linux)
 - Aim for 0 build warnings
 - Use interfaces + DI, not static classes
 - Platform checks: `OperatingSystem.IsWindows()`, `.IsLinux()`, `.IsMacOS()`
-
-## Release Process
-
-Use `release.ps1` to automate version bumping, commit, tag, and push:
-
-```powershell
-.\release.ps1 -Bump patch -Message "Fix installer issue"
-.\release.ps1 -Bump minor -Message "Add new feature"
-.\release.ps1 -Bump major -Message "Breaking change"
-```
-
-The script:
-1. Bumps version in both csproj files, version.json, and Host/Program.cs
-2. Commits all changes with message `v{version}: {Message}`
-3. Creates annotated tag
-4. Pushes to main and pushes tag
-5. GitHub Actions builds and creates release
-
-**GitHub Actions workflow** (`.github/workflows/release.yml`):
-- Triggers on `v*` tags
-- Matrix build: `win-x64`, `linux-x64`, `osx-arm64`, `osx-x64`
-- Builds both `mm` and `mm-host` for each platform
-- Packages both binaries together per platform
-
-## Update System
-
-**Version manifest** (`version.json`): Contains `web`, `pty`, `protocol` versions.
-
-**Update types:**
-- **Web-only** (sessions preserved): Only `web` version changed
-- **Full** (sessions lost): `pty` or `protocol` version changed
-
-## Install System
-
-**Scripts:** `install.ps1` (Windows), `install.sh` (macOS/Linux)
-
-**Modes:**
-- **System service**: `C:\Program Files\MiddleManager` or `/usr/local/bin`, runs `mm-host --service`
-- **User install**: `%LOCALAPPDATA%\MiddleManager` or `~/.local/bin`, user runs `mm` manually
-
-**Key behaviors:**
-- Installer kills running `mm-host`/`mm` processes before copying (avoids locked files)
-- Service runs as SYSTEM/root but spawns terminals as the installing user
-- Settings stored in `%ProgramData%\MiddleManager` (service) or `~/.middlemanager` (user)
+- All JSON serialization must use source-generated `AppJsonContext` for AOT safety

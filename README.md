@@ -10,7 +10,6 @@
 
 **Your terminal, anywhere.** Run AI coding agents and TUI apps on your machine, access them from any browser.
 
-<!-- TODO: Add screenshot or GIF demo here -->
 ![MiddleManager Screenshot](docs/screenshot.png)
 
 ## The Problem
@@ -40,26 +39,16 @@ Your PC                          Anywhere
 - **Long-running tasks** — Builds, deployments, data processing
 - **Any TUI app** — htop, vim, tmux sessions, whatever you run in a terminal
 
-## Why Not Just...?
-
-| Alternative | Problem |
-|-------------|---------|
-| Cloud VMs | Expensive, limited resources, your API keys on their servers |
-| SSH | Firewalls, NAT, corporate networks block it |
-| Screen sharing | Laggy, needs coordination, can't multitask |
-| tmux + SSH | Still needs SSH access |
-
-MiddleManager: HTTP works everywhere. Your machine, your power, your keys.
-
 ## Features
 
 - **Single binary** — ~15MB, no dependencies, no runtime
-- **Cross-platform** — macOS, Windows, Linux
-- **Responsive UI** — Works on any screen size. That old iPad? Now it's a terminal monitor.
-- **Instant startup** — Native AOT compiled, sub-second launch
+- **Cross-platform** — macOS, Windows, Linux (Native AOT compiled)
+- **Password protected** — PBKDF2 hashed password, required during install
 - **Multi-session** — Multiple terminals, one WebSocket connection
+- **Manual resize** — Fit terminal to any screen size with one click
 - **Any shell** — Zsh, Bash, PowerShell, CMD
-- **Auto-update** — Checks for updates hourly, one-click update from the UI
+- **Auto-update** — One-click update from the UI, page reloads automatically
+- **Responsive UI** — Works on any screen size
 
 ## Installation
 
@@ -75,16 +64,14 @@ curl -fsSL https://raw.githubusercontent.com/AiTlbx/MiddleManager/main/install.s
 irm https://raw.githubusercontent.com/AiTlbx/MiddleManager/main/install.ps1 | iex
 ```
 
-The installer will ask you to choose:
+The installer will:
+1. Ask you to choose between **system service** or **user install**
+2. **Prompt for a password** (required — protects your terminal from network access)
 
 | Option | Best for | Privileges |
 |--------|----------|------------|
 | **System service** | Always-on access, headless machines, remote access before login | Requires admin/sudo |
 | **User install** | Try it out, occasional use, no admin rights | No special permissions |
-
-**System service:** Runs in background, starts on boot, survives reboots. Great for machines you access remotely.
-
-**User install:** You run `mm` when you need it. Simpler, no admin required, installs to your home folder.
 
 ### Manual Download
 
@@ -105,23 +92,40 @@ mm.exe                  # Windows
 # Open in browser
 http://localhost:2000
 
-# Start Claude Code in the terminal
+# Enter your password, then start Claude Code
 claude
 ```
 
-That's it. Now open that same URL from any device on your network.
+## Security
+
+MiddleManager exposes terminal access over the network. Security is mandatory:
+
+- **Password required** — Set during installation, cannot be skipped
+- **PBKDF2 hashing** — 100,000 iterations with SHA256
+- **Session cookies** — 3-week validity with sliding expiration
+- **Rate limiting** — Lockout after failed login attempts
+
+Change your password anytime in **Settings > Security**.
+
+## Terminal Resize
+
+Terminals are created at the optimal size for your current screen. When viewing from a different device:
+
+- Click the **resize button (⤢)** in the sidebar to fit the terminal to your current screen
+- Each terminal maintains its own dimensions
+- Resizing one terminal doesn't affect others
 
 ## Remote Access
 
-For access from your phone, tablet, or any device outside your local network:
+For access outside your local network:
 
-**[Tailscale](https://tailscale.com)** — The easiest option. Install on your Mac and phone, done. Access your terminal from anywhere via `http://your-mac:2000`. Free for personal use.
+**[Tailscale](https://tailscale.com)** — The easiest option. Install on your machine and phone, access via `http://your-machine:2000`. Free for personal use.
 
 Other options:
 - **Cloudflare Tunnel** — Free, no port forwarding needed
 - **Reverse proxy** — nginx/Caddy with HTTPS
 
-## Options
+## Command Line Options
 
 ```
 mm [options]
@@ -129,19 +133,22 @@ mm [options]
   --port 2000       Port to listen on (default: 2000)
   --bind 0.0.0.0    Address to bind to (default: 0.0.0.0)
   --version         Show version and exit
-  --check-update    Check for updates (JSON output)
-  --update          Download and apply update, then restart
+  --hash-password   Hash a password for settings.json
 ```
 
 ## Configuration
 
-Settings stored in `~/.middlemanager/settings.json`:
+Settings stored in:
+- **Service mode:** `%ProgramData%\MiddleManager\settings.json` (Windows) or `/usr/local/etc/middlemanager/settings.json` (Unix)
+- **User mode:** `~/.middlemanager/settings.json`
 
 ```json
 {
   "defaultShell": "Pwsh",
   "defaultCols": 120,
-  "defaultRows": 30
+  "defaultRows": 30,
+  "authenticationEnabled": true,
+  "passwordHash": "$PBKDF2$100000$..."
 }
 ```
 
@@ -154,7 +161,7 @@ git clone https://github.com/AiTlbx/MiddleManager.git
 cd MiddleManager
 
 # Build
-dotnet build
+dotnet build Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj
 
 # AOT binary (platform-specific)
 cd Ai.Tlbx.MiddleManager
