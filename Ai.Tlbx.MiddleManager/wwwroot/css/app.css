@@ -642,42 +642,47 @@ html, body {
 }
 
 .settings-container {
-    max-width: 600px;
+    max-width: 640px;
     margin: 0 auto;
 }
 
 .settings-container h2 {
-    margin: 0 0 24px 0;
-    font-size: 24px;
-    font-weight: 500;
+    margin: 0 0 28px 0;
+    font-size: 22px;
+    font-weight: 600;
     color: var(--text-primary);
 }
 
 .settings-section {
-    margin-bottom: 32px;
+    margin-bottom: 28px;
 }
 
 .settings-section h3 {
-    margin: 0 0 16px 0;
-    font-size: 14px;
+    margin: 0 0 12px 0;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
     color: var(--accent-blue);
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 8px;
 }
 
 .setting-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 0;
+    padding: 10px 0;
     border-bottom: 1px solid #1F2335;
+    gap: 16px;
+}
+
+.setting-row:last-child {
+    border-bottom: none;
 }
 
 .setting-row label {
     font-size: 14px;
     color: var(--text-primary);
+    flex-shrink: 0;
 }
 
 .setting-row select {
@@ -687,7 +692,7 @@ html, body {
     border: 1px solid var(--btn-secondary);
     border-radius: 4px;
     font-size: 14px;
-    min-width: 180px;
+    width: 200px;
     cursor: pointer;
 }
 
@@ -711,10 +716,12 @@ html, body {
     gap: 8px;
 }
 
-.text-input-wrapper input[type="text"],
+.text-input-wrapper input[type="text"] {
+    width: 240px;
+}
+
 .text-input-wrapper input[type="number"] {
-    flex: 1;
-    min-width: 150px;
+    width: 100px;
 }
 
 .text-input-wrapper.unsaved input {
@@ -791,7 +798,6 @@ html, body {
     border: 1px solid var(--btn-secondary);
     border-radius: 4px;
     font-size: 14px;
-    min-width: 180px;
 }
 
 .setting-row input[type="text"]:hover,
@@ -806,7 +812,6 @@ html, body {
 }
 
 .setting-row input[type="number"] {
-    min-width: 100px;
     width: 100px;
 }
 
@@ -919,6 +924,15 @@ html, body {
     display: flex;
     align-items: center;
     gap: 6px;
+    overflow: hidden;
+}
+
+.update-current,
+.update-latest {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .update-current {
@@ -927,6 +941,7 @@ html, body {
 
 .update-arrow {
     color: var(--accent-green);
+    flex-shrink: 0;
 }
 
 .update-latest {
@@ -971,51 +986,25 @@ html, body {
 }
 
 /* About & Updates section in settings */
-.about-section {
-    background-color: #1F2335;
-    border: 1px solid var(--border-color);
-}
-
-.version-info {
-    display: flex;
-    gap: 24px;
-    margin-bottom: 12px;
-}
-
-.version-row {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.version-label {
-    font-size: 11px;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-}
-
 .version-value {
     font-size: 14px;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: 'Cascadia Mono NF', Consolas, monospace;
     color: var(--accent-cyan);
 }
 
-.update-actions {
+.update-actions-inline {
     display: flex;
     gap: 8px;
-    margin-bottom: 8px;
 }
 
-.update-actions .btn-secondary {
-    flex: 1;
-    padding: 8px 12px;
-    font-size: 12px;
+.update-actions-inline .btn-secondary {
+    padding: 6px 14px;
+    font-size: 13px;
 }
 
 .update-status {
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 12px;
+    padding: 10px 0;
+    font-size: 13px;
     text-align: center;
 }
 
@@ -1024,20 +1013,14 @@ html, body {
 }
 
 .update-status-available {
-    background-color: #1A2F23;
-    border: 1px solid #2D5A3D;
     color: var(--accent-green);
 }
 
 .update-status-current {
-    background-color: #1F2335;
-    border: 1px solid var(--border-color);
     color: var(--text-secondary);
 }
 
 .update-status-error {
-    background-color: #2F1A1A;
-    border: 1px solid #5A2D2D;
     color: var(--accent-orange);
 }
 

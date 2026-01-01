@@ -156,6 +156,13 @@
         return match ? decodeURIComponent(match.split('=')[1]) : null;
     }
 
+    function getClipboardStyle() {
+        var setting = currentSettings && currentSettings.clipboardShortcuts || 'auto';
+        if (setting !== 'auto') return setting;
+        var platform = navigator.platform || '';
+        return platform.startsWith('Win') ? 'windows' : 'unix';
+    }
+
     // ========================================================================
     // WebSocket: State Channel
     // ========================================================================
@@ -693,6 +700,49 @@
             }
         });
 
+        // Keyboard shortcuts for copy/paste
+        terminal.attachCustomKeyEventHandler(function(e) {
+            if (e.type !== 'keydown') return true;
+
+            var style = getClipboardStyle();
+
+            if (style === 'windows') {
+                // Ctrl+C: copy if selected, else let terminal handle (SIGINT)
+                if (e.ctrlKey && !e.shiftKey && e.key === 'c') {
+                    if (terminal.hasSelection()) {
+                        navigator.clipboard.writeText(terminal.getSelection()).catch(function() {});
+                        terminal.clearSelection();
+                        return false;
+                    }
+                    return true;
+                }
+                // Ctrl+V: paste
+                if (e.ctrlKey && !e.shiftKey && e.key === 'v') {
+                    navigator.clipboard.readText().then(function(text) {
+                        if (text) sendInput(sessionId, text);
+                    }).catch(function() {});
+                    return false;
+                }
+            } else {
+                // Unix: Ctrl+Shift+C to copy
+                if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+                    if (terminal.hasSelection()) {
+                        navigator.clipboard.writeText(terminal.getSelection()).catch(function() {});
+                        terminal.clearSelection();
+                    }
+                    return false;
+                }
+                // Unix: Ctrl+Shift+V to paste
+                if (e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+                    navigator.clipboard.readText().then(function(text) {
+                        if (text) sendInput(sessionId, text);
+                    }).catch(function() {});
+                    return false;
+                }
+            }
+            return true;
+        });
+
         // Right-click paste
         container.addEventListener('contextmenu', function(e) {
             if (!currentSettings || currentSettings.rightClickPaste !== false) {
@@ -1149,6 +1199,7 @@
         setElementValue('setting-bell-style', settings.bellStyle || 'notification');
         setElementChecked('setting-copy-on-select', settings.copyOnSelect === true);
         setElementChecked('setting-right-click-paste', settings.rightClickPaste !== false);
+        setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts || 'auto');
         setElementValue('setting-run-as-user', settings.runAsUser || '');
         setElementChecked('setting-debug-logging', settings.debugLogging === true);
     }
@@ -1186,6 +1237,7 @@
             bellStyle: getElementValue('setting-bell-style', 'notification'),
             copyOnSelect: getElementChecked('setting-copy-on-select'),
             rightClickPaste: getElementChecked('setting-right-click-paste'),
+            clipboardShortcuts: getElementValue('setting-clipboard-shortcuts', 'auto'),
             runAsUser: runAsUserValue || null,
             debugLogging: getElementChecked('setting-debug-logging')
         };

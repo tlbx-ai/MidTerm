@@ -2,6 +2,7 @@
   "profiles": {
     "Ai.Tlbx.MiddleManager.Aot": {
       "commandName": "Project",
+      "commandLineArgs": "--spawned",
       "launchBrowser": true,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"

@@ -34,6 +34,7 @@ namespace Ai.Tlbx.MiddleManager.Settings
         public string BellStyle { get; set; } = "notification";
         public bool CopyOnSelect { get; set; } = false;
         public bool RightClickPaste { get; set; } = true;
+        public string ClipboardShortcuts { get; set; } = "auto";
 
         // Security - User to spawn terminals as (when running as service)
         public string? RunAsUser { get; set; }

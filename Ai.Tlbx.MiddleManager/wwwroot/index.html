@@ -65,17 +65,18 @@
                         <h2>Settings</h2>
 
                         <!-- About & Updates -->
-                        <div class="settings-section about-section">
+                        <div class="settings-section">
                             <h3>About & Updates</h3>
-                            <div class="version-info">
-                                <div class="version-row">
-                                    <span class="version-label">Version</span>
-                                    <span class="version-value" id="version-web">-</span>
-                                </div>
+                            <div class="setting-row">
+                                <label>Version</label>
+                                <span class="version-value" id="version-web">-</span>
                             </div>
-                            <div class="update-actions">
-                                <button id="btn-check-updates" class="btn-secondary">Check for Updates</button>
-                                <button id="btn-show-changelog" class="btn-secondary">Changelog</button>
+                            <div class="setting-row">
+                                <label>Updates</label>
+                                <div class="update-actions-inline">
+                                    <button id="btn-check-updates" class="btn-secondary">Check for Updates</button>
+                                    <button id="btn-show-changelog" class="btn-secondary">Changelog</button>
+                                </div>
                             </div>
                             <div id="update-status" class="update-status hidden"></div>
                         </div>
@@ -159,6 +160,14 @@
                             <div class="setting-row">
                                 <label for="setting-right-click-paste">Right-Click Paste</label>
                                 <input type="checkbox" id="setting-right-click-paste" checked />
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-clipboard-shortcuts">Copy/Paste Shortcuts</label>
+                                <select id="setting-clipboard-shortcuts">
+                                    <option value="auto">Auto (detect platform)</option>
+                                    <option value="windows">Windows (Ctrl+C/V)</option>
+                                    <option value="unix">Unix (Ctrl+Shift+C/V)</option>
+                                </select>
                             </div>
                         </div>
 
