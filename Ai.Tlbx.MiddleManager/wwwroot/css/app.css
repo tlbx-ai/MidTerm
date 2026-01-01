@@ -565,13 +565,26 @@ html, body {
 
     .setting-row {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
         gap: 8px;
+        text-align: left;
+    }
+
+    .setting-row label {
+        text-align: left;
     }
 
     .setting-row select,
     .text-input-wrapper {
         width: 100%;
+    }
+
+    .update-actions-inline {
+        justify-content: flex-start;
+    }
+
+    .update-status {
+        text-align: left;
     }
 
     /* Connection status - above safe area */
