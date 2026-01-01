@@ -23,6 +23,7 @@ NC='\033[0m' # No Color
 INSTALLING_USER="${INSTALLING_USER:-}"
 INSTALLING_UID="${INSTALLING_UID:-}"
 INSTALLING_GID="${INSTALLING_GID:-}"
+PASSWORD_HASH="${PASSWORD_HASH:-}"
 
 print_header() {
     echo ""
@@ -114,6 +115,66 @@ prompt_service_mode() {
     esac
 }
 
+get_existing_password_hash() {
+    local settings_path="/usr/local/etc/middlemanager/settings.json"
+    if [ -f "$settings_path" ]; then
+        local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
+        if [ -n "$hash" ] && [ ${#hash} -gt 10 ]; then
+            echo "$hash"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+prompt_password() {
+    echo ""
+    echo -e "  ${YELLOW}Security Notice:${NC}"
+    echo -e "  ${GRAY}MiddleManager exposes terminal access over the network.${NC}"
+    echo -e "  ${GRAY}A password is required to prevent unauthorized access.${NC}"
+    echo ""
+
+    local max_attempts=3
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        read -s -p "  Enter password: " password
+        echo
+        read -s -p "  Confirm password: " confirm
+        echo
+
+        if [ "$password" != "$confirm" ]; then
+            echo -e "  ${RED}Passwords do not match. Try again.${NC}"
+            attempt=$((attempt + 1))
+            continue
+        fi
+
+        if [ ${#password} -lt 4 ]; then
+            echo -e "  ${RED}Password must be at least 4 characters.${NC}"
+            attempt=$((attempt + 1))
+            continue
+        fi
+
+        # Try to hash the password using mm --hash-password
+        local mm_path="/usr/local/bin/mm"
+        if [ -f "$mm_path" ]; then
+            local hash=$("$mm_path" --hash-password "$password" 2>/dev/null || true)
+            if [[ "$hash" == '$PBKDF2$'* ]]; then
+                PASSWORD_HASH="$hash"
+                return 0
+            fi
+        fi
+
+        # Fallback: mark for first-run setup
+        echo -e "  ${YELLOW}Warning: Could not hash password, will be set on first access.${NC}"
+        PASSWORD_HASH="__PENDING__:$password"
+        return 0
+    done
+
+    echo -e "  ${RED}Too many failed attempts. Exiting.${NC}"
+    exit 1
+}
+
 write_service_settings() {
     local config_dir="/usr/local/etc/middlemanager"
     local settings_path="$config_dir/settings.json"
@@ -128,13 +189,27 @@ write_service_settings() {
     fi
 
     # Write minimal bootstrap settings - app will migrate user preferences from .old
-    cat > "$settings_path" << EOF
+    if [ -n "$PASSWORD_HASH" ]; then
+        cat > "$settings_path" << EOF
 {
   "runAsUser": "$INSTALLING_USER",
   "runAsUid": $INSTALLING_UID,
-  "runAsGid": $INSTALLING_GID
+  "runAsGid": $INSTALLING_GID,
+  "authenticationEnabled": true,
+  "passwordHash": "$PASSWORD_HASH"
 }
 EOF
+        echo -e "  ${GRAY}Password: configured${NC}"
+    else
+        cat > "$settings_path" << EOF
+{
+  "runAsUser": "$INSTALLING_USER",
+  "runAsUid": $INSTALLING_UID,
+  "runAsGid": $INSTALLING_GID,
+  "authenticationEnabled": true
+}
+EOF
+    fi
 
     chmod 644 "$settings_path"
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
@@ -184,6 +259,7 @@ install_as_service() {
         exec sudo INSTALLING_USER="$INSTALLING_USER" \
                   INSTALLING_UID="$INSTALLING_UID" \
                   INSTALLING_GID="$INSTALLING_GID" \
+                  PASSWORD_HASH="$PASSWORD_HASH" \
                   "$0" --service
     fi
 
@@ -434,6 +510,17 @@ get_latest_release
 prompt_service_mode
 
 if [ "$SERVICE_MODE" = true ]; then
+    # Check for existing password (preserve on update)
+    existing_hash=$(get_existing_password_hash || true)
+    if [ -n "$existing_hash" ]; then
+        echo ""
+        echo -e "  ${GREEN}Existing password found - preserving...${NC}"
+        PASSWORD_HASH="$existing_hash"
+    else
+        # New install - prompt for password
+        prompt_password
+    fi
+
     install_as_service
 else
     install_as_user

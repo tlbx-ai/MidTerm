@@ -5,6 +5,7 @@
 param(
     [string]$RunAsUser,
     [string]$RunAsUserSid,
+    [string]$PasswordHash,
     [switch]$ServiceMode
 )
 
@@ -48,6 +49,81 @@ function Get-CurrentUserInfo
     }
 }
 
+function Get-ExistingPasswordHash
+{
+    $settingsPath = "$env:ProgramData\MiddleManager\settings.json"
+    if (Test-Path $settingsPath)
+    {
+        try
+        {
+            $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+            if ($settings.passwordHash -and $settings.passwordHash.Length -gt 10)
+            {
+                return $settings.passwordHash
+            }
+        }
+        catch { }
+    }
+    return $null
+}
+
+function Prompt-Password
+{
+    param(
+        [string]$InstallDir
+    )
+
+    Write-Host ""
+    Write-Host "  Security Notice:" -ForegroundColor Yellow
+    Write-Host "  MiddleManager exposes terminal access over the network." -ForegroundColor Gray
+    Write-Host "  A password is required to prevent unauthorized access." -ForegroundColor Gray
+    Write-Host ""
+
+    $maxAttempts = 3
+    for ($i = 0; $i -lt $maxAttempts; $i++)
+    {
+        $password = Read-Host "  Enter password" -AsSecureString
+        $confirm = Read-Host "  Confirm password" -AsSecureString
+
+        $pwPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
+        $confirmPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirm))
+
+        if ($pwPlain -ne $confirmPlain)
+        {
+            Write-Host "  Passwords do not match. Try again." -ForegroundColor Red
+            continue
+        }
+
+        if ($pwPlain.Length -lt 4)
+        {
+            Write-Host "  Password must be at least 4 characters." -ForegroundColor Red
+            continue
+        }
+
+        # Hash the password using mm.exe --hash-password
+        $mmPath = Join-Path $InstallDir "mm.exe"
+        if (Test-Path $mmPath)
+        {
+            try
+            {
+                $hash = & $mmPath --hash-password $pwPlain 2>&1
+                if ($hash -match '^\$PBKDF2\$')
+                {
+                    return $hash
+                }
+            }
+            catch { }
+        }
+
+        # Fallback: Return plaintext marker (will be hashed on first run)
+        Write-Host "  Warning: Could not hash password, will be set on first access." -ForegroundColor Yellow
+        return "__PENDING__:$pwPlain"
+    }
+
+    Write-Host "  Too many failed attempts. Exiting." -ForegroundColor Red
+    exit 1
+}
+
 function Get-LatestRelease
 {
     Write-Host "Fetching latest release..." -ForegroundColor Gray
@@ -71,7 +147,8 @@ function Write-ServiceSettings
 {
     param(
         [string]$Username,
-        [string]$UserSid
+        [string]$UserSid,
+        [string]$PasswordHash
     )
 
     $configDir = "$env:ProgramData\MiddleManager"
@@ -94,12 +171,19 @@ function Write-ServiceSettings
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
+        authenticationEnabled = $true
+    }
+
+    if ($PasswordHash)
+    {
+        $settings.passwordHash = $PasswordHash
     }
 
     $json = $settings | ConvertTo-Json -Depth 10
     Set-Content -Path $settingsPath -Value $json -Encoding UTF8
 
     Write-Host "  Terminal user: $Username" -ForegroundColor Gray
+    if ($PasswordHash) { Write-Host "  Password: configured" -ForegroundColor Gray }
 }
 
 function Install-MiddleManager
@@ -108,7 +192,8 @@ function Install-MiddleManager
         [bool]$AsService,
         [string]$Version,
         [string]$RunAsUser,
-        [string]$RunAsUserSid
+        [string]$RunAsUserSid,
+        [string]$PasswordHash
     )
 
     if ($AsService)
@@ -216,10 +301,10 @@ function Install-MiddleManager
 
     if ($AsService)
     {
-        # Write settings with runAsUser info
+        # Write settings with runAsUser info and password
         if ($RunAsUser -and $RunAsUserSid)
         {
-            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid
+            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash
         }
 
         Install-AsService -InstallDir $installDir -Version $Version
@@ -449,7 +534,7 @@ if ($ServiceMode)
     $version = $script:release.tag_name -replace "^v", ""
     Write-Host "  Latest version: $version" -ForegroundColor White
     Write-Host ""
-    Install-MiddleManager -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid
+    Install-MiddleManager -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash
     exit
 }
 
@@ -487,6 +572,22 @@ $asService = ($choice -eq "" -or $choice -eq "1")
 
 if ($asService)
 {
+    $installDir = "$env:ProgramFiles\MiddleManager"
+
+    # Check for existing password (preserve on update)
+    $existingHash = Get-ExistingPasswordHash
+    if ($existingHash)
+    {
+        Write-Host ""
+        Write-Host "  Existing password found - preserving..." -ForegroundColor Green
+        $passwordHash = $existingHash
+    }
+    else
+    {
+        # New install - prompt for password
+        $passwordHash = Prompt-Password -InstallDir $installDir
+    }
+
     # Check if we need to elevate
     if (-not (Test-Administrator))
     {
@@ -506,6 +607,7 @@ if ($asService)
             "-ServiceMode"
             "-RunAsUser", $currentUser.Name
             "-RunAsUserSid", $currentUser.Sid
+            "-PasswordHash", $passwordHash
         )
 
         Start-Process pwsh -ArgumentList $arguments -Verb RunAs -Wait
@@ -514,9 +616,9 @@ if ($asService)
     }
 
     # Already admin, proceed with install
-    Install-MiddleManager -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid
+    Install-MiddleManager -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash
 }
 else
 {
-    Install-MiddleManager -AsService $false -Version $version -RunAsUser "" -RunAsUserSid ""
+    Install-MiddleManager -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash ""
 }

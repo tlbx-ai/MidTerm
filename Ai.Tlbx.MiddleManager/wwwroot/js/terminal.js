@@ -128,6 +128,7 @@
 
         // Setup UI
         bindEvents();
+        bindAuthEvents();
         setupResizeObserver();
         setupVisualViewport();
 
@@ -135,6 +136,7 @@
         fetchVersion();
         fetchNetworks();
         fetchSettings();
+        checkAuthStatus();
         requestNotificationPermission();
     }
 
@@ -1439,6 +1441,207 @@
         var div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // ========================================================================
+    // Authentication
+    // ========================================================================
+
+    var authStatus = null;
+    var passwordModalHasPassword = false;
+
+    function checkAuthStatus() {
+        fetch('/api/auth/status')
+            .then(function(r) {
+                if (r.status === 401) {
+                    window.location.href = '/login.html';
+                    return null;
+                }
+                return r.json();
+            })
+            .then(function(status) {
+                if (!status) return;
+                authStatus = status;
+                updateSecurityWarning();
+                updatePasswordStatus();
+            })
+            .catch(function(e) {
+                console.error('Auth status error:', e);
+            });
+    }
+
+    function updateSecurityWarning() {
+        var warning = document.getElementById('security-warning');
+        if (!warning) return;
+
+        // Show warning if auth enabled but no password set
+        if (authStatus && authStatus.authenticationEnabled && !authStatus.passwordSet) {
+            warning.classList.remove('hidden');
+        } else {
+            warning.classList.add('hidden');
+        }
+    }
+
+    function updatePasswordStatus() {
+        var statusEl = document.getElementById('password-status-text');
+        if (!statusEl) return;
+
+        if (!authStatus) {
+            statusEl.textContent = 'Checking...';
+            statusEl.className = '';
+            return;
+        }
+
+        if (authStatus.passwordSet) {
+            statusEl.textContent = 'Password is set ✓';
+            statusEl.className = 'status-set';
+        } else {
+            statusEl.textContent = 'No password set ⚠️';
+            statusEl.className = 'status-missing';
+        }
+    }
+
+    function showPasswordModal(isInitialSetup) {
+        var modal = document.getElementById('password-modal');
+        var title = document.getElementById('password-modal-title');
+        var currentGroup = document.getElementById('current-password-group');
+        var errorEl = document.getElementById('password-error');
+
+        if (!modal) return;
+
+        passwordModalHasPassword = authStatus && authStatus.passwordSet;
+
+        if (title) {
+            title.textContent = passwordModalHasPassword ? 'Change Password' : 'Set Password';
+        }
+
+        if (currentGroup) {
+            currentGroup.style.display = passwordModalHasPassword ? 'block' : 'none';
+        }
+
+        if (errorEl) {
+            errorEl.classList.add('hidden');
+            errorEl.textContent = '';
+        }
+
+        // Clear form
+        var form = document.getElementById('password-form');
+        if (form) form.reset();
+
+        modal.classList.remove('hidden');
+
+        // Focus appropriate field
+        var focusField = passwordModalHasPassword ? 'current-password' : 'new-password';
+        var field = document.getElementById(focusField);
+        if (field) field.focus();
+    }
+
+    function hidePasswordModal() {
+        var modal = document.getElementById('password-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    function handlePasswordSubmit(e) {
+        e.preventDefault();
+
+        var currentPw = document.getElementById('current-password');
+        var newPw = document.getElementById('new-password');
+        var confirmPw = document.getElementById('confirm-password');
+        var errorEl = document.getElementById('password-error');
+        var saveBtn = document.getElementById('btn-save-password');
+
+        var newPassword = newPw ? newPw.value : '';
+        var confirmPassword = confirmPw ? confirmPw.value : '';
+
+        if (!newPassword) {
+            showPasswordError('New password is required');
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            showPasswordError('Passwords do not match');
+            return;
+        }
+
+        if (newPassword.length < 4) {
+            showPasswordError('Password must be at least 4 characters');
+            return;
+        }
+
+        var payload = {
+            currentPassword: passwordModalHasPassword && currentPw ? currentPw.value : null,
+            newPassword: newPassword
+        };
+
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+        }
+
+        fetch('/api/auth/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+        .then(function(result) {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
+            }
+
+            if (result.ok && result.data.success) {
+                hidePasswordModal();
+                checkAuthStatus();
+            } else {
+                showPasswordError(result.data.error || 'Failed to change password');
+            }
+        })
+        .catch(function(e) {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
+            }
+            showPasswordError('Connection error');
+        });
+    }
+
+    function showPasswordError(msg) {
+        var errorEl = document.getElementById('password-error');
+        if (errorEl) {
+            errorEl.textContent = msg;
+            errorEl.classList.remove('hidden');
+        }
+    }
+
+    function dismissSecurityWarning() {
+        var warning = document.getElementById('security-warning');
+        if (warning) warning.classList.add('hidden');
+    }
+
+    function bindAuthEvents() {
+        // Security warning buttons
+        bindClick('btn-set-password-warning', function() {
+            showPasswordModal(true);
+        });
+        bindClick('btn-dismiss-warning', dismissSecurityWarning);
+
+        // Password modal
+        bindClick('btn-change-password', function() {
+            showPasswordModal(false);
+        });
+        bindClick('btn-close-password', hidePasswordModal);
+        bindClick('btn-cancel-password', hidePasswordModal);
+
+        var passwordBackdrop = document.querySelector('#password-modal .modal-backdrop');
+        if (passwordBackdrop) {
+            passwordBackdrop.addEventListener('click', hidePasswordModal);
+        }
+
+        var passwordForm = document.getElementById('password-form');
+        if (passwordForm) {
+            passwordForm.addEventListener('submit', handlePasswordSubmit);
+        }
     }
 
 })();

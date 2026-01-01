@@ -23,9 +23,36 @@ namespace Ai.Tlbx.MiddleManager.Services;
 [JsonSerializable(typeof(SystemHealth))]
 [JsonSerializable(typeof(UserInfo))]
 [JsonSerializable(typeof(List<UserInfo>))]
+[JsonSerializable(typeof(LoginRequest))]
+[JsonSerializable(typeof(ChangePasswordRequest))]
+[JsonSerializable(typeof(AuthResponse))]
+[JsonSerializable(typeof(AuthStatusResponse))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {
+}
+
+public sealed class LoginRequest
+{
+    public string Password { get; init; } = "";
+}
+
+public sealed class ChangePasswordRequest
+{
+    public string? CurrentPassword { get; init; }
+    public string NewPassword { get; init; } = "";
+}
+
+public sealed class AuthResponse
+{
+    public bool Success { get; init; }
+    public string? Error { get; init; }
+}
+
+public sealed class AuthStatusResponse
+{
+    public bool AuthenticationEnabled { get; init; }
+    public bool PasswordSet { get; init; }
 }
 
 public sealed class StateUpdate

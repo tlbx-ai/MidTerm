@@ -1264,3 +1264,220 @@ html, body {
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
+/* Security Warning Banner */
+.security-warning {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background-color: #3D2A1A;
+    border-bottom: 1px solid var(--accent-orange);
+    color: var(--accent-orange);
+    font-size: 13px;
+}
+
+.security-warning.hidden {
+    display: none;
+}
+
+.warning-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.warning-text {
+    flex: 1;
+}
+
+.warning-btn {
+    padding: 5px 12px;
+    background-color: var(--accent-orange);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.warning-btn:hover {
+    background-color: #FFB17A;
+}
+
+.warning-dismiss {
+    background: none;
+    border: none;
+    color: var(--accent-orange);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    opacity: 0.7;
+}
+
+.warning-dismiss:hover {
+    opacity: 1;
+}
+
+/* Login Page */
+.login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background-color: var(--bg-primary);
+}
+
+.login-container {
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+}
+
+.login-card {
+    background-color: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 40px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.login-header h1 {
+    margin: 0 0 8px 0;
+    font-size: 24px;
+    color: var(--text-primary);
+}
+
+.login-header p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.login-form .form-group {
+    margin-bottom: 20px;
+}
+
+.login-form label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.login-form input[type="password"] {
+    width: 100%;
+    padding: 12px 16px;
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--btn-secondary);
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.login-form input[type="password"]:focus {
+    border-color: var(--accent-blue);
+}
+
+.login-btn {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--btn-primary);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.login-btn:hover {
+    background-color: var(--btn-primary-hover);
+}
+
+.login-btn:disabled {
+    background-color: var(--btn-secondary);
+    cursor: not-allowed;
+}
+
+.error-message {
+    padding: 12px;
+    background-color: #2F1A1A;
+    border: 1px solid #5A2D2D;
+    border-radius: 6px;
+    color: var(--accent-red);
+    font-size: 13px;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.error-message.hidden {
+    display: none;
+}
+
+/* Password Modal */
+.password-modal-content {
+    max-width: 400px;
+}
+
+.password-modal-content .form-group {
+    margin-bottom: 16px;
+}
+
+.password-modal-content label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.password-modal-content input[type="password"] {
+    width: 100%;
+    padding: 10px 12px;
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--btn-secondary);
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+}
+
+.password-modal-content input[type="password"]:focus {
+    border-color: var(--accent-blue);
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.modal-footer .btn-primary,
+.modal-footer .btn-secondary {
+    padding: 8px 20px;
+}
+
+/* Password Status in Settings */
+.password-status {
+    display: flex;
+    align-items: center;
+}
+
+.password-status .status-set {
+    color: var(--accent-green);
+    font-size: 14px;
+}
+
+.password-status .status-missing {
+    color: var(--accent-orange);
+    font-size: 14px;
+}

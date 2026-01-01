@@ -34,9 +34,13 @@ public class Program
 
         var settingsService = app.Services.GetRequiredService<SettingsService>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
+        var authService = app.Services.GetRequiredService<AuthService>();
 
         // Configure debug logging from settings
         var settings = settingsService.Load();
+
+        // Authentication middleware
+        ConfigureAuthMiddleware(app, settingsService, authService);
         DebugLogger.Enabled = settings.DebugLogging;
         if (DebugLogger.Enabled)
         {
@@ -142,6 +146,16 @@ public class Program
             return true;
         }
 
+        // --hash-password: Generate password hash for install scripts
+        var hashIndex = Array.IndexOf(args, "--hash-password");
+        if (hashIndex >= 0 && hashIndex + 1 < args.Length)
+        {
+            var password = args[hashIndex + 1];
+            var authService = new AuthService(new SettingsService());
+            Console.WriteLine(authService.HashPassword(password));
+            return true;
+        }
+
         return false;
     }
 
@@ -191,6 +205,7 @@ public class Program
         builder.Services.AddSingleton<SettingsService>();
         builder.Services.AddSingleton<SessionManager>();
         builder.Services.AddSingleton<UpdateService>();
+        builder.Services.AddSingleton<AuthService>();
 
         return builder;
     }
@@ -233,6 +248,168 @@ public class Program
         });
 
         app.UseWebSockets();
+    }
+
+    private static void ConfigureAuthMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
+    {
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Strict,
+            Secure = false, // Allow HTTP for localhost
+            MaxAge = TimeSpan.FromHours(24)
+        };
+
+        // Auth middleware - runs before all requests
+        app.Use(async (context, next) =>
+        {
+            var authSettings = settingsService.Load();
+            var path = context.Request.Path.Value ?? "";
+
+            // Skip auth if disabled
+            if (!authSettings.AuthenticationEnabled || string.IsNullOrEmpty(authSettings.PasswordHash))
+            {
+                await next();
+                return;
+            }
+
+            // Public paths that don't require auth
+            if (path == "/login" || path == "/login.html" ||
+                path.StartsWith("/api/auth/") ||
+                path.StartsWith("/css/") ||
+                path.StartsWith("/js/") ||
+                path.EndsWith(".ico") ||
+                path.EndsWith(".webmanifest"))
+            {
+                await next();
+                return;
+            }
+
+            // Check session cookie
+            var token = context.Request.Cookies["mm-session"];
+            if (token is not null && authService.ValidateSessionToken(token))
+            {
+                // Refresh cookie (sliding expiration)
+                context.Response.Cookies.Append("mm-session", token, cookieOptions);
+                await next();
+                return;
+            }
+
+            // API/WebSocket requests: return 401
+            if (path.StartsWith("/api/") || path.StartsWith("/ws/"))
+            {
+                context.Response.StatusCode = 401;
+                return;
+            }
+
+            // Page requests: redirect to login
+            context.Response.Redirect("/login.html");
+        });
+
+        // Auth endpoints
+        app.MapPost("/api/auth/login", async (HttpContext ctx) =>
+        {
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+            if (authService.IsRateLimited(ip))
+            {
+                var remaining = authService.GetRemainingLockout(ip);
+                return Results.Json(new AuthResponse { Success = false, Error = $"Too many attempts. Try again in {remaining?.TotalSeconds:0} seconds." },
+                    AppJsonContext.Default.AuthResponse, statusCode: 429);
+            }
+
+            LoginRequest? request;
+            try
+            {
+                request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.LoginRequest);
+            }
+            catch
+            {
+                return Results.Json(new AuthResponse { Success = false, Error = "Invalid request" },
+                    AppJsonContext.Default.AuthResponse, statusCode: 400);
+            }
+
+            if (request is null || string.IsNullOrEmpty(request.Password))
+            {
+                return Results.Json(new AuthResponse { Success = false, Error = "Password required" },
+                    AppJsonContext.Default.AuthResponse, statusCode: 400);
+            }
+
+            var loginSettings = settingsService.Load();
+            if (!authService.VerifyPassword(request.Password, loginSettings.PasswordHash))
+            {
+                authService.RecordFailedAttempt(ip);
+                return Results.Json(new AuthResponse { Success = false, Error = "Invalid password" },
+                    AppJsonContext.Default.AuthResponse, statusCode: 401);
+            }
+
+            authService.ResetAttempts(ip);
+            var token = authService.CreateSessionToken();
+            ctx.Response.Cookies.Append("mm-session", token, cookieOptions);
+
+            return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
+        });
+
+        app.MapPost("/api/auth/logout", (HttpContext ctx) =>
+        {
+            ctx.Response.Cookies.Delete("mm-session");
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/auth/change-password", async (HttpContext ctx) =>
+        {
+            ChangePasswordRequest? request;
+            try
+            {
+                request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.ChangePasswordRequest);
+            }
+            catch
+            {
+                return Results.Json(new AuthResponse { Success = false, Error = "Invalid request" },
+                    AppJsonContext.Default.AuthResponse, statusCode: 400);
+            }
+
+            if (request is null || string.IsNullOrEmpty(request.NewPassword))
+            {
+                return Results.Json(new AuthResponse { Success = false, Error = "New password required" },
+                    AppJsonContext.Default.AuthResponse, statusCode: 400);
+            }
+
+            var pwSettings = settingsService.Load();
+
+            // If password exists, verify current password
+            if (!string.IsNullOrEmpty(pwSettings.PasswordHash))
+            {
+                if (string.IsNullOrEmpty(request.CurrentPassword) ||
+                    !authService.VerifyPassword(request.CurrentPassword, pwSettings.PasswordHash))
+                {
+                    return Results.Json(new AuthResponse { Success = false, Error = "Current password is incorrect" },
+                        AppJsonContext.Default.AuthResponse, statusCode: 401);
+                }
+            }
+
+            // Set new password
+            pwSettings.PasswordHash = authService.HashPassword(request.NewPassword);
+            pwSettings.AuthenticationEnabled = true;
+            authService.InvalidateAllSessions();
+            settingsService.Save(pwSettings);
+
+            // Set new session cookie
+            var token = authService.CreateSessionToken();
+            ctx.Response.Cookies.Append("mm-session", token, cookieOptions);
+
+            return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
+        });
+
+        app.MapGet("/api/auth/status", () =>
+        {
+            var statusSettings = settingsService.Load();
+            return Results.Json(new AuthStatusResponse
+            {
+                AuthenticationEnabled = statusSettings.AuthenticationEnabled,
+                PasswordSet = !string.IsNullOrEmpty(statusSettings.PasswordHash)
+            }, AppJsonContext.Default.AuthStatusResponse);
+        });
     }
 
     private static void MapApiEndpoints(

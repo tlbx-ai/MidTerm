@@ -42,6 +42,11 @@ namespace Ai.Tlbx.MiddleManager.Settings
         public int? RunAsUid { get; set; }         // Unix: User ID
         public int? RunAsGid { get; set; }         // Unix: Group ID
 
+        // Authentication
+        public bool AuthenticationEnabled { get; set; } = false;
+        public string? PasswordHash { get; set; }
+        public string? SessionSecret { get; set; }
+
         // Diagnostics
         public bool DebugLogging { get; set; } = false;
     }

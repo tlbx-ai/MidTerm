@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Login - MiddleManager</title>
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1e1e1e" />
+
+    <link rel="stylesheet" href="css/app.css" />
+</head>
+<body class="login-page">
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h1>MiddleManager</h1>
+                <p>Terminal Multiplexer</p>
+            </div>
+
+            <form id="login-form" class="login-form">
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password" autofocus />
+                </div>
+
+                <div id="error-message" class="error-message hidden"></div>
+
+                <button type="submit" id="login-btn" class="login-btn">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const form = document.getElementById('login-form');
+            const passwordInput = document.getElementById('password');
+            const errorDiv = document.getElementById('error-message');
+            const loginBtn = document.getElementById('login-btn');
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const password = passwordInput.value;
+                if (!password) {
+                    showError('Password required');
+                    return;
+                }
+
+                loginBtn.disabled = true;
+                loginBtn.textContent = 'Logging in...';
+                errorDiv.classList.add('hidden');
+
+                try {
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password })
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok && result.success) {
+                        window.location.href = '/';
+                    } else {
+                        showError(result.error || 'Login failed');
+                        passwordInput.value = '';
+                        passwordInput.focus();
+                    }
+                } catch (err) {
+                    showError('Connection error. Please try again.');
+                } finally {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Login';
+                }
+            });
+
+            function showError(msg) {
+                errorDiv.textContent = msg;
+                errorDiv.classList.remove('hidden');
+            }
+        })();
+    </script>
+</body>
+</html>

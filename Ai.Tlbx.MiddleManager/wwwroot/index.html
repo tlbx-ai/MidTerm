@@ -17,6 +17,13 @@
     <link rel="stylesheet" href="css/xterm.css" />
 </head>
 <body>
+    <div id="security-warning" class="security-warning hidden">
+        <span class="warning-icon">&#9888;</span>
+        <span class="warning-text">No password set. Anyone on the network can access your terminals.</span>
+        <button id="btn-set-password-warning" class="warning-btn">Set Password</button>
+        <button id="btn-dismiss-warning" class="warning-dismiss">&times;</button>
+    </div>
+
     <div id="app" class="terminal-page">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
@@ -175,6 +182,16 @@
                         <div class="settings-section" id="security-section">
                             <h3>Security</h3>
                             <div class="setting-row">
+                                <label>Password</label>
+                                <div class="password-status">
+                                    <span id="password-status-text" class="status-missing">Checking...</span>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <label>Change Password</label>
+                                <button id="btn-change-password" class="btn-secondary">Change...</button>
+                            </div>
+                            <div class="setting-row">
                                 <label for="setting-run-as-user">Terminal User</label>
                                 <select id="setting-run-as-user">
                                     <option value="">Process Owner (default)</option>
@@ -261,6 +278,38 @@
             </div>
             <div class="modal-body" id="changelog-body">
                 <div class="changelog-loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Change Modal -->
+    <div id="password-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content password-modal-content">
+            <div class="modal-header">
+                <h3 id="password-modal-title">Change Password</h3>
+                <button id="btn-close-password" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="password-form">
+                    <div class="form-group" id="current-password-group">
+                        <label for="current-password">Current Password</label>
+                        <input type="password" id="current-password" autocomplete="current-password" />
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">New Password</label>
+                        <input type="password" id="new-password" required autocomplete="new-password" />
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-password">Confirm Password</label>
+                        <input type="password" id="confirm-password" required autocomplete="new-password" />
+                    </div>
+                    <div id="password-error" class="error-message hidden"></div>
+                    <div class="modal-footer">
+                        <button type="button" id="btn-cancel-password" class="btn-secondary">Cancel</button>
+                        <button type="submit" id="btn-save-password" class="btn-primary">Save</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
