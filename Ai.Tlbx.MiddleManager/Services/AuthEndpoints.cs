@@ -7,9 +7,10 @@ public static class AuthEndpoints
     private static readonly CookieOptions SessionCookieOptions = new()
     {
         HttpOnly = true,
-        SameSite = SameSiteMode.Strict,
+        SameSite = SameSiteMode.Lax,
         Secure = false,
-        MaxAge = TimeSpan.FromHours(24)
+        Path = "/",
+        MaxAge = TimeSpan.FromDays(21)
     };
 
     public static void ConfigureAuthMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
