@@ -1,7 +1,4 @@
-using System.Net.WebSockets;
 using System.Reflection;
-using System.Text;
-using System.Text.Json;
 using Ai.Tlbx.MiddleManager.Models;
 using Ai.Tlbx.MiddleManager.Services;
 using Ai.Tlbx.MiddleManager.Settings;
@@ -15,8 +12,6 @@ public class Program
 {
     private const int DefaultPort = 2000;
     private const string DefaultBindAddress = "0.0.0.0";
-
-    private static void DebugLog(string message) => DebugLogger.Log(message);
 
     public static async Task Main(string[] args)
     {
@@ -36,11 +31,7 @@ public class Program
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
 
-        // Configure debug logging from settings
         var settings = settingsService.Load();
-
-        // Authentication middleware
-        ConfigureAuthMiddleware(app, settingsService, authService);
         DebugLogger.Enabled = settings.DebugLogging;
         if (DebugLogger.Enabled)
         {
@@ -48,11 +39,9 @@ public class Program
             DebugLogger.Log("Debug logging enabled");
         }
 
-        // Con-host mode: mm.exe spawns mm-con-host per session (service mode)
+        // Session managers
         ConHostSessionManager? conHostSessionManager = null;
         ConHostMuxConnectionManager? conHostMuxManager = null;
-
-        // Direct mode: mm.exe creates PTY directly (standalone mode)
         SessionManager? directSessionManager = null;
         MuxConnectionManager? directMuxManager = null;
 
@@ -73,7 +62,11 @@ public class Program
             modeDescription = "Direct (sessions lost on restart)";
         }
 
-        MapApiEndpoints(app, conHostSessionManager, directSessionManager, updateService, version);
+        // Configure middleware and endpoints
+        AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
+        AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
+        MapSystemEndpoints(app, conHostSessionManager, directSessionManager, updateService, settingsService, version);
+        SessionApiEndpoints.MapSessionEndpoints(app, conHostSessionManager, directSessionManager);
         MapWebSocketMiddleware(app, conHostSessionManager, directSessionManager, conHostMuxManager, directMuxManager, updateService);
 
         PrintWelcomeBanner(port, bindAddress, settingsService, version, modeDescription);
@@ -146,7 +139,6 @@ public class Program
             return true;
         }
 
-        // --hash-password: Generate password hash for install scripts
         var hashIndex = Array.IndexOf(args, "--hash-password");
         if (hashIndex >= 0 && hashIndex + 1 < args.Length)
         {
@@ -163,8 +155,6 @@ public class Program
     {
         var port = DefaultPort;
         var bindAddress = DefaultBindAddress;
-        // --service: running as Windows service entry point
-        // --spawned: spawned by mm-host, also needs con-host mode for proper PTY
         var useConHost = args.Contains("--service") || args.Contains("--spawned");
 
         for (int i = 0; i < args.Length; i++)
@@ -189,7 +179,6 @@ public class Program
         var builder = WebApplication.CreateSlimBuilder(args);
 
 #if WINDOWS
-        // Enable Windows Service hosting (no-op when not running as service)
         builder.Host.UseWindowsService();
 #endif
 
@@ -250,177 +239,15 @@ public class Program
         app.UseWebSockets();
     }
 
-    private static void ConfigureAuthMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
-    {
-        var cookieOptions = new CookieOptions
-        {
-            HttpOnly = true,
-            SameSite = SameSiteMode.Strict,
-            Secure = false, // Allow HTTP for localhost
-            MaxAge = TimeSpan.FromHours(24)
-        };
-
-        // Auth middleware - runs before all requests
-        app.Use(async (context, next) =>
-        {
-            var authSettings = settingsService.Load();
-            var path = context.Request.Path.Value ?? "";
-
-            // Skip auth if disabled
-            if (!authSettings.AuthenticationEnabled || string.IsNullOrEmpty(authSettings.PasswordHash))
-            {
-                await next();
-                return;
-            }
-
-            // Public paths that don't require auth
-            if (path == "/login" || path == "/login.html" ||
-                path.StartsWith("/api/auth/") ||
-                path.StartsWith("/css/") ||
-                path.StartsWith("/js/") ||
-                path.EndsWith(".ico") ||
-                path.EndsWith(".webmanifest"))
-            {
-                await next();
-                return;
-            }
-
-            // Check session cookie
-            var token = context.Request.Cookies["mm-session"];
-            if (token is not null && authService.ValidateSessionToken(token))
-            {
-                // Refresh cookie (sliding expiration)
-                context.Response.Cookies.Append("mm-session", token, cookieOptions);
-                await next();
-                return;
-            }
-
-            // API/WebSocket requests: return 401
-            if (path.StartsWith("/api/") || path.StartsWith("/ws/"))
-            {
-                context.Response.StatusCode = 401;
-                return;
-            }
-
-            // Page requests: redirect to login
-            context.Response.Redirect("/login.html");
-        });
-
-        // Auth endpoints
-        app.MapPost("/api/auth/login", async (HttpContext ctx) =>
-        {
-            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-
-            if (authService.IsRateLimited(ip))
-            {
-                var remaining = authService.GetRemainingLockout(ip);
-                return Results.Json(new AuthResponse { Success = false, Error = $"Too many attempts. Try again in {remaining?.TotalSeconds:0} seconds." },
-                    AppJsonContext.Default.AuthResponse, statusCode: 429);
-            }
-
-            LoginRequest? request;
-            try
-            {
-                request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.LoginRequest);
-            }
-            catch
-            {
-                return Results.Json(new AuthResponse { Success = false, Error = "Invalid request" },
-                    AppJsonContext.Default.AuthResponse, statusCode: 400);
-            }
-
-            if (request is null || string.IsNullOrEmpty(request.Password))
-            {
-                return Results.Json(new AuthResponse { Success = false, Error = "Password required" },
-                    AppJsonContext.Default.AuthResponse, statusCode: 400);
-            }
-
-            var loginSettings = settingsService.Load();
-            if (!authService.VerifyPassword(request.Password, loginSettings.PasswordHash))
-            {
-                authService.RecordFailedAttempt(ip);
-                return Results.Json(new AuthResponse { Success = false, Error = "Invalid password" },
-                    AppJsonContext.Default.AuthResponse, statusCode: 401);
-            }
-
-            authService.ResetAttempts(ip);
-            var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append("mm-session", token, cookieOptions);
-
-            return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
-        });
-
-        app.MapPost("/api/auth/logout", (HttpContext ctx) =>
-        {
-            ctx.Response.Cookies.Delete("mm-session");
-            return Results.Ok();
-        });
-
-        app.MapPost("/api/auth/change-password", async (HttpContext ctx) =>
-        {
-            ChangePasswordRequest? request;
-            try
-            {
-                request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.ChangePasswordRequest);
-            }
-            catch
-            {
-                return Results.Json(new AuthResponse { Success = false, Error = "Invalid request" },
-                    AppJsonContext.Default.AuthResponse, statusCode: 400);
-            }
-
-            if (request is null || string.IsNullOrEmpty(request.NewPassword))
-            {
-                return Results.Json(new AuthResponse { Success = false, Error = "New password required" },
-                    AppJsonContext.Default.AuthResponse, statusCode: 400);
-            }
-
-            var pwSettings = settingsService.Load();
-
-            // If password exists, verify current password
-            if (!string.IsNullOrEmpty(pwSettings.PasswordHash))
-            {
-                if (string.IsNullOrEmpty(request.CurrentPassword) ||
-                    !authService.VerifyPassword(request.CurrentPassword, pwSettings.PasswordHash))
-                {
-                    return Results.Json(new AuthResponse { Success = false, Error = "Current password is incorrect" },
-                        AppJsonContext.Default.AuthResponse, statusCode: 401);
-                }
-            }
-
-            // Set new password
-            pwSettings.PasswordHash = authService.HashPassword(request.NewPassword);
-            pwSettings.AuthenticationEnabled = true;
-            authService.InvalidateAllSessions();
-            settingsService.Save(pwSettings);
-
-            // Set new session cookie
-            var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append("mm-session", token, cookieOptions);
-
-            return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
-        });
-
-        app.MapGet("/api/auth/status", () =>
-        {
-            var statusSettings = settingsService.Load();
-            return Results.Json(new AuthStatusResponse
-            {
-                AuthenticationEnabled = statusSettings.AuthenticationEnabled,
-                PasswordSet = !string.IsNullOrEmpty(statusSettings.PasswordHash)
-            }, AppJsonContext.Default.AuthStatusResponse);
-        });
-    }
-
-    private static void MapApiEndpoints(
+    private static void MapSystemEndpoints(
         WebApplication app,
         ConHostSessionManager? conHostManager,
         SessionManager? directManager,
         UpdateService updateService,
+        SettingsService settingsService,
         string version)
     {
         var shellRegistry = directManager?.ShellRegistry ?? app.Services.GetRequiredService<ShellRegistry>();
-        var settingsService = directManager?.SettingsService ?? app.Services.GetRequiredService<SettingsService>();
 
         app.MapGet("/api/version", () => Results.Text(version));
 
@@ -432,7 +259,6 @@ public class Program
 
             var mode = isConHostMode ? "service" : "direct";
 
-            // Get mm-con-host version info (Windows only)
             string? conHostVersion = null;
             string? conHostExpected = null;
             bool? conHostCompatible = null;
@@ -444,7 +270,7 @@ public class Program
                 conHostExpected = manifest.Pty;
                 conHostCompatible = conHostVersion == conHostExpected ||
                     (conHostVersion is not null && manifest.MinCompatiblePty is not null &&
-                     CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
+                     UpdateService.CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
             }
 
             var health = new SystemHealth
@@ -551,175 +377,6 @@ public class Program
             var users = UserEnumerationService.GetSystemUsers();
             return Results.Json(users, AppJsonContext.Default.ListUserInfo);
         });
-
-        app.MapGet("/api/sessions", () =>
-        {
-            if (conHostManager is not null)
-            {
-                var sessions = conHostManager.GetAllSessions();
-                var list = new SessionListDto
-                {
-                    Sessions = sessions.Select(s => new SessionInfoDto
-                    {
-                        Id = s.Id,
-                        Pid = s.Pid,
-                        CreatedAt = s.CreatedAt,
-                        IsRunning = s.IsRunning,
-                        ExitCode = s.ExitCode,
-                        CurrentWorkingDirectory = s.CurrentWorkingDirectory,
-                        Cols = s.Cols,
-                        Rows = s.Rows,
-                        ShellType = s.ShellType,
-                        Name = s.Name
-                    }).ToList()
-                };
-                return Results.Json(list, AppJsonContext.Default.SessionListDto);
-            }
-            return Results.Json(directManager!.GetSessionList(), AppJsonContext.Default.SessionListDto);
-        });
-
-        app.MapPost("/api/sessions", async (CreateSessionRequest? request) =>
-        {
-            var cols = request?.Cols ?? 120;
-            var rows = request?.Rows ?? 30;
-
-            ShellType? shellType = null;
-            if (!string.IsNullOrEmpty(request?.Shell) && Enum.TryParse<ShellType>(request.Shell, true, out var parsed))
-            {
-                shellType = parsed;
-            }
-
-            if (conHostManager is not null)
-            {
-                var sessionInfo = await conHostManager.CreateSessionAsync(shellType?.ToString(), cols, rows, request?.WorkingDirectory);
-                if (sessionInfo is null)
-                {
-                    return Results.Problem("Failed to create session");
-                }
-                var info = new SessionInfoDto
-                {
-                    Id = sessionInfo.Id,
-                    Pid = sessionInfo.Pid,
-                    CreatedAt = sessionInfo.CreatedAt,
-                    IsRunning = sessionInfo.IsRunning,
-                    ExitCode = sessionInfo.ExitCode,
-                    CurrentWorkingDirectory = sessionInfo.CurrentWorkingDirectory,
-                    Cols = sessionInfo.Cols,
-                    Rows = sessionInfo.Rows,
-                    ShellType = sessionInfo.ShellType,
-                    Name = sessionInfo.Name
-                };
-                return Results.Json(info, AppJsonContext.Default.SessionInfoDto);
-            }
-            else
-            {
-                var session = directManager!.CreateSession(cols, rows, shellType);
-                var info = new SessionInfoDto
-                {
-                    Id = session.Id,
-                    Pid = session.Pid,
-                    CreatedAt = session.CreatedAt,
-                    IsRunning = session.IsRunning,
-                    ExitCode = session.ExitCode,
-                    CurrentWorkingDirectory = session.CurrentWorkingDirectory,
-                    Cols = session.Cols,
-                    Rows = session.Rows,
-                    ShellType = session.ShellType.ToString(),
-                    Name = session.Name
-                };
-                return Results.Json(info, AppJsonContext.Default.SessionInfoDto);
-            }
-        });
-
-        app.MapDelete("/api/sessions/{id}", async (string id) =>
-        {
-            if (conHostManager is not null)
-            {
-                await conHostManager.CloseSessionAsync(id);
-            }
-            else
-            {
-                directManager!.CloseSession(id);
-            }
-            return Results.Ok();
-        });
-
-        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request) =>
-        {
-            if (conHostManager is not null)
-            {
-                var session = conHostManager.GetSession(id);
-                if (session is null)
-                {
-                    return Results.NotFound();
-                }
-                await conHostManager.ResizeSessionAsync(id, request.Cols, request.Rows);
-                return Results.Json(new ResizeResponse
-                {
-                    Accepted = true,
-                    Cols = request.Cols,
-                    Rows = request.Rows
-                }, AppJsonContext.Default.ResizeResponse);
-            }
-            else
-            {
-                var session = directManager!.GetSession(id);
-                if (session is null)
-                {
-                    return Results.NotFound();
-                }
-                var accepted = session.Resize(request.Cols, request.Rows);
-                return Results.Json(new ResizeResponse
-                {
-                    Accepted = accepted,
-                    Cols = session.Cols,
-                    Rows = session.Rows
-                }, AppJsonContext.Default.ResizeResponse);
-            }
-        });
-
-        app.MapGet("/api/sessions/{id}/buffer", async (string id) =>
-        {
-            if (conHostManager is not null)
-            {
-                var session = conHostManager.GetSession(id);
-                if (session is null)
-                {
-                    return Results.NotFound();
-                }
-                var buffer = await conHostManager.GetBufferAsync(id);
-                return Results.Bytes(buffer ?? []);
-            }
-            else
-            {
-                var session = directManager!.GetSession(id);
-                if (session is null)
-                {
-                    return Results.NotFound();
-                }
-                return Results.Text(session.GetBuffer());
-            }
-        });
-
-        app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request) =>
-        {
-            if (conHostManager is not null)
-            {
-                if (!await conHostManager.SetSessionNameAsync(id, request.Name))
-                {
-                    return Results.NotFound();
-                }
-                return Results.Ok();
-            }
-            else
-            {
-                if (!directManager!.RenameSession(id, request.Name))
-                {
-                    return Results.NotFound();
-                }
-                return Results.Ok();
-            }
-        });
     }
 
     private static void MapWebSocketMiddleware(
@@ -730,6 +387,9 @@ public class Program
         MuxConnectionManager? directMuxManager,
         UpdateService updateService)
     {
+        var muxHandler = new MuxWebSocketHandler(conHostManager, directManager, conHostMuxManager, directMuxManager);
+        var stateHandler = new StateWebSocketHandler(conHostManager, directManager, updateService);
+
         app.Use(async (context, next) =>
         {
             if (!context.Request.Path.StartsWithSegments("/ws"))
@@ -748,13 +408,13 @@ public class Program
 
             if (path == "/ws/state")
             {
-                await HandleStateWebSocketAsync(context, conHostManager, directManager, updateService);
+                await stateHandler.HandleAsync(context);
                 return;
             }
 
             if (path == "/ws/mux")
             {
-                await HandleMuxWebSocketAsync(context, conHostManager, directManager, conHostMuxManager, directMuxManager);
+                await muxHandler.HandleAsync(context);
                 return;
             }
 
@@ -783,253 +443,6 @@ public class Program
         }
     }
 
-    private static async Task HandleMuxWebSocketAsync(
-        HttpContext context,
-        ConHostSessionManager? conHostManager,
-        SessionManager? directManager,
-        ConHostMuxConnectionManager? conHostMuxManager,
-        MuxConnectionManager? directMuxManager)
-    {
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
-        var clientId = Guid.NewGuid().ToString("N");
-
-        MuxClient client;
-        if (conHostMuxManager is not null)
-        {
-            client = conHostMuxManager.AddClient(clientId, ws);
-        }
-        else
-        {
-            client = directMuxManager!.AddClient(clientId, ws);
-        }
-
-        try
-        {
-            var initFrame = new byte[MuxProtocol.HeaderSize + 32];
-            initFrame[0] = 0xFF;
-            Encoding.ASCII.GetBytes(clientId.AsSpan(0, 8), initFrame.AsSpan(1, 8));
-            Encoding.UTF8.GetBytes(clientId, initFrame.AsSpan(MuxProtocol.HeaderSize));
-            await client.SendAsync(initFrame);
-
-            // Send initial buffer for existing sessions (with current dimensions)
-            if (conHostManager is not null)
-            {
-                var sessions = conHostManager.GetAllSessions();
-                foreach (var sessionInfo in sessions)
-                {
-                    var buffer = await conHostManager.GetBufferAsync(sessionInfo.Id);
-                    if (buffer is not null && buffer.Length > 0)
-                    {
-                        var frame = MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, buffer);
-                        await client.SendAsync(frame);
-                    }
-                }
-            }
-            else
-            {
-                foreach (var session in directManager!.Sessions)
-                {
-                    var buffer = session.GetBuffer();
-                    if (!string.IsNullOrEmpty(buffer))
-                    {
-                        var bufferBytes = Encoding.UTF8.GetBytes(buffer);
-                        var frame = MuxProtocol.CreateOutputFrame(session.Id, session.Cols, session.Rows, bufferBytes);
-                        await client.SendAsync(frame);
-                    }
-                }
-            }
-
-            var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
-
-            while (ws.State == WebSocketState.Open)
-            {
-                WebSocketReceiveResult result;
-                try
-                {
-                    result = await ws.ReceiveAsync(receiveBuffer, CancellationToken.None);
-                }
-                catch (WebSocketException)
-                {
-                    break;
-                }
-
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    break;
-                }
-
-                if (result.MessageType == WebSocketMessageType.Binary && result.Count >= MuxProtocol.HeaderSize)
-                {
-                    if (MuxProtocol.TryParseFrame(receiveBuffer.AsSpan(0, result.Count), out var type, out var sessionId, out var payload))
-                    {
-                        switch (type)
-                        {
-                            case MuxProtocol.TypeTerminalInput:
-                                if (payload.Length < 20)
-                                {
-                                    DebugLog($"[WS-INPUT] {sessionId}: {BitConverter.ToString(payload.ToArray())}");
-                                }
-                                if (conHostMuxManager is not null)
-                                {
-                                    await conHostMuxManager.HandleInputAsync(sessionId, new ReadOnlyMemory<byte>(payload.ToArray()));
-                                }
-                                else
-                                {
-                                    await directMuxManager!.HandleInputAsync(sessionId, payload.ToArray());
-                                }
-                                break;
-
-                            case MuxProtocol.TypeResize:
-                                var (cols, rows) = MuxProtocol.ParseResizePayload(payload);
-                                if (conHostMuxManager is not null)
-                                {
-                                    await conHostMuxManager.HandleResizeAsync(sessionId, cols, rows);
-                                }
-                                else
-                                {
-                                    directMuxManager!.HandleResize(sessionId, cols, rows);
-                                }
-                                break;
-                        }
-                    }
-                }
-            }
-        }
-        finally
-        {
-            if (conHostMuxManager is not null)
-            {
-                conHostMuxManager.RemoveClient(clientId);
-            }
-            else
-            {
-                directMuxManager!.RemoveClient(clientId);
-            }
-
-            if (ws.State == WebSocketState.Open)
-            {
-                try
-                {
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-                }
-                catch
-                {
-                }
-            }
-        }
-    }
-
-    private static async Task HandleStateWebSocketAsync(
-        HttpContext context,
-        ConHostSessionManager? conHostManager,
-        SessionManager? directManager,
-        UpdateService updateService)
-    {
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
-        var sendLock = new SemaphoreSlim(1, 1);
-        UpdateInfo? lastUpdate = null;
-
-        async Task SendStateAsync()
-        {
-            if (ws.State != WebSocketState.Open)
-            {
-                return;
-            }
-
-            await sendLock.WaitAsync();
-            try
-            {
-                if (ws.State != WebSocketState.Open)
-                {
-                    return;
-                }
-
-                var sessionList = conHostManager?.GetSessionList() ?? directManager!.GetSessionList();
-                var state = new StateUpdate
-                {
-                    Sessions = sessionList,
-                    Update = lastUpdate
-                };
-                var json = JsonSerializer.Serialize(state, AppJsonContext.Default.StateUpdate);
-                var bytes = Encoding.UTF8.GetBytes(json);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
-            }
-            catch
-            {
-            }
-            finally
-            {
-                sendLock.Release();
-            }
-        }
-
-        void OnStateChange() => _ = SendStateAsync();
-
-        void OnUpdateAvailable(UpdateInfo update)
-        {
-            lastUpdate = update;
-            _ = SendStateAsync();
-        }
-
-        string sessionListenerId;
-        if (conHostManager is not null)
-        {
-            sessionListenerId = conHostManager.AddStateListener(OnStateChange);
-        }
-        else
-        {
-            sessionListenerId = directManager!.AddStateListener(OnStateChange);
-        }
-        var updateListenerId = updateService.AddUpdateListener(OnUpdateAvailable);
-
-        try
-        {
-            lastUpdate = updateService.LatestUpdate;
-            await SendStateAsync();
-
-            var buffer = new byte[1024];
-            while (ws.State == WebSocketState.Open)
-            {
-                try
-                {
-                    var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
-                    if (result.MessageType == WebSocketMessageType.Close)
-                    {
-                        break;
-                    }
-                }
-                catch
-                {
-                    break;
-                }
-            }
-        }
-        finally
-        {
-            if (conHostManager is not null)
-            {
-                conHostManager.RemoveStateListener(sessionListenerId);
-            }
-            else
-            {
-                directManager!.RemoveStateListener(sessionListenerId);
-            }
-            updateService.RemoveUpdateListener(updateListenerId);
-            sendLock.Dispose();
-
-            if (ws.State == WebSocketState.Open)
-            {
-                try
-                {
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-                }
-                catch
-                {
-                }
-            }
-        }
-    }
-
     private static void PrintWelcomeBanner(int port, string bindAddress, SettingsService settingsService, string version, string modeDescription)
     {
         var settings = settingsService.Load();
@@ -1045,7 +458,6 @@ public class Program
         Console.Write(@"   by Johannes Schmidt - https://github.com/AiTlbx");
         Console.ForegroundColor = ConsoleColor.White;
         Console.WriteLine(@"     |___/");
-
 
         Console.ResetColor();
         Console.WriteLine();
@@ -1084,27 +496,5 @@ public class Program
         }
 
         Console.WriteLine();
-    }
-
-    private static int CompareVersions(string v1, string v2)
-    {
-        var v1Clean = v1.Split('+')[0];
-        var v2Clean = v2.Split('+')[0];
-
-        var v1Parts = v1Clean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
-        var v2Parts = v2Clean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
-
-        for (var i = 0; i < Math.Max(v1Parts.Length, v2Parts.Length); i++)
-        {
-            var p1 = i < v1Parts.Length ? v1Parts[i] : 0;
-            var p2 = i < v2Parts.Length ? v2Parts[i] : 0;
-
-            if (p1 != p2)
-            {
-                return p1 - p2;
-            }
-        }
-
-        return 0;
     }
 }

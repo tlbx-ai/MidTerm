@@ -297,32 +297,31 @@ public sealed class UpdateService : IDisposable
         }
     }
 
-    private static bool IsNewerVersion(string latest, string current)
+    public static int CompareVersions(string v1, string v2)
     {
-        // Strip +metadata suffix (e.g., "2.0.1+githash" -> "2.0.1")
-        var latestClean = latest.Split('+')[0];
-        var currentClean = current.Split('+')[0];
+        var v1Clean = v1.Split('+')[0];
+        var v2Clean = v2.Split('+')[0];
 
-        var latestParts = latestClean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
-        var currentParts = currentClean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        var v1Parts = v1Clean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        var v2Parts = v2Clean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
 
-        for (int i = 0; i < Math.Max(latestParts.Length, currentParts.Length); i++)
+        for (var i = 0; i < Math.Max(v1Parts.Length, v2Parts.Length); i++)
         {
-            var l = i < latestParts.Length ? latestParts[i] : 0;
-            var c = i < currentParts.Length ? currentParts[i] : 0;
+            var p1 = i < v1Parts.Length ? v1Parts[i] : 0;
+            var p2 = i < v2Parts.Length ? v2Parts[i] : 0;
 
-            if (l > c)
+            if (p1 != p2)
             {
-                return true;
-            }
-
-            if (l < c)
-            {
-                return false;
+                return p1 - p2;
             }
         }
 
-        return false;
+        return 0;
+    }
+
+    private static bool IsNewerVersion(string latest, string current)
+    {
+        return CompareVersions(latest, current) > 0;
     }
 
     private static string GetAssetNameForPlatform()

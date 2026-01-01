@@ -555,6 +555,10 @@ html, body {
         padding-bottom: calc(16px + env(safe-area-inset-bottom, 0));
     }
 
+    .settings-container {
+        margin: 0;
+    }
+
     .settings-container h2 {
         font-size: 20px;
     }

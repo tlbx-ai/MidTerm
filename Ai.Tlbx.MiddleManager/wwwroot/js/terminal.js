@@ -1282,6 +1282,7 @@
     function openSettings() {
         settingsOpen = true;
         if (settingsBtn) settingsBtn.classList.add('active');
+        closeSidebar();
 
         // Hide active terminal
         if (activeSessionId) {
@@ -1318,26 +1319,27 @@
         Promise.all([
             fetch('/api/settings').then(function(r) { return r.json(); }),
             fetch('/api/users').then(function(r) { return r.json(); }).catch(function() { return []; }),
-            fetch('/api/version/details').then(function(r) { return r.json(); }).catch(function() { return null; })
+            fetch('/api/version').then(function(r) { return r.text(); }).catch(function() { return null; })
         ])
         .then(function(results) {
             var settings = results[0];
             var users = results[1];
-            var versionDetails = results[2];
+            var version = results[2];
             currentSettings = settings;
             populateUserDropdown(users, settings.runAsUser);
             populateSettingsForm(settings);
-            populateVersionInfo(versionDetails);
+            populateVersionInfo(version);
         })
         .catch(function(e) {
             console.error('Error fetching settings:', e);
         });
     }
 
-    function populateVersionInfo(details) {
+    function populateVersionInfo(version) {
         var webEl = document.getElementById('version-web');
-        if (webEl) {
-            webEl.textContent = details?.web || '-';
+        if (webEl && version) {
+            var shortVersion = version.split(/[+-]/)[0].split('.').slice(0, 3).join('.');
+            webEl.textContent = 'v' + shortVersion;
         }
     }
 
