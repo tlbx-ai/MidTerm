@@ -37,14 +37,14 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Publish Web Server (mm)
-        run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} --no-incremental /p:IsPublishing=true
+        run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
 
       - name: Publish PTY Host (mm-host)
-        run: dotnet publish ${{ env.HOST_PROJECT }} -c Release -r ${{ matrix.rid }} --no-incremental /p:IsPublishing=true
+        run: dotnet publish ${{ env.HOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
 
       - name: Publish ConHost (mm-con-host) - Windows only
         if: matrix.rid == 'win-x64'
-        run: dotnet publish ${{ env.CONHOST_PROJECT }} -c Release -r ${{ matrix.rid }} --no-incremental /p:IsPublishing=true
+        run: dotnet publish ${{ env.CONHOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
 
       - name: Create staging directory
         shell: bash
