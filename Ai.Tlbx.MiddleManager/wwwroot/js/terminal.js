@@ -542,18 +542,23 @@
                     var frameRows = payload[2] | (payload[3] << 8);
                     var terminalData = payload.slice(4);
 
+                    // Validate dimensions are within sane bounds (1-500)
+                    var validDims = frameCols > 0 && frameCols <= 500 && frameRows > 0 && frameRows <= 500;
+
                     // Ensure terminal matches frame dimensions before writing
-                    if (frameCols > 0 && frameRows > 0) {
+                    if (validDims && state.terminal._core && state.terminal._core._renderService) {
                         var currentCols = state.terminal.cols;
                         var currentRows = state.terminal.rows;
 
                         if (currentCols !== frameCols || currentRows !== frameRows) {
-                            // Resize terminal to match frame dimensions
-                            state.terminal.resize(frameCols, frameRows);
-                            state.serverCols = frameCols;
-                            state.serverRows = frameRows;
-                            // Apply scaling if terminal doesn't fit viewport
-                            applyTerminalScaling(sessionId, state);
+                            try {
+                                state.terminal.resize(frameCols, frameRows);
+                                state.serverCols = frameCols;
+                                state.serverRows = frameRows;
+                                applyTerminalScaling(sessionId, state);
+                            } catch (e) {
+                                console.warn('Terminal resize deferred:', e.message);
+                            }
                         }
                     }
 
