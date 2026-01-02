@@ -265,7 +265,7 @@ public class Program
             bool? conHostCompatible = null;
 
 #if WINDOWS
-            if (isConHostMode)
+            if (isConHostMode && OperatingSystem.IsWindows())
             {
                 conHostVersion = ConHostSpawner.GetConHostVersion();
                 var manifest = updateService.InstalledManifest;
