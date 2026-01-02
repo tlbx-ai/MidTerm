@@ -85,7 +85,6 @@ coverage*.info
 .claude/
 nul
 
-# TypeScript build output
-Ai.Tlbx.MiddleManager/wwwroot/js/terminal.min.js
+# TypeScript build output (terminal.min.js is committed for AOT embedding)
 Ai.Tlbx.MiddleManager/wwwroot/js/terminal.min.js.map
 Ai.Tlbx.MiddleManager/dist/

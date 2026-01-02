@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>4.2.0</Version>
+    <Version>4.2.1</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
@@ -42,7 +42,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="wwwroot\**\*" LinkBase="wwwroot" />
+    <!-- Static wwwroot files (terminal.min.js is committed, .map is gitignored) -->
+    <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\js\terminal.min.js.map" LinkBase="wwwroot" />
     <UpToDateCheckInput Include="wwwroot\**\*" />
   </ItemGroup>
 
