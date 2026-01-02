@@ -78,6 +78,13 @@ import {
 } from './state';
 import { bindClick, escapeHtml } from './utils';
 
+// Debug export for console access
+(window as any).mmDebug = {
+  get terminals() { return sessionTerminals; },
+  get activeId() { return activeSessionId; },
+  get settings() { return currentSettings; }
+};
+
 // =============================================================================
 // Initialization
 // =============================================================================
