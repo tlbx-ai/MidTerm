@@ -5,25 +5,25 @@ namespace Ai.Tlbx.MiddleManager.Services;
 
 public sealed class MuxClient : IAsyncDisposable
 {
-    private const int MaxQueueSize = 500;
-    private const int ResyncThreshold = 400;
+    private const int ResyncThreshold = 200;
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<byte[]> _outputQueue;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _outputProcessor;
+    private volatile bool _needsResync;
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
-    public bool NeedsResync { get; private set; }
+    public bool NeedsResync => _needsResync;
 
     public MuxClient(string id, WebSocket webSocket)
     {
         Id = id;
         WebSocket = webSocket;
-        _outputQueue = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(MaxQueueSize)
+        // Unbounded channel - we control backpressure manually via resync
+        _outputQueue = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = false
         });
@@ -32,22 +32,31 @@ public sealed class MuxClient : IAsyncDisposable
 
     public void QueueOutput(byte[] frame)
     {
-        if (_cts.IsCancellationRequested) return;
+        if (_cts.IsCancellationRequested || _needsResync) return;
 
         // Check if queue is backing up - trigger resync if needed
-        if (_outputQueue.Reader.Count >= ResyncThreshold && !NeedsResync)
+        var count = _outputQueue.Reader.Count;
+        if (count >= ResyncThreshold)
         {
-            NeedsResync = true;
-            DebugLogger.Log($"[MuxClient] {Id}: Queue backing up ({_outputQueue.Reader.Count}), will resync");
+            _needsResync = true;
+            DebugLogger.Log($"[MuxClient] {Id}: Queue backed up ({count} frames), triggering resync");
+            // Don't write this frame - client will get full buffer on resync
+            return;
         }
 
-        // Non-blocking write - drops oldest if full
         _outputQueue.Writer.TryWrite(frame);
+    }
+
+    public void PrepareForResync()
+    {
+        // Drain the queue - we're about to send fresh buffer content
+        while (_outputQueue.Reader.TryRead(out _)) { }
+        DebugLogger.Log($"[MuxClient] {Id}: Queue cleared for resync");
     }
 
     public void ClearResyncFlag()
     {
-        NeedsResync = false;
+        _needsResync = false;
     }
 
     private async Task ProcessOutputQueueAsync(CancellationToken ct)
