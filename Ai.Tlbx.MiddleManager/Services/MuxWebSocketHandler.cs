@@ -50,7 +50,7 @@ public sealed class MuxWebSocketHandler
         initFrame[0] = 0xFF;
         Encoding.ASCII.GetBytes(clientId.AsSpan(0, 8), initFrame.AsSpan(1, 8));
         Encoding.UTF8.GetBytes(clientId, initFrame.AsSpan(MuxProtocol.HeaderSize));
-        await client.SendAsync(initFrame);
+        await client.TrySendAsync(initFrame);
     }
 
     private async Task SendInitialBuffersAsync(MuxClient client)
@@ -60,11 +60,18 @@ public sealed class MuxWebSocketHandler
             var sessions = _conHostManager.GetAllSessions();
             foreach (var sessionInfo in sessions)
             {
-                var buffer = await _conHostManager.GetBufferAsync(sessionInfo.Id);
-                if (buffer is not null && buffer.Length > 0)
+                try
                 {
-                    var frame = MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, buffer);
-                    await client.SendAsync(frame);
+                    var buffer = await _conHostManager.GetBufferAsync(sessionInfo.Id);
+                    if (buffer is not null && buffer.Length > 0)
+                    {
+                        var frame = MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, buffer);
+                        await client.TrySendAsync(frame);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.Log($"[MuxHandler] Failed to get buffer for {sessionInfo.Id}: {ex.Message}");
                 }
             }
         }
@@ -77,7 +84,7 @@ public sealed class MuxWebSocketHandler
                 {
                     var bufferBytes = Encoding.UTF8.GetBytes(buffer);
                     var frame = MuxProtocol.CreateOutputFrame(session.Id, session.Cols, session.Rows, bufferBytes);
-                    await client.SendAsync(frame);
+                    await client.TrySendAsync(frame);
                 }
             }
         }
@@ -89,23 +96,10 @@ public sealed class MuxWebSocketHandler
 
         while (ws.State == WebSocketState.Open)
         {
-            // Check if client needs resync (frames were dropped due to slow connection)
-            if (client.NeedsResync)
-            {
-                await client.PerformResyncAsync(SendResyncBuffersAsync);
-            }
-
             WebSocketReceiveResult result;
             try
             {
-                // Timeout allows periodic resync check even if no input from client
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                result = await ws.ReceiveAsync(receiveBuffer, cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Timeout - loop back to check resync
-                continue;
+                result = await ws.ReceiveAsync(receiveBuffer, CancellationToken.None);
             }
             catch (WebSocketException)
             {
@@ -121,17 +115,35 @@ public sealed class MuxWebSocketHandler
             {
                 await ProcessFrameAsync(new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count));
             }
+
+            // After processing input, check if resync needed (frames were dropped)
+            if (client.CheckAndResetDroppedFrames())
+            {
+                await PerformResyncAsync(client);
+            }
         }
     }
 
-    private async Task SendResyncBuffersAsync(MuxClient client)
+    private async Task PerformResyncAsync(MuxClient client)
     {
-        // Send clear screen first so client resets terminal state
-        var clearFrame = MuxProtocol.CreateClearScreenFrame();
-        await client.SendAsync(clearFrame);
+        try
+        {
+            DebugLogger.Log($"[MuxHandler] {client.Id}: Performing resync");
 
-        // Then send fresh buffer for each session
-        await SendInitialBuffersAsync(client);
+            // Send clear screen command
+            var clearFrame = MuxProtocol.CreateClearScreenFrame();
+            await client.TrySendAsync(clearFrame);
+
+            // Send fresh buffers
+            await SendInitialBuffersAsync(client);
+
+            DebugLogger.Log($"[MuxHandler] {client.Id}: Resync complete");
+        }
+        catch (Exception ex)
+        {
+            DebugLogger.Log($"[MuxHandler] {client.Id}: Resync failed: {ex.Message}");
+            // Don't rethrow - keep the connection alive
+        }
     }
 
     private async Task ProcessFrameAsync(ReadOnlyMemory<byte> data)

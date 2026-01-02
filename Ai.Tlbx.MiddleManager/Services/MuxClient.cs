@@ -9,15 +9,12 @@ public sealed class MuxClient : IAsyncDisposable
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<byte[]> _outputQueue;
-    private readonly Channel<byte[]> _pendingQueue; // Frames arriving during resync
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _outputProcessor;
-    private volatile bool _needsResync;
-    private volatile bool _isResyncing;
+    private int _droppedFrameCount;
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
-    public bool NeedsResync => _needsResync;
 
     public MuxClient(string id, WebSocket webSocket)
     {
@@ -29,11 +26,6 @@ public sealed class MuxClient : IAsyncDisposable
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest
         });
-        _pendingQueue = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false
-        });
         _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
     }
 
@@ -42,52 +34,28 @@ public sealed class MuxClient : IAsyncDisposable
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
 
-        // During resync, queue to pending (will be sent after buffer)
-        if (_isResyncing)
-        {
-            _pendingQueue.Writer.TryWrite(frame);
-            return;
-        }
-
-        // Check if queue is full - if so, we're about to drop frames
+        // Track if we're dropping frames (queue full)
         var queueCount = _outputQueue.Reader.Count;
-        if (queueCount >= MaxQueuedFrames - 1 && !_needsResync)
+        if (queueCount >= MaxQueuedFrames - 1)
         {
-            _needsResync = true;
-            DebugLogger.Log($"[MuxClient] {Id}: Queue full ({queueCount}), flagged for resync");
+            var newCount = Interlocked.Increment(ref _droppedFrameCount);
+            if (newCount == 1)
+            {
+                DebugLogger.Log($"[MuxClient] {Id}: Queue full, dropping old frames");
+            }
         }
 
         _outputQueue.Writer.TryWrite(frame);
     }
 
-    public async Task PerformResyncAsync(Func<MuxClient, Task> sendBuffersAsync)
+    /// <summary>
+    /// Check if frames were dropped and a resync is needed.
+    /// Returns true if resync should happen, and resets the counter.
+    /// </summary>
+    public bool CheckAndResetDroppedFrames()
     {
-        _isResyncing = true;
-        DebugLogger.Log($"[MuxClient] {Id}: Starting resync");
-
-        // Drain main queue (these frames are incomplete/corrupted due to drops)
-        var discarded = 0;
-        while (_outputQueue.Reader.TryRead(out _)) discarded++;
-        DebugLogger.Log($"[MuxClient] {Id}: Discarded {discarded} stale frames");
-
-        // Send fresh buffer content (complete, consistent state)
-        await sendBuffersAsync(this).ConfigureAwait(false);
-
-        // Send any frames that arrived during resync (these are NEW, after buffer snapshot)
-        var pending = 0;
-        while (_pendingQueue.Reader.TryRead(out var frame))
-        {
-            await SendFrameAsync(frame).ConfigureAwait(false);
-            pending++;
-        }
-        if (pending > 0)
-        {
-            DebugLogger.Log($"[MuxClient] {Id}: Sent {pending} pending frames");
-        }
-
-        _needsResync = false;
-        _isResyncing = false;
-        DebugLogger.Log($"[MuxClient] {Id}: Resync complete");
+        var count = Interlocked.Exchange(ref _droppedFrameCount, 0);
+        return count > 0;
     }
 
     private async Task ProcessOutputQueueAsync(CancellationToken ct)
@@ -96,16 +64,22 @@ public sealed class MuxClient : IAsyncDisposable
         {
             await foreach (var frame in _outputQueue.Reader.ReadAllAsync(ct))
             {
-                // Skip sending if we need resync (frames are corrupted anyway)
-                if (_needsResync) continue;
-
                 if (WebSocket.State != WebSocketState.Open)
                 {
+                    // Connection closed, drain and exit
                     while (_outputQueue.Reader.TryRead(out _)) { }
                     break;
                 }
 
-                await SendFrameAsync(frame).ConfigureAwait(false);
+                try
+                {
+                    await SendFrameAsync(frame).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.Log($"[MuxClient] {Id}: Send error: {ex.Message}");
+                    // Continue trying to send other frames
+                }
             }
         }
         catch (OperationCanceledException)
@@ -127,25 +101,30 @@ public sealed class MuxClient : IAsyncDisposable
                 await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
-        {
-            DebugLogger.Log($"[MuxClient] {Id}: Send failed: {ex.Message}");
-        }
         finally
         {
             _sendLock.Release();
         }
     }
 
-    public async Task SendAsync(byte[] data)
+    public async Task<bool> TrySendAsync(byte[] data)
     {
+        if (WebSocket.State != WebSocketState.Open) return false;
+
         await _sendLock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (WebSocket.State == WebSocketState.Open)
             {
                 await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
+                return true;
             }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            DebugLogger.Log($"[MuxClient] {Id}: TrySend failed: {ex.Message}");
+            return false;
         }
         finally
         {
@@ -157,7 +136,6 @@ public sealed class MuxClient : IAsyncDisposable
     {
         _cts.Cancel();
         _outputQueue.Writer.Complete();
-        _pendingQueue.Writer.Complete();
 
         try
         {

@@ -44,7 +44,7 @@ public static class Log
 
 public static class Program
 {
-    public const string Version = "3.4.3";
+    public const string Version = "3.4.4";
 
     public static async Task<int> Main(string[] args)
     {
