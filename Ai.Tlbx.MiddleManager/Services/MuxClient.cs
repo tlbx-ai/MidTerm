@@ -5,10 +5,13 @@ namespace Ai.Tlbx.MiddleManager.Services;
 
 public sealed class MuxClient : IAsyncDisposable
 {
+    private const int MaxQueuedFrames = 1000; // Drop frames beyond this to prevent memory growth
+
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<byte[]> _outputQueue;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _outputProcessor;
+    private volatile bool _droppingFrames;
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
@@ -17,10 +20,11 @@ public sealed class MuxClient : IAsyncDisposable
     {
         Id = id;
         WebSocket = webSocket;
-        _outputQueue = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions
+        _outputQueue = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(MaxQueuedFrames)
         {
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropOldest
         });
         _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
     }
@@ -30,7 +34,20 @@ public sealed class MuxClient : IAsyncDisposable
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
 
+        // Log once when we start dropping frames (queue full)
+        var wasFull = _outputQueue.Reader.Count >= MaxQueuedFrames - 1;
         _outputQueue.Writer.TryWrite(frame);
+
+        if (wasFull && !_droppingFrames)
+        {
+            _droppingFrames = true;
+            DebugLogger.Log($"[MuxClient] {Id}: Queue full, dropping old frames (slow connection)");
+        }
+        else if (!wasFull && _droppingFrames)
+        {
+            _droppingFrames = false;
+            DebugLogger.Log($"[MuxClient] {Id}: Queue recovered");
+        }
     }
 
     private async Task ProcessOutputQueueAsync(CancellationToken ct)
