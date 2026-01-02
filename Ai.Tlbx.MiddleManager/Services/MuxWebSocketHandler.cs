@@ -86,27 +86,13 @@ public sealed class MuxWebSocketHandler
     private async Task ProcessMessagesAsync(WebSocket ws, string clientId, MuxClient client)
     {
         var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
-        using var cts = new CancellationTokenSource();
 
         while (ws.State == WebSocketState.Open)
         {
-            // Check if client needs resync (queue backed up due to slow connection)
-            if (client.NeedsResync)
-            {
-                await client.PerformResyncAsync(SendInitialBuffersAsync);
-            }
-
             WebSocketReceiveResult result;
             try
             {
-                // Use timeout to periodically check resync flag
-                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                result = await ws.ReceiveAsync(receiveBuffer, timeoutCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Timeout - loop back to check resync flag
-                continue;
+                result = await ws.ReceiveAsync(receiveBuffer, CancellationToken.None);
             }
             catch (WebSocketException)
             {
