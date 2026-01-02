@@ -37,7 +37,8 @@ import {
   closeSidebar,
   collapseSidebar,
   expandSidebar,
-  restoreSidebarState
+  restoreSidebarState,
+  setupSidebarResize
 } from './modules/sidebar';
 import {
   openSettings,
@@ -71,7 +72,8 @@ import {
   dom,
   setActiveSessionId,
   setFontsReadyPromise,
-  newlyCreatedSessions
+  newlyCreatedSessions,
+  pendingSessions
 } from './state';
 import { bindClick, escapeHtml } from './utils';
 
@@ -86,6 +88,7 @@ document.addEventListener('DOMContentLoaded', init);
 function init(): void {
   cacheDOMElements();
   restoreSidebarState();
+  setupSidebarResize();
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
@@ -196,6 +199,20 @@ function createSession(): void {
     }
   }
 
+  // Optimistic UI: add temporary session with spinner
+  const tempId = 'pending-' + Date.now();
+  const tempSession = {
+    id: tempId,
+    name: null,
+    shellType: 'Loading...',
+    cols: cols,
+    rows: rows
+  };
+  sessions.push(tempSession);
+  pendingSessions.add(tempId);
+  renderSessionList();
+  closeSidebar();
+
   fetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -203,11 +220,25 @@ function createSession(): void {
   })
     .then((r) => r.json())
     .then((session) => {
+      // Remove temporary session
+      pendingSessions.delete(tempId);
+      const idx = sessions.findIndex((s) => s.id === tempId);
+      if (idx >= 0) {
+        sessions.splice(idx, 1);
+      }
+
       newlyCreatedSessions.add(session.id);
       selectSession(session.id);
-      closeSidebar();
     })
     .catch((e) => {
+      // Remove temporary session on error
+      pendingSessions.delete(tempId);
+      const idx = sessions.findIndex((s) => s.id === tempId);
+      if (idx >= 0) {
+        sessions.splice(idx, 1);
+        renderSessionList();
+        updateEmptyState();
+      }
       console.error('Error creating session:', e);
     });
 }
@@ -249,6 +280,28 @@ function selectSession(sessionId: string): void {
 }
 
 function deleteSession(sessionId: string): void {
+  // Optimistic UI: remove session immediately for better UX
+  destroyTerminalForSession(sessionId);
+
+  // Remove from local sessions array
+  const idx = sessions.findIndex((s) => s.id === sessionId);
+  if (idx >= 0) {
+    sessions.splice(idx, 1);
+  }
+
+  // If this was the active session, select another
+  if (activeSessionId === sessionId) {
+    setActiveSessionId(null);
+    if (sessions.length > 0) {
+      selectSession(sessions[0].id);
+    }
+  }
+
+  renderSessionList();
+  updateEmptyState();
+  updateMobileTitle();
+
+  // Send delete request to server
   fetch('/api/sessions/' + sessionId, { method: 'DELETE' }).catch((e) => {
     console.error('Error deleting session:', e);
   });

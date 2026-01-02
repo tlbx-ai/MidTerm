@@ -22,7 +22,10 @@ import { getSessionDisplayName } from './sessionList';
 // =============================================================================
 
 const SIDEBAR_COLLAPSED_COOKIE = 'mm-sidebar-collapsed';
+const SIDEBAR_WIDTH_COOKIE = 'mm-sidebar-width';
 const DESKTOP_BREAKPOINT = 768;
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 400;
 
 // =============================================================================
 // Mobile Sidebar Toggle
@@ -92,4 +95,64 @@ export function restoreSidebarState(): void {
     setSidebarCollapsed(true);
     if (dom.app) dom.app.classList.add('sidebar-collapsed');
   }
+
+  // Restore sidebar width
+  const savedWidth = getCookie(SIDEBAR_WIDTH_COOKIE);
+  if (savedWidth) {
+    const width = parseInt(savedWidth, 10);
+    if (width >= MIN_SIDEBAR_WIDTH && width <= MAX_SIDEBAR_WIDTH) {
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.style.width = width + 'px';
+      }
+    }
+  }
+}
+
+// =============================================================================
+// Sidebar Resize
+// =============================================================================
+
+/**
+ * Set up sidebar resize grip functionality
+ */
+export function setupSidebarResize(): void {
+  const grip = document.getElementById('sidebar-resize-grip');
+  const sidebar = document.getElementById('sidebar');
+  if (!grip || !sidebar) return;
+
+  let isResizing = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  grip.addEventListener('mousedown', (e: MouseEvent) => {
+    isResizing = true;
+    startX = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    grip.classList.add('active');
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e: MouseEvent) => {
+    if (!isResizing) return;
+
+    const delta = e.clientX - startX;
+    const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + delta));
+    sidebar.style.width = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+
+    isResizing = false;
+    grip.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    // Save width to cookie
+    const currentWidth = sidebar.offsetWidth;
+    setCookie(SIDEBAR_WIDTH_COOKIE, String(currentWidth));
+  });
 }

@@ -84,6 +84,9 @@ export const sessionTerminals = new Map<string, TerminalState>();
 /** Sessions created in this browser session (use WebSocket buffering) */
 export const newlyCreatedSessions = new Set<string>();
 
+/** Pending sessions being created (for optimistic UI) */
+export const pendingSessions = new Set<string>();
+
 /** Buffer WebSocket output frames for terminals not yet opened */
 export const pendingOutputFrames = new Map<string, Uint8Array[]>();
 

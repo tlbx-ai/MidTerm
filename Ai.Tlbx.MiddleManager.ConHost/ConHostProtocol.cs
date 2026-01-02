@@ -12,7 +12,7 @@ namespace Ai.Tlbx.MiddleManager.ConHost;
 public static class ConHostProtocol
 {
     public const int HeaderSize = 5;
-    public const int MaxPayloadSize = 64 * 1024;
+    public const int MaxPayloadSize = 1024 * 1024;
 
     public static byte[] CreateInfoRequest()
     {

@@ -311,7 +311,6 @@ public static class Program
     private static async Task ProcessMessagesAsync(TerminalSession session, NamedPipeServerStream pipe, CancellationToken ct, Action? onHandshakeComplete = null)
     {
         var headerBuffer = new byte[ConHostProtocol.HeaderSize];
-        var payloadBuffer = new byte[ConHostProtocol.MaxPayloadSize];
 
         while (!ct.IsCancellationRequested && pipe.IsConnected)
         {
@@ -337,15 +336,11 @@ public static class Program
                 break;
             }
 
-            // Read payload
+            // Read payload - allocate dynamically based on actual size
+            byte[] payloadBuffer = [];
             if (payloadLength > 0)
             {
-                if (payloadLength > ConHostProtocol.MaxPayloadSize)
-                {
-                    Log($"Payload too large: {payloadLength}");
-                    break;
-                }
-
+                payloadBuffer = new byte[payloadLength];
                 var totalRead = 0;
                 while (totalRead < payloadLength)
                 {

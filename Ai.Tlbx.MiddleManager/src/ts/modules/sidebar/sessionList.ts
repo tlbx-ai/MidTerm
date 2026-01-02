@@ -10,6 +10,7 @@ import {
   sessions,
   activeSessionId,
   settingsOpen,
+  pendingSessions,
   dom
 } from '../../state';
 
@@ -63,19 +64,30 @@ export function renderSessionList(): void {
   dom.sessionList.innerHTML = '';
 
   sessions.forEach((session) => {
+    const isPending = pendingSessions.has(session.id);
     const item = document.createElement('div');
-    item.className = 'session-item' + (session.id === activeSessionId ? ' active' : '');
+    item.className = 'session-item' +
+      (session.id === activeSessionId ? ' active' : '') +
+      (isPending ? ' pending' : '');
     item.dataset.sessionId = session.id;
 
-    item.addEventListener('click', () => {
-      if (callbacks) {
-        callbacks.onSelect(session.id);
-        callbacks.onCloseSidebar();
-      }
-    });
+    if (!isPending) {
+      item.addEventListener('click', () => {
+        if (callbacks) {
+          callbacks.onSelect(session.id);
+          callbacks.onCloseSidebar();
+        }
+      });
+    }
 
     const info = document.createElement('div');
     info.className = 'session-info';
+
+    if (isPending) {
+      const spinner = document.createElement('span');
+      spinner.className = 'session-spinner';
+      info.appendChild(spinner);
+    }
 
     const title = document.createElement('span');
     title.className = 'session-title';
@@ -86,50 +98,54 @@ export function renderSessionList(): void {
     const actions = document.createElement('div');
     actions.className = 'session-actions';
 
-    const resizeBtn = document.createElement('button');
-    resizeBtn.className = 'session-resize';
-    resizeBtn.innerHTML = '⤢';
-    resizeBtn.title = 'Fit to screen';
-    resizeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (callbacks) {
-        callbacks.onResize(session.id);
-      }
-    });
+    if (!isPending) {
+      const resizeBtn = document.createElement('button');
+      resizeBtn.className = 'session-resize';
+      resizeBtn.innerHTML = '⤢';
+      resizeBtn.title = 'Fit to screen';
+      resizeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (callbacks) {
+          callbacks.onResize(session.id);
+        }
+      });
 
-    const renameBtn = document.createElement('button');
-    renameBtn.className = 'session-rename';
-    renameBtn.innerHTML = '✏️';
-    renameBtn.title = 'Rename session';
-    renameBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (callbacks) {
-        callbacks.onRename(session.id);
-      }
-    });
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'session-rename';
+      renameBtn.innerHTML = '✏️';
+      renameBtn.title = 'Rename session';
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (callbacks) {
+          callbacks.onRename(session.id);
+        }
+      });
 
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'session-close';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.title = 'Close session';
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (callbacks) {
-        callbacks.onDelete(session.id);
-      }
-    });
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'session-close';
+      closeBtn.innerHTML = '&times;';
+      closeBtn.title = 'Close session';
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (callbacks) {
+          callbacks.onDelete(session.id);
+        }
+      });
 
-    actions.appendChild(resizeBtn);
-    actions.appendChild(renameBtn);
-    actions.appendChild(closeBtn);
+      actions.appendChild(resizeBtn);
+      actions.appendChild(renameBtn);
+      actions.appendChild(closeBtn);
+    }
 
     item.appendChild(info);
     item.appendChild(actions);
     dom.sessionList.appendChild(item);
   });
 
+  // Count only non-pending sessions
+  const realSessionCount = sessions.filter((s) => !pendingSessions.has(s.id)).length;
   if (dom.sessionCount) {
-    dom.sessionCount.textContent = String(sessions.length);
+    dom.sessionCount.textContent = String(realSessionCount);
   }
 }
 

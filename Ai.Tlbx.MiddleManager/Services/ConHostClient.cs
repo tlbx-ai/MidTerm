@@ -308,7 +308,6 @@ public sealed class ConHostClient : IAsyncDisposable
     private async Task ReadLoopWithReconnectAsync(CancellationToken ct)
     {
         var headerBuffer = new byte[ConHostProtocol.HeaderSize];
-        var payloadBuffer = new byte[ConHostProtocol.MaxPayloadSize];
 
         while (!ct.IsCancellationRequested && !_disposed)
         {
@@ -356,17 +355,11 @@ public sealed class ConHostClient : IAsyncDisposable
                     break;
                 }
 
-                // Read payload
+                // Read payload - allocate dynamically based on actual size
+                byte[] payloadBuffer = [];
                 if (payloadLength > 0)
                 {
-                    if (payloadLength > ConHostProtocol.MaxPayloadSize)
-                    {
-                        Log($"Payload too large: {payloadLength}, header bytes: {BitConverter.ToString(headerBuffer)}, msgType: 0x{(byte)msgType:X2}");
-                        // Protocol desync'd - can't recover without reconnecting
-                        HandleDisconnect();
-                        break;
-                    }
-
+                    payloadBuffer = new byte[payloadLength];
                     var totalRead = 0;
                     while (totalRead < payloadLength)
                     {
