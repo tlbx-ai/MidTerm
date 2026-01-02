@@ -5,8 +5,9 @@ namespace Ai.Tlbx.MiddleManager.Services;
 
 public sealed class MuxClient : IAsyncDisposable
 {
-    private const int FrameCountThreshold = 100;
-    private const int TimeThresholdMs = 5000; // 5 seconds behind = resync
+    private const int FrameCountThreshold = 100;      // Hard limit: resync if this many frames queued
+    private const int TimeCheckMinFrames = 20;        // Only check time if at least this many frames
+    private const int TimeThresholdMs = 5000;         // 5 seconds behind with 20+ frames = resync
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<byte[]> _outputQueue;
@@ -65,9 +66,14 @@ public sealed class MuxClient : IAsyncDisposable
             Interlocked.Exchange(ref _queueStartTicks, now);
         }
 
-        // Check thresholds: frame count OR time behind
+        // Check thresholds:
+        // - Hard limit: 100+ frames queued
+        // - Soft limit: 20+ frames AND oldest is 5+ seconds old
         var queueAge = now - Interlocked.Read(ref _queueStartTicks);
-        if (count >= FrameCountThreshold || (count > 0 && queueAge > TimeThresholdMs))
+        var hardLimit = count >= FrameCountThreshold;
+        var softLimit = count >= TimeCheckMinFrames && queueAge > TimeThresholdMs;
+
+        if (hardLimit || softLimit)
         {
             _needsResync = true;
             DebugLogger.Log($"[MuxClient] {Id}: Queue backed up ({count} frames, {queueAge}ms old), will resync");
