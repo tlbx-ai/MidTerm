@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>4.2.1</Version>
+    <Version>4.2.2</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
@@ -82,19 +82,15 @@
     <TypeScriptOutFile>wwwroot\js\terminal.min.js</TypeScriptOutFile>
   </PropertyGroup>
 
-  <!-- Debug build: with source map -->
+  <!-- Debug build: with source map (always runs - esbuild is fast, ensures freshness) -->
   <Target Name="CompileTypeScriptDebug" BeforeTargets="Build;Publish"
-          Condition="'$(Configuration)' == 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')"
-          Inputs="$(TypeScriptSourceDir)\**\*.ts"
-          Outputs="$(TypeScriptOutFile)">
+          Condition="'$(Configuration)' == 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')">
     <Exec Command="esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" />
   </Target>
 
-  <!-- Release build: no source map, smallest size -->
+  <!-- Release build: no source map, smallest size (always runs - esbuild is fast, ensures freshness) -->
   <Target Name="CompileTypeScriptRelease" BeforeTargets="Build;Publish"
-          Condition="'$(Configuration)' != 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')"
-          Inputs="$(TypeScriptSourceDir)\**\*.ts"
-          Outputs="$(TypeScriptOutFile)">
+          Condition="'$(Configuration)' != 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')">
     <Exec Command="esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --outfile=$(TypeScriptOutFile) --target=es2020" />
   </Target>
 
