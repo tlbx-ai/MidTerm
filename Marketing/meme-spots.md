@@ -10,7 +10,7 @@
 
 - **Boyfriend (you):** Dev trying to check on their Claude Code session
 - **Girlfriend (angry):** SSH tunnel that corporate firewall killed
-- **Other woman:** MiddleManager running on port 2000
+- **Other woman:** MidTerm running on port 2000
 
 **Caption:** "When HTTP just works and SSH doesn't"
 
@@ -25,9 +25,9 @@
 - **Button 1:** "Pay $50/month for cloud terminal"
 - **Button 2:** "Put my API keys on someone else's server"
 - **Sweating guy:** Every dev running AI coding agents
-- **Punchline text below:** "MiddleManager: Run locally, access anywhere"
+- **Punchline text below:** "MidTerm: Run locally, access anywhere"
 
-**Hook:** Cloud terminals force this choice. MiddleManager doesn't.
+**Hook:** Cloud terminals force this choice. MidTerm doesn't.
 
 ---
 
@@ -90,9 +90,9 @@
 - **Small brain:** Sitting at desk watching terminal
 - **Normal brain:** SSH tunnel (blocks at hotels)
 - **Glowing brain:** Cloud terminal ($50/month, their servers)
-- **Galaxy brain:** MiddleManager (your machine, any browser)
+- **Galaxy brain:** MidTerm (your machine, any browser)
 
-**Hook:** Each "solution" has tradeoffs until MiddleManager.
+**Hook:** Each "solution" has tradeoffs until MidTerm.
 
 ---
 
@@ -131,7 +131,7 @@
 - **Kalm (stays kalm):** Opens browser, types localhost:2000, enters password
 - **Context:** What was a crisis is now a non-event
 
-**Hook:** The emotional journey from anxiety to "oh right, I have MiddleManager."
+**Hook:** The emotional journey from anxiety to "oh right, I have MidTerm."
 
 ---
 

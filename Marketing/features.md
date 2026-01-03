@@ -1,4 +1,4 @@
-# MiddleManager Features
+# MidTerm Features
 
 Current feature set as of v2.4.x.
 
@@ -76,7 +76,7 @@ Current feature set as of v2.4.x.
 4. **Remote development** — Access your dev machine from anywhere
 5. **Headless servers** — Terminal access without SSH (via Tailscale/Cloudflare Tunnel)
 
-## What MiddleManager Is NOT
+## What MidTerm Is NOT
 
 - Not a cloud service (runs on YOUR machine)
 - Not a replacement for SSH (complementary, works where SSH can't)
@@ -85,7 +85,7 @@ Current feature set as of v2.4.x.
 
 ## Competitive Landscape
 
-| Alternative | Downside MiddleManager solves |
+| Alternative | Downside MidTerm solves |
 |-------------|-------------------------------|
 | tmux + SSH | SSH blocked by many networks |
 | ttyd | No auth, no multi-session, not cross-platform |

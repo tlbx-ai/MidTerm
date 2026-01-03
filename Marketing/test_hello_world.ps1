@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== MiddleManager Marketing - AI Generation Test ===" -ForegroundColor Cyan
+Write-Host "=== MidTerm Marketing - AI Generation Test ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Check environment variables

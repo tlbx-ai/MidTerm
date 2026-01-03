@@ -86,5 +86,5 @@ coverage*.info
 nul
 
 # TypeScript build output (terminal.min.js is committed for AOT embedding)
-Ai.Tlbx.MiddleManager/wwwroot/js/terminal.min.js.map
-Ai.Tlbx.MiddleManager/dist/
+Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js.map
+Ai.Tlbx.MidTerm/dist/

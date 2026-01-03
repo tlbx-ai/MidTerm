@@ -1,6 +1,6 @@
 # Quick local deploy - run as admin
 $ErrorActionPreference = "Stop"
-$repoRoot = "Q:\repos\MiddleManager"
+$repoRoot = "Q:\repos\MidTerm"
 
 # Bump patch version
 Write-Host "Bumping version..." -ForegroundColor Yellow

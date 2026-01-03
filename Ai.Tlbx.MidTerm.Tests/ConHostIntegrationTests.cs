@@ -459,7 +459,7 @@ public class ConHostIntegrationTests : IAsyncLifetime
         {
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Ai.Tlbx.MidTerm.TtyHost", "bin", "Debug", "net10.0", "win-x64", "mmttyhost.exe"),
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Ai.Tlbx.MidTerm.TtyHost", "bin", "Release", "net10.0", "win-x64", "mmttyhost.exe"),
-            @"C:\Program Files\MiddleManager\mmttyhost.exe",
+            @"C:\Program Files\MidTerm\mthost.exe",
         };
 
         foreach (var path in candidates)
