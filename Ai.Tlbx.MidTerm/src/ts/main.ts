@@ -17,7 +17,6 @@ import {
 import {
   createTerminalForSession,
   destroyTerminalForSession,
-  applySettingsToTerminals,
   refreshActiveTerminalBuffer,
   preloadTerminalFont,
   registerTerminalCallbacks,
@@ -44,7 +43,6 @@ import {
   setupSidebarResize
 } from './modules/sidebar';
 import {
-  openSettings,
   closeSettings,
   toggleSettings,
   checkSystemHealth,
@@ -70,8 +68,6 @@ import {
   settingsOpen,
   stateWsConnected,
   muxWsConnected,
-  stateReconnectDelay,
-  muxReconnectDelay,
   dom,
   setActiveSessionId,
   setFontsReadyPromise,

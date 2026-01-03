@@ -7,7 +7,6 @@
 
 import {
   sidebarOpen,
-  sidebarCollapsed,
   setSidebarOpen,
   setSidebarCollapsed,
   sessions,

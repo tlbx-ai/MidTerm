@@ -13,7 +13,7 @@ let passwordModalHasPassword = false;
 /**
  * Show the password modal for setting or changing password
  */
-export function showPasswordModal(isInitialSetup: boolean): void {
+export function showPasswordModal(_isInitialSetup: boolean): void {
   const modal = document.getElementById('password-modal');
   const title = document.getElementById('password-modal-title');
   const currentGroup = document.getElementById('current-password-group');

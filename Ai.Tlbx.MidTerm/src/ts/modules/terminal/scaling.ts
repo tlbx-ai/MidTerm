@@ -135,7 +135,7 @@ export function fitSessionToScreen(sessionId: string): void {
  * Scales down terminals that are larger than the available space.
  * Uses CSS zoom instead of transform:scale for better pixel alignment.
  */
-export function applyTerminalScaling(sessionId: string, state: TerminalState): void {
+export function applyTerminalScaling(_sessionId: string, state: TerminalState): void {
   const container = state.container;
   const xterm = container.querySelector('.xterm') as HTMLElement | null;
   if (!xterm) return;

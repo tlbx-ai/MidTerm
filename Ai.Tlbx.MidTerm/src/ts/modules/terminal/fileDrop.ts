@@ -8,7 +8,6 @@
 import { activeSessionId } from '../../state';
 
 // Forward declarations for callbacks
-let sendInput: (sessionId: string, data: string) => void = () => {};
 let pasteToTerminal: (sessionId: string, data: string) => void = () => {};
 
 /**
@@ -18,7 +17,6 @@ export function registerFileDropCallbacks(callbacks: {
   sendInput?: (sessionId: string, data: string) => void;
   pasteToTerminal?: (sessionId: string, data: string) => void;
 }): void {
-  if (callbacks.sendInput) sendInput = callbacks.sendInput;
   if (callbacks.pasteToTerminal) pasteToTerminal = callbacks.pasteToTerminal;
 }
 
@@ -67,32 +65,6 @@ async function handleFileDrop(files: FileList): Promise<void> {
     // Use terminal.paste() which handles bracketed paste mode automatically
     pasteToTerminal(activeSessionId, paths.join(' '));
   }
-}
-
-/**
- * Handle clipboard image paste - convert to file and upload
- */
-async function handleClipboardImage(items: DataTransferItemList): Promise<boolean> {
-  if (!activeSessionId) return false;
-
-  for (const item of Array.from(items)) {
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile();
-      if (file) {
-        // Always use .jpg extension - TUIs are smart enough to detect actual format
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const namedFile = new File([file], `clipboard_${timestamp}.jpg`, { type: file.type });
-
-        const path = await uploadFile(activeSessionId, namedFile);
-        if (path) {
-          pasteToTerminal(activeSessionId, path);
-          return true;
-        }
-      }
-    }
-  }
-
-  return false;
 }
 
 /**
