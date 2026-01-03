@@ -173,8 +173,9 @@ export function encodeSessionId(buffer: Uint8Array, offset: number, sessionId: s
 export function decodeSessionId(buffer: Uint8Array, offset: number): string {
   const chars: string[] = [];
   for (let i = 0; i < 8; i++) {
-    if (buffer[offset + i] !== 0) {
-      chars.push(String.fromCharCode(buffer[offset + i]));
+    const byte = buffer[offset + i];
+    if (byte !== undefined && byte !== 0) {
+      chars.push(String.fromCharCode(byte));
     }
   }
   return chars.join('');

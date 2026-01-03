@@ -19,8 +19,8 @@ export interface OutputFrame {
  * Frame format: [cols:2][rows:2][data]
  */
 export function parseOutputFrame(payload: Uint8Array): OutputFrame {
-  const cols = payload[0] | (payload[1] << 8);
-  const rows = payload[2] | (payload[3] << 8);
+  const cols = (payload[0] ?? 0) | ((payload[1] ?? 0) << 8);
+  const rows = (payload[2] ?? 0) | ((payload[3] ?? 0) << 8);
   const data = payload.slice(4);
   const valid = cols > 0 && cols <= MAX_FRAME_DIMENSION && rows > 0 && rows <= MAX_FRAME_DIMENSION;
 

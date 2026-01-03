@@ -139,15 +139,17 @@ export function handleStateUpdate(newSessions: Session[]): void {
   updateEmptyState();
 
   // Auto-select first session if none active
-  if (!activeSessionId && sessions.length > 0) {
-    selectSession(sessions[0].id);
+  const firstSession = sessions[0];
+  if (!activeSessionId && firstSession) {
+    selectSession(firstSession.id);
   }
 
   // Handle active session being deleted
   if (activeSessionId && !sessions.find(s => s.id === activeSessionId)) {
     setActiveSessionId(null);
-    if (sessions.length > 0) {
-      selectSession(sessions[0].id);
+    const nextSession = sessions[0];
+    if (nextSession) {
+      selectSession(nextSession.id);
     }
   }
 

@@ -48,7 +48,7 @@ export function getElementChecked(id: string): boolean {
 export function populateVersionInfo(version: string | null): void {
   const webEl = document.getElementById('version-web');
   if (webEl && version) {
-    const shortVersion = version.split(/[+-]/)[0].split('.').slice(0, 3).join('.');
+    const shortVersion = (version.split(/[+-]/)[0] ?? version).split('.').slice(0, 3).join('.');
     webEl.textContent = 'v' + shortVersion;
   }
 }

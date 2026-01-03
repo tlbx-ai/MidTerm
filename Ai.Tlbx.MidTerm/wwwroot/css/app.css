@@ -111,22 +111,22 @@ html, body {
 .sidebar-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     padding: 10px 12px;
     border-bottom: 1px solid var(--border-color);
-    gap: 8px;
 }
 
 .sidebar-brand {
+    flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    gap: 4px;
     min-width: 0;
 }
 
 .sidebar-logo {
-    width: 24px;
-    height: 24px;
+    height: 32px;
+    width: auto;
     flex-shrink: 0;
 }
 

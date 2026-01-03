@@ -312,8 +312,9 @@ function deleteSession(sessionId: string): void {
   // If this was the active session, select another
   if (activeSessionId === sessionId) {
     setActiveSessionId(null);
-    if (sessions.length > 0) {
-      selectSession(sessions[0].id);
+    const firstSession = sessions[0];
+    if (firstSession) {
+      selectSession(firstSession.id);
     }
   }
 
@@ -440,7 +441,7 @@ function fetchVersion(): void {
   fetch('/api/version')
     .then((r) => r.text())
     .then((v) => {
-      const shortVersion = v.split(/[+-]/)[0].split('.').slice(0, 3).join('.');
+      const shortVersion = (v.split(/[+-]/)[0] ?? v).split('.').slice(0, 3).join('.');
       const el = document.getElementById('app-version');
       if (el) el.textContent = 'v' + shortVersion;
     })
