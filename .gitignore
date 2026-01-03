@@ -85,6 +85,11 @@ coverage*.info
 .claude/
 nul
 
-# TypeScript build output (terminal.min.js is committed for AOT embedding)
-Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js.map
+# TypeScript build output
 Ai.Tlbx.MidTerm/dist/
+
+# Node.js
+node_modules/
+
+# Marketing generated output
+Marketing/output/
