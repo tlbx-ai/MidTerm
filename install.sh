@@ -25,6 +25,8 @@ INSTALLING_USER="${INSTALLING_USER:-}"
 INSTALLING_UID="${INSTALLING_UID:-}"
 INSTALLING_GID="${INSTALLING_GID:-}"
 PASSWORD_HASH="${PASSWORD_HASH:-}"
+PORT="${PORT:-2000}"
+BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 
 print_header() {
     echo ""
@@ -176,6 +178,47 @@ prompt_password() {
     exit 1
 }
 
+prompt_network_config() {
+    echo ""
+    echo -e "  ${CYAN}Network Configuration:${NC}"
+    echo ""
+
+    # Port configuration
+    read -p "  Port number [2000]: " port_input
+    if [ -z "$port_input" ]; then
+        PORT=2000
+    elif [[ "$port_input" =~ ^[0-9]+$ ]] && [ "$port_input" -ge 1 ] && [ "$port_input" -le 65535 ]; then
+        PORT="$port_input"
+    else
+        echo -e "  ${YELLOW}Invalid port, using default 2000${NC}"
+        PORT=2000
+    fi
+
+    echo ""
+    echo -e "  ${CYAN}Network binding:${NC}"
+    echo -e "  ${CYAN}[1] Accept connections from anywhere${NC} (default)"
+    echo -e "      ${GRAY}- Access from other devices on your network${NC}"
+    echo -e "      ${GRAY}- Required for remote access${NC}"
+    echo ""
+    echo -e "  ${CYAN}[2] Localhost only${NC}"
+    echo -e "      ${GRAY}- Only accessible from this computer${NC}"
+    echo -e "      ${GREEN}- More secure, no network exposure${NC}"
+    echo ""
+
+    read -p "  Your choice [1/2]: " bind_choice
+
+    if [ "$bind_choice" = "2" ]; then
+        BIND_ADDRESS="127.0.0.1"
+        echo -e "  ${GRAY}Binding to localhost only${NC}"
+    else
+        BIND_ADDRESS="0.0.0.0"
+        echo ""
+        echo -e "  ${YELLOW}Security Warning:${NC}"
+        echo -e "  ${YELLOW}MidTerm will accept connections from any device on your network.${NC}"
+        echo -e "  ${YELLOW}Ensure your password is strong and consider firewall rules.${NC}"
+    fi
+}
+
 write_service_settings() {
     local config_dir="/usr/local/etc/MidTerm"
     local settings_path="$config_dir/settings.json"
@@ -214,6 +257,12 @@ EOF
 
     chmod 644 "$settings_path"
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
+    echo -e "  ${GRAY}Port: $PORT${NC}"
+    if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
+        echo -e "  ${GRAY}Binding: localhost only${NC}"
+    else
+        echo -e "  ${GRAY}Binding: all interfaces${NC}"
+    fi
 }
 
 install_binary() {
@@ -264,6 +313,8 @@ install_as_service() {
                   INSTALLING_UID="$INSTALLING_UID" \
                   INSTALLING_GID="$INSTALLING_GID" \
                   PASSWORD_HASH="$PASSWORD_HASH" \
+                  PORT="$PORT" \
+                  BIND_ADDRESS="$BIND_ADDRESS" \
                   "$0" --service
     fi
 
@@ -290,7 +341,7 @@ install_as_service() {
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
     echo -e "  ${GRAY}Location: $install_dir/mt${NC}"
-    echo -e "  ${CYAN}URL:      http://localhost:2000${NC}"
+    echo -e "  ${CYAN}URL:      http://localhost:$PORT${NC}"
     echo ""
 }
 
@@ -326,6 +377,10 @@ install_launchd() {
     <key>ProgramArguments</key>
     <array>
         <string>${install_dir}/mt</string>
+        <string>--port</string>
+        <string>${PORT}</string>
+        <string>--bind</string>
+        <string>${BIND_ADDRESS}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -376,7 +431,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${install_dir}/mt
+ExecStart=${install_dir}/mt --port ${PORT} --bind ${BIND_ADDRESS}
 Restart=always
 RestartSec=5
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
@@ -416,7 +471,7 @@ install_as_user() {
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
     echo -e "  ${GRAY}Location: $install_dir/mt${NC}"
-    echo -e "  ${YELLOW}Run 'mm' to start MidTerm${NC}"
+    echo -e "  ${YELLOW}Run 'mt' to start MidTerm${NC}"
     echo ""
 }
 
@@ -518,6 +573,9 @@ if [ "$SERVICE_MODE" = true ]; then
         # New install - prompt for password
         prompt_password
     fi
+
+    # Prompt for network configuration
+    prompt_network_config
 
     install_as_service
 else
