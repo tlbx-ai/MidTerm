@@ -426,11 +426,11 @@ export function applySettingsToTerminals(): void {
 export function fetchAndWriteBuffer(sessionId: string, terminal: any): void {
   fetch('/api/sessions/' + sessionId + '/buffer')
     .then((response) => {
-      return response.ok ? response.text() : '';
+      return response.ok ? response.arrayBuffer() : null;
     })
     .then((buffer) => {
-      if (buffer) {
-        terminal.write(buffer);
+      if (buffer && buffer.byteLength > 0) {
+        terminal.write(new Uint8Array(buffer));
       }
     })
     .catch((e) => {
