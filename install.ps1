@@ -299,6 +299,29 @@ function Install-MidTerm
     Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
     Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
 
+    # Hash pending password now that mt.exe is installed
+    if ($PasswordHash -and $PasswordHash.StartsWith("__PENDING__:"))
+    {
+        $plainPassword = $PasswordHash.Substring(12)
+        try
+        {
+            $hash = & $destWebBinary --hash-password $plainPassword 2>&1
+            if ($hash -match '^\$PBKDF2\$')
+            {
+                $PasswordHash = $hash
+                Write-Host "  Password: hashed" -ForegroundColor Gray
+            }
+            else
+            {
+                Write-Host "  Warning: Password hashing failed, using fallback" -ForegroundColor Yellow
+            }
+        }
+        catch
+        {
+            Write-Host "  Warning: Could not hash password: $_" -ForegroundColor Yellow
+        }
+    }
+
     if ($AsService)
     {
         # Write settings with runAsUser info and password

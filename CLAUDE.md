@@ -197,9 +197,12 @@ export function createTerminal(sessionId: string, session: Session): TerminalSta
 .\release.ps1 -Bump patch -Message "Fix bug"
 .\release.ps1 -Bump minor -Message "Add feature"
 .\release.ps1 -Bump major -Message "Breaking change"
+
+# Add -PtyBreaking when mthost changes are included (terminals restart on update)
+.\release.ps1 -Bump patch -Message "Fix PTY issue" -PtyBreaking
 ```
 
-The script bumps version in all csproj files and version.json, commits, tags, and pushes. GitHub Actions builds releases for all platforms.
+Without `-PtyBreaking`, only the web version is bumped (terminals survive the update). With `-PtyBreaking`, both web and pty versions are bumped together.
 
 ## Install System
 
