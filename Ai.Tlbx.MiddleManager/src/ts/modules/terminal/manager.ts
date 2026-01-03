@@ -344,6 +344,13 @@ export function setupTerminalEvents(
     return true;
   });
 
+  // Prevent browser paste event - we handle it ourselves via handleClipboardPaste
+  // This prevents xterm.js from also handling paste via onData
+  const pasteHandler = (e: ClipboardEvent) => {
+    e.preventDefault();
+  };
+  container.addEventListener('paste', pasteHandler);
+
   // Right-click paste (images uploaded, text pasted)
   const contextMenuHandler = (e: MouseEvent) => {
     if (!currentSettings || currentSettings.rightClickPaste !== false) {

@@ -30,7 +30,7 @@ public abstract class ShellConfigurationBase : IShellConfiguration
                 env[key] = entry.Value?.ToString() ?? string.Empty;
             }
         }
-        env["TERM"] = "xterm-256color";
+        env["TERM"] = OperatingSystem.IsWindows() ? "windows-terminal" : "xterm-256color";
         env["COLORTERM"] = "truecolor";
         env["LANG"] = "en_US.UTF-8";
         env["LC_ALL"] = "en_US.UTF-8";

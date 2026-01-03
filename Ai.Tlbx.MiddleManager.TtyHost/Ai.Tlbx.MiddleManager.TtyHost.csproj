@@ -10,8 +10,8 @@
     <PublishAot>true</PublishAot>
     <SelfContained>true</SelfContained>
 
-    <Version>4.5.4</Version>
-    <FileVersion>4.5.4.0</FileVersion>
+    <Version>4.5.5</Version>
+    <FileVersion>4.5.5.0</FileVersion>
   </PropertyGroup>
 
   <!-- Link common protocol sources -->
