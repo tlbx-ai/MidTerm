@@ -153,8 +153,10 @@ export function createTerminalForSession(
     terminal.open(container);
     state.opened = true;
 
+    // Patch canvas context to round coordinates for pixel-perfect rendering
+    patchCanvasContext(terminal);
+
     // Load WebGL addon for GPU-accelerated rendering (with fallback)
-    // Disabled temporarily to test canvas renderer for box-drawing gaps
     if (currentSettings?.useWebGL !== false) {
       try {
         const webglAddon = new WebglAddon.WebglAddon();
@@ -446,4 +448,70 @@ export function preloadTerminalFont(): Promise<void> {
 
   setFontsReadyPromise(promise);
   return promise;
+}
+
+/**
+ * Patch canvas context to round coordinates for pixel-perfect rendering.
+ * This monkey-patches the canvas 2D context drawing methods to use integer coordinates,
+ * which can help eliminate subpixel rendering artifacts in box-drawing characters.
+ */
+function patchCanvasContext(terminal: any): void {
+  try {
+    // Access xterm.js internals to get all canvas contexts
+    const core = terminal._core;
+    if (!core) return;
+
+    // Get all canvases in the terminal
+    const canvases = terminal.element?.querySelectorAll('canvas');
+    if (!canvases) return;
+
+    canvases.forEach((canvas: HTMLCanvasElement) => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx || (ctx as any)._patchedForPixelPerfect) return;
+
+      // Mark as patched to avoid double-patching
+      (ctx as any)._patchedForPixelPerfect = true;
+
+      // Patch fillRect to round coordinates
+      const origFillRect = ctx.fillRect.bind(ctx);
+      ctx.fillRect = (x: number, y: number, w: number, h: number) => {
+        origFillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+      };
+
+      // Patch strokeRect to round coordinates
+      const origStrokeRect = ctx.strokeRect.bind(ctx);
+      ctx.strokeRect = (x: number, y: number, w: number, h: number) => {
+        origStrokeRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+      };
+
+      // Patch fillText to round coordinates
+      const origFillText = ctx.fillText.bind(ctx);
+      ctx.fillText = (text: string, x: number, y: number, maxWidth?: number) => {
+        if (maxWidth !== undefined) {
+          origFillText(text, Math.round(x), Math.round(y), maxWidth);
+        } else {
+          origFillText(text, Math.round(x), Math.round(y));
+        }
+      };
+
+      // Patch clearRect to round coordinates
+      const origClearRect = ctx.clearRect.bind(ctx);
+      ctx.clearRect = (x: number, y: number, w: number, h: number) => {
+        origClearRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+      };
+
+      // Patch moveTo and lineTo for line drawing
+      const origMoveTo = ctx.moveTo.bind(ctx);
+      ctx.moveTo = (x: number, y: number) => {
+        origMoveTo(Math.round(x) + 0.5, Math.round(y) + 0.5);
+      };
+
+      const origLineTo = ctx.lineTo.bind(ctx);
+      ctx.lineTo = (x: number, y: number) => {
+        origLineTo(Math.round(x) + 0.5, Math.round(y) + 0.5);
+      };
+    });
+  } catch {
+    // Patching failed, continue without it
+  }
 }
