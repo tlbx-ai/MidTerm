@@ -7,6 +7,13 @@
 
 import type { TerminalState } from '../../types';
 import {
+  TERMINAL_PADDING,
+  MIN_TERMINAL_COLS,
+  MIN_TERMINAL_ROWS,
+  MAX_TERMINAL_COLS,
+  MAX_TERMINAL_ROWS
+} from '../../constants';
+import {
   sessionTerminals,
   fontsReadyPromise,
   dom
@@ -27,6 +34,10 @@ export function registerScalingCallbacks(callbacks: {
 /**
  * Fit a session's terminal to the current screen size.
  * This sends a resize request to the server.
+ *
+ * Uses direct measurement of terminalsArea via getBoundingClientRect() rather than
+ * FitAddon's measurement of the terminal container. This avoids timing issues where
+ * clearing zoom/scale causes layout to be in flux when measurements occur.
  */
 export function fitSessionToScreen(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
@@ -54,17 +65,62 @@ export function fitSessionToScreen(sessionId: string): void {
     state.container.classList.remove('hidden');
   }
 
+  // Measure terminalsArea directly - this gives us the actual visible area
+  // regardless of any layout complexities with the terminal container
+  const rect = dom.terminalsArea?.getBoundingClientRect();
+  if (!rect || rect.width < 100 || rect.height < 100) {
+    if (wasHidden) {
+      state.container.classList.add('hidden');
+    }
+    return;
+  }
+
+  // Get cell dimensions from xterm's render service
+  const renderService = state.terminal._core?._renderService;
+  const cellWidth = renderService?.dimensions?.css?.cell?.width;
+  const cellHeight = renderService?.dimensions?.css?.cell?.height;
+
+  if (!cellWidth || !cellHeight) {
+    // Fallback to FitAddon if render service isn't ready
+    requestAnimationFrame(() => {
+      try {
+        const dims = state.fitAddon.proposeDimensions();
+        if (dims?.cols && dims?.rows) {
+          state.fitAddon.fit();
+          sendResize(sessionId, state.terminal);
+        }
+      } catch {
+        // FitAddon may fail if terminal render service isn't initialized
+      }
+
+      if (wasHidden) {
+        state.container.classList.add('hidden');
+      }
+    });
+    return;
+  }
+
+  // Calculate available space (accounting for container padding)
+  const availWidth = rect.width - TERMINAL_PADDING;
+  const availHeight = rect.height - TERMINAL_PADDING;
+
+  // Calculate cols/rows that fit in available space
+  let cols = Math.floor(availWidth / cellWidth);
+  let rows = Math.floor(availHeight / cellHeight);
+
+  // Clamp to valid range
+  cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
+  rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
+
+  // Resize terminal and notify server
   requestAnimationFrame(() => {
     try {
-      // Check if dimensions can be proposed before calling fit()
-      // This avoids errors when terminal internals aren't ready
-      const dims = state.fitAddon.proposeDimensions();
-      if (dims?.cols && dims?.rows) {
-        state.fitAddon.fit();
+      if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
+        state.terminal.resize(cols, rows);
         sendResize(sessionId, state.terminal);
       }
     } catch {
-      // FitAddon may fail if terminal render service isn't initialized
+      // Resize may fail if terminal is disposed
     }
 
     if (wasHidden) {
