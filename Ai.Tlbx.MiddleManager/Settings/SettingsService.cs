@@ -103,6 +103,11 @@ namespace Ai.Tlbx.MiddleManager.Settings
                     var json = File.ReadAllText(_settingsPath);
                     _cached = JsonSerializer.Deserialize(json, SettingsJsonContext.Default.MiddleManagerSettings)
                         ?? new MiddleManagerSettings();
+
+                    // Apply defaults for properties that may be missing from older settings files
+                    // System.Text.Json leaves missing bool properties as false, not their initializer value
+                    ApplyMissingDefaults(_cached, json);
+
                     LoadStatus = SettingsLoadStatus.LoadedFromFile;
 
                     // Check for .old file and migrate user preferences
@@ -130,6 +135,16 @@ namespace Ai.Tlbx.MiddleManager.Settings
                 }
 
                 return _cached;
+            }
+        }
+
+        private static void ApplyMissingDefaults(MiddleManagerSettings settings, string json)
+        {
+            // For boolean properties with non-false defaults, check if they were present in the JSON
+            // If not present, apply the intended default value
+            if (!json.Contains("\"useWebGL\"", StringComparison.OrdinalIgnoreCase))
+            {
+                settings.UseWebGL = true;
             }
         }
 
