@@ -26,6 +26,12 @@ namespace Ai.Tlbx.MiddleManager.Services
         public string? Name { get; private set; }
         public bool ManuallyNamed { get; private set; }
 
+        /// <summary>
+        /// Temp directory for file drops and clipboard uploads. Created on first use.
+        /// </summary>
+        public string TempDirectory => _tempDirectory ??= CreateTempDirectory();
+        private string? _tempDirectory;
+
         public void SetName(string? name, bool isManual = true)
         {
             if (isManual)
@@ -278,6 +284,34 @@ namespace Ai.Tlbx.MiddleManager.Services
             try { _cts.Cancel(); } catch { }
             try { _cts.Dispose(); } catch { }
             try { _connection.Dispose(); } catch { }
+            CleanupTempDirectory();
+        }
+
+        private string CreateTempDirectory()
+        {
+            var tempPath = Path.Combine(Path.GetTempPath(), "mm-drops", Id);
+            Directory.CreateDirectory(tempPath);
+            return tempPath;
+        }
+
+        private void CleanupTempDirectory()
+        {
+            if (_tempDirectory is null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (Directory.Exists(_tempDirectory))
+                {
+                    Directory.Delete(_tempDirectory, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort cleanup - files may be locked
+            }
         }
     }
 }

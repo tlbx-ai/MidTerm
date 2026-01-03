@@ -20,6 +20,7 @@ import {
 } from '../../state';
 import { getClipboardStyle } from '../../utils';
 import { applyTerminalScaling, fitSessionToScreen } from './scaling';
+import { setupFileDrop } from './fileDrop';
 
 declare const Terminal: any;
 declare const FitAddon: any;
@@ -125,6 +126,9 @@ export function createTerminalForSession(
   container.className = 'terminal-container hidden';
   container.id = 'terminal-' + sessionId;
   dom.terminalsArea?.appendChild(container);
+
+  // Set up file drop handler for drag-and-drop uploads
+  setupFileDrop(container);
 
   // Initialize xterm.js
   const terminal = new Terminal(getTerminalOptions());

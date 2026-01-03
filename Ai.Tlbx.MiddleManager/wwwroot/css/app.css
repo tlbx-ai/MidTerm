@@ -417,6 +417,30 @@ html, body {
     display: none;
 }
 
+/* Drag and drop file upload indicator */
+.terminal-container.drag-over {
+    outline: 2px dashed var(--accent-blue);
+    outline-offset: -2px;
+    background-color: rgba(122, 162, 247, 0.1);
+}
+
+.terminal-container.drag-over::after {
+    content: 'Drop file to upload';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 12px 24px;
+    background-color: var(--bg-sidebar);
+    border: 1px solid var(--accent-blue);
+    border-radius: 8px;
+    color: var(--accent-blue);
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 100;
+    pointer-events: none;
+}
+
 /* xterm sizing - natural size based on rows/cols */
 .terminal-container .xterm {
     flex-shrink: 0;

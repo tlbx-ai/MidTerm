@@ -26,7 +26,8 @@ import {
   setupResizeObserver,
   setupVisualViewport,
   registerScalingCallbacks,
-  bindSearchEvents
+  bindSearchEvents,
+  registerFileDropCallbacks
 } from './modules/terminal';
 import {
   renderSessionList,
@@ -144,6 +145,10 @@ function registerCallbacks(): void {
   registerTerminalCallbacks({
     sendInput,
     showBellNotification
+  });
+
+  registerFileDropCallbacks({
+    sendInput
   });
 
   registerScalingCallbacks({

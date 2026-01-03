@@ -14,6 +14,7 @@ public sealed class ConHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, ConHostClient> _clients = new();
     private readonly ConcurrentDictionary<string, SessionInfo> _sessionCache = new();
     private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
+    private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly string? _expectedConHostVersion;
     private readonly string? _minCompatibleVersion;
     private bool _disposed;
@@ -323,6 +324,37 @@ public sealed class ConHostSessionManager : IAsyncDisposable
         return _sessionCache.TryGetValue(sessionId, out var info) ? info : null;
     }
 
+    /// <summary>
+    /// Get or create the temp directory for file uploads for a session.
+    /// </summary>
+    public string GetTempDirectory(string sessionId)
+    {
+        return _tempDirectories.GetOrAdd(sessionId, id =>
+        {
+            var tempPath = Path.Combine(Path.GetTempPath(), "mm-drops", id);
+            Directory.CreateDirectory(tempPath);
+            return tempPath;
+        });
+    }
+
+    private void CleanupTempDirectory(string sessionId)
+    {
+        if (_tempDirectories.TryRemove(sessionId, out var tempPath))
+        {
+            try
+            {
+                if (Directory.Exists(tempPath))
+                {
+                    Directory.Delete(tempPath, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort cleanup - files may be locked
+            }
+        }
+    }
+
     public IReadOnlyList<SessionInfo> GetAllSessions()
     {
         return _sessionCache.Values.ToList();
@@ -357,6 +389,7 @@ public sealed class ConHostSessionManager : IAsyncDisposable
         }
 
         _sessionCache.TryRemove(sessionId, out _);
+        CleanupTempDirectory(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
@@ -495,6 +528,12 @@ public sealed class ConHostSessionManager : IAsyncDisposable
         {
             try { await client.DisposeAsync().ConfigureAwait(false); }
             catch (Exception ex) { DebugLogger.LogException($"ConHostSessionManager.Dispose({client.SessionId})", ex); }
+        }
+
+        // Clean up all temp directories
+        foreach (var sessionId in _tempDirectories.Keys.ToList())
+        {
+            CleanupTempDirectory(sessionId);
         }
 
         _clients.Clear();

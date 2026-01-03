@@ -7,3 +7,4 @@
 export * from './manager';
 export * from './scaling';
 export * from './search';
+export * from './fileDrop';

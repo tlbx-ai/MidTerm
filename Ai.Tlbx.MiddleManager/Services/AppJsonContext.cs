@@ -12,6 +12,7 @@ namespace Ai.Tlbx.MiddleManager.Services;
 [JsonSerializable(typeof(RenameSessionRequest))]
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]
+[JsonSerializable(typeof(FileUploadResponse))]
 [JsonSerializable(typeof(List<NetworkInterfaceDto>))]
 [JsonSerializable(typeof(ShellInfoDto))]
 [JsonSerializable(typeof(List<ShellInfoDto>))]

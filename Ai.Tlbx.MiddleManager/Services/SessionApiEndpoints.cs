@@ -78,6 +78,46 @@ public static class SessionApiEndpoints
             }
             return Results.Ok();
         });
+
+        app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (file is null || file.Length == 0)
+            {
+                return Results.BadRequest("No file provided");
+            }
+
+            // Sanitize filename to prevent path traversal
+            var fileName = Path.GetFileName(file.FileName);
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+            }
+
+            // Get or create temp directory for this session
+            var tempDir = sessionManager.GetTempDirectory(id);
+
+            // Make filename unique if it already exists
+            var targetPath = Path.Combine(tempDir, fileName);
+            var counter = 1;
+            var baseName = Path.GetFileNameWithoutExtension(fileName);
+            var extension = Path.GetExtension(fileName);
+            while (File.Exists(targetPath))
+            {
+                fileName = $"{baseName}_{counter}{extension}";
+                targetPath = Path.Combine(tempDir, fileName);
+                counter++;
+            }
+
+            await using var stream = File.Create(targetPath);
+            await file.CopyToAsync(stream);
+
+            return Results.Json(new FileUploadResponse { Path = targetPath }, AppJsonContext.Default.FileUploadResponse);
+        }).DisableAntiforgery();
     }
 
     private static SessionInfoDto MapToDto(SessionInfo sessionInfo)
