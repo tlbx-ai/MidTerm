@@ -391,6 +391,11 @@ html, body {
     background: rgba(122, 162, 247, 0.5);
 }
 
+.terminal-container .xterm-screen canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
 /* ============================================================================
    Sidebar Collapse (Desktop only)
    ============================================================================ */
