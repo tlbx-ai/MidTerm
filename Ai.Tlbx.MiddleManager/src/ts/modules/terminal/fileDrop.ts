@@ -61,11 +61,7 @@ async function handleFileDrop(files: FileList): Promise<void> {
   }
 
   if (paths.length > 0) {
-    // Insert paths separated by space, with quotes if path contains spaces
-    const pathString = paths
-      .map(p => p.includes(' ') ? `"${p}"` : p)
-      .join(' ');
-    sendInput(activeSessionId, pathString);
+    sendInput(activeSessionId, paths.join(' '));
   }
 }
 
@@ -85,8 +81,7 @@ async function handleClipboardImage(items: DataTransferItemList): Promise<boolea
 
         const path = await uploadFile(activeSessionId, namedFile);
         if (path) {
-          const pathString = path.includes(' ') ? `"${path}"` : path;
-          sendInput(activeSessionId, pathString);
+          sendInput(activeSessionId, path);
           return true;
         }
       }
@@ -152,8 +147,7 @@ export function setupClipboardImagePaste(sessionId: string, terminal: any): void
 
           const path = await uploadFile(sessionId, file);
           if (path) {
-            const pathString = path.includes(' ') ? `"${path}"` : path;
-            sendInput(sessionId, pathString);
+            sendInput(sessionId, path);
           }
         }
       }

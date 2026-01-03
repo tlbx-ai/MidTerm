@@ -20,7 +20,7 @@ import {
 } from '../../state';
 import { getClipboardStyle } from '../../utils';
 import { applyTerminalScaling, fitSessionToScreen } from './scaling';
-import { setupFileDrop } from './fileDrop';
+import { setupFileDrop, setupClipboardImagePaste } from './fileDrop';
 
 declare const Terminal: any;
 declare const FitAddon: any;
@@ -198,6 +198,7 @@ export function createTerminalForSession(
       fitSessionToScreen(sessionId);
 
       setupTerminalEvents(sessionId, terminal, container);
+      setupClipboardImagePaste(sessionId, terminal);
     });
   });
 
