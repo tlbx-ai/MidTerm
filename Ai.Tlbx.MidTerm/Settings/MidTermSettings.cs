@@ -1,36 +1,37 @@
+using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Common.Shells;
 
 namespace Ai.Tlbx.MidTerm.Settings;
 
 public enum CursorStyleSetting
 {
-    Bar,
-    Block,
-    Underline
+    [JsonStringEnumMemberName("bar")] Bar,
+    [JsonStringEnumMemberName("block")] Block,
+    [JsonStringEnumMemberName("underline")] Underline
 }
 
 public enum ThemeSetting
 {
-    Dark,
-    Light,
-    SolarizedDark,
-    SolarizedLight
+    [JsonStringEnumMemberName("dark")] Dark,
+    [JsonStringEnumMemberName("light")] Light,
+    [JsonStringEnumMemberName("solarizedDark")] SolarizedDark,
+    [JsonStringEnumMemberName("solarizedLight")] SolarizedLight
 }
 
 public enum BellStyleSetting
 {
-    Notification,
-    Sound,
-    Visual,
-    Both,
-    Off
+    [JsonStringEnumMemberName("notification")] Notification,
+    [JsonStringEnumMemberName("sound")] Sound,
+    [JsonStringEnumMemberName("visual")] Visual,
+    [JsonStringEnumMemberName("both")] Both,
+    [JsonStringEnumMemberName("off")] Off
 }
 
 public enum ClipboardShortcutsSetting
 {
-    Auto,
-    Windows,
-    Unix
+    [JsonStringEnumMemberName("auto")] Auto,
+    [JsonStringEnumMemberName("windows")] Windows,
+    [JsonStringEnumMemberName("unix")] Unix
 }
 
 public sealed class MidTermSettings

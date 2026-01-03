@@ -209,7 +209,7 @@ public sealed class UpdateService : IDisposable
 
         try
         {
-            var tempDir = Path.Combine(Path.GetTempPath(), $"mm-update-{Guid.NewGuid():N}");
+            var tempDir = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}");
             Directory.CreateDirectory(tempDir);
 
             var assetName = _latestUpdate?.AssetName ?? GetAssetNameForPlatform();
@@ -328,18 +328,18 @@ public sealed class UpdateService : IDisposable
     {
         if (OperatingSystem.IsWindows())
         {
-            return "mm-win-x64.zip";
+            return "mt-win-x64.zip";
         }
 
         if (OperatingSystem.IsMacOS())
         {
             return System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
                    System.Runtime.InteropServices.Architecture.Arm64
-                ? "mm-osx-arm64.tar.gz"
-                : "mm-osx-x64.tar.gz";
+                ? "mt-osx-arm64.tar.gz"
+                : "mt-osx-x64.tar.gz";
         }
 
-        return "mm-linux-x64.tar.gz";
+        return "mt-linux-x64.tar.gz";
     }
 
     public static string GetCurrentBinaryPath()
