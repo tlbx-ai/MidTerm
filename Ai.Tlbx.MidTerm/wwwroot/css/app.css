@@ -87,7 +87,7 @@ html, body {
     min-width: 180px;
     max-width: 400px;
     background-color: var(--bg-sidebar);
-    border-right: 1px solid var(--border-color);
+    border-right: 1px solid var(--bg-sidebar);
     display: flex;
     flex-direction: column;
     position: relative;
@@ -111,8 +111,9 @@ html, body {
 .sidebar-header {
     display: flex;
     align-items: center;
-    padding: 10px 12px;
+    padding: 6px 12px;
     border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-primary);
 }
 
 .sidebar-brand {
@@ -326,6 +327,7 @@ html, body {
     border-top: 1px solid var(--border-color);
     font-size: 11px;
     color: var(--text-muted);
+    background-color: var(--bg-primary);
 }
 
 .sidebar-footer .footer-row {
