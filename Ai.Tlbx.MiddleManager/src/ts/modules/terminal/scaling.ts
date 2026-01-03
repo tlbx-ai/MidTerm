@@ -44,6 +44,7 @@ export function fitSessionToScreen(sessionId: string): void {
   // Clear any existing scaling first
   const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
   if (xterm) {
+    (xterm.style as any).zoom = '';
     xterm.style.transform = '';
     state.container.classList.remove('scaled');
   }
@@ -67,6 +68,7 @@ export function fitSessionToScreen(sessionId: string): void {
 /**
  * Apply CSS scaling to a terminal to fit within its container.
  * Scales down terminals that are larger than the available space.
+ * Uses CSS zoom instead of transform:scale for better pixel alignment.
  */
 export function applyTerminalScaling(sessionId: string, state: TerminalState): void {
   const container = state.container;
@@ -86,10 +88,13 @@ export function applyTerminalScaling(sessionId: string, state: TerminalState): v
     const scale = Math.min(scaleX, scaleY, 1);
 
     if (scale < 0.99) {
-      xterm.style.transformOrigin = 'top left';
-      xterm.style.transform = 'scale(' + scale + ')';
+      // Use zoom instead of transform:scale for better pixel alignment
+      // zoom respects pixel boundaries, transform can cause subpixel rendering
+      (xterm.style as any).zoom = scale;
+      xterm.style.transform = '';
       container.classList.add('scaled');
     } else {
+      (xterm.style as any).zoom = '';
       xterm.style.transform = '';
       container.classList.remove('scaled');
     }
