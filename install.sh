@@ -4,6 +4,17 @@
 
 set -e
 
+# When piped to bash, $0 is "bash" not the script path.
+# Save script to temp file and re-exec so sudo re-exec works.
+SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH" == "/usr/bin/bash" ]]; then
+    TEMP_SCRIPT=$(mktemp)
+    # Script is being piped - we need to download it to a file
+    curl -fsSL "https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.sh" > "$TEMP_SCRIPT"
+    chmod +x "$TEMP_SCRIPT"
+    exec "$TEMP_SCRIPT" "$@"
+fi
+
 REPO_OWNER="AiTlbx"
 REPO_NAME="MidTerm"
 SERVICE_NAME="MidTerm"
@@ -315,7 +326,7 @@ install_as_service() {
                   PASSWORD_HASH="$PASSWORD_HASH" \
                   PORT="$PORT" \
                   BIND_ADDRESS="$BIND_ADDRESS" \
-                  "$0" --service
+                  "$SCRIPT_PATH" --service
     fi
 
     install_binary "$install_dir"
