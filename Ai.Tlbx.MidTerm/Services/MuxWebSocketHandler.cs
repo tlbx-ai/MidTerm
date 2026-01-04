@@ -47,16 +47,28 @@ public sealed class MuxWebSocketHandler
 
     private async Task SendInitialBuffersAsync(MuxClient client)
     {
+        const int ChunkSize = 32 * 1024; // 32KB chunks to avoid memory spikes
         var sessions = _sessionManager.GetAllSessions();
+
         foreach (var sessionInfo in sessions)
         {
             try
             {
                 var buffer = await _sessionManager.GetBufferAsync(sessionInfo.Id);
-                if (buffer is not null && buffer.Length > 0)
+                if (buffer is null || buffer.Length == 0) continue;
+
+                // Chunk large buffers for flow control
+                for (var offset = 0; offset < buffer.Length; offset += ChunkSize)
                 {
-                    var frame = MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, buffer);
-                    await client.TrySendAsync(frame);
+                    var length = Math.Min(ChunkSize, buffer.Length - offset);
+                    var chunk = buffer.AsSpan(offset, length);
+                    var frame = MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk);
+                    if (!await client.TrySendAsync(frame))
+                    {
+                        // Client queue full, stop sending to this client
+                        DebugLogger.Log($"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
+                        return;
+                    }
                 }
             }
             catch (Exception ex)

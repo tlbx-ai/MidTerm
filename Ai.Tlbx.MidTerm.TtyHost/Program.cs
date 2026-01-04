@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.2.6";
+    public const string Version = "5.3.0";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -193,7 +193,9 @@ public static class Program
 
     private static async Task HandleClientAsync(TerminalSession session, IIpcClientConnection client, CancellationToken ct, Action? onSubscribed = null)
     {
+        const int MaxPendingOutputSize = 1_000_000; // 1MB max during handshake
         var pendingOutput = new List<byte[]>();
+        var pendingOutputSize = 0;
         var outputLock = new object();
         var handshakeComplete = false;
         var stream = client.Stream;
@@ -212,12 +214,18 @@ public static class Program
                     {
                         if (!handshakeComplete)
                         {
-                            // Buffer output until handshake completes
-                            if (data.Length < 50)
+                            // Buffer output until handshake completes (bounded)
+                            if (pendingOutputSize < MaxPendingOutputSize)
                             {
-                                DebugLog($"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
+                                if (data.Length < 50)
+                                {
+                                    DebugLog($"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
+                                }
+                                var copy = data.ToArray();
+                                pendingOutput.Add(copy);
+                                pendingOutputSize += copy.Length;
                             }
-                            pendingOutput.Add(data.ToArray());
+                            // else: drop - startup output is less critical than OOM
                             return;
                         }
                     }
@@ -651,7 +659,9 @@ internal sealed class TerminalSession
     private readonly IPtyConnection _pty;
     private readonly StringBuilder _outputBuffer = new();
     private readonly object _bufferLock = new();
-    private const int MaxBufferSize = 100_000;
+    private const int EscapeOverheadFactor = 3; // Conservative: colors, cursor, etc.
+    private readonly int _scrollbackLines;
+    private int _maxBufferSize;
 
     public string Id { get; }
     public ShellType ShellType { get; }
@@ -668,13 +678,22 @@ internal sealed class TerminalSession
     public event Action<ReadOnlyMemory<byte>>? OnOutput;
     public event Action? OnStateChanged;
 
-    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows)
+    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows, int scrollbackLines = 10000)
     {
         Id = id;
         _pty = pty;
         ShellType = shellType;
         Cols = cols;
         Rows = rows;
+        _scrollbackLines = scrollbackLines;
+        RecalculateBufferSize(cols);
+    }
+
+    private void RecalculateBufferSize(int cols)
+    {
+        // Formula: scrollback × cols × escape_overhead
+        // 10000 lines × 300 cols × 3 = 9MB max for wide terminal
+        _maxBufferSize = _scrollbackLines * cols * EscapeOverheadFactor;
     }
 
     public async Task StartReadLoopAsync(CancellationToken ct)
@@ -709,8 +728,10 @@ internal sealed class TerminalSession
                 {
                     Program.DebugLog($"[PTY-READ] {BitConverter.ToString(data.ToArray())}");
                 }
-                AppendToBuffer(data.Span);
-                ParseOscSequences(data.Span);
+                // Decode once, use for both buffer append and OSC parsing
+                var text = Encoding.UTF8.GetString(data.Span);
+                AppendToBuffer(text);
+                ParseOscSequences(text);
                 OnOutput?.Invoke(data);
             }
         }
@@ -737,6 +758,7 @@ internal sealed class TerminalSession
         Cols = cols;
         Rows = rows;
         _pty.Resize(cols, rows);
+        RecalculateBufferSize(cols); // Buffer grows with wider terminals
         OnStateChanged?.Invoke();
     }
 
@@ -777,22 +799,20 @@ internal sealed class TerminalSession
         _pty.Kill();
     }
 
-    private void AppendToBuffer(ReadOnlySpan<byte> data)
+    private void AppendToBuffer(string text)
     {
-        var text = Encoding.UTF8.GetString(data);
         lock (_bufferLock)
         {
             _outputBuffer.Append(text);
-            if (_outputBuffer.Length > MaxBufferSize)
+            if (_outputBuffer.Length > _maxBufferSize)
             {
-                _outputBuffer.Remove(0, _outputBuffer.Length - MaxBufferSize);
+                _outputBuffer.Remove(0, _outputBuffer.Length - _maxBufferSize);
             }
         }
     }
 
-    private void ParseOscSequences(ReadOnlySpan<byte> data)
+    private void ParseOscSequences(string text)
     {
-        var text = Encoding.UTF8.GetString(data);
 
         // Detect bracketed paste mode enable/disable
         if (text.Contains("\x1b[?2004h"))

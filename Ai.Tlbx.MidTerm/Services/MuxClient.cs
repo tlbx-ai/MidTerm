@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class MuxClient : IAsyncDisposable
 {
-    private const int MaxQueuedFrames = 500;
+    private const int MaxQueuedFrames = 100;
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<byte[]> _outputQueue;

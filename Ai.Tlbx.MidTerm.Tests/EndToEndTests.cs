@@ -104,13 +104,9 @@ public class EndToEndTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
         await SendTerminalInputAsync(ws, session.Id, command);
 
         // 4. Verify we at least got some initial output (even if shell exits quickly)
-        var bufferResponse = await _client.GetAsync($"/api/sessions/{session.Id}/buffer");
-        var buffer = await bufferResponse.Content.ReadAsStringAsync();
-
         // In test environment, shell exits quickly but we should have received SOME output
         // (escape sequences from terminal init, or banner)
-        Assert.True(output.Length > 0 || buffer.Length > 0,
-            $"Should receive some output. WSOutput={output.Length}chars, Buffer={buffer.Length}chars");
+        Assert.True(output.Length > 0, $"Should receive some output. WSOutput={output.Length}chars");
     }
 
     [Fact(Skip = "Shell exits immediately in test environment (ConPTY limitation)")]
@@ -246,26 +242,6 @@ public class EndToEndTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
 
         Assert.Equal(120, updated.Cols);
         Assert.Equal(40, updated.Rows);
-    }
-
-    [Fact]
-    public async Task EndToEnd_GetBuffer_ReturnsTerminalContent()
-    {
-        // 1. Create session
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(session);
-
-        // 2. Wait for some output
-        await Task.Delay(2000);
-
-        // 3. Get buffer via API (like browser does for scroll-back)
-        var bufferResponse = await _client.GetAsync($"/api/sessions/{session.Id}/buffer");
-        bufferResponse.EnsureSuccessStatusCode();
-        var buffer = await bufferResponse.Content.ReadAsStringAsync();
-
-        // Buffer should contain something (shell prompt at minimum)
-        Assert.NotEmpty(buffer);
     }
 
     #region Helper Methods

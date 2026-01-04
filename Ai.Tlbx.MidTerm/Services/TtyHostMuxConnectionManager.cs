@@ -11,7 +11,10 @@ public sealed class TtyHostMuxConnectionManager
 {
     private readonly TtyHostSessionManager _sessionManager;
     private readonly ConcurrentDictionary<string, MuxClient> _clients = new();
-    private readonly Channel<(string sessionId, int cols, int rows, byte[] data)> _outputQueue = Channel.CreateUnbounded<(string, int, int, byte[])>();
+    private const int MaxQueuedOutputs = 1000;
+    private readonly Channel<(string sessionId, int cols, int rows, byte[] data)> _outputQueue =
+        Channel.CreateBounded<(string, int, int, byte[])>(
+            new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropOldest });
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
 

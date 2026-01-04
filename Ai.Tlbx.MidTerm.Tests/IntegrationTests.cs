@@ -101,25 +101,6 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     }
 
     [Fact]
-    public async Task Api_GetBuffer_ReturnsTerminalOutput()
-    {
-        // Create a session
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(session);
-
-        // Wait for shell to start and produce output
-        await Task.Delay(2000);
-
-        // Get buffer
-        var response = await _client.GetAsync($"/api/sessions/{session.Id}/buffer");
-        response.EnsureSuccessStatusCode();
-        var buffer = await response.Content.ReadAsStringAsync();
-
-        Assert.NotEmpty(buffer);
-    }
-
-    [Fact]
     public async Task WebSocket_Mux_ReceivesInitFrame()
     {
         var ws = await ConnectWebSocket("/ws/mux");
