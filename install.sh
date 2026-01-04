@@ -276,6 +276,44 @@ EOF
     fi
 }
 
+write_user_settings() {
+    local config_dir="$HOME/.MidTerm"
+    local settings_path="$config_dir/settings.json"
+
+    mkdir -p "$config_dir"
+
+    if [ -n "$PASSWORD_HASH" ]; then
+        cat > "$settings_path" << EOF
+{
+  "authenticationEnabled": true,
+  "passwordHash": "$PASSWORD_HASH"
+}
+EOF
+        echo -e "  ${GRAY}Password: configured${NC}"
+    else
+        cat > "$settings_path" << EOF
+{
+  "authenticationEnabled": true
+}
+EOF
+    fi
+
+    chmod 600 "$settings_path"
+    echo -e "  ${GRAY}Settings: $settings_path${NC}"
+}
+
+get_existing_user_password_hash() {
+    local settings_path="$HOME/.MidTerm/settings.json"
+    if [ -f "$settings_path" ]; then
+        local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
+        if [ -n "$hash" ] && [ ${#hash} -gt 10 ]; then
+            echo "$hash"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 install_binary() {
     local install_dir="$1"
     local temp_dir=$(mktemp -d)
@@ -463,6 +501,9 @@ install_as_user() {
 
     install_binary "$install_dir"
 
+    # Write user settings with password
+    write_user_settings
+
     # Check if ~/.local/bin is in PATH
     if [[ ":$PATH:" != *":$install_dir:"* ]]; then
         echo ""
@@ -590,5 +631,16 @@ if [ "$SERVICE_MODE" = true ]; then
 
     install_as_service
 else
+    # User install - still require password
+    existing_hash=$(get_existing_user_password_hash || true)
+    if [ -n "$existing_hash" ]; then
+        echo ""
+        echo -e "  ${GREEN}Existing password found - preserving...${NC}"
+        PASSWORD_HASH="$existing_hash"
+    else
+        # New install - prompt for password
+        prompt_password
+    fi
+
     install_as_user
 fi

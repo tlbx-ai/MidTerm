@@ -48,6 +48,21 @@ public sealed class AuthService
             return false;
         }
 
+        // Handle pending password from installer (plaintext with prefix)
+        if (storedHash.StartsWith("__PENDING__:"))
+        {
+            var pendingPassword = storedHash["__PENDING__:".Length..];
+            if (password == pendingPassword)
+            {
+                // Convert to proper hash on successful match
+                var settings = _settingsService.Load();
+                settings.PasswordHash = HashPassword(password);
+                _settingsService.Save(settings);
+                return true;
+            }
+            return false;
+        }
+
         var parts = storedHash.Split('$');
         if (parts.Length != 5 || parts[1] != "PBKDF2")
         {

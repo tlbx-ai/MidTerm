@@ -718,5 +718,44 @@ if ($asService)
 }
 else
 {
-    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash ""
+    # User install - still require password
+    $userSettingsDir = Join-Path $env:USERPROFILE ".MidTerm"
+    $userSettingsPath = Join-Path $userSettingsDir "settings.json"
+
+    # Check for existing password
+    $existingHash = $null
+    if (Test-Path $userSettingsPath)
+    {
+        try
+        {
+            $settings = Get-Content $userSettingsPath -Raw | ConvertFrom-Json
+            if ($settings.passwordHash -and $settings.passwordHash.Length -gt 10)
+            {
+                $existingHash = $settings.passwordHash
+            }
+        }
+        catch { }
+    }
+
+    if ($existingHash)
+    {
+        Write-Host ""
+        Write-Host "  Existing password found - preserving..." -ForegroundColor Green
+        $passwordHash = $existingHash
+    }
+    else
+    {
+        # Prompt for password - need a temp location for mt.exe to hash
+        $tempDir = Join-Path $env:TEMP "MidTerm-Install"
+        $passwordHash = Prompt-Password -InstallDir $tempDir
+    }
+
+    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash
+
+    # Write user settings
+    if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
+    $userSettings = @{ authenticationEnabled = $true }
+    if ($passwordHash) { $userSettings.passwordHash = $passwordHash }
+    $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
+    Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
 }
