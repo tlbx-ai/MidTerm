@@ -286,9 +286,7 @@ function selectSession(sessionId: string): void {
     state.terminal.focus();
 
     if (isNewTerminal && !isNewlyCreated) {
-      import('./modules/terminal').then((mod) => {
-        mod.fetchAndWriteBuffer(sessionId, state.terminal);
-      });
+      requestBufferRefresh(sessionId);
     }
 
     if (isNewlyCreated) {

@@ -59,17 +59,6 @@ public static class SessionApiEndpoints
             }, AppJsonContext.Default.ResizeResponse);
         });
 
-        app.MapGet("/api/sessions/{id}/buffer", async (string id) =>
-        {
-            var session = sessionManager.GetSession(id);
-            if (session is null)
-            {
-                return Results.NotFound();
-            }
-            var buffer = await sessionManager.GetBufferAsync(id);
-            return Results.Bytes(buffer ?? []);
-        });
-
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>
         {
             if (!await sessionManager.SetSessionNameAsync(id, request.Name, isManual: !auto))

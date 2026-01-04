@@ -479,24 +479,6 @@ export function applySettingsToTerminals(): void {
 }
 
 /**
- * Fetch and write terminal buffer from server
- */
-export function fetchAndWriteBuffer(sessionId: string, terminal: any): void {
-  fetch('/api/sessions/' + sessionId + '/buffer')
-    .then((response) => {
-      return response.ok ? response.arrayBuffer() : null;
-    })
-    .then((buffer) => {
-      if (buffer && buffer.byteLength > 0) {
-        terminal.write(new Uint8Array(buffer));
-      }
-    })
-    .catch((e) => {
-      console.error('Error fetching buffer:', e);
-    });
-}
-
-/**
  * Refresh the active terminal buffer by clearing and requesting via WebSocket.
  * Using WebSocket ensures the buffer arrives in-order with live terminal data.
  */
