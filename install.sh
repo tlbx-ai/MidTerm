@@ -331,10 +331,10 @@ install_binary() {
     cp "$temp_dir/mt" "$install_dir/"
     chmod +x "$install_dir/mt"
 
-    # Copy con-host binary (terminal subprocess)
-    if [ -f "$temp_dir/mtttyhost" ]; then
-        cp "$temp_dir/mtttyhost" "$install_dir/"
-        chmod +x "$install_dir/mtttyhost"
+    # Copy tty host binary (terminal subprocess)
+    if [ -f "$temp_dir/mthost" ]; then
+        cp "$temp_dir/mthost" "$install_dir/"
+        chmod +x "$install_dir/mthost"
     fi
 
     # Copy version manifest
@@ -579,7 +579,7 @@ else
 fi
 
 sudo rm -f /usr/local/bin/mt
-sudo rm -f /usr/local/bin/mtttyhost
+sudo rm -f /usr/local/bin/mthost
 sudo rm -f /usr/local/bin/mt-host  # legacy cleanup
 sudo rm -rf /usr/local/lib/MidTerm
 sudo rm -rf /usr/local/etc/MidTerm
@@ -596,7 +596,7 @@ set -e
 echo "Uninstalling MidTerm..."
 
 rm -f "$HOME/.local/bin/mt"
-rm -f "$HOME/.local/bin/mtttyhost"
+rm -f "$HOME/.local/bin/mthost"
 rm -f "$HOME/.local/bin/mt-host"  # legacy cleanup
 rm -rf "$HOME/.local/lib/MidTerm"
 
