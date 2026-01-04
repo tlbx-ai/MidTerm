@@ -358,12 +358,12 @@ install_as_service() {
         echo ""
         echo -e "${YELLOW}Requesting sudo privileges...${NC}"
         # Re-exec with sudo, passing user info as environment variables
-        exec sudo INSTALLING_USER="$INSTALLING_USER" \
-                  INSTALLING_UID="$INSTALLING_UID" \
-                  INSTALLING_GID="$INSTALLING_GID" \
-                  PORT="$PORT" \
-                  BIND_ADDRESS="$BIND_ADDRESS" \
-                  "$SCRIPT_PATH" --service
+        exec sudo env INSTALLING_USER="$INSTALLING_USER" \
+                     INSTALLING_UID="$INSTALLING_UID" \
+                     INSTALLING_GID="$INSTALLING_GID" \
+                     PORT="$PORT" \
+                     BIND_ADDRESS="$BIND_ADDRESS" \
+                     "$SCRIPT_PATH" --service
     fi
 
     install_binary "$install_dir"
