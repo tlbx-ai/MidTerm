@@ -98,17 +98,13 @@ jobs:
           # Linux
           cd linux-x64 && tar -czvf ../mt-linux-x64.tar.gz mt mthost version.json && cd ..
 
-      - name: Generate changelog
-        id: changelog
+      - name: Get release notes from tag
+        id: tag_notes
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            CHANGELOG=$(git log --pretty=format:"- %s" HEAD)
-          else
-            CHANGELOG=$(git log --pretty=format:"- %s" ${PREV_TAG}..HEAD)
-          fi
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          # Get the tag annotation body (everything after the title line)
+          TAG_BODY=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAG_BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Release
@@ -116,7 +112,7 @@ jobs:
         with:
           body: |
             ## What's Changed
-            ${{ steps.changelog.outputs.changelog }}
+            ${{ steps.tag_notes.outputs.body }}
           files: |
             artifacts/mt-osx-arm64.tar.gz
             artifacts/mt-osx-x64.tar.gz
