@@ -57,6 +57,7 @@ import {
   renderUpdatePanel,
   applyUpdate,
   checkForUpdates,
+  checkUpdateResult,
   showChangelog,
   closeChangelog
 } from './modules/updating';
@@ -124,6 +125,7 @@ function init(): void {
   fetchNetworks();
   fetchSettings();
   checkAuthStatus();
+  checkUpdateResult();
   requestNotificationPermission();
 
   setupVisibilityChangeHandler();

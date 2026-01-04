@@ -335,6 +335,54 @@ public class Program
             return Results.Ok("Update started. Server will restart shortly.");
         });
 
+        app.MapGet("/api/update/result", () =>
+        {
+            var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
+            if (string.IsNullOrEmpty(installDir))
+            {
+                return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
+            }
+
+            var resultPath = Path.Combine(installDir, "update-result.json");
+            if (!File.Exists(resultPath))
+            {
+                return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
+            }
+
+            try
+            {
+                var json = File.ReadAllText(resultPath);
+                var result = System.Text.Json.JsonSerializer.Deserialize<UpdateResult>(json, AppJsonContext.Default.UpdateResult);
+                if (result is not null)
+                {
+                    result.Found = true;
+                    return Results.Json(result, AppJsonContext.Default.UpdateResult);
+                }
+            }
+            catch
+            {
+            }
+
+            return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
+        });
+
+        app.MapDelete("/api/update/result", () =>
+        {
+            var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
+            if (string.IsNullOrEmpty(installDir))
+            {
+                return Results.Ok();
+            }
+
+            var resultPath = Path.Combine(installDir, "update-result.json");
+            if (File.Exists(resultPath))
+            {
+                try { File.Delete(resultPath); } catch { }
+            }
+
+            return Results.Ok();
+        });
+
         app.MapGet("/api/networks", () =>
         {
             static bool IsPhysicalOrVpn(string name)

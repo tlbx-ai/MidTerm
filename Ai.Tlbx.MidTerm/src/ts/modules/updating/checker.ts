@@ -194,3 +194,80 @@ export function handleUpdateInfo(update: UpdateInfo): void {
   setUpdateInfo(update);
   renderUpdatePanel();
 }
+
+interface UpdateResult {
+  found: boolean;
+  success: boolean;
+  message: string;
+  details: string;
+  timestamp: string;
+  logFile: string;
+}
+
+/**
+ * Check for update results on startup and show notification if needed
+ */
+export function checkUpdateResult(): void {
+  fetch('/api/update/result')
+    .then((r) => r.json())
+    .then((result: UpdateResult) => {
+      if (!result.found) return;
+
+      // Show notification
+      showUpdateResultNotification(result);
+
+      // Clear the result file
+      fetch('/api/update/result', { method: 'DELETE' }).catch(() => {});
+    })
+    .catch(() => {});
+}
+
+/**
+ * Show a notification for the update result
+ */
+function showUpdateResultNotification(result: UpdateResult): void {
+  const notification = document.createElement('div');
+  notification.className = result.success
+    ? 'update-notification update-notification-success'
+    : 'update-notification update-notification-error';
+
+  const icon = result.success ? '✓' : '✕';
+  const title = result.success ? 'Update Successful' : 'Update Failed';
+
+  notification.innerHTML = `
+    <div class="update-notification-icon">${icon}</div>
+    <div class="update-notification-content">
+      <div class="update-notification-title">${title}</div>
+      <div class="update-notification-message">${escapeHtml(result.message)}</div>
+    </div>
+    <button class="update-notification-close" aria-label="Close">&times;</button>
+  `;
+
+  // Add click handler to close
+  const closeBtn = notification.querySelector('.update-notification-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      notification.classList.add('update-notification-hiding');
+      setTimeout(() => notification.remove(), 300);
+    });
+  }
+
+  document.body.appendChild(notification);
+
+  // Auto-hide success after 5 seconds, keep errors visible
+  if (result.success) {
+    setTimeout(() => {
+      notification.classList.add('update-notification-hiding');
+      setTimeout(() => notification.remove(), 300);
+    }, 5000);
+  }
+}
+
+/**
+ * Escape HTML entities
+ */
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}

@@ -403,6 +403,16 @@ public sealed class VersionManifest
     public string MinCompatiblePty { get; set; } = "";
 }
 
+public sealed class UpdateResult
+{
+    public bool Found { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = "";
+    public string Details { get; set; } = "";
+    public string Timestamp { get; set; } = "";
+    public string LogFile { get; set; } = "";
+}
+
 internal sealed class GitHubRelease
 {
     public string? TagName { get; set; }

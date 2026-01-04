@@ -1,10 +1,17 @@
 namespace Ai.Tlbx.MidTerm.Services;
 
+/// <summary>
+/// Generates bulletproof update scripts for Windows, Linux, and macOS.
+/// Scripts include: aggressive process termination, file lock waiting,
+/// copy verification, rollback on failure, and detailed logging.
+/// </summary>
 public static class UpdateScriptGenerator
 {
     private const string ServiceName = "MidTerm";
     private const string LaunchdLabel = "com.aitlbx.midterm";
     private const string SystemdService = "midterm";
+    private const int MaxRetries = 15;
+    private const int RetryDelaySeconds = 1;
 
     public static string GenerateUpdateScript(string extractedDir, string currentBinaryPath, UpdateType updateType = UpdateType.Full)
     {
@@ -19,80 +26,388 @@ public static class UpdateScriptGenerator
     private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, UpdateType updateType)
     {
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? currentBinaryPath;
-        var newWebBinaryPath = Path.Combine(extractedDir, "mt.exe");
-        var newConHostBinaryPath = Path.Combine(extractedDir, "mthost.exe");
+        var newMtPath = Path.Combine(extractedDir, "mt.exe");
+        var newMthostPath = Path.Combine(extractedDir, "mthost.exe");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
-        var currentConHostBinaryPath = Path.Combine(installDir, "mthost.exe");
+        var currentMthostPath = Path.Combine(installDir, "mthost.exe");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
+        var resultFilePath = Path.Combine(installDir, "update-result.json");
+        var logFilePath = Path.Combine(installDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.ps1");
 
         var isWebOnly = updateType == UpdateType.WebOnly;
-        var killConHost = isWebOnly ? "" : "Get-Process -Name 'mthost' -ErrorAction SilentlyContinue | Stop-Process -Force";
-        var backupConHost = isWebOnly ? "" : $@"
-if (Test-Path $conHostBinary) {{
-    Copy-Item $conHostBinary ($conHostBinary + '.bak') -Force
-}}";
-        var copyConHost = isWebOnly ? "" : $@"
-if (Test-Path $newConHostBinary) {{
-    Copy-Item $newConHostBinary $conHostBinary -Force
-}}";
-        var cleanupConHost = isWebOnly ? "" : "Remove-Item ($conHostBinary + '.bak') -Force -ErrorAction SilentlyContinue";
-        var updateTypeComment = isWebOnly ? "# Web-only update - mthost sessions preserved" : "# Full update - all sessions will be restarted";
 
         var script = $@"
-# MidTerm Update Script
-{updateTypeComment}
-$ErrorActionPreference = 'SilentlyContinue'
+# MidTerm Update Script (Windows)
+# Type: {(isWebOnly ? "Web-only (sessions preserved)" : "Full (sessions will restart)")}
+# Generated: {DateTime.UtcNow:O}
 
-# Wait for main process to exit
-Start-Sleep -Seconds 2
+$ErrorActionPreference = 'Stop'
 
-# Stop service
-$service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
-if ($service) {{
-    Stop-Service -Name '{ServiceName}' -Force
-    Start-Sleep -Seconds 2
+# === Configuration ===
+$InstallDir = '{EscapeForPowerShell(installDir)}'
+$CurrentMt = '{EscapeForPowerShell(currentBinaryPath)}'
+$CurrentMthost = '{EscapeForPowerShell(currentMthostPath)}'
+$CurrentVersionJson = '{EscapeForPowerShell(currentVersionJsonPath)}'
+$NewMt = '{EscapeForPowerShell(newMtPath)}'
+$NewMthost = '{EscapeForPowerShell(newMthostPath)}'
+$NewVersionJson = '{EscapeForPowerShell(newVersionJsonPath)}'
+$ExtractedDir = '{EscapeForPowerShell(extractedDir)}'
+$LogFile = '{EscapeForPowerShell(logFilePath)}'
+$ResultFile = '{EscapeForPowerShell(resultFilePath)}'
+$MaxRetries = {MaxRetries}
+$IsWebOnly = ${(isWebOnly ? "true" : "false")}
+
+# === Helper Functions ===
+
+function Log {{
+    param([string]$Message, [string]$Level = 'INFO')
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+    $line = ""[$timestamp] [$Level] $Message""
+    Write-Host $line
+    try {{ Add-Content -Path $LogFile -Value $line -ErrorAction SilentlyContinue }} catch {{}}
 }}
 
-# Kill mt.exe process
-Get-Process -Name 'mt' -ErrorAction SilentlyContinue | Stop-Process -Force
-{killConHost}
+function WriteResult {{
+    param([bool]$Success, [string]$Message, [string]$Details = '')
+    $result = @{{
+        success = $Success
+        message = $Message
+        details = $Details
+        timestamp = (Get-Date -Format 'o')
+        logFile = $LogFile
+    }}
+    try {{
+        $result | ConvertTo-Json -Depth 3 | Set-Content -Path $ResultFile -Encoding UTF8
+    }} catch {{
+        Log ""Failed to write result file: $_"" 'ERROR'
+    }}
+}}
+
+function WaitForFileWritable {{
+    param([string]$Path, [int]$Retries = $MaxRetries)
+
+    for ($i = 1; $i -le $Retries; $i++) {{
+        if (-not (Test-Path $Path)) {{
+            Log ""File does not exist (OK): $Path""
+            return $true
+        }}
+
+        try {{
+            $stream = [System.IO.File]::Open($Path, 'Open', 'ReadWrite', 'None')
+            $stream.Close()
+            $stream.Dispose()
+            Log ""File is writable: $Path""
+            return $true
+        }} catch {{
+            Log ""File locked (attempt $i/$Retries): $Path"" 'WARN'
+            if ($i -lt $Retries) {{
+                Start-Sleep -Seconds {RetryDelaySeconds}
+            }}
+        }}
+    }}
+
+    Log ""File still locked after $Retries attempts: $Path"" 'ERROR'
+    return $false
+}}
+
+function KillProcessByName {{
+    param([string]$Name)
+
+    $procs = Get-Process -Name $Name -ErrorAction SilentlyContinue
+    if ($procs) {{
+        foreach ($proc in $procs) {{
+            Log ""Killing $Name (PID: $($proc.Id))...""
+            try {{
+                $proc.Kill()
+                $proc.WaitForExit(5000)
+            }} catch {{
+                Log ""Failed to kill $Name (PID: $($proc.Id)): $_"" 'WARN'
+            }}
+        }}
+        Start-Sleep -Milliseconds 500
+    }}
+
+    # Double-check with taskkill
+    $remaining = Get-Process -Name $Name -ErrorAction SilentlyContinue
+    if ($remaining) {{
+        Log ""Using taskkill for remaining $Name processes...""
+        taskkill /F /IM ""$Name.exe"" 2>$null
+        Start-Sleep -Seconds 1
+    }}
+}}
+
+function VerifyCopy {{
+    param([string]$Source, [string]$Dest)
+
+    if (-not (Test-Path $Dest)) {{
+        throw ""Copy verification failed: destination does not exist: $Dest""
+    }}
+
+    $srcSize = (Get-Item $Source).Length
+    $dstSize = (Get-Item $Dest).Length
+
+    if ($srcSize -ne $dstSize) {{
+        throw ""Copy verification failed: size mismatch for $Dest (expected $srcSize bytes, got $dstSize bytes)""
+    }}
+
+    Log ""Verified: $Dest ($dstSize bytes)""
+}}
+
+function SafeCopy {{
+    param([string]$Source, [string]$Dest, [string]$Description)
+
+    Log ""Copying $Description...""
+    Log ""  From: $Source""
+    Log ""  To: $Dest""
+
+    if (-not (Test-Path $Source)) {{
+        throw ""Source file does not exist: $Source""
+    }}
+
+    Copy-Item -Path $Source -Destination $Dest -Force -ErrorAction Stop
+    VerifyCopy $Source $Dest
+
+    Log ""$Description copied successfully""
+}}
+
+# === Main Script ===
+
+# Clear previous logs
+Remove-Item $LogFile -Force -ErrorAction SilentlyContinue
+Remove-Item $ResultFile -Force -ErrorAction SilentlyContinue
+
+Log '=========================================='
+Log 'MidTerm Update Script Starting'
+Log ""Update type: $(if ($IsWebOnly) {{ 'Web-only' }} else {{ 'Full' }})""
+Log '=========================================='
+
+$rollbackNeeded = $false
+$startedOk = $false
+
+try {{
+    # ============================================
+    # PHASE 1: Stop all processes
+    # ============================================
+    Log ''
+    Log '=== PHASE 1: Stopping processes ==='
+
+    # Stop Windows service if running
+    $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+    if ($service -and $service.Status -eq 'Running') {{
+        Log 'Stopping MidTerm service...'
+        Stop-Service -Name '{ServiceName}' -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+
+        # Verify service stopped
+        $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+        if ($service -and $service.Status -eq 'Running') {{
+            Log 'Service did not stop gracefully, forcing...' 'WARN'
+        }}
+    }}
+
+    # Kill mt.exe processes
+    Log 'Killing mt.exe processes...'
+    KillProcessByName 'mt'
+
+    # Kill mthost.exe processes (only for full updates)
+    if (-not $IsWebOnly) {{
+        Log 'Killing mthost.exe processes...'
+        KillProcessByName 'mthost'
+    }}
+
+    Log 'All processes stopped'
+
+    # ============================================
+    # PHASE 2: Wait for file handles to release
+    # ============================================
+    Log ''
+    Log '=== PHASE 2: Waiting for file handles ==='
+
+    if (-not (WaitForFileWritable $CurrentMt)) {{
+        throw ""mt.exe is still locked after $MaxRetries retries. Another process may be using it.""
+    }}
+
+    if ((-not $IsWebOnly) -and (Test-Path $CurrentMthost)) {{
+        if (-not (WaitForFileWritable $CurrentMthost)) {{
+            throw ""mthost.exe is still locked after $MaxRetries retries. Another process may be using it.""
+        }}
+    }}
+
+    Log 'All file handles released'
+
+    # ============================================
+    # PHASE 3: Create backups
+    # ============================================
+    Log ''
+    Log '=== PHASE 3: Creating backups ==='
+
+    if (Test-Path $CurrentMt) {{
+        Log 'Backing up mt.exe...'
+        Copy-Item $CurrentMt ""$CurrentMt.bak"" -Force -ErrorAction Stop
+        Log 'mt.exe backed up'
+    }}
+
+    if ((-not $IsWebOnly) -and (Test-Path $CurrentMthost)) {{
+        Log 'Backing up mthost.exe...'
+        Copy-Item $CurrentMthost ""$CurrentMthost.bak"" -Force -ErrorAction Stop
+        Log 'mthost.exe backed up'
+    }}
+
+    if (Test-Path $CurrentVersionJson) {{
+        Log 'Backing up version.json...'
+        Copy-Item $CurrentVersionJson ""$CurrentVersionJson.bak"" -Force -ErrorAction Stop
+        Log 'version.json backed up'
+    }}
+
+    $rollbackNeeded = $true
+    Log 'All backups created'
+
+    # ============================================
+    # PHASE 4: Install new files
+    # ============================================
+    Log ''
+    Log '=== PHASE 4: Installing new files ==='
+
+    SafeCopy $NewMt $CurrentMt 'mt.exe'
+
+    if ((-not $IsWebOnly) -and (Test-Path $NewMthost)) {{
+        SafeCopy $NewMthost $CurrentMthost 'mthost.exe'
+    }}
+
+    if (Test-Path $NewVersionJson) {{
+        SafeCopy $NewVersionJson $CurrentVersionJson 'version.json'
+    }}
+
+    Log 'All files installed'
+
+    # ============================================
+    # PHASE 5: Start the new version
+    # ============================================
+    Log ''
+    Log '=== PHASE 5: Starting new version ==='
+
+    $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+    if ($service) {{
+        Log 'Starting MidTerm service...'
+        Start-Service -Name '{ServiceName}' -ErrorAction Stop
+        Start-Sleep -Seconds 3
+
+        $service = Get-Service -Name '{ServiceName}'
+        if ($service.Status -ne 'Running') {{
+            throw ""Service failed to start. Status: $($service.Status)""
+        }}
+        Log ""Service started successfully (Status: $($service.Status))""
+        $startedOk = $true
+    }} else {{
+        Log 'Starting mt.exe directly...'
+        $proc = Start-Process -FilePath $CurrentMt -WindowStyle Hidden -PassThru
+        Start-Sleep -Seconds 3
+
+        # Verify process is running
+        $running = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+        if (-not $running -or $running.HasExited) {{
+            throw 'mt.exe started but exited immediately'
+        }}
+        Log ""mt.exe started successfully (PID: $($proc.Id))""
+        $startedOk = $true
+    }}
+
+    # ============================================
+    # PHASE 6: Cleanup
+    # ============================================
+    Log ''
+    Log '=== PHASE 6: Cleanup ==='
+
+    Remove-Item ""$CurrentMt.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$CurrentMthost.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$CurrentVersionJson.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $ExtractedDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    Log 'Cleanup complete'
+
+    # ============================================
+    # SUCCESS
+    # ============================================
+    Log ''
+    Log '=========================================='
+    Log 'UPDATE COMPLETED SUCCESSFULLY'
+    Log '=========================================='
+
+    WriteResult $true 'Update completed successfully'
+
+}} catch {{
+    $errorMessage = $_.Exception.Message
+    Log '' 'ERROR'
+    Log '==========================================' 'ERROR'
+    Log ""UPDATE FAILED: $errorMessage"" 'ERROR'
+    Log '==========================================' 'ERROR'
+
+    if ($rollbackNeeded -and -not $startedOk) {{
+        Log ''
+        Log '=== ROLLBACK ===' 'WARN'
+
+        # Stop any partially started process
+        KillProcessByName 'mt'
+
+        # Restore backups
+        if (Test-Path ""$CurrentMt.bak"") {{
+            Log 'Restoring mt.exe from backup...'
+            try {{
+                Copy-Item ""$CurrentMt.bak"" $CurrentMt -Force -ErrorAction Stop
+                Log 'mt.exe restored'
+            }} catch {{
+                Log ""Failed to restore mt.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        if (Test-Path ""$CurrentMthost.bak"") {{
+            Log 'Restoring mthost.exe from backup...'
+            try {{
+                Copy-Item ""$CurrentMthost.bak"" $CurrentMthost -Force -ErrorAction Stop
+                Log 'mthost.exe restored'
+            }} catch {{
+                Log ""Failed to restore mthost.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        if (Test-Path ""$CurrentVersionJson.bak"") {{
+            Log 'Restoring version.json from backup...'
+            try {{
+                Copy-Item ""$CurrentVersionJson.bak"" $CurrentVersionJson -Force -ErrorAction Stop
+                Log 'version.json restored'
+            }} catch {{
+                Log ""Failed to restore version.json: $_"" 'ERROR'
+            }}
+        }}
+
+        # Try to restart previous version
+        Log 'Attempting to restart previous version...'
+        $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+        if ($service) {{
+            try {{
+                Start-Service -Name '{ServiceName}' -ErrorAction Stop
+                Log 'Previous version service started'
+            }} catch {{
+                Log ""Failed to start service: $_"" 'ERROR'
+            }}
+        }} else {{
+            try {{
+                Start-Process -FilePath $CurrentMt -WindowStyle Hidden
+                Log 'Previous version started'
+            }} catch {{
+                Log ""Failed to start mt.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        Log 'Rollback complete'
+    }}
+
+    WriteResult $false $errorMessage
+}}
+
+# Self-cleanup
 Start-Sleep -Seconds 1
-
-# Backup current binaries
-$webBinary = '{currentBinaryPath}'
-$conHostBinary = '{currentConHostBinaryPath}'
-
-if (Test-Path $webBinary) {{
-    Copy-Item $webBinary ($webBinary + '.bak') -Force
-}}
-{backupConHost}
-
-# Copy new binaries
-$newWebBinary = '{newWebBinaryPath}'
-$newConHostBinary = '{newConHostBinaryPath}'
-$newVersionJson = '{newVersionJsonPath}'
-$currentVersionJson = '{currentVersionJsonPath}'
-
-Copy-Item $newWebBinary $webBinary -Force
-{copyConHost}
-if (Test-Path $newVersionJson) {{
-    Copy-Item $newVersionJson $currentVersionJson -Force
-}}
-
-# Start service
-if ($service) {{
-    Start-Service -Name '{ServiceName}'
-}} else {{
-    # Start the binary directly
-    Start-Process -FilePath $webBinary -WindowStyle Hidden
-}}
-
-# Cleanup
-Start-Sleep -Seconds 2
-Remove-Item ($webBinary + '.bak') -Force -ErrorAction SilentlyContinue
-{cleanupConHost}
-Remove-Item -Path '{extractedDir}' -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 ";
 
@@ -103,92 +418,392 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
     private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, UpdateType updateType)
     {
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? "/usr/local/bin";
-        var newWebBinaryPath = Path.Combine(extractedDir, "mt");
-        var newConHostBinaryPath = Path.Combine(extractedDir, "mthost");
+        var newMtPath = Path.Combine(extractedDir, "mt");
+        var newMthostPath = Path.Combine(extractedDir, "mthost");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
-        var currentConHostBinaryPath = Path.Combine(installDir, "mthost");
+        var currentMthostPath = Path.Combine(installDir, "mthost");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
+        var resultFilePath = Path.Combine(installDir, "update-result.json");
+        var logFilePath = Path.Combine(installDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
         var isMacOs = OperatingSystem.IsMacOS();
         var isWebOnly = updateType == UpdateType.WebOnly;
 
-        var stopService = isMacOs
-            ? $"launchctl unload /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
+        var stopServiceCmd = isMacOs
+            ? $"launchctl bootout system/{LaunchdLabel} 2>/dev/null || launchctl unload /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
             : $"systemctl stop {SystemdService} 2>/dev/null || true";
-        var startService = isMacOs
-            ? $"launchctl load /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
+
+        var startServiceCmd = isMacOs
+            ? $"launchctl bootstrap system /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || launchctl load /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
             : $"systemctl start {SystemdService} 2>/dev/null || true";
 
-        var killConHost = isWebOnly ? "" : "pkill -f 'mthost' 2>/dev/null || true";
-        var backupConHost = isWebOnly ? "" : @"
-if [ -f ""$CONHOST_BINARY"" ]; then
-    cp ""$CONHOST_BINARY"" ""$CONHOST_BINARY.bak""
-fi";
-        var copyConHost = isWebOnly ? "" : @"
-if [ -f ""$NEW_CONHOST_BINARY"" ]; then
-    cp ""$NEW_CONHOST_BINARY"" ""$CONHOST_BINARY""
-    chmod +x ""$CONHOST_BINARY""
-fi";
-        var cleanupConHost = isWebOnly ? "" : @"rm -f ""$CONHOST_BINARY.bak""";
-        var updateTypeComment = isWebOnly ? "# Web-only update - mthost sessions preserved" : "# Full update - all sessions will be restarted";
+        var checkServiceCmd = isMacOs
+            ? $"launchctl print system/{LaunchdLabel} >/dev/null 2>&1"
+            : $"systemctl is-active --quiet {SystemdService}";
 
         var script = $@"#!/bin/bash
-# MidTerm Update Script
-{updateTypeComment}
+# MidTerm Update Script (Unix)
+# Type: {(isWebOnly ? "Web-only (sessions preserved)" : "Full (sessions will restart)")}
+# Generated: {DateTime.UtcNow:O}
 
-# Wait for main process to exit
-sleep 2
+set -euo pipefail
+
+# === Configuration ===
+INSTALL_DIR='{EscapeForBash(installDir)}'
+CURRENT_MT='{EscapeForBash(currentBinaryPath)}'
+CURRENT_MTHOST='{EscapeForBash(currentMthostPath)}'
+CURRENT_VERSION_JSON='{EscapeForBash(currentVersionJsonPath)}'
+NEW_MT='{EscapeForBash(newMtPath)}'
+NEW_MTHOST='{EscapeForBash(newMthostPath)}'
+NEW_VERSION_JSON='{EscapeForBash(newVersionJsonPath)}'
+EXTRACTED_DIR='{EscapeForBash(extractedDir)}'
+LOG_FILE='{EscapeForBash(logFilePath)}'
+RESULT_FILE='{EscapeForBash(resultFilePath)}'
+MAX_RETRIES={MaxRetries}
+IS_WEB_ONLY={( isWebOnly ? "true" : "false")}
+IS_MACOS={( isMacOs ? "true" : "false")}
+
+ROLLBACK_NEEDED=false
+STARTED_OK=false
+
+# === Helper Functions ===
+
+log() {{
+    local level=""${{2:-INFO}}""
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S.%3N')
+    local message=""[$timestamp] [$level] $1""
+    echo ""$message""
+    echo ""$message"" >> ""$LOG_FILE"" 2>/dev/null || true
+}}
+
+write_result() {{
+    local success=""$1""
+    local message=""$2""
+    local details=""${{3:-}}""
+    cat > ""$RESULT_FILE"" << RESULT_EOF
+{{
+    ""success"": $success,
+    ""message"": ""$message"",
+    ""details"": ""$details"",
+    ""timestamp"": ""$(date -u '+%Y-%m-%dT%H:%M:%SZ')"",
+    ""logFile"": ""$LOG_FILE""
+}}
+RESULT_EOF
+}}
+
+wait_for_file_writable() {{
+    local file_path=""$1""
+    local retries=""${{2:-$MAX_RETRIES}}""
+
+    if [[ ! -f ""$file_path"" ]]; then
+        log ""File does not exist (OK): $file_path""
+        return 0
+    fi
+
+    for ((i=1; i<=retries; i++)); do
+        if [[ -w ""$file_path"" ]]; then
+            # Try to actually open for write
+            if ( exec 3>>""$file_path"" ) 2>/dev/null; then
+                exec 3>&-
+                log ""File is writable: $file_path""
+                return 0
+            fi
+        fi
+        log ""File locked (attempt $i/$retries): $file_path"" ""WARN""
+        if [[ $i -lt $retries ]]; then
+            sleep {RetryDelaySeconds}
+        fi
+    done
+
+    log ""File still locked after $retries attempts: $file_path"" ""ERROR""
+    return 1
+}}
+
+kill_process() {{
+    local name=""$1""
+    local pids
+
+    pids=$(pgrep -f ""/$name\$"" 2>/dev/null || true)
+    if [[ -n ""$pids"" ]]; then
+        for pid in $pids; do
+            log ""Killing $name (PID: $pid)...""
+            kill -9 ""$pid"" 2>/dev/null || true
+        done
+        sleep 1
+    fi
+
+    # Double-check
+    pids=$(pgrep -f ""/$name\$"" 2>/dev/null || true)
+    if [[ -n ""$pids"" ]]; then
+        log ""Force killing remaining $name processes..."" ""WARN""
+        pkill -9 -f ""/$name\$"" 2>/dev/null || true
+        sleep 1
+    fi
+}}
+
+verify_copy() {{
+    local src=""$1""
+    local dst=""$2""
+
+    if [[ ! -f ""$dst"" ]]; then
+        echo ""Copy verification failed: destination does not exist: $dst""
+        return 1
+    fi
+
+    local src_size=$(stat -f%z ""$src"" 2>/dev/null || stat -c%s ""$src"" 2>/dev/null)
+    local dst_size=$(stat -f%z ""$dst"" 2>/dev/null || stat -c%s ""$dst"" 2>/dev/null)
+
+    if [[ ""$src_size"" != ""$dst_size"" ]]; then
+        echo ""Copy verification failed: size mismatch for $dst (expected $src_size bytes, got $dst_size bytes)""
+        return 1
+    fi
+
+    log ""Verified: $dst ($dst_size bytes)""
+    return 0
+}}
+
+safe_copy() {{
+    local src=""$1""
+    local dst=""$2""
+    local desc=""$3""
+
+    log ""Copying $desc...""
+    log ""  From: $src""
+    log ""  To: $dst""
+
+    if [[ ! -f ""$src"" ]]; then
+        echo ""Source file does not exist: $src""
+        return 1
+    fi
+
+    cp -f ""$src"" ""$dst""
+    chmod +x ""$dst""
+
+    if ! verify_copy ""$src"" ""$dst""; then
+        return 1
+    fi
+
+    log ""$desc copied successfully""
+    return 0
+}}
+
+cleanup() {{
+    log """"
+    if [[ ""$ROLLBACK_NEEDED"" == ""true"" ]] && [[ ""$STARTED_OK"" != ""true"" ]]; then
+        log ""=== ROLLBACK ==="" ""WARN""
+
+        # Stop any partially started process
+        kill_process ""mt""
+
+        # Restore backups
+        if [[ -f ""$CURRENT_MT.bak"" ]]; then
+            log ""Restoring mt from backup...""
+            cp -f ""$CURRENT_MT.bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
+            chmod +x ""$CURRENT_MT"" 2>/dev/null || true
+        fi
+
+        if [[ -f ""$CURRENT_MTHOST.bak"" ]]; then
+            log ""Restoring mthost from backup...""
+            cp -f ""$CURRENT_MTHOST.bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
+            chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
+        fi
+
+        if [[ -f ""$CURRENT_VERSION_JSON.bak"" ]]; then
+            log ""Restoring version.json from backup...""
+            cp -f ""$CURRENT_VERSION_JSON.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
+        fi
+
+        # Try to restart previous version
+        log ""Attempting to restart previous version...""
+        if $IS_MACOS; then
+            {startServiceCmd}
+        else
+            {startServiceCmd}
+        fi
+
+        if ! pgrep -f ""$CURRENT_MT"" > /dev/null 2>&1; then
+            nohup ""$CURRENT_MT"" > /dev/null 2>&1 &
+        fi
+
+        log ""Rollback complete""
+    fi
+
+    # Self-cleanup
+    sleep 1
+    rm -f ""$0"" 2>/dev/null || true
+}}
+
+trap cleanup EXIT
+
+# === Main Script ===
+
+# Clear previous logs
+rm -f ""$LOG_FILE"" 2>/dev/null || true
+rm -f ""$RESULT_FILE"" 2>/dev/null || true
+
+log '=========================================='
+log 'MidTerm Update Script Starting'
+log ""Update type: $(if $IS_WEB_ONLY; then echo 'Web-only'; else echo 'Full'; fi)""
+log ""Platform: $(if $IS_MACOS; then echo 'macOS'; else echo 'Linux'; fi)""
+log '=========================================='
+
+# ============================================
+# PHASE 1: Stop all processes
+# ============================================
+log """"
+log '=== PHASE 1: Stopping processes ==='
 
 # Stop service
-{stopService}
-
-# Kill mt process
-pkill -f '/mt$' 2>/dev/null || true
-{killConHost}
-sleep 1
-
-# Backup current binaries
-WEB_BINARY='{currentBinaryPath}'
-CONHOST_BINARY='{currentConHostBinaryPath}'
-
-if [ -f ""$WEB_BINARY"" ]; then
-    cp ""$WEB_BINARY"" ""$WEB_BINARY.bak""
-fi
-{backupConHost}
-
-# Copy new binaries
-NEW_WEB_BINARY='{newWebBinaryPath}'
-NEW_CONHOST_BINARY='{newConHostBinaryPath}'
-NEW_VERSION_JSON='{newVersionJsonPath}'
-CURRENT_VERSION_JSON='{currentVersionJsonPath}'
-
-cp ""$NEW_WEB_BINARY"" ""$WEB_BINARY""
-chmod +x ""$WEB_BINARY""
-{copyConHost}
-
-if [ -f ""$NEW_VERSION_JSON"" ]; then
-    cp ""$NEW_VERSION_JSON"" ""$CURRENT_VERSION_JSON""
-fi
-
-# Start service
-{startService}
-
-# If services didn't start (not installed as service), start directly
-if ! pgrep -f ""$WEB_BINARY"" > /dev/null; then
-    nohup ""$WEB_BINARY"" > /dev/null 2>&1 &
-fi
-
-# Cleanup
+log ""Stopping service...""
+{stopServiceCmd}
 sleep 2
-rm -f ""$WEB_BINARY.bak""
-{cleanupConHost}
-rm -rf '{extractedDir}'
-rm -f ""$0""
+
+# Kill mt processes
+log ""Killing mt processes...""
+kill_process ""mt""
+
+# Kill mthost processes (only for full updates)
+if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
+    log ""Killing mthost processes...""
+    kill_process ""mthost""
+fi
+
+log ""All processes stopped""
+
+# ============================================
+# PHASE 2: Wait for file handles to release
+# ============================================
+log """"
+log '=== PHASE 2: Waiting for file handles ==='
+
+if ! wait_for_file_writable ""$CURRENT_MT""; then
+    log ""mt is still locked after $MAX_RETRIES retries"" ""ERROR""
+    write_result false ""mt is still locked. Another process may be using it.""
+    exit 1
+fi
+
+if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+    if ! wait_for_file_writable ""$CURRENT_MTHOST""; then
+        log ""mthost is still locked after $MAX_RETRIES retries"" ""ERROR""
+        write_result false ""mthost is still locked. Another process may be using it.""
+        exit 1
+    fi
+fi
+
+log ""All file handles released""
+
+# ============================================
+# PHASE 3: Create backups
+# ============================================
+log """"
+log '=== PHASE 3: Creating backups ==='
+
+if [[ -f ""$CURRENT_MT"" ]]; then
+    log ""Backing up mt...""
+    cp -f ""$CURRENT_MT"" ""$CURRENT_MT.bak""
+    log ""mt backed up""
+fi
+
+if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+    log ""Backing up mthost...""
+    cp -f ""$CURRENT_MTHOST"" ""$CURRENT_MTHOST.bak""
+    log ""mthost backed up""
+fi
+
+if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
+    log ""Backing up version.json...""
+    cp -f ""$CURRENT_VERSION_JSON"" ""$CURRENT_VERSION_JSON.bak""
+    log ""version.json backed up""
+fi
+
+ROLLBACK_NEEDED=true
+log ""All backups created""
+
+# ============================================
+# PHASE 4: Install new files
+# ============================================
+log """"
+log '=== PHASE 4: Installing new files ==='
+
+if ! safe_copy ""$NEW_MT"" ""$CURRENT_MT"" ""mt""; then
+    write_result false ""Failed to install mt""
+    exit 1
+fi
+
+if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$NEW_MTHOST"" ]]; then
+    if ! safe_copy ""$NEW_MTHOST"" ""$CURRENT_MTHOST"" ""mthost""; then
+        write_result false ""Failed to install mthost""
+        exit 1
+    fi
+fi
+
+if [[ -f ""$NEW_VERSION_JSON"" ]]; then
+    log ""Copying version.json...""
+    cp -f ""$NEW_VERSION_JSON"" ""$CURRENT_VERSION_JSON""
+    log ""version.json copied""
+fi
+
+log ""All files installed""
+
+# ============================================
+# PHASE 5: Start the new version
+# ============================================
+log """"
+log '=== PHASE 5: Starting new version ==='
+
+# Try to start service first
+log ""Starting service...""
+{startServiceCmd}
+sleep 3
+
+# Check if service is running
+if {checkServiceCmd}; then
+    log ""Service started successfully""
+    STARTED_OK=true
+else
+    # Service not running, start directly
+    log ""Service not running, starting mt directly...""
+    nohup ""$CURRENT_MT"" > /dev/null 2>&1 &
+    sleep 3
+
+    if pgrep -f ""$CURRENT_MT"" > /dev/null 2>&1; then
+        log ""mt started successfully (PID: $(pgrep -f ""$CURRENT_MT"" | head -1))""
+        STARTED_OK=true
+    else
+        log ""mt failed to start"" ""ERROR""
+        write_result false ""mt failed to start after installation""
+        exit 1
+    fi
+fi
+
+# ============================================
+# PHASE 6: Cleanup
+# ============================================
+log """"
+log '=== PHASE 6: Cleanup ==='
+
+rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
+rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
+rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
+rm -rf ""$EXTRACTED_DIR"" 2>/dev/null || true
+
+log ""Cleanup complete""
+
+# ============================================
+# SUCCESS
+# ============================================
+log """"
+log '=========================================='
+log 'UPDATE COMPLETED SUCCESSFULLY'
+log '=========================================='
+
+write_result true ""Update completed successfully""
 ";
 
         File.WriteAllText(scriptPath, script);
 
+        // Set executable permission (Unix only)
         if (!OperatingSystem.IsWindows())
         {
             try
@@ -229,5 +844,17 @@ rm -f ""$0""
                 CreateNoWindow = true
             });
         }
+    }
+
+    private static string EscapeForPowerShell(string value)
+    {
+        // Escape single quotes for PowerShell single-quoted strings
+        return value.Replace("'", "''");
+    }
+
+    private static string EscapeForBash(string value)
+    {
+        // Escape single quotes for bash single-quoted strings
+        return value.Replace("'", "'\\''");
     }
 }

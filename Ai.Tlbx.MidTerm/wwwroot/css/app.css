@@ -1447,6 +1447,112 @@ html, body {
     color: var(--accent-orange);
 }
 
+/* Update result notifications */
+.update-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    animation: slideIn 0.3s ease-out;
+    max-width: 400px;
+}
+
+.update-notification-success {
+    background: linear-gradient(135deg, #1a2e1a 0%, #1a1b26 100%);
+    border: 1px solid var(--accent-green);
+}
+
+.update-notification-error {
+    background: linear-gradient(135deg, #2e1a1a 0%, #1a1b26 100%);
+    border: 1px solid var(--accent-red);
+}
+
+.update-notification-icon {
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.update-notification-success .update-notification-icon {
+    color: var(--accent-green);
+}
+
+.update-notification-error .update-notification-icon {
+    color: var(--accent-red);
+}
+
+.update-notification-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.update-notification-title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.update-notification-success .update-notification-title {
+    color: var(--accent-green);
+}
+
+.update-notification-error .update-notification-title {
+    color: var(--accent-red);
+}
+
+.update-notification-message {
+    font-size: 13px;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.update-notification-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.update-notification-close:hover {
+    color: var(--text-primary);
+}
+
+.update-notification-hiding {
+    animation: slideOut 0.3s ease-in forwards;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100px);
+    }
+}
+
 /* Modal styles */
 .modal {
     position: fixed;
