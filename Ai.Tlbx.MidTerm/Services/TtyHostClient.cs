@@ -1,6 +1,8 @@
 using System.Net.Sockets;
 #if WINDOWS
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 #endif
 using Ai.Tlbx.MidTerm.Common.Ipc;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -13,6 +15,16 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// </summary>
 public sealed class TtyHostClient : IAsyncDisposable
 {
+#if WINDOWS
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool PeekNamedPipe(
+        SafePipeHandle hNamedPipe,
+        IntPtr lpBuffer,
+        uint nBufferSize,
+        IntPtr lpBytesRead,
+        out uint lpTotalBytesAvail,
+        IntPtr lpBytesLeftThisMessage);
+#endif
     private readonly string _sessionId;
     private readonly string _endpoint;
     private readonly object _streamLock = new();
@@ -29,17 +41,20 @@ public sealed class TtyHostClient : IAsyncDisposable
     private Stream? _stream;
     private CancellationTokenSource? _cts;
     private Task? _readTask;
+    private Task? _heartbeatTask;
     private Task? _reconnectTask;
     private bool _disposed;
     private bool _intentionalDisconnect;
     private int _reconnectAttempts;
+    private DateTime _lastDataReceived = DateTime.UtcNow;
 
     private TaskCompletionSource<(TtyHostMessageType type, byte[] payload)>? _pendingResponse;
 
     private const int MaxReconnectAttempts = 10;
     private const int InitialReconnectDelayMs = 100;
     private const int MaxReconnectDelayMs = 5000;
-    private const int ReadTimeoutMs = 60000; // 60 seconds - detect stale connections after standby
+    private const int HeartbeatIntervalMs = 3000; // Check connection every 3 seconds
+    private const int ReadTimeoutMs = 10000; // 10 seconds - shorter now that we have heartbeat
 
     public string SessionId => _sessionId;
     public bool IsConnected
@@ -132,6 +147,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         if (_readTask is not null) return;
         _cts = new CancellationTokenSource();
         _readTask = ReadLoopWithReconnectAsync(_cts.Token);
+        _heartbeatTask = HeartbeatLoopAsync(_cts.Token);
     }
 
     public async Task<SessionInfo?> GetInfoAsync(CancellationToken ct = default)
@@ -378,6 +394,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                     continue;
                 }
 
+                _lastDataReceived = DateTime.UtcNow;
                 DebugLogger.Log($"[READ-LOOP] {_sessionId}: Read {bytesRead} bytes");
                 if (bytesRead == 0)
                 {
@@ -517,6 +534,72 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
+    private async Task HeartbeatLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && !_disposed)
+        {
+            try
+            {
+                await Task.Delay(HeartbeatIntervalMs, ct).ConfigureAwait(false);
+
+                if (_disposed || _intentionalDisconnect || !IsConnected) continue;
+
+                // Use PeekNamedPipe on Windows for instant stale detection
+#if WINDOWS
+                var pipe = _pipe;
+                if (pipe is not null && pipe.IsConnected)
+                {
+                    try
+                    {
+                        var handle = pipe.SafePipeHandle;
+                        if (!PeekNamedPipe(handle, IntPtr.Zero, 0, IntPtr.Zero, out _, IntPtr.Zero))
+                        {
+                            var error = Marshal.GetLastWin32Error();
+                            Log($"PeekNamedPipe failed (error {error}) - pipe is stale");
+                            HandleDisconnect();
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Pipe was disposed, will reconnect
+                    }
+                }
+#else
+                // On Unix, try a zero-byte write to detect broken socket
+                var socket = _socket;
+                if (socket is not null && socket.Connected)
+                {
+                    try
+                    {
+                        // Poll for error condition
+                        if (socket.Poll(0, SelectMode.SelectError))
+                        {
+                            Log("Socket poll detected error - connection stale");
+                            HandleDisconnect();
+                        }
+                    }
+                    catch (SocketException)
+                    {
+                        HandleDisconnect();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Socket was disposed, will reconnect
+                    }
+                }
+#endif
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Log($"[HEARTBEAT] {_sessionId}: Error: {ex.Message}");
+            }
+        }
+    }
+
     private void HandleDisconnect()
     {
         if (_disposed || _intentionalDisconnect) return;
@@ -653,6 +736,12 @@ public sealed class TtyHostClient : IAsyncDisposable
         {
             try { await _readTask.ConfigureAwait(false); }
             catch (Exception ex) { DebugLogger.LogException($"TtyHostClient.Dispose.ReadTask({_sessionId})", ex); }
+        }
+
+        if (_heartbeatTask is not null)
+        {
+            try { await _heartbeatTask.ConfigureAwait(false); }
+            catch (Exception ex) { DebugLogger.LogException($"TtyHostClient.Dispose.HeartbeatTask({_sessionId})", ex); }
         }
 
         if (_reconnectTask is not null)
