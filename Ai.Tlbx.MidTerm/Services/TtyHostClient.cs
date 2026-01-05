@@ -395,13 +395,10 @@ public sealed class TtyHostClient : IAsyncDisposable
                 }
                 catch (OperationCanceledException) when (readTimeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
                 {
-                    // Read timed out - connection may be stale, verify with a ping
-                    Log($"Read timeout after {ReadTimeoutMs}ms - checking connection health");
-                    if (!await CheckConnectionHealthAsync(ct).ConfigureAwait(false))
-                    {
-                        Log("Connection health check failed - triggering reconnect");
-                        HandleDisconnect();
-                    }
+                    // Read timed out - terminal may be idle, this is normal
+                    // Heartbeat (PeekNamedPipe/socket poll every 3s) handles stale connection detection
+                    // No need to send probe messages that leave orphan responses
+                    DebugLogger.Log($"[READ-LOOP] {_sessionId}: Read timeout (idle terminal), continuing");
                     continue;
                 }
 
@@ -519,29 +516,6 @@ public sealed class TtyHostClient : IAsyncDisposable
             default:
                 Log($"Unknown message type: {msgType}");
                 break;
-        }
-    }
-
-    private async Task<bool> CheckConnectionHealthAsync(CancellationToken ct)
-    {
-        try
-        {
-            // Try to get info with a short timeout - if this fails, connection is dead
-            using var healthCts = new CancellationTokenSource(5000);
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, healthCts.Token);
-
-            var msg = TtyHostProtocol.CreateInfoRequest();
-            await WriteWithLockAsync(msg, linkedCts.Token).ConfigureAwait(false);
-
-            // If write succeeded, connection is likely still alive
-            // (if pipe was broken, write would throw)
-            Log("Connection health check passed");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log($"Connection health check failed: {ex.Message}");
-            return false;
         }
     }
 

@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.3.0";
+    public const string Version = "5.3.8";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -311,13 +311,20 @@ public static class Program
 
             // Don't subscribe to OnStateChanged until after handshake - OSC-7 during startup
             // can fire StateChange before Info response, breaking the handshake
+            var stateChangeSubscribed = false;
 
             try
             {
                 await ProcessMessagesAsync(session, stream, clientCts.Token, () =>
                 {
                     OnHandshakeComplete();
-                    session.OnStateChanged += OnStateChange; // Subscribe after handshake
+                    // Only subscribe once - repeated GetInfo requests must not add duplicate handlers
+                    // (duplicate handlers cause exponential StateChange message growth)
+                    if (!stateChangeSubscribed)
+                    {
+                        stateChangeSubscribed = true;
+                        session.OnStateChanged += OnStateChange;
+                    }
                 }).ConfigureAwait(false);
             }
             finally
@@ -466,7 +473,10 @@ public static class Program
                 case TtyHostMessageType.GetInfo:
                     var info = session.GetInfo();
                     var infoMsg = TtyHostProtocol.CreateInfoResponse(info);
-                    Log($"Writing Info response: type=0x{infoMsg[0]:X2}, len={BitConverter.ToInt32(infoMsg, 1)}, total={infoMsg.Length}");
+                    var infoPreview = infoMsg.Length > TtyHostProtocol.HeaderSize
+                        ? Encoding.UTF8.GetString(infoMsg, TtyHostProtocol.HeaderSize, Math.Min(50, infoMsg.Length - TtyHostProtocol.HeaderSize))
+                        : "";
+                    Log($"Writing Info response: type=0x{infoMsg[0]:X2}, len={BitConverter.ToInt32(infoMsg, 1)}, preview=\"{infoPreview}...\"");
                     lock (stream)
                     {
                         stream.Write(infoMsg);
