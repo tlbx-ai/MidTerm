@@ -6,8 +6,7 @@
  */
 
 import type { UpdateInfo } from '../../types';
-import { updateInfo, setUpdateInfo, settingsOpen } from '../../state';
-import { openSettings } from '../settings/panel';
+import { updateInfo, setUpdateInfo } from '../../state';
 
 const MAX_RELOAD_ATTEMPTS = 30;
 const RELOAD_INTERVAL_MS = 2000;
@@ -121,9 +120,6 @@ export function checkForUpdates(): void {
   const statusEl = document.getElementById('update-status');
   const warningEl = document.getElementById('update-warning');
 
-  // Remember if settings were open (renderUpdatePanel may close them as side effect)
-  const wasSettingsOpen = settingsOpen;
-
   if (btn) {
     btn.disabled = true;
     btn.textContent = 'Checking...';
@@ -139,11 +135,6 @@ export function checkForUpdates(): void {
 
       setUpdateInfo(update);
       renderUpdatePanel();
-
-      // Restore settings if they were closed unexpectedly
-      if (wasSettingsOpen && !settingsOpen) {
-        openSettings();
-      }
 
       const applyBtn = document.getElementById('btn-apply-update');
       if (statusEl) {
@@ -205,7 +196,8 @@ interface UpdateResult {
 }
 
 /**
- * Check for update results on startup and show notification if needed
+ * Check for update results on startup and clear the result file.
+ * The update result is shown in the settings panel, not as a notification.
  */
 export function checkUpdateResult(): void {
   fetch('/api/update/result')
@@ -213,61 +205,8 @@ export function checkUpdateResult(): void {
     .then((result: UpdateResult) => {
       if (!result.found) return;
 
-      // Show notification
-      showUpdateResultNotification(result);
-
-      // Clear the result file
+      // Clear the result file - the result is shown in the settings/sidebar panels
       fetch('/api/update/result', { method: 'DELETE' }).catch(() => {});
     })
     .catch(() => {});
-}
-
-/**
- * Show a notification for the update result
- */
-function showUpdateResultNotification(result: UpdateResult): void {
-  const notification = document.createElement('div');
-  notification.className = result.success
-    ? 'update-notification update-notification-success'
-    : 'update-notification update-notification-error';
-
-  const icon = result.success ? '✓' : '✕';
-  const title = result.success ? 'Update Successful' : 'Update Failed';
-
-  notification.innerHTML = `
-    <div class="update-notification-icon">${icon}</div>
-    <div class="update-notification-content">
-      <div class="update-notification-title">${title}</div>
-      <div class="update-notification-message">${escapeHtml(result.message)}</div>
-    </div>
-    <button class="update-notification-close" aria-label="Close">&times;</button>
-  `;
-
-  // Add click handler to close
-  const closeBtn = notification.querySelector('.update-notification-close');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      notification.classList.add('update-notification-hiding');
-      setTimeout(() => notification.remove(), 300);
-    });
-  }
-
-  document.body.appendChild(notification);
-
-  // Auto-hide success after 5 seconds, keep errors visible
-  if (result.success) {
-    setTimeout(() => {
-      notification.classList.add('update-notification-hiding');
-      setTimeout(() => notification.remove(), 300);
-    }, 5000);
-  }
-}
-
-/**
- * Escape HTML entities
- */
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }

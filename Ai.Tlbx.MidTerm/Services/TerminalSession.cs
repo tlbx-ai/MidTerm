@@ -289,7 +289,7 @@ namespace Ai.Tlbx.MidTerm.Services
 
         private string CreateTempDirectory()
         {
-            var tempPath = Path.Combine(Path.GetTempPath(), "mm-drops", Id);
+            var tempPath = Path.Combine(Path.GetTempPath(), "mt-drops", Id);
             Directory.CreateDirectory(tempPath);
             return tempPath;
         }

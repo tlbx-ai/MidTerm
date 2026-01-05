@@ -44,7 +44,6 @@ import {
   setupSidebarResize
 } from './modules/sidebar';
 import {
-  closeSettings,
   toggleSettings,
   checkSystemHealth,
   fetchSettings
@@ -67,7 +66,6 @@ import {
   activeSessionId,
   sessionTerminals,
   currentSettings,
-  settingsOpen,
   stateWsConnected,
   muxWsConnected,
   dom,
@@ -268,10 +266,7 @@ function createSession(): void {
 }
 
 function selectSession(sessionId: string): void {
-  if (settingsOpen) {
-    closeSettings();
-  }
-
+  // Don't close settings - only the gear button toggle should close settings
   sessionTerminals.forEach((state) => {
     state.container.classList.add('hidden');
   });

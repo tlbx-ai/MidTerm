@@ -113,7 +113,7 @@ html, body {
     align-items: center;
     padding: 6px 12px;
     border-bottom: 1px solid var(--border-color);
-    background-color: var(--bg-primary);
+    background-color: #06060E;
 }
 
 .sidebar-brand {
@@ -347,7 +347,7 @@ html, body {
     border-top: 1px solid var(--border-color);
     font-size: 11px;
     color: var(--text-muted);
-    background-color: var(--bg-primary);
+    background-color: #06060E;
 }
 
 .sidebar-footer .footer-row {

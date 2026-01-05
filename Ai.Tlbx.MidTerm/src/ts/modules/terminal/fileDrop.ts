@@ -8,7 +8,7 @@
 import { activeSessionId } from '../../state';
 
 // Forward declarations for callbacks
-let pasteToTerminal: (sessionId: string, data: string) => void = () => {};
+let pasteToTerminal: (sessionId: string, data: string, isFilePath?: boolean) => void = () => {};
 
 /**
  * Sanitize pasted content to prevent "paste escape" attacks
@@ -25,7 +25,7 @@ function sanitizePasteContent(text: string): string {
  */
 export function registerFileDropCallbacks(callbacks: {
   sendInput?: (sessionId: string, data: string) => void;
-  pasteToTerminal?: (sessionId: string, data: string) => void;
+  pasteToTerminal?: (sessionId: string, data: string, isFilePath?: boolean) => void;
 }): void {
   if (callbacks.pasteToTerminal) pasteToTerminal = callbacks.pasteToTerminal;
 }
@@ -73,7 +73,7 @@ async function handleFileDrop(files: FileList): Promise<void> {
 
   if (paths.length > 0) {
     const joined = sanitizePasteContent(paths.join(' '));
-    pasteToTerminal(activeSessionId, joined);
+    pasteToTerminal(activeSessionId, joined, true);
   }
 }
 
@@ -127,7 +127,7 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
         const file = new File([blob], `clipboard_${timestamp}.jpg`, { type: imageType });
         const path = await uploadFile(sessionId, file);
         if (path) {
-          pasteToTerminal(sessionId, sanitizePasteContent(path));
+          pasteToTerminal(sessionId, sanitizePasteContent(path), true);
           return; // Image handled, don't paste text
         }
       }

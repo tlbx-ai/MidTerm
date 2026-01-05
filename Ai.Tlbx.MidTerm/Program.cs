@@ -41,6 +41,10 @@ public class Program
         var settingsService = app.Services.GetRequiredService<SettingsService>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
+        var tempCleanupService = app.Services.GetRequiredService<TempCleanupService>();
+
+        // Clean orphaned temp files from previous crashed instances
+        tempCleanupService.CleanupOrphanedFiles();
 
         var settings = settingsService.Load();
         DebugLogger.Enabled = settings.DebugLogging;
@@ -89,6 +93,8 @@ public class Program
                 }
                 finally
                 {
+                    // Final cleanup of any remaining temp files
+                    tempCleanupService.CleanupAllMidTermFiles();
                     instanceGuard.Dispose();
                 }
             });
@@ -209,6 +215,7 @@ public class Program
         builder.Services.AddSingleton<SettingsService>();
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
+        builder.Services.AddSingleton<TempCleanupService>();
 
         return builder;
     }

@@ -359,7 +359,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         return _tempDirectories.GetOrAdd(sessionId, id =>
         {
-            var tempPath = Path.Combine(Path.GetTempPath(), "mm-drops", id);
+            var tempPath = Path.Combine(Path.GetTempPath(), "mt-drops", id);
             Directory.CreateDirectory(tempPath);
             return tempPath;
         });

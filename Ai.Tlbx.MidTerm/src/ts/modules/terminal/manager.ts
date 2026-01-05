@@ -38,8 +38,35 @@ let requestBufferRefresh: (sessionId: string) => void = () => {};
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
 
-// Track bracketed paste mode state per session
-// We track this ourselves because xterm.js internal state may not be reliable
+/**
+ * Bracketed Paste Mode (BPM) State Tracking
+ *
+ * BPM allows TUI apps to distinguish pasted text from typed input by wrapping
+ * pastes with escape sequences: ESC[200~ (start) and ESC[201~ (end).
+ *
+ * HOW IT WORKS WITH COMPLEX TUIs (e.g., Claude Code):
+ * 1. Shell/app enables BPM by outputting ESC[?2004h
+ * 2. We detect this in terminal output and track state per session
+ * 3. When user pastes (or drops file), we wrap content with BPM markers
+ * 4. TUI app receives markers and knows it's pasted content
+ *
+ * IMAGE DRAG-DROP TO CLAUDE CODE:
+ * Claude Code detects dropped images via string heuristics - it pattern-matches
+ * for file paths like: ^"?[A-Z]:\\.*?\.(png|jpg|jpeg|webp|gif)"?$
+ * When detected, it reads the file and adds it to context as an image.
+ *
+ * CRITICAL FOR WINDOWS: Claude Code checks environment variables to detect
+ * if it's running in Windows Terminal. See ShellConfigurations.cs for details.
+ * - WT_PROFILE_ID must have curly braces: {guid-here}
+ * - TERM and COLORTERM must NOT be set (Windows Terminal doesn't set them)
+ *
+ * FOR MAC/LINUX TESTING: The env var requirements may differ. Start by checking
+ * what environment a native terminal sets, then match it in ShellConfigurations.cs.
+ * The BPM mechanism itself should work the same across platforms.
+ *
+ * We track BPM ourselves AND check xterm.js internal state as fallback because
+ * xterm.js detection alone proved unreliable in some scenarios.
+ */
 const bracketedPasteState = new Map<string, boolean>();
 
 /**
@@ -426,10 +453,13 @@ export function destroyTerminalForSession(sessionId: string): void {
 }
 
 /**
- * Paste text to a terminal, wrapping with bracketed paste markers if enabled
- * We track BPM state ourselves to ensure reliable paste handling for TUI apps
+ * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
+ * We track BPM state ourselves to ensure reliable paste handling for TUI apps.
+ *
+ * @param isFilePath - If true, wrap content in quotes for file path handling.
+ *                     This helps TUI apps like Claude Code detect file paths with spaces.
  */
-export function pasteToTerminal(sessionId: string, data: string): void {
+export function pasteToTerminal(sessionId: string, data: string, isFilePath: boolean = false): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
@@ -440,8 +470,9 @@ export function pasteToTerminal(sessionId: string, data: string): void {
 
   if (bpmEnabled) {
     // Manually wrap with bracketed paste sequences and send via input
-    // Quote the content to handle paths with spaces
-    const wrapped = '\x1b[200~"' + data + '"\x1b[201~';
+    // Only quote file paths (for Claude Code image detection with spaces in path)
+    const content = isFilePath ? '"' + data + '"' : data;
+    const wrapped = '\x1b[200~' + content + '\x1b[201~';
     sendInput(sessionId, wrapped);
   } else {
     // No bracketed paste mode - use standard paste

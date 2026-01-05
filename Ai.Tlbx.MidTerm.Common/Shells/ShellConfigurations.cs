@@ -20,6 +20,28 @@ public abstract class ShellConfigurationBase : IShellConfiguration
     public abstract string[] Arguments { get; }
     public abstract bool SupportsOsc7 { get; }
 
+    /// <summary>
+    /// Configure environment variables for the shell process.
+    ///
+    /// IMPORTANT FOR TUI IMAGE SUPPORT (e.g., Claude Code):
+    /// Complex TUI apps like Claude Code detect their terminal environment to enable features.
+    /// Claude Code specifically checks for Windows Terminal by looking at env vars.
+    ///
+    /// WINDOWS REQUIREMENTS (discovered through testing):
+    /// - WT_PROFILE_ID: Must have curly braces around GUID, e.g., {550e8400-...}
+    /// - WT_SESSION: Plain GUID without braces
+    /// - TERM: Must NOT be set (Windows Terminal doesn't set it)
+    /// - COLORTERM: Must NOT be set (Windows Terminal doesn't set it)
+    ///
+    /// If these don't match exactly, Claude Code won't recognize image paths dropped/pasted
+    /// into the terminal and will just show the raw path instead of [Image #1].
+    ///
+    /// MAC/LINUX REQUIREMENTS (not yet tested):
+    /// When testing on Mac/Linux, run Claude Code in the native terminal and compare:
+    ///   env | grep -E 'TERM|COLORTERM|ITERM|APPLE|LC_'
+    /// Then adjust this method to match what the native terminal sets.
+    /// The pattern-matching for image paths may also differ (Unix paths vs Windows paths).
+    /// </summary>
     public virtual Dictionary<string, string> GetEnvironmentVariables()
     {
         var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -30,24 +52,26 @@ public abstract class ShellConfigurationBase : IShellConfiguration
                 env[key] = entry.Value?.ToString() ?? string.Empty;
             }
         }
-        // On Unix, set TERM for compatibility. On Windows, don't set TERM/COLORTERM
-        // to match native Windows Terminal behavior (which doesn't set these)
-        if (!OperatingSystem.IsWindows())
-        {
-            env["TERM"] = "xterm-256color";
-            env["COLORTERM"] = "truecolor";
-        }
-        env["LANG"] = "en_US.UTF-8";
-        env["LC_ALL"] = "en_US.UTF-8";
-        env["MSYS"] = "enable_pcon";
 
-        // Mimic Windows Terminal to enable features like bracketed paste detection
-        // Use curly braces around GUIDs to match Windows Terminal's format exactly
+        // Platform-specific terminal environment setup
         if (OperatingSystem.IsWindows())
         {
+            // Windows: Mimic Windows Terminal exactly
+            // DO NOT set TERM or COLORTERM - Windows Terminal doesn't set these
             env["WT_SESSION"] = Guid.NewGuid().ToString();
             env["WT_PROFILE_ID"] = "{" + Guid.NewGuid().ToString() + "}";
         }
+        else
+        {
+            // Unix: Set standard terminal variables
+            // TODO: Test with Claude Code on Mac/Linux and adjust if needed
+            env["TERM"] = "xterm-256color";
+            env["COLORTERM"] = "truecolor";
+        }
+
+        env["LANG"] = "en_US.UTF-8";
+        env["LC_ALL"] = "en_US.UTF-8";
+        env["MSYS"] = "enable_pcon";
 
         return env;
     }
