@@ -1,7 +1,7 @@
 # MidTerm
 
 [![GitHub Release](https://img.shields.io/github/v/release/AiTlbx/MidTerm)](https://github.com/AiTlbx/MidTerm/releases/latest)
-[![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#installation)
 [![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](#installation)
 [![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](#installation)
@@ -166,9 +166,17 @@ cd Ai.Tlbx.MidTerm
 ./build-aot-linux.sh     # Linux
 ```
 
+## Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+**Note:** All contributions require acceptance of our [Contributor License Agreement](CLA.md).
+
 ## License
 
-[Mozilla Public License 2.0](LICENSE) — Use freely, share modifications to MPL files.
+[GNU Affero General Public License v3.0](LICENSE)
+
+Commercial licensing available — [contact for details](https://github.com/AiTlbx).
 
 ---
 
