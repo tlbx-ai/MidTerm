@@ -42,12 +42,6 @@ const pendingTitleUpdates = new Map<string, number>();
 // We track this ourselves because xterm.js internal state may not be reliable
 const bracketedPasteState = new Map<string, boolean>();
 
-// Check for debug force-enable via URL param: ?forceBPM=1
-const forceBracketedPaste = new URLSearchParams(window.location.search).get('forceBPM') === '1';
-if (forceBracketedPaste) {
-  console.log('[BPM] Force-enabled via URL parameter');
-}
-
 /**
  * Auto-update session name from shell title (with debounce)
  */
@@ -447,11 +441,11 @@ export function pasteToTerminal(sessionId: string, data: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  const bpmEnabled = forceBracketedPaste || (bracketedPasteState.get(sessionId) ?? false);
+  const bpmEnabled = bracketedPasteState.get(sessionId) ?? false;
 
   // Diagnostic logging
   const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode;
-  console.log(`[PASTE] sessionId=${sessionId}, ourBPM=${bpmEnabled}, xtermBPM=${xtermBpm}, forced=${forceBracketedPaste}, len=${data.length}`);
+  console.log(`[PASTE] sessionId=${sessionId}, ourBPM=${bpmEnabled}, xtermBPM=${xtermBpm}, len=${data.length}`);
 
   if (bpmEnabled) {
     // Manually wrap with bracketed paste sequences and send via input
