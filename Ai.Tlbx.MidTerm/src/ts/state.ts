@@ -74,6 +74,9 @@ export let muxReconnectDelay = 1000;
 /** Mux WebSocket connected flag */
 export let muxWsConnected = false;
 
+/** Tracks if mux WebSocket has ever connected (for reconnect detection) */
+export let muxHasConnected = false;
+
 // =============================================================================
 // Terminal State
 // =============================================================================
@@ -181,6 +184,10 @@ export function setMuxReconnectDelay(delay: number): void {
 
 export function setMuxWsConnected(connected: boolean): void {
   muxWsConnected = connected;
+}
+
+export function setMuxHasConnected(connected: boolean): void {
+  muxHasConnected = connected;
 }
 
 export function setFontsReadyPromise(promise: Promise<void>): void {

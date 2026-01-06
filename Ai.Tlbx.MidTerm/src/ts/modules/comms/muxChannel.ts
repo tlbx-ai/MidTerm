@@ -25,12 +25,14 @@ import {
   muxWs,
   muxReconnectTimer,
   muxReconnectDelay,
+  muxHasConnected,
   sessionTerminals,
   pendingOutputFrames,
   setMuxWs,
   setMuxReconnectTimer,
   setMuxReconnectDelay,
-  setMuxWsConnected
+  setMuxWsConnected,
+  setMuxHasConnected
 } from '../../state';
 import { updateConnectionStatus } from './stateChannel';
 
@@ -208,15 +210,18 @@ export function connectMuxWebSocket(): void {
   setMuxWs(ws);
 
   ws.onopen = () => {
-    const wasReconnect = muxReconnectDelay > INITIAL_RECONNECT_DELAY;
+    // Detect reconnect: we've connected before AND have terminals to refresh
+    const isReconnect = muxHasConnected && sessionTerminals.size > 0;
+
     setMuxReconnectDelay(INITIAL_RECONNECT_DELAY);
     setMuxWsConnected(true);
+    setMuxHasConnected(true);
     updateConnectionStatus();
 
     // On reconnect, clear all terminals and request buffer refresh for each
     // This handles mt.exe restarts where sessions survive but connection is new
-    if (wasReconnect) {
-      console.log('[Mux] Reconnected after server restart - refreshing all terminals');
+    if (isReconnect) {
+      console.log(`[Mux] Reconnected - refreshing ${sessionTerminals.size} terminals`);
       pendingOutputFrames.clear();
       outputQueue.length = 0;
       sessionTerminals.forEach((state, sessionId) => {
@@ -228,6 +233,8 @@ export function connectMuxWebSocket(): void {
         // Request buffer refresh for ALL terminals immediately
         requestBufferRefresh(sessionId);
       });
+    } else {
+      console.log('[Mux] Connected (first connection)');
     }
   };
 
