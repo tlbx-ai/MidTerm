@@ -34,6 +34,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Clean build artifacts
+        shell: bash
+        run: |
+          echo "Cleaning bin/obj/publish folders..."
+          find . -type d -name "bin" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "obj" -exec rm -rf {} + 2>/dev/null || true
+          rm -rf staging 2>/dev/null || true
+          echo "Clean complete"
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -47,11 +56,16 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Clean .NET projects
+        run: |
+          dotnet clean ${{ env.WEB_PROJECT }} -c Release
+          dotnet clean ${{ env.TTYHOST_PROJECT }} -c Release
+
       - name: Publish Web Server (mt)
-        run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
+        run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true --no-incremental
 
       - name: Publish TtyHost (mthost)
-        run: dotnet publish ${{ env.TTYHOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
+        run: dotnet publish ${{ env.TTYHOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true --no-incremental
 
       - name: Create staging directory
         shell: bash
