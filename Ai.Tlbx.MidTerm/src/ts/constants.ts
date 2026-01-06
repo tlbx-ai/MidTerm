@@ -38,10 +38,10 @@ export const MUX_TYPE_COMPRESSED_OUTPUT = 0x07; // Server -> Client: GZip compre
 /** Terminal color themes */
 export const THEMES: Record<ThemeName, TerminalTheme> = {
   dark: {
-    background: '#101014',
+    background: '#06060E',
     foreground: '#DCDCF5',
     cursor: '#DCDCF5',
-    cursorAccent: '#101014',
+    cursorAccent: '#06060E',
     selectionBackground: '#283457'
   },
   light: {
