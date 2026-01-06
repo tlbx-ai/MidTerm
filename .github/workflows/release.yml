@@ -56,11 +56,6 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Clean .NET projects
-        run: |
-          dotnet clean ${{ env.WEB_PROJECT }} -c Release || true
-          dotnet clean ${{ env.TTYHOST_PROJECT }} -c Release || true
-
       - name: Publish Web Server (mt)
         run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
 

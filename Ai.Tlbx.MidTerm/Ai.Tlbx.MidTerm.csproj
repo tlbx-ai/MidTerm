@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>5.5.10</Version>
+    <Version>5.5.11</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
@@ -85,20 +85,20 @@
   <!-- TypeScript type checking (fails build on TS errors) -->
   <!-- Use node directly to avoid Unix permission issues with npx shims in CI -->
   <Target Name="TypeCheckTypeScript" BeforeTargets="CompileTypeScriptDebug;CompileTypeScriptRelease"
-          Condition="Exists('$(TypeScriptSourceDir)/main.ts')">
-    <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(ProjectDir)" />
+          Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
+    <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
   <!-- Debug build: with source map -->
   <Target Name="CompileTypeScriptDebug" BeforeTargets="Build;Publish"
-          Condition="'$(Configuration)' == 'Debug' And Exists('$(TypeScriptSourceDir)/main.ts')">
-    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" />
+          Condition="'$(Configuration)' == 'Debug' And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
+    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
   <!-- Release build: WITH source map for production debugging -->
   <Target Name="CompileTypeScriptRelease" BeforeTargets="Build;Publish"
-          Condition="'$(Configuration)' != 'Debug' And Exists('$(TypeScriptSourceDir)/main.ts')">
-    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" />
+          Condition="'$(Configuration)' != 'Debug' And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
+    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
   <Target Name="CleanTypeScript" AfterTargets="Clean">
