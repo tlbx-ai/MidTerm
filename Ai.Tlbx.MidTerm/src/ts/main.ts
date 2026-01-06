@@ -182,14 +182,13 @@ function registerCallbacks(): void {
 function setupVisibilityChangeHandler(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      // Reconnect WebSockets if they were dropped while in background
+      // Buffer refresh is handled by muxChannel's reconnect handler if needed
       if (!stateWsConnected) {
         connectStateWebSocket();
       }
       if (!muxWsConnected) {
         connectMuxWebSocket();
-      }
-      if (muxWsConnected && activeSessionId) {
-        setTimeout(refreshActiveTerminalBuffer, 200);
       }
     }
   });
