@@ -174,17 +174,34 @@ public sealed class TtyHostClient : IAsyncDisposable
                 var requestBytes = TtyHostProtocol.CreateInfoRequest();
                 await WriteWithLockAsync(requestBytes, ct).ConfigureAwait(false);
 
-                var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
-                if (directResponse is null) continue;
-
-                var (type, payload) = directResponse.Value;
-                if (type != TtyHostMessageType.Info)
+                // During discovery, mthost may be flooding output - skip those messages
+                // and wait for the actual Info response
+                const int maxSkip = 1000;
+                for (var skip = 0; skip < maxSkip; skip++)
                 {
-                    Log($"GetInfo got unexpected message type: {type}");
-                    continue;
+                    var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
+                    if (directResponse is null)
+                    {
+                        Log($"GetInfo: ReadMessage returned null after skipping {skip} messages");
+                        break;
+                    }
+
+                    var (type, payload) = directResponse.Value;
+                    if (type == TtyHostMessageType.Info)
+                    {
+                        if (skip > 0) Log($"GetInfo: Skipped {skip} output messages during discovery");
+                        return TtyHostProtocol.ParseInfo(payload.Span);
+                    }
+
+                    // Expected: Output and StateChange messages from busy terminal
+                    if (type != TtyHostMessageType.Output && type != TtyHostMessageType.StateChange)
+                    {
+                        Log($"GetInfo: unexpected message type {type} while waiting for Info");
+                    }
                 }
 
-                return TtyHostProtocol.ParseInfo(payload.Span);
+                Log($"GetInfo: gave up after skipping {maxSkip} messages");
+                continue;
             }
             catch (Exception ex)
             {
