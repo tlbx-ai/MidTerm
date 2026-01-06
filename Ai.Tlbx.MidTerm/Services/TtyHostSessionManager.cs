@@ -459,9 +459,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         if (!_clients.TryGetValue(sessionId, out var client))
         {
+            Console.WriteLine($"[TtyHostSessionManager] GetBuffer: session {sessionId} not in _clients (count: {_clients.Count})");
             return null;
         }
 
+        Console.WriteLine($"[TtyHostSessionManager] GetBuffer: session {sessionId} found, IsConnected={client.IsConnected}");
         return await client.GetBufferAsync(ct).ConfigureAwait(false);
     }
 
