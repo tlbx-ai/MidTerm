@@ -9,6 +9,7 @@ public sealed class UnixPty : IPtyConnection
     private readonly object _lock = new();
     private int _masterFd = -1;
     private Process? _process;
+    private Microsoft.Win32.SafeHandles.SafeFileHandle? _masterHandle; // Single handle for both streams
     private FileStream? _writerStream;
     private FileStream? _readerStream;
     private bool _disposed;
@@ -132,11 +133,11 @@ public sealed class UnixPty : IPtyConnection
         };
         ioctl(_masterFd, TIOCSWINSZ, ref winSize);
 
-        var safeHandle = new Microsoft.Win32.SafeHandles.SafeFileHandle((IntPtr)_masterFd, ownsHandle: false);
-        _writerStream = new FileStream(safeHandle, FileAccess.Write, bufferSize: 4096, isAsync: false);
-        _readerStream = new FileStream(
-            new Microsoft.Win32.SafeHandles.SafeFileHandle((IntPtr)_masterFd, ownsHandle: false),
-            FileAccess.Read, bufferSize: 4096, isAsync: false);
+        // Use a single SafeFileHandle for both streams to avoid double-close risk
+        // ownsHandle: false because we manage the FD lifecycle manually with close()
+        _masterHandle = new Microsoft.Win32.SafeHandles.SafeFileHandle((IntPtr)_masterFd, ownsHandle: false);
+        _writerStream = new FileStream(_masterHandle, FileAccess.Write, bufferSize: 4096, isAsync: false);
+        _readerStream = new FileStream(_masterHandle, FileAccess.Read, bufferSize: 4096, isAsync: false);
 
         ProcessStartInfo psi;
         var argsString = args.Length > 0 ? " " + string.Join(" ", args) : "";
@@ -258,15 +259,7 @@ public sealed class UnixPty : IPtyConnection
             }
             _disposed = true;
 
-            try { _writerStream?.Dispose(); } catch { }
-            try { _readerStream?.Dispose(); } catch { }
-
-            if (_masterFd >= 0)
-            {
-                try { close(_masterFd); } catch { }
-                _masterFd = -1;
-            }
-
+            // Kill process FIRST so it can flush buffers before FD is closed
             if (_process is not null)
             {
                 try
@@ -278,9 +271,28 @@ public sealed class UnixPty : IPtyConnection
                     }
                 }
                 catch { }
-                try { _process.Dispose(); } catch { }
-                _process = null;
             }
+
+            // Dispose streams before closing FD
+            try { _writerStream?.Dispose(); } catch { }
+            try { _readerStream?.Dispose(); } catch { }
+            _writerStream = null;
+            _readerStream = null;
+
+            // Dispose handle (doesn't close FD since ownsHandle: false)
+            try { _masterHandle?.Dispose(); } catch { }
+            _masterHandle = null;
+
+            // Close the FD manually
+            if (_masterFd >= 0)
+            {
+                try { close(_masterFd); } catch { }
+                _masterFd = -1;
+            }
+
+            // Finally dispose process object
+            try { _process?.Dispose(); } catch { }
+            _process = null;
         }
 
         GC.SuppressFinalize(this);

@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.6.0";
+    public const string Version = "5.6.1";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -145,6 +145,7 @@ public static class Program
 
     // Track current client to disconnect when a new one connects
     private static CancellationTokenSource? _currentClientCts;
+    private static CancellationTokenSource? _linkedClientCts; // Prevent CTS leak from CreateLinkedTokenSource
     private static readonly object _clientLock = new();
 
     private static async Task AcceptClientsAsync(TerminalSession session, string endpoint, CancellationToken ct, Action? onFirstClientSubscribed = null)
@@ -164,9 +165,12 @@ public static class Program
                 // Cancel any existing client - only one active client per session
                 lock (_clientLock)
                 {
+                    _linkedClientCts?.Cancel();
+                    _linkedClientCts?.Dispose();
                     _currentClientCts?.Cancel();
                     _currentClientCts?.Dispose();
                     _currentClientCts = new CancellationTokenSource();
+                    _linkedClientCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _currentClientCts.Token);
                 }
 
                 // Start the read loop when the first client subscribes to output
@@ -183,8 +187,7 @@ public static class Program
                     };
                 }
 
-                var clientCt = CancellationTokenSource.CreateLinkedTokenSource(ct, _currentClientCts!.Token).Token;
-                _ = HandleClientAsync(session, client, clientCt, onSubscribed);
+                _ = HandleClientAsync(session, client, _linkedClientCts.Token, onSubscribed);
             }
             catch (OperationCanceledException)
             {

@@ -6,21 +6,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>5.6.0</Version>
+    <Version>5.6.1</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
     <PublishAot>true</PublishAot>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
 
-  <!-- Publish-only: AOT and size optimizations -->
+  <!-- Publish-only: AOT optimizations (Speed over Size) -->
   <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(IsPublishing)' == 'true'">
-    <OptimizationPreference>Size</OptimizationPreference>
+    <OptimizationPreference>Speed</OptimizationPreference>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
     <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
     <IlcTrimMetadata>true</IlcTrimMetadata>
     <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>

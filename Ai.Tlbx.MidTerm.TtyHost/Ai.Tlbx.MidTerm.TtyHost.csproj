@@ -7,12 +7,43 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <PublishAot>true</PublishAot>
     <SelfContained>true</SelfContained>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
 
-    <Version>5.6.0</Version>
-    <FileVersion>5.6.0.0</FileVersion>
+    <Version>5.6.1</Version>
+    <FileVersion>5.6.1.0</FileVersion>
   </PropertyGroup>
+
+  <!-- Publish-only: AOT optimizations (Speed over Size) -->
+  <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(IsPublishing)' == 'true'">
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <IlcTrimMetadata>true</IlcTrimMetadata>
+    <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
+    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+    <StackTraceSupport>true</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
+    <DebuggerSupport>false</DebuggerSupport>
+    <DebugType>none</DebugType>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
+  </PropertyGroup>
+
+  <!-- Windows linker optimizations -->
+  <ItemGroup Condition="'$(IsPublishing)' == 'true' And $(RuntimeIdentifier.StartsWith('win'))">
+    <LinkerArg Include="/OPT:REF" />
+    <LinkerArg Include="/OPT:ICF" />
+  </ItemGroup>
 
   <!-- Link common protocol sources -->
   <ItemGroup>
