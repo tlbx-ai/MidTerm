@@ -7,8 +7,6 @@ on:
 
 env:
   DOTNET_VERSION: '10.0.x'
-  WEB_PROJECT: Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
-  TTYHOST_PROJECT: Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj
 
 jobs:
   build:
@@ -27,64 +25,56 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
             ext: ''
-
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Clean build artifacts
-        shell: bash
-        run: |
-          echo "Cleaning bin/obj/publish folders..."
-          find . -type d -name "bin" -exec rm -rf {} + 2>/dev/null || true
-          find . -type d -name "obj" -exec rm -rf {} + 2>/dev/null || true
-          rm -rf staging 2>/dev/null || true
-          echo "Clean complete"
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install npm dependencies
-        run: npm ci
+      # 1. Build TypeScript (before dotnet)
+      - name: Build TypeScript
+        shell: bash
+        run: |
+          npm ci
+          VERSION=$(node -p "require('./version.json').web")
+          cd Ai.Tlbx.MidTerm
+          npx tsc --noEmit
+          npx esbuild src/ts/main.ts --bundle --minify --sourcemap=external \
+            --outfile=wwwroot/js/terminal.min.js --target=es2020 \
+            "--define:BUILD_VERSION=\"$VERSION\""
+          echo "✓ terminal.min.js ($(wc -c < wwwroot/js/terminal.min.js | tr -d ' ') bytes)"
 
-      - name: Publish Web Server (mt)
-        run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
-
-      - name: Verify TypeScript was compiled
+      # 2. Verify TypeScript exists before dotnet
+      - name: Verify frontend
         shell: bash
         run: |
           if [ ! -f "Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js" ]; then
-            echo "::error::terminal.min.js not found! TypeScript compilation failed."
-            echo "Build cannot proceed without frontend JavaScript."
+            echo "::error::terminal.min.js missing - TypeScript build failed"
             exit 1
           fi
-          echo "✓ terminal.min.js exists ($(wc -c < Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js) bytes)"
 
-      - name: Publish TtyHost (mthost)
-        run: dotnet publish ${{ env.TTYHOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
+      # 3. Build binaries
+      - name: Build mt
+        run: dotnet publish Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
 
-      - name: Create staging directory
-        shell: bash
-        run: mkdir -p staging
+      - name: Build mthost
+        run: dotnet publish Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
 
-      - name: Stage binaries
+      # 4. Stage and upload
+      - name: Stage
         shell: bash
         run: |
+          mkdir -p staging
           cp Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/
           cp Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
           cp version.json staging/
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.rid }}
           path: staging/
@@ -96,31 +86,25 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Package artifacts
+      - name: Package
         run: |
           cd artifacts
-          # Windows
           cd win-x64 && zip ../mt-win-x64.zip mt.exe mthost.exe version.json && cd ..
-          # macOS
           cd osx-arm64 && tar -czvf ../mt-osx-arm64.tar.gz mt mthost version.json && cd ..
           cd osx-x64 && tar -czvf ../mt-osx-x64.tar.gz mt mthost version.json && cd ..
-          # Linux
           cd linux-x64 && tar -czvf ../mt-linux-x64.tar.gz mt mthost version.json && cd ..
 
-      - name: Get release notes from tag
-        id: tag_notes
+      - name: Get release notes
+        id: notes
         run: |
-          # Get the tag annotation body (everything after the title line)
           TAG_BODY=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
           echo "body<<EOF" >> $GITHUB_OUTPUT
           echo "$TAG_BODY" >> $GITHUB_OUTPUT
@@ -131,7 +115,7 @@ jobs:
         with:
           body: |
             ## What's Changed
-            ${{ steps.tag_notes.outputs.body }}
+            ${{ steps.notes.outputs.body }}
           files: |
             artifacts/mt-osx-arm64.tar.gz
             artifacts/mt-osx-x64.tar.gz

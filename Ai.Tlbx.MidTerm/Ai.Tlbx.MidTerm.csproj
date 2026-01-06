@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>5.5.14</Version>
+    <Version>5.5.15</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
@@ -82,28 +82,18 @@
     <TypeScriptOutFile>wwwroot/js/terminal.min.js</TypeScriptOutFile>
   </PropertyGroup>
 
-  <!-- Read version from version.json for JS injection -->
-  <Target Name="ReadVersionJson" BeforeTargets="CompileTypeScript">
+  <!-- TypeScript compilation for local dev (skipped if CI already built it) -->
+  <Target Name="CompileTypeScript" BeforeTargets="PrepareResources"
+          Condition="!Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile)') And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
     <Exec Command="node -p &quot;require('../version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMsBuild="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
     </Exec>
-  </Target>
-
-  <!-- TypeScript type checking (fails build on TS errors) -->
-  <!-- Use node directly to avoid Unix permission issues with npx shims in CI -->
-  <Target Name="TypeCheckTypeScript" BeforeTargets="CompileTypeScript"
-          Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
     <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)" />
-  </Target>
-
-  <!-- TypeScript compilation - runs before PrepareResources so generated files are included in EmbeddedResource -->
-  <Target Name="CompileTypeScript" BeforeTargets="PrepareResources" DependsOnTargets="ReadVersionJson"
-          Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
     <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <!-- Dynamically add generated files to EmbeddedResource since they don't exist at project load time -->
+    <!-- Add generated files since they didn't exist at project load -->
     <ItemGroup>
-      <EmbeddedResource Include="$(TypeScriptOutFile)" LinkBase="wwwroot/js" Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile)')" />
-      <EmbeddedResource Include="$(TypeScriptOutFile).map" LinkBase="wwwroot/js" Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile).map')" />
+      <EmbeddedResource Include="$(TypeScriptOutFile)" LinkBase="wwwroot/js" />
+      <EmbeddedResource Include="$(TypeScriptOutFile).map" LinkBase="wwwroot/js" />
     </ItemGroup>
   </Target>
 
