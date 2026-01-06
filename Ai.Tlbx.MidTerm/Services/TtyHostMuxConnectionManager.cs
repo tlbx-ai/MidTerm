@@ -41,8 +41,10 @@ public sealed class TtyHostMuxConnectionManager
                 DebugLogger.Log($"[WS-OUTPUT] {sessionId}: {BitConverter.ToString(data)}");
             }
 
-            // Use dimensions from the output event (embedded at capture time)
-            var frame = MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data);
+            // Use compression for payloads over threshold
+            var frame = data.Length > MuxProtocol.CompressionThreshold
+                ? MuxProtocol.CreateCompressedOutputFrame(sessionId, cols, rows, data)
+                : MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data);
 
             // Queue to each client - non-blocking, each client has its own queue
             foreach (var client in _clients.Values)
@@ -86,7 +88,10 @@ public sealed class TtyHostMuxConnectionManager
         var cols = sessionInfo?.Cols ?? 80;
         var rows = sessionInfo?.Rows ?? 24;
 
-        var frame = MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data.Span);
+        // Use compression for payloads over threshold
+        var frame = data.Length > MuxProtocol.CompressionThreshold
+            ? MuxProtocol.CreateCompressedOutputFrame(sessionId, cols, rows, data.Span)
+            : MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data.Span);
 
         // Queue to each client - non-blocking
         foreach (var client in _clients.Values)

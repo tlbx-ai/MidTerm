@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.IO.Compression;
 
 namespace Ai.Tlbx.MidTerm.Services
 {
@@ -20,6 +21,12 @@ namespace Ai.Tlbx.MidTerm.Services
         public const byte TypeSessionState = 0x04;
         public const byte TypeResync = 0x05; // Server -> Client: clear all terminals, buffer refresh follows
         public const byte TypeBufferRequest = 0x06; // Client -> Server: request buffer refresh for session
+        public const byte TypeCompressedOutput = 0x07; // Server -> Client: GZip compressed terminal output
+
+        // Compression settings
+        public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
+        public const int CompressionThreshold = 2048; // Only compress payloads > 2KB
+        public const int CompressedOutputHeaderSize = 17; // HeaderSize + dims(4) + uncompressedLen(4)
 
         public static byte[] CreateOutputFrame(string sessionId, int cols, int rows, ReadOnlySpan<byte> data)
         {
@@ -30,6 +37,42 @@ namespace Ai.Tlbx.MidTerm.Services
             BitConverter.TryWriteBytes(frame.AsSpan(11, 2), (ushort)rows);
             data.CopyTo(frame.AsSpan(OutputHeaderSize));
             return frame;
+        }
+
+        /// <summary>
+        /// Creates a GZip-compressed output frame.
+        /// Format: [type:1][sessionId:8][cols:2][rows:2][uncompressedLen:4][gzip-data...]
+        /// </summary>
+        public static byte[] CreateCompressedOutputFrame(string sessionId, int cols, int rows, ReadOnlySpan<byte> data)
+        {
+            using var ms = new MemoryStream();
+
+            // Write header (17 bytes)
+            ms.WriteByte(TypeCompressedOutput);
+
+            // SessionId (8 bytes)
+            Span<byte> sessionIdBytes = stackalloc byte[8];
+            WriteSessionId(sessionIdBytes, sessionId);
+            ms.Write(sessionIdBytes);
+
+            // Cols and rows (4 bytes)
+            Span<byte> dimBytes = stackalloc byte[4];
+            BitConverter.TryWriteBytes(dimBytes.Slice(0, 2), (ushort)cols);
+            BitConverter.TryWriteBytes(dimBytes.Slice(2, 2), (ushort)rows);
+            ms.Write(dimBytes);
+
+            // Uncompressed length (4 bytes)
+            Span<byte> lenBytes = stackalloc byte[4];
+            BitConverter.TryWriteBytes(lenBytes, data.Length);
+            ms.Write(lenBytes);
+
+            // GZip compressed data
+            using (var gzip = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+            {
+                gzip.Write(data);
+            }
+
+            return ms.ToArray();
         }
 
         public static byte[] CreateStateFrame(string sessionId, bool created)

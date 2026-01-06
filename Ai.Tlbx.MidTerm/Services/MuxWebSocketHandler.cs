@@ -47,7 +47,6 @@ public sealed class MuxWebSocketHandler
 
     private async Task SendInitialBuffersAsync(MuxClient client)
     {
-        const int ChunkSize = 32 * 1024; // 32KB chunks to avoid memory spikes
         var sessions = _sessionManager.GetAllSessions();
 
         foreach (var sessionInfo in sessions)
@@ -57,15 +56,19 @@ public sealed class MuxWebSocketHandler
                 var buffer = await _sessionManager.GetBufferAsync(sessionInfo.Id);
                 if (buffer is null || buffer.Length == 0) continue;
 
-                // Chunk large buffers for flow control
-                for (var offset = 0; offset < buffer.Length; offset += ChunkSize)
+                // Chunk large buffers and compress each chunk
+                for (var offset = 0; offset < buffer.Length; offset += MuxProtocol.CompressionChunkSize)
                 {
-                    var length = Math.Min(ChunkSize, buffer.Length - offset);
+                    var length = Math.Min(MuxProtocol.CompressionChunkSize, buffer.Length - offset);
                     var chunk = buffer.AsSpan(offset, length);
-                    var frame = MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk);
+
+                    // Use compression for chunks over threshold
+                    var frame = length > MuxProtocol.CompressionThreshold
+                        ? MuxProtocol.CreateCompressedOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk)
+                        : MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk);
+
                     if (!await client.TrySendAsync(frame))
                     {
-                        // Client queue full, stop sending to this client
                         DebugLogger.Log($"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
                         return;
                     }
@@ -176,8 +179,18 @@ public sealed class MuxWebSocketHandler
             var buffer = await _sessionManager.GetBufferAsync(sessionId);
             if (buffer is not null && buffer.Length > 0)
             {
-                var frame = MuxProtocol.CreateOutputFrame(sessionId, session.Cols, session.Rows, buffer);
-                await client.TrySendAsync(frame);
+                // Chunk and compress buffer response
+                for (var offset = 0; offset < buffer.Length; offset += MuxProtocol.CompressionChunkSize)
+                {
+                    var length = Math.Min(MuxProtocol.CompressionChunkSize, buffer.Length - offset);
+                    var chunk = buffer.AsSpan(offset, length);
+
+                    var frame = length > MuxProtocol.CompressionThreshold
+                        ? MuxProtocol.CreateCompressedOutputFrame(sessionId, session.Cols, session.Rows, chunk)
+                        : MuxProtocol.CreateOutputFrame(sessionId, session.Cols, session.Rows, chunk);
+
+                    await client.TrySendAsync(frame);
+                }
                 DebugLogger.Log($"[MuxHandler] Sent buffer for {sessionId}: {buffer.Length} bytes");
             }
         }
