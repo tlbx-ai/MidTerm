@@ -6,7 +6,8 @@
 
 import { escapeHtml } from '../../utils';
 
-const GITHUB_RELEASES_URL = 'https://api.github.com/repos/AiTlbx/MidTerm/releases?per_page=10';
+const GITHUB_RELEASES_BASE = 'https://api.github.com/repos/AiTlbx/MidTerm/releases';
+const PER_PAGE = 30;
 const GITHUB_RELEASES_PAGE = 'https://github.com/AiTlbx/MidTerm/releases';
 
 interface GitHubRelease {
@@ -15,6 +16,11 @@ interface GitHubRelease {
   body?: string;
 }
 
+// Pagination state
+let currentPage = 1;
+let hasMoreReleases = true;
+let isLoading = false;
+
 /**
  * Show the changelog modal and fetch releases from GitHub
  */
@@ -22,19 +28,54 @@ export function showChangelog(): void {
   const modal = document.getElementById('changelog-modal');
   const body = document.getElementById('changelog-body');
 
+  // Reset pagination state
+  currentPage = 1;
+  hasMoreReleases = true;
+  isLoading = false;
+
   if (modal) modal.classList.remove('hidden');
   if (body) body.innerHTML = '<div class="changelog-loading">Loading changelog...</div>';
 
-  fetch(GITHUB_RELEASES_URL)
+  fetchReleases(true);
+}
+
+/**
+ * Fetch releases from GitHub API
+ */
+function fetchReleases(isInitial: boolean): void {
+  if (isLoading) return;
+  isLoading = true;
+
+  const body = document.getElementById('changelog-body');
+  if (!body) return;
+
+  const url = `${GITHUB_RELEASES_BASE}?per_page=${PER_PAGE}&page=${currentPage}`;
+
+  fetch(url)
     .then((r) => r.json())
     .then((releases: GitHubRelease[]) => {
-      if (!body) return;
+      isLoading = false;
 
-      if (!releases || releases.length === 0) {
-        body.innerHTML = '<p>No releases found.</p>';
+      if (!releases || !Array.isArray(releases)) {
+        if (isInitial) {
+          body.innerHTML = '<p>No releases found.</p>';
+        }
+        hasMoreReleases = false;
         return;
       }
 
+      // Check if there are more pages
+      hasMoreReleases = releases.length === PER_PAGE;
+
+      if (releases.length === 0) {
+        if (isInitial) {
+          body.innerHTML = '<p>No releases found.</p>';
+        }
+        hasMoreReleases = false;
+        return;
+      }
+
+      // Build HTML for releases
       let html = '';
       releases.forEach((release) => {
         const version = release.tag_name || 'Unknown';
@@ -52,10 +93,32 @@ export function showChangelog(): void {
         html += '</div>';
       });
 
-      body.innerHTML = html;
+      if (isInitial) {
+        body.innerHTML = html;
+      } else {
+        // Remove existing load more button before appending
+        const existingBtn = body.querySelector('.changelog-load-more');
+        if (existingBtn) existingBtn.remove();
+        body.insertAdjacentHTML('beforeend', html);
+      }
+
+      // Add load more button if there are more releases
+      if (hasMoreReleases) {
+        const loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'changelog-load-more';
+        loadMoreBtn.textContent = 'Load older releases';
+        loadMoreBtn.addEventListener('click', () => {
+          currentPage++;
+          loadMoreBtn.textContent = 'Loading...';
+          loadMoreBtn.disabled = true;
+          fetchReleases(false);
+        });
+        body.appendChild(loadMoreBtn);
+      }
     })
     .catch((e) => {
-      if (body) {
+      isLoading = false;
+      if (isInitial) {
         body.innerHTML =
           '<p class="changelog-error">Failed to load changelog. ' +
           '<a href="' + GITHUB_RELEASES_PAGE + '" target="_blank">View on GitHub</a></p>';

@@ -1682,6 +1682,29 @@ html, body {
     color: var(--accent-blue);
 }
 
+.changelog-load-more {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin-top: 16px;
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.2s;
+}
+
+.changelog-load-more:hover:not(:disabled) {
+    background-color: var(--bg-secondary);
+}
+
+.changelog-load-more:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* System Status Section */
 .system-status-section .status-loading {
     color: var(--text-secondary);
