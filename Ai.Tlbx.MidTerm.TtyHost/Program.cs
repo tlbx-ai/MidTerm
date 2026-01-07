@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.7.0";
+    public const string Version = "5.7.1";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -258,7 +258,6 @@ public static class Program
                     if (client.IsConnected)
                     {
                         var msg = TtyHostProtocol.CreateOutputMessage(session.Cols, session.Rows, data.Span);
-                        Log($"Writing output: type=0x{msg[0]:X2}, len={BitConverter.ToInt32(msg, 1)}, total={msg.Length}");
                         lock (stream)
                         {
                             stream.Write(msg);
@@ -312,7 +311,6 @@ public static class Program
                                 if (client.IsConnected)
                                 {
                                     var msg = TtyHostProtocol.CreateOutputMessage(session.Cols, session.Rows, data);
-                                    Log($"Writing buffered: type=0x{msg[0]:X2}, len={BitConverter.ToInt32(msg, 1)}, total={msg.Length}");
                                     lock (stream)
                                     {
                                         stream.Write(msg);
