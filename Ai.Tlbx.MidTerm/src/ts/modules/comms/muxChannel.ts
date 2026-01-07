@@ -58,14 +58,20 @@ interface OutputFrameItem {
   compressed: boolean;
 }
 
+const MAX_QUEUE_SIZE = 10000;
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
 
 /**
  * Queue an output frame and trigger processing.
  * ALL frames go through this queue to guarantee strict ordering.
+ * Drops oldest frames when queue is full to prevent OOM.
  */
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
+  if (outputQueue.length >= MAX_QUEUE_SIZE) {
+    console.warn('[Mux] Output queue full, dropping oldest frame');
+    outputQueue.shift();
+  }
   outputQueue.push({ sessionId, payload, compressed });
   processOutputQueue();
 }
@@ -161,23 +167,19 @@ function writeToTerminal(
   }
 
   // Resize if dimensions are valid and different
-  if (cols > 0 && rows > 0 && cols <= 500 && rows <= 500) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const termCore = (state.terminal as any)._core;
-    if (termCore && termCore._renderService) {
-      const currentCols = state.terminal.cols;
-      const currentRows = state.terminal.rows;
+  if (cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened) {
+    const currentCols = state.terminal.cols;
+    const currentRows = state.terminal.rows;
 
-      if (currentCols !== cols || currentRows !== rows) {
-        try {
-          state.terminal.resize(cols, rows);
-          state.serverCols = cols;
-          state.serverRows = rows;
-          applyTerminalScaling(sessionId, state);
-        } catch (e: unknown) {
-          const message = e instanceof Error ? e.message : String(e);
-          console.warn('Terminal resize deferred:', message);
-        }
+    if (currentCols !== cols || currentRows !== rows) {
+      try {
+        state.terminal.resize(cols, rows);
+        state.serverCols = cols;
+        state.serverRows = rows;
+        applyTerminalScaling(sessionId, state);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.warn('Terminal resize deferred:', message);
       }
     }
   }

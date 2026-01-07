@@ -38,6 +38,8 @@ INSTALLING_GID="${INSTALLING_GID:-}"
 PASSWORD_HASH="${PASSWORD_HASH:-}"
 PORT="${PORT:-2000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
+USE_HTTPS="${USE_HTTPS:-false}"
+CERT_PATH="${CERT_PATH:-}"
 
 print_header() {
     echo ""
@@ -227,6 +229,115 @@ prompt_network_config() {
         echo -e "  ${YELLOW}MidTerm will accept connections from any device on your network.${NC}"
         echo -e "  ${YELLOW}Ensure your password is strong and consider firewall rules.${NC}"
     fi
+
+    # HTTPS configuration
+    echo ""
+    echo -e "  ${CYAN}HTTPS Configuration:${NC}"
+    echo -e "  ${CYAN}[1] HTTP only${NC} (default)"
+    echo -e "      ${GRAY}- No encryption, simpler setup${NC}"
+    echo ""
+    echo -e "  ${CYAN}[2] Enable HTTPS${NC}"
+    echo -e "      ${GRAY}- Encrypted connections${NC}"
+    echo -e "      ${GRAY}- Generates self-signed certificate${NC}"
+    echo -e "      ${YELLOW}- Browser will show warning until cert is trusted${NC}"
+    echo ""
+
+    read -p "  Your choice [1/2]: " https_choice < /dev/tty
+
+    if [ "$https_choice" = "2" ]; then
+        USE_HTTPS=true
+        generate_certificate "$1"
+    else
+        USE_HTTPS=false
+    fi
+}
+
+generate_certificate() {
+    local settings_dir="$1"
+    local cert_dir="$settings_dir"
+
+    mkdir -p "$cert_dir"
+    CERT_PATH="$cert_dir/cert.pfx"
+
+    echo ""
+    echo -e "  ${GRAY}Generating self-signed certificate...${NC}"
+
+    # Collect all valid IP addresses for SANs
+    local san_entries="DNS:localhost,IP:127.0.0.1"
+
+    # Get local IP addresses
+    if command -v ip &> /dev/null; then
+        # Linux
+        local ips=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.')
+    elif command -v ifconfig &> /dev/null; then
+        # macOS
+        local ips=$(ifconfig | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}')
+    fi
+
+    for ip in $ips; do
+        san_entries="$san_entries,IP:$ip"
+    done
+
+    # Also try to get hostname
+    local hostname=$(hostname 2>/dev/null)
+    if [ -n "$hostname" ]; then
+        san_entries="$san_entries,DNS:$hostname"
+    fi
+
+    # Generate certificate with openssl
+    local temp_key=$(mktemp)
+    local temp_cert=$(mktemp)
+    local temp_config=$(mktemp)
+
+    # Create OpenSSL config for SANs
+    cat > "$temp_config" << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+x509_extensions = v3_ca
+prompt = no
+
+[req_distinguished_name]
+CN = MidTerm
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = $san_entries
+
+[v3_ca]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = $san_entries
+EOF
+
+    # Generate key and certificate
+    openssl req -x509 -newkey rsa:4096 -keyout "$temp_key" -out "$temp_cert" \
+        -days 3650 -nodes -config "$temp_config" 2>/dev/null
+
+    # Export to PFX format
+    openssl pkcs12 -export -out "$CERT_PATH" -inkey "$temp_key" -in "$temp_cert" \
+        -password pass:midterm 2>/dev/null
+
+    # Cleanup temp files
+    rm -f "$temp_key" "$temp_cert" "$temp_config"
+
+    # Trust certificate on macOS
+    if [ "$(uname -s)" = "Darwin" ]; then
+        echo -e "  ${YELLOW}To trust the certificate (may require password):${NC}"
+        echo -e "  ${GRAY}sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \"$cert_dir/cert.pem\"${NC}"
+        # Export PEM for macOS trust
+        openssl pkcs12 -in "$CERT_PATH" -out "$cert_dir/cert.pem" -nodes -password pass:midterm 2>/dev/null
+    else
+        echo -e "  ${YELLOW}To trust the certificate on Linux:${NC}"
+        echo -e "  ${GRAY}sudo cp \"$cert_dir/cert.pem\" /usr/local/share/ca-certificates/midterm.crt${NC}"
+        echo -e "  ${GRAY}sudo update-ca-certificates${NC}"
+        openssl pkcs12 -in "$CERT_PATH" -out "$cert_dir/cert.pem" -nodes -password pass:midterm 2>/dev/null
+    fi
+
+    echo -e "  ${GREEN}Certificate generated: $CERT_PATH${NC}"
 }
 
 write_service_settings() {
@@ -242,29 +353,31 @@ write_service_settings() {
         mv "$settings_path" "$old_settings_path"
     fi
 
-    # Write minimal bootstrap settings - app will migrate user preferences from .old
+    # Build JSON with optional fields
+    local json_content="{
+  \"runAsUser\": \"$INSTALLING_USER\",
+  \"runAsUid\": $INSTALLING_UID,
+  \"runAsGid\": $INSTALLING_GID,
+  \"authenticationEnabled\": true"
+
     if [ -n "$PASSWORD_HASH" ]; then
-        cat > "$settings_path" << EOF
-{
-  "runAsUser": "$INSTALLING_USER",
-  "runAsUid": $INSTALLING_UID,
-  "runAsGid": $INSTALLING_GID,
-  "authenticationEnabled": true,
-  "passwordHash": "$PASSWORD_HASH"
-}
-EOF
+        json_content="$json_content,
+  \"passwordHash\": \"$PASSWORD_HASH\""
         echo -e "  ${GRAY}Password: configured${NC}"
-    else
-        cat > "$settings_path" << EOF
-{
-  "runAsUser": "$INSTALLING_USER",
-  "runAsUid": $INSTALLING_UID,
-  "runAsGid": $INSTALLING_GID,
-  "authenticationEnabled": true
-}
-EOF
     fi
 
+    if [ "$USE_HTTPS" = true ] && [ -n "$CERT_PATH" ]; then
+        json_content="$json_content,
+  \"useHttps\": true,
+  \"certificatePath\": \"$CERT_PATH\",
+  \"certificatePassword\": \"midterm\""
+        echo -e "  ${GREEN}HTTPS: enabled${NC}"
+    fi
+
+    json_content="$json_content
+}"
+
+    echo "$json_content" > "$settings_path"
     chmod 644 "$settings_path"
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
     echo -e "  ${GRAY}Port: $PORT${NC}"
@@ -281,22 +394,28 @@ write_user_settings() {
 
     mkdir -p "$config_dir"
 
+    # Build JSON with optional fields
+    local json_content="{
+  \"authenticationEnabled\": true"
+
     if [ -n "$PASSWORD_HASH" ]; then
-        cat > "$settings_path" << EOF
-{
-  "authenticationEnabled": true,
-  "passwordHash": "$PASSWORD_HASH"
-}
-EOF
+        json_content="$json_content,
+  \"passwordHash\": \"$PASSWORD_HASH\""
         echo -e "  ${GRAY}Password: configured${NC}"
-    else
-        cat > "$settings_path" << EOF
-{
-  "authenticationEnabled": true
-}
-EOF
     fi
 
+    if [ "$USE_HTTPS" = true ] && [ -n "$CERT_PATH" ]; then
+        json_content="$json_content,
+  \"useHttps\": true,
+  \"certificatePath\": \"$CERT_PATH\",
+  \"certificatePassword\": \"midterm\""
+        echo -e "  ${GREEN}HTTPS: enabled${NC}"
+    fi
+
+    json_content="$json_content
+}"
+
+    echo "$json_content" > "$settings_path"
     chmod 600 "$settings_path"
     echo -e "  ${GRAY}Settings: $settings_path${NC}"
 }
@@ -363,6 +482,8 @@ install_as_service() {
                      INSTALLING_GID="$INSTALLING_GID" \
                      PORT="$PORT" \
                      BIND_ADDRESS="$BIND_ADDRESS" \
+                     USE_HTTPS="$USE_HTTPS" \
+                     CERT_PATH="$CERT_PATH" \
                      "$SCRIPT_PATH" --service
     fi
 
@@ -398,7 +519,12 @@ install_as_service() {
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
     echo -e "  ${GRAY}Location: $install_dir/mt${NC}"
-    echo -e "  ${CYAN}URL:      http://localhost:$PORT${NC}"
+    if [ "$USE_HTTPS" = true ]; then
+        echo -e "  ${CYAN}URL:      https://localhost:$PORT${NC}"
+        echo -e "  ${YELLOW}Note:     Browser may show certificate warning until trusted${NC}"
+    else
+        echo -e "  ${CYAN}URL:      http://localhost:$PORT${NC}"
+    fi
     echo ""
 }
 
@@ -506,6 +632,7 @@ EOF
 
 install_as_user() {
     local install_dir="$HOME/.local/bin"
+    local settings_dir="$HOME/.MidTerm"
 
     install_binary "$install_dir"
 
@@ -516,6 +643,27 @@ install_as_user() {
         PASSWORD_HASH="$existing_hash"
     else
         MT_BINARY_PATH="$install_dir/mt" prompt_password
+    fi
+
+    # Prompt for HTTPS (user install skips port/bind config since it's manual)
+    echo ""
+    echo -e "  ${CYAN}HTTPS Configuration:${NC}"
+    echo -e "  ${CYAN}[1] HTTP only${NC} (default)"
+    echo -e "      ${GRAY}- No encryption, simpler setup${NC}"
+    echo ""
+    echo -e "  ${CYAN}[2] Enable HTTPS${NC}"
+    echo -e "      ${GRAY}- Encrypted connections${NC}"
+    echo -e "      ${GRAY}- Generates self-signed certificate${NC}"
+    echo -e "      ${YELLOW}- Browser will show warning until cert is trusted${NC}"
+    echo ""
+
+    read -p "  Your choice [1/2]: " https_choice < /dev/tty
+
+    if [ "$https_choice" = "2" ]; then
+        USE_HTTPS=true
+        generate_certificate "$settings_dir"
+    else
+        USE_HTTPS=false
     fi
 
     # Write user settings with password
@@ -541,6 +689,9 @@ install_as_user() {
     echo ""
     echo -e "  ${GRAY}Location: $install_dir/mt${NC}"
     echo -e "  ${YELLOW}Run 'mt' to start MidTerm${NC}"
+    if [ "$USE_HTTPS" = true ]; then
+        echo -e "  ${YELLOW}Note: Browser may show certificate warning until trusted${NC}"
+    fi
     echo ""
 }
 
@@ -641,7 +792,7 @@ prompt_service_mode
 
 if [ "$SERVICE_MODE" = true ]; then
     # Prompt for network configuration (password handled after binary install)
-    prompt_network_config
+    prompt_network_config "/usr/local/etc/MidTerm"
     install_as_service
 else
     install_as_user

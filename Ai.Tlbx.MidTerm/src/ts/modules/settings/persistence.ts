@@ -46,7 +46,7 @@ export function getElementChecked(id: string): boolean {
  * Populate version info in the about section
  */
 export function populateVersionInfo(serverVersion: string | null, hostVersion: string | null, frontendVersion: string): void {
-  const formatVersion = (v: string) => 'v' + (v.split(/[+-]/)[0] ?? v).split('.').slice(0, 3).join('.');
+  const formatVersion = (v: string) => 'v' + (v.split(/[+-]/)[0] ?? v);
 
   const serverEl = document.getElementById('version-server');
   if (serverEl && serverVersion) {

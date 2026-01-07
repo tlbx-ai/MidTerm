@@ -220,7 +220,7 @@ function createSession(): void {
   }
 
   // Optimistic UI: add temporary session with spinner
-  const tempId = 'pending-' + Date.now();
+  const tempId = 'pending-' + crypto.randomUUID();
   const tempSession = {
     id: tempId,
     name: null,
@@ -433,9 +433,9 @@ function fetchVersion(): void {
   fetch('/api/version')
     .then((r) => r.text())
     .then((v) => {
-      const shortVersion = (v.split(/[+-]/)[0] ?? v).split('.').slice(0, 3).join('.');
+      const version = v.split(/[+-]/)[0] ?? v;
       const el = document.getElementById('app-version');
-      if (el) el.textContent = 'v' + shortVersion;
+      if (el) el.textContent = 'v' + version;
     })
     .catch(() => {});
 }

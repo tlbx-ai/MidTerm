@@ -75,14 +75,22 @@ export function fitSessionToScreen(sessionId: string): void {
     return;
   }
 
-  // Get cell dimensions from xterm's render service
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderService = (state.terminal as any)._core?._renderService;
-  const cellWidth = renderService?.dimensions?.css?.cell?.width;
-  const cellHeight = renderService?.dimensions?.css?.cell?.height;
+  // Get cell dimensions by measuring the terminal's rendered size
+  // This avoids depending on xterm.js internal APIs
+  const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+  const terminalCols = state.terminal.cols;
+  const terminalRows = state.terminal.rows;
 
-  if (!cellWidth || !cellHeight) {
-    // Fallback to FitAddon if render service isn't ready
+  let cellWidth: number | null = null;
+  let cellHeight: number | null = null;
+
+  if (screen && terminalCols > 0 && terminalRows > 0) {
+    cellWidth = screen.offsetWidth / terminalCols;
+    cellHeight = screen.offsetHeight / terminalRows;
+  }
+
+  if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
+    // Fallback to FitAddon if measurements aren't valid
     requestAnimationFrame(() => {
       try {
         const dims = state.fitAddon.proposeDimensions();
@@ -91,7 +99,7 @@ export function fitSessionToScreen(sessionId: string): void {
           sendResize(sessionId, state.terminal);
         }
       } catch {
-        // FitAddon may fail if terminal render service isn't initialized
+        // FitAddon may fail if terminal isn't fully initialized
       }
 
       if (wasHidden) {

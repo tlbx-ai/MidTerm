@@ -40,37 +40,6 @@ let requestBufferRefresh: (sessionId: string) => void = () => {};
 const pendingTitleUpdates = new Map<string, number>();
 
 /**
- * Bracketed Paste Mode (BPM) State Tracking
- *
- * BPM allows TUI apps to distinguish pasted text from typed input by wrapping
- * pastes with escape sequences: ESC[200~ (start) and ESC[201~ (end).
- *
- * HOW IT WORKS WITH COMPLEX TUIs (e.g., Claude Code):
- * 1. Shell/app enables BPM by outputting ESC[?2004h
- * 2. We detect this in terminal output and track state per session
- * 3. When user pastes (or drops file), we wrap content with BPM markers
- * 4. TUI app receives markers and knows it's pasted content
- *
- * IMAGE DRAG-DROP TO CLAUDE CODE:
- * Claude Code detects dropped images via string heuristics - it pattern-matches
- * for file paths like: ^"?[A-Z]:\\.*?\.(png|jpg|jpeg|webp|gif)"?$
- * When detected, it reads the file and adds it to context as an image.
- *
- * CRITICAL FOR WINDOWS: Claude Code checks environment variables to detect
- * if it's running in Windows Terminal. See ShellConfigurations.cs for details.
- * - WT_PROFILE_ID must have curly braces: {guid-here}
- * - TERM and COLORTERM must NOT be set (Windows Terminal doesn't set them)
- *
- * FOR MAC/LINUX TESTING: The env var requirements may differ. Start by checking
- * what environment a native terminal sets, then match it in ShellConfigurations.cs.
- * The BPM mechanism itself should work the same across platforms.
- *
- * We track BPM ourselves AND check xterm.js internal state as fallback because
- * xterm.js detection alone proved unreliable in some scenarios.
- */
-const bracketedPasteState = new Map<string, boolean>();
-
-/**
  * Auto-update session name from shell title (with debounce)
  */
 function updateSessionNameAuto(sessionId: string, name: string): void {
@@ -272,28 +241,8 @@ export function writeOutputFrame(
 ): void {
   const frame = parseOutputFrame(payload);
 
-  // Track bracketed paste mode by detecting escape sequences in output
-  // Apps send \x1b[?2004h to enable and \x1b[?2004l to disable
-  if (frame.data.length > 0) {
-    const text = new TextDecoder().decode(frame.data);
-
-    // Check for bracketed paste mode sequences (multiple formats)
-    // ESC[?2004h = enable, ESC[?2004l = disable
-    const enableMatch = text.includes('\x1b[?2004h') || text.includes('\u001b[?2004h');
-    const disableMatch = text.includes('\x1b[?2004l') || text.includes('\u001b[?2004l');
-
-    if (enableMatch) {
-      bracketedPasteState.set(sessionId, true);
-    }
-    if (disableMatch) {
-      bracketedPasteState.set(sessionId, false);
-    }
-  }
-
   // Ensure terminal matches frame dimensions before writing
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const core = (state.terminal as any)._core;
-  if (frame.valid && core && core._renderService) {
+  if (frame.valid && state.opened) {
     const currentCols = state.terminal.cols;
     const currentRows = state.terminal.rows;
 
@@ -460,12 +409,11 @@ export function destroyTerminalForSession(sessionId: string): void {
   state.container.remove();
   sessionTerminals.delete(sessionId);
   pendingOutputFrames.delete(sessionId);
-  bracketedPasteState.delete(sessionId);
 }
 
 /**
  * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
- * We track BPM state ourselves to ensure reliable paste handling for TUI apps.
+ * BPM state is tracked in muxChannel from live WebSocket data.
  *
  * @param isFilePath - If true, wrap content in quotes for file path handling.
  *                     This helps TUI apps like Claude Code detect file paths with spaces.
@@ -474,11 +422,10 @@ export function pasteToTerminal(sessionId: string, data: string, isFilePath: boo
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  // Check all BPM tracking sources: local replay tracking, muxChannel live tracking, and xterm.js
-  const localBpm = bracketedPasteState.get(sessionId) ?? false;
+  // Check BPM state from muxChannel (live WebSocket tracking) and xterm.js internal state
   const muxBpm = isBracketedPasteEnabled(sessionId);
   const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode ?? false;
-  const bpmEnabled = localBpm || muxBpm || xtermBpm;
+  const bpmEnabled = muxBpm || xtermBpm;
 
   if (bpmEnabled) {
     // Manually wrap with bracketed paste sequences and send via input

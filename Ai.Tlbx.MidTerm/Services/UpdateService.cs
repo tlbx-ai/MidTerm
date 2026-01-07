@@ -9,6 +9,8 @@ public sealed class UpdateService : IDisposable
 {
     private const string RepoOwner = "AiTlbx";
     private const string RepoName = "MidTerm";
+    private const string LocalReleasePath = @"C:\temp\mtlocalrelease";
+    private const string DevEnvironmentName = "THELAIR";
     private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(1);
 
     private readonly HttpClient _httpClient;
@@ -129,6 +131,8 @@ public sealed class UpdateService : IDisposable
     {
         try
         {
+            var devEnv = GetDevEnvironment();
+
             var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
             var response = await _httpClient.GetStringAsync(apiUrl);
             var release = JsonSerializer.Deserialize<GitHubRelease>(response, GitHubReleaseContext.Default.GitHubRelease);
@@ -142,6 +146,25 @@ public sealed class UpdateService : IDisposable
 
             if (!IsNewerVersion(latestVersion, _currentVersion))
             {
+                // No GitHub update, but check for local update in dev mode
+                if (devEnv is not null)
+                {
+                    var localUpdateOnly = CheckLocalUpdate();
+                    if (localUpdateOnly is not null)
+                    {
+                        _latestUpdate = new UpdateInfo
+                        {
+                            Available = false,
+                            CurrentVersion = _currentVersion,
+                            LatestVersion = _currentVersion,
+                            ReleaseUrl = "",
+                            Environment = devEnv,
+                            LocalUpdate = localUpdateOnly
+                        };
+                        NotifyListeners(_latestUpdate);
+                        return _latestUpdate;
+                    }
+                }
                 _latestUpdate = null;
                 return null;
             }
@@ -152,6 +175,8 @@ public sealed class UpdateService : IDisposable
             var releaseManifest = await FetchReleaseManifestAsync(release.TagName);
             var updateType = DetermineUpdateType(_installedManifest, releaseManifest);
 
+            var localUpdate = devEnv is not null ? CheckLocalUpdate() : null;
+
             _latestUpdate = new UpdateInfo
             {
                 Available = true,
@@ -161,7 +186,9 @@ public sealed class UpdateService : IDisposable
                 DownloadUrl = asset?.BrowserDownloadUrl,
                 AssetName = assetName,
                 ReleaseNotes = release.Body,
-                Type = updateType
+                Type = updateType,
+                Environment = devEnv,
+                LocalUpdate = localUpdate
             };
 
             NotifyListeners(_latestUpdate);
@@ -169,6 +196,26 @@ public sealed class UpdateService : IDisposable
         }
         catch
         {
+            // If GitHub check fails but we're in dev mode, still return local update info
+            var devEnv = GetDevEnvironment();
+            if (devEnv is not null)
+            {
+                var localUpdate = CheckLocalUpdate();
+                if (localUpdate is not null)
+                {
+                    _latestUpdate = new UpdateInfo
+                    {
+                        Available = false,
+                        CurrentVersion = _currentVersion,
+                        LatestVersion = _currentVersion,
+                        ReleaseUrl = "",
+                        Environment = devEnv,
+                        LocalUpdate = localUpdate
+                    };
+                    NotifyListeners(_latestUpdate);
+                    return _latestUpdate;
+                }
+            }
             return null;
         }
     }
@@ -197,6 +244,81 @@ public sealed class UpdateService : IDisposable
             Protocol = 1,
             MinCompatiblePty = version
         };
+    }
+
+    private LocalUpdateInfo? CheckLocalUpdate()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        var versionJsonPath = Path.Combine(LocalReleasePath, "version.json");
+        if (!File.Exists(versionJsonPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(versionJsonPath);
+            var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
+            if (manifest is null)
+            {
+                return null;
+            }
+
+            if (!IsNewerVersion(manifest.Web, _currentVersion))
+            {
+                return null;
+            }
+
+            var updateType = DetermineUpdateType(_installedManifest, manifest);
+
+            return new LocalUpdateInfo
+            {
+                Available = true,
+                Version = manifest.Web,
+                Path = LocalReleasePath,
+                Type = updateType
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? GetDevEnvironment()
+    {
+        var env = System.Environment.GetEnvironmentVariable("MIDTERM_ENVIRONMENT");
+        return env == DevEnvironmentName ? env : null;
+    }
+
+    public static bool IsDevEnvironment => GetDevEnvironment() is not null;
+
+    public string? GetLocalUpdatePath()
+    {
+        if (!IsDevEnvironment || !OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        var versionJsonPath = Path.Combine(LocalReleasePath, "version.json");
+        if (!File.Exists(versionJsonPath))
+        {
+            return null;
+        }
+
+        // Verify mt.exe and mthost.exe exist
+        var mtPath = Path.Combine(LocalReleasePath, "mt.exe");
+        var mthostPath = Path.Combine(LocalReleasePath, "mthost.exe");
+        if (!File.Exists(mtPath) || !File.Exists(mthostPath))
+        {
+            return null;
+        }
+
+        return LocalReleasePath;
     }
 
     public async Task<string?> DownloadUpdateAsync(string? downloadUrl = null)
@@ -391,6 +513,19 @@ public sealed class UpdateInfo
     public string? DownloadUrl { get; init; }
     public string? AssetName { get; init; }
     public string? ReleaseNotes { get; init; }
+    public UpdateType Type { get; init; } = UpdateType.Full;
+    public bool SessionsPreserved => Type == UpdateType.WebOnly;
+
+    // Local development support (MIDTERM_ENVIRONMENT=THELAIR)
+    public string? Environment { get; init; }
+    public LocalUpdateInfo? LocalUpdate { get; init; }
+}
+
+public sealed class LocalUpdateInfo
+{
+    public bool Available { get; init; }
+    public string Version { get; init; } = "";
+    public string Path { get; init; } = "";
     public UpdateType Type { get; init; } = UpdateType.Full;
     public bool SessionsPreserved => Type == UpdateType.WebOnly;
 }

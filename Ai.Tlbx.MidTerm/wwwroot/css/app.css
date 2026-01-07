@@ -1529,6 +1529,65 @@ html, body {
     color: var(--accent-orange);
 }
 
+/* Local update section (dev environment only) */
+.local-update-section {
+    margin-top: 1rem;
+    padding: 12px;
+    border: 1px dashed var(--accent-orange);
+    border-radius: 6px;
+    background: rgba(255, 165, 0, 0.05);
+}
+
+.local-update-header {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent-orange);
+    margin-bottom: 8px;
+}
+
+.local-update-status {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.local-update-available {
+    color: var(--accent-orange);
+}
+
+.btn-dev {
+    background: var(--accent-orange);
+    color: var(--bg-primary);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.btn-dev:hover:not(:disabled) {
+    background: #e69500;
+}
+
+.btn-dev:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.local-update-warning {
+    font-size: 0.8rem;
+    margin-top: 6px;
+}
+
+.local-warning-safe {
+    color: var(--accent-green);
+}
+
+.local-warning-warn {
+    color: var(--accent-orange);
+}
+
 /* Modal styles */
 .modal {
     position: fixed;

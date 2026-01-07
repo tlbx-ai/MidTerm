@@ -135,6 +135,7 @@ export function checkForUpdates(): void {
 
       setUpdateInfo(update);
       renderUpdatePanel();
+      renderLocalUpdateSection(update);
 
       const applyBtn = document.getElementById('btn-apply-update');
       if (statusEl) {
@@ -175,6 +176,116 @@ export function checkForUpdates(): void {
       }
       if (warningEl) warningEl.classList.add('hidden');
       console.error('Update check error:', e);
+    });
+}
+
+/**
+ * Render local update section (only visible in dev environment)
+ */
+export function renderLocalUpdateSection(update: UpdateInfo | null): void {
+  let section = document.getElementById('local-update-section');
+
+  // Remove section if not in dev environment
+  if (!update?.environment) {
+    if (section) section.remove();
+    return;
+  }
+
+  // Create section if it doesn't exist
+  if (!section) {
+    section = createLocalUpdateSection();
+    const warningEl = document.getElementById('update-warning');
+    if (warningEl) {
+      warningEl.after(section);
+    }
+  }
+
+  const statusEl = section.querySelector('.local-update-status');
+  const applyBtn = section.querySelector('.btn-apply-local') as HTMLButtonElement | null;
+  const warningEl = section.querySelector('.local-update-warning');
+  const local = update.localUpdate;
+
+  if (statusEl) {
+    if (local?.available) {
+      statusEl.textContent = `Local build available: v${local.version}`;
+      statusEl.className = 'local-update-status local-update-available';
+      if (applyBtn) {
+        applyBtn.classList.remove('hidden');
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Apply Local Build';
+      }
+      if (warningEl) {
+        warningEl.classList.remove('hidden');
+        if (local.sessionsPreserved) {
+          warningEl.textContent = 'Sessions will stay alive';
+          warningEl.className = 'local-update-warning local-warning-safe';
+        } else {
+          warningEl.textContent = 'Save your work - sessions will restart';
+          warningEl.className = 'local-update-warning local-warning-warn';
+        }
+      }
+    } else {
+      statusEl.textContent = 'No local build available';
+      statusEl.className = 'local-update-status';
+      if (applyBtn) applyBtn.classList.add('hidden');
+      if (warningEl) warningEl.classList.add('hidden');
+    }
+  }
+}
+
+/**
+ * Create the local update section HTML
+ */
+function createLocalUpdateSection(): HTMLElement {
+  const section = document.createElement('div');
+  section.id = 'local-update-section';
+  section.className = 'local-update-section';
+  section.innerHTML = `
+    <div class="local-update-header">Local Development</div>
+    <div class="local-update-status"></div>
+    <button class="btn-dev btn-apply-local hidden">Apply Local Build</button>
+    <div class="local-update-warning hidden"></div>
+  `;
+
+  const applyBtn = section.querySelector('.btn-apply-local');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', applyLocalUpdate);
+  }
+
+  return section;
+}
+
+/**
+ * Apply local update from C:\temp\mtlocalrelease
+ */
+export function applyLocalUpdate(): void {
+  const section = document.getElementById('local-update-section');
+  const btn = section?.querySelector('.btn-apply-local') as HTMLButtonElement | null;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+  }
+
+  fetch('/api/update/apply?source=local', { method: 'POST' })
+    .then((r) => {
+      if (r.ok) {
+        if (btn) btn.textContent = 'Restarting...';
+        waitForServerAndReload();
+      } else {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Apply Local Build';
+        }
+        console.error('Local update failed');
+      }
+    })
+    .catch((e) => {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Apply Local Build';
+      }
+      console.error('Local update error:', e);
     });
 }
 

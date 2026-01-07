@@ -7,7 +7,7 @@ public static class AuthEndpoints
     private static readonly CookieOptions SessionCookieOptions = new()
     {
         HttpOnly = true,
-        SameSite = SameSiteMode.Lax,
+        SameSite = SameSiteMode.Strict,
         Secure = false,
         Path = "/",
         MaxAge = TimeSpan.FromDays(21)

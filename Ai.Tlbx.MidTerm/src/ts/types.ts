@@ -88,6 +88,15 @@ export interface AuthStatus {
 // Update Types
 // =============================================================================
 
+/** Local update info (dev environment only) */
+export interface LocalUpdateInfo {
+  available: boolean;
+  version: string;
+  path: string;
+  type: 'None' | 'WebOnly' | 'Full';
+  sessionsPreserved: boolean;
+}
+
 /** Update info from server */
 export interface UpdateInfo {
   available: boolean;
@@ -99,6 +108,8 @@ export interface UpdateInfo {
   releaseNotes?: string;
   type: 'None' | 'WebOnly' | 'Full';
   sessionsPreserved: boolean;
+  environment?: string;
+  localUpdate?: LocalUpdateInfo;
 }
 
 // =============================================================================

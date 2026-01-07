@@ -8,6 +8,8 @@ param(
     [string]$PasswordHash,
     [int]$Port = 2000,
     [string]$BindAddress = "",
+    [bool]$UseHttps = $false,
+    [string]$CertPath = "",
     [switch]$ServiceMode
 )
 
@@ -126,8 +128,91 @@ function Prompt-Password
     exit 1
 }
 
+function Generate-Certificate
+{
+    param(
+        [string]$CertPath,
+        [string]$Password = "midterm"
+    )
+
+    Write-Host "  Generating HTTPS certificate..." -ForegroundColor Gray
+
+    # Get all local IP addresses (physical and VPN)
+    $ipAddresses = @("127.0.0.1")
+    try
+    {
+        $adapters = Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
+            $_.IPAddress -ne "127.0.0.1" -and
+            $_.PrefixOrigin -ne "WellKnown"
+        }
+        foreach ($adapter in $adapters)
+        {
+            $ipAddresses += $adapter.IPAddress
+        }
+    }
+    catch { }
+
+    # Build DNS names list (localhost + all IPs)
+    $dnsNames = @("localhost") + $ipAddresses
+
+    # Generate self-signed certificate
+    try
+    {
+        $cert = New-SelfSignedCertificate `
+            -Subject "CN=MidTerm" `
+            -DnsName $dnsNames `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -NotAfter (Get-Date).AddYears(10) `
+            -KeyUsage DigitalSignature, KeyEncipherment `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.1") `
+            -FriendlyName "MidTerm HTTPS Certificate"
+
+        # Export to PFX
+        $securePassword = ConvertTo-SecureString -String $Password -Force -AsPlainText
+        Export-PfxCertificate -Cert $cert -FilePath $CertPath -Password $securePassword | Out-Null
+
+        Write-Host "  Certificate generated: $CertPath" -ForegroundColor Gray
+        Write-Host "  Valid for: localhost, $($ipAddresses -join ', ')" -ForegroundColor Gray
+
+        # Offer to trust the certificate
+        Write-Host ""
+        Write-Host "  Trust certificate? (Removes browser warnings)" -ForegroundColor Yellow
+        Write-Host "  This requires administrator privileges." -ForegroundColor Gray
+        $trustChoice = Read-Host "  Trust certificate? [Y/n]"
+
+        if ($trustChoice -ne "n" -and $trustChoice -ne "N")
+        {
+            try
+            {
+                # Import to Trusted Root - requires admin
+                $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+                $rootStore.Open("ReadWrite")
+                $rootStore.Add($cert)
+                $rootStore.Close()
+                Write-Host "  Certificate trusted successfully" -ForegroundColor Green
+            }
+            catch
+            {
+                Write-Host "  Could not trust certificate (requires admin): $_" -ForegroundColor Yellow
+                Write-Host "  You may see browser warnings until manually trusted" -ForegroundColor Gray
+            }
+        }
+
+        return $true
+    }
+    catch
+    {
+        Write-Host "  Failed to generate certificate: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
 function Prompt-NetworkConfig
 {
+    param(
+        [string]$SettingsDir
+    )
+
     Write-Host ""
     Write-Host "  Network Configuration:" -ForegroundColor Cyan
     Write-Host ""
@@ -175,9 +260,43 @@ function Prompt-NetworkConfig
         Write-Host "  Ensure your password is strong and consider firewall rules." -ForegroundColor Yellow
     }
 
+    # HTTPS configuration
+    Write-Host ""
+    Write-Host "  HTTPS Configuration:" -ForegroundColor White
+    Write-Host "  [1] HTTP only (default)" -ForegroundColor Cyan
+    Write-Host "      - No encryption, works immediately" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  [2] HTTPS (recommended for network access)" -ForegroundColor Cyan
+    Write-Host "      - Generates self-signed certificate" -ForegroundColor Gray
+    Write-Host "      - Encrypts all traffic" -ForegroundColor Gray
+    Write-Host ""
+
+    $httpsChoice = Read-Host "  Your choice [1/2]"
+    $useHttps = $false
+    $certPath = $null
+
+    if ($httpsChoice -eq "2")
+    {
+        $useHttps = $true
+        if ($SettingsDir)
+        {
+            if (-not (Test-Path $SettingsDir)) { New-Item -ItemType Directory -Path $SettingsDir -Force | Out-Null }
+            $certPath = Join-Path $SettingsDir "cert.pfx"
+            $certGenerated = Generate-Certificate -CertPath $certPath
+            if (-not $certGenerated)
+            {
+                Write-Host "  Falling back to HTTP" -ForegroundColor Yellow
+                $useHttps = $false
+                $certPath = $null
+            }
+        }
+    }
+
     return @{
         Port = $port
         BindAddress = $bindAddress
+        UseHttps = $useHttps
+        CertPath = $certPath
     }
 }
 
@@ -207,7 +326,9 @@ function Write-ServiceSettings
         [string]$UserSid,
         [string]$PasswordHash,
         [int]$Port = 2000,
-        [string]$BindAddress = "*"
+        [string]$BindAddress = "*",
+        [bool]$UseHttps = $false,
+        [string]$CertPath = $null
     )
 
     $configDir = "$env:ProgramData\MidTerm"
@@ -239,12 +360,21 @@ function Write-ServiceSettings
         $settings.passwordHash = $PasswordHash
     }
 
+    # HTTPS settings
+    if ($UseHttps -and $CertPath)
+    {
+        $settings.useHttps = $true
+        $settings.certificatePath = $CertPath
+        $settings.certificatePassword = "midterm"
+    }
+
     $json = $settings | ConvertTo-Json -Depth 10
     Set-Content -Path $settingsPath -Value $json -Encoding UTF8
 
     Write-Host "  Terminal user: $Username" -ForegroundColor Gray
     Write-Host "  Port: $Port" -ForegroundColor Gray
     Write-Host "  Binding: $(if ($BindAddress -eq 'localhost') { 'localhost only' } else { 'all interfaces' })" -ForegroundColor Gray
+    if ($UseHttps) { Write-Host "  HTTPS: enabled" -ForegroundColor Green }
     if ($PasswordHash) { Write-Host "  Password: configured" -ForegroundColor Gray }
 }
 
@@ -257,7 +387,9 @@ function Install-MidTerm
         [string]$RunAsUserSid,
         [string]$PasswordHash,
         [int]$Port = 2000,
-        [string]$BindAddress = "*"
+        [string]$BindAddress = "*",
+        [bool]$UseHttps = $false,
+        [string]$CertPath = ""
     )
 
     if ($AsService)
@@ -391,7 +523,7 @@ function Install-MidTerm
         # Write settings with runAsUser info and password
         if ($RunAsUser -and $RunAsUserSid)
         {
-            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
+            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath
         }
 
         Install-AsService -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
@@ -437,7 +569,9 @@ function Install-MidTerm
     Write-Host "Installation complete!" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Location: $installDir" -ForegroundColor Gray
-    Write-Host "  URL:      http://localhost:$Port" -ForegroundColor Cyan
+    $protocol = if ($UseHttps) { "https" } else { "http" }
+    Write-Host "  URL:      ${protocol}://localhost:$Port" -ForegroundColor Cyan
+    if ($UseHttps) { Write-Host "  Note:     Browser may show certificate warning until trusted" -ForegroundColor Yellow }
     Write-Host ""
 }
 
@@ -625,7 +759,7 @@ if ($ServiceMode)
     $version = $script:release.tag_name -replace "^v", ""
     Write-Host "  Latest version: $version" -ForegroundColor White
     Write-Host ""
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath
     exit
 }
 
@@ -679,10 +813,13 @@ if ($asService)
         $passwordHash = Prompt-Password -InstallDir $installDir
     }
 
-    # Prompt for network configuration
-    $networkConfig = Prompt-NetworkConfig
+    # Prompt for network configuration (including HTTPS)
+    $settingsDir = "$env:ProgramData\MidTerm"
+    $networkConfig = Prompt-NetworkConfig -SettingsDir $settingsDir
     $port = $networkConfig.Port
     $bindAddress = $networkConfig.BindAddress
+    $useHttps = $networkConfig.UseHttps
+    $certPath = $networkConfig.CertPath
 
     # Check if we need to elevate
     if (-not (Test-Administrator))
@@ -706,6 +843,8 @@ if ($asService)
             "-PasswordHash", $passwordHash
             "-Port", $port
             "-BindAddress", $bindAddress
+            "-UseHttps", $useHttps
+            "-CertPath", $certPath
         )
 
         Start-Process pwsh -ArgumentList $arguments -Verb RunAs -Wait
@@ -714,7 +853,7 @@ if ($asService)
     }
 
     # Already admin, proceed with install
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -UseHttps $useHttps -CertPath $certPath
 }
 else
 {
@@ -750,12 +889,22 @@ else
         $passwordHash = Prompt-Password -InstallDir $tempDir
     }
 
-    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash
+    # Prompt for network configuration (including HTTPS)
+    $networkConfig = Prompt-NetworkConfig -SettingsDir $userSettingsDir
+    $useHttps = $networkConfig.UseHttps
+    $certPath = $networkConfig.CertPath
+
+    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash -UseHttps $useHttps -CertPath $certPath
 
     # Write user settings
     if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
     $userSettings = @{ authenticationEnabled = $true }
     if ($passwordHash) { $userSettings.passwordHash = $passwordHash }
+    if ($useHttps) {
+        $userSettings.useHttps = $true
+        $userSettings.certificatePath = $certPath
+        $userSettings.certificatePassword = "midterm"
+    }
     $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
     Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
 }

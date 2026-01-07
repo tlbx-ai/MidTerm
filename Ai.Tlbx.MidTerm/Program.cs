@@ -105,7 +105,7 @@ public class Program
         // Discover existing sessions after banner so logs appear cleanly
         await sessionManager.DiscoverExistingSessionsAsync();
 
-        RunWithPortErrorHandling(app, port, bindAddress);
+        RunWithPortErrorHandling(app, port, bindAddress, settings);
     }
 
     private static bool HandleSpecialCommands(string[] args)
@@ -206,7 +206,36 @@ public class Program
         builder.Host.UseWindowsService();
 #endif
 
-        builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+        // Load settings early for HTTPS configuration
+        var settingsService = new SettingsService();
+        var settings = settingsService.Load();
+
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.AddServerHeader = false;
+
+            // Configure HTTPS if enabled and certificate exists
+            if (settings.UseHttps &&
+                !string.IsNullOrEmpty(settings.CertificatePath) &&
+                File.Exists(settings.CertificatePath))
+            {
+                try
+                {
+                    var cert = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(
+                        settings.CertificatePath,
+                        settings.CertificatePassword);
+                    options.ConfigureHttpsDefaults(httpsOptions =>
+                    {
+                        httpsOptions.ServerCertificate = cert;
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Failed to load HTTPS certificate: {ex.Message}");
+                    Console.WriteLine("Falling back to HTTP");
+                }
+            }
+        });
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
         builder.Services.ConfigureHttpJsonOptions(options =>
@@ -323,27 +352,55 @@ public class Program
             }, AppJsonContext.Default.UpdateInfo);
         });
 
-        app.MapPost("/api/update/apply", async () =>
+        app.MapPost("/api/update/apply", async (string? source) =>
         {
-            var update = updateService.LatestUpdate;
-            if (update is null || !update.Available)
+            string? extractedDir;
+            UpdateType updateType;
+
+            if (source == "local")
             {
-                return Results.BadRequest("No update available");
+                // Apply local update (dev environment only)
+                extractedDir = updateService.GetLocalUpdatePath();
+                if (string.IsNullOrEmpty(extractedDir))
+                {
+                    return Results.BadRequest("No local update available");
+                }
+
+                var update = updateService.LatestUpdate;
+                updateType = update?.LocalUpdate?.Type ?? UpdateType.Full;
+            }
+            else
+            {
+                // Apply GitHub update (existing behavior)
+                var update = updateService.LatestUpdate;
+                if (update is null || !update.Available)
+                {
+                    return Results.BadRequest("No update available");
+                }
+
+                extractedDir = await updateService.DownloadUpdateAsync();
+                if (string.IsNullOrEmpty(extractedDir))
+                {
+                    return Results.Problem("Failed to download update");
+                }
+
+                updateType = update.Type;
             }
 
-            var extractedDir = await updateService.DownloadUpdateAsync();
-            if (string.IsNullOrEmpty(extractedDir))
-            {
-                return Results.Problem("Failed to download update");
-            }
-
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), update.Type);
+            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), updateType);
 
             _ = Task.Run(async () =>
             {
-                await Task.Delay(1000);
-                UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
-                Environment.Exit(0);
+                try
+                {
+                    await Task.Delay(1000);
+                    UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
+                    Environment.Exit(0);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Update execution failed: {ex.Message}");
+                }
             });
 
             return Results.Ok("Update started. Server will restart shortly.");
@@ -503,11 +560,16 @@ public class Program
         });
     }
 
-    private static void RunWithPortErrorHandling(WebApplication app, int port, string bindAddress)
+    private static void RunWithPortErrorHandling(WebApplication app, int port, string bindAddress, MidTermSettings settings)
     {
         try
         {
-            app.Run($"http://{bindAddress}:{port}");
+            var useHttps = settings.UseHttps &&
+                           !string.IsNullOrEmpty(settings.CertificatePath) &&
+                           File.Exists(settings.CertificatePath);
+
+            var protocol = useHttps ? "https" : "http";
+            app.Run($"{protocol}://{bindAddress}:{port}");
         }
         catch (IOException ex) when (ex.InnerException is System.Net.Sockets.SocketException socketEx &&
             socketEx.SocketErrorCode == System.Net.Sockets.SocketError.AddressAlreadyInUse)
@@ -645,7 +707,12 @@ public class Program
         Console.WriteLine("Service (subprocess per terminal)");
         Console.ResetColor();
         Console.WriteLine();
-        Console.WriteLine($"  Listening on http://{bindAddress}:{port}");
+
+        var useHttps = settings.UseHttps &&
+                       !string.IsNullOrEmpty(settings.CertificatePath) &&
+                       File.Exists(settings.CertificatePath);
+        var protocol = useHttps ? "https" : "http";
+        Console.WriteLine($"  Listening on {protocol}://{bindAddress}:{port}");
         Console.WriteLine();
 
         switch (settingsService.LoadStatus)
@@ -663,6 +730,18 @@ public class Program
             default:
                 Console.WriteLine($"  Settings: Using defaults (no settings file)");
                 break;
+        }
+
+        // Security warning for network-exposed instances without authentication
+        var isNetworkBound = bindAddress != "127.0.0.1" && bindAddress != "localhost";
+        var hasNoPassword = string.IsNullOrEmpty(settings.PasswordHash) || !settings.AuthenticationEnabled;
+        if (isNetworkBound && hasNoPassword)
+        {
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("  WARNING: Listening on network interface without authentication!");
+            Console.WriteLine("           Set a password in settings to secure access.");
+            Console.ResetColor();
         }
 
         Console.WriteLine();

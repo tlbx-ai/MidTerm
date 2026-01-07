@@ -83,6 +83,11 @@ public sealed class MidTermSettings
     public string? PasswordHash { get; set; }
     public string? SessionSecret { get; set; }
 
+    // HTTPS
+    public bool UseHttps { get; set; } = false;
+    public string? CertificatePath { get; set; }
+    public string? CertificatePassword { get; set; }
+
     // Diagnostics
     public bool DebugLogging { get; set; } = false;
 }
