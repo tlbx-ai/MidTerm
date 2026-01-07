@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.7.1";
+    public const string Version = "5.7.2";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -75,7 +75,7 @@ public static class Program
         PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal);
 #endif
 
-        Log($"mthost {Version} starting for session {config.SessionId}");
+        Log($"mthost {Version} starting, session={config.SessionId}");
 
         try
         {
@@ -95,8 +95,6 @@ public static class Program
         var shellConfig = shellRegistry.GetConfigurationByName(config.ShellType)
             ?? shellRegistry.GetConfigurationOrDefault(null);
 
-        Log($"Starting shell: {shellConfig.ShellType} ({shellConfig.ExecutablePath})");
-
         IPtyConnection? pty = null;
         try
         {
@@ -108,12 +106,9 @@ public static class Program
                 config.Rows,
                 shellConfig.GetEnvironmentVariables());
 
-            Log($"PTY started, PID: {pty.Pid}");
-
             var session = new TerminalSession(config.SessionId, pty, shellConfig.ShellType, config.Cols, config.Rows);
-
             var endpoint = IpcEndpoint.GetSessionEndpoint(config.SessionId, Environment.ProcessId);
-            Log($"Listening on: {endpoint}");
+            Log($"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
 
             using var cts = new CancellationTokenSource();
             _shutdownCts = cts;
@@ -125,7 +120,6 @@ public static class Program
             {
                 if (ptyReadTask is null)
                 {
-                    Log("Starting PTY read loop (first client connected)");
                     ptyReadTask = session.StartReadLoopAsync(cts.Token);
                 }
             }).ConfigureAwait(false);
@@ -139,7 +133,6 @@ public static class Program
         finally
         {
             pty?.Dispose();
-            Log("Shutdown complete");
         }
     }
 
@@ -158,10 +151,9 @@ public static class Program
         {
             try
             {
-                Log($"Waiting for client connection #{connectionCount + 1}...");
                 var client = await server.AcceptAsync(ct).ConfigureAwait(false);
                 connectionCount++;
-                Log($"Client #{connectionCount} connected");
+                Log($"Client connected (#{connectionCount})");
 
                 // Cancel any existing client - only one active client per session
                 // Don't dispose immediately - let GC handle it to avoid race conditions
@@ -178,8 +170,6 @@ public static class Program
                 // This is created outside the lock and passed directly to HandleClientAsync
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
                 var clientToken = linkedCts.Token;
-
-                Log($"Client #{connectionCount}: CTS created, IsCancellationRequested={clientToken.IsCancellationRequested}");
 
                 // Start the read loop when the first client subscribes to output
                 Action? onSubscribed = null;
@@ -198,7 +188,6 @@ public static class Program
                 // Run HandleClientAsync synchronously (don't fire-and-forget)
                 // This ensures the linked CTS stays alive for the duration of the handler
                 await HandleClientAsync(session, client, clientToken, onSubscribed).ConfigureAwait(false);
-                Log($"Client #{connectionCount} handler completed");
             }
             catch (OperationCanceledException)
             {
@@ -303,7 +292,6 @@ public static class Program
                     // Send any buffered output (buffered before handshake, all at same initial dimensions)
                     if (pendingOutput.Count > 0)
                     {
-                        Log($"Flushing {pendingOutput.Count} buffered output chunks");
                         foreach (var data in pendingOutput)
                         {
                             try
@@ -349,11 +337,9 @@ public static class Program
                         session.OnStateChanged += OnStateChange;
                     }
                 }).ConfigureAwait(false);
-                Log("ProcessMessagesAsync returned normally");
             }
             finally
             {
-                Log("Unsubscribing from session events");
                 session.OnOutput -= OnOutput;
                 session.OnStateChanged -= OnStateChange;
             }
@@ -446,13 +432,9 @@ public static class Program
     private static async Task ProcessMessagesAsync(TerminalSession session, Stream stream, CancellationToken ct, Action? onHandshakeComplete = null)
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
-        var messageCount = 0;
 
-        Log("ProcessMessages: Starting message loop");
         while (!ct.IsCancellationRequested)
         {
-            // Read header
-            Log($"ProcessMessages: Waiting for message #{messageCount + 1}...");
             int bytesRead;
             try
             {
@@ -460,21 +442,18 @@ public static class Program
             }
             catch (OperationCanceledException)
             {
-                Log("ProcessMessages: Cancelled");
                 throw;
             }
             catch (Exception ex)
             {
-                Log($"ProcessMessages: Read error: {ex.Message}");
+                Log($"IPC read error: {ex.Message}");
                 break;
             }
 
             if (bytesRead == 0)
             {
-                Log("ProcessMessages: Client disconnected (0 bytes)");
                 break;
             }
-            messageCount++;
 
             if (bytesRead < TtyHostProtocol.HeaderSize)
             {
@@ -520,16 +499,11 @@ public static class Program
                     case TtyHostMessageType.GetInfo:
                         var info = session.GetInfo();
                         var infoMsg = TtyHostProtocol.CreateInfoResponse(info);
-                        var infoPreview = infoMsg.Length > TtyHostProtocol.HeaderSize
-                            ? Encoding.UTF8.GetString(infoMsg, TtyHostProtocol.HeaderSize, Math.Min(50, infoMsg.Length - TtyHostProtocol.HeaderSize))
-                            : "";
-                        Log($"Writing Info response: type=0x{infoMsg[0]:X2}, len={BitConverter.ToInt32(infoMsg, 1)}, preview=\"{infoPreview}...\"");
                         lock (stream)
                         {
                             stream.Write(infoMsg);
                             stream.Flush();
                         }
-                        // Signal that handshake is complete - safe to start sending output
                         onHandshakeComplete?.Invoke();
                         break;
 
@@ -595,17 +569,8 @@ public static class Program
             {
                 Log($"Error processing message type {msgType}: {ex.Message}");
                 LogException($"ProcessMessage.{msgType}", ex);
-                // Continue processing next message instead of breaking the loop
-            }
-
-            // Log cancellation state at end of each iteration
-            if (ct.IsCancellationRequested)
-            {
-                Log($"ProcessMessages: Cancellation requested after message #{messageCount}, exiting loop");
             }
         }
-
-        Log($"ProcessMessages: Loop exited after {messageCount} messages, IsCancellationRequested={ct.IsCancellationRequested}");
     }
 
     private static SessionConfig? ParseArgs(string[] args)
