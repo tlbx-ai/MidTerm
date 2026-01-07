@@ -485,10 +485,13 @@ function bindEvents(): void {
   bindClick('btn-resize-mobile', () => {
     if (activeSessionId) fitSessionToScreen(activeSessionId);
   });
-  bindClick('btn-resize-island', () => {
+  bindClick('btn-resize-titlebar', () => {
     if (activeSessionId) fitSessionToScreen(activeSessionId);
   });
   bindClick('btn-rename-mobile', () => {
+    if (activeSessionId) promptRenameSession(activeSessionId);
+  });
+  bindClick('btn-rename-titlebar', () => {
     if (activeSessionId) promptRenameSession(activeSessionId);
   });
   bindClick('btn-close-mobile', () => {

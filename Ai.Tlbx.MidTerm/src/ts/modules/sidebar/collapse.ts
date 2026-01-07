@@ -9,12 +9,10 @@ import {
   sidebarOpen,
   setSidebarOpen,
   setSidebarCollapsed,
-  sessions,
-  activeSessionId,
   dom
 } from '../../state';
 import { getCookie, setCookie } from '../../utils';
-import { getSessionDisplayName } from './sessionList';
+import { updateMobileTitle } from './sessionList';
 import { rescaleAllTerminals } from '../terminal/scaling';
 
 // =============================================================================
@@ -58,7 +56,7 @@ export function collapseSidebar(): void {
   setSidebarCollapsed(true);
   if (dom.app) dom.app.classList.add('sidebar-collapsed');
   setCookie(SIDEBAR_COLLAPSED_COOKIE, 'true');
-  updateIslandTitle();
+  updateMobileTitle();
   requestAnimationFrame(rescaleAllTerminals);
 }
 
@@ -70,19 +68,6 @@ export function expandSidebar(): void {
   if (dom.app) dom.app.classList.remove('sidebar-collapsed');
   setCookie(SIDEBAR_COLLAPSED_COOKIE, 'false');
   requestAnimationFrame(rescaleAllTerminals);
-}
-
-// =============================================================================
-// Island Title
-// =============================================================================
-
-/**
- * Update the desktop island title with current session name
- */
-export function updateIslandTitle(): void {
-  if (!dom.islandTitle) return;
-  const session = sessions.find((s) => s.id === activeSessionId);
-  dom.islandTitle.textContent = session ? getSessionDisplayName(session) : 'MidTerm';
 }
 
 // =============================================================================

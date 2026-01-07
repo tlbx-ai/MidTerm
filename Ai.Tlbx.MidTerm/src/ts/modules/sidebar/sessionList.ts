@@ -52,7 +52,7 @@ interface SessionDisplayInfo {
 /**
  * Get display info for a session (primary title and optional secondary subtitle)
  */
-function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
+export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
   const termTitle = session.terminalTitle || session.shellType;
   if (session.name) {
     return { primary: session.name, secondary: termTitle };
@@ -191,7 +191,7 @@ export function updateEmptyState(): void {
 
 /**
  * Update the mobile title bar with current session name.
- * Also updates the desktop island title.
+ * Also updates the desktop collapsed title bar.
  */
 export function updateMobileTitle(): void {
   if (!dom.mobileTitle) return;
@@ -207,8 +207,32 @@ export function updateMobileTitle(): void {
     }
   }
 
-  // Also update the desktop island title
-  if (dom.islandTitle) {
-    dom.islandTitle.textContent = session ? getSessionDisplayName(session) : 'MidTerm';
+  // Also update the desktop collapsed title bar
+  updateTitleBar(session);
+}
+
+/**
+ * Update the collapsed title bar with current session info
+ */
+function updateTitleBar(session: Session | undefined): void {
+  if (!dom.titleBarCustom || !dom.titleBarTerminal || !dom.titleBarSeparator) return;
+
+  if (!session) {
+    dom.titleBarCustom.textContent = 'MidTerm';
+    dom.titleBarTerminal.textContent = '';
+    dom.titleBarSeparator.style.display = 'none';
+    return;
+  }
+
+  const info = getSessionDisplayInfo(session);
+
+  if (session.name) {
+    dom.titleBarCustom.textContent = info.primary;
+    dom.titleBarTerminal.textContent = info.secondary || '';
+    dom.titleBarSeparator.style.display = info.secondary ? '' : 'none';
+  } else {
+    dom.titleBarCustom.textContent = info.primary;
+    dom.titleBarTerminal.textContent = '';
+    dom.titleBarSeparator.style.display = 'none';
   }
 }
