@@ -12,8 +12,8 @@
     <SelfContained>true</SelfContained>
     <ServerGarbageCollection>false</ServerGarbageCollection>
 
-    <Version>5.8.2.1</Version>
-    <FileVersion>5.8.2.1</FileVersion>
+    <Version>5.8.2.2</Version>
+    <FileVersion>5.8.2.2</FileVersion>
   </PropertyGroup>
 
   <!-- Publish-only: AOT optimizations (Speed over Size) -->

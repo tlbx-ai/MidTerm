@@ -101,11 +101,31 @@ if ($ptyParts.Count -eq 4) {
 }
 
 $localWebVersion = "$baseWebVersion.$buildNum"
-$localPtyVersion = if ($InfluencesTtyHost -eq "yes") { "$basePtyVersion.$buildNum" } else { $basePtyVersion }
+
+# PTY needs its own buildNum to ensure it's always different from installed version
+if ($InfluencesTtyHost -eq "yes") {
+    $ptyBuildNum = 1
+    $localVersionFile = "$OutputDir\version.json"
+    if (Test-Path $localVersionFile) {
+        $localVersion = Get-Content $localVersionFile | ConvertFrom-Json
+        $localPtyParts = $localVersion.pty.Split('.')
+        if ($localPtyParts.Count -eq 4 -and ($localPtyParts[0..2] -join '.') -eq $basePtyVersion) {
+            $ptyBuildNum = [int]$localPtyParts[3] + 1
+        }
+    }
+    $localPtyVersion = "$basePtyVersion.$ptyBuildNum"
+} else {
+    $localPtyVersion = $basePtyVersion
+}
 
 $updateType = if ($InfluencesTtyHost -eq "yes") { "Full" } else { "WebOnly" }
-Write-Host "  Base version: $baseWebVersion" -ForegroundColor Gray
-Write-Host "  Local version: $localWebVersion ($updateType)" -ForegroundColor White
+Write-Host "  Base web version: $baseWebVersion" -ForegroundColor Gray
+Write-Host "  Local web version: $localWebVersion" -ForegroundColor White
+if ($InfluencesTtyHost -eq "yes") {
+    Write-Host "  Base pty version: $basePtyVersion" -ForegroundColor Gray
+    Write-Host "  Local pty version: $localPtyVersion" -ForegroundColor White
+}
+Write-Host "  Update type: $updateType" -ForegroundColor White
 Write-Host ""
 
 # ===========================================
