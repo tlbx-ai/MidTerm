@@ -8,6 +8,7 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 #endif
 using Ai.Tlbx.MidTerm.Common.Ipc;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.TtyHost.Ipc;
@@ -33,15 +34,6 @@ public static class Program
     private const int HeartbeatIntervalMs = 5000;
     private const int ReadTimeoutMs = 10000;
 
-    private static readonly string LogDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        "MidTerm", "logs");
-
-    private static readonly string StartTimestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss");
-
-    private static string? _sessionId;
-    private static string? _logPath;
-    private static bool _debugEnabled;
     private static CancellationTokenSource? _shutdownCts;
 
     public static async Task<int> Main(string[] args)
@@ -65,9 +57,8 @@ public static class Program
             return 1;
         }
 
-        _sessionId = config.SessionId;
-        _logPath = Path.Combine(LogDir, $"mthost-{_sessionId}-{StartTimestamp}.log");
-        _debugEnabled = config.Debug;
+        var logDirectory = LogPaths.GetLogDirectory(isWindowsService: false);
+        Log.Initialize($"mthost-{config.SessionId}", logDirectory, config.LogSeverity);
 
 #if !WINDOWS
         // Register Unix signal handlers for graceful shutdown
@@ -75,7 +66,7 @@ public static class Program
         PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal);
 #endif
 
-        Log($"mthost {Version} starting, session={config.SessionId}");
+        Log.Info(() => $"mthost {Version} starting, session={config.SessionId}");
 
         try
         {
@@ -84,8 +75,12 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Log($"Fatal error: {ex}");
+            Log.Exception(ex, "Fatal error");
             return 1;
+        }
+        finally
+        {
+            Log.Shutdown();
         }
     }
 
@@ -108,7 +103,7 @@ public static class Program
 
             var session = new TerminalSession(config.SessionId, pty, shellConfig.ShellType, config.Cols, config.Rows);
             var endpoint = IpcEndpoint.GetSessionEndpoint(config.SessionId, Environment.ProcessId);
-            Log($"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
+            Log.Info(() => $"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
 
             using var cts = new CancellationTokenSource();
             _shutdownCts = cts;
@@ -153,7 +148,7 @@ public static class Program
             {
                 var client = await server.AcceptAsync(ct).ConfigureAwait(false);
                 connectionCount++;
-                Log($"Client connected (#{connectionCount})");
+                Log.Info(() => $"Client connected (#{connectionCount})");
 
                 // Cancel any existing client - only one active client per session
                 // Don't dispose immediately - let GC handle it to avoid race conditions
@@ -195,8 +190,8 @@ public static class Program
             }
             catch (Exception ex)
             {
-                Log($"Accept error: {ex.Message}");
-                LogException("AcceptClients", ex);
+                Log.Error(() => $"Accept error: {ex.Message}");
+                Log.Exception(ex, "AcceptClients");
                 await Task.Delay(100, ct).ConfigureAwait(false);
             }
         }
@@ -230,7 +225,7 @@ public static class Program
                             {
                                 if (data.Length < 50)
                                 {
-                                    DebugLog($"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
+                                    Log.Verbose(() => $"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
                                 }
                                 var copy = data.ToArray();
                                 pendingOutput.Add(copy);
@@ -238,7 +233,7 @@ public static class Program
                             }
                             else
                             {
-                                Log($"Warning: dropping {data.Length} bytes during handshake (buffer full: {pendingOutputSize}/{MaxPendingOutputSize})");
+                                Log.Warn(() => $"Warning: dropping {data.Length} bytes during handshake (buffer full: {pendingOutputSize}/{MaxPendingOutputSize})");
                             }
                             return;
                         }
@@ -255,13 +250,13 @@ public static class Program
                     }
                     else
                     {
-                        DebugLog($"[IPC-OUTPUT] Client not connected, discarding {data.Length} bytes");
+                        Log.Verbose(() => $"[IPC-OUTPUT] Client not connected, discarding {data.Length} bytes");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Log($"Output write failed: {ex.Message}");
-                    LogException("OnOutput.Write", ex);
+                    Log.Error(() => $"Output write failed: {ex.Message}");
+                    Log.Exception(ex, "OnOutput.Write");
                 }
             }
 
@@ -279,7 +274,7 @@ public static class Program
                         }
                     }
                 }
-                catch (Exception ex) { LogException("OnStateChange", ex); }
+                catch (Exception ex) { Log.Exception(ex, "OnStateChange"); }
             }
 
             void OnHandshakeComplete()
@@ -287,7 +282,7 @@ public static class Program
                 lock (outputLock)
                 {
                     handshakeComplete = true;
-                    DebugLog($"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
+                    Log.Verbose(() => $"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
 
                     // Send any buffered output (buffered before handshake, all at same initial dimensions)
                     if (pendingOutput.Count > 0)
@@ -308,8 +303,8 @@ public static class Program
                             }
                             catch (Exception ex)
                             {
-                                Log($"Buffered output write failed: {ex.Message}");
-                                LogException("OnHandshakeComplete.BufferedWrite", ex);
+                                Log.Error(() => $"Buffered output write failed: {ex.Message}");
+                                Log.Exception(ex, "OnHandshakeComplete.BufferedWrite");
                             }
                         }
                         pendingOutput.Clear();
@@ -346,16 +341,16 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Log($"Client handler error: {ex.Message}");
-            LogException("HandleClient", ex);
+            Log.Error(() => $"Client handler error: {ex.Message}");
+            Log.Exception(ex, "HandleClient");
         }
         finally
         {
             clientCts.Cancel();
             try { await heartbeatTask.ConfigureAwait(false); } catch { }
             try { client.Dispose(); }
-            catch (Exception disposeEx) { LogException("HandleClient.ClientDispose", disposeEx); }
-            Log("Client disconnected");
+            catch (Exception disposeEx) { Log.Exception(disposeEx, "HandleClient.ClientDispose"); }
+            Log.Info(() => "Client disconnected");
         }
     }
 
@@ -370,7 +365,7 @@ public static class Program
 
                 if (!client.IsConnected)
                 {
-                    Log("Heartbeat: client disconnected");
+                    Log.Info(() => "Heartbeat: client disconnected");
                     clientCts.Cancel();
                     break;
                 }
@@ -385,7 +380,7 @@ public static class Program
                         if (!PeekNamedPipe(handle, IntPtr.Zero, 0, IntPtr.Zero, out _, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
-                            Log($"Heartbeat: PeekNamedPipe failed (error {error}) - pipe stale");
+                            Log.Warn(() => $"Heartbeat: PeekNamedPipe failed (error {error}) - pipe stale");
                             clientCts.Cancel();
                             break;
                         }
@@ -405,7 +400,7 @@ public static class Program
                         var socket = ns.Socket;
                         if (socket.Poll(0, SelectMode.SelectError))
                         {
-                            Log("Heartbeat: socket error detected");
+                            Log.Warn(() => "Heartbeat: socket error detected");
                             clientCts.Cancel();
                             break;
                         }
@@ -424,7 +419,7 @@ public static class Program
             }
             catch (Exception ex)
             {
-                Log($"Heartbeat error: {ex.Message}");
+                Log.Error(() => $"Heartbeat error: {ex.Message}");
             }
         }
     }
@@ -446,7 +441,7 @@ public static class Program
             }
             catch (Exception ex)
             {
-                Log($"IPC read error: {ex.Message}");
+                Log.Error(() => $"IPC read error: {ex.Message}");
                 break;
             }
 
@@ -466,7 +461,7 @@ public static class Program
 
             if (!TtyHostProtocol.TryReadHeader(headerBuffer, out var msgType, out var payloadLength))
             {
-                Log("Invalid message header");
+                Log.Warn(() => "Invalid message header");
                 break;
             }
 
@@ -508,11 +503,12 @@ public static class Program
                         break;
 
                     case TtyHostMessageType.Input:
-                        if (payloadLength < 20)
+                        var inputData = payload.ToArray();
+                        if (inputData.Length < 20)
                         {
-                            DebugLog($"[IPC-INPUT] {BitConverter.ToString(payload.ToArray())}");
+                            Log.Verbose(() => $"[IPC-INPUT] {BitConverter.ToString(inputData)}");
                         }
-                        await session.SendInputAsync(payload.ToArray(), ct).ConfigureAwait(false);
+                        await session.SendInputAsync(inputData, ct).ConfigureAwait(false);
                         break;
 
                     case TtyHostMessageType.Resize:
@@ -548,7 +544,7 @@ public static class Program
                         break;
 
                     case TtyHostMessageType.Close:
-                        Log("Received close request, shutting down");
+                        Log.Info(() => "Received close request, shutting down");
                         var closeAck = TtyHostProtocol.CreateCloseAck();
                         lock (stream)
                         {
@@ -561,14 +557,14 @@ public static class Program
                         return;
 
                     default:
-                        Log($"Unknown message type: {msgType}");
+                        Log.Warn(() => $"Unknown message type: {msgType}");
                         break;
                 }
             }
             catch (Exception ex) when (msgType != TtyHostMessageType.Close)
             {
-                Log($"Error processing message type {msgType}: {ex.Message}");
-                LogException($"ProcessMessage.{msgType}", ex);
+                Log.Error(() => $"Error processing message type {msgType}: {ex.Message}");
+                Log.Exception(ex, $"ProcessMessage.{msgType}");
             }
         }
     }
@@ -580,7 +576,7 @@ public static class Program
         string? workingDir = null;
         int cols = 80;
         int rows = 24;
-        bool debug = false;
+        var logLevel = LogSeverity.Warn;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -603,18 +599,20 @@ public static class Program
                     rows = r;
                     i++;
                     break;
+                case "--loglevel" when i + 1 < args.Length && Enum.TryParse<LogSeverity>(args[i + 1], ignoreCase: true, out var level):
+                    logLevel = level;
+                    i++;
+                    break;
                 case "--debug":
-                    debug = true;
+                    logLevel = LogSeverity.Verbose;
                     break;
             }
         }
 
-        // Use PID as session ID if not provided - this ensures IPC endpoint name matches the process
         sessionId ??= Environment.ProcessId.ToString();
-
         workingDir ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-        return new SessionConfig(sessionId, shellType, workingDir, cols, rows, debug);
+        return new SessionConfig(sessionId, shellType, workingDir, cols, rows, logLevel);
     }
 
     private static void PrintHelp()
@@ -632,6 +630,8 @@ public static class Program
               --cwd <path>      Working directory
               --cols <n>        Terminal columns (default: 80)
               --rows <n>        Terminal rows (default: 24)
+              --loglevel <lvl>  Log level: exception, error, warn, info, verbose (default: warn)
+              --debug           Shortcut for --loglevel verbose
               -h, --help        Show this help
               -v, --version     Show version
 
@@ -642,59 +642,16 @@ public static class Program
             """);
     }
 
-    private static readonly string ExceptionLogPath = Path.Combine(LogDir, $"mthost-exceptions-{StartTimestamp}.log");
-    private static readonly object _exceptionLock = new();
-
-    internal static void Log(string message)
-    {
-        var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{_sessionId}] {message}";
-        try
-        {
-            Directory.CreateDirectory(LogDir);
-            File.AppendAllText(_logPath!, line + Environment.NewLine);
-        }
-        catch { }
-    }
-
-    internal static void DebugLog(string message)
-    {
-        if (!_debugEnabled) return;
-        Log(message);
-    }
-
-    internal static void LogException(string context, Exception ex)
-    {
-        try
-        {
-            Directory.CreateDirectory(LogDir);
-            var entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{_sessionId}] [{context}] {ex.GetType().Name}: {ex.Message}{Environment.NewLine}" +
-                        $"  StackTrace: {ex.StackTrace}{Environment.NewLine}";
-
-            if (ex.InnerException is not null)
-            {
-                entry += $"  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}{Environment.NewLine}";
-            }
-
-            entry += Environment.NewLine;
-
-            lock (_exceptionLock)
-            {
-                File.AppendAllText(ExceptionLogPath, entry);
-            }
-        }
-        catch { }
-    }
-
 #if !WINDOWS
     private static void OnSignal(PosixSignalContext context)
     {
-        Log($"Received signal {context.Signal}, initiating graceful shutdown");
-        context.Cancel = true; // Prevent default termination
-        _shutdownCts?.Cancel(); // Signal graceful shutdown
+        Log.Info(() => $"Received signal {context.Signal}, initiating graceful shutdown");
+        context.Cancel = true;
+        _shutdownCts?.Cancel();
     }
 #endif
 
-    private sealed record SessionConfig(string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows, bool Debug);
+    private sealed record SessionConfig(string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows, LogSeverity LogSeverity);
 }
 
 internal sealed class TerminalSession
@@ -746,7 +703,7 @@ internal sealed class TerminalSession
                 }
                 catch (IOException ex)
                 {
-                    Program.LogException("TerminalSession.ReadLoop", ex);
+                    Log.Exception(ex, "TerminalSession.ReadLoop");
                     break;
                 }
 
@@ -758,7 +715,7 @@ internal sealed class TerminalSession
                 var data = buffer.AsMemory(0, bytesRead);
                 if (bytesRead < 50)
                 {
-                    Program.DebugLog($"[PTY-READ] {BitConverter.ToString(data.ToArray())}");
+                    Log.Verbose(() => $"[PTY-READ] {BitConverter.ToString(data.ToArray())}");
                 }
 
                 lock (_bufferLock)
@@ -780,7 +737,7 @@ internal sealed class TerminalSession
     {
         if (data.Length < 20)
         {
-            Program.DebugLog($"[PTY-WRITE] {BitConverter.ToString(data)}");
+            Log.Verbose(() => $"[PTY-WRITE] {BitConverter.ToString(data)}");
         }
         await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
         await _pty.WriterStream.FlushAsync(ct).ConfigureAwait(false);

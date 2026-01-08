@@ -131,7 +131,8 @@ Write-Host "  Updated: Ai.Tlbx.MidTerm.csproj" -ForegroundColor DarkGray
 if ($InfluencesTtyHost -eq "yes") {
     $content = Get-Content $ttyHostCsprojPath -Raw
     $content = $content -replace "<Version>\d+\.\d+\.\d+(\.\d+)?</Version>", "<Version>$localPtyVersion</Version>"
-    $content = $content -replace "<FileVersion>\d+\.\d+\.\d+\.\d+</FileVersion>", "<FileVersion>$localPtyVersion.0</FileVersion>"
+    # Local versions are 4-part, FileVersion must be exactly 4 parts
+    $content = $content -replace "<FileVersion>\d+(\.\d+){2,4}</FileVersion>", "<FileVersion>$localPtyVersion</FileVersion>"
     Set-Content $ttyHostCsprojPath $content -NoNewline
     Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost.csproj" -ForegroundColor DarkGray
 

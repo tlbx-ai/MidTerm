@@ -9,6 +9,7 @@
  */
 
 import type { TerminalState } from '../../types';
+import { createLogger } from '../logging';
 import {
   MUX_HEADER_SIZE,
   MUX_TYPE_OUTPUT,
@@ -35,6 +36,8 @@ import {
   setMuxHasConnected
 } from '../../state';
 import { updateConnectionStatus } from './stateChannel';
+
+const log = createLogger('mux');
 
 // Forward declarations for functions from other modules
 let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
@@ -69,7 +72,7 @@ let processingQueue = false;
  */
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   if (outputQueue.length >= MAX_QUEUE_SIZE) {
-    console.warn('[Mux] Output queue full, dropping oldest frame');
+    log.warn(() => 'Output queue full, dropping oldest frame');
     outputQueue.shift();
   }
   outputQueue.push({ sessionId, payload, compressed });
@@ -133,7 +136,7 @@ async function processOneFrame(item: OutputFrameItem): Promise<void> {
       pendingOutputFrames.get(item.sessionId)!.push(bufferedPayload);
     }
   } catch (e) {
-    console.error('Failed to process frame:', e);
+    log.error(() => `Failed to process frame: ${e}`);
   }
 }
 
@@ -179,7 +182,7 @@ function writeToTerminal(
         applyTerminalScaling(sessionId, state);
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
-        console.warn('Terminal resize deferred:', message);
+        log.warn(() => `Terminal resize deferred: ${message}`);
       }
     }
   }
@@ -223,7 +226,7 @@ export function connectMuxWebSocket(): void {
     // On reconnect, clear all terminals and request buffer refresh for each
     // This handles mt.exe restarts where sessions survive but connection is new
     if (isReconnect) {
-      console.log(`[Mux] Reconnected - refreshing ${sessionTerminals.size} terminals`);
+      log.info(() => `Reconnected - refreshing ${sessionTerminals.size} terminals`);
       pendingOutputFrames.clear();
       outputQueue.length = 0;
       sessionTerminals.forEach((state) => {
@@ -235,7 +238,7 @@ export function connectMuxWebSocket(): void {
         // Server pushes all buffers on connect via SendInitialBuffersAsync
       });
     } else {
-      console.log('[Mux] Connected (first connection)');
+      log.info(() => 'Connected (first connection)');
     }
   };
 
@@ -251,7 +254,7 @@ export function connectMuxWebSocket(): void {
 
     if (type === MUX_TYPE_RESYNC) {
       // Server is resyncing due to dropped frames - clear all terminals
-      console.log('[Resync] Clearing terminals for buffer refresh');
+      log.info(() => 'Resync: clearing terminals for buffer refresh');
       sessionTerminals.forEach((state) => {
         if (state.opened) {
           state.terminal.clear();
@@ -277,7 +280,7 @@ export function connectMuxWebSocket(): void {
   };
 
   ws.onerror = (e) => {
-    console.error('Mux WebSocket error:', e);
+    log.error(() => `WebSocket error: ${e}`);
   };
 }
 

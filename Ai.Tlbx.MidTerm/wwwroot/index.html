@@ -271,10 +271,53 @@
                         <div class="settings-section">
                             <h3>Diagnostics</h3>
                             <div class="setting-row">
-                                <label for="setting-debug-logging">Debug Logging</label>
-                                <input type="checkbox" id="setting-debug-logging" />
+                                <label for="setting-log-level">Log Level</label>
+                                <select id="setting-log-level">
+                                    <option value="exception">Exception</option>
+                                    <option value="error">Error</option>
+                                    <option value="warn">Warn (default)</option>
+                                    <option value="info">Info</option>
+                                    <option value="verbose">Verbose</option>
+                                </select>
                             </div>
-                            <p class="setting-hint">Enable verbose logging to diagnose issues. Logs are written to the MidTerm logs folder.</p>
+                            <p class="setting-hint">Set verbosity level for backend logging. Frontend logs are stored in your browser.</p>
+
+                            <div class="diagnostics-tabs">
+                                <button class="diag-tab active" data-tab="frontend">Frontend</button>
+                                <button class="diag-tab" data-tab="server">Server</button>
+                                <button class="diag-tab" data-tab="sessions">Sessions</button>
+                            </div>
+
+                            <div class="diagnostics-controls">
+                                <select id="diag-level-filter" title="Minimum level">
+                                    <option value="4">All</option>
+                                    <option value="3">Info+</option>
+                                    <option value="2" selected>Warn+</option>
+                                    <option value="1">Error+</option>
+                                    <option value="0">Exception</option>
+                                </select>
+                                <input type="text" id="diag-search" placeholder="Search logs..." />
+                                <label class="diag-live-tail-label">
+                                    <input type="checkbox" id="diag-live-tail" checked />
+                                    Live
+                                </label>
+                                <button id="diag-copy-all" class="btn-small" title="Copy all logs">Copy</button>
+                                <button id="diag-clear" class="btn-small" title="Clear (frontend only)">Clear</button>
+                            </div>
+
+                            <div id="diag-session-select" class="diag-session-select hidden">
+                                <select id="diag-session-picker">
+                                    <option value="">Select session...</option>
+                                </select>
+                            </div>
+
+                            <div id="diag-log-viewer" class="diag-log-viewer">
+                                <div class="diag-log-content" id="diag-log-content"></div>
+                            </div>
+
+                            <div class="diag-status">
+                                <span id="diag-entry-count">0 entries</span>
+                            </div>
                         </div>
 
                         <!-- Server -->

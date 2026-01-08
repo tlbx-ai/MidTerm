@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 #endif
 using Ai.Tlbx.MidTerm.Common.Ipc;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -212,7 +213,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         {
             if (data.Length < 20)
             {
-                DebugLogger.Log($"[IPC-SEND] {_sessionId}: {BitConverter.ToString(data.ToArray())}");
+                Log.Verbose(() => $"[IPC-SEND] {_sessionId}: {BitConverter.ToString(data.ToArray())}");
             }
             var msg = TtyHostProtocol.CreateInputMessage(data.Span);
             await WriteWithLockAsync(msg, ct).ConfigureAwait(false);
@@ -310,7 +311,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            DebugLogger.LogException($"TtyHostClient.CloseAsync({_sessionId})", ex);
+            Log.Exception(ex, $"TtyHostClient.CloseAsync({_sessionId})");
             return true;
         }
     }
@@ -483,7 +484,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    DebugLogger.LogException($"TtyHostClient.OnOutput({_sessionId})", ex);
+                    Log.Exception(ex, $"TtyHostClient.OnOutput({_sessionId})");
                 }
                 break;
 
@@ -494,7 +495,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    DebugLogger.LogException($"TtyHostClient.OnStateChanged({_sessionId})", ex);
+                    Log.Exception(ex, $"TtyHostClient.OnStateChanged({_sessionId})");
                 }
                 break;
 
@@ -703,19 +704,19 @@ public sealed class TtyHostClient : IAsyncDisposable
         if (_readTask is not null)
         {
             try { await _readTask.ConfigureAwait(false); }
-            catch (Exception ex) { DebugLogger.LogException($"TtyHostClient.Dispose.ReadTask({_sessionId})", ex); }
+            catch (Exception ex) { Log.Exception(ex, $"TtyHostClient.Dispose.ReadTask({_sessionId})"); }
         }
 
         if (_heartbeatTask is not null)
         {
             try { await _heartbeatTask.ConfigureAwait(false); }
-            catch (Exception ex) { DebugLogger.LogException($"TtyHostClient.Dispose.HeartbeatTask({_sessionId})", ex); }
+            catch (Exception ex) { Log.Exception(ex, $"TtyHostClient.Dispose.HeartbeatTask({_sessionId})"); }
         }
 
         if (_reconnectTask is not null)
         {
             try { await _reconnectTask.ConfigureAwait(false); }
-            catch (Exception ex) { DebugLogger.LogException($"TtyHostClient.Dispose.ReconnectTask({_sessionId})", ex); }
+            catch (Exception ex) { Log.Exception(ex, $"TtyHostClient.Dispose.ReconnectTask({_sessionId})"); }
         }
 
         _cts?.Dispose();

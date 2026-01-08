@@ -7,6 +7,13 @@
 
 import { initThemeFromCookie } from './modules/theming';
 import {
+  initLogStorage,
+  createLogger,
+  setLogLevel,
+  setConsoleLogging,
+  LogLevel
+} from './modules/logging';
+import {
   connectStateWebSocket,
   connectMuxWebSocket,
   registerStateCallbacks,
@@ -60,6 +67,7 @@ import {
   showChangelog,
   closeChangelog
 } from './modules/updating';
+import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
   cacheDOMElements,
   sessions,
@@ -85,6 +93,9 @@ import {
 } from './constants';
 import { bindClick, escapeHtml } from './utils';
 
+// Create logger for main module
+const log = createLogger('main');
+
 // Debug export for console access
 (window as any).mmDebug = {
   get terminals() { return sessionTerminals; },
@@ -100,7 +111,13 @@ initThemeFromCookie();
 
 document.addEventListener('DOMContentLoaded', init);
 
-function init(): void {
+async function init(): Promise<void> {
+  // Initialize logging first
+  await initLogStorage();
+  setLogLevel(LogLevel.Info);
+  setConsoleLogging(false);
+  log.info(() => 'MidTerm frontend initializing');
+
   cacheDOMElements();
   restoreSidebarState();
   setupSidebarResize();
@@ -125,8 +142,10 @@ function init(): void {
   checkAuthStatus();
   checkUpdateResult();
   requestNotificationPermission();
+  initDiagnosticsPanel();
 
   setupVisibilityChangeHandler();
+  log.info(() => 'MidTerm frontend initialized');
 }
 
 // =============================================================================
@@ -260,7 +279,7 @@ function createSession(): void {
         renderSessionList();
         updateEmptyState();
       }
-      console.error('Error creating session:', e);
+      log.error(() => `Failed to create session: ${e}`);
     });
 }
 
@@ -316,7 +335,7 @@ function deleteSession(sessionId: string): void {
 
   // Send delete request to server
   fetch('/api/sessions/' + sessionId, { method: 'DELETE' }).catch((e) => {
-    console.error('Error deleting session:', e);
+    log.error(() => `Failed to delete session ${sessionId}: ${e}`);
   });
 }
 
@@ -336,7 +355,7 @@ function renameSession(sessionId: string, newName: string | null): void {
       session.manuallyNamed = true;
     })
     .catch((e) => {
-      console.error('Error renaming session:', e);
+      log.error(() => `Failed to rename session ${sessionId}: ${e}`);
     });
 }
 

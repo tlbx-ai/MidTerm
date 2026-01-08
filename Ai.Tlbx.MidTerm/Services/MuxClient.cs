@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using System.Threading.Channels;
+using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -41,7 +42,7 @@ public sealed class MuxClient : IAsyncDisposable
             var newCount = Interlocked.Increment(ref _droppedFrameCount);
             if (newCount == 1)
             {
-                DebugLogger.Log($"[MuxClient] {Id}: Queue full, dropping old frames");
+                Log.Warn(() => $"[MuxClient] {Id}: Queue full, dropping old frames");
             }
         }
 
@@ -77,7 +78,7 @@ public sealed class MuxClient : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    DebugLogger.Log($"[MuxClient] {Id}: Send error: {ex.Message}");
+                    Log.Error(() => $"[MuxClient] {Id}: Send error: {ex.Message}");
                     // Continue trying to send other frames
                 }
             }
@@ -87,7 +88,7 @@ public sealed class MuxClient : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            DebugLogger.LogException($"MuxClient.ProcessOutputQueue({Id})", ex);
+            Log.Exception(ex, $"MuxClient.ProcessOutputQueue({Id})");
         }
     }
 
@@ -123,7 +124,7 @@ public sealed class MuxClient : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            DebugLogger.Log($"[MuxClient] {Id}: TrySend failed: {ex.Message}");
+            Log.Error(() => $"[MuxClient] {Id}: TrySend failed: {ex.Message}");
             return false;
         }
         finally

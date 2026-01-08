@@ -108,7 +108,7 @@ export function populateSettingsForm(settings: Settings): void {
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling === true);
   setElementChecked('setting-webgl', settings.useWebGL !== false);
   setElementValue('setting-run-as-user', settings.runAsUser || '');
-  setElementChecked('setting-debug-logging', settings.debugLogging === true);
+  setElementValue('setting-log-level', settings.logLevel || 'warn');
 }
 
 /**
@@ -201,7 +201,7 @@ export function saveAllSettings(): void {
       'auto'
     ) as Settings['clipboardShortcuts'],
     runAsUser: runAsUserValue || null,
-    debugLogging: getElementChecked('setting-debug-logging')
+    logLevel: getElementValue('setting-log-level', 'warn') as Settings['logLevel']
   };
 
   setCookie('mm-theme', settings.theme);

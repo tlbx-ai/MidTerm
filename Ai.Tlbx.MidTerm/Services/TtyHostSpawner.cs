@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Ai.Tlbx.MidTerm.Common.Logging;
 #if WINDOWS
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -43,7 +44,7 @@ public static class TtyHostSpawner
         string? workingDirectory,
         int cols,
         int rows,
-        bool debug,
+        LogSeverity logLevel,
         string? runAsUser,
         out int processId)
     {
@@ -55,7 +56,7 @@ public static class TtyHostSpawner
             return false;
         }
 
-        var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows, debug);
+        var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows, logLevel);
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
@@ -66,9 +67,9 @@ public static class TtyHostSpawner
 #pragma warning restore CA1416
     }
 
-    private static string BuildArgs(string sessionId, string? shellType, string? workingDirectory, int cols, int rows, bool debug)
+    private static string BuildArgs(string sessionId, string? shellType, string? workingDirectory, int cols, int rows, LogSeverity logLevel)
     {
-        var args = $"--session {sessionId} --cols {cols} --rows {rows}";
+        var args = $"--session {sessionId} --cols {cols} --rows {rows} --loglevel {logLevel.ToString().ToLowerInvariant()}";
         if (!string.IsNullOrEmpty(shellType))
         {
             args += $" --shell {shellType}";
@@ -76,10 +77,6 @@ public static class TtyHostSpawner
         if (!string.IsNullOrEmpty(workingDirectory))
         {
             args += $" --cwd \"{workingDirectory}\"";
-        }
-        if (debug)
-        {
-            args += " --debug";
         }
         return args;
     }

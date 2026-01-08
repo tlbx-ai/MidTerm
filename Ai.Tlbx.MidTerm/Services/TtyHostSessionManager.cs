@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Ai.Tlbx.MidTerm.Common.Ipc;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
 
@@ -128,7 +129,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         catch (Exception ex)
         {
             Console.WriteLine($"[TtyHostSessionManager] Failed to connect to {sessionId}: {ex.Message}");
-            DebugLogger.LogException($"TtyHostSessionManager.TryConnect({sessionId})", ex);
+            Log.Exception(ex, $"TtyHostSessionManager.TryConnect({sessionId})");
             await client.DisposeAsync().ConfigureAwait(false);
             return new DiscoveryResult.Unresponsive();
         }
@@ -220,7 +221,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         var sessionId = Guid.NewGuid().ToString("N")[..8];
 
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, DebugLogger.Enabled, _runAsUser, out var hostPid))
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, Log.MinLevel, _runAsUser, out var hostPid))
         {
             return null;
         }
@@ -441,7 +442,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         foreach (var listener in _stateListeners.Values)
         {
             try { listener(); }
-            catch (Exception ex) { DebugLogger.LogException("TtyHostSessionManager.NotifyStateChange", ex); }
+            catch (Exception ex) { Log.Exception(ex, "TtyHostSessionManager.NotifyStateChange"); }
         }
     }
 
@@ -483,7 +484,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         foreach (var client in _clients.Values)
         {
             try { await client.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception ex) { DebugLogger.LogException($"TtyHostSessionManager.Dispose({client.SessionId})", ex); }
+            catch (Exception ex) { Log.Exception(ex, $"TtyHostSessionManager.Dispose({client.SessionId})"); }
         }
 
         // Clean up all temp directories

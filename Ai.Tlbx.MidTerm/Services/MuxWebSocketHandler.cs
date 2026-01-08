@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using System.Text;
+using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -69,14 +70,14 @@ public sealed class MuxWebSocketHandler
 
                     if (!await client.TrySendAsync(frame))
                     {
-                        DebugLogger.Log($"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
+                        Log.Warn(() => $"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
                         return;
                     }
                 }
             }
             catch (Exception ex)
             {
-                DebugLogger.Log($"[MuxHandler] Failed to get buffer for {sessionInfo.Id}: {ex.Message}");
+                Log.Error(() => $"[MuxHandler] Failed to get buffer for {sessionInfo.Id}: {ex.Message}");
             }
         }
     }
@@ -119,7 +120,7 @@ public sealed class MuxWebSocketHandler
     {
         try
         {
-            DebugLogger.Log($"[MuxHandler] {client.Id}: Performing resync");
+            Log.Info(() => $"[MuxHandler] {client.Id}: Performing resync");
 
             // Send clear screen command
             var clearFrame = MuxProtocol.CreateClearScreenFrame();
@@ -128,11 +129,11 @@ public sealed class MuxWebSocketHandler
             // Send fresh buffers
             await SendInitialBuffersAsync(client);
 
-            DebugLogger.Log($"[MuxHandler] {client.Id}: Resync complete");
+            Log.Verbose(() => $"[MuxHandler] {client.Id}: Resync complete");
         }
         catch (Exception ex)
         {
-            DebugLogger.Log($"[MuxHandler] {client.Id}: Resync failed: {ex.Message}");
+            Log.Error(() => $"[MuxHandler] {client.Id}: Resync failed: {ex.Message}");
             // Don't rethrow - keep the connection alive
         }
     }
@@ -147,11 +148,12 @@ public sealed class MuxWebSocketHandler
         switch (type)
         {
             case MuxProtocol.TypeTerminalInput:
-                if (payload.Length < 20)
+                var inputBytes = payload.ToArray();
+                if (inputBytes.Length < 20)
                 {
-                    DebugLogger.Log($"[WS-INPUT] {sessionId}: {BitConverter.ToString(payload.ToArray())}");
+                    Log.Verbose(() => $"[WS-INPUT] {sessionId}: {BitConverter.ToString(inputBytes)}");
                 }
-                await _muxManager.HandleInputAsync(sessionId, new ReadOnlyMemory<byte>(payload.ToArray()));
+                await _muxManager.HandleInputAsync(sessionId, new ReadOnlyMemory<byte>(inputBytes));
                 break;
 
             case MuxProtocol.TypeResize:
@@ -172,7 +174,7 @@ public sealed class MuxWebSocketHandler
             var session = _sessionManager.GetSession(sessionId);
             if (session is null)
             {
-                DebugLogger.Log($"[MuxHandler] BufferRequest for unknown session: {sessionId}");
+                Log.Warn(() => $"[MuxHandler] BufferRequest for unknown session: {sessionId}");
                 return;
             }
 
@@ -196,12 +198,12 @@ public sealed class MuxWebSocketHandler
 
                     await client.TrySendAsync(frame);
                 }
-                DebugLogger.Log($"[MuxHandler] Sent buffer for {sessionId}: {buffer.Length} bytes");
+                Log.Verbose(() => $"[MuxHandler] Sent buffer for {sessionId}: {buffer.Length} bytes");
             }
         }
         catch (Exception ex)
         {
-            DebugLogger.Log($"[MuxHandler] BufferRequest failed for {sessionId}: {ex.Message}");
+            Log.Error(() => $"[MuxHandler] BufferRequest failed for {sessionId}: {ex.Message}");
         }
     }
 

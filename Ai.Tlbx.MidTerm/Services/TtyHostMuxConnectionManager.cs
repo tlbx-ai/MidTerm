@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Threading.Channels;
+using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -38,7 +39,7 @@ public sealed class TtyHostMuxConnectionManager
         {
             if (data.Length < 50)
             {
-                DebugLogger.Log($"[WS-OUTPUT] {sessionId}: {BitConverter.ToString(data)}");
+                Log.Verbose(() => $"[WS-OUTPUT] {sessionId}: {BitConverter.ToString(data)}");
             }
 
             // Use compression for payloads over threshold

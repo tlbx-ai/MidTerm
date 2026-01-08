@@ -8,6 +8,9 @@
 import type { Session, UpdateInfo, TerminalState } from '../../types';
 import { INITIAL_RECONNECT_DELAY, MAX_RECONNECT_DELAY } from '../../constants';
 import { scheduleReconnect } from '../../utils';
+import { createLogger } from '../logging';
+
+const log = createLogger('state');
 import {
   sessions,
   activeSessionId,
@@ -89,7 +92,7 @@ export function connectStateWebSocket(): void {
       handleUpdateInfo(data.update);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      console.error('Error parsing state:', message);
+      log.error(() => `Error parsing state: ${message}`);
     }
   };
 
@@ -100,7 +103,7 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onerror = (e) => {
-    console.error('State WebSocket error:', e);
+    log.error(() => `WebSocket error: ${e}`);
   };
 }
 

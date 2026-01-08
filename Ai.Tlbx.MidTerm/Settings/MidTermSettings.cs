@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 
 namespace Ai.Tlbx.MidTerm.Settings;
@@ -89,5 +90,5 @@ public sealed class MidTermSettings
     public string? CertificatePassword { get; set; }
 
     // Diagnostics
-    public bool DebugLogging { get; set; } = false;
+    public LogSeverity LogLevel { get; set; } = LogSeverity.Warn;
 }

@@ -237,7 +237,10 @@ if ($isPtyBreaking) {
     # Update TtyHost csproj (regex handles both 3-part and 4-part versions)
     $content = Get-Content $ttyHostCsprojPath -Raw
     $content = $content -replace "<Version>\d+\.\d+\.\d+(\.\d+)?</Version>", "<Version>$newVersion</Version>"
-    $content = $content -replace "<FileVersion>\d+\.\d+\.\d+\.\d+</FileVersion>", "<FileVersion>$newVersion.0</FileVersion>"
+    # FileVersion must be exactly 4 parts - add .0 only if version is 3-part
+    $versionParts = $newVersion.Split('.').Count
+    $fileVersion = if ($versionParts -eq 3) { "$newVersion.0" } else { $newVersion }
+    $content = $content -replace "<FileVersion>\d+(\.\d+){2,4}</FileVersion>", "<FileVersion>$fileVersion</FileVersion>"
     Set-Content $ttyHostCsprojPath $content -NoNewline
     Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost.csproj" -ForegroundColor Gray
 

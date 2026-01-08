@@ -1,8 +1,9 @@
 using System.Reflection;
+using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
-using Ai.Tlbx.MidTerm.Common.Shells;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 
@@ -47,12 +48,9 @@ public class Program
         tempCleanupService.CleanupOrphanedFiles();
 
         var settings = settingsService.Load();
-        DebugLogger.Enabled = settings.DebugLogging;
-        if (DebugLogger.Enabled)
-        {
-            DebugLogger.ClearLogs();
-            DebugLogger.Log("Debug logging enabled");
-        }
+        var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
+        Log.Initialize("mt", logDirectory, settings.LogLevel);
+        Log.Info(() => $"MidTerm server starting (LogLevel: {settings.LogLevel})");
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
         AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
@@ -66,7 +64,7 @@ public class Program
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
-        MapWebSocketMiddleware(app, sessionManager, muxManager, updateService);
+        MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, logDirectory);
 
         // Register cleanup for graceful shutdown (service restart, Ctrl+C)
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
@@ -94,6 +92,7 @@ public class Program
                 {
                     // Final cleanup of any remaining temp files
                     tempCleanupService.CleanupAllMidTermFiles();
+                    Log.Shutdown();
                     instanceGuard.Dispose();
                 }
             });
@@ -236,7 +235,7 @@ public class Program
                 }
             }
         });
-        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        builder.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning);
 
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
@@ -530,10 +529,13 @@ public class Program
         WebApplication app,
         TtyHostSessionManager sessionManager,
         TtyHostMuxConnectionManager muxManager,
-        UpdateService updateService)
+        UpdateService updateService,
+        string logDirectory)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService);
+        var logFileWatcher = new LogFileWatcher(logDirectory, TimeSpan.FromMilliseconds(250));
+        var logHandler = new LogWebSocketHandler(logFileWatcher, sessionManager);
 
         app.Use(async (context, next) =>
         {
@@ -560,6 +562,12 @@ public class Program
             if (path == "/ws/mux")
             {
                 await muxHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/logs")
+            {
+                await logHandler.HandleAsync(context);
                 return;
             }
 

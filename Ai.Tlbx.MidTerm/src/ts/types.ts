@@ -51,6 +51,9 @@ export type BellStyle = 'notification' | 'sound' | 'visual' | 'both' | 'off';
 /** Clipboard shortcut options */
 export type ClipboardShortcuts = 'auto' | 'windows' | 'unix';
 
+/** Log level options (matching backend enum) */
+export type LogLevelSetting = 'exception' | 'error' | 'warn' | 'info' | 'verbose';
+
 /** User settings from server */
 export interface Settings {
   defaultShell: string;
@@ -71,7 +74,7 @@ export interface Settings {
   rightClickPaste: boolean;
   clipboardShortcuts: ClipboardShortcuts;
   runAsUser: string | null;
-  debugLogging: boolean;
+  logLevel: LogLevelSetting;
 }
 
 // =============================================================================
