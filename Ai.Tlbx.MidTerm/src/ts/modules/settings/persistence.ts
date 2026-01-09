@@ -7,7 +7,7 @@
 
 import type { Settings, ThemeName, TerminalState, HealthResponse } from '../../types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
-import { currentSettings, setCurrentSettings, dom, sessionTerminals } from '../../state';
+import { currentSettings, setCurrentSettings, dom, sessionTerminals, settingsOpen } from '../../state';
 import { setCookie } from '../../utils';
 
 /**
@@ -144,7 +144,7 @@ export async function fetchSettings(): Promise<void> {
 /**
  * Apply current settings to all open terminals
  */
-function applySettingsToTerminals(): void {
+export function applySettingsToTerminals(): void {
   if (!currentSettings) return;
   const settings = currentSettings;
 
@@ -172,6 +172,22 @@ function applySettingsToTerminals(): void {
       }
     }
   });
+}
+
+/**
+ * Apply settings received from WebSocket sync.
+ * Updates the form if settings panel is open, applies to terminals, and updates theme.
+ */
+export function applyReceivedSettings(settings: Settings): void {
+  if (settingsOpen) {
+    populateSettingsForm(settings);
+  }
+
+  const theme = THEMES[settings.theme] || THEMES.dark;
+  document.documentElement.style.setProperty('--terminal-bg', theme.background);
+  setCookie('mm-theme', settings.theme);
+
+  applySettingsToTerminals();
 }
 
 /**

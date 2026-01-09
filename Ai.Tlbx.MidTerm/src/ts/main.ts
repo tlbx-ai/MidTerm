@@ -16,8 +16,10 @@ import {
 import {
   connectStateWebSocket,
   connectMuxWebSocket,
+  connectSettingsWebSocket,
   registerStateCallbacks,
   registerMuxCallbacks,
+  registerSettingsCallbacks,
   sendInput,
   sendResize,
   requestBufferRefresh,
@@ -54,7 +56,8 @@ import {
   toggleSettings,
   closeSettings,
   checkSystemHealth,
-  fetchSettings
+  fetchSettings,
+  applyReceivedSettings
 } from './modules/settings';
 import {
   checkAuthStatus,
@@ -129,6 +132,7 @@ async function init(): Promise<void> {
   registerCallbacks();
   connectStateWebSocket();
   connectMuxWebSocket();
+  connectSettingsWebSocket();
   checkSystemHealth();
 
   bindEvents();
@@ -166,6 +170,10 @@ function registerCallbacks(): void {
 
   registerMuxCallbacks({
     applyTerminalScaling
+  });
+
+  registerSettingsCallbacks({
+    applyReceivedSettings
   });
 
   registerTerminalCallbacks({

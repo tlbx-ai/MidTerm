@@ -64,7 +64,7 @@ public class Program
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
-        MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, logDirectory);
+        MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, logDirectory);
 
         // Register cleanup for graceful shutdown (service restart, Ctrl+C)
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
@@ -530,10 +530,12 @@ public class Program
         TtyHostSessionManager sessionManager,
         TtyHostMuxConnectionManager muxManager,
         UpdateService updateService,
+        SettingsService settingsService,
         string logDirectory)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService);
+        var settingsHandler = new SettingsWebSocketHandler(settingsService);
         var logFileWatcher = new LogFileWatcher(logDirectory, TimeSpan.FromMilliseconds(250));
         var logHandler = new LogWebSocketHandler(logFileWatcher, sessionManager);
 
@@ -556,6 +558,12 @@ public class Program
             if (path == "/ws/state")
             {
                 await stateHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/settings")
+            {
+                await settingsHandler.HandleAsync(context);
                 return;
             }
 
