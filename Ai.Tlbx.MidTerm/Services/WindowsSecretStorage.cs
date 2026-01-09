@@ -1,3 +1,4 @@
+#if WINDOWS
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
@@ -123,3 +124,4 @@ public sealed class WindowsSecretStorage : ISecretStorage
         }
     }
 }
+#endif
