@@ -16,6 +16,7 @@ import {
   setWindowsBuildNumber
 } from '../../state';
 import { fetchSettings } from './persistence';
+import { initSettingsTabs } from './tabs';
 
 /**
  * Close the mobile sidebar
@@ -52,6 +53,7 @@ export function openSettings(): void {
   if (dom.emptyState) dom.emptyState.classList.add('hidden');
   if (dom.settingsView) dom.settingsView.classList.remove('hidden');
 
+  initSettingsTabs();
   fetchSettings();
   fetchSystemStatus();
 }

@@ -99,289 +99,337 @@
                     <button id="btn-create-terminal">Create Terminal</button>
                 </div>
                 <div id="settings-view" class="settings-view hidden">
-                    <div class="settings-container">
-                        <h2>Settings</h2>
+                    <div class="settings-layout">
+                        <!-- Left: Vertical Tab Bar -->
+                        <nav class="settings-tabs" role="tablist">
+                            <button class="settings-tab active" data-tab="general" role="tab" aria-selected="true">
+                                <span class="icon">&#xea0c;</span>
+                                <span class="tab-label">General</span>
+                            </button>
+                            <button class="settings-tab" data-tab="appearance" role="tab" aria-selected="false">
+                                <span class="icon">&#xe90d;</span>
+                                <span class="tab-label">Appearance</span>
+                            </button>
+                            <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
+                                <span class="icon">&#xe993;</span>
+                                <span class="tab-label">Behavior</span>
+                            </button>
+                            <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
+                                <span class="icon">&#xe908;</span>
+                                <span class="tab-label">Security</span>
+                            </button>
+                            <button class="settings-tab" data-tab="diagnostics" role="tab" aria-selected="false">
+                                <span class="icon">&#xe9ce;</span>
+                                <span class="tab-label">Diagnostics</span>
+                            </button>
+                        </nav>
 
-                        <!-- About & Updates -->
-                        <div class="settings-section">
-                            <h3>About & Updates</h3>
-                            <div class="setting-row">
-                                <label>Server</label>
-                                <span class="version-value" id="version-server" title="mt.exe binary version">-</span>
-                            </div>
-                            <div class="setting-row">
-                                <label>Frontend</label>
-                                <span class="version-value" id="version-frontend" title="JavaScript build version">-</span>
-                            </div>
-                            <div class="setting-row">
-                                <label>Host</label>
-                                <span class="version-value" id="version-host" title="mthost.exe binary version">-</span>
-                            </div>
-                            <div class="setting-row">
-                                <label>Updates</label>
-                                <div class="update-actions-inline">
-                                    <button id="btn-check-updates" class="btn-secondary">Check for Updates</button>
-                                    <button id="btn-show-changelog" class="btn-secondary">Changelog</button>
+                        <!-- Right: Content Area -->
+                        <div class="settings-content" role="tabpanel">
+
+                            <!-- General Panel -->
+                            <section class="settings-panel" data-panel="general">
+                                <h2>General</h2>
+
+                                <!-- About & Updates -->
+                                <div class="settings-section">
+                                    <h3>About & Updates</h3>
+                                    <div class="setting-row">
+                                        <label>Server</label>
+                                        <span class="version-value" id="version-server" title="mt.exe binary version">-</span>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Frontend</label>
+                                        <span class="version-value" id="version-frontend" title="JavaScript build version">-</span>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Host</label>
+                                        <span class="version-value" id="version-host" title="mthost.exe binary version">-</span>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Updates</label>
+                                        <div class="update-actions-inline">
+                                            <button id="btn-check-updates" class="btn-secondary">Check for Updates</button>
+                                            <button id="btn-show-changelog" class="btn-secondary">Changelog</button>
+                                        </div>
+                                    </div>
+                                    <div id="update-status-none" class="update-status-none hidden">You are running the latest version</div>
+                                    <div id="update-cards" class="update-cards"></div>
                                 </div>
-                            </div>
-                            <div id="update-status-none" class="update-status-none hidden">You are running the latest version</div>
-                            <div id="update-cards" class="update-cards"></div>
-                        </div>
 
-                        <!-- Session Defaults -->
-                        <div class="settings-section">
-                            <h3>Session Defaults</h3>
-                            <div class="setting-row">
-                                <label for="setting-default-shell">Default Shell</label>
-                                <select id="setting-default-shell">
-                                    <option value="Pwsh">PowerShell 7</option>
-                                    <option value="PowerShell">Windows PowerShell</option>
-                                    <option value="Cmd">Command Prompt</option>
-                                </select>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-working-dir">Default Working Directory</label>
-                                <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
-                                    <input type="text" id="setting-working-dir" placeholder="Leave empty for home directory" />
-                                    <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
+                                <!-- Server -->
+                                <div class="settings-section">
+                                    <h3>Server</h3>
+                                    <p class="setting-hint">Server settings are configured via command line arguments:</p>
+                                    <div class="setting-info">
+                                        <code>--port 2000</code> - Port to listen on (default: 2000)
+                                    </div>
+                                    <div class="setting-info">
+                                        <code>--bind 0.0.0.0</code> - Bind address (default: 0.0.0.0, use 127.0.0.1 for local only)
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
 
-                        <!-- Terminal Appearance -->
-                        <div class="settings-section">
-                            <h3>Terminal Appearance</h3>
-                            <div class="setting-row">
-                                <label for="setting-font-size">Font Size</label>
-                                <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
-                                    <input type="number" id="setting-font-size" min="8" max="24" value="14" />
-                                    <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
+                                <!-- System Status -->
+                                <div class="settings-section system-status-section">
+                                    <h3>System Status</h3>
+                                    <div id="system-status-content">
+                                        <div class="status-loading">Loading...</div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-font-family">Font</label>
-                                <select id="setting-font-family">
-                                    <option value="Cascadia Code">Cascadia Code</option>
-                                    <option value="JetBrains Mono">JetBrains Mono</option>
-                                    <option value="Terminus">Terminus</option>
-                                </select>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-cursor-style">Cursor Style</label>
-                                <select id="setting-cursor-style">
-                                    <option value="bar">Bar</option>
-                                    <option value="block">Block</option>
-                                    <option value="underline">Underline</option>
-                                </select>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-cursor-blink">Cursor Blink</label>
-                                <input type="checkbox" id="setting-cursor-blink" checked />
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-theme">Theme</label>
-                                <select id="setting-theme">
-                                    <option value="dark">Dark</option>
-                                    <option value="light">Light</option>
-                                    <option value="solarizedDark">Solarized Dark</option>
-                                    <option value="solarizedLight">Solarized Light</option>
-                                </select>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-contrast">Minimum Contrast</label>
-                                <select id="setting-contrast">
-                                    <option value="1">Off</option>
-                                    <option value="4.5">WCAG AA (4.5:1)</option>
-                                    <option value="7">WCAG AAA (7:1)</option>
-                                    <option value="21">Maximum (21:1)</option>
-                                </select>
-                            </div>
-                        </div>
+                            </section>
 
-                        <!-- Terminal Behavior -->
-                        <div class="settings-section">
-                            <h3>Terminal Behavior</h3>
-                            <div class="setting-row">
-                                <label for="setting-scrollback">Scrollback Lines</label>
-                                <div class="text-input-wrapper" data-setting="scrollbackLines" data-type="number">
-                                    <input type="number" id="setting-scrollback" min="500" max="100000" step="500" value="10000" />
-                                    <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
+                            <!-- Appearance Panel -->
+                            <section class="settings-panel hidden" data-panel="appearance">
+                                <h2>Appearance</h2>
+
+                                <div class="settings-section">
+                                    <h3>Terminal Appearance</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-font-size">Font Size</label>
+                                        <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
+                                            <input type="number" id="setting-font-size" min="8" max="24" value="14" />
+                                            <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-font-family">Font</label>
+                                        <select id="setting-font-family">
+                                            <option value="Cascadia Code">Cascadia Code</option>
+                                            <option value="JetBrains Mono">JetBrains Mono</option>
+                                            <option value="Terminus">Terminus</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-cursor-style">Cursor Style</label>
+                                        <select id="setting-cursor-style">
+                                            <option value="bar">Bar</option>
+                                            <option value="block">Block</option>
+                                            <option value="underline">Underline</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-cursor-blink">Cursor Blink</label>
+                                        <input type="checkbox" id="setting-cursor-blink" checked />
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-theme">Theme</label>
+                                        <select id="setting-theme">
+                                            <option value="dark">Dark</option>
+                                            <option value="light">Light</option>
+                                            <option value="solarizedDark">Solarized Dark</option>
+                                            <option value="solarizedLight">Solarized Light</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-contrast">Minimum Contrast</label>
+                                        <select id="setting-contrast">
+                                            <option value="1">Off</option>
+                                            <option value="4.5">WCAG AA (4.5:1)</option>
+                                            <option value="7">WCAG AAA (7:1)</option>
+                                            <option value="21">Maximum (21:1)</option>
+                                        </select>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-bell-style">Bell Style</label>
-                                <select id="setting-bell-style">
-                                    <option value="notification">Desktop Notification</option>
-                                    <option value="sound">Sound</option>
-                                    <option value="visual">Visual Flash</option>
-                                    <option value="off">Off</option>
-                                </select>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-copy-on-select">Copy on Select</label>
-                                <input type="checkbox" id="setting-copy-on-select" />
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-right-click-paste">Right-Click Paste</label>
-                                <input type="checkbox" id="setting-right-click-paste" checked />
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-clipboard-shortcuts">Copy/Paste Shortcuts</label>
-                                <select id="setting-clipboard-shortcuts">
-                                    <option value="auto">Auto (detect platform)</option>
-                                    <option value="windows">Windows (Ctrl+C/V)</option>
-                                    <option value="unix">Unix (Ctrl+Shift+C/V)</option>
-                                </select>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-smooth-scrolling">Smooth Scrolling</label>
-                                <input type="checkbox" id="setting-smooth-scrolling" />
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-webgl">GPU Rendering (WebGL)</label>
-                                <input type="checkbox" id="setting-webgl" />
-                            </div>
-                        </div>
+                            </section>
 
-                        <!-- Security -->
-                        <div class="settings-section" id="security-section">
-                            <h3>Security</h3>
-                            <div class="setting-row">
-                                <label>Password</label>
-                                <div class="password-status">
-                                    <span id="password-status-text" class="status-missing">Checking...</span>
+                            <!-- Behavior Panel -->
+                            <section class="settings-panel hidden" data-panel="behavior">
+                                <h2>Behavior</h2>
+
+                                <!-- Session Defaults -->
+                                <div class="settings-section">
+                                    <h3>Session Defaults</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-default-shell">Default Shell</label>
+                                        <select id="setting-default-shell">
+                                            <option value="Pwsh">PowerShell 7</option>
+                                            <option value="PowerShell">Windows PowerShell</option>
+                                            <option value="Cmd">Command Prompt</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-working-dir">Default Working Directory</label>
+                                        <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
+                                            <input type="text" id="setting-working-dir" placeholder="Leave empty for home directory" />
+                                            <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="setting-row">
-                                <label>Change Password</label>
-                                <button id="btn-change-password" class="btn-secondary">Change...</button>
-                            </div>
-                            <div class="setting-row">
-                                <label for="setting-run-as-user">Terminal User</label>
-                                <select id="setting-run-as-user">
-                                    <option value="">Process Owner (default)</option>
-                                </select>
-                            </div>
-                            <p class="setting-hint">When running as a system service, terminals spawn as this user instead of the service account.</p>
-                        </div>
 
-                        <!-- Diagnostics -->
-                        <div class="settings-section">
-                            <h3>Diagnostics</h3>
-                            <div class="setting-row">
-                                <label for="setting-log-level">Log Level</label>
-                                <select id="setting-log-level">
-                                    <option value="exception">Exception</option>
-                                    <option value="error">Error</option>
-                                    <option value="warn">Warn (default)</option>
-                                    <option value="info">Info</option>
-                                    <option value="verbose">Verbose</option>
-                                </select>
-                            </div>
-                            <p class="setting-hint">Set verbosity level for backend logging. Frontend logs are stored in your browser.</p>
+                                <!-- Terminal Behavior -->
+                                <div class="settings-section">
+                                    <h3>Terminal Behavior</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-scrollback">Scrollback Lines</label>
+                                        <div class="text-input-wrapper" data-setting="scrollbackLines" data-type="number">
+                                            <input type="number" id="setting-scrollback" min="500" max="100000" step="500" value="10000" />
+                                            <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-bell-style">Bell Style</label>
+                                        <select id="setting-bell-style">
+                                            <option value="notification">Desktop Notification</option>
+                                            <option value="sound">Sound</option>
+                                            <option value="visual">Visual Flash</option>
+                                            <option value="off">Off</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-copy-on-select">Copy on Select</label>
+                                        <input type="checkbox" id="setting-copy-on-select" />
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-right-click-paste">Right-Click Paste</label>
+                                        <input type="checkbox" id="setting-right-click-paste" checked />
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-clipboard-shortcuts">Copy/Paste Shortcuts</label>
+                                        <select id="setting-clipboard-shortcuts">
+                                            <option value="auto">Auto (detect platform)</option>
+                                            <option value="windows">Windows (Ctrl+C/V)</option>
+                                            <option value="unix">Unix (Ctrl+Shift+C/V)</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-smooth-scrolling">Smooth Scrolling</label>
+                                        <input type="checkbox" id="setting-smooth-scrolling" />
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-webgl">GPU Rendering (WebGL)</label>
+                                        <input type="checkbox" id="setting-webgl" />
+                                    </div>
+                                </div>
+                            </section>
 
-                            <div class="diagnostics-tabs">
-                                <button class="diag-tab active" data-tab="frontend">Frontend</button>
-                                <button class="diag-tab" data-tab="server">Server</button>
-                                <button class="diag-tab" data-tab="sessions">Sessions</button>
-                            </div>
+                            <!-- Security Panel -->
+                            <section class="settings-panel hidden" data-panel="security" id="security-section">
+                                <h2>Security</h2>
 
-                            <div class="diagnostics-controls">
-                                <select id="diag-level-filter" title="Minimum level">
-                                    <option value="4">All</option>
-                                    <option value="3">Info+</option>
-                                    <option value="2" selected>Warn+</option>
-                                    <option value="1">Error+</option>
-                                    <option value="0">Exception</option>
-                                </select>
-                                <input type="text" id="diag-search" placeholder="Search logs..." />
-                                <label class="diag-live-tail-label">
-                                    <input type="checkbox" id="diag-live-tail" checked />
-                                    Live
-                                </label>
-                                <button id="diag-copy-all" class="btn-small" title="Copy all logs">Copy</button>
-                                <button id="diag-clear" class="btn-small" title="Clear (frontend only)">Clear</button>
-                            </div>
+                                <div class="settings-section">
+                                    <h3>Authentication</h3>
+                                    <div class="setting-row">
+                                        <label>Password</label>
+                                        <div class="password-status">
+                                            <span id="password-status-text" class="status-missing">Checking...</span>
+                                        </div>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Change Password</label>
+                                        <button id="btn-change-password" class="btn-secondary">Change...</button>
+                                    </div>
+                                </div>
 
-                            <div id="diag-session-select" class="diag-session-select hidden">
-                                <select id="diag-session-picker">
-                                    <option value="">Select session...</option>
-                                </select>
-                            </div>
+                                <div class="settings-section">
+                                    <h3>Process Identity</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-run-as-user">Terminal User</label>
+                                        <select id="setting-run-as-user">
+                                            <option value="">Process Owner (default)</option>
+                                        </select>
+                                    </div>
+                                    <p class="setting-hint">When running as a system service, terminals spawn as this user instead of the service account.</p>
+                                </div>
+                            </section>
 
-                            <div id="diag-log-viewer" class="diag-log-viewer">
-                                <div class="diag-log-content" id="diag-log-content"></div>
-                            </div>
+                            <!-- Diagnostics Panel -->
+                            <section class="settings-panel hidden" data-panel="diagnostics">
+                                <h2>Diagnostics</h2>
 
-                            <div class="diag-status">
-                                <span id="diag-entry-count">0 entries</span>
-                            </div>
-                        </div>
+                                <div class="settings-section">
+                                    <h3>Logging</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-log-level">Log Level</label>
+                                        <select id="setting-log-level">
+                                            <option value="exception">Exception</option>
+                                            <option value="error">Error</option>
+                                            <option value="warn">Warn (default)</option>
+                                            <option value="info">Info</option>
+                                            <option value="verbose">Verbose</option>
+                                        </select>
+                                    </div>
+                                    <p class="setting-hint">Set verbosity level for backend logging. Frontend logs are stored in your browser.</p>
 
-                        <!-- Server -->
-                        <div class="settings-section">
-                            <h3>Server</h3>
-                            <p class="setting-hint">Server settings are configured via command line arguments:</p>
-                            <div class="setting-info">
-                                <code>--port 2000</code> - Port to listen on (default: 2000)
-                            </div>
-                            <div class="setting-info">
-                                <code>--bind 0.0.0.0</code> - Bind address (default: 0.0.0.0, use 127.0.0.1 for local only)
-                            </div>
-                        </div>
+                                    <div class="diagnostics-tabs">
+                                        <button class="diag-tab active" data-tab="frontend">Frontend</button>
+                                        <button class="diag-tab" data-tab="server">Server</button>
+                                        <button class="diag-tab" data-tab="sessions">Sessions</button>
+                                    </div>
 
-                        <!-- System Status -->
-                        <div class="settings-section system-status-section">
-                            <h3>System Status</h3>
-                            <div id="system-status-content">
-                                <div class="status-loading">Loading...</div>
-                            </div>
-                        </div>
+                                    <div class="diagnostics-controls">
+                                        <select id="diag-level-filter" title="Minimum level">
+                                            <option value="4">All</option>
+                                            <option value="3">Info+</option>
+                                            <option value="2" selected>Warn+</option>
+                                            <option value="1">Error+</option>
+                                            <option value="0">Exception</option>
+                                        </select>
+                                        <input type="text" id="diag-search" placeholder="Search logs..." />
+                                        <label class="diag-live-tail-label">
+                                            <input type="checkbox" id="diag-live-tail" checked />
+                                            Live
+                                        </label>
+                                        <button id="diag-copy-all" class="btn-small" title="Copy all logs">Copy</button>
+                                        <button id="diag-clear" class="btn-small" title="Clear (frontend only)">Clear</button>
+                                    </div>
 
-                        <!-- OSS Licenses -->
-                        <div class="settings-section">
-                            <h3>Open Source Licenses</h3>
-                            <p class="setting-hint">MidTerm uses the following open source components:</p>
-                            <div class="license-item">
-                                <strong>xterm.js</strong> <span class="license-version">v6.0.0</span>
-                                <span class="license-type">MIT License</span>
-                                <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
-                            </div>
-                            <div class="license-item">
-                                <strong>xterm-addon-fit</strong> <span class="license-version">v0.11.0</span>
-                                <span class="license-type">MIT License</span>
-                                <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
-                            </div>
-                            <div class="license-item">
-                                <strong>xterm-addon-webgl</strong> <span class="license-version">v0.19.0</span>
-                                <span class="license-type">MIT License</span>
-                                <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
-                            </div>
-                            <div class="license-item">
-                                <strong>xterm-addon-search</strong> <span class="license-version">v0.16.0</span>
-                                <span class="license-type">MIT License</span>
-                                <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
-                            </div>
-                            <div class="license-item">
-                                <strong>xterm-addon-web-links</strong> <span class="license-version">v0.12.0</span>
-                                <span class="license-type">MIT License</span>
-                                <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
-                            </div>
-                            <div class="license-item">
-                                <strong>CsWin32</strong> <span class="license-version">v0.3.106</span>
-                                <span class="license-type">MIT License</span>
-                                <a href="https://github.com/microsoft/CsWin32" target="_blank" rel="noopener">github.com/microsoft/CsWin32</a>
-                            </div>
-                            <div class="license-item">
-                                <strong>ASP.NET Core</strong>
-                                <span class="license-type">MIT License</span>
-                                <a href="https://github.com/dotnet/aspnetcore" target="_blank" rel="noopener">github.com/dotnet/aspnetcore</a>
-                            </div>
-                        </div>
+                                    <div id="diag-session-select" class="diag-session-select hidden">
+                                        <select id="diag-session-picker">
+                                            <option value="">Select session...</option>
+                                        </select>
+                                    </div>
 
-                        <div class="settings-footer">
-                            <button id="btn-settings-save" class="btn-primary">Save</button>
-                            <button id="btn-settings-cancel" class="btn-secondary">Cancel</button>
+                                    <div id="diag-log-viewer" class="diag-log-viewer">
+                                        <div class="diag-log-content" id="diag-log-content"></div>
+                                    </div>
+
+                                    <div class="diag-status">
+                                        <span id="diag-entry-count">0 entries</span>
+                                    </div>
+                                </div>
+
+                                <!-- OSS Licenses -->
+                                <div class="settings-section">
+                                    <h3>Open Source Licenses</h3>
+                                    <p class="setting-hint">MidTerm uses the following open source components:</p>
+                                    <div class="license-item">
+                                        <strong>xterm.js</strong> <span class="license-version">v6.0.0</span>
+                                        <span class="license-type">MIT License</span>
+                                        <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
+                                    </div>
+                                    <div class="license-item">
+                                        <strong>xterm-addon-fit</strong> <span class="license-version">v0.11.0</span>
+                                        <span class="license-type">MIT License</span>
+                                        <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
+                                    </div>
+                                    <div class="license-item">
+                                        <strong>xterm-addon-webgl</strong> <span class="license-version">v0.19.0</span>
+                                        <span class="license-type">MIT License</span>
+                                        <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
+                                    </div>
+                                    <div class="license-item">
+                                        <strong>xterm-addon-search</strong> <span class="license-version">v0.16.0</span>
+                                        <span class="license-type">MIT License</span>
+                                        <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
+                                    </div>
+                                    <div class="license-item">
+                                        <strong>xterm-addon-web-links</strong> <span class="license-version">v0.12.0</span>
+                                        <span class="license-type">MIT License</span>
+                                        <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
+                                    </div>
+                                    <div class="license-item">
+                                        <strong>CsWin32</strong> <span class="license-version">v0.3.106</span>
+                                        <span class="license-type">MIT License</span>
+                                        <a href="https://github.com/microsoft/CsWin32" target="_blank" rel="noopener">github.com/microsoft/CsWin32</a>
+                                    </div>
+                                    <div class="license-item">
+                                        <strong>ASP.NET Core</strong>
+                                        <span class="license-type">MIT License</span>
+                                        <a href="https://github.com/dotnet/aspnetcore" target="_blank" rel="noopener">github.com/dotnet/aspnetcore</a>
+                                    </div>
+                                </div>
+                            </section>
+
                         </div>
                     </div>
                 </div>

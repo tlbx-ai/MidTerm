@@ -149,6 +149,11 @@ export const ICONS = {
   interrupt: '\ue9b5',     // power
   terminal: '\uea81',      // terminal
   warning: '\uea07',       // warning
+  tabGeneral: '\uea0c',    // info
+  tabAppearance: '\ue90d', // eyedropper
+  tabBehavior: '\ue993',   // equalizer2
+  tabSecurity: '\ue908',   // key
+  tabDiagnostics: '\ue9ce', // eye
 } as const;
 
 /** Creates an icon span element */

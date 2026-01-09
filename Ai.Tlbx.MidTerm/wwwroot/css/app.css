@@ -876,18 +876,61 @@ html, body {
         font-size: 12px;
     }
 
-    /* Settings adjustments for mobile */
-    .settings-view {
+    /* Settings adjustments for mobile - convert to horizontal tabs */
+    .settings-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+    }
+
+    .settings-tabs {
+        flex-direction: row;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        padding: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .settings-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .settings-tab {
+        flex-direction: column;
+        gap: 4px;
+        padding: 12px 16px;
+        min-width: 70px;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        flex-shrink: 0;
+    }
+
+    .settings-tab.active {
+        border-left-color: transparent;
+        border-bottom-color: var(--accent-blue);
+    }
+
+    .settings-tab .icon {
+        font-size: 20px;
+    }
+
+    .settings-tab .tab-label {
+        font-size: 11px;
+    }
+
+    .settings-content {
         padding: 16px;
         padding-top: calc(16px + env(safe-area-inset-top, 0));
         padding-bottom: calc(16px + env(safe-area-inset-bottom, 0));
     }
 
-    .settings-container {
-        margin: 0;
+    .settings-panel {
+        max-width: none;
     }
 
-    .settings-container h2 {
+    .settings-panel h2 {
         font-size: 20px;
     }
 
@@ -1135,8 +1178,6 @@ html, body {
     right: 0;
     bottom: 0;
     background-color: var(--bg-primary);
-    overflow-y: auto;
-    padding: 24px;
     z-index: 100;
 }
 
@@ -1144,14 +1185,80 @@ html, body {
     display: none;
 }
 
-.settings-container {
-    max-width: 640px;
-    margin: 0 auto;
+/* Settings layout - vertical tabs on left, content on right */
+.settings-layout {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    height: 100%;
+    overflow: hidden;
 }
 
-.settings-container h2 {
-    margin: 0 0 28px 0;
-    font-size: 22px;
+/* Vertical tab bar */
+.settings-tabs {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    padding: 16px 0;
+    overflow-y: auto;
+}
+
+.settings-tab {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    font-family: inherit;
+}
+
+.settings-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.settings-tab.active {
+    background: var(--bg-active);
+    color: var(--accent-blue);
+    border-left-color: var(--accent-blue);
+}
+
+.settings-tab .icon {
+    font-size: 18px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.settings-tab .tab-label {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* Settings content area */
+.settings-content {
+    padding: 24px 32px;
+    overflow-y: auto;
+}
+
+/* Settings panel (each tab's content) */
+.settings-panel {
+    max-width: 600px;
+}
+
+.settings-panel.hidden {
+    display: none;
+}
+
+.settings-panel h2 {
+    margin: 0 0 24px 0;
+    font-size: 24px;
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -1206,10 +1313,6 @@ html, body {
 .setting-row select:focus {
     outline: none;
     border-color: var(--accent-blue);
-}
-
-.settings-footer {
-    display: none;
 }
 
 /* Inline text input with save button */
