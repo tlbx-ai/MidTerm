@@ -33,6 +33,7 @@ export interface TerminalState {
   opened: boolean;
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
+  savedViewportY?: number;
 }
 
 // =============================================================================

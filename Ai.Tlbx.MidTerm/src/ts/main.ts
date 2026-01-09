@@ -37,7 +37,9 @@ import {
   registerScalingCallbacks,
   bindSearchEvents,
   registerFileDropCallbacks,
-  pasteToTerminal
+  pasteToTerminal,
+  saveScrollPosition,
+  restoreScrollPosition
 } from './modules/terminal';
 import {
   renderSessionList,
@@ -161,6 +163,7 @@ function registerCallbacks(): void {
   registerStateCallbacks({
     destroyTerminalForSession,
     applyTerminalScaling,
+    createTerminalForSession,
     renderSessionList,
     updateEmptyState,
     selectSession,
@@ -294,6 +297,12 @@ function createSession(): void {
 
 function selectSession(sessionId: string): void {
   closeSettings();
+
+  // Save scroll position for the previously active terminal
+  if (activeSessionId && activeSessionId !== sessionId) {
+    saveScrollPosition(activeSessionId);
+  }
+
   sessionTerminals.forEach((state) => {
     state.container.classList.add('hidden');
   });
@@ -308,6 +317,9 @@ function selectSession(sessionId: string): void {
 
   requestAnimationFrame(() => {
     state.terminal.focus();
+
+    // Restore scroll position if user had scrolled back
+    restoreScrollPosition(sessionId);
 
     // Server pushes all buffers on WS connect, no need to request again
     if (isNewlyCreated) {

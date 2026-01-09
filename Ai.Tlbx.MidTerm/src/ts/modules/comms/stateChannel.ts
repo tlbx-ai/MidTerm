@@ -35,6 +35,7 @@ import {
 // These will be imported when those modules are created
 let destroyTerminalForSession: (sessionId: string) => void = () => {};
 let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
+let createTerminalForSession: (sessionId: string, sessionInfo: Session | undefined) => void = () => {};
 let renderSessionList: () => void = () => {};
 let updateEmptyState: () => void = () => {};
 let selectSession: (sessionId: string) => void = () => {};
@@ -47,6 +48,7 @@ let renderUpdatePanel: () => void = () => {};
 export function registerStateCallbacks(callbacks: {
   destroyTerminalForSession?: (sessionId: string) => void;
   applyTerminalScaling?: (sessionId: string, state: TerminalState) => void;
+  createTerminalForSession?: (sessionId: string, sessionInfo: Session | undefined) => void;
   renderSessionList?: () => void;
   updateEmptyState?: () => void;
   selectSession?: (sessionId: string) => void;
@@ -55,6 +57,7 @@ export function registerStateCallbacks(callbacks: {
 }): void {
   if (callbacks.destroyTerminalForSession) destroyTerminalForSession = callbacks.destroyTerminalForSession;
   if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
+  if (callbacks.createTerminalForSession) createTerminalForSession = callbacks.createTerminalForSession;
   if (callbacks.renderSessionList) renderSessionList = callbacks.renderSessionList;
   if (callbacks.updateEmptyState) updateEmptyState = callbacks.updateEmptyState;
   if (callbacks.selectSession) selectSession = callbacks.selectSession;
@@ -110,6 +113,7 @@ export function connectStateWebSocket(): void {
 /**
  * Handle session list updates from server.
  * Removes terminals for deleted sessions, updates dimensions, and manages selection.
+ * Creates terminals proactively for all sessions so they receive data in the background.
  */
 export function handleStateUpdate(newSessions: Session[]): void {
   // Remove terminals for deleted sessions
@@ -122,6 +126,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
   });
 
   // Update dimensions and resize terminals when server dimensions change
+  // Also create terminals proactively for sessions that don't have one yet
   newSessions.forEach((session) => {
     const state = sessionTerminals.get(session.id);
     if (state && state.opened) {
@@ -135,6 +140,9 @@ export function handleStateUpdate(newSessions: Session[]): void {
     } else if (state) {
       state.serverCols = session.cols;
       state.serverRows = session.rows;
+    } else {
+      // Create terminal proactively - it will be hidden and ready for data
+      createTerminalForSession(session.id, session);
     }
   });
 

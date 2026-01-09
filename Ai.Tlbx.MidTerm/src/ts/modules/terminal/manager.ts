@@ -219,7 +219,7 @@ export function createTerminalForSession(
 }
 
 /**
- * Replay pending output frames that arrived before terminal was opened
+ * Replay pending output frames that arrived before terminal was opened.
  */
 function replayPendingFrames(sessionId: string, state: TerminalState): void {
   const frames = pendingOutputFrames.get(sessionId);
@@ -488,6 +488,34 @@ export function pasteToTerminal(sessionId: string, data: string, isFilePath: boo
     } else {
       sendInput(sessionId, content);
     }
+  }
+}
+
+/**
+ * Save the scroll position for a terminal (call before hiding)
+ */
+export function saveScrollPosition(sessionId: string): void {
+  const state = sessionTerminals.get(sessionId);
+  if (!state || !state.opened) return;
+
+  const buffer = state.terminal.buffer?.active;
+  if (buffer) {
+    const viewportY = buffer.viewportY ?? 0;
+    state.savedViewportY = viewportY > 0 ? viewportY : undefined;
+  }
+}
+
+/**
+ * Restore the scroll position for a terminal (call after showing)
+ */
+export function restoreScrollPosition(sessionId: string): void {
+  const state = sessionTerminals.get(sessionId);
+  if (!state || !state.opened) return;
+
+  if (state.savedViewportY !== undefined && state.savedViewportY > 0) {
+    // viewportY is distance from bottom - scroll up by that amount
+    state.terminal.scrollLines(-state.savedViewportY);
+    state.savedViewportY = undefined;
   }
 }
 
