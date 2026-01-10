@@ -463,6 +463,9 @@ public class Program
         var settingsService = new SettingsService();
         var settings = settingsService.Load();
 
+        // .NET 10 requires this for dynamic https:// URLs in app.Run()
+        builder.WebHost.UseKestrelHttpsConfiguration();
+
         builder.WebHost.ConfigureKestrel(options =>
         {
             options.AddServerHeader = false;
