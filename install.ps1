@@ -236,18 +236,43 @@ function Prompt-NetworkConfig
     Write-Host "  Network Configuration:" -ForegroundColor Cyan
     Write-Host ""
 
-    # Port configuration
-    $portInput = Read-Host "  Port number [2000]"
-    if ([string]::IsNullOrWhiteSpace($portInput))
+    # Port configuration with validation and retry
+    $maxAttempts = 3
+    $port = 2000
+    for ($i = 0; $i -lt $maxAttempts; $i++)
     {
-        $port = 2000
-    }
-    else
-    {
-        $port = [int]$portInput
-        if ($port -lt 1 -or $port -gt 65535)
+        $portInput = Read-Host "  Port number [2000]"
+        if ([string]::IsNullOrWhiteSpace($portInput))
         {
-            Write-Host "  Invalid port, using default 2000" -ForegroundColor Yellow
+            $port = 2000
+            break
+        }
+
+        if ($portInput -match '^\d+$')
+        {
+            $portNum = [int]$portInput
+            if ($portNum -ge 1 -and $portNum -le 65535)
+            {
+                $port = $portNum
+                break
+            }
+            else
+            {
+                Write-Host "  Error: Port must be between 1 and 65535." -ForegroundColor Red
+            }
+        }
+        else
+        {
+            Write-Host "  Error: Port must be a number." -ForegroundColor Red
+        }
+
+        if ($i -lt $maxAttempts - 1)
+        {
+            Write-Host "  Please try again." -ForegroundColor Yellow
+        }
+        else
+        {
+            Write-Host "  Using default port 2000." -ForegroundColor Yellow
             $port = 2000
         }
     }
@@ -263,20 +288,40 @@ function Prompt-NetworkConfig
     Write-Host "      - More secure, no network exposure" -ForegroundColor Green
     Write-Host ""
 
-    $bindChoice = Read-Host "  Your choice [1/2]"
+    # Binding choice with validation and retry
+    $bindAddress = "*"
+    for ($i = 0; $i -lt $maxAttempts; $i++)
+    {
+        $bindChoice = Read-Host "  Your choice [1/2]"
 
-    if ($bindChoice -eq "2")
-    {
-        $bindAddress = "localhost"
-        Write-Host "  Binding to localhost only" -ForegroundColor Gray
-    }
-    else
-    {
-        $bindAddress = "*"
-        Write-Host ""
-        Write-Host "  Security Warning:" -ForegroundColor Yellow
-        Write-Host "  MidTerm will accept connections from any device on your network." -ForegroundColor Yellow
-        Write-Host "  Ensure your password is strong and consider firewall rules." -ForegroundColor Yellow
+        if ([string]::IsNullOrWhiteSpace($bindChoice) -or $bindChoice -eq "1")
+        {
+            $bindAddress = "*"
+            Write-Host ""
+            Write-Host "  Security Warning:" -ForegroundColor Yellow
+            Write-Host "  MidTerm will accept connections from any device on your network." -ForegroundColor Yellow
+            Write-Host "  Ensure your password is strong and consider firewall rules." -ForegroundColor Yellow
+            break
+        }
+        elseif ($bindChoice -eq "2")
+        {
+            $bindAddress = "localhost"
+            Write-Host "  Binding to localhost only" -ForegroundColor Gray
+            break
+        }
+        else
+        {
+            Write-Host "  Error: Please enter 1 or 2." -ForegroundColor Red
+            if ($i -lt $maxAttempts - 1)
+            {
+                Write-Host "  Please try again." -ForegroundColor Yellow
+            }
+            else
+            {
+                Write-Host "  Using default: accept connections from anywhere." -ForegroundColor Yellow
+                $bindAddress = "*"
+            }
+        }
     }
 
     # Always HTTPS - certificate will be generated after binary install
@@ -898,7 +943,7 @@ $version = $script:release.tag_name -replace "^v", ""
 Write-Host "  Latest version: $version" -ForegroundColor White
 Write-Host ""
 
-# Prompt for install mode
+# Prompt for install mode with validation
 Write-Host "  How would you like to install MidTerm?" -ForegroundColor White
 Write-Host ""
 Write-Host "  [1] System service (recommended for always-on access)" -ForegroundColor Cyan
@@ -915,8 +960,36 @@ Write-Host "      - Installs to your AppData folder" -ForegroundColor Gray
 Write-Host "      - No special permissions needed" -ForegroundColor Green
 Write-Host ""
 
-$choice = Read-Host "  Your choice [1/2]"
-$asService = ($choice -eq "" -or $choice -eq "1")
+$asService = $null
+$maxAttempts = 3
+for ($i = 0; $i -lt $maxAttempts; $i++)
+{
+    $choice = Read-Host "  Your choice [1/2]"
+
+    if ([string]::IsNullOrWhiteSpace($choice) -or $choice -eq "1")
+    {
+        $asService = $true
+        break
+    }
+    elseif ($choice -eq "2")
+    {
+        $asService = $false
+        break
+    }
+    else
+    {
+        Write-Host "  Error: Please enter 1 or 2." -ForegroundColor Red
+        if ($i -lt $maxAttempts - 1)
+        {
+            Write-Host "  Please try again." -ForegroundColor Yellow
+        }
+        else
+        {
+            Write-Host "  Using default: System service." -ForegroundColor Yellow
+            $asService = $true
+        }
+    }
+}
 
 if ($asService)
 {

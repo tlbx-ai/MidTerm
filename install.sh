@@ -118,15 +118,32 @@ prompt_service_mode() {
     echo -e "      ${GREEN}- No special permissions needed${NC}"
     echo ""
 
-    read -p "  Your choice [1/2]: " choice < /dev/tty
-    case "$choice" in
-        2)
-            SERVICE_MODE=false
-            ;;
-        *)
-            SERVICE_MODE=true
-            ;;
-    esac
+    local max_attempts=3
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        read -p "  Your choice [1/2]: " choice < /dev/tty
+        case "$choice" in
+            ""|1)
+                SERVICE_MODE=true
+                return
+                ;;
+            2)
+                SERVICE_MODE=false
+                return
+                ;;
+            *)
+                echo -e "  ${RED}Error: Please enter 1 or 2.${NC}"
+                attempt=$((attempt + 1))
+                if [ $attempt -lt $max_attempts ]; then
+                    echo -e "  ${YELLOW}Please try again.${NC}"
+                else
+                    echo -e "  ${YELLOW}Using default: System service.${NC}"
+                    SERVICE_MODE=true
+                fi
+                ;;
+        esac
+    done
 }
 
 get_existing_password_hash() {
@@ -193,16 +210,33 @@ prompt_network_config() {
     echo -e "  ${CYAN}Network Configuration:${NC}"
     echo ""
 
-    # Port configuration
-    read -p "  Port number [2000]: " port_input < /dev/tty
-    if [ -z "$port_input" ]; then
-        PORT=2000
-    elif [[ "$port_input" =~ ^[0-9]+$ ]] && [ "$port_input" -ge 1 ] && [ "$port_input" -le 65535 ]; then
-        PORT="$port_input"
-    else
-        echo -e "  ${YELLOW}Invalid port, using default 2000${NC}"
-        PORT=2000
-    fi
+    # Port configuration with validation and retry
+    local max_attempts=3
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        read -p "  Port number [2000]: " port_input < /dev/tty
+        if [ -z "$port_input" ]; then
+            PORT=2000
+            break
+        elif [[ "$port_input" =~ ^[0-9]+$ ]] && [ "$port_input" -ge 1 ] && [ "$port_input" -le 65535 ]; then
+            PORT="$port_input"
+            break
+        else
+            if [[ ! "$port_input" =~ ^[0-9]+$ ]]; then
+                echo -e "  ${RED}Error: Port must be a number.${NC}"
+            else
+                echo -e "  ${RED}Error: Port must be between 1 and 65535.${NC}"
+            fi
+            attempt=$((attempt + 1))
+            if [ $attempt -lt $max_attempts ]; then
+                echo -e "  ${YELLOW}Please try again.${NC}"
+            else
+                echo -e "  ${YELLOW}Using default port 2000.${NC}"
+                PORT=2000
+            fi
+        fi
+    done
 
     echo ""
     echo -e "  ${CYAN}Network binding:${NC}"
@@ -215,18 +249,37 @@ prompt_network_config() {
     echo -e "      ${GREEN}- More secure, no network exposure${NC}"
     echo ""
 
-    read -p "  Your choice [1/2]: " bind_choice < /dev/tty
+    # Binding choice with validation and retry
+    attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        read -p "  Your choice [1/2]: " bind_choice < /dev/tty
 
-    if [ "$bind_choice" = "2" ]; then
-        BIND_ADDRESS="127.0.0.1"
-        echo -e "  ${GRAY}Binding to localhost only${NC}"
-    else
-        BIND_ADDRESS="0.0.0.0"
-        echo ""
-        echo -e "  ${YELLOW}Security Warning:${NC}"
-        echo -e "  ${YELLOW}MidTerm will accept connections from any device on your network.${NC}"
-        echo -e "  ${YELLOW}Ensure your password is strong and consider firewall rules.${NC}"
-    fi
+        case "$bind_choice" in
+            ""|1)
+                BIND_ADDRESS="0.0.0.0"
+                echo ""
+                echo -e "  ${YELLOW}Security Warning:${NC}"
+                echo -e "  ${YELLOW}MidTerm will accept connections from any device on your network.${NC}"
+                echo -e "  ${YELLOW}Ensure your password is strong and consider firewall rules.${NC}"
+                break
+                ;;
+            2)
+                BIND_ADDRESS="127.0.0.1"
+                echo -e "  ${GRAY}Binding to localhost only${NC}"
+                break
+                ;;
+            *)
+                echo -e "  ${RED}Error: Please enter 1 or 2.${NC}"
+                attempt=$((attempt + 1))
+                if [ $attempt -lt $max_attempts ]; then
+                    echo -e "  ${YELLOW}Please try again.${NC}"
+                else
+                    echo -e "  ${YELLOW}Using default: accept connections from anywhere.${NC}"
+                    BIND_ADDRESS="0.0.0.0"
+                fi
+                ;;
+        esac
+    done
 
     echo ""
     echo -e "  ${GREEN}HTTPS: Enabled${NC}"
