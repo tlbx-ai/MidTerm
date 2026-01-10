@@ -5,6 +5,7 @@
  */
 
 import { createLogger } from '../logging';
+import { RECONNECT_DELAY } from '../../constants';
 
 const log = createLogger('logs-ws');
 
@@ -44,8 +45,6 @@ type LogMessage = ServerLogEntry | LogHistoryResponse | LogSessionsResponse | Pi
 
 let ws: WebSocket | null = null;
 let reconnectTimer: number | null = null;
-let reconnectDelay = 1000;
-const MAX_RECONNECT_DELAY = 30000;
 
 // Callbacks
 let onLogEntry: ((entry: ServerLogEntry) => void) | null = null;
@@ -97,7 +96,6 @@ export function connectLogsWebSocket(): void {
 
   ws.onopen = () => {
     log.info(() => 'Connected to logs WebSocket');
-    reconnectDelay = 1000;
     onConnectionChange?.(true);
   };
 
@@ -213,7 +211,6 @@ function scheduleReconnect(): void {
 
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null;
-    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
     connectLogsWebSocket();
-  }, reconnectDelay);
+  }, RECONNECT_DELAY);
 }

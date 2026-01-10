@@ -89,11 +89,8 @@ export const DEFAULT_SETTINGS = {
 // WebSocket Configuration
 // =============================================================================
 
-/** Initial reconnect delay in milliseconds */
-export const INITIAL_RECONNECT_DELAY = 1000;
-
-/** Maximum reconnect delay in milliseconds */
-export const MAX_RECONNECT_DELAY = 30000;
+/** Fixed reconnect delay in milliseconds */
+export const RECONNECT_DELAY = 3000;
 
 // =============================================================================
 // Terminal Rendering Constants

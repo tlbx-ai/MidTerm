@@ -3,11 +3,9 @@
  *
  * Manages the settings WebSocket connection for real-time settings and update sync.
  * When settings are changed on any client, all connected clients receive the update.
- * Also receives update notifications when new versions are detected.
  */
 
 import type { Settings, UpdateInfo } from '../../types';
-import { INITIAL_RECONNECT_DELAY, MAX_RECONNECT_DELAY } from '../../constants';
 import { scheduleReconnect } from '../../utils';
 import { createLogger } from '../logging';
 import { setCurrentSettings, setUpdateInfo } from '../../state';
@@ -23,7 +21,6 @@ interface SettingsWsMessage {
 
 let settingsWs: WebSocket | null = null;
 let settingsReconnectTimer: number | undefined;
-let settingsReconnectDelay = INITIAL_RECONNECT_DELAY;
 let settingsWsConnected = false;
 
 let applyReceivedSettings: (settings: Settings) => void = () => {};
@@ -56,7 +53,6 @@ export function connectSettingsWebSocket(): void {
   settingsWs = ws;
 
   ws.onopen = () => {
-    settingsReconnectDelay = INITIAL_RECONNECT_DELAY;
     settingsWsConnected = true;
     log.info(() => 'Settings WebSocket connected');
   };
@@ -94,10 +90,7 @@ function handleMessage(message: SettingsWsMessage): void {
 
 function scheduleSettingsReconnect(): void {
   scheduleReconnect(
-    settingsReconnectDelay,
-    MAX_RECONNECT_DELAY,
     connectSettingsWebSocket,
-    (delay) => { settingsReconnectDelay = delay; },
     (timer) => { settingsReconnectTimer = timer; },
     settingsReconnectTimer
   );

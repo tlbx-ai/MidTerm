@@ -18,15 +18,12 @@ import {
   MUX_TYPE_RESYNC,
   MUX_TYPE_BUFFER_REQUEST,
   MUX_TYPE_COMPRESSED_OUTPUT,
-  MUX_TYPE_ACTIVE_HINT,
-  INITIAL_RECONNECT_DELAY,
-  MAX_RECONNECT_DELAY
+  MUX_TYPE_ACTIVE_HINT
 } from '../../constants';
-import { parseOutputFrame, parseCompressedOutputFrame, scheduleReconnect } from '../../utils';
+import { parseOutputFrame, parseCompressedOutputFrame, scheduleReconnect, checkVersionAndReload } from '../../utils';
 import {
   muxWs,
   muxReconnectTimer,
-  muxReconnectDelay,
   muxHasConnected,
   sessionTerminals,
   pendingOutputFrames,
@@ -34,7 +31,6 @@ import {
   activeSessionId,
   setMuxWs,
   setMuxReconnectTimer,
-  setMuxReconnectDelay,
   setMuxWsConnected,
   setMuxHasConnected
 } from '../../state';
@@ -230,14 +226,13 @@ export function connectMuxWebSocket(): void {
     // Detect reconnect: we've connected before AND have terminals to refresh
     const isReconnect = muxHasConnected && sessionTerminals.size > 0;
 
-    setMuxReconnectDelay(INITIAL_RECONNECT_DELAY);
     setMuxWsConnected(true);
     setMuxHasConnected(true);
     updateConnectionStatus();
 
-    // On reconnect, clear all terminals and request buffer refresh for each
-    // This handles mt.exe restarts where sessions survive but connection is new
+    // On reconnect, check if server version changed (update applied) and reload
     if (isReconnect) {
+      checkVersionAndReload();
       log.info(() => `Reconnected - refreshing ${sessionTerminals.size} terminals`);
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
@@ -389,17 +384,10 @@ export function decodeSessionId(buffer: Uint8Array, offset: number): string {
 }
 
 /**
- * Schedule mux WebSocket reconnection with exponential backoff.
+ * Schedule mux WebSocket reconnection.
  */
 export function scheduleMuxReconnect(): void {
-  scheduleReconnect(
-    muxReconnectDelay,
-    MAX_RECONNECT_DELAY,
-    connectMuxWebSocket,
-    setMuxReconnectDelay,
-    setMuxReconnectTimer,
-    muxReconnectTimer
-  );
+  scheduleReconnect(connectMuxWebSocket, setMuxReconnectTimer, muxReconnectTimer);
 }
 
 /**

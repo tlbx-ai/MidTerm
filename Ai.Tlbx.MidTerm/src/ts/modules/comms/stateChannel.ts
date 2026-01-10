@@ -2,11 +2,10 @@
  * State Channel Module
  *
  * Manages the state WebSocket connection for real-time session list updates.
- * Handles automatic reconnection with exponential backoff.
+ * Handles automatic reconnection on disconnect.
  */
 
 import type { Session, UpdateInfo, TerminalState } from '../../types';
-import { INITIAL_RECONNECT_DELAY, MAX_RECONNECT_DELAY } from '../../constants';
 import { scheduleReconnect } from '../../utils';
 import { createLogger } from '../logging';
 
@@ -17,14 +16,12 @@ import {
   settingsOpen,
   stateWs,
   stateReconnectTimer,
-  stateReconnectDelay,
   stateWsConnected,
   muxWsConnected,
   sessionTerminals,
   newlyCreatedSessions,
   setStateWs,
   setStateReconnectTimer,
-  setStateReconnectDelay,
   setStateWsConnected,
   setSessions,
   setActiveSessionId,
@@ -82,7 +79,6 @@ export function connectStateWebSocket(): void {
   setStateWs(ws);
 
   ws.onopen = () => {
-    setStateReconnectDelay(INITIAL_RECONNECT_DELAY);
     setStateWsConnected(true);
     updateConnectionStatus();
   };
@@ -178,17 +174,10 @@ export function handleUpdateInfo(update: UpdateInfo | null): void {
 }
 
 /**
- * Schedule state WebSocket reconnection with exponential backoff.
+ * Schedule state WebSocket reconnection.
  */
 export function scheduleStateReconnect(): void {
-  scheduleReconnect(
-    stateReconnectDelay,
-    MAX_RECONNECT_DELAY,
-    connectStateWebSocket,
-    setStateReconnectDelay,
-    setStateReconnectTimer,
-    stateReconnectTimer
-  );
+  scheduleReconnect(connectStateWebSocket, setStateReconnectTimer, stateReconnectTimer);
 }
 
 /**

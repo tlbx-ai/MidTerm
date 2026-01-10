@@ -1,18 +1,16 @@
 /**
  * Reconnection Utilities
  *
- * Exponential backoff reconnection logic for WebSocket connections.
+ * Simple fixed-interval reconnection logic for WebSocket connections.
  */
 
+import { RECONNECT_DELAY } from '../constants';
+
 /**
- * Schedule a reconnection with exponential backoff.
- * Returns the timer ID for cancellation.
+ * Schedule a reconnection after fixed delay.
  */
 export function scheduleReconnect(
-  currentDelay: number,
-  maxDelay: number,
   connect: () => void,
-  setDelay: (delay: number) => void,
   setTimer: (timer: number | undefined) => void,
   existingTimer: number | undefined
 ): void {
@@ -20,10 +18,6 @@ export function scheduleReconnect(
     clearTimeout(existingTimer);
   }
 
-  const timer = window.setTimeout(() => {
-    setDelay(Math.min(currentDelay * 1.5, maxDelay));
-    connect();
-  }, currentDelay);
-
+  const timer = window.setTimeout(connect, RECONNECT_DELAY);
   setTimer(timer);
 }
