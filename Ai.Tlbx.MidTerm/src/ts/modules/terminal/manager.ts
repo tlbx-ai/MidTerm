@@ -24,11 +24,10 @@ import { applyTerminalScaling, fitSessionToScreen } from './scaling';
 import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
 import { isBracketedPasteEnabled } from '../comms';
 
-declare const Terminal: any;
-declare const FitAddon: any;
-declare const WebglAddon: any;
-declare const WebLinksAddon: any;
-declare const SearchAddon: any;
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 
 import { initSearchForTerminal, showSearch, isSearchVisible, hideSearch, cleanupSearchForTerminal } from './search';
 
@@ -147,7 +146,7 @@ export function createTerminalForSession(
 
   // Initialize xterm.js
   const terminal = new Terminal(getTerminalOptions());
-  const fitAddon = new FitAddon.FitAddon();
+  const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
 
   // Get server dimensions from session info (if available)
@@ -175,8 +174,8 @@ export function createTerminalForSession(
     // Load WebGL addon for GPU-accelerated rendering (with fallback)
     if (currentSettings?.useWebGL !== false) {
       try {
-        const webglAddon = new WebglAddon.WebglAddon();
-        webglAddon.onContextLost(() => {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
           webglAddon.dispose();
         });
         terminal.loadAddon(webglAddon);
@@ -187,7 +186,7 @@ export function createTerminalForSession(
 
     // Load Web-Links addon for clickable URLs
     try {
-      const webLinksAddon = new WebLinksAddon.WebLinksAddon(
+      const webLinksAddon = new WebLinksAddon(
         (_event: MouseEvent, uri: string) => {
           if (uri.startsWith('http://') || uri.startsWith('https://')) {
             window.open(uri, '_blank', 'noopener,noreferrer');
