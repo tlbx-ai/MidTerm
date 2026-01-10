@@ -8,7 +8,9 @@ param(
     [string]$PasswordHash,
     [int]$Port = 2000,
     [string]$BindAddress = "",
-    [switch]$ServiceMode
+    [switch]$ServiceMode,
+    [switch]$TrustCert,
+    [string]$LogFile
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,7 +133,8 @@ function Generate-Certificate
     param(
         [string]$InstallDir,
         [string]$SettingsDir,
-        [bool]$IsService = $false
+        [bool]$IsService = $false,
+        [bool]$TrustCert = $false
     )
 
     Write-Host "  Generating HTTPS certificate with OS-protected private key..." -ForegroundColor Gray
@@ -174,15 +177,11 @@ function Generate-Certificate
         }
 
         Write-Host "  Certificate generated with DPAPI-protected private key" -ForegroundColor Green
-        Write-Host ""
 
-        # Offer to trust the certificate
-        Write-Host "  Trust certificate? (Removes browser warnings)" -ForegroundColor Yellow
-        Write-Host "  This requires administrator privileges." -ForegroundColor Gray
-        $trustChoice = Read-Host "  Trust certificate? [Y/n]"
-
-        if ($trustChoice -ne "n" -and $trustChoice -ne "N")
+        # Trust the certificate if requested (decision made before elevation)
+        if ($TrustCert)
         {
+            Write-Host "  Adding certificate to trusted root store..." -ForegroundColor Gray
             try
             {
                 # Load the PEM certificate - extract base64 and create cert via constructor (not Import)
@@ -200,7 +199,7 @@ function Generate-Certificate
             }
             catch
             {
-                Write-Host "  Could not trust certificate (requires admin): $_" -ForegroundColor Yellow
+                Write-Host "  Could not trust certificate: $_" -ForegroundColor Yellow
                 Write-Host "  You may see browser warnings until manually trusted" -ForegroundColor Gray
             }
         }
@@ -358,7 +357,8 @@ function Install-MidTerm
         [string]$RunAsUserSid,
         [string]$PasswordHash,
         [int]$Port = 2000,
-        [string]$BindAddress = "*"
+        [string]$BindAddress = "*",
+        [bool]$TrustCert = $false
     )
 
     if ($AsService)
@@ -489,7 +489,7 @@ function Install-MidTerm
 
     # Always generate certificate now that mt.exe is installed (always HTTPS)
     $settingsDir = if ($AsService) { "$env:ProgramData\MidTerm" } else { "$env:USERPROFILE\.MidTerm" }
-    $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService
+    $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService -TrustCert $TrustCert
     if (-not $CertPath)
     {
         Write-Host "  Warning: Certificate generation failed. App will use fallback certificate." -ForegroundColor Yellow
@@ -741,15 +741,42 @@ Write-Host "MidTerm uninstalled." -ForegroundColor Green
 
 # Main
 
-# If we're being called with ServiceMode flag, we're the elevated process
+# If we're being called with ServiceMode flag, we're the elevated process (runs hidden)
 if ($ServiceMode)
 {
-    Write-Header
-    $script:release = Get-LatestRelease
-    $version = $script:release.tag_name -replace "^v", ""
-    Write-Host "  Latest version: $version" -ForegroundColor White
-    Write-Host ""
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
+    # If log file specified, redirect all output there for streaming to original terminal
+    if ($LogFile)
+    {
+        # Clear log file
+        "" | Set-Content $LogFile -Force
+
+        # Run the install with all output captured to file
+        & {
+            Write-Host ""
+            Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
+            Write-Host ""
+            $script:release = Get-LatestRelease
+            $version = $script:release.tag_name -replace "^v", ""
+            Write-Host "  Latest version: $version" -ForegroundColor White
+            Write-Host ""
+            Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -TrustCert:$TrustCert
+        } *>&1 | ForEach-Object {
+            $line = $_.ToString()
+            Write-Host $_
+            Add-Content -Path $LogFile -Value $line
+        }
+    }
+    else
+    {
+        Write-Host ""
+        Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
+        Write-Host ""
+        $script:release = Get-LatestRelease
+        $version = $script:release.tag_name -replace "^v", ""
+        Write-Host "  Latest version: $version" -ForegroundColor White
+        Write-Host ""
+        Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -TrustCert:$TrustCert
+    }
     return
 }
 
@@ -808,18 +835,31 @@ if ($asService)
     $port = $networkConfig.Port
     $bindAddress = $networkConfig.BindAddress
 
+    # Ask about certificate trust BEFORE elevation (all interactive prompts in original terminal)
+    Write-Host ""
+    Write-Host "  Certificate Trust:" -ForegroundColor Cyan
+    Write-Host "  Trust the certificate to remove browser warnings?" -ForegroundColor Yellow
+    Write-Host "  (Adds self-signed certificate to Windows trusted root store)" -ForegroundColor Gray
+    $trustChoice = Read-Host "  Trust certificate? [Y/n]"
+    $trustCert = ($trustChoice -ne "n" -and $trustChoice -ne "N")
+
     # Check if we need to elevate
     if (-not (Test-Administrator))
     {
         Write-Host ""
         Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
+        Write-Host ""
 
         # Download script to temp file and run elevated with parameters
         $tempScript = Join-Path $env:TEMP "mt-install-elevated.ps1"
+        $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
         $scriptUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/install.ps1"
         Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript
 
-        # Run elevated with user info passed as parameters
+        # Clear any existing log file
+        if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
+
+        # Run elevated with user info passed as parameters (hidden window, output to log file)
         $arguments = @(
             "-NoProfile"
             "-ExecutionPolicy", "Bypass"
@@ -830,15 +870,48 @@ if ($asService)
             "-PasswordHash", $passwordHash
             "-Port", $port
             "-BindAddress", $bindAddress
+            "-LogFile", $tempLogFile
         )
+        if ($trustCert) { $arguments += "-TrustCert" }
 
-        Start-Process pwsh -ArgumentList $arguments -Verb RunAs -Wait
+        # Start elevated process hidden
+        $elevatedProcess = Start-Process pwsh -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
+
+        # Stream output from log file to original terminal
+        $linesRead = 0
+        while (-not $elevatedProcess.HasExited)
+        {
+            Start-Sleep -Milliseconds 200
+            if (Test-Path $tempLogFile)
+            {
+                $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
+                if ($lines -and $lines.Count -gt $linesRead)
+                {
+                    $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                    $linesRead = $lines.Count
+                }
+            }
+        }
+
+        # Final read to catch any remaining output
+        Start-Sleep -Milliseconds 300
+        if (Test-Path $tempLogFile)
+        {
+            $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
+            if ($lines -and $lines.Count -gt $linesRead)
+            {
+                $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+            }
+        }
+
+        # Cleanup
         Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+        Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
         return
     }
 
     # Already admin, proceed with install
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -TrustCert $trustCert
 }
 else
 {
