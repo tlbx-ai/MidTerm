@@ -101,21 +101,36 @@ public sealed class EncryptedFileProtector : ICertificateProtector
     public X509Certificate2 LoadCertificateWithPrivateKey(string certificatePath, string keyId)
     {
         var certPem = File.ReadAllText(certificatePath);
-        var cert = X509Certificate2.CreateFromPem(certPem);
+        using var cert = X509Certificate2.CreateFromPem(certPem);
 
         var privateKeyBytes = RetrievePrivateKey(keyId);
         try
         {
-            using var ecdsa = ECDsa.Create();
-            ecdsa.ImportPkcs8PrivateKey(privateKeyBytes, out _);
-            return cert.CopyWithPrivateKey(ecdsa);
-        }
-        catch
-        {
-            // Try RSA if ECDSA fails
-            using var rsa = RSA.Create();
-            rsa.ImportPkcs8PrivateKey(privateKeyBytes, out _);
-            return cert.CopyWithPrivateKey(rsa);
+            X509Certificate2 certWithKey;
+            try
+            {
+                using var ecdsa = ECDsa.Create();
+                ecdsa.ImportPkcs8PrivateKey(privateKeyBytes, out _);
+                certWithKey = cert.CopyWithPrivateKey(ecdsa);
+            }
+            catch
+            {
+                // Try RSA if ECDSA fails
+                using var rsa = RSA.Create();
+                rsa.ImportPkcs8PrivateKey(privateKeyBytes, out _);
+                certWithKey = cert.CopyWithPrivateKey(rsa);
+            }
+
+            // CopyWithPrivateKey returns a cert that references the key object.
+            // When the key is disposed, the cert's private key becomes invalid.
+            // Export to PFX and reload to get a self-contained certificate.
+            var pfxBytes = certWithKey.Export(X509ContentType.Pfx);
+            certWithKey.Dispose();
+
+            var result = X509CertificateLoader.LoadPkcs12(pfxBytes, null,
+                X509KeyStorageFlags.Exportable);
+            CryptographicOperations.ZeroMemory(pfxBytes);
+            return result;
         }
         finally
         {
