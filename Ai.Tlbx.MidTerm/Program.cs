@@ -275,7 +275,8 @@ public class Program
         if (args.Contains("--generate-cert"))
         {
             var force = args.Contains("--force");
-            GenerateCertificateCommand(force);
+            var serviceMode = args.Contains("--service-mode");
+            GenerateCertificateCommand(force, serviceMode);
             return true;
         }
 
@@ -296,7 +297,7 @@ public class Program
         Console.WriteLine("  --hash-password     Hash a password (reads from stdin)");
         Console.WriteLine("  --write-secret <k>  Store secret (reads value from stdin)");
         Console.WriteLine("                      Keys: password_hash, session_secret, certificate_password");
-        Console.WriteLine("  --generate-cert     Generate HTTPS certificate");
+        Console.WriteLine("  --generate-cert     Generate HTTPS certificate (add --service-mode for service install)");
         Console.WriteLine("  --apply-update      Download and apply latest update");
         Console.WriteLine();
         Console.WriteLine("Password Recovery:");
@@ -338,11 +339,30 @@ public class Program
         return password.ToString();
     }
 
-    private static void GenerateCertificateCommand(bool force)
+    private static void GenerateCertificateCommand(bool force, bool serviceMode)
     {
         var settingsService = new SettingsService();
         var settings = settingsService.Load();
-        var settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
+
+        // If serviceMode is explicitly requested, use service directory regardless of detection
+        string settingsDir;
+        if (serviceMode)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                settingsDir = Path.Combine(programData, "MidTerm");
+            }
+            else
+            {
+                settingsDir = "/usr/local/etc/midterm";
+            }
+            Directory.CreateDirectory(settingsDir);
+        }
+        else
+        {
+            settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
+        }
 
         var certPath = Path.Combine(settingsDir, "midterm.pem");
         var keyId = "midterm";
@@ -370,7 +390,8 @@ public class Program
         CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
         // Store private key with OS-level protection
-        var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, settingsService.IsRunningAsService);
+        var isService = serviceMode || settingsService.IsRunningAsService;
+        var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, isService);
         var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
                               ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
                               ?? throw new InvalidOperationException("Failed to export private key");

@@ -130,7 +130,8 @@ function Generate-Certificate
 {
     param(
         [string]$InstallDir,
-        [string]$SettingsDir
+        [string]$SettingsDir,
+        [bool]$IsService = $false
     )
 
     Write-Host "  Generating HTTPS certificate with OS-protected private key..." -ForegroundColor Gray
@@ -145,7 +146,9 @@ function Generate-Certificate
     try
     {
         # Use mt.exe --generate-cert to generate certificate with DPAPI-protected key
-        $output = & $mtPath --generate-cert 2>&1
+        # Pass --service-mode for service installs so it uses ProgramData instead of user profile
+        $certArgs = if ($IsService) { @("--generate-cert", "--service-mode") } else { @("--generate-cert") }
+        $output = & $mtPath @certArgs 2>&1
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -ne 0)
@@ -158,7 +161,7 @@ function Generate-Certificate
         $certPath = $null
         foreach ($line in $output)
         {
-            if ($line -match "Certificate saved to: (.+\.pem)")
+            if ($line -match "Location:\s*(.+\.pem)")
             {
                 $certPath = $Matches[1].Trim()
             }
@@ -166,8 +169,8 @@ function Generate-Certificate
 
         if (-not $certPath)
         {
-            # Default path
-            $certPath = Join-Path $SettingsDir "midterm-cert.pem"
+            # Default path (matches what mt.exe generates)
+            $certPath = Join-Path $SettingsDir "midterm.pem"
         }
 
         Write-Host "  Certificate generated with DPAPI-protected private key" -ForegroundColor Green
@@ -486,7 +489,7 @@ function Install-MidTerm
 
     # Always generate certificate now that mt.exe is installed (always HTTPS)
     $settingsDir = if ($AsService) { "$env:ProgramData\MidTerm" } else { "$env:USERPROFILE\.MidTerm" }
-    $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir
+    $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService
     if (-not $CertPath)
     {
         Write-Host "  Warning: Certificate generation failed. App will use fallback certificate." -ForegroundColor Yellow
