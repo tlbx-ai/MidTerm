@@ -173,7 +173,7 @@ prompt_password() {
         # Hash using the installed binary (must be called after install_binary)
         local mt_path="${MT_BINARY_PATH:-/usr/local/bin/mt}"
         if [ -f "$mt_path" ]; then
-            local hash=$("$mt_path" --hash-password "$password" 2>/dev/null || true)
+            local hash=$(echo "$password" | "$mt_path" --hash-password 2>/dev/null || true)
             if [[ "$hash" == '$PBKDF2$'* ]]; then
                 PASSWORD_HASH="$hash"
                 return 0

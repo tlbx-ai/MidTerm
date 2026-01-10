@@ -102,13 +102,13 @@ function Prompt-Password
             continue
         }
 
-        # Hash the password using mt.exe --hash-password
+        # Hash the password using mt.exe --hash-password (password piped via stdin)
         $mmPath = Join-Path $InstallDir "mt.exe"
         if (Test-Path $mmPath)
         {
             try
             {
-                $hash = & $mmPath --hash-password $pwPlain 2>&1
+                $hash = $pwPlain | & $mmPath --hash-password 2>&1
                 if ($hash -match '^\$PBKDF2\$')
                 {
                     return $hash
@@ -470,7 +470,7 @@ function Install-MidTerm
         $plainPassword = $PasswordHash.Substring(12)
         try
         {
-            $hash = & $destWebBinary --hash-password $plainPassword 2>&1
+            $hash = $plainPassword | & $destWebBinary --hash-password 2>&1
             if ($hash -match '^\$PBKDF2\$')
             {
                 $PasswordHash = $hash
