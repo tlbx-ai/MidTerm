@@ -14,7 +14,7 @@ public sealed class AuthService
     private const int Iterations = 100_000;
     private const int SaltSize = 32;
     private const int HashSize = 32;
-    private const int SessionTokenValidityHours = 24 * 21; // 3 weeks
+    private const int SessionTokenValidityHours = 24 * 3; // 3 days (sliding window refresh on activity)
 
     private readonly SettingsService _settingsService;
     private readonly ConcurrentDictionary<string, RateLimitEntry> _rateLimits = new();

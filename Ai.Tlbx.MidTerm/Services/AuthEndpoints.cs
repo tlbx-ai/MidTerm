@@ -11,7 +11,7 @@ public static class AuthEndpoints
         SameSite = SameSiteMode.Strict,
         Secure = true,  // Always HTTPS
         Path = "/",
-        MaxAge = TimeSpan.FromDays(21)
+        MaxAge = TimeSpan.FromDays(3)  // Sliding window - fresh token issued on each request
     };
 
     public static void ConfigureAuthMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
@@ -36,10 +36,13 @@ public static class AuthEndpoints
             var token = context.Request.Cookies["mm-session"];
             if (token is not null && authService.ValidateSessionToken(token))
             {
-                // Don't modify response for WebSocket upgrade requests
+                // Issue fresh token on each request for sliding window expiry
+                // This ensures active users always have a recent token, while
+                // stolen tokens expire after 3 days of attacker non-use
                 if (!context.WebSockets.IsWebSocketRequest)
                 {
-                    context.Response.Cookies.Append("mm-session", token, GetSessionCookieOptions());
+                    var freshToken = authService.CreateSessionToken();
+                    context.Response.Cookies.Append("mm-session", freshToken, GetSessionCookieOptions());
                 }
                 await next();
                 return;

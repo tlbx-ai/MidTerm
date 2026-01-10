@@ -294,6 +294,21 @@ Terminal multiplexing in a browser involves inherent constraints:
 
 **Advantage**: Any device with a browser becomes a terminal client. No SSH configuration. No native app installation. The server handles session persistence across disconnects.
 
+## Testing
+
+The test project (`Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
+
+- REST API endpoints (sessions, version, resize)
+- WebSocket protocols (mux binary frames, state JSON updates)
+- Session lifecycle (create, list, delete)
+
+**Current coverage**: Integration tests for core API and WebSocket functionality. Unit tests for isolated services are a focus for upcoming releases.
+
+**Test patterns**:
+- `WebApplicationFactory<Program>` for in-process HTTP/WebSocket testing
+- `IAsyncLifetime` for test setup/teardown with session cleanup
+- Polling helpers for async state verification
+
 ## File Reference
 
 | Area | Key Files |

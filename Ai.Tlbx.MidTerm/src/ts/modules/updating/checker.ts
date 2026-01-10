@@ -7,6 +7,9 @@
 
 import type { UpdateInfo } from '../../types';
 import { updateInfo, setUpdateInfo } from '../../state';
+import { createLogger } from '../logging';
+
+const log = createLogger('updating');
 
 const MAX_RELOAD_ATTEMPTS = 30;
 const RELOAD_INTERVAL_MS = 2000;
@@ -299,7 +302,9 @@ export function checkUpdateResult(): void {
       if (!result.found) return;
 
       // Clear the result file - the result is shown in the settings/sidebar panels
-      fetch('/api/update/result', { method: 'DELETE' }).catch(() => {});
+      fetch('/api/update/result', { method: 'DELETE' }).catch((e) => {
+        log.verbose(() => `Failed to clear update result: ${e}`);
+      });
     })
-    .catch(() => {});
+    .catch((e) => log.warn(() => `Failed to check update result: ${e}`));
 }

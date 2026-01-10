@@ -44,6 +44,10 @@ Ai.Tlbx.MidTerm/build-aot.cmd        # Windows
 ./Ai.Tlbx.MidTerm/build-aot-macos.sh # macOS
 ```
 
+## Testing
+
+When adding new functionality beyond styling changes, consider adding integration tests. The test project (`Ai.Tlbx.MidTerm.Tests/`) uses xUnit with `WebApplicationFactory` for HTTP/WebSocket testing.
+
 ## Architecture
 
 ```
@@ -159,7 +163,7 @@ The `/ws/mux` endpoint uses a binary protocol for efficient terminal I/O multipl
 
 - **PBKDF2** password hashing (100K iterations, SHA256, 32-byte salt)
 - **HMAC-SHA256** session tokens (format: `timestamp:signature`)
-- **3-week** session validity with sliding expiration
+- **3-day** session validity with sliding window (fresh token on each request)
 - **Rate limiting**: 5 failures = 30s lockout, 10 failures = 5min lockout
 - Password set during install (mandatory), changeable in Settings > Security
 

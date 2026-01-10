@@ -20,13 +20,13 @@ import {
 } from '../../state';
 
 // Forward declarations for functions from other modules
-let sendResize: (sessionId: string, terminal: any) => void = () => {};
+let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
 
 /**
  * Register callbacks from other modules
  */
 export function registerScalingCallbacks(callbacks: {
-  sendResize?: (sessionId: string, terminal: any) => void;
+  sendResize?: (sessionId: string, dimensions: { cols: number; rows: number }) => void;
 }): void {
   if (callbacks.sendResize) sendResize = callbacks.sendResize;
 }
@@ -54,7 +54,7 @@ export function fitSessionToScreen(sessionId: string): void {
   // Clear any existing scaling first
   const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
   if (xterm) {
-    (xterm.style as any).zoom = '';
+    xterm.style.zoom = '';
     xterm.style.transform = '';
     state.container.classList.remove('scaled');
   }
@@ -163,11 +163,11 @@ export function applyTerminalScaling(_sessionId: string, state: TerminalState): 
     if (scale < 0.99) {
       // Use zoom instead of transform:scale for better pixel alignment
       // zoom respects pixel boundaries, transform can cause subpixel rendering
-      (xterm.style as any).zoom = scale;
+      xterm.style.zoom = String(scale);
       xterm.style.transform = '';
       container.classList.add('scaled');
     } else {
-      (xterm.style as any).zoom = '';
+      xterm.style.zoom = '';
       xterm.style.transform = '';
       container.classList.remove('scaled');
     }

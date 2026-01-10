@@ -24,7 +24,7 @@ import { applyTerminalScaling, fitSessionToScreen } from './scaling';
 import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
 import { isBracketedPasteEnabled } from '../comms';
 
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type ITerminalOptions } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -79,14 +79,14 @@ export function registerTerminalCallbacks(callbacks: {
 /**
  * Get terminal options based on current settings
  */
-export function getTerminalOptions(): object {
+export function getTerminalOptions(): ITerminalOptions {
   const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
   const baseFontSize = currentSettings?.fontSize ?? 14;
   const fontSize = isMobile ? Math.max(baseFontSize - 2, 10) : baseFontSize;
   const themeName = currentSettings?.theme ?? 'dark';
   const fontFamily = currentSettings?.fontFamily ?? 'Cascadia Code';
 
-  const options: Record<string, unknown> = {
+  const options: ITerminalOptions = {
     cursorBlink: currentSettings?.cursorBlink ?? true,
     cursorStyle: currentSettings?.cursorStyle ?? 'bar',
     cursorInactiveStyle: currentSettings?.cursorStyle ?? 'bar',
@@ -278,7 +278,7 @@ export function writeOutputFrame(
  */
 export function setupTerminalEvents(
   sessionId: string,
-  terminal: any,
+  terminal: Terminal,
   container: HTMLDivElement
 ): void {
   // Wire up events
@@ -475,7 +475,7 @@ export function pasteToTerminal(sessionId: string, data: string, isFilePath: boo
 
   // Check BPM state from muxChannel (live WebSocket tracking) and xterm.js internal state
   const muxBpm = isBracketedPasteEnabled(sessionId);
-  const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode ?? false;
+  const xtermBpm = state.terminal.modes?.bracketedPasteMode ?? false;
   const bpmEnabled = muxBpm || xtermBpm;
 
   // Prepare content
@@ -518,10 +518,10 @@ export function scrollToBottom(sessionId: string): void {
 export function applySettingsToTerminals(): void {
   const options = getTerminalOptions();
   sessionTerminals.forEach((state) => {
-    state.terminal.options.cursorBlink = (options as any).cursorBlink;
-    state.terminal.options.cursorStyle = (options as any).cursorStyle;
-    state.terminal.options.fontSize = (options as any).fontSize;
-    state.terminal.options.theme = (options as any).theme;
+    state.terminal.options.cursorBlink = options.cursorBlink ?? true;
+    state.terminal.options.cursorStyle = options.cursorStyle ?? 'bar';
+    state.terminal.options.fontSize = options.fontSize ?? 14;
+    state.terminal.options.theme = options.theme ?? {};
   });
 }
 

@@ -17,6 +17,9 @@ import {
 } from '../../state';
 import { fetchSettings } from './persistence';
 import { initSettingsTabs } from './tabs';
+import { createLogger } from '../logging';
+
+const log = createLogger('settings');
 
 /**
  * Close the mobile sidebar
@@ -220,7 +223,7 @@ export function checkSystemHealth(): void {
         setWindowsBuildNumber(health.windowsBuildNumber);
       }
     })
-    .catch(() => {});
+    .catch((e) => log.warn(() => `Failed to check system health: ${e}`));
 }
 
 /**

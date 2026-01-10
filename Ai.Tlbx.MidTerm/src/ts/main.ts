@@ -103,8 +103,8 @@ import { bindClick, escapeHtml } from './utils';
 // Create logger for main module
 const log = createLogger('main');
 
-// Debug export for console access
-(window as any).mmDebug = {
+// Debug export for console access (typed in types/xterm-extensions.d.ts)
+window.mmDebug = {
   get terminals() { return sessionTerminals; },
   get activeId() { return activeSessionId; },
   get settings() { return currentSettings; }
@@ -478,7 +478,7 @@ function fetchVersion(): void {
       const el = document.getElementById('app-version');
       if (el) el.textContent = 'v' + version;
     })
-    .catch(() => {});
+    .catch((e) => log.warn(() => `Failed to fetch version: ${e}`));
 }
 
 function fetchNetworks(): void {
@@ -500,7 +500,7 @@ function fetchNetworks(): void {
           '</div>';
       }).join('');
     })
-    .catch(() => {});
+    .catch((e) => log.warn(() => `Failed to fetch networks: ${e}`));
 }
 
 // =============================================================================

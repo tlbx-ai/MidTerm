@@ -7,10 +7,11 @@
 
 import { sessionTerminals, activeSessionId } from '../../state';
 
+import { Terminal } from '@xterm/xterm';
 import { SearchAddon } from '@xterm/addon-search';
 
 interface SearchState {
-  addon: any;
+  addon: SearchAddon;
   currentIndex: number;
   totalMatches: number;
 }
@@ -25,7 +26,7 @@ let searchContainer: HTMLElement | null = null;
 /**
  * Initialize search addon for a terminal
  */
-export function initSearchForTerminal(sessionId: string, terminal: any): void {
+export function initSearchForTerminal(sessionId: string, terminal: Terminal): void {
   try {
     const addon = new SearchAddon();
     terminal.loadAddon(addon);
