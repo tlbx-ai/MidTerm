@@ -253,7 +253,7 @@ public class Program
             if (writeSecretIdx + 1 >= args.Length)
             {
                 Console.Error.WriteLine("Error: --write-secret requires a key name");
-                Console.Error.WriteLine("Usage: mt --write-secret <key>");
+                Console.Error.WriteLine("Usage: mt --write-secret <key> [--service-mode]");
                 Console.Error.WriteLine("Keys: password_hash, session_secret, certificate_password");
                 Environment.Exit(1);
             }
@@ -291,8 +291,30 @@ public class Program
                 Environment.Exit(1);
             }
 
-            var settingsService = new SettingsService();
-            settingsService.SecretStorage.SetSecret(secretKey, value);
+            // If --service-mode is specified, use service directory regardless of detection
+            var serviceMode = args.Contains("--service-mode");
+            ISecretStorage secretStorage;
+            if (serviceMode)
+            {
+                string settingsDir;
+                if (OperatingSystem.IsWindows())
+                {
+                    var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                    settingsDir = Path.Combine(programData, "MidTerm");
+                }
+                else
+                {
+                    settingsDir = "/usr/local/etc/midterm";
+                }
+                secretStorage = SecretStorageFactory.Create(settingsDir, isServiceMode: true);
+            }
+            else
+            {
+                var settingsService = new SettingsService();
+                secretStorage = settingsService.SecretStorage;
+            }
+
+            secretStorage.SetSecret(secretKey, value);
             Console.WriteLine($"Secret '{keyArg}' stored successfully");
             return true;
         }

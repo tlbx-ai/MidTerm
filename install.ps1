@@ -354,15 +354,18 @@ function Write-ServiceSettings
 
     $json = $settings | ConvertTo-Json -Depth 10
     Set-Content -Path $settingsPath -Value $json -Encoding UTF8
+    Write-Host "  Settings: $settingsPath" -ForegroundColor Gray
 
     # Store password hash in secure storage (DPAPI-protected secrets.bin)
+    # Use --service-mode to ensure it writes to ProgramData, not user profile
     if ($PasswordHash)
     {
         $mtPath = Join-Path $InstallDir "mt.exe"
+        $secretsPath = "$env:ProgramData\MidTerm\secrets.bin"
         try
         {
-            $PasswordHash | & $mtPath --write-secret password_hash 2>&1 | Out-Null
-            Write-Host "  Password: stored in secure storage" -ForegroundColor Gray
+            $PasswordHash | & $mtPath --write-secret password_hash --service-mode 2>&1 | Out-Null
+            Write-Host "  Password: stored in $secretsPath" -ForegroundColor Gray
         }
         catch
         {
@@ -373,7 +376,7 @@ function Write-ServiceSettings
     Write-Host "  Terminal user: $Username" -ForegroundColor Gray
     Write-Host "  Port: $Port" -ForegroundColor Gray
     Write-Host "  Binding: $(if ($BindAddress -eq 'localhost') { 'localhost only' } else { 'all interfaces' })" -ForegroundColor Gray
-    if ($CertPath) { Write-Host "  HTTPS: enabled (OS-protected key)" -ForegroundColor Green }
+    if ($CertPath) { Write-Host "  Certificate: $CertPath" -ForegroundColor Gray }
 }
 
 function Install-MidTerm
@@ -461,7 +464,7 @@ function Install-MidTerm
     $destWebBinary = Join-Path $installDir $WebBinaryName
     $destConHostBinary = Join-Path $installDir $TtyHostBinaryName
 
-    Write-Host "Installing binaries..." -ForegroundColor Gray
+    Write-Host "Installing binaries to $installDir..." -ForegroundColor Gray
 
     # Retry logic for file copy (handles may take time to release)
     $maxRetries = 15
@@ -474,7 +477,7 @@ function Install-MidTerm
         try
         {
             Copy-Item $sourceWebBinary $destWebBinary -Force -ErrorAction Stop
-            Write-Host "  Installed: $WebBinaryName" -ForegroundColor Gray
+            Write-Host "  Installed: $destWebBinary" -ForegroundColor Gray
             $copied = $true
             break
         }
@@ -503,7 +506,7 @@ function Install-MidTerm
             try
             {
                 Copy-Item $sourceConHostBinary $destConHostBinary -Force -ErrorAction Stop
-                Write-Host "  Installed: $TtyHostBinaryName" -ForegroundColor Gray
+                Write-Host "  Installed: $destConHostBinary" -ForegroundColor Gray
                 $copied = $true
                 break
             }
@@ -632,13 +635,14 @@ function Install-MidTerm
         Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
 
         # Store password hash in secure storage (DPAPI-protected secrets.bin)
+        # User mode - no --service-mode flag, stores in user profile
         if ($PasswordHash)
         {
             $mtPath = Join-Path $installDir "mt.exe"
             try
             {
                 $PasswordHash | & $mtPath --write-secret password_hash 2>&1 | Out-Null
-                Write-Host "  Password: stored in secure storage" -ForegroundColor Gray
+                Write-Host "  Password: stored in secure storage ($userSettingsDir\secrets.bin)" -ForegroundColor Gray
             }
             catch
             {
