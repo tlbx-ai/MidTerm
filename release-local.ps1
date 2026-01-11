@@ -122,9 +122,6 @@ if ($localCommit -ne $remoteCommit) {
 # PHASE 2: Compute local version (4th component)
 # ===========================================
 $versionJsonPath = "$PSScriptRoot\version.json"
-$webCsprojPath = "$PSScriptRoot\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj"
-$ttyHostCsprojPath = "$PSScriptRoot\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj"
-$ttyHostProgramPath = "$PSScriptRoot\Ai.Tlbx.MidTerm.TtyHost\Program.cs"
 
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $baseWebVersion = $versionJson.web
@@ -189,34 +186,13 @@ Write-Host ""
 # ===========================================
 Write-Host "Updating version files..." -ForegroundColor Gray
 
-# Update version.json
+# Update version.json (single source of truth - csprojs read from this at build time)
 $versionJson.web = $localWebVersion
 if ($InfluencesTtyHost -eq "yes") {
     $versionJson.pty = $localPtyVersion
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json" -ForegroundColor DarkGray
-
-# Update web csproj
-$content = Get-Content $webCsprojPath -Raw
-$content = $content -replace "<Version>\d+\.\d+\.\d+(\.\d+)?</Version>", "<Version>$localWebVersion</Version>"
-Set-Content $webCsprojPath $content -NoNewline
-Write-Host "  Updated: Ai.Tlbx.MidTerm.csproj" -ForegroundColor DarkGray
-
-# Update TtyHost files if needed
-if ($InfluencesTtyHost -eq "yes") {
-    $content = Get-Content $ttyHostCsprojPath -Raw
-    $content = $content -replace "<Version>\d+\.\d+\.\d+(\.\d+)?</Version>", "<Version>$localPtyVersion</Version>"
-    # Local versions are 4-part, FileVersion must be exactly 4 parts
-    $content = $content -replace "<FileVersion>\d+(\.\d+){2,4}</FileVersion>", "<FileVersion>$localPtyVersion</FileVersion>"
-    Set-Content $ttyHostCsprojPath $content -NoNewline
-    Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost.csproj" -ForegroundColor DarkGray
-
-    $content = Get-Content $ttyHostProgramPath -Raw
-    $content = $content -replace 'public const string Version = "\d+\.\d+\.\d+(\.\d+)?"', "public const string Version = `"$localPtyVersion`""
-    Set-Content $ttyHostProgramPath $content -NoNewline
-    Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost\Program.cs" -ForegroundColor DarkGray
-}
 
 # ===========================================
 # PHASE 4: Build TypeScript with version

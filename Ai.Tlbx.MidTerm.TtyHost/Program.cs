@@ -20,8 +20,6 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.8.2.1.3";
-
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool PeekNamedPipe(
@@ -52,7 +50,7 @@ public static class Program
 
         if (args.Contains("--version") || args.Contains("-v"))
         {
-            Console.WriteLine($"mthost {Version}");
+            Console.WriteLine($"mthost {VersionInfo.Version}");
             return 0;
         }
 
@@ -78,7 +76,7 @@ public static class Program
         PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal);
 #endif
 
-        Log.Info(() => $"mthost {Version} starting, session={config.SessionId}");
+        Log.Info(() => $"mthost {VersionInfo.Version} starting, session={config.SessionId}");
 
         try
         {
@@ -158,7 +156,9 @@ public static class Program
         try
         {
 #if WINDOWS
+#pragma warning disable CA1416 // Platform compatibility - guarded by #if WINDOWS
             return new WindowsProcessMonitor();
+#pragma warning restore CA1416
 #elif LINUX
             return new LinuxProcessMonitor();
 #elif MACOS
@@ -717,7 +717,7 @@ public static class Program
     private static void PrintHelp()
     {
         Console.WriteLine($"""
-            mthost {Version} - MidTerm Console Host
+            mthost {VersionInfo.Version} - MidTerm Console Host
 
             Usage: mthost --session <id> [options]
                    mthost --pty-exec <slave-path> <shell> [shell-args...]
@@ -893,7 +893,7 @@ internal sealed class TerminalSession
             ExitCode = ExitCode,
             Name = Name,
             CreatedAt = CreatedAt,
-            TtyHostVersion = Program.Version
+            TtyHostVersion = VersionInfo.Version
         };
 
         if (_processMonitor is not null)

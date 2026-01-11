@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>5.12.4.4</Version>
+    <!-- Version is set dynamically from version.json via ReadVersionJson target -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
@@ -101,16 +101,34 @@
     <TypeScriptOutFile>wwwroot/js/terminal.min.js</TypeScriptOutFile>
   </PropertyGroup>
 
-  <!-- TypeScript compilation for local dev (skipped if CI already built it) -->
-  <Target Name="CompileTypeScript" BeforeTargets="PrepareResources"
-          Condition="!Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile)') And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
-    <Exec Command="node -p &quot;require('../version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMsBuild="true">
+  <!-- Read version from version.json - single source of truth -->
+  <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;PrepareResources">
+    <Exec Command="node -p &quot;require('./version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/.." ConsoleToMsBuild="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
     </Exec>
-    <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=linked --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <!-- Add generated files since they didn't exist at project load -->
+    <PropertyGroup>
+      <Version>$(WebVersion)</Version>
+    </PropertyGroup>
+  </Target>
+
+  <!-- TypeScript compilation (skipped if output exists and is newer than sources) -->
+  <Target Name="CompileTypeScript" BeforeTargets="PrepareResources"
+          DependsOnTargets="ReadVersionJson"
+          Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
+    <!-- Skip if output exists and no .ts files are newer -->
     <ItemGroup>
+      <TypeScriptSources Include="$(TypeScriptSourceDir)/**/*.ts" />
+    </ItemGroup>
+    <PropertyGroup>
+      <TypeScriptOutputExists>$([System.IO.File]::Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile)'))</TypeScriptOutputExists>
+    </PropertyGroup>
+    <!-- Only compile if output doesn't exist -->
+    <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)"
+          Condition="!$(TypeScriptOutputExists)" />
+    <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=linked --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)"
+          Condition="!$(TypeScriptOutputExists)" />
+    <!-- Add generated files since they didn't exist at project load -->
+    <ItemGroup Condition="!$(TypeScriptOutputExists)">
       <EmbeddedResource Include="$(TypeScriptOutFile)" LinkBase="wwwroot/js" />
       <EmbeddedResource Include="$(TypeScriptOutFile).map" LinkBase="wwwroot/js" />
     </ItemGroup>
@@ -120,8 +138,10 @@
     <Delete Files="$(TypeScriptOutFile);$(TypeScriptOutFile).map" ContinueOnError="true" />
   </Target>
 
-  <!-- Brotli compression for publish builds -->
-  <Target Name="CompressBrotli" BeforeTargets="PrepareResources" Condition="'$(IsPublishing)' == 'true'">
+  <!-- Brotli compression for publish builds - must run AFTER TypeScript -->
+  <Target Name="CompressBrotli" BeforeTargets="PrepareResources"
+          DependsOnTargets="CompileTypeScript"
+          Condition="'$(IsPublishing)' == 'true'">
     <Message Importance="High" Text="Pre-compressing web assets with Brotli..." />
     <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File compress-assets.ps1"
           WorkingDirectory="$(MSBuildProjectDirectory)" />

@@ -11,10 +11,29 @@
     <PublishAot>true</PublishAot>
     <SelfContained>true</SelfContained>
     <ServerGarbageCollection>false</ServerGarbageCollection>
-
-    <Version>5.12.0.1</Version>
-    <FileVersion>5.12.0.1</FileVersion>
+    <!-- Version is set dynamically from version.json via ReadVersionJson target -->
   </PropertyGroup>
+
+  <!-- Read version from version.json - single source of truth -->
+  <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;BeforeCompile">
+    <Exec Command="node -p &quot;require('./version.json').pty&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/.." ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="PtyVersion" />
+    </Exec>
+    <PropertyGroup>
+      <Version>$(PtyVersion)</Version>
+      <FileVersion Condition="$(PtyVersion.Split('.').Length) == 3">$(PtyVersion).0</FileVersion>
+      <FileVersion Condition="$(PtyVersion.Split('.').Length) == 4">$(PtyVersion)</FileVersion>
+    </PropertyGroup>
+    <!-- Generate Version.g.cs with the version string -->
+    <PropertyGroup>
+      <VersionGenFile>$(IntermediateOutputPath)Version.g.cs</VersionGenFile>
+      <VersionGenContent>namespace Ai.Tlbx.MidTerm.TtyHost%3B internal static class VersionInfo { public const string Version = "$(PtyVersion)"%3B }</VersionGenContent>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(VersionGenFile)" Lines="$(VersionGenContent)" Overwrite="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <Compile Include="$(VersionGenFile)" />
+    </ItemGroup>
+  </Target>
 
   <!-- Publish-only: AOT optimizations -->
   <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(IsPublishing)' == 'true'">

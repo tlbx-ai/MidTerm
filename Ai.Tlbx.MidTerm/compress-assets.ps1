@@ -7,21 +7,45 @@ param(
     [string]$WwwRoot = "wwwroot"
 )
 
+$ErrorActionPreference = 'Stop'
 $extensions = @('*.js', '*.css', '*.html', '*.txt', '*.json', '*.map', '*.svg')
 
 Get-ChildItem -Path $WwwRoot -Recurse -Include $extensions | ForEach-Object {
     $src = $_.FullName
     $dst = "$src.br"
 
-    $srcStream = [System.IO.File]::OpenRead($src)
-    $dstStream = [System.IO.File]::Create($dst)
-    $brotli = [System.IO.Compression.BrotliStream]::new($dstStream, [System.IO.Compression.CompressionLevel]::SmallestSize)
+    # Incremental: skip if .br exists and is newer than source
+    if ((Test-Path $dst) -and ((Get-Item $dst).LastWriteTime -gt $_.LastWriteTime)) {
+        return
+    }
 
-    $srcStream.CopyTo($brotli)
+    $srcStream = $null
+    $dstStream = $null
+    $brotli = $null
 
-    $brotli.Dispose()
-    $dstStream.Dispose()
-    $srcStream.Dispose()
+    try {
+        $srcStream = [System.IO.File]::OpenRead($src)
+        $dstStream = [System.IO.File]::Create($dst)
+        $brotli = [System.IO.Compression.BrotliStream]::new($dstStream, [System.IO.Compression.CompressionLevel]::SmallestSize)
+
+        $srcStream.CopyTo($brotli)
+
+        # Flush before dispose to ensure all data is written
+        $brotli.Flush()
+    }
+    catch {
+        # Delete partial .br file on error
+        if ($null -ne $brotli) { $brotli.Dispose() }
+        if ($null -ne $dstStream) { $dstStream.Dispose() }
+        if ($null -ne $srcStream) { $srcStream.Dispose() }
+        if (Test-Path $dst) { Remove-Item $dst -Force }
+        throw
+    }
+    finally {
+        if ($null -ne $brotli) { $brotli.Dispose() }
+        if ($null -ne $dstStream) { $dstStream.Dispose() }
+        if ($null -ne $srcStream) { $srcStream.Dispose() }
+    }
 
     $srcSize = (Get-Item $src).Length
     $dstSize = (Get-Item $dst).Length
