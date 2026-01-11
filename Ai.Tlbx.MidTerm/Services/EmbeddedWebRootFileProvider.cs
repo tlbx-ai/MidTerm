@@ -17,6 +17,11 @@ public sealed class EmbeddedWebRootFileProvider : IFileProvider
         "woff", "woff2", "ttf", "eot", "otf", "map", "webmanifest"
     };
 
+    private static readonly HashSet<string> CompoundExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "br"
+    };
+
     public EmbeddedWebRootFileProvider(Assembly assembly, string baseNamespace)
     {
         _assembly = assembly;
@@ -68,6 +73,25 @@ public sealed class EmbeddedWebRootFileProvider : IFileProvider
     private static string ConvertResourceNameToPath(string resourceName)
     {
         var parts = resourceName.Split('.');
+
+        // Check for compound extensions like .html.br, .css.br
+        // These have the format: name.ext.br where ext is a known extension
+        if (parts.Length >= 3 && CompoundExtensions.Contains(parts[^1]))
+        {
+            var baseExt = parts[^2];
+            if (KnownExtensions.Contains(baseExt))
+            {
+                var extensionStart = parts.Length - 2;
+                if (extensionStart >= 2 && parts[extensionStart - 1] == "min")
+                {
+                    extensionStart--;
+                }
+
+                var pathParts = parts[..extensionStart];
+                var extension = string.Join(".", parts[extensionStart..]);
+                return string.Join("/", pathParts) + "." + extension;
+            }
+        }
 
         for (var i = parts.Length - 1; i >= 1; i--)
         {

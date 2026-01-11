@@ -34,6 +34,12 @@ public sealed class CompressedStaticFilesMiddleware
             return;
         }
 
+        // Handle root path - serve index.html.br
+        if (path == "/")
+        {
+            path = "/index.html";
+        }
+
         var extension = Path.GetExtension(path);
         if (!CompressibleExtensions.TryGetValue(extension, out var contentType))
         {
