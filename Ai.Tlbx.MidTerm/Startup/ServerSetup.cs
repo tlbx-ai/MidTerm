@@ -116,6 +116,17 @@ public static class ServerSetup
             "Ai.Tlbx.MidTerm");
 #endif
 
+        // Rewrite clean URLs to .html files
+        app.Use(async (context, next) =>
+        {
+            var path = context.Request.Path.Value;
+            if (path == "/trust" || path == "/login")
+            {
+                context.Request.Path = path + ".html";
+            }
+            await next();
+        });
+
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
 
         var contentTypeProvider = new FileExtensionContentTypeProvider();
