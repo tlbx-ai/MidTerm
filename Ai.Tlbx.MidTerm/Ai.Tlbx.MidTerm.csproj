@@ -54,12 +54,14 @@
     <UpToDateCheckInput Include="wwwroot\**\*" />
   </ItemGroup>
 
-  <!-- Publish builds: embed non-compressible files (fonts, images, etc.) -->
-  <!-- .br files are added dynamically by CompressBrotli target after generation -->
+  <!-- Publish builds: embed non-compressible files (fonts, images, etc.) plus pre-generated .br files -->
+  <!-- .br files must exist before build starts (created by release scripts or CompressBrotli target) -->
   <ItemGroup Condition="'$(IsPublishing)' == 'true'">
     <EmbeddedResource Include="wwwroot\**\*"
                       Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br"
                       LinkBase="wwwroot" />
+    <!-- Include pre-generated .br files (created before build by release scripts) -->
+    <EmbeddedResource Include="wwwroot\**\*.br" LinkBase="wwwroot" />
     <UpToDateCheckInput Include="wwwroot\**\*" />
   </ItemGroup>
 
@@ -137,18 +139,14 @@
   </Target>
 
   <!-- Brotli compression for publish builds - must run AFTER TypeScript -->
-  <!-- Brotli compression must run before BeforeCompile to add items before resource collection -->
+  <!-- Brotli compression fallback - runs if .br files don't exist yet -->
+  <!-- Primary compression should be done by release scripts BEFORE dotnet publish -->
   <Target Name="CompressBrotli" BeforeTargets="BeforeCompile"
           DependsOnTargets="CompileTypeScript"
-          Condition="'$(IsPublishing)' == 'true'">
+          Condition="'$(IsPublishing)' == 'true' And !Exists('wwwroot\index.html.br')">
     <Message Importance="High" Text="Pre-compressing web assets with Brotli..." />
     <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File compress-assets.ps1"
           WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <!-- Add generated .br files to EmbeddedResource (they don't exist at project load time) -->
-    <ItemGroup>
-      <EmbeddedResource Include="wwwroot\**\*.br" LinkBase="wwwroot" />
-    </ItemGroup>
-    <Message Importance="High" Text="Added @(EmbeddedResource->Count()) embedded resources" />
   </Target>
 
   <Target Name="CleanBrotli" AfterTargets="Clean">

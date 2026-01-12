@@ -58,7 +58,14 @@ jobs:
             exit 1
           fi
 
-      # 3. Build binaries (reproducible builds enabled via ContinuousIntegrationBuild)
+      # 3. Pre-compress assets with Brotli (must exist before dotnet publish for embedding)
+      - name: Compress assets
+        shell: pwsh
+        run: |
+          cd Ai.Tlbx.MidTerm
+          ./compress-assets.ps1
+
+      # 4. Build binaries (reproducible builds enabled via ContinuousIntegrationBuild)
       - name: Build mt
         run: dotnet publish Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} /p:IsPublishing=true /p:ContinuousIntegrationBuild=true
 

@@ -192,6 +192,12 @@ if ($LASTEXITCODE -ne 0) { throw "TypeScript build failed" }
 # ===========================================
 # PHASE 5: AOT publish (parallel)
 # ===========================================
+# Pre-compress assets before publish (ensures .br files exist for embedding)
+Write-Host "Pre-compressing web assets..." -ForegroundColor Gray
+Push-Location Ai.Tlbx.MidTerm
+pwsh -NoProfile -ExecutionPolicy Bypass -File compress-assets.ps1
+Pop-Location
+
 Write-Host "Publishing mt.exe and mthost.exe..." -ForegroundColor Gray
 
 $mtJob = Start-Job -ScriptBlock {
