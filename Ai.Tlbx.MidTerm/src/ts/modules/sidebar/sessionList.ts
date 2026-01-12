@@ -6,19 +6,13 @@
  */
 
 import type { Session, ProcessState } from '../../types';
-import {
-  sessions,
-  activeSessionId,
-  settingsOpen,
-  pendingSessions,
-  dom
-} from '../../state';
+import { sessions, activeSessionId, settingsOpen, pendingSessions, dom } from '../../state';
 import { icon } from '../../constants';
 import {
   registerProcessStateCallback,
   getForegroundInfo,
   getRacingLogText,
-  isRacingLogVisible
+  isRacingLogVisible,
 } from '../process';
 
 // =============================================================================
@@ -67,7 +61,7 @@ function handleProcessStateChange(sessionId: string, _state: ProcessState): void
  */
 function updateSessionProcessInfo(sessionId: string): void {
   const processInfoEl = document.querySelector(
-    `.session-process-info[data-session-id="${sessionId}"]`
+    `.session-process-info[data-session-id="${sessionId}"]`,
   ) as HTMLElement | null;
 
   if (!processInfoEl) return;
@@ -186,7 +180,8 @@ export function renderSessionList(): void {
   sessions.forEach((session) => {
     const isPending = pendingSessions.has(session.id);
     const item = document.createElement('div');
-    item.className = 'session-item' +
+    item.className =
+      'session-item' +
       (session.id === activeSessionId ? ' active' : '') +
       (isPending ? ' pending' : '');
     item.dataset.sessionId = session.id;

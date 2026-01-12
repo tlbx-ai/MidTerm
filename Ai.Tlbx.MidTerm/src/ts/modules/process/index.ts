@@ -13,5 +13,5 @@ export {
   clearProcessState,
   getRacingLogText,
   isRacingLogVisible,
-  getForegroundInfo
+  getForegroundInfo,
 } from './processMonitor';

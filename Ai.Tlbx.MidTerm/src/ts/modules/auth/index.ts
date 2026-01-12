@@ -8,7 +8,7 @@ export {
   checkAuthStatus,
   updateSecurityWarning,
   updatePasswordStatus,
-  dismissSecurityWarning
+  dismissSecurityWarning,
 } from './status';
 
 export {
@@ -16,5 +16,5 @@ export {
   hidePasswordModal,
   handlePasswordSubmit,
   showPasswordError,
-  bindAuthEvents
+  bindAuthEvents,
 } from './password';

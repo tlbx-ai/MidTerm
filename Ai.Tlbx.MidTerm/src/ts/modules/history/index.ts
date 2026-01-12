@@ -13,12 +13,12 @@ export {
   removeEntry,
   setDisplayName,
   getEntryDisplayText,
-  type CommandHistoryEntry
+  type CommandHistoryEntry,
 } from './commandHistory';
 
 export {
   initHistoryDropdown,
   toggleHistoryDropdown,
   openHistoryDropdown,
-  closeHistoryDropdown
+  closeHistoryDropdown,
 } from './historyDropdown';

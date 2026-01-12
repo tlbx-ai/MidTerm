@@ -183,7 +183,7 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
       title: 'GitHub Release',
       version: update.latestVersion,
       sessionsPreserved: update.sessionsPreserved,
-      onApply: applyUpdate
+      onApply: applyUpdate,
     });
     container.appendChild(card);
   }
@@ -195,7 +195,7 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
       title: 'Local Build',
       version: update.localUpdate.version,
       sessionsPreserved: update.localUpdate.sessionsPreserved,
-      onApply: applyLocalUpdate
+      onApply: applyLocalUpdate,
     });
     container.appendChild(card);
   }
@@ -218,9 +218,7 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
   card.id = `update-card-${opts.type}`;
 
   const warningClass = opts.sessionsPreserved ? 'safe' : 'warn';
-  const warningText = opts.sessionsPreserved
-    ? 'Terminals stay connected'
-    : 'Terminals will close';
+  const warningText = opts.sessionsPreserved ? 'Terminals stay connected' : 'Terminals will close';
 
   card.innerHTML = `
     <div class="update-card-header">
@@ -251,7 +249,9 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
 export function applyLocalUpdate(): void {
   fetch('/api/update/apply?source=local', { method: 'POST' })
     .then((r) => {
-      const btn = document.querySelector('#update-card-local .btn-update') as HTMLButtonElement | null;
+      const btn = document.querySelector(
+        '#update-card-local .btn-update',
+      ) as HTMLButtonElement | null;
       if (r.ok) {
         if (btn) btn.textContent = 'Restarting...';
         waitForServerAndReload();
@@ -264,7 +264,9 @@ export function applyLocalUpdate(): void {
       }
     })
     .catch((e) => {
-      const btn = document.querySelector('#update-card-local .btn-update') as HTMLButtonElement | null;
+      const btn = document.querySelector(
+        '#update-card-local .btn-update',
+      ) as HTMLButtonElement | null;
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Apply';

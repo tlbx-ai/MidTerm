@@ -4,18 +4,29 @@
   "description": "Frontend build dependencies for MidTerm",
   "scripts": {
     "typecheck": "tsc --noEmit -p Ai.Tlbx.MidTerm/tsconfig.json",
+    "lint": "eslint Ai.Tlbx.MidTerm/src/ts/",
+    "lint:fix": "eslint Ai.Tlbx.MidTerm/src/ts/ --fix",
+    "format": "prettier --write \"Ai.Tlbx.MidTerm/src/ts/**/*.ts\"",
     "build": "npm run typecheck && npx esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
     "build:dev": "npm run typecheck && npx esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
     "watch": "npx esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --sourcemap=linked --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020 --watch",
     "watch:typecheck": "tsc --noEmit -p Ai.Tlbx.MidTerm/tsconfig.json --watch"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/parser": "^8.53.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "esbuild": "^0.24.0",
-    "typescript": "^5.7.0"
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.7.4",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.53.0"
   }
 }

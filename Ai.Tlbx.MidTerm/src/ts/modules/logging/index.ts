@@ -8,17 +8,12 @@
 export { LogLevel, LOG_LEVEL_NAMES } from './types';
 export type { LogEntry, Logger } from './types';
 
-export {
-  createLogger,
-  setLogLevel,
-  getLogLevel,
-  setConsoleLogging
-} from './logger';
+export { createLogger, setLogLevel, getLogLevel, setConsoleLogging } from './logger';
 
 export {
   initLogStorage,
   readLogEntries,
   clearLogs,
   getLogCount,
-  cleanupOldEntries
+  cleanupOldEntries,
 } from './storage';

@@ -21,7 +21,9 @@ export async function checkVersionAndReload(): Promise<void> {
 
     const serverVersion = await response.text();
     if (serverVersion && serverVersion !== JS_BUILD_VERSION) {
-      log.info(() => `Version mismatch: client=${JS_BUILD_VERSION}, server=${serverVersion} - reloading`);
+      log.info(
+        () => `Version mismatch: client=${JS_BUILD_VERSION}, server=${serverVersion} - reloading`,
+      );
       location.reload();
     }
   } catch {

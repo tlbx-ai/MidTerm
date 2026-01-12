@@ -55,11 +55,11 @@ export function registerHistoryCallback(callback: () => void): void {
 export function recordCommand(
   shellType: string,
   subprocess: string | null,
-  workingDirectory: string
+  workingDirectory: string,
 ): void {
   const key = generateKey(shellType, subprocess, workingDirectory);
 
-  const existing = entries.find(e => e.id === key);
+  const existing = entries.find((e) => e.id === key);
   if (existing) {
     existing.weight++;
     existing.lastUsed = Date.now();
@@ -70,7 +70,7 @@ export function recordCommand(
       subprocess,
       workingDirectory,
       weight: 1,
-      lastUsed: Date.now()
+      lastUsed: Date.now(),
     };
     entries.push(entry);
   }
@@ -79,9 +79,7 @@ export function recordCommand(
   saveHistory();
   notifyChange();
 
-  log.verbose(() =>
-    `Recorded: ${shellType} + ${subprocess || 'shell'} in ${workingDirectory}`
-  );
+  log.verbose(() => `Recorded: ${shellType} + ${subprocess || 'shell'} in ${workingDirectory}`);
 }
 
 /**
@@ -109,7 +107,7 @@ export function clearHistory(): void {
  * Remove a specific entry.
  */
 export function removeEntry(id: string): void {
-  entries = entries.filter(e => e.id !== id);
+  entries = entries.filter((e) => e.id !== id);
   saveHistory();
   notifyChange();
 }
@@ -118,7 +116,7 @@ export function removeEntry(id: string): void {
  * Update display name for an entry.
  */
 export function setDisplayName(id: string, name: string | undefined): void {
-  const entry = entries.find(e => e.id === id);
+  const entry = entries.find((e) => e.id === id);
   if (entry) {
     if (name === undefined) {
       delete entry.displayName;
@@ -149,7 +147,7 @@ export function getEntryDisplayText(entry: CommandHistoryEntry): string {
 function generateKey(
   shellType: string,
   subprocess: string | null,
-  workingDirectory: string
+  workingDirectory: string,
 ): string {
   const normalized = workingDirectory.toLowerCase().replace(/\\/g, '/');
   return `${shellType}|${subprocess || ''}|${normalized}`;
@@ -179,7 +177,7 @@ function shortenPath(path: string): string {
 
 function pruneOldEntries(): void {
   const cutoff = Date.now() - PRUNE_AGE_DAYS * 24 * 60 * 60 * 1000;
-  entries = entries.filter(e => e.weight > 2 || e.lastUsed > cutoff);
+  entries = entries.filter((e) => e.weight > 2 || e.lastUsed > cutoff);
 }
 
 function pruneExcessEntries(): void {

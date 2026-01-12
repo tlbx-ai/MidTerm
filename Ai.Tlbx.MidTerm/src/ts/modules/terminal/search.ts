@@ -7,7 +7,7 @@
 
 import { sessionTerminals, activeSessionId } from '../../state';
 
-import { Terminal } from '@xterm/xterm';
+import { type Terminal } from '@xterm/xterm';
 import { SearchAddon } from '@xterm/addon-search';
 
 interface SearchState {

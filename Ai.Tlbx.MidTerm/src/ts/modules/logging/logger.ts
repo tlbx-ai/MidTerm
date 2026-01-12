@@ -55,7 +55,7 @@ function writeLog(level: LogLevel, module: string, message: string, data?: unkno
     level,
     module,
     message,
-    data
+    data,
   };
 
   // Write to IndexedDB (async, fire-and-forget)
@@ -89,12 +89,10 @@ export function createLogger(module: string): Logger {
   return {
     exception(error: Error, context?: string): void {
       // Exceptions always log regardless of level
-      const message = context
-        ? `${context}: ${error.message}`
-        : error.message;
+      const message = context ? `${context}: ${error.message}` : error.message;
       writeLog(LogLevel.Exception, module, message, {
         name: error.name,
-        stack: error.stack
+        stack: error.stack,
       });
     },
 
@@ -121,6 +119,6 @@ export function createLogger(module: string): Logger {
     log(level: LogLevel, messageFactory: () => string, data?: unknown): void {
       if (level > minLevel) return;
       writeLog(level, module, messageFactory(), data);
-    }
+    },
   };
 }

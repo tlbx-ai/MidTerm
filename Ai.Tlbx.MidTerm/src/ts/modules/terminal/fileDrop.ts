@@ -14,22 +14,70 @@ import { activeSessionId } from '../../state';
 const TEXT_FILE_SIZE_LIMIT = 40 * 1024; // 40KB
 
 const IMAGE_EXTENSIONS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp',
-  '.svg', '.ico', '.tiff', '.tif', '.heic', '.heif', '.avif'
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.bmp',
+  '.webp',
+  '.svg',
+  '.ico',
+  '.tiff',
+  '.tif',
+  '.heic',
+  '.heif',
+  '.avif',
 ]);
 
 const REJECTED_EXTENSIONS = new Set([
   // Documents
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.odt', '.ods', '.odp', '.rtf',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.odt',
+  '.ods',
+  '.odp',
+  '.rtf',
   // Executables/binaries
-  '.exe', '.dll', '.so', '.dylib', '.app', '.msi', '.deb', '.rpm', '.dmg', '.iso',
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.app',
+  '.msi',
+  '.deb',
+  '.rpm',
+  '.dmg',
+  '.iso',
   // Archives
-  '.zip', '.tar', '.gz', '.7z', '.rar', '.bz2', '.xz', '.tgz',
+  '.zip',
+  '.tar',
+  '.gz',
+  '.7z',
+  '.rar',
+  '.bz2',
+  '.xz',
+  '.tgz',
   // Binary data
-  '.bin', '.dat', '.db', '.sqlite', '.sqlite3',
+  '.bin',
+  '.dat',
+  '.db',
+  '.sqlite',
+  '.sqlite3',
   // Media (non-image)
-  '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv', '.flac', '.ogg', '.webm'
+  '.mp3',
+  '.mp4',
+  '.wav',
+  '.avi',
+  '.mov',
+  '.mkv',
+  '.flac',
+  '.ogg',
+  '.webm',
 ]);
 
 // =============================================================================
@@ -88,13 +136,19 @@ async function readFileAsText(file: File): Promise<string> {
  * BPM markers are re-added by pasteToTerminal() after sanitization.
  */
 export function sanitizePasteContent(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n')                     // Normalize CRLF → LF first
-    .replace(/\r(?!\n)/g, '\n')                 // Normalize CR → LF (Mac Classic)
-    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')      // Remove CSI sequences (colors, cursor, clear)
-    .replace(/\x1b\][^\x07]*\x07/g, '')         // Remove OSC sequences (titles, hyperlinks)
-    .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')   // Remove DCS/SOS/PM/APC sequences
-    .replace(/\x1b[\x20-\x2F]*[\x30-\x7E]/g, ''); // Remove other escape sequences
+  return (
+    text
+      .replace(/\r\n/g, '\n') // Normalize CRLF → LF first
+      .replace(/\r(?!\n)/g, '\n') // Normalize CR → LF (Mac Classic)
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Remove CSI sequences (colors, cursor, clear)
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\][^\x07]*\x07/g, '') // Remove OSC sequences (titles, hyperlinks)
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '') // Remove DCS/SOS/PM/APC sequences
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b[\x20-\x2F]*[\x30-\x7E]/g, '')
+  ); // Remove other escape sequences
 }
 
 /**
@@ -117,7 +171,7 @@ async function uploadFile(sessionId: string, file: File): Promise<string | null>
   try {
     const response = await fetch(`/api/sessions/${sessionId}/upload`, {
       method: 'POST',
-      body: formData
+      body: formData,
     });
 
     if (!response.ok) {
@@ -133,7 +187,7 @@ async function uploadFile(sessionId: string, file: File): Promise<string | null>
 
     const result = await response.json();
     return result.path;
-  } catch (error) {
+  } catch (_error) {
     showDropToast('Upload failed: network error');
     return null;
   }
@@ -241,7 +295,7 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
   try {
     const items = await navigator.clipboard.read();
     for (const item of items) {
-      const imageType = item.types.find(t => t.startsWith('image/'));
+      const imageType = item.types.find((t) => t.startsWith('image/'));
       if (imageType) {
         const blob = await item.getType(imageType);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

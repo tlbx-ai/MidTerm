@@ -42,21 +42,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ===========================================
-# PHASE 2: [placeholder] ESLint
+# PHASE 2: ESLint (includes Prettier via plugin)
 # ===========================================
-# TODO: Add eslint check here when ready
-# & npx eslint $TsSource --format stylish
-# if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Write-Host "Linting with ESLint..." -ForegroundColor Cyan
+& npx eslint $TsSource
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
 
 # ===========================================
-# PHASE 3: [placeholder] Prettier
-# ===========================================
-# TODO: Add prettier check here when ready
-# & npx prettier --check "$TsSource/**/*.ts"
-# if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-# ===========================================
-# PHASE 4: Bundle with esbuild
+# PHASE 3: Bundle with esbuild
 # ===========================================
 Write-Host "Bundling with esbuild (version: $Version)..." -ForegroundColor Cyan
 
@@ -78,7 +73,7 @@ $jsSize = (Get-Item $OutFile).Length
 Write-Host "  terminal.min.js ($([math]::Round($jsSize/1KB, 1)) KB)" -ForegroundColor DarkGray
 
 # ===========================================
-# PHASE 5: Brotli compression (publish only)
+# PHASE 4: Brotli compression (publish only)
 # ===========================================
 if ($Publish) {
     Write-Host "Compressing assets with Brotli..." -ForegroundColor Cyan

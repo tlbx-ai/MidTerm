@@ -11,13 +11,9 @@ import {
   MIN_TERMINAL_COLS,
   MIN_TERMINAL_ROWS,
   MAX_TERMINAL_COLS,
-  MAX_TERMINAL_ROWS
+  MAX_TERMINAL_ROWS,
 } from '../../constants';
-import {
-  sessionTerminals,
-  fontsReadyPromise,
-  dom
-} from '../../state';
+import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
 
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};

@@ -12,7 +12,7 @@ import { RECONNECT_DELAY } from '../constants';
 export function scheduleReconnect(
   connect: () => void,
   setTimer: (timer: number | undefined) => void,
-  existingTimer: number | undefined
+  existingTimer: number | undefined,
 ): void {
   if (existingTimer !== undefined) {
     clearTimeout(existingTimer);

@@ -11,7 +11,7 @@ import {
   createLogger,
   setLogLevel,
   setConsoleLogging,
-  LogLevel
+  LogLevel,
 } from './modules/logging';
 import {
   connectStateWebSocket,
@@ -23,7 +23,7 @@ import {
   sendInput,
   sendResize,
   requestBufferRefresh,
-  sendActiveSessionHint
+  sendActiveSessionHint,
 } from './modules/comms';
 import {
   createTerminalForSession,
@@ -38,7 +38,7 @@ import {
   bindSearchEvents,
   registerFileDropCallbacks,
   pasteToTerminal,
-  scrollToBottom
+  scrollToBottom,
 } from './modules/terminal';
 import {
   renderSessionList,
@@ -53,19 +53,16 @@ import {
   restoreSidebarState,
   setupSidebarResize,
   initShareAccessButton,
-  initializeSessionList
+  initializeSessionList,
 } from './modules/sidebar';
 import {
   toggleSettings,
   closeSettings,
   checkSystemHealth,
   fetchSettings,
-  applyReceivedSettings
+  applyReceivedSettings,
 } from './modules/settings';
-import {
-  checkAuthStatus,
-  bindAuthEvents
-} from './modules/auth';
+import { checkAuthStatus, bindAuthEvents } from './modules/auth';
 import {
   renderUpdatePanel,
   applyUpdate,
@@ -73,14 +70,14 @@ import {
   checkUpdateResult,
   showChangelog,
   closeChangelog,
-  handleUpdateInfo
+  handleUpdateInfo,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
   initializeCommandHistory,
   initHistoryDropdown,
   toggleHistoryDropdown,
-  type CommandHistoryEntry
+  type CommandHistoryEntry,
 } from './modules/history';
 import { registerShellTypeLookup } from './modules/process';
 import {
@@ -95,7 +92,7 @@ import {
   setActiveSessionId,
   setFontsReadyPromise,
   newlyCreatedSessions,
-  pendingSessions
+  pendingSessions,
 } from './state';
 import {
   FONT_CHAR_WIDTH_RATIO,
@@ -104,7 +101,7 @@ import {
   MIN_TERMINAL_COLS,
   MIN_TERMINAL_ROWS,
   MAX_TERMINAL_COLS,
-  MAX_TERMINAL_ROWS
+  MAX_TERMINAL_ROWS,
 } from './constants';
 import { bindClick, escapeHtml } from './utils';
 
@@ -113,9 +110,15 @@ const log = createLogger('main');
 
 // Debug export for console access (typed in types/xterm-extensions.d.ts)
 window.mmDebug = {
-  get terminals() { return sessionTerminals; },
-  get activeId() { return activeSessionId; },
-  get settings() { return currentSettings; }
+  get terminals() {
+    return sessionTerminals;
+  },
+  get activeId() {
+    return activeSessionId;
+  },
+  get settings() {
+    return currentSettings;
+  },
 };
 
 // =============================================================================
@@ -140,7 +143,7 @@ async function init(): Promise<void> {
   initializeCommandHistory();
   initHistoryDropdown(spawnFromHistory);
   registerShellTypeLookup((sessionId) => {
-    const session = sessions.find(s => s.id === sessionId);
+    const session = sessions.find((s) => s.id === sessionId);
     return session?.shellType ?? null;
   });
 
@@ -185,33 +188,33 @@ function registerCallbacks(): void {
     updateEmptyState,
     selectSession,
     updateMobileTitle,
-    renderUpdatePanel
+    renderUpdatePanel,
   });
 
   registerMuxCallbacks({
-    applyTerminalScaling
+    applyTerminalScaling,
   });
 
   registerSettingsCallbacks({
     applyReceivedSettings,
-    applyReceivedUpdate: handleUpdateInfo
+    applyReceivedUpdate: handleUpdateInfo,
   });
 
   registerTerminalCallbacks({
     sendInput,
     showBellNotification,
-    requestBufferRefresh
+    requestBufferRefresh,
   });
 
   registerFileDropCallbacks({
     sendInput,
-    pasteToTerminal
+    pasteToTerminal,
   });
 
   registerScalingCallbacks({
     sendResize: (sessionId: string, terminal: { cols: number; rows: number }) => {
       sendResize(sessionId, terminal.cols, terminal.rows);
-    }
+    },
   });
 
   setSessionListCallbacks({
@@ -219,7 +222,7 @@ function registerCallbacks(): void {
     onDelete: deleteSession,
     onRename: startInlineRename,
     onResize: fitSessionToScreen,
-    onCloseSidebar: closeSidebar
+    onCloseSidebar: closeSidebar,
   });
 }
 
@@ -276,7 +279,7 @@ function createSession(): void {
     terminalTitle: null,
     shellType: 'Loading...',
     cols: cols,
-    rows: rows
+    rows: rows,
   };
   sessions.push(tempSession);
   pendingSessions.add(tempId);
@@ -286,7 +289,7 @@ function createSession(): void {
   fetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Cols: cols, Rows: rows })
+    body: JSON.stringify({ Cols: cols, Rows: rows }),
   })
     .then((r) => r.json())
     .then((session) => {
@@ -385,7 +388,7 @@ function renameSession(sessionId: string, newName: string | null): void {
   fetch('/api/sessions/' + sessionId + '/name', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: nameToSend })
+    body: JSON.stringify({ name: nameToSend }),
   })
     .then(() => {
       session.manuallyNamed = true;
@@ -403,7 +406,7 @@ function startInlineRename(sessionId: string): void {
   if (!titleSpan) return;
 
   const session = sessions.find((s) => s.id === sessionId);
-  const currentName = session ? (session.name || session.shellType) : '';
+  const currentName = session ? session.name || session.shellType : '';
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -474,8 +477,8 @@ function spawnFromHistory(entry: CommandHistoryEntry): void {
       Cols: cols,
       Rows: rows,
       ShellType: entry.shellType,
-      WorkingDirectory: entry.workingDirectory
-    })
+      WorkingDirectory: entry.workingDirectory,
+    }),
   })
     .then((r) => r.json())
     .then((session) => {
@@ -505,11 +508,14 @@ function showBellNotification(sessionId: string): void {
   const session = sessions.find((s) => s.id === sessionId);
   const title = session ? getSessionDisplayName(session) : 'Terminal';
 
-  if ((bellStyle === 'notification' || bellStyle === 'both') &&
-      Notification.permission === 'granted' && document.hidden) {
+  if (
+    (bellStyle === 'notification' || bellStyle === 'both') &&
+    Notification.permission === 'granted' &&
+    document.hidden
+  ) {
     new Notification('Bell: ' + title, {
       body: 'Terminal bell triggered',
-      icon: '/favicon.ico'
+      icon: '/favicon.ico',
     });
   }
 
@@ -549,15 +555,27 @@ function fetchNetworks(): void {
 
       const protocol = location.protocol;
       const port = location.port;
-      list.innerHTML = networks.map((n: { name: string; ip: string }) => {
-        const url = protocol + '//' + n.ip + ':' + port;
-        return '<div class="network-item">' +
-          '<span class="network-name" title="' + escapeHtml(n.name) + '">' +
-          escapeHtml(n.name) + '</span>' +
-          '<a class="network-url" href="' + url + '" target="_blank">' +
-          escapeHtml(n.ip) + ':' + port + '</a>' +
-          '</div>';
-      }).join('');
+      list.innerHTML = networks
+        .map((n: { name: string; ip: string }) => {
+          const url = protocol + '//' + n.ip + ':' + port;
+          return (
+            '<div class="network-item">' +
+            '<span class="network-name" title="' +
+            escapeHtml(n.name) +
+            '">' +
+            escapeHtml(n.name) +
+            '</span>' +
+            '<a class="network-url" href="' +
+            url +
+            '" target="_blank">' +
+            escapeHtml(n.ip) +
+            ':' +
+            port +
+            '</a>' +
+            '</div>'
+          );
+        })
+        .join('');
     })
     .catch((e) => log.warn(() => `Failed to fetch networks: ${e}`));
 }

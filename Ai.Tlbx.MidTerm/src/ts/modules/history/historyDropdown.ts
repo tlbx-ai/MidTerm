@@ -9,7 +9,7 @@ import {
   getEntryDisplayText,
   removeEntry,
   registerHistoryCallback,
-  type CommandHistoryEntry
+  type CommandHistoryEntry,
 } from './commandHistory';
 import { icon } from '../../constants';
 
@@ -20,9 +20,7 @@ let onSpawnSession: ((entry: CommandHistoryEntry) => void) | null = null;
 /**
  * Initialize the history dropdown.
  */
-export function initHistoryDropdown(
-  spawnCallback: (entry: CommandHistoryEntry) => void
-): void {
+export function initHistoryDropdown(spawnCallback: (entry: CommandHistoryEntry) => void): void {
   onSpawnSession = spawnCallback;
   createDropdownElement();
   registerHistoryCallback(updateDropdownContent);
@@ -100,7 +98,9 @@ function updateDropdownContent(): void {
   content.classList.remove('hidden');
   empty.classList.add('hidden');
 
-  content.innerHTML = entries.map(entry => `
+  content.innerHTML = entries
+    .map(
+      (entry) => `
     <div class="history-item" data-id="${entry.id}">
       <div class="history-item-info">
         <span class="history-item-text">${escapeHtml(getEntryDisplayText(entry))}</span>
@@ -108,16 +108,18 @@ function updateDropdownContent(): void {
       </div>
       <button class="history-item-delete" title="Remove">${icon('close')}</button>
     </div>
-  `).join('');
+  `,
+    )
+    .join('');
 
-  content.querySelectorAll('.history-item').forEach(item => {
+  content.querySelectorAll('.history-item').forEach((item) => {
     const id = item.getAttribute('data-id');
     if (!id) return;
 
     item.addEventListener('click', (e) => {
       if ((e.target as Element).closest('.history-item-delete')) return;
 
-      const entry = entries.find(en => en.id === id);
+      const entry = entries.find((en) => en.id === id);
       if (entry && onSpawnSession) {
         closeHistoryDropdown();
         onSpawnSession(entry);
@@ -125,7 +127,7 @@ function updateDropdownContent(): void {
     });
   });
 
-  content.querySelectorAll('.history-item-delete').forEach(btn => {
+  content.querySelectorAll('.history-item-delete').forEach((btn) => {
     const item = btn.closest('.history-item');
     const id = item?.getAttribute('data-id');
     if (!id) return;

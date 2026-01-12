@@ -10,7 +10,7 @@ export const enum LogLevel {
   Error = 1,
   Warn = 2,
   Info = 3,
-  Verbose = 4
+  Verbose = 4,
 }
 
 /** Log level display names */
@@ -19,7 +19,7 @@ export const LOG_LEVEL_NAMES: Record<LogLevel, string> = {
   [LogLevel.Error]: 'ERROR',
   [LogLevel.Warn]: 'WARN',
   [LogLevel.Info]: 'INFO',
-  [LogLevel.Verbose]: 'VERBOSE'
+  [LogLevel.Verbose]: 'VERBOSE',
 };
 
 /** A single log entry */

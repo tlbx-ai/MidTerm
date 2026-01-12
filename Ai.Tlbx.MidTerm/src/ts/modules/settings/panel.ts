@@ -13,7 +13,7 @@ import {
   sessionTerminals,
   sessions,
   dom,
-  setWindowsBuildNumber
+  setWindowsBuildNumber,
 } from '../../state';
 import { fetchSettings } from './persistence';
 import { initSettingsTabs } from './tabs';
@@ -250,7 +250,7 @@ export function fetchCertificateInfo(): void {
         const dateOpts: Intl.DateTimeFormatOptions = {
           year: 'numeric',
           month: 'short',
-          day: 'numeric'
+          day: 'numeric',
         };
         validityEl.textContent =
           notBefore.toLocaleDateString(undefined, dateOpts) +

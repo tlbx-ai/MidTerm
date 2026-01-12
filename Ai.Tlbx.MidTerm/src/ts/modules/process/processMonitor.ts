@@ -9,7 +9,7 @@ import type {
   ProcessState,
   ProcessEventPayload,
   ForegroundChangePayload,
-  RacingLogEntry
+  RacingLogEntry,
 } from '../../types';
 import { createLogger } from '../logging';
 import { recordCommand } from '../history';
@@ -28,9 +28,7 @@ let getSessionShellType: ((sessionId: string) => string | null) | null = null;
 /**
  * Register function to get shell type for a session.
  */
-export function registerShellTypeLookup(
-  fn: (sessionId: string) => string | null
-): void {
+export function registerShellTypeLookup(fn: (sessionId: string) => string | null): void {
   getSessionShellType = fn;
 }
 
@@ -38,7 +36,7 @@ export function registerShellTypeLookup(
  * Register callback for process state changes.
  */
 export function registerProcessStateCallback(
-  callback: (sessionId: string, state: ProcessState) => void
+  callback: (sessionId: string, state: ProcessState) => void,
 ): void {
   onProcessStateChanged = callback;
 }
@@ -54,7 +52,7 @@ export function getProcessState(sessionId: string): ProcessState {
       foregroundName: null,
       foregroundCwd: null,
       recentProcesses: [],
-      showRacingLog: false
+      showRacingLog: false,
     };
     processStates.set(sessionId, state);
   }
@@ -72,7 +70,7 @@ export function handleProcessEvent(sessionId: string, payload: ProcessEventPaylo
       pid: payload.Pid,
       name: payload.Name,
       commandLine: payload.CommandLine,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     state.recentProcesses.push(entry);
@@ -133,15 +131,16 @@ export function getRacingLogText(sessionId: string): string {
     return '';
   }
 
-  return state.recentProcesses.map(e => {
-    if (e.commandLine) {
-      const truncated = e.commandLine.length > 20
-        ? e.commandLine.slice(0, 20) + '\u2026'
-        : e.commandLine;
-      return truncated;
-    }
-    return e.name;
-  }).join(' \u2192 ');
+  return state.recentProcesses
+    .map((e) => {
+      if (e.commandLine) {
+        const truncated =
+          e.commandLine.length > 20 ? e.commandLine.slice(0, 20) + '\u2026' : e.commandLine;
+        return truncated;
+      }
+      return e.name;
+    })
+    .join(' \u2192 ');
 }
 
 /**
@@ -159,7 +158,7 @@ export function getForegroundInfo(sessionId: string): { name: string | null; cwd
   const state = processStates.get(sessionId);
   return {
     name: state?.foregroundName ?? null,
-    cwd: state?.foregroundCwd ?? null
+    cwd: state?.foregroundCwd ?? null,
   };
 }
 

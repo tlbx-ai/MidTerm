@@ -69,7 +69,6 @@ async function openShareEmail(): Promise<void> {
         showCopyFallback(subject, body, info.trustPageUrl);
       }
     }, 1000);
-
   } catch (e) {
     log.error(() => `Failed to open share email: ${e}`);
     showFallbackMessage('Failed to generate share info');
@@ -91,23 +90,27 @@ function showCopyFallback(subject: string, body: string, trustPageUrl: string): 
   const copyText = `${subject}\n\n${body}`;
 
   // Try to copy to clipboard
-  navigator.clipboard.writeText(copyText).then(() => {
-    alert('No email client detected.\n\nConnection info has been copied to your clipboard!\n\nYou can also visit the trust page directly:\n' + trustPageUrl);
-  }).catch(() => {
-    // Clipboard failed, show the trust page URL at least
-    alert('No email client detected.\n\nVisit the trust page to share access:\n' + trustPageUrl);
-  });
+  navigator.clipboard
+    .writeText(copyText)
+    .then(() => {
+      alert(
+        'No email client detected.\n\nConnection info has been copied to your clipboard!\n\nYou can also visit the trust page directly:\n' +
+          trustPageUrl,
+      );
+    })
+    .catch(() => {
+      // Clipboard failed, show the trust page URL at least
+      alert('No email client detected.\n\nVisit the trust page to share access:\n' + trustPageUrl);
+    });
 }
 
 function generateEmailBody(info: SharePacketInfo): string {
-  const endpointsList = info.endpoints
-    .map(ep => `• ${ep.name}: ${ep.url}`)
-    .join('\n');
+  const endpointsList = info.endpoints.map((ep) => `• ${ep.name}: ${ep.url}`).join('\n');
 
   const validUntil = new Date(info.certificate.notAfter).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
   });
 
   return `MidTerm Terminal Access

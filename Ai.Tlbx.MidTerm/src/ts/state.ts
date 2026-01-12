@@ -11,7 +11,7 @@ import type {
   Settings,
   UpdateInfo,
   AuthStatus,
-  DOMElements
+  DOMElements,
 } from './types';
 
 // =============================================================================
@@ -114,7 +114,7 @@ export const dom: DOMElements = {
   settingsBtn: null,
   titleBarCustom: null,
   titleBarTerminal: null,
-  titleBarSeparator: null
+  titleBarSeparator: null,
 };
 
 // =============================================================================

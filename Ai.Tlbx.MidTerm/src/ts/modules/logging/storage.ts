@@ -6,7 +6,7 @@
  */
 
 import type { LogEntry } from './types';
-import { LogLevel } from './types';
+import { type LogLevel } from './types';
 
 const DB_NAME = 'midterm-logs';
 const DB_VERSION = 1;
@@ -43,7 +43,7 @@ function initDb(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(STORE_NAME)) {
         const store = database.createObjectStore(STORE_NAME, {
           keyPath: 'id',
-          autoIncrement: true
+          autoIncrement: true,
         });
 
         store.createIndex('by-timestamp', 'timestamp', { unique: false });
@@ -65,7 +65,7 @@ export async function writeLogEntry(entry: Omit<LogEntry, 'id'>): Promise<void> 
     const transaction = database.transaction(STORE_NAME, 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     store.add(entry);
-  } catch (error) {
+  } catch (_error) {
     // Silent fail - logging should never break the app
   }
 }

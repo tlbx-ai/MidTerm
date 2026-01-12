@@ -7,7 +7,13 @@
 
 import type { Settings, ThemeName, TerminalState, HealthResponse } from '../../types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
-import { currentSettings, setCurrentSettings, dom, sessionTerminals, settingsOpen } from '../../state';
+import {
+  currentSettings,
+  setCurrentSettings,
+  dom,
+  sessionTerminals,
+  settingsOpen,
+} from '../../state';
 import { setCookie } from '../../utils';
 
 /**
@@ -45,7 +51,11 @@ export function getElementChecked(id: string): boolean {
 /**
  * Populate version info in the about section
  */
-export function populateVersionInfo(serverVersion: string | null, hostVersion: string | null, frontendVersion: string): void {
+export function populateVersionInfo(
+  serverVersion: string | null,
+  hostVersion: string | null,
+  frontendVersion: string,
+): void {
   // Strip git hash suffix but preserve (DEV) indicator
   const formatVersion = (v: string) => 'v' + v.replace(/[+-][a-f0-9]+$/i, '');
 
@@ -70,7 +80,7 @@ export function populateVersionInfo(serverVersion: string | null, hostVersion: s
  */
 export function populateUserDropdown(
   users: Array<{ username: string }>,
-  selectedUser: string | null
+  selectedUser: string | null,
 ): void {
   const select = document.getElementById('setting-run-as-user') as HTMLSelectElement | null;
   if (!select) return;
@@ -126,7 +136,13 @@ export async function fetchSettings(): Promise<void> {
         .catch(() => null),
       fetch('/api/health')
         .then((r) => r.json() as Promise<HealthResponse>)
-        .catch(() => ({ status: '', memoryMB: 0, uptime: '', sessionCount: 0, ttyHostVersion: undefined }))
+        .catch(() => ({
+          status: '',
+          memoryMB: 0,
+          uptime: '',
+          sessionCount: 0,
+          ttyHostVersion: undefined,
+        })),
     ]);
 
     setCurrentSettings(settings);
@@ -214,10 +230,10 @@ export function saveAllSettings(): void {
     rightClickPaste: getElementChecked('setting-right-click-paste'),
     clipboardShortcuts: getElementValue(
       'setting-clipboard-shortcuts',
-      'auto'
+      'auto',
     ) as Settings['clipboardShortcuts'],
     runAsUser: runAsUserValue || null,
-    logLevel: getElementValue('setting-log-level', 'warn') as Settings['logLevel']
+    logLevel: getElementValue('setting-log-level', 'warn') as Settings['logLevel'],
   };
 
   setCookie('mm-theme', settings.theme);
@@ -225,7 +241,7 @@ export function saveAllSettings(): void {
   fetch('/api/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings)
+    body: JSON.stringify(settings),
   })
     .then((r) => {
       if (r.ok) {

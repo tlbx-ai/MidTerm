@@ -91,7 +91,7 @@ export function handlePasswordSubmit(e: Event): void {
 
   const payload = {
     currentPassword: passwordModalHasPassword && currentPw ? currentPw.value : null,
-    newPassword: newPassword
+    newPassword: newPassword,
   };
 
   if (saveBtn) {
@@ -102,10 +102,10 @@ export function handlePasswordSubmit(e: Event): void {
   fetch('/api/auth/change-password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   })
-    .then(r => r.json().then(data => ({ ok: r.ok, data })))
-    .then(result => {
+    .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+    .then((result) => {
       if (saveBtn) {
         saveBtn.disabled = false;
         saveBtn.textContent = 'Save';

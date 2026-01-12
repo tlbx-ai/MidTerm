@@ -5,12 +5,7 @@
  * and island title updates for desktop view.
  */
 
-import {
-  sidebarOpen,
-  setSidebarOpen,
-  setSidebarCollapsed,
-  dom
-} from '../../state';
+import { sidebarOpen, setSidebarOpen, setSidebarCollapsed, dom } from '../../state';
 import { getCookie, setCookie } from '../../utils';
 import { updateMobileTitle } from './sessionList';
 import { rescaleAllTerminals } from '../terminal/scaling';
@@ -144,4 +139,3 @@ export function setupSidebarResize(): void {
     setCookie(SIDEBAR_WIDTH_COOKIE, String(currentWidth));
   });
 }
-

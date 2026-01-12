@@ -28,7 +28,7 @@ export function bindClick(id: string, handler: (e: MouseEvent) => void): void {
  */
 export function debounce<T extends (...args: unknown[]) => void>(
   fn: T,
-  delay: number
+  delay: number,
 ): (...args: Parameters<T>) => void {
   let timeoutId: number | undefined;
   return (...args: Parameters<T>) => {

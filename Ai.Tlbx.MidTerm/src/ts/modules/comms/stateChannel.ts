@@ -25,17 +25,23 @@ import {
   setStateWsConnected,
   setSessions,
   setActiveSessionId,
-  setUpdateInfo
+  setUpdateInfo,
 } from '../../state';
 
 // Forward declarations for functions from other modules
 // These will be imported when those modules are created
 let destroyTerminalForSession: (sessionId: string) => void = () => {};
 let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
-let createTerminalForSession: (sessionId: string, sessionInfo: Session | undefined) => void = () => {};
+let createTerminalForSession: (
+  sessionId: string,
+  sessionInfo: Session | undefined,
+) => void = () => {};
 let renderSessionList: () => void = () => {};
 let updateEmptyState: () => void = () => {};
-let selectSession: (sessionId: string, options?: { closeSettingsPanel?: boolean }) => void = () => {};
+let selectSession: (
+  sessionId: string,
+  options?: { closeSettingsPanel?: boolean },
+) => void = () => {};
 let updateMobileTitle: () => void = () => {};
 let renderUpdatePanel: () => void = () => {};
 
@@ -52,9 +58,11 @@ export function registerStateCallbacks(callbacks: {
   updateMobileTitle?: () => void;
   renderUpdatePanel?: () => void;
 }): void {
-  if (callbacks.destroyTerminalForSession) destroyTerminalForSession = callbacks.destroyTerminalForSession;
+  if (callbacks.destroyTerminalForSession)
+    destroyTerminalForSession = callbacks.destroyTerminalForSession;
   if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
-  if (callbacks.createTerminalForSession) createTerminalForSession = callbacks.createTerminalForSession;
+  if (callbacks.createTerminalForSession)
+    createTerminalForSession = callbacks.createTerminalForSession;
   if (callbacks.renderSessionList) renderSessionList = callbacks.renderSessionList;
   if (callbacks.updateEmptyState) updateEmptyState = callbacks.updateEmptyState;
   if (callbacks.selectSession) selectSession = callbacks.selectSession;
@@ -113,7 +121,7 @@ export function connectStateWebSocket(): void {
  */
 export function handleStateUpdate(newSessions: Session[]): void {
   // Remove terminals for deleted sessions
-  const newIds = new Set(newSessions.map(s => s.id));
+  const newIds = new Set(newSessions.map((s) => s.id));
   sessionTerminals.forEach((_, id) => {
     if (!newIds.has(id)) {
       destroyTerminalForSession(id);
@@ -126,7 +134,8 @@ export function handleStateUpdate(newSessions: Session[]): void {
   newSessions.forEach((session) => {
     const state = sessionTerminals.get(session.id);
     if (state && state.opened) {
-      const dimensionsChanged = state.serverCols !== session.cols || state.serverRows !== session.rows;
+      const dimensionsChanged =
+        state.serverCols !== session.cols || state.serverRows !== session.rows;
       if (dimensionsChanged) {
         state.serverCols = session.cols;
         state.serverRows = session.rows;
@@ -153,7 +162,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
   }
 
   // Handle active session being deleted (but not if settings are open)
-  if (activeSessionId && !sessions.find(s => s.id === activeSessionId)) {
+  if (activeSessionId && !sessions.find((s) => s.id === activeSessionId)) {
     setActiveSessionId(null);
     const nextSession = sessions[0];
     if (nextSession && !settingsOpen) {

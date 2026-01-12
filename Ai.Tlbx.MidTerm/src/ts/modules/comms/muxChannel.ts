@@ -20,11 +20,16 @@ import {
   MUX_TYPE_COMPRESSED_OUTPUT,
   MUX_TYPE_ACTIVE_HINT,
   MUX_TYPE_PROCESS_EVENT,
-  MUX_TYPE_FOREGROUND_CHANGE
+  MUX_TYPE_FOREGROUND_CHANGE,
 } from '../../constants';
 import type { ProcessEventPayload, ForegroundChangePayload } from '../../types';
 import { handleProcessEvent, handleForegroundChange } from '../process';
-import { parseOutputFrame, parseCompressedOutputFrame, scheduleReconnect, checkVersionAndReload } from '../../utils';
+import {
+  parseOutputFrame,
+  parseCompressedOutputFrame,
+  scheduleReconnect,
+  checkVersionAndReload,
+} from '../../utils';
 import {
   muxWs,
   muxReconnectTimer,
@@ -36,7 +41,7 @@ import {
   setMuxWs,
   setMuxReconnectTimer,
   setMuxWsConnected,
-  setMuxHasConnected
+  setMuxHasConnected,
 } from '../../state';
 import { updateConnectionStatus } from './stateChannel';
 
@@ -168,7 +173,7 @@ function writeToTerminal(
   state: TerminalState,
   cols: number,
   rows: number,
-  data: Uint8Array
+  data: Uint8Array,
 ): void {
   // Track bracketed paste mode by detecting escape sequences
   if (data.length > 0) {
@@ -430,7 +435,11 @@ export function scheduleMuxReconnect(): void {
 /**
  * Write output frame to terminal (used by manager.ts for replay).
  */
-export function writeOutputFrame(sessionId: string, state: TerminalState, payload: Uint8Array): void {
+export function writeOutputFrame(
+  sessionId: string,
+  state: TerminalState,
+  payload: Uint8Array,
+): void {
   const frame = parseOutputFrame(payload);
   writeToTerminal(sessionId, state, frame.cols, frame.rows, frame.data);
 }

@@ -17,7 +17,7 @@ import {
   dom,
   setFontsReadyPromise,
   windowsBuildNumber,
-  sessions
+  sessions,
 } from '../../state';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScaling, fitSessionToScreen } from './scaling';
@@ -29,7 +29,13 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 
-import { initSearchForTerminal, showSearch, isSearchVisible, hideSearch, cleanupSearchForTerminal } from './search';
+import {
+  initSearchForTerminal,
+  showSearch,
+  isSearchVisible,
+  hideSearch,
+  cleanupSearchForTerminal,
+} from './search';
 
 // Forward declarations for functions from other modules
 let sendInput: (sessionId: string, data: string) => void = () => {};
@@ -43,7 +49,7 @@ const pendingTitleUpdates = new Map<string, number>();
  * Auto-update session name from shell title (with debounce)
  */
 function updateSessionNameAuto(sessionId: string, name: string): void {
-  const session = sessions.find(s => s.id === sessionId);
+  const session = sessions.find((s) => s.id === sessionId);
   if (session?.manuallyNamed) return;
 
   const existing = pendingTitleUpdates.get(sessionId);
@@ -56,7 +62,7 @@ function updateSessionNameAuto(sessionId: string, name: string): void {
     fetch(`/api/sessions/${sessionId}/name?auto=true`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name }),
     }).catch(() => {});
   }, 500);
 
@@ -100,7 +106,7 @@ export function getTerminalOptions(): ITerminalOptions {
     allowProposedApi: true,
     customGlyphs: true,
     rescaleOverlappingGlyphs: true,
-    theme: THEMES[themeName] ?? THEMES.dark
+    theme: THEMES[themeName] ?? THEMES.dark,
   };
 
   // Configure ConPTY for Windows - use server-provided build or detect from userAgent
@@ -108,14 +114,14 @@ export function getTerminalOptions(): ITerminalOptions {
   if (windowsBuildNumber !== null) {
     options.windowsPty = {
       backend: 'conpty',
-      buildNumber: windowsBuildNumber
+      buildNumber: windowsBuildNumber,
     };
   } else if (isWindows) {
     // Default to Windows 10 2004 (19041) which has stable ConPTY support
     // This ensures proper VT sequence interpretation before health check completes
     options.windowsPty = {
       backend: 'conpty',
-      buildNumber: 19041
+      buildNumber: 19041,
     };
   }
 
@@ -128,7 +134,7 @@ export function getTerminalOptions(): ITerminalOptions {
  */
 export function createTerminalForSession(
   sessionId: string,
-  sessionInfo: Session | undefined
+  sessionInfo: Session | undefined,
 ): TerminalState {
   const existing = sessionTerminals.get(sessionId);
   if (existing) {
@@ -159,7 +165,7 @@ export function createTerminalForSession(
     container: container,
     serverCols: serverCols,
     serverRows: serverRows,
-    opened: false
+    opened: false,
   };
 
   sessionTerminals.set(sessionId, state);
@@ -186,13 +192,11 @@ export function createTerminalForSession(
 
     // Load Web-Links addon for clickable URLs
     try {
-      const webLinksAddon = new WebLinksAddon(
-        (_event: MouseEvent, uri: string) => {
-          if (uri.startsWith('http://') || uri.startsWith('https://')) {
-            window.open(uri, '_blank', 'noopener,noreferrer');
-          }
+      const webLinksAddon = new WebLinksAddon((_event: MouseEvent, uri: string) => {
+        if (uri.startsWith('http://') || uri.startsWith('https://')) {
+          window.open(uri, '_blank', 'noopener,noreferrer');
         }
-      );
+      });
       terminal.loadAddon(webLinksAddon);
     } catch {
       // Web-Links addon failed to load
@@ -246,7 +250,7 @@ function replayPendingFrames(sessionId: string, state: TerminalState): void {
 export function writeOutputFrame(
   sessionId: string,
   state: TerminalState,
-  payload: Uint8Array
+  payload: Uint8Array,
 ): void {
   const frame = parseOutputFrame(payload);
 
@@ -279,7 +283,7 @@ export function writeOutputFrame(
 export function setupTerminalEvents(
   sessionId: string,
   terminal: Terminal,
-  container: HTMLDivElement
+  container: HTMLDivElement,
 ): void {
   // Wire up events
   terminal.onData((data: string) => {
@@ -442,7 +446,7 @@ export function destroyTerminalForSession(sessionId: string): void {
 // Chunking constants for large pastes to prevent PTY buffer overflow
 // PSReadLine processes input slowly (syntax highlighting, history, etc.)
 // Small chunks + delay give it time to keep up
-const PASTE_CHUNK_SIZE = 128;  // 128 byte chunks
+const PASTE_CHUNK_SIZE = 128; // 128 byte chunks
 const PASTE_CHUNK_DELAY = 100; // 100ms between chunks
 
 /**
@@ -454,7 +458,7 @@ async function sendChunked(sessionId: string, data: string): Promise<void> {
     const chunk = data.slice(i, i + PASTE_CHUNK_SIZE);
     sendInput(sessionId, chunk);
     if (i + PASTE_CHUNK_SIZE < data.length) {
-      await new Promise(resolve => setTimeout(resolve, PASTE_CHUNK_DELAY));
+      await new Promise((resolve) => setTimeout(resolve, PASTE_CHUNK_DELAY));
     }
   }
 }
@@ -469,7 +473,11 @@ async function sendChunked(sessionId: string, data: string): Promise<void> {
  * @param isFilePath - If true, wrap content in quotes for file path handling.
  *                     This helps TUI apps like Claude Code detect file paths with spaces.
  */
-export function pasteToTerminal(sessionId: string, data: string, isFilePath: boolean = false): void {
+export function pasteToTerminal(
+  sessionId: string,
+  data: string,
+  isFilePath: boolean = false,
+): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 

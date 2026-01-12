@@ -24,7 +24,7 @@ import {
   type ServerLogEntry,
   type LogHistoryResponse,
   type LogSessionsResponse,
-  type LogSessionInfo
+  type LogSessionInfo,
 } from './logsChannel';
 
 type DiagnosticsTab = 'frontend' | 'server' | 'sessions';
@@ -222,8 +222,11 @@ function bindControlEvents(): void {
 function handleLogEntry(entry: ServerLogEntry): void {
   if (currentTab === 'server' && entry.source === 'mt') {
     addDisplayEntry(entry);
-  } else if (currentTab === 'sessions' && entry.source === 'mthost' &&
-             entry.sessionId === selectedSessionId) {
+  } else if (
+    currentTab === 'sessions' &&
+    entry.source === 'mthost' &&
+    entry.sessionId === selectedSessionId
+  ) {
     addDisplayEntry(entry);
   }
 }
@@ -239,7 +242,7 @@ function addDisplayEntry(entry: ServerLogEntry): void {
     timestamp: entry.timestamp,
     level: entry.level,
     module: entry.source === 'mt' ? 'mt' : `mthost-${entry.sessionId?.slice(0, 4) || ''}`,
-    message: entry.message
+    message: entry.message,
   };
 
   if (searchFilter && !matchesSearch(displayEntry)) return;
@@ -263,7 +266,7 @@ function handleHistory(response: LogHistoryResponse): void {
       timestamp: e.timestamp,
       level: e.level,
       module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
-      message: e.message
+      message: e.message,
     };
     return !searchFilter || matchesSearch(displayEntry);
   });
@@ -272,7 +275,7 @@ function handleHistory(response: LogHistoryResponse): void {
     timestamp: e.timestamp,
     level: e.level,
     module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
-    message: e.message
+    message: e.message,
   }));
 
   updateDisplay();
@@ -315,12 +318,18 @@ function updateSessionPicker(): void {
  */
 function levelStringToNumber(level: string): number {
   switch (level.toLowerCase()) {
-    case 'exception': return LogLevel.Exception;
-    case 'error': return LogLevel.Error;
-    case 'warn': return LogLevel.Warn;
-    case 'info': return LogLevel.Info;
-    case 'verbose': return LogLevel.Verbose;
-    default: return LogLevel.Verbose;
+    case 'exception':
+      return LogLevel.Exception;
+    case 'error':
+      return LogLevel.Error;
+    case 'warn':
+      return LogLevel.Warn;
+    case 'info':
+      return LogLevel.Info;
+    case 'verbose':
+      return LogLevel.Verbose;
+    default:
+      return LogLevel.Verbose;
   }
 }
 
@@ -328,8 +337,10 @@ function levelStringToNumber(level: string): number {
  * Check if entry matches search filter
  */
 function matchesSearch(entry: DisplayEntry): boolean {
-  return entry.message.toLowerCase().includes(searchFilter) ||
-         entry.module.toLowerCase().includes(searchFilter);
+  return (
+    entry.message.toLowerCase().includes(searchFilter) ||
+    entry.module.toLowerCase().includes(searchFilter)
+  );
 }
 
 /**
@@ -359,9 +370,10 @@ async function refreshLogs(): Promise<void> {
       // Apply search filter
       let filtered = entries;
       if (searchFilter) {
-        filtered = entries.filter((e) =>
-          e.message.toLowerCase().includes(searchFilter) ||
-          e.module.toLowerCase().includes(searchFilter)
+        filtered = entries.filter(
+          (e) =>
+            e.message.toLowerCase().includes(searchFilter) ||
+            e.module.toLowerCase().includes(searchFilter),
         );
       }
 
@@ -370,7 +382,7 @@ async function refreshLogs(): Promise<void> {
         timestamp: new Date(e.timestamp).toISOString(),
         level: LOG_LEVEL_NAMES[e.level].toLowerCase(),
         module: e.module,
-        message: e.message
+        message: e.message,
       }));
     } catch {
       displayedEntries = [];

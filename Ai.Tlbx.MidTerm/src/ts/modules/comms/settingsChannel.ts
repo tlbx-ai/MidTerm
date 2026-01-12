@@ -91,8 +91,10 @@ function handleMessage(message: SettingsWsMessage): void {
 function scheduleSettingsReconnect(): void {
   scheduleReconnect(
     connectSettingsWebSocket,
-    (timer) => { settingsReconnectTimer = timer; },
-    settingsReconnectTimer
+    (timer) => {
+      settingsReconnectTimer = timer;
+    },
+    settingsReconnectTimer,
   );
 }
 

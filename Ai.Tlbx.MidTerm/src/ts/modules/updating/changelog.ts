@@ -121,7 +121,9 @@ function fetchReleases(isInitial: boolean): void {
       if (isInitial) {
         body.innerHTML =
           '<p class="changelog-error">Failed to load changelog. ' +
-          '<a href="' + GITHUB_RELEASES_PAGE + '" target="_blank">View on GitHub</a></p>';
+          '<a href="' +
+          GITHUB_RELEASES_PAGE +
+          '" target="_blank">View on GitHub</a></p>';
       }
       console.error('Changelog error:', e);
     });
