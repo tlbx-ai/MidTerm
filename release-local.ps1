@@ -180,24 +180,18 @@ $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json" -ForegroundColor DarkGray
 
 # ===========================================
-# PHASE 4: Build TypeScript with version
+# PHASE 4: Build frontend (TypeScript + Brotli)
 # ===========================================
 Write-Host ""
-Write-Host "Building TypeScript..." -ForegroundColor Gray
-npm run typecheck
-if ($LASTEXITCODE -ne 0) { throw "TypeScript typecheck failed" }
-npx esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020 "--define:BUILD_VERSION=`"$localWebVersion`""
-if ($LASTEXITCODE -ne 0) { throw "TypeScript build failed" }
+Write-Host "Building frontend..." -ForegroundColor Gray
+Push-Location Ai.Tlbx.MidTerm
+pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Publish -Version $localWebVersion
+if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
+Pop-Location
 
 # ===========================================
 # PHASE 5: AOT publish (parallel)
 # ===========================================
-# Pre-compress assets before publish (ensures .br files exist for embedding)
-Write-Host "Pre-compressing web assets..." -ForegroundColor Gray
-Push-Location Ai.Tlbx.MidTerm
-pwsh -NoProfile -ExecutionPolicy Bypass -File compress-assets.ps1
-Pop-Location
-
 Write-Host "Publishing mt.exe and mthost.exe..." -ForegroundColor Gray
 
 $mtJob = Start-Job -ScriptBlock {

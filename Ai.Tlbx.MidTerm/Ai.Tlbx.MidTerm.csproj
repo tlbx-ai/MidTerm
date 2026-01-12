@@ -43,25 +43,9 @@
     <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
   </PropertyGroup>
 
-  <!-- Compressible file extensions for Brotli pre-compression -->
-  <PropertyGroup>
-    <CompressibleExtensions>.js;.css;.html;.txt;.json;.map;.svg</CompressibleExtensions>
-  </PropertyGroup>
-
-  <!-- Debug builds: embed all original files, exclude .br files -->
-  <ItemGroup Condition="'$(IsPublishing)' != 'true'">
-    <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\**\*.br" LinkBase="wwwroot" />
-    <UpToDateCheckInput Include="wwwroot\**\*" />
-  </ItemGroup>
-
-  <!-- Publish builds: embed non-compressible files (fonts, images, etc.) plus pre-generated .br files -->
-  <!-- .br files must exist before build starts (created by release scripts or CompressBrotli target) -->
-  <ItemGroup Condition="'$(IsPublishing)' == 'true'">
-    <EmbeddedResource Include="wwwroot\**\*"
-                      Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br"
-                      LinkBase="wwwroot" />
-    <!-- Include pre-generated .br files (created before build by release scripts) -->
-    <EmbeddedResource Include="wwwroot\**\*.br" LinkBase="wwwroot" />
+  <!-- Embedded resources are collected dynamically by CollectFrontendResources target -->
+  <!-- This avoids the issue of static ItemGroups being evaluated before .br files exist -->
+  <ItemGroup>
     <UpToDateCheckInput Include="wwwroot\**\*" />
   </ItemGroup>
 
@@ -95,14 +79,12 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 
-  <!-- TypeScript build configuration (use forward slashes for cross-platform) -->
-  <PropertyGroup>
-    <TypeScriptSourceDir>src/ts</TypeScriptSourceDir>
-    <TypeScriptOutFile>wwwroot/js/terminal.min.js</TypeScriptOutFile>
-  </PropertyGroup>
+  <!-- ============================================ -->
+  <!-- Frontend Build (TypeScript + Brotli)        -->
+  <!-- ============================================ -->
 
   <!-- Read version from version.json - single source of truth -->
-  <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;PrepareResources">
+  <Target Name="ReadVersionJson" BeforeTargets="BuildFrontend;GetAssemblyVersion">
     <Exec Command="node -p &quot;require('./version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/.." ConsoleToMsBuild="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
     </Exec>
@@ -111,45 +93,49 @@
     </PropertyGroup>
   </Target>
 
-  <!-- TypeScript compilation (skipped if output exists and is newer than sources) -->
-  <Target Name="CompileTypeScript" BeforeTargets="PrepareResources"
-          DependsOnTargets="ReadVersionJson"
-          Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
-    <!-- Skip if output exists and no .ts files are newer -->
-    <ItemGroup>
-      <TypeScriptSources Include="$(TypeScriptSourceDir)/**/*.ts" />
-    </ItemGroup>
-    <PropertyGroup>
-      <TypeScriptOutputExists>$([System.IO.File]::Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile)'))</TypeScriptOutputExists>
-    </PropertyGroup>
-    <!-- Only compile if output doesn't exist -->
-    <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)"
-          Condition="!$(TypeScriptOutputExists)" />
-    <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=linked --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)"
-          Condition="!$(TypeScriptOutputExists)" />
-    <!-- Add generated files since they didn't exist at project load -->
-    <ItemGroup Condition="!$(TypeScriptOutputExists)">
-      <EmbeddedResource Include="$(TypeScriptOutFile)" LinkBase="wwwroot/js" />
-      <EmbeddedResource Include="$(TypeScriptOutFile).map" LinkBase="wwwroot/js" />
-    </ItemGroup>
+  <!-- Compute -Publish flag for frontend-build.ps1 -->
+  <PropertyGroup>
+    <FrontendPublishFlag Condition="'$(IsPublishing)' == 'true'">-Publish</FrontendPublishFlag>
+    <FrontendPublishFlag Condition="'$(IsPublishing)' != 'true'"></FrontendPublishFlag>
+  </PropertyGroup>
+
+  <!-- Single frontend build target: calls frontend-build.ps1 -->
+  <!-- TypeScript errors use "pretty false" for MSBuild-compatible format -->
+  <!-- ConsoleToMsBuild="true" forwards errors to VS Error List -->
+  <Target Name="BuildFrontend" BeforeTargets="BeforeCompile" DependsOnTargets="ReadVersionJson">
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Version $(WebVersion) $(FrontendPublishFlag)"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMsBuild="true" />
   </Target>
 
-  <Target Name="CleanTypeScript" AfterTargets="Clean">
-    <Delete Files="$(TypeScriptOutFile);$(TypeScriptOutFile).map" ContinueOnError="true" />
+  <!-- Collect embedded resources AFTER frontend build using CreateItem -->
+  <!-- CreateItem adds items during build execution (not project load time) -->
+  <Target Name="CollectFrontendResources" AfterTargets="BuildFrontend" BeforeTargets="PrepareResources">
+    <!-- Debug: embed original files (exclude .br) -->
+    <CreateItem Include="wwwroot\**\*" Exclude="wwwroot\**\*.br"
+                Condition="'$(IsPublishing)' != 'true'"
+                AdditionalMetadata="LinkBase=wwwroot">
+      <Output ItemName="EmbeddedResource" TaskParameter="Include" />
+    </CreateItem>
+
+    <!-- Publish: embed .br files for compressible assets -->
+    <CreateItem Include="wwwroot\**\*.br" Condition="'$(IsPublishing)' == 'true'"
+                AdditionalMetadata="LinkBase=wwwroot">
+      <Output ItemName="EmbeddedResource" TaskParameter="Include" />
+    </CreateItem>
+
+    <!-- Publish: embed non-compressible originals (fonts, images, etc.) -->
+    <CreateItem Include="wwwroot\**\*"
+                Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br"
+                Condition="'$(IsPublishing)' == 'true'"
+                AdditionalMetadata="LinkBase=wwwroot">
+      <Output ItemName="EmbeddedResource" TaskParameter="Include" />
+    </CreateItem>
   </Target>
 
-  <!-- Brotli compression for publish builds - must run AFTER TypeScript -->
-  <!-- Brotli compression fallback - runs if .br files don't exist yet -->
-  <!-- Primary compression should be done by release scripts BEFORE dotnet publish -->
-  <Target Name="CompressBrotli" BeforeTargets="BeforeCompile"
-          DependsOnTargets="CompileTypeScript"
-          Condition="'$(IsPublishing)' == 'true' And !Exists('wwwroot\index.html.br')">
-    <Message Importance="High" Text="Pre-compressing web assets with Brotli..." />
-    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File compress-assets.ps1"
-          WorkingDirectory="$(MSBuildProjectDirectory)" />
-  </Target>
-
-  <Target Name="CleanBrotli" AfterTargets="Clean">
+  <!-- Clean generated frontend files -->
+  <Target Name="CleanFrontend" AfterTargets="Clean">
+    <Delete Files="wwwroot\js\terminal.min.js;wwwroot\js\terminal.min.js.map" ContinueOnError="true" />
     <ItemGroup>
       <BrotliFiles Include="wwwroot\**\*.br" />
     </ItemGroup>

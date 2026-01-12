@@ -36,36 +36,19 @@ jobs:
         with:
           node-version: '20'
 
-      # 1. Build TypeScript (before dotnet)
-      - name: Build TypeScript
-        shell: bash
-        run: |
-          npm ci
-          VERSION=$(node -p "require('./version.json').web")
-          cd Ai.Tlbx.MidTerm
-          npx tsc --noEmit
-          npx esbuild src/ts/main.ts --bundle --minify --sourcemap=linked \
-            --outfile=wwwroot/js/terminal.min.js --target=es2020 \
-            "--define:BUILD_VERSION=\"$VERSION\""
-          echo "✓ terminal.min.js ($(wc -c < wwwroot/js/terminal.min.js | tr -d ' ') bytes)"
+      # 1. Install npm dependencies (required for frontend-build.ps1)
+      - name: Install npm packages
+        run: npm ci
 
-      # 2. Verify TypeScript exists before dotnet
-      - name: Verify frontend
-        shell: bash
-        run: |
-          if [ ! -f "Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js" ]; then
-            echo "::error::terminal.min.js missing - TypeScript build failed"
-            exit 1
-          fi
-
-      # 3. Pre-compress assets with Brotli (must exist before dotnet publish for embedding)
-      - name: Compress assets
+      # 2. Build frontend (TypeScript + Brotli via unified script)
+      - name: Build frontend
         shell: pwsh
         run: |
+          $version = (Get-Content version.json | ConvertFrom-Json).web
           cd Ai.Tlbx.MidTerm
-          ./compress-assets.ps1
+          ./frontend-build.ps1 -Publish -Version $version
 
-      # 4. Build binaries (reproducible builds enabled via ContinuousIntegrationBuild)
+      # 3. Build binaries (reproducible builds enabled via ContinuousIntegrationBuild)
       - name: Build mt
         run: dotnet publish Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} /p:IsPublishing=true /p:ContinuousIntegrationBuild=true
 
