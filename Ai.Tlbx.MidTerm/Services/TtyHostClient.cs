@@ -299,6 +299,22 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
+    public async Task<bool> SetLogLevelAsync(LogSeverity level, CancellationToken ct = default)
+    {
+        if (!IsConnected) return false;
+
+        try
+        {
+            var msg = TtyHostProtocol.CreateSetLogLevelMessage(level);
+            var response = await SendRequestAsync(msg, TtyHostMessageType.SetLogLevelAck, ct).ConfigureAwait(false);
+            return response is not null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> CloseAsync(CancellationToken ct = default)
     {
         _intentionalDisconnect = true;
@@ -533,6 +549,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.Buffer:
             case TtyHostMessageType.ResizeAck:
             case TtyHostMessageType.SetNameAck:
+            case TtyHostMessageType.SetLogLevelAck:
             case TtyHostMessageType.CloseAck:
             case TtyHostMessageType.Info:
                 lock (_responseLock)

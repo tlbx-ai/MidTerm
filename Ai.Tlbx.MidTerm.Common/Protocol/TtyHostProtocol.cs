@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Process;
 
 namespace Ai.Tlbx.MidTerm.Common.Protocol;
@@ -185,6 +186,22 @@ public static class TtyHostProtocol
     {
         return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ProcessSnapshotPayload);
     }
+
+    public static byte[] CreateSetLogLevelMessage(LogSeverity level)
+    {
+        var payload = new byte[1] { (byte)level };
+        return CreateFrame(TtyHostMessageType.SetLogLevel, payload);
+    }
+
+    public static byte[] CreateSetLogLevelAck()
+    {
+        return CreateFrame(TtyHostMessageType.SetLogLevelAck, []);
+    }
+
+    public static LogSeverity ParseSetLogLevel(ReadOnlySpan<byte> payload)
+    {
+        return payload.Length > 0 ? (LogSeverity)payload[0] : LogSeverity.Warn;
+    }
 }
 
 /// <summary>
@@ -212,7 +229,11 @@ public enum TtyHostMessageType : byte
     // Process monitoring
     ProcessEvent = 0x50,
     ForegroundChange = 0x51,
-    ProcessSnapshot = 0x52
+    ProcessSnapshot = 0x52,
+
+    // Settings updates
+    SetLogLevel = 0x60,
+    SetLogLevelAck = 0x61
 }
 
 /// <summary>

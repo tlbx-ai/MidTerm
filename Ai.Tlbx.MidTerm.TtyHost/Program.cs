@@ -642,6 +642,18 @@ public static class Program
                         }
                         break;
 
+                    case TtyHostMessageType.SetLogLevel:
+                        var newLevel = TtyHostProtocol.ParseSetLogLevel(payload);
+                        Log.Info(() => $"Log level changed via IPC: {Log.MinLevel} -> {newLevel}");
+                        Log.MinLevel = newLevel;
+                        var levelAck = TtyHostProtocol.CreateSetLogLevelAck();
+                        lock (stream)
+                        {
+                            stream.Write(levelAck);
+                            stream.Flush();
+                        }
+                        break;
+
                     case TtyHostMessageType.Close:
                         Log.Info(() => "Received close request, shutting down");
                         var closeAck = TtyHostProtocol.CreateCloseAck();

@@ -141,6 +141,9 @@ public class Program
             {
                 Log.Info(() => $"Log level changed: {Log.MinLevel} -> {newSettings.LogLevel}");
                 Log.MinLevel = newSettings.LogLevel;
+
+                // Propagate to all running mthost processes
+                _ = sessionManager.SetLogLevelForAllAsync(newSettings.LogLevel);
             }
 
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);

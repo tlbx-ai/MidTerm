@@ -53,6 +53,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         Console.WriteLine($"[TtyHostSessionManager] RunAsUser updated to: {runAsUser ?? "(none)"}");
     }
 
+    public async Task SetLogLevelForAllAsync(LogSeverity level, CancellationToken ct = default)
+    {
+        Log.Info(() => $"Broadcasting log level change to {_clients.Count} sessions: {level}");
+
+        var tasks = _clients.Values
+            .Select(client => client.SetLogLevelAsync(level, ct))
+            .ToList();
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Discover and connect to existing mmttyhost sessions.
     /// Kills incompatible or unresponsive processes, cleans up stale endpoints.
@@ -230,7 +241,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         var sessionId = Guid.NewGuid().ToString("N")[..8];
 
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, Log.MinLevel, _runAsUser, out var hostPid))
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid))
         {
             return null;
         }
@@ -273,6 +284,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         client.StartReadLoop();
         _clients[sessionId] = client;
         _sessionCache[sessionId] = info;
+
+        // Send current log level to new session
+        await client.SetLogLevelAsync(Log.MinLevel, ct).ConfigureAwait(false);
 
         Console.WriteLine($"[TtyHostSessionManager] Created session {sessionId} (PID {hostPid})");
         OnStateChanged?.Invoke(sessionId);
