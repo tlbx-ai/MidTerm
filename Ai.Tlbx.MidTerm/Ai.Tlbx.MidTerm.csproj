@@ -108,30 +108,23 @@
           ConsoleToMsBuild="true" />
   </Target>
 
-  <!-- Collect embedded resources AFTER frontend build using CreateItem -->
-  <!-- CreateItem adds items during build execution (not project load time) -->
+  <!-- Collect embedded resources AFTER frontend build -->
+  <!-- ItemGroup inside Target is evaluated during build, not at project load -->
   <!-- Must run before CoreCompile for resources to be embedded in AOT builds -->
   <Target Name="CollectFrontendResources" AfterTargets="BuildFrontend" BeforeTargets="CoreCompile">
-    <!-- Debug: embed original files (exclude .br) -->
-    <CreateItem Include="wwwroot\**\*" Exclude="wwwroot\**\*.br"
-                Condition="'$(IsPublishing)' != 'true'"
-                AdditionalMetadata="LinkBase=wwwroot">
-      <Output ItemName="EmbeddedResource" TaskParameter="Include" />
-    </CreateItem>
+    <ItemGroup Condition="'$(IsPublishing)' != 'true'">
+      <!-- Debug: embed original files (exclude .br) -->
+      <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\**\*.br" LinkBase="wwwroot" />
+    </ItemGroup>
 
-    <!-- Publish: embed .br files for compressible assets -->
-    <CreateItem Include="wwwroot\**\*.br" Condition="'$(IsPublishing)' == 'true'"
-                AdditionalMetadata="LinkBase=wwwroot">
-      <Output ItemName="EmbeddedResource" TaskParameter="Include" />
-    </CreateItem>
-
-    <!-- Publish: embed non-compressible originals (fonts, images, etc.) -->
-    <CreateItem Include="wwwroot\**\*"
-                Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br"
-                Condition="'$(IsPublishing)' == 'true'"
-                AdditionalMetadata="LinkBase=wwwroot">
-      <Output ItemName="EmbeddedResource" TaskParameter="Include" />
-    </CreateItem>
+    <ItemGroup Condition="'$(IsPublishing)' == 'true'">
+      <!-- Publish: embed .br files for compressible assets -->
+      <EmbeddedResource Include="wwwroot\**\*.br" LinkBase="wwwroot" />
+      <!-- Publish: embed non-compressible originals (fonts, images, etc.) -->
+      <EmbeddedResource Include="wwwroot\**\*"
+                        Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br"
+                        LinkBase="wwwroot" />
+    </ItemGroup>
   </Target>
 
   <!-- Clean generated frontend files -->
