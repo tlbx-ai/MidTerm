@@ -91,6 +91,7 @@ import {
   dom,
   setActiveSessionId,
   setFontsReadyPromise,
+  setRenamingSessionId,
   newlyCreatedSessions,
   pendingSessions,
 } from './state';
@@ -382,17 +383,26 @@ function renameSession(sessionId: string, newName: string | null): void {
   const trimmedName = (newName || '').trim();
   const nameToSend = trimmedName === '' || trimmedName === session.shellType ? null : trimmedName;
 
+  // Optimistic UI update
+  const previousName = session.name;
+  const wasManuallyNamed = session.manuallyNamed ?? false;
+  session.name = nameToSend;
+  session.manuallyNamed = true;
+  renderSessionList();
+  updateMobileTitle();
+
   fetch('/api/sessions/' + sessionId + '/name', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: nameToSend }),
-  })
-    .then(() => {
-      session.manuallyNamed = true;
-    })
-    .catch((e) => {
-      log.error(() => `Failed to rename session ${sessionId}: ${e}`);
-    });
+  }).catch((e) => {
+    // Rollback on error
+    session.name = previousName;
+    session.manuallyNamed = wasManuallyNamed;
+    renderSessionList();
+    updateMobileTitle();
+    log.error(() => `Failed to rename session ${sessionId}: ${e}`);
+  });
 }
 
 function startInlineRename(sessionId: string): void {
@@ -405,13 +415,31 @@ function startInlineRename(sessionId: string): void {
   const session = sessions.find((s) => s.id === sessionId);
   const currentName = session ? session.name || session.shellType : '';
 
+  // Mark this session as being renamed (prevents re-render from destroying input)
+  setRenamingSessionId(sessionId);
+
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'session-rename-input';
   input.value = currentName;
 
+  // Prevent clicks inside input from bubbling to session item (which would select it)
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('mousedown', (e) => e.stopPropagation());
+
+  let committed = false;
   function finishRename(): void {
+    if (committed) return;
+    committed = true;
+    setRenamingSessionId(null);
     renameSession(sessionId, input.value);
+    input.replaceWith(titleSpan as Node);
+  }
+
+  function cancelRename(): void {
+    if (committed) return;
+    committed = true;
+    setRenamingSessionId(null);
     input.replaceWith(titleSpan as Node);
   }
 
@@ -422,7 +450,7 @@ function startInlineRename(sessionId: string): void {
       input.blur();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      input.replaceWith(titleSpan);
+      cancelRename();
     }
   });
 

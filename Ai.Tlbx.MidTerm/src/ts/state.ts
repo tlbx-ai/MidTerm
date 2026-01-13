@@ -96,6 +96,9 @@ export const sessionsNeedingResync = new Set<string>();
 /** Font loading promise */
 export let fontsReadyPromise: Promise<void> | null = null;
 
+/** Session currently being renamed (guards against re-render destroying input) */
+export let renamingSessionId: string | null = null;
+
 // =============================================================================
 // DOM Element Cache
 // =============================================================================
@@ -187,6 +190,10 @@ export function setFontsReadyPromise(promise: Promise<void>): void {
 
 export function setWindowsBuildNumber(build: number | null): void {
   windowsBuildNumber = build;
+}
+
+export function setRenamingSessionId(id: string | null): void {
+  renamingSessionId = id;
 }
 
 // =============================================================================

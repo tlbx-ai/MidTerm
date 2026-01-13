@@ -6,7 +6,14 @@
  */
 
 import type { Session, ProcessState } from '../../types';
-import { sessions, activeSessionId, settingsOpen, pendingSessions, dom } from '../../state';
+import {
+  sessions,
+  activeSessionId,
+  settingsOpen,
+  pendingSessions,
+  dom,
+  renamingSessionId,
+} from '../../state';
 import { icon } from '../../constants';
 import {
   registerProcessStateCallback,
@@ -177,9 +184,27 @@ export function getSessionDisplayName(session: Session): string {
 export function renderSessionList(): void {
   if (!dom.sessionList) return;
 
+  // Preserve the item being renamed (if any) to avoid destroying the input mid-edit
+  let renamingElement: HTMLElement | null = null;
+  if (renamingSessionId) {
+    renamingElement = dom.sessionList.querySelector(
+      `[data-session-id="${renamingSessionId}"]`,
+    ) as HTMLElement | null;
+    if (renamingElement) {
+      renamingElement.remove();
+    }
+  }
+
   dom.sessionList.innerHTML = '';
 
   sessions.forEach((session) => {
+    // Reuse preserved element for the session being renamed
+    if (session.id === renamingSessionId && renamingElement) {
+      // Update active class in case it changed
+      renamingElement.classList.toggle('active', session.id === activeSessionId);
+      dom.sessionList!.appendChild(renamingElement);
+      return;
+    }
     const isPending = pendingSessions.has(session.id);
     const item = document.createElement('div');
     item.className =
