@@ -250,9 +250,8 @@ export function renderSessionList(): void {
       processInfo.appendChild(racingLog);
     }
 
-    if (processInfo.children.length > 0) {
-      info.appendChild(processInfo);
-    }
+    // Always add processInfo container so updateSessionProcessInfo can find it later
+    info.appendChild(processInfo);
 
     const actions = document.createElement('div');
     actions.className = 'session-actions';

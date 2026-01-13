@@ -214,8 +214,12 @@ $mtResult = Receive-Job -Job $mtJob -Wait
 $mthostResult = Receive-Job -Job $mthostJob -Wait
 Remove-Job -Job $mtJob, $mthostJob
 
-if ($mtResult[-1] -ne 0) { throw "mt publish failed" }
-if ($mthostResult[-1] -ne 0) { throw "mthost publish failed" }
+# Check if publish succeeded by verifying output file exists
+# (MSBuild uses _REINVOKE_SUCCESS_ error to stop outer build after nested build completes, so exit code is unreliable)
+$mtExe = "Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe"
+$mthostExe = "Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe"
+if (-not (Test-Path $mtExe)) { throw "mt publish failed - output not found: $mtExe" }
+if (-not (Test-Path $mthostExe)) { throw "mthost publish failed - output not found: $mthostExe" }
 
 # ===========================================
 # PHASE 6: Copy to output
