@@ -92,12 +92,19 @@ function handleModifierPress(modifier: ModifierKey): void {
 }
 
 function handleExpandToggle(): void {
-  if (!panelElement || !expandButton) return;
+  if (!panelElement || !expandButton || !controllerElement) return;
 
   const isExpanded = panelElement.classList.toggle(CSS_CLASSES.expanded);
   panelElement.setAttribute('aria-hidden', String(!isExpanded));
   expandButton.setAttribute('aria-expanded', String(isExpanded));
   document.body.classList.toggle(CSS_CLASSES.panelExpanded, isExpanded);
+
+  requestAnimationFrame(() => {
+    const terminalsArea = document.querySelector<HTMLElement>('.terminals-area');
+    if (terminalsArea && controllerElement) {
+      terminalsArea.style.paddingBottom = controllerElement.offsetHeight + 'px';
+    }
+  });
 }
 
 function handleKeyPress(key: string): void {

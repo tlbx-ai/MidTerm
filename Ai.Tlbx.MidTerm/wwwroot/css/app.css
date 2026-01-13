@@ -3328,10 +3328,10 @@ html, body {
 .touch-controller {
     display: none;
     position: fixed;
-    bottom: env(keyboard-inset-height, 0px);
+    bottom: 0;
     left: 0;
     right: 0;
-    z-index: 1000;
+    z-index: 900;
     background: var(--bg-sidebar);
     border-top: 1px solid var(--border-color);
     padding: 8px;
@@ -3458,15 +3458,6 @@ html, body {
 .touch-panel-row .touch-key {
     flex: 1;
     max-width: 80px;
-}
-
-/* Adjust terminal area when touch bar visible */
-body.touch-mode .terminals-area {
-    padding-bottom: 70px;
-}
-
-body.touch-mode.touch-panel-expanded .terminals-area {
-    padding-bottom: 180px;
 }
 
 /* Small screen adjustments */
