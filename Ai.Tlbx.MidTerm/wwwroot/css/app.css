@@ -679,35 +679,34 @@ html, body {
     flex-shrink: 0;
 }
 
-/* Thin auto-hide scrollbar for xterm */
+/* Permanent dark scrollbar for xterm - takes 7px space, doesn't overlay */
 .terminal-container .xterm-viewport {
-    overflow-y: auto !important;
+    overflow-y: scroll !important;
     scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-    transition: scrollbar-color 0.2s;
-}
-
-.terminal-container .xterm-viewport:hover {
-    scrollbar-color: rgba(122, 162, 247, 0.3) transparent;
+    scrollbar-color: var(--text-muted) var(--bg-primary);
 }
 
 .terminal-container .xterm-viewport::-webkit-scrollbar {
-    width: 4px;
-    background: transparent;
+    width: 7px;
+    background: var(--bg-primary);
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-track {
+    background: var(--bg-primary);
 }
 
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
-    background: transparent;
-    border-radius: 2px;
-    transition: background 0.2s;
-}
-
-.terminal-container:hover .xterm-viewport::-webkit-scrollbar-thumb {
-    background: rgba(122, 162, 247, 0.3);
+    background: var(--text-muted);
+    border-radius: 3px;
 }
 
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
-    background: rgba(122, 162, 247, 0.5);
+    background: var(--text-secondary);
+}
+
+/* Hide xterm.js custom overlay scrollbar - we use native scrollbar */
+.terminal-container .xterm-scrollable-element > .scrollbar {
+    display: none !important;
 }
 
 /* ============================================================================
