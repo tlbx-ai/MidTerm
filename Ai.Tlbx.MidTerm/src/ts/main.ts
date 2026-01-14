@@ -517,7 +517,7 @@ function snapshotSession(sessionId: string): void {
         );
       } else {
         alert(
-          `Snapshot NOT recorded.\n\nReason: ${result.skipReason}\n\nDebug info:\n- ShellType: ${result.shellType}\n- ForegroundName: ${result.foregroundName || '(none)'}\n- ForegroundPid: ${result.foregroundPid || '(none)'}\n- CurrentDirectory: ${result.currentDirectory || '(none)'}`,
+          `Snapshot NOT recorded.\n\nReason: ${result.skipReason}\n\nDebug info:\n- ShellType: ${result.shellType}\n- ForegroundName: ${result.foregroundName || '(none)'}\n- ForegroundCommandLine: ${result.foregroundCommandLine || '(none)'}\n- ForegroundPid: ${result.foregroundPid || '(none)'}\n- CurrentDirectory: ${result.currentDirectory || '(none)'}`,
         );
       }
     })

@@ -77,12 +77,18 @@ public sealed class HistoryService
             return;
         }
 
+        // Strip .exe extension for cleaner display
+        var cleanExecutable = executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? executable[..^4]
+            : executable;
+
         // Don't record shell as subprocess (e.g., "pwsh" when running pwsh)
-        if (executable.Equals(shellType, StringComparison.OrdinalIgnoreCase))
+        if (cleanExecutable.Equals(shellType, StringComparison.OrdinalIgnoreCase))
         {
-            Log.Info(() => $"RecordEntry skipped: exe matches shell ({executable})");
+            Log.Info(() => $"RecordEntry skipped: exe matches shell ({cleanExecutable})");
             return;
         }
+        executable = cleanExecutable;
 
         var id = GenerateId(shellType, executable, commandLine, workingDirectory);
         Log.Info(() => $"RecordEntry: recording id={id}");
