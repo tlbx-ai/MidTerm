@@ -82,7 +82,7 @@ function updateSessionProcessInfo(sessionId: string): void {
   const fgInfo = getForegroundInfo(sessionId);
   if (fgInfo.name) {
     const fgIndicator = document.createElement('span');
-    fgIndicator.className = 'session-foreground';
+    fgIndicator.className = 'session-foreground truncate';
     const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
     const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
     const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
@@ -95,7 +95,7 @@ function updateSessionProcessInfo(sessionId: string): void {
   const racingText = getRacingLogText(sessionId);
   if (racingText && isRacingLogVisible(sessionId)) {
     const racingLog = document.createElement('span');
-    racingLog.className = 'session-racing-log';
+    racingLog.className = 'session-racing-log truncate';
     racingLog.textContent = `\u26A1 ${racingText}`;
     racingLog.title = getFullRacingLog(sessionId);
     processInfoEl.appendChild(racingLog);
@@ -243,14 +243,14 @@ export function renderSessionList(): void {
       const displayInfo = getSessionDisplayInfo(session);
 
       const title = document.createElement('span');
-      title.className = 'session-title';
+      title.className = 'session-title truncate';
       title.textContent = displayInfo.primary;
       info.appendChild(title);
 
       if (displayInfo.secondary) {
         item.classList.add('two-line');
         const subtitle = document.createElement('span');
-        subtitle.className = 'session-subtitle';
+        subtitle.className = 'session-subtitle truncate';
         subtitle.textContent = displayInfo.secondary;
         info.appendChild(subtitle);
       }
@@ -264,7 +264,7 @@ export function renderSessionList(): void {
       const fgInfo = getForegroundInfo(session.id);
       if (fgInfo.name) {
         const fgIndicator = document.createElement('span');
-        fgIndicator.className = 'session-foreground';
+        fgIndicator.className = 'session-foreground truncate';
         const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
         const truncatedCmd =
           cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
@@ -278,7 +278,7 @@ export function renderSessionList(): void {
       const racingText = getRacingLogText(session.id);
       if (racingText && isRacingLogVisible(session.id)) {
         const racingLog = document.createElement('span');
-        racingLog.className = 'session-racing-log';
+        racingLog.className = 'session-racing-log truncate';
         racingLog.textContent = `\u26A1 ${racingText}`;
         racingLog.title = getFullRacingLog(session.id);
         processInfo.appendChild(racingLog);

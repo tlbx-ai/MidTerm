@@ -123,7 +123,7 @@ function renderDropdownContent(): void {
         ${entry.isStarred ? '\u2605' : '\u2606'}
       </button>
       <div class="history-item-info">
-        <span class="history-item-text">${escapeHtml(getDisplayText(entry))}</span>
+        <span class="history-item-text truncate">${escapeHtml(getDisplayText(entry))}</span>
         <span class="history-item-meta">${entry.weight}x</span>
       </div>
       <button class="history-item-delete" title="Remove">${icon('close')}</button>
