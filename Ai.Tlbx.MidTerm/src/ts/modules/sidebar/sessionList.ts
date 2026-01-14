@@ -187,19 +187,23 @@ export function renderSessionList(): void {
 
   // Set flag to prevent blur handler from committing rename during DOM manipulation
   setSessionListRerendering(true);
+
   try {
-    // Preserve the item being renamed (if any) to avoid destroying the input mid-edit
+    // Find element being renamed (if any) - we'll keep it attached to prevent focus loss
     let renamingElement: HTMLElement | null = null;
     if (renamingSessionId) {
       renamingElement = dom.sessionList.querySelector(
         `[data-session-id="${renamingSessionId}"]`,
       ) as HTMLElement | null;
-      if (renamingElement) {
-        renamingElement.remove();
-      }
     }
 
-    dom.sessionList.innerHTML = '';
+    // Remove all children EXCEPT the renaming element (to prevent blur)
+    const children = Array.from(dom.sessionList.children);
+    for (const child of children) {
+      if (child !== renamingElement) {
+        child.remove();
+      }
+    }
 
     sessions.forEach((session) => {
       // Reuse preserved element for the session being renamed
