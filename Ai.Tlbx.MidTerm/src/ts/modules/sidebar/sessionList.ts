@@ -77,7 +77,7 @@ function updateSessionProcessInfo(sessionId: string): void {
   if (fgInfo.name) {
     const fgIndicator = document.createElement('span');
     fgIndicator.className = 'session-foreground truncate';
-    const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
+    const cmdDisplay = stripExePath(fgInfo.commandLine ?? fgInfo.name);
     const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
     const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
     fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
@@ -109,6 +109,39 @@ function shortenPath(path: string): string {
     return path;
   }
   return parts.slice(-2).join('/');
+}
+
+/**
+ * Strip executable path from command line, keeping just the exe name and arguments.
+ * Handles quoted paths (e.g., "C:\Program Files\git\bin\git.exe" status)
+ * and unquoted paths (e.g., C:\Windows\System32\cmd.exe /c dir)
+ */
+function stripExePath(commandLine: string): string {
+  const trimmed = commandLine.trim();
+  if (!trimmed) return trimmed;
+
+  // Handle quoted executable path
+  if (trimmed.startsWith('"')) {
+    const endQuote = trimmed.indexOf('"', 1);
+    if (endQuote > 1) {
+      const quotedPath = trimmed.slice(1, endQuote);
+      const rest = trimmed.slice(endQuote + 1);
+      const exeName = quotedPath.replace(/\\/g, '/').split('/').pop() || quotedPath;
+      return (exeName + rest).trim();
+    }
+  }
+
+  // Handle unquoted path - split on first space
+  const spaceIdx = trimmed.indexOf(' ');
+  if (spaceIdx === -1) {
+    // No arguments, just strip the path from the executable
+    return trimmed.replace(/\\/g, '/').split('/').pop() || trimmed;
+  }
+
+  const exePart = trimmed.slice(0, spaceIdx);
+  const argsPart = trimmed.slice(spaceIdx);
+  const exeName = exePart.replace(/\\/g, '/').split('/').pop() || exePart;
+  return (exeName + argsPart).trim();
 }
 
 // =============================================================================
@@ -229,7 +262,7 @@ function createSessionItem(
   if (fgInfo.name) {
     const fgIndicator = document.createElement('span');
     fgIndicator.className = 'session-foreground truncate';
-    const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
+    const cmdDisplay = stripExePath(fgInfo.commandLine ?? fgInfo.name);
     const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
     const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
     fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
