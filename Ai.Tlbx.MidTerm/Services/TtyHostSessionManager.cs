@@ -474,7 +474,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         client.OnOutput += (sessionId, cols, rows, data) => OnOutput?.Invoke(sessionId, cols, rows, data);
         client.OnProcessEvent += (sessionId, payload) => OnProcessEvent?.Invoke(sessionId, payload);
-        client.OnForegroundChanged += (sessionId, payload) => OnForegroundChanged?.Invoke(sessionId, payload);
+        client.OnForegroundChanged += (sessionId, payload) =>
+        {
+            // Update cached session info with foreground data
+            if (_sessionCache.TryGetValue(sessionId, out var info))
+            {
+                info.ForegroundPid = payload.Pid;
+                info.ForegroundName = payload.Name;
+                info.ForegroundCommandLine = payload.CommandLine;
+                info.CurrentDirectory = payload.Cwd;
+            }
+            OnForegroundChanged?.Invoke(sessionId, payload);
+        };
         client.OnStateChanged += async sessionId =>
         {
             // Update cached info
