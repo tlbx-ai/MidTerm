@@ -128,7 +128,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                     var fgName = GetProcessName(foreground);
                     // Fall back to shell's CWD if foreground process CWD is unavailable
                     var fgCwd = GetProcessCwd(foreground) ?? GetProcessCwd(_rootPid);
-                    var fgCmd = GetProcessCommandLine(foreground);
+                    var fgCmd = StripExecutablePath(GetProcessCommandLine(foreground));
 
                     OnForegroundChanged?.Invoke(new ForegroundProcessInfo
                     {
@@ -348,6 +348,54 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Strips the path from the executable in a command line, keeping just the filename and arguments.
+    /// Example: "C:\Windows\system32\edit.exe" file.txt → edit.exe file.txt
+    /// </summary>
+    private static string? StripExecutablePath(string? commandLine)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine))
+        {
+            return commandLine;
+        }
+
+        var cmd = commandLine.AsSpan().Trim();
+        if (cmd.IsEmpty)
+        {
+            return commandLine;
+        }
+
+        int exeEnd;
+        if (cmd[0] == '"')
+        {
+            // Quoted executable: find closing quote
+            var closeQuote = cmd.Slice(1).IndexOf('"');
+            if (closeQuote < 0)
+            {
+                return commandLine; // Malformed, return as-is
+            }
+            var exePath = cmd.Slice(1, closeQuote);
+            var lastSlash = exePath.LastIndexOfAny(['\\', '/']);
+            var exeName = lastSlash >= 0 ? exePath.Slice(lastSlash + 1) : exePath;
+            exeEnd = closeQuote + 2; // Skip past closing quote
+
+            // Get arguments (everything after the quoted path)
+            var args = cmd.Length > exeEnd ? cmd.Slice(exeEnd).TrimStart() : ReadOnlySpan<char>.Empty;
+            return args.IsEmpty ? exeName.ToString() : $"{exeName} {args}";
+        }
+        else
+        {
+            // Unquoted executable: find first space
+            exeEnd = cmd.IndexOf(' ');
+            var exePath = exeEnd >= 0 ? cmd.Slice(0, exeEnd) : cmd;
+            var lastSlash = exePath.LastIndexOfAny(['\\', '/']);
+            var exeName = lastSlash >= 0 ? exePath.Slice(lastSlash + 1) : exePath;
+
+            var args = exeEnd >= 0 ? cmd.Slice(exeEnd + 1).TrimStart() : ReadOnlySpan<char>.Empty;
+            return args.IsEmpty ? exeName.ToString() : $"{exeName} {args}";
         }
     }
 
