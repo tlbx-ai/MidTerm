@@ -353,7 +353,8 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
     /// <summary>
     /// Strips the path and .exe extension from a command line, keeping just the command name and arguments.
-    /// Example: "C:\Windows\system32\edit.exe" file.txt → edit file.txt
+    /// Also removes unnecessary quotes from arguments for cleaner "as-typed" output.
+    /// Example: "C:\Windows\system32\edit.exe" "file.txt" → edit file.txt
     /// </summary>
     private static string? StripExecutablePath(string? commandLine)
     {
@@ -399,7 +400,81 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         }
 
         var args = exeEnd >= 0 && cmd.Length > exeEnd ? cmd.Slice(exeEnd).TrimStart() : ReadOnlySpan<char>.Empty;
-        return args.IsEmpty ? exeName.ToString() : $"{exeName} {args}";
+        if (args.IsEmpty)
+        {
+            return exeName.ToString();
+        }
+
+        // Clean up unnecessary quotes from arguments
+        var cleanedArgs = CleanArgumentQuotes(args);
+        return $"{exeName} {cleanedArgs}";
+    }
+
+    /// <summary>
+    /// Removes unnecessary quotes from arguments. Quotes are kept only when they contain spaces.
+    /// Example: "file.txt" → file.txt, but "file name.txt" stays quoted.
+    /// </summary>
+    private static string CleanArgumentQuotes(ReadOnlySpan<char> args)
+    {
+        var result = new StringBuilder();
+        var i = 0;
+
+        while (i < args.Length)
+        {
+            // Skip whitespace
+            while (i < args.Length && char.IsWhiteSpace(args[i]))
+            {
+                result.Append(args[i]);
+                i++;
+            }
+
+            if (i >= args.Length) break;
+
+            if (args[i] == '"')
+            {
+                // Find closing quote
+                var start = i + 1;
+                var end = start;
+                while (end < args.Length && args[end] != '"')
+                {
+                    end++;
+                }
+
+                if (end < args.Length)
+                {
+                    var content = args.Slice(start, end - start);
+                    // Keep quotes only if content has spaces or special chars
+                    if (content.IndexOf(' ') >= 0 || content.IndexOf('\t') >= 0)
+                    {
+                        result.Append('"');
+                        result.Append(content);
+                        result.Append('"');
+                    }
+                    else
+                    {
+                        result.Append(content);
+                    }
+                    i = end + 1;
+                }
+                else
+                {
+                    // Unclosed quote, copy as-is
+                    result.Append(args.Slice(i));
+                    break;
+                }
+            }
+            else
+            {
+                // Unquoted token - copy until whitespace or end
+                while (i < args.Length && !char.IsWhiteSpace(args[i]))
+                {
+                    result.Append(args[i]);
+                    i++;
+                }
+            }
+        }
+
+        return result.ToString();
     }
 
     public IReadOnlyList<int> GetChildProcesses(int pid)
