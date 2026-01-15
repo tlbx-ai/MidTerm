@@ -12,6 +12,8 @@
 
 **Your terminal, anywhere.** Run AI coding agents and TUI apps on your machine, access them from any browser.
 
+![MidTerm Screenshot](Marketing/Screenshots/sc1.png)
+
 ## The Problem
 
 You kick off Claude Code on a complex refactor. It's going to take a while. Now you need to leave your desk — grab lunch, head to a meeting, go home. Your options:
