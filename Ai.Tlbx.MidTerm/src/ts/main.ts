@@ -5,6 +5,8 @@
  * Main entry point - wires together all modules.
  */
 
+import { initLoginPage } from './modules/login';
+import { initTrustPage } from './modules/trust';
 import { initThemeFromCookie } from './modules/theming';
 import {
   initLogStorage,
@@ -135,7 +137,16 @@ window.mmDebug = {
 
 initThemeFromCookie();
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  const path = window.location.pathname;
+  if (path === '/login' || path === '/login.html') {
+    initLoginPage();
+  } else if (path === '/trust' || path === '/trust.html') {
+    initTrustPage();
+  } else {
+    init();
+  }
+});
 
 async function init(): Promise<void> {
   // Initialize logging first
