@@ -38,6 +38,8 @@ import {
   sessionsNeedingResync,
   setMuxWs,
   setMuxReconnectTimer,
+  addWsRxBytes,
+  addWsTxBytes,
 } from '../../state';
 import { $muxWsConnected, $muxHasConnected, $activeSessionId } from '../../stores';
 
@@ -274,6 +276,7 @@ export function connectMuxWebSocket(): void {
 
   ws.onmessage = (event) => {
     if (!(event.data instanceof ArrayBuffer)) return;
+    addWsRxBytes(event.data.byteLength);
 
     const data = new Uint8Array(event.data);
     if (data.length < MUX_HEADER_SIZE) return;
@@ -334,6 +337,15 @@ export function connectMuxWebSocket(): void {
 }
 
 /**
+ * Send a frame to the mux WebSocket with traffic tracking.
+ */
+function sendFrame(frame: Uint8Array): void {
+  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+  addWsTxBytes(frame.byteLength);
+  muxWs.send(frame);
+}
+
+/**
  * Send terminal input to server.
  */
 export function sendInput(sessionId: string, data: string): void {
@@ -344,7 +356,7 @@ export function sendInput(sessionId: string, data: string): void {
   frame[0] = MUX_TYPE_INPUT;
   encodeSessionId(frame, 1, sessionId);
   frame.set(payload, MUX_HEADER_SIZE);
-  muxWs.send(frame);
+  sendFrame(frame);
 }
 
 /**
@@ -360,7 +372,7 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
   frame[MUX_HEADER_SIZE + 1] = (cols >> 8) & 0xff;
   frame[MUX_HEADER_SIZE + 2] = rows & 0xff;
   frame[MUX_HEADER_SIZE + 3] = (rows >> 8) & 0xff;
-  muxWs.send(frame);
+  sendFrame(frame);
 
   const state = sessionTerminals.get(sessionId);
   if (state) {
@@ -378,7 +390,7 @@ export function requestBufferRefresh(sessionId: string): void {
   const frame = new Uint8Array(MUX_HEADER_SIZE);
   frame[0] = MUX_TYPE_BUFFER_REQUEST;
   encodeSessionId(frame, 1, sessionId);
-  muxWs.send(frame);
+  sendFrame(frame);
 }
 
 /**
@@ -392,7 +404,7 @@ export function sendActiveSessionHint(sessionId: string | null): void {
   if (sessionId) {
     encodeSessionId(frame, 1, sessionId);
   }
-  muxWs.send(frame);
+  sendFrame(frame);
 }
 
 /**

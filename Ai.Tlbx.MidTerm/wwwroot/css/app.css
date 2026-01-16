@@ -608,6 +608,20 @@ html, body {
     color: var(--text-muted);
 }
 
+.sidebar-footer .footer-traffic {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 55px;
+    text-align: right;
+    transition: opacity 0.2s;
+}
+
+.sidebar-footer .footer-traffic::before {
+    content: '\2195 ';
+    opacity: 0.6;
+}
+
 .network-list {
     margin-bottom: 6px;
     font-size: 9px;

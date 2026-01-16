@@ -37,6 +37,22 @@ export let muxWs: WebSocket | null = null;
 export let muxReconnectTimer: number | undefined;
 
 // =============================================================================
+// WebSocket Traffic Metrics
+// =============================================================================
+
+/** Accumulated TX bytes since last sample */
+export let wsTxAccum = 0;
+
+/** Accumulated RX bytes since last sample */
+export let wsRxAccum = 0;
+
+/** EMA-smoothed TX rate (bytes/sec) */
+export let wsTxRateEma = 0;
+
+/** EMA-smoothed RX rate (bytes/sec) */
+export let wsRxRateEma = 0;
+
+// =============================================================================
 // Terminal State
 // =============================================================================
 
@@ -120,6 +136,30 @@ export function setFontsReadyPromise(promise: Promise<void>): void {
 
 export function setWindowsBuildNumber(build: number | null): void {
   windowsBuildNumber = build;
+}
+
+// =============================================================================
+// Traffic Metrics Setters
+// =============================================================================
+
+export function addWsTxBytes(bytes: number): void {
+  wsTxAccum += bytes;
+}
+
+export function addWsRxBytes(bytes: number): void {
+  wsRxAccum += bytes;
+}
+
+export function resetWsAccum(): { tx: number; rx: number } {
+  const result = { tx: wsTxAccum, rx: wsRxAccum };
+  wsTxAccum = 0;
+  wsRxAccum = 0;
+  return result;
+}
+
+export function setWsRateEma(tx: number, rx: number): void {
+  wsTxRateEma = tx;
+  wsRxRateEma = rx;
 }
 
 // =============================================================================

@@ -10,3 +10,4 @@ export * from './collapse';
 export * from './shareAccess';
 export * from './networkSection';
 export * from './sidebarUpdater';
+export { initTrafficIndicator } from './trafficIndicator';

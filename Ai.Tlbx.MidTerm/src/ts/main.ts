@@ -59,6 +59,7 @@ import {
   initNetworkSection,
   initializeSessionList,
   initializeSidebarUpdater,
+  initTrafficIndicator,
 } from './modules/sidebar';
 import {
   toggleSettings,
@@ -156,6 +157,7 @@ async function init(): Promise<void> {
   log.info(() => 'MidTerm frontend initializing');
 
   cacheDOMElements();
+  initTrafficIndicator();
   initConnectionStatusIndicator();
   restoreSidebarState();
   setupSidebarResize();
