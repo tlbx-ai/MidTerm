@@ -647,14 +647,23 @@ public sealed class TtyHostClient : IAsyncDisposable
 
     private async Task ReconnectAsync()
     {
-        while (!_disposed && !_intentionalDisconnect && _reconnectAttempts < MaxReconnectAttempts)
+        var ct = _cts?.Token ?? CancellationToken.None;
+
+        while (!_disposed && !_intentionalDisconnect && !ct.IsCancellationRequested && _reconnectAttempts < MaxReconnectAttempts)
         {
             _reconnectAttempts++;
             var delay = Math.Min(InitialReconnectDelayMs * (1 << _reconnectAttempts), MaxReconnectDelayMs);
 
-            await Task.Delay(delay).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
 
-            if (_disposed || _intentionalDisconnect) return;
+            if (_disposed || _intentionalDisconnect || ct.IsCancellationRequested) return;
 
             try
             {
@@ -665,7 +674,9 @@ public sealed class TtyHostClient : IAsyncDisposable
                     _pipe = new NamedPipeClientStream(".", _endpoint, PipeDirection.InOut, PipeOptions.Asynchronous);
                 }
 
-                await _pipe.ConnectAsync(2000).ConfigureAwait(false);
+                using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                connectCts.CancelAfter(2000);
+                await _pipe.ConnectAsync(connectCts.Token).ConfigureAwait(false);
                 _stream = _pipe;
 #else
                 lock (_streamLock)
@@ -675,19 +686,24 @@ public sealed class TtyHostClient : IAsyncDisposable
                     _socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
                 }
 
-                using var timeoutCts = new CancellationTokenSource(2000);
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(2000);
                 await _socket.ConnectAsync(new UnixDomainSocketEndPoint(_endpoint), timeoutCts.Token).ConfigureAwait(false);
                 _networkStream = new NetworkStream(_socket, ownsSocket: false);
                 _stream = _networkStream;
 #endif
 
-                var info = await GetInfoAsync().ConfigureAwait(false);
+                var info = await GetInfoAsync(ct).ConfigureAwait(false);
                 if (info is not null)
                 {
                     _reconnectAttempts = 0;
                     OnReconnected?.Invoke(_sessionId);
                     return;
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
             }
             catch
             {

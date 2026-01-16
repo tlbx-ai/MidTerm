@@ -11,12 +11,18 @@ public sealed class SettingsWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly UpdateService _updateService;
     private readonly AuthService _authService;
+    private readonly ShutdownService _shutdownService;
 
-    public SettingsWebSocketHandler(SettingsService settingsService, UpdateService updateService, AuthService authService)
+    public SettingsWebSocketHandler(
+        SettingsService settingsService,
+        UpdateService updateService,
+        AuthService authService,
+        ShutdownService shutdownService)
     {
         _settingsService = settingsService;
         _updateService = updateService;
         _authService = authService;
+        _shutdownService = shutdownService;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -78,17 +84,16 @@ public sealed class SettingsWebSocketHandler
 
         var settingsListenerId = _settingsService.AddSettingsListener(OnSettingsChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateChange);
+        var shutdownToken = _shutdownService.Token;
 
         try
         {
-            // Send initial settings
             await SendMessageAsync(new SettingsWsMessage
             {
                 Type = "settings",
                 Settings = _settingsService.Load()
             });
 
-            // Send initial update info if available
             var latestUpdate = _updateService.LatestUpdate;
             if (latestUpdate is not null)
             {
@@ -100,15 +105,19 @@ public sealed class SettingsWebSocketHandler
             }
 
             var buffer = new byte[1024];
-            while (ws.State == WebSocketState.Open)
+            while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
                 try
                 {
-                    var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+                    var result = await ws.ReceiveAsync(buffer, shutdownToken);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         break;
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
                 catch
                 {
@@ -126,7 +135,8 @@ public sealed class SettingsWebSocketHandler
             {
                 try
                 {
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, cts.Token);
                 }
                 catch
                 {

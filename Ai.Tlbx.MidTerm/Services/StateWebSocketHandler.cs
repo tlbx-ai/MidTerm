@@ -13,17 +13,20 @@ public sealed class StateWebSocketHandler
     private readonly UpdateService _updateService;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
+    private readonly ShutdownService _shutdownService;
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
         UpdateService updateService,
         SettingsService settingsService,
-        AuthService authService)
+        AuthService authService,
+        ShutdownService shutdownService)
     {
         _sessionManager = sessionManager;
         _updateService = updateService;
         _settingsService = settingsService;
         _authService = authService;
+        _shutdownService = shutdownService;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -88,6 +91,7 @@ public sealed class StateWebSocketHandler
 
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
+        var shutdownToken = _shutdownService.Token;
 
         try
         {
@@ -95,15 +99,19 @@ public sealed class StateWebSocketHandler
             await SendStateAsync();
 
             var buffer = new byte[1024];
-            while (ws.State == WebSocketState.Open)
+            while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
                 try
                 {
-                    var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+                    var result = await ws.ReceiveAsync(buffer, shutdownToken);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         break;
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
                 catch
                 {
@@ -121,7 +129,8 @@ public sealed class StateWebSocketHandler
             {
                 try
                 {
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, cts.Token);
                 }
                 catch
                 {

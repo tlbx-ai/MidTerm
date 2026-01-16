@@ -319,11 +319,12 @@ public static class EndpointSetup
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
+        ShutdownService shutdownService,
         string logDirectory)
     {
-        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService);
-        var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService);
+        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
+        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService);
+        var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var logFileWatcher = new LogFileWatcher(logDirectory, TimeSpan.FromMilliseconds(250));
         var logHandler = new LogWebSocketHandler(logFileWatcher, sessionManager, settingsService, authService);
 

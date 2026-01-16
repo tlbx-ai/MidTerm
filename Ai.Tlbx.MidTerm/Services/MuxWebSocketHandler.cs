@@ -11,17 +11,20 @@ public sealed class MuxWebSocketHandler
     private readonly TtyHostMuxConnectionManager _muxManager;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
+    private readonly ShutdownService _shutdownService;
 
     public MuxWebSocketHandler(
         TtyHostSessionManager sessionManager,
         TtyHostMuxConnectionManager muxManager,
         SettingsService settingsService,
-        AuthService authService)
+        AuthService authService,
+        ShutdownService shutdownService)
     {
         _sessionManager = sessionManager;
         _muxManager = muxManager;
         _settingsService = settingsService;
         _authService = authService;
+        _shutdownService = shutdownService;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -104,13 +107,18 @@ public sealed class MuxWebSocketHandler
     private async Task ProcessMessagesAsync(WebSocket ws, string clientId, MuxClient client)
     {
         var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
+        var shutdownToken = _shutdownService.Token;
 
-        while (ws.State == WebSocketState.Open)
+        while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
         {
             WebSocketReceiveResult result;
             try
             {
-                result = await ws.ReceiveAsync(receiveBuffer, CancellationToken.None);
+                result = await ws.ReceiveAsync(receiveBuffer, shutdownToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
             catch (WebSocketException)
             {
@@ -127,7 +135,6 @@ public sealed class MuxWebSocketHandler
                 await ProcessFrameAsync(new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count), client);
             }
 
-            // After processing input, check if resync needed (frames were dropped)
             if (client.CheckAndResetDroppedFrames())
             {
                 await PerformResyncAsync(client);
@@ -236,7 +243,8 @@ public sealed class MuxWebSocketHandler
         {
             try
             {
-                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, cts.Token);
             }
             catch
             {

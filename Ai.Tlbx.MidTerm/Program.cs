@@ -167,11 +167,13 @@ public class Program
             }
         });
 
+        var shutdownService = new ShutdownService();
+
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, logDirectory);
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, logDirectory);
 
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 
@@ -182,31 +184,52 @@ public class Program
 
         lifetime.ApplicationStopping.Register(() =>
         {
-            Log.Info(() => "Shutdown requested, cleaning up...");
-            var cleanupTask = Task.Run(async () =>
+            Log.Info(() => "Shutdown requested, signaling components...");
+
+            shutdownService.SignalShutdown();
+
+            Thread.Sleep(200);
+
+            Log.Info(() => "Disposing managers...");
+
+            try
             {
-                try
+                using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                muxManager.DisposeAsync().AsTask().Wait(cleanupCts.Token);
+                sessionManager.DisposeAsync().AsTask().Wait(cleanupCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Log.Warn(() => "Cleanup timed out after 8 seconds");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Cleanup error: {ex.Message}");
+            }
+            finally
+            {
+                tempCleanupService.CleanupAllMidTermFiles();
+                Log.Shutdown();
+                instanceGuard.Dispose();
+                shutdownService.Dispose();
+            }
+        });
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(Timeout.Infinite, shutdownService.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                await Task.Delay(10000);
+                if (shutdownService.IsShuttingDown)
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    await muxManager.DisposeAsync().AsTask().WaitAsync(cts.Token);
-                    await sessionManager.DisposeAsync().AsTask().WaitAsync(cts.Token);
+                    Log.Error(() => "Shutdown timeout exceeded (10s), forcing exit");
+                    Environment.Exit(1);
                 }
-                catch (OperationCanceledException)
-                {
-                    Log.Warn(() => "Cleanup timed out, forcing exit");
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn(() => $"Cleanup error: {ex.Message}");
-                }
-                finally
-                {
-                    tempCleanupService.CleanupAllMidTermFiles();
-                    Log.Shutdown();
-                    instanceGuard.Dispose();
-                }
-            });
-            cleanupTask.Wait(TimeSpan.FromSeconds(6));
+            }
         });
 
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
