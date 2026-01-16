@@ -43,10 +43,10 @@
     <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
   </PropertyGroup>
 
-  <!-- Embedded resources are collected dynamically by CollectFrontendResources target -->
-  <!-- This avoids the issue of static ItemGroups being evaluated before .br files exist -->
+  <!-- Source files for up-to-date checking -->
   <ItemGroup>
-    <UpToDateCheckInput Include="wwwroot\**\*" />
+    <UpToDateCheckInput Include="src\static\**\*" />
+    <UpToDateCheckInput Include="src\ts\**\*" />
   </ItemGroup>
 
   <!-- Link common protocol sources -->
@@ -61,7 +61,7 @@
   <!-- Windows-specific defines and linker options -->
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win')) Or '$(RuntimeIdentifier)' == ''">
     <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
-    <ApplicationIcon>wwwroot\favicon.ico</ApplicationIcon>
+    <ApplicationIcon>src\static\favicon\favicon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsPublishing)' == 'true' And $(RuntimeIdentifier.StartsWith('win'))">
@@ -145,24 +145,23 @@
   </Target>
 
   <!-- Embedded resources - static ItemGroups evaluated at project load -->
-  <!-- After re-invocation, these see the freshly generated files -->
+  <!-- Debug: embed all wwwroot (uncompressed text + binary) -->
   <ItemGroup Condition="'$(IsPublishing)' != 'true'">
-    <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\**\*.br" />
+    <EmbeddedResource Include="wwwroot\**\*" />
   </ItemGroup>
 
+  <!-- Publish: embed .br for text, originals for binary -->
   <ItemGroup Condition="'$(IsPublishing)' == 'true'">
     <EmbeddedResource Include="wwwroot\**\*.br" />
-    <EmbeddedResource Include="wwwroot\**\*"
-                      Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br" />
+    <EmbeddedResource Include="wwwroot\**\*.png" />
+    <EmbeddedResource Include="wwwroot\**\*.ico" />
+    <EmbeddedResource Include="wwwroot\**\*.woff" />
+    <EmbeddedResource Include="wwwroot\**\*.woff2" />
   </ItemGroup>
 
-  <!-- Clean generated frontend files -->
+  <!-- Clean generated wwwroot folder -->
   <Target Name="CleanFrontend" AfterTargets="Clean">
-    <Delete Files="wwwroot\js\terminal.min.js;wwwroot\js\terminal.min.js.map" ContinueOnError="true" />
-    <ItemGroup>
-      <BrotliFiles Include="wwwroot\**\*.br" />
-    </ItemGroup>
-    <Delete Files="@(BrotliFiles)" ContinueOnError="true" />
+    <RemoveDir Directories="wwwroot" ContinueOnError="true" />
   </Target>
 
 </Project>

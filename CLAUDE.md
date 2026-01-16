@@ -91,27 +91,27 @@ Ai.Tlbx.MidTerm/              Web Server (mt.exe)
 │   └── AppJsonContext.cs           AOT-safe JSON serialization
 ├── Settings/
 │   └── MidTermSettings.cs    Settings model (auth, defaults, appearance)
-├── src/ts/                         TypeScript source (compiled by esbuild)
-│   ├── main.ts                     Entry point, initialization
-│   ├── types.ts                    Shared interfaces and types
-│   ├── constants.ts                Protocol constants, themes
-│   ├── state.ts                    Ephemeral state (WebSockets, DOM, timers)
-│   ├── stores/
-│   │   └── index.ts                Reactive state (nanostores)
-│   ├── modules/
-│   │   ├── comms/                  WebSocket communication
-│   │   ├── terminal/               xterm.js lifecycle and scaling
-│   │   ├── sidebar/                Session list and collapse
-│   │   ├── settings/               Settings panel and persistence
-│   │   ├── auth/                   Authentication and password modal
-│   │   ├── theming/                Theme definitions
-│   │   └── updating/               Update checker and changelog
-│   └── utils/                      DOM helpers, cookies, debounce
-└── wwwroot/                        Static files (embedded)
-    ├── index.html                  Main UI
-    ├── login.html                  Login page
-    ├── js/terminal.min.js          Compiled TypeScript (generated)
-    └── css/app.css                 Styles
+├── src/
+│   ├── ts/                         TypeScript source (compiled by esbuild)
+│   │   ├── main.ts                 Entry point, initialization
+│   │   ├── types.ts                Shared interfaces and types
+│   │   ├── constants.ts            Protocol constants, themes
+│   │   ├── state.ts                Ephemeral state (WebSockets, DOM, timers)
+│   │   ├── stores/                 Reactive state (nanostores)
+│   │   ├── modules/                Feature modules (comms, terminal, sidebar, etc.)
+│   │   └── utils/                  DOM helpers, cookies, debounce
+│   └── static/                     Source static assets
+│       ├── *.html                  HTML pages (index, login, trust)
+│       ├── css/                    Stylesheets (app.css, xterm.css)
+│       ├── fonts/                  Web fonts (woff/woff2)
+│       ├── img/                    Images (logo.png)
+│       └── favicon/                Favicon files (ico, png)
+└── wwwroot/                        GENERATED (gitignored) - built by frontend-build.ps1
+    ├── *.html[.br]                 HTML (compressed in publish)
+    ├── js/terminal.min.js[.br]     Compiled TypeScript
+    ├── css/*.css[.br]              Stylesheets
+    ├── fonts/                      Web fonts (copied as-is)
+    └── img/, *.png, *.ico          Images and favicons (copied as-is)
 
 Ai.Tlbx.MidTerm.TtyHost/      TTY Host (all platforms)
 ├── Program.cs                      Spawned per terminal, hosts PTY session

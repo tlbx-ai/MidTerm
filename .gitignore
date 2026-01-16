@@ -85,13 +85,9 @@ coverage*.info
 .claude/
 nul
 
-# TypeScript build output (generated at build time, not committed)
-Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js
-Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js.map
+# Generated wwwroot (entire folder is build output from src/static + TypeScript)
+Ai.Tlbx.MidTerm/wwwroot/
 Ai.Tlbx.MidTerm/dist/
-
-# Brotli compressed assets (generated during publish)
-Ai.Tlbx.MidTerm/wwwroot/**/*.br
 
 # Node.js
 node_modules/
