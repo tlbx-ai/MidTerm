@@ -1,0 +1,61 @@
+---
+---
+
+@import "jekyll-theme-midnight";
+
+body {
+  background: #0d1117;
+  background-image: none;
+  color: #c9d1d9;
+}
+
+#header {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+
+#header h1 {
+  color: #58a6ff;
+}
+
+#main_content {
+  background: #0d1117;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #c9d1d9;
+}
+
+a {
+  color: #58a6ff;
+}
+
+a:hover {
+  color: #79c0ff;
+}
+
+code {
+  background: #161b22;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+}
+
+pre {
+  background: #161b22;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+}
+
+table th {
+  background: #161b22;
+  color: #c9d1d9;
+}
+
+table td {
+  background: #0d1117;
+  color: #c9d1d9;
+}
+
+table tr:nth-child(even) td {
+  background: #161b22;
+}
