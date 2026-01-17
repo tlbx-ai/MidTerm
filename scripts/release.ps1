@@ -26,8 +26,8 @@
 
     This is NOT optional. Users deserve to know what changed in each release.
 
-.PARAMETER InfluencesTtyHost
-    MANDATORY: Does this release affect mthost or the protocol between mt and mthost?
+.PARAMETER mthostUpdate
+    MANDATORY: Does this release require updating mthost?
 
     Answer 'yes' if ANY of these are true:
       - Changed Ai.Tlbx.MidTerm.TtyHost/ code
@@ -51,7 +51,7 @@
         "Fixed bug where settings panel would close when checking for updates",
         "Update button now correctly shows 'Update & Restart' text",
         "Added session preservation warning in settings panel"
-    ) -InfluencesTtyHost no
+    ) -mthostUpdate no
 
 .EXAMPLE
     .\release.ps1 -Bump minor -ReleaseTitle "Bulletproof self-update with rollback support" -ReleaseNotes @(
@@ -61,14 +61,14 @@
         "Copy verification ensures files are correctly written before proceeding",
         "Detailed logging to update.log for troubleshooting failed updates",
         "Toast notifications show update success or failure with error details"
-    ) -InfluencesTtyHost no
+    ) -mthostUpdate no
 
 .EXAMPLE
     .\release.ps1 -Bump patch -ReleaseTitle "Fix PTY handle leak on session close" -ReleaseNotes @(
         "Fixed memory leak where PTY handles were not released when closing sessions",
         "Improved cleanup sequence ensures all resources are freed",
         "Affects mthost - terminals will restart during update"
-    ) -InfluencesTtyHost yes
+    ) -mthostUpdate yes
 #>
 
 param(
@@ -86,7 +86,7 @@ param(
 
     [Parameter(Mandatory=$true)]
     [ValidateSet("yes", "no")]
-    [string]$InfluencesTtyHost
+    [string]$mthostUpdate
 )
 
 $ErrorActionPreference = "Stop"
@@ -205,7 +205,7 @@ $newVersion = "$major.$minor.$patch"
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
 # Determine release type
-$isPtyBreaking = $InfluencesTtyHost -eq "yes"
+$isPtyBreaking = $mthostUpdate -eq "yes"
 if ($isPtyBreaking) {
     Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
 } else {
@@ -216,12 +216,18 @@ if ($isPtyBreaking) {
 $versionJson.web = $newVersion
 if ($isPtyBreaking) {
     $versionJson.pty = $newVersion
+    # Remove webOnly flag for PTY-breaking releases (mthost checksum will be included)
+    if ($versionJson.PSObject.Properties["webOnly"]) {
+        $versionJson.PSObject.Properties.Remove("webOnly")
+    }
 } else {
     # Strip 4th component from pty if present (from local release)
     $ptyParts = $versionJson.pty.Split('.')
     if ($ptyParts.Count -eq 4) {
         $versionJson.pty = "$($ptyParts[0]).$($ptyParts[1]).$($ptyParts[2])"
     }
+    # Mark as web-only release so sign-release.ps1 skips mthost checksum
+    $versionJson | Add-Member -NotePropertyName "webOnly" -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray

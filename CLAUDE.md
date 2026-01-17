@@ -281,13 +281,13 @@ $activeSessionId.set(newId);            // Write
         "Update button now correctly shows 'Update & Restart' text",
         "Added session preservation warning in settings panel"
     ) `
-    -InfluencesTtyHost no
+    -mthostUpdate no
 ```
 
 **Parameters:**
 - `-ReleaseTitle`: One-line headline (NO version number - it's in the git tag)
 - `-ReleaseNotes`: MANDATORY array of detailed changelog entries. Each entry should be a complete sentence explaining what changed and why.
-- `-InfluencesTtyHost`: `yes` if TtyHost/Common/protocol changed, `no` for frontend/web-only changes
+- `-mthostUpdate`: `yes` if TtyHost/Common/protocol changed, `no` for frontend/web-only changes
 
 **Good ReleaseNotes examples:**
 - "Fixed bug where settings panel would close when checking for updates"
@@ -299,8 +299,8 @@ $activeSessionId.set(newId);            // Write
 - "Update UI" (what specifically?)
 - "v5.3.4: Changes" (version is redundant, "changes" says nothing)
 
-With `-InfluencesTtyHost no`: Only mt version bumped, terminals survive the update.
-With `-InfluencesTtyHost yes`: Both mt and mthost versions bumped, terminals restart on update.
+With `-mthostUpdate no`: Only mt version bumped, terminals survive the update.
+With `-mthostUpdate yes`: Both mt and mthost versions bumped, terminals restart on update.
 
 ## Install System
 

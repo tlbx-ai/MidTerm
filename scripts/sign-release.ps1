@@ -41,10 +41,18 @@ try {
             continue
         }
 
-        # Compute checksums for binaries
+        # Read version.json to check for web-only release
+        $versionJson = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
+        $isWebOnly = $versionJson.webOnly -eq $true
+
+        # Compute checksums for binaries (skip mthost for web-only releases)
         $checksums = @{}
-        $binaries = @("mt", "mthost")
+        $binaries = if ($isWebOnly) { @("mt") } else { @("mt", "mthost") }
         $ext = if ($platform -eq "win-x64") { ".exe" } else { "" }
+
+        if ($isWebOnly) {
+            Write-Host "    Web-only release: skipping mthost checksum" -ForegroundColor Cyan
+        }
 
         foreach ($binary in $binaries) {
             $binaryPath = Join-Path $platformDir "$binary$ext"
@@ -80,8 +88,7 @@ try {
             Remove-Item $sigFile -ErrorAction SilentlyContinue
         }
 
-        # Load and update version.json
-        $versionJson = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
+        # Update version.json with checksums and signature
         $versionJson | Add-Member -NotePropertyName "checksums" -NotePropertyValue $checksums -Force
         $versionJson | Add-Member -NotePropertyName "signature" -NotePropertyValue $signature -Force
 

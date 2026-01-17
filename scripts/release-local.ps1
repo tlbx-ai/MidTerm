@@ -13,7 +13,7 @@
     - Why it matters to users
     - Any important technical details
 
-.PARAMETER InfluencesTtyHost
+.PARAMETER mthostUpdate
     MANDATORY: Does this release affect mthost or the protocol between mt and mthost?
 
     Answer 'yes' if ANY of these are true:
@@ -31,12 +31,12 @@
     .\release-local.ps1 -ReleaseNotes @(
         "Removed blocking FlushAsync from IPC writes to fix input latency",
         "Sessions no longer lag when mthost is busy processing output"
-    ) -InfluencesTtyHost no
+    ) -mthostUpdate no
 
 .EXAMPLE
     .\release-local.ps1 -ReleaseNotes @(
         "Fixed PTY handle leak on session close"
-    ) -InfluencesTtyHost yes
+    ) -mthostUpdate yes
 #>
 
 param(
@@ -46,7 +46,7 @@ param(
 
     [Parameter(Mandatory=$true)]
     [ValidateSet("yes", "no")]
-    [string]$InfluencesTtyHost
+    [string]$mthostUpdate
 )
 
 $ErrorActionPreference = "Stop"
@@ -149,19 +149,19 @@ if ($webParts.Count -eq 4) {
 
 $localWebVersion = "$baseWebVersion.$buildNum"
 
-# When InfluencesTtyHost=yes, PTY syncs to web version (full update)
-# When InfluencesTtyHost=no, PTY keeps its current version unchanged
-if ($InfluencesTtyHost -eq "yes") {
+# When mthostUpdate=yes, PTY syncs to web version (full update)
+# When mthostUpdate=no, PTY keeps its current version unchanged
+if ($mthostUpdate -eq "yes") {
     $localPtyVersion = $localWebVersion
 } else {
     $localPtyVersion = $currentPtyVersion
 }
 
-$updateType = if ($InfluencesTtyHost -eq "yes") { "Full" } else { "WebOnly" }
+$updateType = if ($mthostUpdate -eq "yes") { "Full" } else { "WebOnly" }
 Write-Host "  Base version: $baseWebVersion" -ForegroundColor Gray
 Write-Host "  Local version: $localWebVersion" -ForegroundColor White
 Write-Host "  Update type: $updateType" -ForegroundColor White
-if ($InfluencesTtyHost -eq "yes") {
+if ($mthostUpdate -eq "yes") {
     Write-Host "  PTY synced to: $localPtyVersion" -ForegroundColor White
 }
 Write-Host ""
@@ -173,7 +173,7 @@ Write-Host "Updating version files..." -ForegroundColor Gray
 
 # Update version.json (single source of truth - csprojs read from this at build time)
 $versionJson.web = $localWebVersion
-if ($InfluencesTtyHost -eq "yes") {
+if ($mthostUpdate -eq "yes") {
     $versionJson.pty = $localPtyVersion
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
