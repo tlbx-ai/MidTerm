@@ -147,10 +147,10 @@ function applyUpdate(type: ChangeType, sessions: Record<string, Session>): void 
     updateEmptyState();
     updateMobileTitle();
   } else if (type === 'order') {
-    log.info(() => 'Applying order update (full re-render)');
+    log.verbose(() => 'Applying order update (full re-render)');
     renderSessionList();
   } else if (type === 'data') {
-    log.info(() => 'Applying data update (surgical)');
+    log.verbose(() => 'Applying data update (surgical)');
     // Surgical updates for each changed session
     for (const [id, session] of Object.entries(sessions)) {
       const prev = previousSessions[id];
@@ -218,7 +218,7 @@ export function initializeSidebarUpdater(): void {
     } else if (changeType === 'data') {
       // Data changes: apply surgical updates to all sessions
       // The renaming session's title element is replaced with input, so it's naturally skipped
-      log.info(() => 'Applying data update (surgical)');
+      log.verbose(() => 'Applying data update (surgical)');
       for (const [id, session] of Object.entries(sessions)) {
         const prev = previousSessions[id];
         if (

@@ -308,7 +308,7 @@ export function connectMuxWebSocket(): void {
       try {
         const jsonStr = new TextDecoder().decode(payload);
         const eventPayload = JSON.parse(jsonStr) as ProcessEventPayload;
-        log.info(
+        log.verbose(
           () => `ProcessEvent: ${eventPayload.Type} ${eventPayload.Name} (${eventPayload.Pid})`,
         );
         handleProcessEvent(sessionId, eventPayload);
