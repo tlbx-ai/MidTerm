@@ -16,7 +16,11 @@ public sealed class CompressedStaticFilesMiddleware
         [".txt"] = "text/plain",
         [".json"] = "application/json",
         [".map"] = "application/json",
-        [".svg"] = "image/svg+xml"
+        [".svg"] = "image/svg+xml",
+        [".webmanifest"] = "application/manifest+json",
+        [".woff"] = "font/woff",
+        [".woff2"] = "font/woff2",
+        [".ico"] = "image/x-icon"
     };
 
     public CompressedStaticFilesMiddleware(RequestDelegate next, IFileProvider fileProvider)
