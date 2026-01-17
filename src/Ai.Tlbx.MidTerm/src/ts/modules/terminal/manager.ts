@@ -524,11 +524,14 @@ export function destroyTerminalForSession(sessionId: string): void {
 
 // WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin
 const WS_MAX_PAYLOAD = 32 * 1024;
-// Chunking for non-BPM shells to prevent PTY buffer issues
-const NON_BPM_CHUNK_SIZE = 4096;
-const NON_BPM_CHUNK_DELAY = 5;
+// Chunking for non-BPM shells - conservative to prevent PTY/readline overwhelm
+// PSReadLine does syntax highlighting, history, etc. on each character
+const NON_BPM_CHUNK_SIZE = 512;
+const NON_BPM_CHUNK_DELAY = 30;
 // Only show paste indicator for pastes > 1KB
 const PASTE_INDICATOR_THRESHOLD = 1024;
+// Minimum badge display time so users can see it
+const MIN_BADGE_DISPLAY_MS = 300;
 
 /**
  * Send data in WebSocket-safe chunks without delays.
@@ -556,6 +559,19 @@ async function sendChunkedWithDelay(sessionId: string, data: string): Promise<vo
 }
 
 /**
+ * Hide paste indicator after minimum display time.
+ */
+function hidePasteIndicatorDelayed(startTime: number): void {
+  const elapsed = Date.now() - startTime;
+  const remaining = MIN_BADGE_DISPLAY_MS - elapsed;
+  if (remaining > 0) {
+    setTimeout(hidePasteIndicator, remaining);
+  } else {
+    hidePasteIndicator();
+  }
+}
+
+/**
  * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
  * BPM state is tracked in muxChannel from live WebSocket data.
  *
@@ -579,6 +595,7 @@ export function pasteToTerminal(
   const content = isFilePath ? '"' + data + '"' : data;
 
   const showIndicator = content.length > PASTE_INDICATOR_THRESHOLD;
+  const startTime = Date.now();
   if (showIndicator) {
     showPasteIndicator();
   }
@@ -595,20 +612,20 @@ export function pasteToTerminal(
       sendInput(sessionId, wrapped);
     }
     if (showIndicator) {
-      hidePasteIndicator();
+      hidePasteIndicatorDelayed(startTime);
     }
   } else {
     // Non-BPM: chunk with delays to prevent PTY overflow
     if (content.length > NON_BPM_CHUNK_SIZE) {
       sendChunkedWithDelay(sessionId, content).then(() => {
         if (showIndicator) {
-          hidePasteIndicator();
+          hidePasteIndicatorDelayed(startTime);
         }
       });
     } else {
       sendInput(sessionId, content);
       if (showIndicator) {
-        hidePasteIndicator();
+        hidePasteIndicatorDelayed(startTime);
       }
     }
   }
