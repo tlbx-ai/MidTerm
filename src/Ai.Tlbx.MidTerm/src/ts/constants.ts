@@ -47,7 +47,7 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     cursor: '#DCDCF5',
     cursorAccent: '#06060E',
     selectionBackground: '#283457',
-    scrollbarSliderBackground: '#1A1B26',
+    scrollbarSliderBackground: 'rgba(26, 27, 38, 0.5)',
     scrollbarSliderHoverBackground: 'rgba(122, 162, 247, 0.5)',
     scrollbarSliderActiveBackground: 'rgba(122, 162, 247, 0.7)',
   },
