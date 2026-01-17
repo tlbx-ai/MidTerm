@@ -464,6 +464,29 @@ export function setupTerminalEvents(
       }, 100);
     });
   }
+
+  // Auto-hide mouse cursor after 2 seconds of inactivity
+  let cursorHideTimer: number | null = null;
+  const CURSOR_HIDE_DELAY = 2000;
+
+  const showCursor = () => {
+    container.classList.remove('cursor-hidden');
+    if (cursorHideTimer !== null) {
+      window.clearTimeout(cursorHideTimer);
+    }
+    cursorHideTimer = window.setTimeout(() => {
+      container.classList.add('cursor-hidden');
+    }, CURSOR_HIDE_DELAY);
+  };
+
+  container.addEventListener('mousemove', showCursor);
+  container.addEventListener('mouseleave', () => {
+    container.classList.remove('cursor-hidden');
+    if (cursorHideTimer !== null) {
+      window.clearTimeout(cursorHideTimer);
+      cursorHideTimer = null;
+    }
+  });
 }
 
 /**

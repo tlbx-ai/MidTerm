@@ -785,15 +785,13 @@ html, body {
     display: none;
 }
 
-/* Make xterm scrollbar always visible (don't fade out) */
-.terminal-container .xterm-scrollable-element > .scrollbar {
-    opacity: 1 !important;
-    transition: none !important;
+/* Auto-hide mouse cursor over terminal after inactivity */
+.terminal-container.cursor-hidden {
+    cursor: none !important;
 }
 
-.terminal-container .xterm-scrollable-element > .scrollbar.invisible {
-    opacity: 1 !important;
-    pointer-events: auto !important;
+.terminal-container.cursor-hidden .xterm {
+    cursor: none !important;
 }
 
 /* Terminal initialization error state */
