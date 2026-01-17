@@ -260,6 +260,7 @@ export interface WsCommandPayload {
 
   // session.rename
   name?: string | null;
+  auto?: boolean;
 
   // settings.save
   settings?: Settings;

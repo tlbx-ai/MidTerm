@@ -95,7 +95,7 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
                             Type = ProcessEventType.Exec,
                             Pid = pid,
                             ParentPid = parentPid,
-                            Name = name,
+                            Name = info.Name,
                             CommandLine = cmdLine,
                             Timestamp = DateTime.UtcNow
                         });
@@ -106,11 +106,13 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
                 {
                     if (!currentPids.Contains(pid))
                     {
-                        _processTree.TryRemove(pid, out _);
+                        _processTree.TryRemove(pid, out var exitedInfo);
                         OnProcessEvent?.Invoke(new ProcessEvent
                         {
                             Type = ProcessEventType.Exit,
                             Pid = pid,
+                            ParentPid = exitedInfo?.ParentPid ?? 0,
+                            Name = exitedInfo?.Name,
                             Timestamp = DateTime.UtcNow
                         });
                     }

@@ -263,7 +263,8 @@ public sealed class StateWebSocketHandler
         }
 
         var name = cmd.Payload?.Name;
-        var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual: true);
+        var isManual = cmd.Payload?.Auto != true;
+        var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual);
         await sendResponse(cmd.Id, renamed, null, renamed ? null : "Session not found");
     }
 

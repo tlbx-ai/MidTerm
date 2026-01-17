@@ -21,7 +21,7 @@ import { $activeSessionId, getSession } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScaling, applyTerminalScalingSync } from './scaling';
 import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
-import { isBracketedPasteEnabled } from '../comms';
+import { isBracketedPasteEnabled, sendCommand } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
 import { Terminal, type ITerminalOptions } from '@xterm/xterm';
@@ -85,11 +85,7 @@ function updateSessionNameAuto(sessionId: string, name: string): void {
 
   const timer = window.setTimeout(() => {
     pendingTitleUpdates.delete(sessionId);
-    fetch(`/api/sessions/${sessionId}/name?auto=true`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    }).catch(() => {});
+    sendCommand('session.rename', { sessionId, name, auto: true }).catch(() => {});
   }, 500);
 
   pendingTitleUpdates.set(sessionId, timer);

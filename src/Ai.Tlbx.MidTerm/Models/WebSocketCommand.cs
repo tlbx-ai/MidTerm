@@ -27,6 +27,7 @@ public sealed class WsCommandPayload
 
     // session.rename
     public string? Name { get; init; }
+    public bool? Auto { get; init; }
 
     // settings.save - full settings object
     public Settings.MidTermSettingsPublic? Settings { get; init; }
