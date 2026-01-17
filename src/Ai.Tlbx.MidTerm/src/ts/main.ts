@@ -269,9 +269,12 @@ function createSession(): void {
   let cols = currentSettings?.defaultCols ?? 120;
   let rows = currentSettings?.defaultRows ?? 30;
 
+  // Generate tempId early so we can use it for logging
+  const tempId = 'pending-' + crypto.randomUUID();
+
   if (dom.terminalsArea) {
     const fontSize = currentSettings?.fontSize ?? 14;
-    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize);
+    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;
@@ -279,7 +282,6 @@ function createSession(): void {
   }
 
   // Optimistic UI: add temporary session with spinner
-  const tempId = 'pending-' + crypto.randomUUID();
   const tempSession = {
     id: tempId,
     name: null,
@@ -503,7 +505,8 @@ function spawnFromHistory(entry: LaunchEntry): void {
 
   if (dom.terminalsArea) {
     const fontSize = currentSettings?.fontSize ?? 14;
-    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize);
+    const logId = 'history-' + crypto.randomUUID().slice(0, 8);
+    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;

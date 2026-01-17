@@ -16,8 +16,8 @@ import {
   TERMINAL_FONT_STACK,
   icon,
 } from '../../constants';
-import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
-import { $activeSessionId } from '../../stores';
+import { sessionTerminals, fontsReadyPromise, dom, currentSettings } from '../../state';
+import { $activeSessionId, getSession } from '../../stores';
 import { debounce } from '../../utils';
 
 // Forward declarations for functions from other modules
@@ -33,6 +33,57 @@ export function registerScalingCallbacks(callbacks: {
 }): void {
   if (callbacks.sendResize) sendResize = callbacks.sendResize;
   if (callbacks.focusActiveTerminal) focusActiveTerminal = callbacks.focusActiveTerminal;
+}
+
+type MeasurementSource = 'existing-terminal' | 'font-probe';
+
+function logResizeDiagnostics(
+  operation: 'create' | 'manual-resize',
+  sessionId: string,
+  container: HTMLElement,
+  fontSize: number,
+  cellWidth: number,
+  cellHeight: number,
+  measurementSource: MeasurementSource,
+  cols: number,
+  rows: number,
+  state?: TerminalState,
+): void {
+  const session = getSession(sessionId);
+  const containerRect = container.getBoundingClientRect();
+
+  const assumedWidth = cols * cellWidth;
+  const assumedHeight = rows * cellHeight;
+
+  let actualWidth = 0;
+  let actualHeight = 0;
+  let scaleFactor = 1;
+
+  if (state?.opened) {
+    const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
+    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    if (xterm && screen) {
+      actualWidth = screen.offsetWidth;
+      actualHeight = screen.offsetHeight;
+      const availW = state.container.clientWidth - 8;
+      const availH = state.container.clientHeight - 8;
+      const scaleX = availW / xterm.offsetWidth;
+      const scaleY = availH / xterm.offsetHeight;
+      scaleFactor = Math.min(scaleX, scaleY, 1);
+    }
+  }
+
+  console.log(
+    `[RESIZE DIAG] ${operation}\n` +
+      `  Session: "${session?.name ?? sessionId}" (${session?.terminalTitle ?? 'no title'})\n` +
+      `  Container: ${containerRect.width.toFixed(0)}×${containerRect.height.toFixed(0)} px\n` +
+      `  Font: ${TERMINAL_FONT_STACK.split(',')[0]}, ${fontSize}px\n` +
+      `  Cell size: ${cellWidth.toFixed(2)}×${cellHeight.toFixed(2)} px (from: ${measurementSource})\n` +
+      `  Calculated fit: ${cols}×${rows}\n` +
+      `  Assumed size: ${assumedWidth.toFixed(0)}×${assumedHeight.toFixed(0)} px\n` +
+      `  Actual size: ${actualWidth.toFixed(0)}×${actualHeight.toFixed(0)} px\n` +
+      `  Scale factor: ${scaleFactor.toFixed(3)}`,
+  );
 }
 
 /**
@@ -95,6 +146,7 @@ function measureFromFont(fontSize: number): { cellWidth: number; cellHeight: num
 export function calculateOptimalDimensions(
   container: HTMLElement,
   fontSize: number,
+  sessionIdForLog?: string,
 ): { cols: number; rows: number } | null {
   const rect = container.getBoundingClientRect();
   if (rect.width < 100 || rect.height < 100) {
@@ -102,7 +154,11 @@ export function calculateOptimalDimensions(
   }
 
   // Get cell dimensions: prefer existing terminal, otherwise measure font directly
-  const { cellWidth, cellHeight } = measureFromExistingTerminal() ?? measureFromFont(fontSize);
+  const existingMeasurement = measureFromExistingTerminal();
+  const measurementSource: MeasurementSource = existingMeasurement
+    ? 'existing-terminal'
+    : 'font-probe';
+  const { cellWidth, cellHeight } = existingMeasurement ?? measureFromFont(fontSize);
 
   // Account for padding and scrollbar width
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
@@ -119,6 +175,20 @@ export function calculateOptimalDimensions(
     return null;
   }
 
+  if (sessionIdForLog) {
+    logResizeDiagnostics(
+      'create',
+      sessionIdForLog,
+      container,
+      fontSize,
+      cellWidth,
+      cellHeight,
+      measurementSource,
+      clampedCols,
+      clampedRows,
+    );
+  }
+
   return { cols: clampedCols, rows: clampedRows };
 }
 
@@ -133,6 +203,9 @@ export function calculateOptimalDimensions(
 export function fitSessionToScreen(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
+
+  // Capture fontSize for diagnostics
+  const fontSize = currentSettings?.fontSize ?? 14;
 
   // Wait for terminal to be opened before fitting
   if (!state.opened) {
@@ -220,6 +293,22 @@ export function fitSessionToScreen(sessionId: string): void {
     } catch {
       // Resize may fail if terminal is disposed
     }
+
+    // Re-apply scaling check (fixes badge persistence bug)
+    applyTerminalScalingSync(state);
+
+    logResizeDiagnostics(
+      'manual-resize',
+      sessionId,
+      dom.terminalsArea!,
+      fontSize,
+      cellWidth,
+      cellHeight,
+      'existing-terminal',
+      cols,
+      rows,
+      state,
+    );
 
     if (wasHidden) {
       state.container.classList.add('hidden');
