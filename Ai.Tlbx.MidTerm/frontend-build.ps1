@@ -237,15 +237,39 @@ Get-ChildItem -Path "$StaticSource\*" -Include $textExtensions | ForEach-Object 
     }
 }
 
-# CSS files -> wwwroot/css/
+# CSS files -> wwwroot/css/ (minified)
 $cssSource = Join-Path $StaticSource "css"
 Get-ChildItem -Path "$cssSource\*" -Include @('*.css') | ForEach-Object {
     $dstPath = Join-Path $WwwRoot "css/$($_.Name)"
-    $result = Process-TextFile -Source $_.FullName -Destination $dstPath -Compress $Publish
+    $srcSize = $_.Length
+
+    # Minify with esbuild
+    $null = & npx esbuild $_.FullName --minify --outfile=$dstPath 2>&1
+    $minSize = (Get-Item $dstPath).Length
 
     if ($Publish) {
-        $totalSaved += $result.Saved
-        Write-Host "  css/$($_.Name) -> css/$($_.Name).br ($($result.Reduction)% reduction)" -ForegroundColor DarkGray
+        # Brotli compress the minified file
+        $brPath = "$dstPath.br"
+        $srcStream = $null
+        $dstStream = $null
+        $brotli = $null
+        try {
+            $srcStream = [System.IO.File]::OpenRead($dstPath)
+            $dstStream = [System.IO.File]::Create($brPath)
+            $brotli = [System.IO.Compression.BrotliStream]::new($dstStream, [System.IO.Compression.CompressionLevel]::SmallestSize)
+            $srcStream.CopyTo($brotli)
+            $brotli.Flush()
+        }
+        finally {
+            if ($null -ne $brotli) { $brotli.Dispose() }
+            if ($null -ne $dstStream) { $dstStream.Dispose() }
+            if ($null -ne $srcStream) { $srcStream.Dispose() }
+        }
+        Remove-Item $dstPath -Force
+        $brSize = (Get-Item $brPath).Length
+        $totalSaved += ($srcSize - $brSize)
+        $reduction = [math]::Round((1 - $brSize / $srcSize) * 100)
+        Write-Host "  css/$($_.Name) -> css/$($_.Name).br ($reduction% reduction)" -ForegroundColor DarkGray
     }
     else {
         Write-Host "  css/$($_.Name)" -ForegroundColor DarkGray
