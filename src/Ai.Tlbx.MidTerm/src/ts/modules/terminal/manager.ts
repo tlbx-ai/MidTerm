@@ -522,22 +522,35 @@ export function destroyTerminalForSession(sessionId: string): void {
   sessionsNeedingResync.delete(sessionId);
 }
 
-// Chunking only needed for non-BPM shells as a safety margin
-// BPM shells handle bulk paste atomically via bracketed markers
-const PASTE_CHUNK_SIZE = 4096; // 4KB chunks
-const PASTE_CHUNK_DELAY = 5; // 5ms between chunks (only for non-BPM)
-const PASTE_INDICATOR_THRESHOLD = 1024; // Only show indicator for pastes > 1KB
+// WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin
+const WS_MAX_PAYLOAD = 32 * 1024;
+// Chunking for non-BPM shells to prevent PTY buffer issues
+const NON_BPM_CHUNK_SIZE = 4096;
+const NON_BPM_CHUNK_DELAY = 5;
+// Only show paste indicator for pastes > 1KB
+const PASTE_INDICATOR_THRESHOLD = 1024;
+
+/**
+ * Send data in WebSocket-safe chunks without delays.
+ * Used for BPM pastes where the shell buffers internally.
+ */
+function sendChunkedImmediate(sessionId: string, data: string): void {
+  for (let i = 0; i < data.length; i += WS_MAX_PAYLOAD) {
+    const chunk = data.slice(i, i + WS_MAX_PAYLOAD);
+    sendInput(sessionId, chunk);
+  }
+}
 
 /**
  * Send data in chunks with delays to prevent PTY buffer overflow.
- * Used for large pastes (> 4KB) to avoid cursor corruption.
+ * Used for non-BPM shells that process input character-by-character.
  */
-async function sendChunked(sessionId: string, data: string): Promise<void> {
-  for (let i = 0; i < data.length; i += PASTE_CHUNK_SIZE) {
-    const chunk = data.slice(i, i + PASTE_CHUNK_SIZE);
+async function sendChunkedWithDelay(sessionId: string, data: string): Promise<void> {
+  for (let i = 0; i < data.length; i += NON_BPM_CHUNK_SIZE) {
+    const chunk = data.slice(i, i + NON_BPM_CHUNK_SIZE);
     sendInput(sessionId, chunk);
-    if (i + PASTE_CHUNK_SIZE < data.length) {
-      await new Promise((resolve) => setTimeout(resolve, PASTE_CHUNK_DELAY));
+    if (i + NON_BPM_CHUNK_SIZE < data.length) {
+      await new Promise((resolve) => setTimeout(resolve, NON_BPM_CHUNK_DELAY));
     }
   }
 }
@@ -546,11 +559,10 @@ async function sendChunked(sessionId: string, data: string): Promise<void> {
  * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
  * BPM state is tracked in muxChannel from live WebSocket data.
  *
- * BPM shells handle bulk paste atomically - no chunking needed.
- * Non-BPM shells use chunking as a safety margin for legacy shells.
+ * Large pastes are chunked to stay within WebSocket frame limits (64KB backend).
+ * BPM pastes chunk without delays (shell buffers); non-BPM chunk with delays.
  *
  * @param isFilePath - If true, wrap content in quotes for file path handling.
- *                     This helps TUI apps like Claude Code detect file paths with spaces.
  */
 export function pasteToTerminal(
   sessionId: string,
@@ -560,30 +572,35 @@ export function pasteToTerminal(
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  // Check BPM state from muxChannel (live WebSocket tracking) and xterm.js internal state
   const muxBpm = isBracketedPasteEnabled(sessionId);
   const xtermBpm = state.terminal.modes?.bracketedPasteMode ?? false;
   const bpmEnabled = muxBpm || xtermBpm;
 
-  // Prepare content
   const content = isFilePath ? '"' + data + '"' : data;
 
-  // Show indicator for large pastes
   const showIndicator = content.length > PASTE_INDICATOR_THRESHOLD;
   if (showIndicator) {
     showPasteIndicator();
   }
 
   if (bpmEnabled) {
-    // BPM shells handle bulk paste atomically - send everything at once
-    sendInput(sessionId, '\x1b[200~' + content + '\x1b[201~');
+    // BPM: wrap with markers, chunk for WebSocket but no delays (shell buffers)
+    const wrapped = '\x1b[200~' + content + '\x1b[201~';
+    if (wrapped.length > WS_MAX_PAYLOAD) {
+      // Large paste: send start marker, chunked content, end marker
+      sendInput(sessionId, '\x1b[200~');
+      sendChunkedImmediate(sessionId, content);
+      sendInput(sessionId, '\x1b[201~');
+    } else {
+      sendInput(sessionId, wrapped);
+    }
     if (showIndicator) {
       hidePasteIndicator();
     }
   } else {
-    // Non-BPM: use chunking as safety margin for legacy shells
-    if (content.length > PASTE_CHUNK_SIZE) {
-      sendChunked(sessionId, content).then(() => {
+    // Non-BPM: chunk with delays to prevent PTY overflow
+    if (content.length > NON_BPM_CHUNK_SIZE) {
+      sendChunkedWithDelay(sessionId, content).then(() => {
         if (showIndicator) {
           hidePasteIndicator();
         }
