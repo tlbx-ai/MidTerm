@@ -330,8 +330,9 @@ html, body {
 }
 
 .fg-cwd {
-    flex: 1 1 0;
+    flex: 0 1 auto;
     min-width: 20px;
+    max-width: 50%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -346,7 +347,7 @@ html, body {
 }
 
 .fg-process {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     min-width: 20px;
     overflow: hidden;
     text-overflow: ellipsis;
