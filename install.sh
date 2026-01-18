@@ -147,10 +147,23 @@ prompt_service_mode() {
 }
 
 get_existing_password_hash() {
-    local settings_path="/usr/local/etc/MidTerm/settings.json"
+    local settings_dir="/usr/local/etc/MidTerm"
+    local secrets_path="$settings_dir/secrets.bin"
+    local settings_path="$settings_dir/settings.json"
+    local mt_path="/usr/local/bin/mt"
+
+    # Check secrets.bin first (preferred secure storage)
+    if [ -f "$secrets_path" ] && [ -f "$mt_path" ]; then
+        local hash=$("$mt_path" --read-secret password_hash --service-mode 2>/dev/null || true)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            echo "$hash"
+            return 0
+        fi
+    fi
+
+    # Fall back to settings.json (legacy or migration)
     if [ -f "$settings_path" ]; then
         local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
-        # Only accept proper PBKDF2 hashes, not empty or __PENDING__
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0
@@ -187,7 +200,7 @@ prompt_password() {
             continue
         fi
 
-        # Hash using the installed binary (must be called after install_binary)
+        # Try to hash using the installed binary
         local mt_path="${MT_BINARY_PATH:-/usr/local/bin/mt}"
         if [ -f "$mt_path" ]; then
             local hash=$(echo "$password" | "$mt_path" --hash-password 2>/dev/null || true)
@@ -197,8 +210,9 @@ prompt_password() {
             fi
         fi
 
-        echo -e "  ${RED}Error: Could not hash password. Binary not found at $mt_path${NC}"
-        exit 1
+        # Binary not available yet - use pending marker (hash after install)
+        PASSWORD_HASH="__PENDING__:$password"
+        return 0
     done
 
     echo -e "  ${RED}Too many failed attempts. Exiting.${NC}"
@@ -375,16 +389,10 @@ write_service_settings() {
         mv "$settings_path" "$old_settings_path"
     fi
 
-    # Build JSON with optional fields
+    # Build JSON - passwordHash NOT included (stored in secrets.bin)
     local json_content="{
   \"runAsUser\": \"$INSTALLING_USER\",
   \"authenticationEnabled\": true"
-
-    if [ -n "$PASSWORD_HASH" ]; then
-        json_content="$json_content,
-  \"passwordHash\": \"$PASSWORD_HASH\""
-        echo -e "  ${GRAY}Password: configured${NC}"
-    fi
 
     if [ -n "$CERT_PATH" ]; then
         json_content="$json_content,
@@ -410,18 +418,19 @@ write_service_settings() {
 write_user_settings() {
     local config_dir="$HOME/.MidTerm"
     local settings_path="$config_dir/settings.json"
+    local old_settings_path="$config_dir/settings.json.old"
 
     mkdir -p "$config_dir"
 
-    # Build JSON with optional fields
+    # Backup existing settings for migration by the app
+    if [ -f "$settings_path" ]; then
+        echo -e "  ${GRAY}Backing up existing settings...${NC}"
+        mv "$settings_path" "$old_settings_path"
+    fi
+
+    # Build JSON - passwordHash NOT included (stored in secrets.bin)
     local json_content="{
   \"authenticationEnabled\": true"
-
-    if [ -n "$PASSWORD_HASH" ]; then
-        json_content="$json_content,
-  \"passwordHash\": \"$PASSWORD_HASH\""
-        echo -e "  ${GRAY}Password: configured${NC}"
-    fi
 
     if [ -n "$CERT_PATH" ]; then
         json_content="$json_content,
@@ -439,16 +448,115 @@ write_user_settings() {
 }
 
 get_existing_user_password_hash() {
-    local settings_path="$HOME/.MidTerm/settings.json"
+    local settings_dir="$HOME/.MidTerm"
+    local secrets_path="$settings_dir/secrets.bin"
+    local settings_path="$settings_dir/settings.json"
+    local mt_path="$HOME/.local/bin/mt"
+
+    # Check secrets.bin first (preferred secure storage)
+    if [ -f "$secrets_path" ] && [ -f "$mt_path" ]; then
+        local hash=$("$mt_path" --read-secret password_hash 2>/dev/null || true)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            echo "$hash"
+            return 0
+        fi
+    fi
+
+    # Fall back to settings.json (legacy or migration)
     if [ -f "$settings_path" ]; then
         local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
-        # Only accept proper PBKDF2 hashes, not empty or __PENDING__
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0
         fi
     fi
     return 1
+}
+
+copy_with_retry() {
+    local src="$1"
+    local dest="$2"
+    local max_retries=15
+    local delay_ms=500
+
+    for ((i=0; i<max_retries; i++)); do
+        if cp "$src" "$dest" 2>/dev/null; then
+            return 0
+        fi
+        [ $i -eq 0 ] && echo -e "  ${YELLOW}Waiting for file to be released...${NC}"
+        sleep 0.$delay_ms
+    done
+    return 1
+}
+
+check_existing_certificate() {
+    local cert_path="$1"
+    [ ! -f "$cert_path" ] && return 1
+
+    # Check expiry using openssl
+    local expiry_date
+    expiry_date=$(openssl x509 -in "$cert_path" -noout -enddate 2>/dev/null | cut -d= -f2)
+    [ -z "$expiry_date" ] && return 1
+
+    # Parse expiry date - try GNU date first, then BSD date
+    local expiry_ts now_ts
+    expiry_ts=$(date -d "$expiry_date" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry_date" +%s 2>/dev/null)
+    [ -z "$expiry_ts" ] && return 1
+
+    now_ts=$(date +%s)
+    local days_left=$(( (expiry_ts - now_ts) / 86400 ))
+
+    if [ $days_left -lt 0 ]; then
+        echo -e "  ${YELLOW}Existing certificate has expired${NC}"
+        return 1
+    elif [ $days_left -lt 30 ]; then
+        echo -e "  ${YELLOW}Certificate expires in $days_left days - regenerating${NC}"
+        return 1
+    fi
+
+    echo -e "  ${GREEN}Existing certificate valid (expires in $days_left days)${NC}"
+    return 0
+}
+
+prompt_certificate_trust() {
+    local cert_path="$1"
+
+    echo ""
+    echo -e "  ${CYAN}Certificate Trust:${NC}"
+    echo -e "  ${YELLOW}Trust the certificate to remove browser warnings?${NC}"
+    read -p "  Trust certificate? [Y/n]: " trust_choice < /dev/tty
+
+    if [[ "$trust_choice" != "n" && "$trust_choice" != "N" ]]; then
+        if [ "$(uname -s)" = "Darwin" ]; then
+            if sudo security add-trusted-cert -d -r trustRoot \
+                -k /Library/Keychains/System.keychain "$cert_path" 2>/dev/null; then
+                echo -e "  ${GREEN}Certificate trusted${NC}"
+            else
+                echo -e "  ${YELLOW}Could not auto-trust - use manual command above${NC}"
+            fi
+        else
+            if sudo cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
+               sudo update-ca-certificates 2>/dev/null; then
+                echo -e "  ${GREEN}Certificate trusted${NC}"
+            else
+                echo -e "  ${YELLOW}Could not auto-trust - use manual commands above${NC}"
+            fi
+        fi
+    fi
+}
+
+check_health() {
+    local port="$1"
+    sleep 2
+
+    # Try curl with insecure flag (self-signed cert)
+    if curl -fsSk "https://localhost:$port/api/health" >/dev/null 2>&1; then
+        echo -e "  ${GREEN}Health check passed${NC}"
+        return 0
+    else
+        echo -e "  ${YELLOW}Health check pending - check logs if issues persist${NC}"
+        return 1
+    fi
 }
 
 install_binary() {
@@ -464,19 +572,27 @@ install_binary() {
     # Create install directory
     mkdir -p "$install_dir"
 
-    # Copy web binary
-    cp "$temp_dir/mt" "$install_dir/"
+    # Copy web binary with retry (handles file lock during updates)
+    if ! copy_with_retry "$temp_dir/mt" "$install_dir/mt"; then
+        echo -e "${RED}Failed to copy mt - file locked${NC}"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
     chmod +x "$install_dir/mt"
 
     # Copy tty host binary (terminal subprocess)
     if [ -f "$temp_dir/mthost" ]; then
-        cp "$temp_dir/mthost" "$install_dir/"
+        if ! copy_with_retry "$temp_dir/mthost" "$install_dir/mthost"; then
+            echo -e "${RED}Failed to copy mthost - file locked${NC}"
+            rm -rf "$temp_dir"
+            exit 1
+        fi
         chmod +x "$install_dir/mthost"
     fi
 
     # Copy version manifest
     if [ -f "$temp_dir/version.json" ]; then
-        cp "$temp_dir/version.json" "$install_dir/"
+        copy_with_retry "$temp_dir/version.json" "$install_dir/version.json" || true
     fi
 
     # Cleanup
@@ -518,12 +634,39 @@ install_as_service() {
         MT_BINARY_PATH="$install_dir/mt" prompt_password
     fi
 
-    # Generate certificate now that binary is installed
-    if ! generate_certificate "$install_dir" "$settings_dir"; then
+    # Hash pending password now that binary is installed
+    if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+        local plain_password="${PASSWORD_HASH#__PENDING__:}"
+        local hash
+        hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            PASSWORD_HASH="$hash"
+        else
+            echo -e "  ${RED}Failed to hash password${NC}"
+            exit 1
+        fi
+    fi
+
+    # Store password in secrets.bin (secure storage)
+    if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
+        if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode 2>/dev/null; then
+            echo -e "  ${GRAY}Password: stored securely${NC}"
+        else
+            echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
+        fi
+    fi
+
+    # Check existing certificate before generating
+    local existing_cert="$settings_dir/midterm-cert.pem"
+    if check_existing_certificate "$existing_cert"; then
+        CERT_PATH="$existing_cert"
+    elif ! generate_certificate "$install_dir" "$settings_dir"; then
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
     else
         # Show fingerprint so user can verify connections from other devices
         show_certificate_fingerprint "$CERT_PATH"
+        # Offer to trust certificate
+        prompt_certificate_trust "$CERT_PATH"
     fi
 
     # Write settings with runAsUser info
@@ -536,6 +679,9 @@ install_as_service() {
     else
         install_systemd "$install_dir"
     fi
+
+    # Health check after service start
+    check_health "$PORT"
 
     # Create uninstall script
     create_uninstall_script "$lib_dir" true
@@ -688,15 +834,42 @@ install_as_user() {
         MT_BINARY_PATH="$install_dir/mt" prompt_password
     fi
 
-    # Generate certificate
-    if ! generate_certificate "$install_dir" "$settings_dir"; then
+    # Hash pending password now that binary is installed
+    if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+        local plain_password="${PASSWORD_HASH#__PENDING__:}"
+        local hash
+        hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            PASSWORD_HASH="$hash"
+        else
+            echo -e "  ${RED}Failed to hash password${NC}"
+            exit 1
+        fi
+    fi
+
+    # Store password in secrets.bin (secure storage)
+    if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
+        if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash 2>/dev/null; then
+            echo -e "  ${GRAY}Password: stored securely${NC}"
+        else
+            echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
+        fi
+    fi
+
+    # Check existing certificate before generating
+    local existing_cert="$settings_dir/midterm-cert.pem"
+    if check_existing_certificate "$existing_cert"; then
+        CERT_PATH="$existing_cert"
+    elif ! generate_certificate "$install_dir" "$settings_dir"; then
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
     else
         # Show fingerprint so user can verify connections from other devices
         show_certificate_fingerprint "$CERT_PATH"
+        # Offer to trust certificate (user mode - no sudo available, may fail)
+        prompt_certificate_trust "$CERT_PATH"
     fi
 
-    # Write user settings with password
+    # Write user settings
     write_user_settings
 
     # Check if ~/.local/bin is in PATH

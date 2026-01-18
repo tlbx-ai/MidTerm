@@ -15,6 +15,15 @@ public static class MuxProtocol
     public const int OutputHeaderSize = 13; // HeaderSize + 4 bytes (cols + rows)
     public const int MaxFrameSize = 64 * 1024;
 
+    // Protocol versioning
+    public const ushort ProtocolVersion = 1;
+    public const ushort MinCompatibleProtocolVersion = 1;
+
+    // Custom WebSocket close codes (4000-4999 range)
+    public const int CloseAuthFailed = 4401;
+    public const int CloseServerShutdown = 4503;
+    public const int CloseProtocolError = 4400;
+
     public const byte TypeTerminalOutput = 0x01;
     public const byte TypeTerminalInput = 0x02;
     public const byte TypeResize = 0x03;
@@ -25,6 +34,7 @@ public static class MuxProtocol
     public const byte TypeActiveSessionHint = 0x08; // Client -> Server: hint which session is active (for priority)
     public const byte TypeProcessEvent = 0x09; // Server -> Client: process lifecycle event (fork/exec/exit)
     public const byte TypeForegroundChange = 0x0A; // Server -> Client: foreground process changed
+    public const byte TypeDataLoss = 0x0B; // Server -> Client: background session dropped data, resync recommended
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
@@ -185,6 +195,20 @@ public static class MuxProtocol
         frame[0] = TypeForegroundChange;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
         jsonPayload.CopyTo(frame.AsSpan(HeaderSize));
+        return frame;
+    }
+
+    /// <summary>
+    /// Creates a data loss notification frame.
+    /// Format: [type:1][sessionId:8][droppedBytes:4]
+    /// Client should request buffer refresh when receiving this.
+    /// </summary>
+    public static byte[] CreateDataLossFrame(string sessionId, int droppedBytes)
+    {
+        var frame = new byte[HeaderSize + 4];
+        frame[0] = TypeDataLoss;
+        WriteSessionId(frame.AsSpan(1, 8), sessionId);
+        BitConverter.TryWriteBytes(frame.AsSpan(HeaderSize, 4), droppedBytes);
         return frame;
     }
 

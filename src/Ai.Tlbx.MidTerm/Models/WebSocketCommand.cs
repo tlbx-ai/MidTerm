@@ -29,6 +29,9 @@ public sealed class WsCommandPayload
     public string? Name { get; init; }
     public bool? Auto { get; init; }
 
+    // session.reorder - array of session IDs in desired order
+    public List<string>? SessionIds { get; init; }
+
     // settings.save - full settings object
     public Settings.MidTermSettingsPublic? Settings { get; init; }
 }

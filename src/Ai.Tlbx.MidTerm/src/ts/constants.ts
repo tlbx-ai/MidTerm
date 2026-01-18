@@ -24,6 +24,12 @@ export const JS_BUILD_VERSION: string =
 /** Mux protocol header size (1 byte type + 8 byte session ID) */
 export const MUX_HEADER_SIZE = 9;
 
+/** Mux protocol version - increment when making breaking protocol changes */
+export const MUX_PROTOCOL_VERSION = 1;
+
+/** Minimum compatible protocol version */
+export const MUX_MIN_COMPATIBLE_VERSION = 1;
+
 /** Mux protocol message types */
 export const MUX_TYPE_OUTPUT = 0x01; // Server -> Client: Terminal output (includes dimensions)
 export const MUX_TYPE_INPUT = 0x02; // Client -> Server: Terminal input
@@ -34,6 +40,12 @@ export const MUX_TYPE_COMPRESSED_OUTPUT = 0x07; // Server -> Client: GZip compre
 export const MUX_TYPE_ACTIVE_HINT = 0x08; // Client -> Server: Hint which session is active
 export const MUX_TYPE_PROCESS_EVENT = 0x09; // Server -> Client: Process lifecycle event
 export const MUX_TYPE_FOREGROUND_CHANGE = 0x0a; // Server -> Client: Foreground process changed
+export const MUX_TYPE_DATA_LOSS = 0x0b; // Server -> Client: Background session lost data
+
+// Custom WebSocket close codes (4000-4999 range)
+export const WS_CLOSE_AUTH_FAILED = 4401;
+export const WS_CLOSE_SERVER_SHUTDOWN = 4503;
+export const WS_CLOSE_PROTOCOL_ERROR = 4400;
 
 // =============================================================================
 // Terminal Themes

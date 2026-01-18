@@ -265,7 +265,7 @@ function setupVisibilityChangeHandler(): void {
 // Session Management
 // =============================================================================
 
-function createSession(): void {
+async function createSession(): Promise<void> {
   let cols = currentSettings?.defaultCols ?? 120;
   let rows = currentSettings?.defaultRows ?? 30;
 
@@ -274,7 +274,7 @@ function createSession(): void {
 
   if (dom.terminalsArea) {
     const fontSize = currentSettings?.fontSize ?? 14;
-    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
+    const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;
@@ -499,14 +499,14 @@ function promptRenameSession(sessionId: string): void {
   }
 }
 
-function spawnFromHistory(entry: LaunchEntry): void {
+async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
   let cols = currentSettings?.defaultCols ?? 120;
   let rows = currentSettings?.defaultRows ?? 30;
 
   if (dom.terminalsArea) {
     const fontSize = currentSettings?.fontSize ?? 14;
     const logId = 'history-' + crypto.randomUUID().slice(0, 8);
-    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
+    const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;

@@ -93,12 +93,45 @@ public sealed class StateWebSocketHandler
             await SendJsonAsync(response, AppJsonContext.Default.WsCommandResponse);
         }
 
-        void OnStateChange() => _ = SendStateAsync();
+        async void OnStateChange()
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    await SendStateAsync();
+                    return;
+                }
+                catch (WebSocketException) when (attempt < 2)
+                {
+                    await Task.Delay(100);
+                }
+                catch
+                {
+                    return;
+                }
+            }
+        }
 
-        void OnUpdateAvailable(UpdateInfo update)
+        async void OnUpdateAvailable(UpdateInfo update)
         {
             lastUpdate = update;
-            _ = SendStateAsync();
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    await SendStateAsync();
+                    return;
+                }
+                catch (WebSocketException) when (attempt < 2)
+                {
+                    await Task.Delay(100);
+                }
+                catch
+                {
+                    return;
+                }
+            }
         }
 
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
@@ -157,7 +190,13 @@ public sealed class StateWebSocketHandler
                 try
                 {
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, cts.Token);
+                    var closeCode = shutdownToken.IsCancellationRequested
+                        ? (WebSocketCloseStatus)MuxProtocol.CloseServerShutdown
+                        : WebSocketCloseStatus.NormalClosure;
+                    var closeMessage = shutdownToken.IsCancellationRequested
+                        ? "Server shutting down"
+                        : null;
+                    await ws.CloseAsync(closeCode, closeMessage, cts.Token);
                 }
                 catch
                 {
@@ -197,6 +236,10 @@ public sealed class StateWebSocketHandler
 
                 case "session.rename":
                     await HandleSessionRenameAsync(cmd, sendResponse);
+                    break;
+
+                case "session.reorder":
+                    HandleSessionReorder(cmd, sendResponse);
                     break;
 
                 case "settings.save":
@@ -266,6 +309,19 @@ public sealed class StateWebSocketHandler
         var isManual = cmd.Payload?.Auto != true;
         var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual);
         await sendResponse(cmd.Id, renamed, null, renamed ? null : "Session not found");
+    }
+
+    private async void HandleSessionReorder(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    {
+        var sessionIds = cmd.Payload?.SessionIds;
+        if (sessionIds is null || sessionIds.Count == 0)
+        {
+            await sendResponse(cmd.Id, false, null, "sessionIds required");
+            return;
+        }
+
+        var reordered = _sessionManager.ReorderSessions(sessionIds);
+        await sendResponse(cmd.Id, reordered, null, reordered ? null : "Invalid session IDs");
     }
 
     private async Task HandleSettingsSaveAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)

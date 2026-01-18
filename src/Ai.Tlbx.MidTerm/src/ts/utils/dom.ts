@@ -40,6 +40,36 @@ export function debounce<T extends (...args: unknown[]) => void>(
 }
 
 /**
+ * Create a throttled version of a function that fires immediately,
+ * then at most once per interval, with a trailing call to capture final state.
+ */
+export function throttle<T extends (...args: unknown[]) => void>(
+  fn: T,
+  interval: number,
+): (...args: Parameters<T>) => void {
+  let lastCall = 0;
+  let trailingTimeoutId: number | undefined;
+  return (...args: Parameters<T>) => {
+    const now = performance.now();
+    const elapsed = now - lastCall;
+
+    if (trailingTimeoutId !== undefined) {
+      clearTimeout(trailingTimeoutId);
+    }
+
+    if (elapsed >= interval) {
+      lastCall = now;
+      fn(...args);
+    }
+
+    trailingTimeoutId = window.setTimeout(() => {
+      lastCall = performance.now();
+      fn(...args);
+    }, interval);
+  };
+}
+
+/**
  * Format bytes as human-readable string
  */
 export function formatBytes(bytes: number): string {

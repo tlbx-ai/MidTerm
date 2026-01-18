@@ -9,11 +9,12 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// <summary>
 /// WebSocket client with per-session output buffering.
 /// Active session gets immediate delivery; background sessions batch for efficiency.
+/// Uses ArrayPool for zero-allocation buffering.
 /// </summary>
 public sealed class MuxClient : IAsyncDisposable
 {
     private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
-    private const int MaxBufferBytesPerSession = 65536;
+    private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
     private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(500);
@@ -33,13 +34,77 @@ public sealed class MuxClient : IAsyncDisposable
 
     private readonly record struct OutputItem(string SessionId, int Cols, int Rows, byte[] Data);
 
-    private sealed class SessionBuffer
+    /// <summary>
+    /// Pooled contiguous buffer for session output. Uses ArrayPool to avoid GC pressure.
+    /// </summary>
+    private sealed class SessionBuffer : IDisposable
     {
-        public Queue<byte[]> DataChunks { get; } = new();
-        public int TotalBytes { get; set; }
+        private byte[] _buffer;
+        private int _position;
+        private bool _disposed;
+
+        public int TotalBytes => _position;
         public int LastCols { get; set; }
         public int LastRows { get; set; }
         public long LastFlushTicks { get; set; } = Environment.TickCount64;
+        public int DroppedBytes { get; set; }
+
+        public SessionBuffer()
+        {
+            _buffer = ArrayPool<byte>.Shared.Rent(MaxBufferBytesPerSession);
+        }
+
+        public void Write(ReadOnlySpan<byte> data)
+        {
+            if (_disposed) return;
+
+            // If this write would exceed capacity, drop oldest data by shifting
+            if (_position + data.Length > _buffer.Length)
+            {
+                var overflow = _position + data.Length - _buffer.Length;
+
+                if (overflow >= _position)
+                {
+                    // Need to drop everything - incoming data is larger than buffer or fills it
+                    DroppedBytes += _position;
+                    _position = 0;
+
+                    // If incoming data itself exceeds buffer, truncate to most recent
+                    if (data.Length > _buffer.Length)
+                    {
+                        DroppedBytes += data.Length - _buffer.Length;
+                        data = data.Slice(data.Length - _buffer.Length);
+                    }
+                }
+                else
+                {
+                    // Shift buffer to drop oldest bytes, keep most recent
+                    DroppedBytes += overflow;
+                    var keepBytes = _position - overflow;
+                    Buffer.BlockCopy(_buffer, overflow, _buffer, 0, keepBytes);
+                    _position = keepBytes;
+                }
+            }
+
+            data.CopyTo(_buffer.AsSpan(_position));
+            _position += data.Length;
+        }
+
+        public ReadOnlySpan<byte> GetData() => _buffer.AsSpan(0, _position);
+
+        public void Reset() => _position = 0;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            if (_buffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(_buffer);
+                _buffer = null!;
+            }
+        }
     }
 
     public MuxClient(string id, WebSocket webSocket)
@@ -109,10 +174,13 @@ public sealed class MuxClient : IAsyncDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                // 1. Process pending session removals
+                // 1. Process pending session removals (dispose buffers to return to pool)
                 while (_sessionsToRemove.TryDequeue(out var sessionId))
                 {
-                    _sessionBuffers.Remove(sessionId);
+                    if (_sessionBuffers.Remove(sessionId, out var buffer))
+                    {
+                        buffer.Dispose();
+                    }
                 }
 
                 // 2. Drain all immediately available items into buffers
@@ -156,16 +224,7 @@ public sealed class MuxClient : IAsyncDisposable
             _sessionBuffers[item.SessionId] = buffer;
         }
 
-        // Enforce per-session limit (drop oldest if exceeded)
-        while (buffer.TotalBytes + item.Data.Length > MaxBufferBytesPerSession
-               && buffer.DataChunks.Count > 0)
-        {
-            var oldest = buffer.DataChunks.Dequeue();
-            buffer.TotalBytes -= oldest.Length;
-        }
-
-        buffer.DataChunks.Enqueue(item.Data);
-        buffer.TotalBytes += item.Data.Length;
+        buffer.Write(item.Data);
         buffer.LastCols = item.Cols;
         buffer.LastRows = item.Rows;
     }
@@ -176,7 +235,7 @@ public sealed class MuxClient : IAsyncDisposable
 
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {
-            if (buffer.DataChunks.Count == 0) continue;
+            if (buffer.TotalBytes == 0) continue;
 
             bool shouldFlush;
             if (sessionId == _activeSessionId)
@@ -202,36 +261,27 @@ public sealed class MuxClient : IAsyncDisposable
 
     private async Task FlushBufferAsync(string sessionId, SessionBuffer buffer)
     {
-        if (buffer.DataChunks.Count == 0) return;
+        if (buffer.TotalBytes == 0) return;
 
-        // Combine all chunks into pooled buffer (reduces GC pressure)
-        var totalLen = buffer.DataChunks.Sum(c => c.Length);
-        var combined = ArrayPool<byte>.Shared.Rent(totalLen);
-        try
+        // If data was dropped, notify client before sending (so client can request resync)
+        if (buffer.DroppedBytes > 0)
         {
-            var offset = 0;
-            foreach (var chunk in buffer.DataChunks)
-            {
-                Buffer.BlockCopy(chunk, 0, combined, offset, chunk.Length);
-                offset += chunk.Length;
-            }
-
-            // Create frame using exact span (rented buffer may be larger)
-            var data = combined.AsSpan(0, totalLen);
-            var frame = totalLen > MuxProtocol.CompressionThreshold
-                ? MuxProtocol.CreateCompressedOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, data)
-                : MuxProtocol.CreateOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, data);
-
-            // Send first, clear after - prevents data loss on send failure
-            await SendFrameAsync(frame).ConfigureAwait(false);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(combined);
+            var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes);
+            await SendFrameAsync(lossFrame).ConfigureAwait(false);
+            Log.Warn(() => $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes (buffer overflow)");
+            buffer.DroppedBytes = 0;
         }
 
-        buffer.DataChunks.Clear();
-        buffer.TotalBytes = 0;
+        // Get data directly from pooled buffer (zero-copy until frame creation)
+        var data = buffer.GetData();
+        var frame = data.Length > MuxProtocol.CompressionThreshold
+            ? MuxProtocol.CreateCompressedOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, data)
+            : MuxProtocol.CreateOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, data);
+
+        // Send first, reset after - prevents data loss on send failure
+        await SendFrameAsync(frame).ConfigureAwait(false);
+
+        buffer.Reset();
     }
 
     private async Task SendFrameAsync(byte[] data)
@@ -303,6 +353,13 @@ public sealed class MuxClient : IAsyncDisposable
         {
             // Ignore shutdown errors
         }
+
+        // Return all pooled buffers
+        foreach (var buffer in _sessionBuffers.Values)
+        {
+            buffer.Dispose();
+        }
+        _sessionBuffers.Clear();
 
         _cts.Dispose();
         _sendLock.Dispose();

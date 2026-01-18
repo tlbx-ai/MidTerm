@@ -127,6 +127,14 @@ export function connectStateWebSocket(): void {
 
   ws.onclose = () => {
     $stateWsConnected.set(false);
+
+    // Reject all pending commands immediately (don't wait for timeout)
+    pendingCommands.forEach((cmd, id) => {
+      clearTimeout(cmd.timeout);
+      cmd.reject(new Error('Connection lost'));
+      pendingCommands.delete(id);
+    });
+
     scheduleStateReconnect();
   };
 
@@ -295,4 +303,16 @@ export async function sendCommand<T = unknown>(
  */
 export function isStateConnected(): boolean {
   return stateWs !== null && stateWs.readyState === WebSocket.OPEN;
+}
+
+/**
+ * Persist session order to server.
+ * Fire-and-forget - failures are logged but not thrown.
+ */
+export function persistSessionOrder(sessionIds: string[]): void {
+  if (!isStateConnected()) return;
+
+  sendCommand('session.reorder', { sessionIds }).catch((e) => {
+    log.warn(() => `Failed to persist session order: ${e}`);
+  });
 }

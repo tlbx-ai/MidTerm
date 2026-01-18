@@ -25,7 +25,9 @@ export interface Session {
   foregroundPid?: number;
   foregroundName?: string;
   foregroundCommandLine?: string;
-  /** Client-side ordering index (preserves server order) */
+  /** Server-side ordering index (persists across reconnects) */
+  order?: number;
+  /** Client-side ordering index (used for local sorting) */
   _order?: number;
 }
 
@@ -261,6 +263,9 @@ export interface WsCommandPayload {
   // session.rename
   name?: string | null;
   auto?: boolean;
+
+  // session.reorder
+  sessionIds?: string[];
 
   // settings.save
   settings?: Settings;

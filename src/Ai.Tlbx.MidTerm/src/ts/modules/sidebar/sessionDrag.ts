@@ -6,6 +6,7 @@
 
 import { dom } from '../../state';
 import { reorderSessions, $sessionList } from '../../stores';
+import { persistSessionOrder } from '../comms/stateChannel';
 
 let draggedSessionId: string | null = null;
 let draggedElement: HTMLElement | null = null;
@@ -149,6 +150,10 @@ function handleDrop(e: DragEvent): void {
 
   reorderSessions(fromIndex, toIndex);
   clearAllDropIndicators();
+
+  // Persist new order to server
+  const newOrder = $sessionList.get().map((s) => s.id);
+  persistSessionOrder(newOrder);
 }
 
 function clearAllDropIndicators(): void {

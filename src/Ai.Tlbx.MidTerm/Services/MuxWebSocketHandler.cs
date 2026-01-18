@@ -61,10 +61,12 @@ public sealed class MuxWebSocketHandler
 
     private async Task SendInitFrameAsync(MuxClient client, string clientId)
     {
-        var initFrame = new byte[MuxProtocol.HeaderSize + 32];
+        // Init frame format: [0xFF][clientId:8][protocolVersion:2][fullClientId:32]
+        var initFrame = new byte[MuxProtocol.HeaderSize + 2 + 32];
         initFrame[0] = 0xFF;
         Encoding.ASCII.GetBytes(clientId.AsSpan(0, 8), initFrame.AsSpan(1, 8));
-        Encoding.UTF8.GetBytes(clientId, initFrame.AsSpan(MuxProtocol.HeaderSize));
+        BitConverter.TryWriteBytes(initFrame.AsSpan(MuxProtocol.HeaderSize, 2), MuxProtocol.ProtocolVersion);
+        Encoding.UTF8.GetBytes(clientId, initFrame.AsSpan(MuxProtocol.HeaderSize + 2));
         await client.TrySendAsync(initFrame);
     }
 
@@ -194,6 +196,10 @@ public sealed class MuxWebSocketHandler
             case MuxProtocol.TypeActiveSessionHint:
                 client.SetActiveSession(sessionId);
                 break;
+
+            default:
+                Log.Warn(() => $"[Mux] Unknown frame type 0x{type:X2} from {client.Id}");
+                break;
         }
     }
 
@@ -237,14 +243,20 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private static async Task CloseWebSocketAsync(WebSocket ws)
+    private async Task CloseWebSocketAsync(WebSocket ws)
     {
         if (ws.State == WebSocketState.Open)
         {
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, cts.Token);
+                var closeCode = _shutdownService.Token.IsCancellationRequested
+                    ? (WebSocketCloseStatus)MuxProtocol.CloseServerShutdown
+                    : WebSocketCloseStatus.NormalClosure;
+                var closeMessage = _shutdownService.Token.IsCancellationRequested
+                    ? "Server shutting down"
+                    : null;
+                await ws.CloseAsync(closeCode, closeMessage, cts.Token);
             }
             catch
             {

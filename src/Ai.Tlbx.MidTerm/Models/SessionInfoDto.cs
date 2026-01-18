@@ -20,4 +20,5 @@ public sealed class SessionInfoDto
     public int? ForegroundPid { get; set; }
     public string? ForegroundName { get; set; }
     public string? ForegroundCommandLine { get; set; }
+    public int Order { get; set; }
 }

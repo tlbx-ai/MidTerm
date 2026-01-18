@@ -159,9 +159,21 @@ public static class ServerSetup
             ContentTypeProvider = contentTypeProvider,
             OnPrepareResponse = ctx =>
             {
-                ctx.Context.Response.Headers.Remove("ETag");
-                ctx.Context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
-                ctx.Context.Response.Headers.Pragma = "no-cache";
+                var path = ctx.Context.Request.Path.Value ?? "";
+                var isFont = path.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase)
+                          || path.EndsWith(".woff", StringComparison.OrdinalIgnoreCase)
+                          || path.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase);
+
+                if (isFont)
+                {
+                    ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+                }
+                else
+                {
+                    ctx.Context.Response.Headers.Remove("ETag");
+                    ctx.Context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                    ctx.Context.Response.Headers.Pragma = "no-cache";
+                }
             }
         });
 

@@ -36,6 +36,9 @@ export let muxWs: WebSocket | null = null;
 /** Mux WebSocket reconnect timer */
 export let muxReconnectTimer: number | undefined;
 
+/** Server's mux protocol version (received in init frame) */
+export let serverProtocolVersion: number | null = null;
+
 // =============================================================================
 // WebSocket Traffic Metrics
 // =============================================================================
@@ -128,6 +131,10 @@ export function setMuxWs(ws: WebSocket | null): void {
 
 export function setMuxReconnectTimer(timer: number | undefined): void {
   muxReconnectTimer = timer;
+}
+
+export function setServerProtocolVersion(version: number | null): void {
+  serverProtocolVersion = version;
 }
 
 export function setFontsReadyPromise(promise: Promise<void>): void {

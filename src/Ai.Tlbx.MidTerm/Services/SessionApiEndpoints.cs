@@ -45,12 +45,11 @@ public static class SessionApiEndpoints
 
         app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request) =>
         {
-            var session = sessionManager.GetSession(id);
-            if (session is null)
+            var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows);
+            if (!success)
             {
                 return Results.NotFound();
             }
-            await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows);
             return Results.Json(new ResizeResponse
             {
                 Accepted = true,

@@ -40,7 +40,7 @@ export const $renamingSessionId = atom<string | null>(null);
 
 /**
  * Sessions as a sorted array for rendering.
- * Sorted by _order to preserve server ordering.
+ * Sorted by _order (which is set from server's order field on load).
  */
 export const $sessionList = computed($sessions, (sessions) => {
   return Object.values(sessions).sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
@@ -164,12 +164,12 @@ export function removeSession(sessionId: string): void {
 /**
  * Set all sessions (replaces entire collection).
  * Used when receiving session list from server.
- * Assigns _order based on array index to preserve server ordering.
+ * Uses server's order field if present, otherwise array index.
  */
 export function setSessions(sessionList: Session[]): void {
   const sessionsMap: Record<string, Session> = {};
   sessionList.forEach((session, i) => {
-    sessionsMap[session.id] = { ...session, _order: i };
+    sessionsMap[session.id] = { ...session, _order: session.order ?? i };
   });
   $sessions.set(sessionsMap);
 }

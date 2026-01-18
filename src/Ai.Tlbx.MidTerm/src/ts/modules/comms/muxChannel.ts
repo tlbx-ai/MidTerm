@@ -12,6 +12,8 @@ import type { TerminalState } from '../../types';
 import { createLogger } from '../logging';
 import {
   MUX_HEADER_SIZE,
+  MUX_PROTOCOL_VERSION,
+  MUX_MIN_COMPATIBLE_VERSION,
   MUX_TYPE_OUTPUT,
   MUX_TYPE_INPUT,
   MUX_TYPE_RESIZE,
@@ -21,6 +23,8 @@ import {
   MUX_TYPE_ACTIVE_HINT,
   MUX_TYPE_PROCESS_EVENT,
   MUX_TYPE_FOREGROUND_CHANGE,
+  MUX_TYPE_DATA_LOSS,
+  WS_CLOSE_SERVER_SHUTDOWN,
 } from '../../constants';
 import type { ProcessEventPayload, ForegroundChangePayload } from '../../types';
 import { handleProcessEvent, handleForegroundChange } from '../process';
@@ -38,12 +42,39 @@ import {
   sessionsNeedingResync,
   setMuxWs,
   setMuxReconnectTimer,
+  setServerProtocolVersion,
   addWsRxBytes,
   addWsTxBytes,
 } from '../../state';
-import { $muxWsConnected, $muxHasConnected, $activeSessionId } from '../../stores';
+import {
+  $muxWsConnected,
+  $muxHasConnected,
+  $activeSessionId,
+  $stateWsConnected,
+} from '../../stores';
 
 const log = createLogger('mux');
+
+/**
+ * Fetch fresh session list from server via REST API.
+ * Used to ensure state consistency after mux reconnect.
+ */
+async function refreshSessionList(): Promise<void> {
+  try {
+    const response = await fetch('/api/sessions');
+    if (!response.ok) return;
+
+    const data = await response.json();
+    const sessions = data?.sessions ?? [];
+
+    // Import dynamically to avoid circular dependency
+    const { handleStateUpdate } = await import('./stateChannel');
+    handleStateUpdate(sessions);
+    log.info(() => `Refreshed session list: ${sessions.length} sessions`);
+  } catch (e) {
+    log.warn(() => `Failed to refresh session list: ${e}`);
+  }
+}
 
 // Forward declarations for functions from other modules
 let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
@@ -142,10 +173,11 @@ async function processOneFrame(item: OutputFrameItem): Promise<void> {
       }
       const frames = pendingOutputFrames.get(item.sessionId)!;
       if (frames.length >= MAX_PENDING_FRAMES_PER_SESSION) {
-        // Overflow: partial data is useless for TUI apps, mark for full resync
-        log.warn(() => `Pending frames overflow for ${item.sessionId}, scheduling resync`);
+        // Overflow: partial data is useless for TUI apps, request immediate resync
+        log.warn(() => `Pending frames overflow for ${item.sessionId}, requesting buffer refresh`);
         sessionsNeedingResync.add(item.sessionId);
         pendingOutputFrames.delete(item.sessionId);
+        requestBufferRefresh(item.sessionId);
         return;
       }
       frames.push(bufferedPayload);
@@ -256,6 +288,12 @@ export function connectMuxWebSocket(): void {
         state.serverRows = 0;
         // Server pushes all buffers on connect via SendInitialBuffersAsync
       });
+
+      // If state WS is connected, fetch fresh session list to ensure consistency
+      // (state WS may have missed updates while mux was disconnected)
+      if ($stateWsConnected.get()) {
+        refreshSessionList();
+      }
     } else {
       log.info(() => 'Connected (first connection)');
     }
@@ -282,6 +320,33 @@ export function connectMuxWebSocket(): void {
     if (data.length < MUX_HEADER_SIZE) return;
 
     const type = data[0];
+
+    // Handle init frame (0xFF) - contains protocol version
+    if (type === 0xff) {
+      // Init frame format: [0xFF][clientId:8][protocolVersion:2][fullClientId:32]
+      if (data.length >= MUX_HEADER_SIZE + 2) {
+        const serverVersion = data[MUX_HEADER_SIZE]! | (data[MUX_HEADER_SIZE + 1]! << 8);
+        setServerProtocolVersion(serverVersion);
+        log.info(
+          () =>
+            `Server protocol version: ${serverVersion}, client version: ${MUX_PROTOCOL_VERSION}`,
+        );
+
+        if (serverVersion < MUX_MIN_COMPATIBLE_VERSION) {
+          log.error(
+            () =>
+              `Server protocol version ${serverVersion} is below minimum ${MUX_MIN_COMPATIBLE_VERSION}`,
+          );
+        } else if (serverVersion > MUX_PROTOCOL_VERSION) {
+          log.warn(
+            () =>
+              `Server uses newer protocol (v${serverVersion}), client is v${MUX_PROTOCOL_VERSION}`,
+          );
+        }
+      }
+      return;
+    }
+
     const sessionId = decodeSessionId(data, 1);
     const payload = data.slice(MUX_HEADER_SIZE);
 
@@ -323,11 +388,29 @@ export function connectMuxWebSocket(): void {
       } catch (e) {
         log.error(() => `Failed to parse foreground change: ${e}`);
       }
+    } else if (type === MUX_TYPE_DATA_LOSS) {
+      const droppedBytes =
+        payload.length >= 4
+          ? payload[0]! | (payload[1]! << 8) | (payload[2]! << 16) | (payload[3]! << 24)
+          : 0;
+      log.warn(
+        () => `Data loss: session ${sessionId} dropped ${droppedBytes} bytes, requesting resync`,
+      );
+      sessionsNeedingResync.add(sessionId);
+      requestBufferRefresh(sessionId);
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     $muxWsConnected.set(false);
+
+    // Log close reason
+    if (event.code === WS_CLOSE_SERVER_SHUTDOWN) {
+      log.info(() => 'Server shutting down, will reconnect');
+    } else if (event.code !== 1000 && event.code !== 1001) {
+      log.warn(() => `WebSocket closed: code=${event.code}, reason=${event.reason || 'none'}`);
+    }
+
     scheduleMuxReconnect();
   };
 
