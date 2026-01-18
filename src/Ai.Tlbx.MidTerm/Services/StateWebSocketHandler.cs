@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -158,11 +159,14 @@ public sealed class StateWebSocketHandler
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
-                        messageBuffer.AddRange(buffer.AsSpan(0, result.Count).ToArray());
+                        var existingLen = messageBuffer.Count;
+                        CollectionsMarshal.SetCount(messageBuffer, existingLen + result.Count);
+                        buffer.AsSpan(0, result.Count).CopyTo(
+                            CollectionsMarshal.AsSpan(messageBuffer).Slice(existingLen));
 
                         if (result.EndOfMessage)
                         {
-                            var messageJson = Encoding.UTF8.GetString(messageBuffer.ToArray());
+                            var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
                             await HandleCommandAsync(messageJson, SendCommandResponseAsync);

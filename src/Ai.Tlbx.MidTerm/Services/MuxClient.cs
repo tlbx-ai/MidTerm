@@ -32,7 +32,7 @@ public sealed class MuxClient : IAsyncDisposable
     public string Id { get; }
     public WebSocket WebSocket { get; }
 
-    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, byte[] Data);
+    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, byte[] Data, int Length);
 
     /// <summary>
     /// Pooled contiguous buffer for session output. Uses ArrayPool to avoid GC pressure.
@@ -123,7 +123,7 @@ public sealed class MuxClient : IAsyncDisposable
     /// <summary>
     /// Queue raw terminal output for buffered delivery.
     /// </summary>
-    public void QueueOutput(string sessionId, int cols, int rows, byte[] data)
+    public void QueueOutput(string sessionId, int cols, int rows, byte[] buffer, int length)
     {
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
@@ -138,7 +138,7 @@ public sealed class MuxClient : IAsyncDisposable
             }
         }
 
-        _inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, data));
+        _inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, buffer, length));
     }
 
     /// <summary>
@@ -224,7 +224,7 @@ public sealed class MuxClient : IAsyncDisposable
             _sessionBuffers[item.SessionId] = buffer;
         }
 
-        buffer.Write(item.Data);
+        buffer.Write(item.Data.AsSpan(0, item.Length));
         buffer.LastCols = item.Cols;
         buffer.LastRows = item.Rows;
     }
@@ -274,12 +274,27 @@ public sealed class MuxClient : IAsyncDisposable
 
         // Get data directly from pooled buffer (zero-copy until frame creation)
         var data = buffer.GetData();
-        var frame = data.Length > MuxProtocol.CompressionThreshold
-            ? MuxProtocol.CreateCompressedOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, data)
-            : MuxProtocol.CreateOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, data);
 
-        // Send first, reset after - prevents data loss on send failure
-        await SendFrameAsync(frame).ConfigureAwait(false);
+        // Rent buffer for frame, write, send, return
+        var useCompression = data.Length > MuxProtocol.CompressionThreshold;
+        var maxFrameSize = useCompression
+            ? MuxProtocol.CompressedOutputHeaderSize + data.Length + 100
+            : MuxProtocol.OutputHeaderSize + data.Length;
+
+        var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
+        try
+        {
+            var frameLength = useCompression
+                ? MuxProtocol.WriteCompressedOutputFrameInto(sessionId, buffer.LastCols, buffer.LastRows, data, frameBuffer)
+                : MuxProtocol.WriteOutputFrameInto(sessionId, buffer.LastCols, buffer.LastRows, data, frameBuffer);
+
+            // Send first, reset after - prevents data loss on send failure
+            await SendFrameAsync(frameBuffer, frameLength).ConfigureAwait(false);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(frameBuffer);
+        }
 
         buffer.Reset();
     }
@@ -292,6 +307,22 @@ public sealed class MuxClient : IAsyncDisposable
             if (WebSocket.State == WebSocketState.Open)
             {
                 await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    private async Task SendFrameAsync(byte[] data, int length)
+    {
+        await _sendLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (WebSocket.State == WebSocketState.Open)
+            {
+                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
             }
         }
         finally
@@ -325,6 +356,34 @@ public sealed class MuxClient : IAsyncDisposable
             if (WebSocket.State == WebSocketState.Open)
             {
                 await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(() => $"[MuxClient] {Id}: TrySend failed: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Send a frame directly (bypassing buffering) - used for init/sync frames with pooled buffers.
+    /// </summary>
+    public async Task<bool> TrySendAsync(byte[] data, int length)
+    {
+        if (WebSocket.State != WebSocketState.Open) return false;
+
+        await _sendLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (WebSocket.State == WebSocketState.Open)
+            {
+                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
                 return true;
             }
             return false;

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net.Sockets;
 #if WINDOWS
 using System.IO.Pipes;
@@ -211,18 +212,24 @@ public sealed class TtyHostClient : IAsyncDisposable
     {
         if (_disposed) return;
 
+        var frameSize = TtyHostProtocol.HeaderSize + data.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
         try
         {
             if (data.Length < 20)
             {
                 Log.Verbose(() => $"[IPC-SEND] {_sessionId}: {BitConverter.ToString(data.ToArray())}");
             }
-            var msg = TtyHostProtocol.CreateInputMessage(data.Span);
-            await WriteWithLockAsync(msg, ct).ConfigureAwait(false);
+            TtyHostProtocol.WriteInputFrameInto(data.Span, buffer.AsSpan(0, frameSize));
+            await WriteWithLockAsync(buffer, frameSize, ct).ConfigureAwait(false);
         }
         catch
         {
             TriggerReconnect();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -232,6 +239,19 @@ public sealed class TtyHostClient : IAsyncDisposable
         try
         {
             await WriteAsync(data, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async Task WriteWithLockAsync(byte[] data, int length, CancellationToken ct)
+    {
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await WriteAsync(data, length, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -397,109 +417,138 @@ public sealed class TtyHostClient : IAsyncDisposable
         await stream.WriteAsync(data, ct).ConfigureAwait(false);
     }
 
+    private async Task WriteAsync(byte[] data, int length, CancellationToken ct)
+    {
+        var stream = _stream;
+        if (stream is null || !IsConnected)
+        {
+            throw new IOException("Not connected");
+        }
+
+        await stream.WriteAsync(data.AsMemory(0, length), ct).ConfigureAwait(false);
+    }
+
     private async Task ReadLoopWithReconnectAsync(CancellationToken ct)
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
+        byte[]? rentedPayload = null;
 
-        while (!ct.IsCancellationRequested && !_disposed)
+        try
         {
-            try
+            while (!ct.IsCancellationRequested && !_disposed)
             {
-                if (!IsConnected)
-                {
-                    await Task.Delay(100, ct).ConfigureAwait(false);
-                    continue;
-                }
-
-                var stream = _stream;
-                if (stream is null) continue;
-
-                // Create cancellation that heartbeat can use to unblock us immediately
-                _readCancellation?.Dispose();
-                _readCancellation = new CancellationTokenSource();
-
-                // Use timeout on read to detect stale connections after standby/resume
-                // If the pipe is broken, ReadAsync may hang forever without throwing
-                using var readTimeoutCts = new CancellationTokenSource(ReadTimeoutMs);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, readTimeoutCts.Token, _readCancellation.Token);
-
-                int bytesRead;
                 try
                 {
-                    bytesRead = await stream.ReadAsync(headerBuffer, linkedCts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (_readCancellation?.IsCancellationRequested == true && !ct.IsCancellationRequested)
-                {
-                    continue;
-                }
-                catch (OperationCanceledException) when (readTimeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
-                {
-                    continue;
-                }
+                    if (!IsConnected)
+                    {
+                        await Task.Delay(100, ct).ConfigureAwait(false);
+                        continue;
+                    }
 
-                _lastDataReceived = DateTime.UtcNow;
-                if (bytesRead == 0)
-                {
-                    HandleDisconnect();
-                    continue;
-                }
+                    var stream = _stream;
+                    if (stream is null) continue;
 
-                while (bytesRead < TtyHostProtocol.HeaderSize)
-                {
-                    var more = await stream.ReadAsync(headerBuffer.AsMemory(bytesRead), ct).ConfigureAwait(false);
-                    if (more == 0)
+                    // Create cancellation that heartbeat can use to unblock us immediately
+                    _readCancellation?.Dispose();
+                    _readCancellation = new CancellationTokenSource();
+
+                    // Use timeout on read to detect stale connections after standby/resume
+                    // If the pipe is broken, ReadAsync may hang forever without throwing
+                    using var readTimeoutCts = new CancellationTokenSource(ReadTimeoutMs);
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, readTimeoutCts.Token, _readCancellation.Token);
+
+                    int bytesRead;
+                    try
+                    {
+                        bytesRead = await stream.ReadAsync(headerBuffer, linkedCts.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (_readCancellation?.IsCancellationRequested == true && !ct.IsCancellationRequested)
+                    {
+                        continue;
+                    }
+                    catch (OperationCanceledException) when (readTimeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                    {
+                        continue;
+                    }
+
+                    _lastDataReceived = DateTime.UtcNow;
+                    if (bytesRead == 0)
                     {
                         HandleDisconnect();
-                        break;
+                        continue;
                     }
-                    bytesRead += more;
-                }
 
-                if (bytesRead < TtyHostProtocol.HeaderSize) continue;
-
-                if (!TtyHostProtocol.TryReadHeader(headerBuffer, out var msgType, out var payloadLength))
-                {
-                    HandleDisconnect();
-                    break;
-                }
-
-                byte[] payloadBuffer = [];
-                if (payloadLength > 0)
-                {
-                    payloadBuffer = new byte[payloadLength];
-                    var totalRead = 0;
-                    while (totalRead < payloadLength)
+                    while (bytesRead < TtyHostProtocol.HeaderSize)
                     {
-                        var chunk = await stream.ReadAsync(payloadBuffer.AsMemory(totalRead, payloadLength - totalRead), ct).ConfigureAwait(false);
-                        if (chunk == 0)
+                        var more = await stream.ReadAsync(headerBuffer.AsMemory(bytesRead), ct).ConfigureAwait(false);
+                        if (more == 0)
                         {
                             HandleDisconnect();
                             break;
                         }
-                        totalRead += chunk;
+                        bytesRead += more;
                     }
 
-                    if (totalRead < payloadLength) continue;
-                }
+                    if (bytesRead < TtyHostProtocol.HeaderSize) continue;
 
-                var payload = payloadBuffer.AsMemory(0, payloadLength);
-                ProcessMessage(msgType, payload);
+                    if (!TtyHostProtocol.TryReadHeader(headerBuffer, out var msgType, out var payloadLength))
+                    {
+                        HandleDisconnect();
+                        break;
+                    }
+
+                    // Return previous rented buffer before renting new one
+                    if (rentedPayload is not null)
+                    {
+                        ArrayPool<byte>.Shared.Return(rentedPayload);
+                        rentedPayload = null;
+                    }
+
+                    Memory<byte> payload = Memory<byte>.Empty;
+                    if (payloadLength > 0)
+                    {
+                        rentedPayload = ArrayPool<byte>.Shared.Rent(payloadLength);
+                        var totalRead = 0;
+                        while (totalRead < payloadLength)
+                        {
+                            var chunk = await stream.ReadAsync(rentedPayload.AsMemory(totalRead, payloadLength - totalRead), ct).ConfigureAwait(false);
+                            if (chunk == 0)
+                            {
+                                HandleDisconnect();
+                                break;
+                            }
+                            totalRead += chunk;
+                        }
+
+                        if (totalRead < payloadLength) continue;
+                        payload = rentedPayload.AsMemory(0, payloadLength);
+                    }
+
+                    ProcessMessage(msgType, payload);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (IOException)
+                {
+                    HandleDisconnect();
+                }
+                catch (SocketException)
+                {
+                    HandleDisconnect();
+                }
+                catch
+                {
+                    HandleDisconnect();
+                }
             }
-            catch (OperationCanceledException)
+        }
+        finally
+        {
+            if (rentedPayload is not null)
             {
-                break;
-            }
-            catch (IOException)
-            {
-                HandleDisconnect();
-            }
-            catch (SocketException)
-            {
-                HandleDisconnect();
-            }
-            catch
-            {
-                HandleDisconnect();
+                ArrayPool<byte>.Shared.Return(rentedPayload);
             }
         }
     }

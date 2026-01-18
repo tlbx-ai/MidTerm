@@ -1,5 +1,8 @@
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.IO.Compression;
+using System.Text;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -11,6 +14,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// </summary>
 public static class MuxProtocol
 {
+    private static readonly ConcurrentDictionary<ulong, string> _sessionIdCache = new();
+
     public const int HeaderSize = 9; // 1 byte type + 8 bytes sessionId
     public const int OutputHeaderSize = 13; // HeaderSize + 4 bytes (cols + rows)
     public const int MaxFrameSize = 64 * 1024;
@@ -88,6 +93,107 @@ public static class MuxProtocol
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Creates a GZip-compressed output frame using pooled buffers. Zero allocations.
+    /// Callback receives the frame data; buffer is returned to pool after callback.
+    /// </summary>
+    public static void WriteCompressedOutputFrame(
+        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        Action<ReadOnlyMemory<byte>> callback)
+    {
+        var maxSize = CompressedOutputHeaderSize + data.Length + 100;
+        var buffer = ArrayPool<byte>.Shared.Rent(maxSize);
+        try
+        {
+            buffer[0] = TypeCompressedOutput;
+            WriteSessionId(buffer.AsSpan(1, 8), sessionId);
+            BitConverter.TryWriteBytes(buffer.AsSpan(9, 2), (ushort)cols);
+            BitConverter.TryWriteBytes(buffer.AsSpan(11, 2), (ushort)rows);
+            BitConverter.TryWriteBytes(buffer.AsSpan(13, 4), data.Length);
+
+            using var ms = new MemoryStream(buffer, CompressedOutputHeaderSize,
+                buffer.Length - CompressedOutputHeaderSize);
+            using (var gzip = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+            {
+                gzip.Write(data);
+            }
+
+            callback(new ReadOnlyMemory<byte>(buffer, 0, CompressedOutputHeaderSize + (int)ms.Position));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    /// <summary>
+    /// Creates an uncompressed output frame using pooled buffers. Zero allocations.
+    /// Callback receives the frame data; buffer is returned to pool after callback.
+    /// </summary>
+    public static void WriteOutputFrame(
+        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        Action<ReadOnlyMemory<byte>> callback)
+    {
+        var frameSize = OutputHeaderSize + data.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        try
+        {
+            buffer[0] = TypeTerminalOutput;
+            WriteSessionId(buffer.AsSpan(1, 8), sessionId);
+            BitConverter.TryWriteBytes(buffer.AsSpan(9, 2), (ushort)cols);
+            BitConverter.TryWriteBytes(buffer.AsSpan(11, 2), (ushort)rows);
+            data.CopyTo(buffer.AsSpan(OutputHeaderSize));
+
+            callback(new ReadOnlyMemory<byte>(buffer, 0, frameSize));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    /// <summary>
+    /// Writes a compressed output frame into a caller-provided buffer.
+    /// Returns the total bytes written. Caller is responsible for buffer lifecycle.
+    /// Buffer must be at least CompressedOutputHeaderSize + data.Length + 100 bytes.
+    /// </summary>
+    public static int WriteCompressedOutputFrameInto(
+        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        byte[] destination)
+    {
+        destination[0] = TypeCompressedOutput;
+        WriteSessionId(destination.AsSpan(1, 8), sessionId);
+        BitConverter.TryWriteBytes(destination.AsSpan(9, 2), (ushort)cols);
+        BitConverter.TryWriteBytes(destination.AsSpan(11, 2), (ushort)rows);
+        BitConverter.TryWriteBytes(destination.AsSpan(13, 4), data.Length);
+
+        using var ms = new MemoryStream(destination, CompressedOutputHeaderSize,
+            destination.Length - CompressedOutputHeaderSize);
+        using (var gzip = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            gzip.Write(data);
+        }
+
+        return CompressedOutputHeaderSize + (int)ms.Position;
+    }
+
+    /// <summary>
+    /// Writes an uncompressed output frame into a caller-provided buffer.
+    /// Returns the total bytes written. Caller is responsible for buffer lifecycle.
+    /// Buffer must be at least OutputHeaderSize + data.Length bytes.
+    /// </summary>
+    public static int WriteOutputFrameInto(
+        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        byte[] destination)
+    {
+        destination[0] = TypeTerminalOutput;
+        WriteSessionId(destination.AsSpan(1, 8), sessionId);
+        BitConverter.TryWriteBytes(destination.AsSpan(9, 2), (ushort)cols);
+        BitConverter.TryWriteBytes(destination.AsSpan(11, 2), (ushort)rows);
+        data.CopyTo(destination.AsSpan(OutputHeaderSize));
+        return OutputHeaderSize + data.Length;
+    }
+
     public static byte[] CreateStateFrame(string sessionId, bool created)
     {
         var frame = new byte[HeaderSize + 1];
@@ -125,7 +231,16 @@ public static class MuxProtocol
         }
 
         type = data[0];
-        sessionId = System.Text.Encoding.ASCII.GetString(data.Slice(1, 8));
+
+        var sessionIdSpan = data.Slice(1, 8);
+        var key = BinaryPrimitives.ReadUInt64LittleEndian(sessionIdSpan);
+
+        if (!_sessionIdCache.TryGetValue(key, out sessionId!))
+        {
+            sessionId = Encoding.ASCII.GetString(sessionIdSpan);
+            _sessionIdCache.TryAdd(key, sessionId);
+        }
+
         payload = data.Slice(HeaderSize);
         return true;
     }

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -88,14 +89,27 @@ public sealed class MuxWebSocketHandler
                     var chunk = buffer.AsSpan(offset, length);
 
                     // Use compression for chunks over threshold
-                    var frame = length > MuxProtocol.CompressionThreshold
-                        ? MuxProtocol.CreateCompressedOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk)
-                        : MuxProtocol.CreateOutputFrame(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk);
+                    var useCompression = length > MuxProtocol.CompressionThreshold;
+                    var maxFrameSize = useCompression
+                        ? MuxProtocol.CompressedOutputHeaderSize + length + 100
+                        : MuxProtocol.OutputHeaderSize + length;
 
-                    if (!await client.TrySendAsync(frame))
+                    var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
+                    try
                     {
-                        Log.Warn(() => $"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
-                        return;
+                        var frameLength = useCompression
+                            ? MuxProtocol.WriteCompressedOutputFrameInto(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk, frameBuffer)
+                            : MuxProtocol.WriteOutputFrameInto(sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, chunk, frameBuffer);
+
+                        if (!await client.TrySendAsync(frameBuffer, frameLength))
+                        {
+                            Log.Warn(() => $"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
+                            return;
+                        }
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(frameBuffer);
                     }
                 }
             }
@@ -228,11 +242,24 @@ public sealed class MuxWebSocketHandler
                     var length = Math.Min(MuxProtocol.CompressionChunkSize, buffer.Length - offset);
                     var chunk = buffer.AsSpan(offset, length);
 
-                    var frame = length > MuxProtocol.CompressionThreshold
-                        ? MuxProtocol.CreateCompressedOutputFrame(sessionId, session.Cols, session.Rows, chunk)
-                        : MuxProtocol.CreateOutputFrame(sessionId, session.Cols, session.Rows, chunk);
+                    var useCompression = length > MuxProtocol.CompressionThreshold;
+                    var maxFrameSize = useCompression
+                        ? MuxProtocol.CompressedOutputHeaderSize + length + 100
+                        : MuxProtocol.OutputHeaderSize + length;
 
-                    await client.TrySendAsync(frame);
+                    var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
+                    try
+                    {
+                        var frameLength = useCompression
+                            ? MuxProtocol.WriteCompressedOutputFrameInto(sessionId, session.Cols, session.Rows, chunk, frameBuffer)
+                            : MuxProtocol.WriteOutputFrameInto(sessionId, session.Cols, session.Rows, chunk, frameBuffer);
+
+                        await client.TrySendAsync(frameBuffer, frameLength);
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(frameBuffer);
+                    }
                 }
                 Log.Verbose(() => $"[MuxHandler] Sent buffer for {sessionId}: {buffer.Length} bytes");
             }

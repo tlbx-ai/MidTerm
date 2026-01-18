@@ -33,6 +33,17 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.Input, data.ToArray());
     }
 
+    /// <summary>
+    /// Writes an input message into a pre-allocated buffer. Zero allocations.
+    /// Destination must be at least HeaderSize + data.Length bytes.
+    /// </summary>
+    public static void WriteInputFrameInto(ReadOnlySpan<byte> data, Span<byte> destination)
+    {
+        destination[0] = (byte)TtyHostMessageType.Input;
+        BinaryPrimitives.WriteInt32LittleEndian(destination.Slice(1, 4), data.Length);
+        data.CopyTo(destination.Slice(HeaderSize));
+    }
+
     [Obsolete("Use WriteOutputMessage with callback for zero-allocation")]
     public static byte[] CreateOutputMessage(int cols, int rows, ReadOnlySpan<byte> data)
     {

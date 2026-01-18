@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
@@ -12,11 +13,19 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// </summary>
 public sealed class TtyHostMuxConnectionManager
 {
+    private readonly record struct PooledOutputItem(
+        string SessionId, int Cols, int Rows,
+        byte[] Buffer, int Length)
+    {
+        public ReadOnlySpan<byte> Data => Buffer.AsSpan(0, Length);
+        public void Return() => ArrayPool<byte>.Shared.Return(Buffer);
+    }
+
     private readonly TtyHostSessionManager _sessionManager;
     private readonly ConcurrentDictionary<string, MuxClient> _clients = new();
     private const int MaxQueuedOutputs = 1000;
-    private readonly Channel<(string sessionId, int cols, int rows, byte[] data)> _outputQueue =
-        Channel.CreateBounded<(string, int, int, byte[])>(
+    private readonly Channel<PooledOutputItem> _outputQueue =
+        Channel.CreateBounded<PooledOutputItem>(
             new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropOldest });
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
@@ -43,7 +52,9 @@ public sealed class TtyHostMuxConnectionManager
 
     private void HandleOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
     {
-        _outputQueue.Writer.TryWrite((sessionId, cols, rows, data.ToArray()));
+        var buffer = ArrayPool<byte>.Shared.Rent(data.Length);
+        data.Span.CopyTo(buffer);
+        _outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, cols, rows, buffer, data.Length));
     }
 
     private void HandleProcessEvent(string sessionId, ProcessEventPayload payload)
@@ -76,20 +87,27 @@ public sealed class TtyHostMuxConnectionManager
 
     private async Task ProcessOutputQueueAsync(CancellationToken ct)
     {
-        await foreach (var (sessionId, cols, rows, data) in _outputQueue.Reader.ReadAllAsync(ct))
+        await foreach (var item in _outputQueue.Reader.ReadAllAsync(ct))
         {
-            if (data.Length < 50)
+            try
             {
-                Log.Verbose(() => $"[WS-OUTPUT] {sessionId}: {BitConverter.ToString(data)}");
-            }
-
-            // Queue raw data to each client - clients handle buffering and framing
-            foreach (var client in _clients.Values)
-            {
-                if (client.WebSocket.State == WebSocketState.Open)
+                if (item.Length < 50)
                 {
-                    client.QueueOutput(sessionId, cols, rows, data);
+                    Log.Verbose(() => $"[WS-OUTPUT] {item.SessionId}: {BitConverter.ToString(item.Buffer, 0, item.Length)}");
                 }
+
+                // Queue raw data to each client - clients handle buffering and framing
+                foreach (var client in _clients.Values)
+                {
+                    if (client.WebSocket.State == WebSocketState.Open)
+                    {
+                        client.QueueOutput(item.SessionId, item.Cols, item.Rows, item.Buffer, item.Length);
+                    }
+                }
+            }
+            finally
+            {
+                item.Return();
             }
         }
     }
@@ -126,14 +144,16 @@ public sealed class TtyHostMuxConnectionManager
         var rows = sessionInfo?.Rows ?? 24;
 
         // Queue raw data to each client - clients handle buffering and framing
-        var dataArray = data.ToArray();
+        var buffer = ArrayPool<byte>.Shared.Rent(data.Length);
+        data.Span.CopyTo(buffer);
         foreach (var client in _clients.Values)
         {
             if (client.WebSocket.State == WebSocketState.Open)
             {
-                client.QueueOutput(sessionId, cols, rows, dataArray);
+                client.QueueOutput(sessionId, cols, rows, buffer, data.Length);
             }
         }
+        ArrayPool<byte>.Shared.Return(buffer);
     }
 
     public async ValueTask DisposeAsync()
