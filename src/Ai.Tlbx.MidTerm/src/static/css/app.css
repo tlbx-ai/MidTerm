@@ -3690,8 +3690,8 @@ html, body {
     padding: 3px 6px;
     font-size: 10.5px;
     color: var(--text-primary);
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-input);
+    border: 1px solid var(--btn-secondary);
     border-radius: var(--radius-sm);
     cursor: pointer;
     max-width: 120px;
@@ -3704,6 +3704,11 @@ html, body {
 .voice-select:focus {
     outline: none;
     border-color: var(--accent-blue);
+}
+
+.voice-select option {
+    background-color: var(--bg-input);
+    color: var(--text-primary);
 }
 
 .voice-speed-control {
