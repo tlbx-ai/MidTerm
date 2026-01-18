@@ -3552,6 +3552,10 @@ html, body {
     margin-bottom: 8px;
 }
 
+.voice-section.hidden {
+    display: none;
+}
+
 .voice-section-header {
     display: flex;
     align-items: center;
