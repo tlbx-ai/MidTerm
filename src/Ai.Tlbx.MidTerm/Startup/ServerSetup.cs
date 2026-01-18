@@ -206,7 +206,7 @@ public static class ServerSetup
                       "style-src 'self' 'unsafe-inline'; " +
                       "img-src 'self' data:; " +
                       "font-src 'self' data:; " +
-                      "connect-src 'self' ws: wss: https://api.github.com; " +
+                      "connect-src 'self' ws: wss: https://api.github.com https://localhost:2010; " +
                       "frame-ancestors 'none'";
             headers.ContentSecurityPolicy = csp;
 
