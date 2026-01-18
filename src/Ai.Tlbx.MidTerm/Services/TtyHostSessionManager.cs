@@ -551,6 +551,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 var info = await c.GetInfoAsync().ConfigureAwait(false);
                 if (info is not null)
                 {
+                    // Preserve web-server-only state that mthost doesn't track
+                    if (_sessionCache.TryGetValue(sessionId, out var existing))
+                    {
+                        info.TerminalTitle = existing.TerminalTitle;
+                        info.ManuallyNamed = existing.ManuallyNamed;
+                    }
                     _sessionCache[sessionId] = info;
                 }
 
