@@ -35,8 +35,9 @@ let selectedSpeed = 1.0;
  */
 export async function checkVoiceServerHealth(): Promise<boolean> {
   try {
+    // Voice server is always HTTPS
     const host = window.location.hostname;
-    const url = `http://${host}:${VOICE_SERVER_PORT}/api/health`;
+    const url = `https://${host}:${VOICE_SERVER_PORT}/api/health`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
@@ -218,8 +219,9 @@ export async function startVoiceSession(): Promise<void> {
   }
 
   try {
+    // Voice server is always HTTPS/WSS
     const host = window.location.hostname;
-    const wsUrl = `ws://${host}:${VOICE_SERVER_PORT}/voice`;
+    const wsUrl = `wss://${host}:${VOICE_SERVER_PORT}/voice`;
 
     // Reset counters
     audioFrameCount = 0;
