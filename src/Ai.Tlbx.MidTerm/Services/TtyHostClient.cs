@@ -315,6 +315,22 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
+    public async Task<bool> SetOrderAsync(byte order, CancellationToken ct = default)
+    {
+        if (!IsConnected) return false;
+
+        try
+        {
+            var msg = TtyHostProtocol.CreateSetOrder(order);
+            var response = await SendRequestAsync(msg, TtyHostMessageType.SetOrderAck, ct).ConfigureAwait(false);
+            return response is not null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> CloseAsync(CancellationToken ct = default)
     {
         _intentionalDisconnect = true;
@@ -549,6 +565,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.ResizeAck:
             case TtyHostMessageType.SetNameAck:
             case TtyHostMessageType.SetLogLevelAck:
+            case TtyHostMessageType.SetOrderAck:
             case TtyHostMessageType.CloseAck:
             case TtyHostMessageType.Info:
                 lock (_responseLock)

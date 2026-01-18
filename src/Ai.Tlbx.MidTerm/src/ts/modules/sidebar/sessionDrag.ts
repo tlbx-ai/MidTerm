@@ -11,6 +11,7 @@ import { persistSessionOrder } from '../comms/stateChannel';
 let draggedSessionId: string | null = null;
 let draggedElement: HTMLElement | null = null;
 let dropIndicatorPosition: 'above' | 'below' | null = null;
+let dragImageElement: HTMLElement | null = null;
 
 /**
  * Initialize drag-and-drop for the session list
@@ -58,13 +59,20 @@ function handleDragStart(e: DragEvent): void {
     document.body.appendChild(dragImage);
     e.dataTransfer.setDragImage(dragImage, 20, sessionItem.offsetHeight / 2);
 
-    requestAnimationFrame(() => dragImage.remove());
+    // Keep drag image until drag ends - some browsers need it to persist
+    dragImageElement = dragImage;
   }
 }
 
 function handleDragEnd(_e: DragEvent): void {
   if (draggedElement) {
     draggedElement.classList.remove('dragging');
+  }
+
+  // Clean up drag image
+  if (dragImageElement) {
+    dragImageElement.remove();
+    dragImageElement = null;
   }
 
   clearAllDropIndicators();

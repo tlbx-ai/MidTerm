@@ -202,6 +202,21 @@ public static class TtyHostProtocol
     {
         return payload.Length > 0 ? (LogSeverity)payload[0] : LogSeverity.Warn;
     }
+
+    public static byte[] CreateSetOrder(byte order)
+    {
+        return CreateFrame(TtyHostMessageType.SetOrder, [order]);
+    }
+
+    public static byte[] CreateSetOrderAck()
+    {
+        return CreateFrame(TtyHostMessageType.SetOrderAck, []);
+    }
+
+    public static byte ParseSetOrder(ReadOnlySpan<byte> payload)
+    {
+        return payload.Length > 0 ? payload[0] : (byte)0;
+    }
 }
 
 /// <summary>
@@ -233,7 +248,11 @@ public enum TtyHostMessageType : byte
 
     // Settings updates
     SetLogLevel = 0x60,
-    SetLogLevelAck = 0x61
+    SetLogLevelAck = 0x61,
+
+    // Display order
+    SetOrder = 0x24,
+    SetOrderAck = 0x25
 }
 
 /// <summary>
@@ -260,6 +279,9 @@ public sealed class SessionInfo
     public int? ForegroundPid { get; set; }
     public string? ForegroundName { get; set; }
     public string? ForegroundCommandLine { get; set; }
+
+    // Display order (0-255)
+    public byte Order { get; set; }
 }
 
 /// <summary>

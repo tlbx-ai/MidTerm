@@ -12,6 +12,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// </summary>
 public sealed class TtyHostSessionManager : IAsyncDisposable
 {
+    public const int MaxSessions = 256;
+
     private readonly ConcurrentDictionary<string, TtyHostClient> _clients = new();
     private readonly ConcurrentDictionary<string, SessionInfo> _sessionCache = new();
     private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
@@ -77,6 +79,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var existingEndpoints = GetExistingEndpoints();
         Log.Info(() => $"TtyHostSessionManager: Found {existingEndpoints.Count} IPC endpoints");
 
+        var discoveredOrders = new List<int>();
+
         foreach (var (sessionId, hostPid) in existingEndpoints)
         {
             if (ct.IsCancellationRequested) break;
@@ -86,8 +90,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
             switch (result)
             {
-                case DiscoveryResult.Connected:
-                    // Success - session is usable
+                case DiscoveryResult.Connected connected:
+                    discoveredOrders.Add(connected.Order);
                     break;
 
                 case DiscoveryResult.Incompatible incompatible:
@@ -109,7 +113,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             }
         }
 
-        Log.Info(() => $"TtyHostSessionManager: Discovered {_clients.Count} active sessions");
+        // Set _nextOrder to max discovered + 1 to avoid collisions
+        _nextOrder = discoveredOrders.Count > 0 ? discoveredOrders.Max() + 1 : 0;
+
+        Log.Info(() => $"TtyHostSessionManager: Discovered {_clients.Count} active sessions, nextOrder={_nextOrder}");
     }
 
     private async Task<DiscoveryResult> TryConnectToSessionAsync(string sessionId, int hostPid, CancellationToken ct)
@@ -144,10 +151,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             client.StartReadLoop();
             _clients[sessionId] = client;
             _sessionCache[sessionId] = info;
-            _sessionOrder.TryAdd(sessionId, Interlocked.Increment(ref _nextOrder));
-            Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid})");
 
-            return new DiscoveryResult.Connected();
+            // Use order from mthost if available, otherwise use discovery sequence
+            var order = info.Order;
+            _sessionOrder.TryAdd(sessionId, order);
+            Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid}, order={order})");
+
+            return new DiscoveryResult.Connected(order);
         }
         catch (Exception ex)
         {
@@ -249,7 +259,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private abstract record DiscoveryResult
     {
-        public sealed record Connected() : DiscoveryResult;
+        public sealed record Connected(int Order) : DiscoveryResult;
         public sealed record Incompatible(int HostPid, string? Version) : DiscoveryResult;
         public sealed record Unresponsive() : DiscoveryResult;
         public sealed record NoProcess() : DiscoveryResult;
@@ -262,6 +272,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? workingDirectory,
         CancellationToken ct = default)
     {
+        if (_sessionCache.Count >= MaxSessions)
+        {
+            Log.Warn(() => $"Session limit reached ({MaxSessions})");
+            return null;
+        }
+
         var sessionId = Guid.NewGuid().ToString("N")[..8];
 
         if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid))
@@ -313,10 +329,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         client.StartReadLoop();
         _clients[sessionId] = client;
         _sessionCache[sessionId] = info;
-        _sessionOrder[sessionId] = Interlocked.Increment(ref _nextOrder);
 
-        // Send current log level to new session
+        var order = Interlocked.Increment(ref _nextOrder);
+        _sessionOrder[sessionId] = order;
+
+        // Send current log level and order to new session
         await client.SetLogLevelAsync(Log.MinLevel, ct).ConfigureAwait(false);
+        await client.SetOrderAsync((byte)(order % 256), ct).ConfigureAwait(false);
 
         Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {hostPid})");
         OnStateChanged?.Invoke(sessionId);
@@ -496,14 +515,37 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             }
         }
 
-        // Assign new order values
+        // Update local state immediately (UI responsiveness)
         for (var i = 0; i < sessionIds.Count; i++)
         {
             _sessionOrder[sessionIds[i]] = i;
         }
 
         NotifyStateChange();
+
+        // Fire-and-forget IPC to persist order on mthosts
+        _ = SendOrderUpdatesAsync(sessionIds);
+
         return true;
+    }
+
+    private async Task SendOrderUpdatesAsync(IList<string> sessionIds)
+    {
+        for (var i = 0; i < sessionIds.Count; i++)
+        {
+            var id = sessionIds[i];
+            if (_clients.TryGetValue(id, out var client))
+            {
+                try
+                {
+                    await client.SetOrderAsync((byte)i).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn(() => $"Failed to persist order for {id}: {ex.Message}");
+                }
+            }
+        }
     }
 
     public string AddStateListener(Action callback)

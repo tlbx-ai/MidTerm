@@ -642,6 +642,18 @@ public static class Program
                         }
                         break;
 
+                    case TtyHostMessageType.SetOrder:
+                        var order = TtyHostProtocol.ParseSetOrder(payload);
+                        session.SetOrder(order);
+                        var orderAck = TtyHostProtocol.CreateSetOrderAck();
+                        lock (stream)
+                        {
+                            stream.Write(orderAck);
+                            stream.Flush();
+                        }
+                        Log.Verbose(() => $"Order set to {order}");
+                        break;
+
                     case TtyHostMessageType.SetLogLevel:
                         var newLevel = TtyHostProtocol.ParseSetLogLevel(payload);
                         Log.Info(() => $"Log level changed via IPC: {Log.MinLevel} -> {newLevel}");
@@ -783,6 +795,7 @@ internal sealed class TerminalSession
     public int Cols { get; private set; }
     public int Rows { get; private set; }
     public string? Name { get; private set; }
+    public byte Order { get; private set; }
     public DateTime CreatedAt { get; } = DateTime.UtcNow;
 
     public int Pid => _pty.Pid;
@@ -883,6 +896,11 @@ internal sealed class TerminalSession
         OnStateChanged?.Invoke();
     }
 
+    public void SetOrder(byte order)
+    {
+        Order = order;
+    }
+
     public byte[] GetBuffer()
     {
         lock (_bufferLock)
@@ -904,6 +922,7 @@ internal sealed class TerminalSession
             IsRunning = IsRunning,
             ExitCode = ExitCode,
             Name = Name,
+            Order = Order,
             CreatedAt = CreatedAt,
             TtyHostVersion = VersionInfo.Version
         };
