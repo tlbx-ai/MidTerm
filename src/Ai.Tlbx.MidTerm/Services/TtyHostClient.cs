@@ -496,8 +496,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                 try
                 {
                     var (cols, rows) = TtyHostProtocol.ParseOutputDimensions(payload.Span);
-                    var data = TtyHostProtocol.GetOutputData(payload.Span);
-                    OnOutput?.Invoke(_sessionId, cols, rows, data.ToArray());
+                    OnOutput?.Invoke(_sessionId, cols, rows, payload.Slice(4));
                 }
                 catch (Exception ex)
                 {
