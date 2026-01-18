@@ -284,12 +284,14 @@ public static class Program
 
                     if (client.IsConnected)
                     {
-                        var msg = TtyHostProtocol.CreateOutputMessage(session.Cols, session.Rows, data.Span);
-                        lock (stream)
+                        TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, data.Span, frame =>
                         {
-                            stream.Write(msg);
-                            stream.Flush();
-                        }
+                            lock (stream)
+                            {
+                                stream.Write(frame);
+                                stream.Flush();
+                            }
+                        });
                     }
                     else
                     {
@@ -387,12 +389,14 @@ public static class Program
                             {
                                 if (client.IsConnected)
                                 {
-                                    var msg = TtyHostProtocol.CreateOutputMessage(session.Cols, session.Rows, data);
-                                    lock (stream)
+                                    TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, data, frame =>
                                     {
-                                        stream.Write(msg);
-                                        stream.Flush();
-                                    }
+                                        lock (stream)
+                                        {
+                                            stream.Write(frame);
+                                            stream.Flush();
+                                        }
+                                    });
                                 }
                             }
                             catch (Exception ex)
@@ -623,12 +627,14 @@ public static class Program
 
                     case TtyHostMessageType.GetBuffer:
                         var buffer = session.GetBuffer();
-                        var bufferMsg = TtyHostProtocol.CreateBufferResponse(buffer);
-                        lock (stream)
+                        TtyHostProtocol.WriteBufferResponse(buffer, frame =>
                         {
-                            stream.Write(bufferMsg);
-                            stream.Flush();
-                        }
+                            lock (stream)
+                            {
+                                stream.Write(frame);
+                                stream.Flush();
+                            }
+                        });
                         break;
 
                     case TtyHostMessageType.SetName:

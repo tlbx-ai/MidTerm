@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
@@ -32,6 +33,7 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.Input, data.ToArray());
     }
 
+    [Obsolete("Use WriteOutputMessage with callback for zero-allocation")]
     public static byte[] CreateOutputMessage(int cols, int rows, ReadOnlySpan<byte> data)
     {
         var payload = new byte[4 + data.Length];
@@ -39,6 +41,29 @@ public static class TtyHostProtocol
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2, 2), (ushort)rows);
         data.CopyTo(payload.AsSpan(4));
         return CreateFrame(TtyHostMessageType.Output, payload);
+    }
+
+    /// <summary>
+    /// Creates an output message using a pooled buffer. Zero allocations.
+    /// Callback receives the frame; buffer is returned to pool after callback.
+    /// </summary>
+    public static void WriteOutputMessage(int cols, int rows, ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> callback)
+    {
+        var frameSize = HeaderSize + 4 + data.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        try
+        {
+            buffer[0] = (byte)TtyHostMessageType.Output;
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(1, 4), 4 + data.Length);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(HeaderSize, 2), (ushort)cols);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(HeaderSize + 2, 2), (ushort)rows);
+            data.CopyTo(buffer.AsSpan(HeaderSize + 4));
+            callback(buffer.AsSpan(0, frameSize));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     public static (int cols, int rows) ParseOutputDimensions(ReadOnlySpan<byte> payload)
@@ -82,9 +107,31 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.GetBuffer, []);
     }
 
+    [Obsolete("Use WriteBufferResponse with callback for zero-allocation")]
     public static byte[] CreateBufferResponse(ReadOnlySpan<byte> buffer)
     {
         return CreateFrame(TtyHostMessageType.Buffer, buffer.ToArray());
+    }
+
+    /// <summary>
+    /// Creates a buffer response using a pooled buffer. Zero allocations.
+    /// Callback receives the frame; buffer is returned to pool after callback.
+    /// </summary>
+    public static void WriteBufferResponse(ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> callback)
+    {
+        var frameSize = HeaderSize + data.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        try
+        {
+            buffer[0] = (byte)TtyHostMessageType.Buffer;
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(1, 4), data.Length);
+            data.CopyTo(buffer.AsSpan(HeaderSize));
+            callback(buffer.AsSpan(0, frameSize));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     public static byte[] CreateClose()
