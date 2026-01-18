@@ -1,17 +1,7 @@
 name: Deploy Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'README.md'
-      - 'LICENSE'
-      - 'install.ps1'
-      - 'install.sh'
-      - '_config.yml'
-      - 'assets/**'
-      - 'docs/**'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:  # Manual trigger only
 
 permissions:
   contents: read
