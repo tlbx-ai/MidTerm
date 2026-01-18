@@ -17,7 +17,7 @@ import {
   setFontsReadyPromise,
   windowsBuildNumber,
 } from '../../state';
-import { $activeSessionId, getSession } from '../../stores';
+import { $activeSessionId } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScaling, applyTerminalScalingSync } from './scaling';
 import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
@@ -72,12 +72,11 @@ export function focusActiveTerminal(): void {
 }
 
 /**
- * Auto-update session name from shell title (with debounce)
+ * Auto-update session terminalTitle from shell title (with debounce).
+ * Always sends to server to update terminalTitle field.
+ * Server will only update 'name' if session is not manually named.
  */
 function updateSessionNameAuto(sessionId: string, name: string): void {
-  const session = getSession(sessionId);
-  if (session?.manuallyNamed) return;
-
   const existing = pendingTitleUpdates.get(sessionId);
   if (existing) {
     window.clearTimeout(existing);

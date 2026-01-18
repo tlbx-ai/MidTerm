@@ -37,7 +37,7 @@ public sealed class MuxClient : IAsyncDisposable
     public string Id { get; }
     public WebSocket WebSocket { get; }
 
-    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, byte[] Data, int Length);
+    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, byte[] Data, int Length, bool OwnsBuffer);
 
     /// <summary>
     /// Pooled contiguous buffer for session output. Uses ArrayPool to avoid GC pressure.
@@ -127,6 +127,7 @@ public sealed class MuxClient : IAsyncDisposable
 
     /// <summary>
     /// Queue raw terminal output for buffered delivery.
+    /// Copies data into a pooled buffer owned by this client.
     /// </summary>
     public void QueueOutput(string sessionId, int cols, int rows, byte[] buffer, int length)
     {
@@ -143,7 +144,10 @@ public sealed class MuxClient : IAsyncDisposable
             }
         }
 
-        _inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, buffer, length));
+        // Copy data into our own pooled buffer (caller may return original buffer before we process)
+        var ownedBuffer = ArrayPool<byte>.Shared.Rent(length);
+        buffer.AsSpan(0, length).CopyTo(ownedBuffer);
+        _inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, ownedBuffer, length, OwnsBuffer: true));
     }
 
     /// <summary>
@@ -229,15 +233,25 @@ public sealed class MuxClient : IAsyncDisposable
 
     private void BufferOutput(OutputItem item)
     {
-        if (!_sessionBuffers.TryGetValue(item.SessionId, out var buffer))
+        try
         {
-            buffer = new SessionBuffer();
-            _sessionBuffers[item.SessionId] = buffer;
-        }
+            if (!_sessionBuffers.TryGetValue(item.SessionId, out var buffer))
+            {
+                buffer = new SessionBuffer();
+                _sessionBuffers[item.SessionId] = buffer;
+            }
 
-        buffer.Write(item.Data.AsSpan(0, item.Length));
-        buffer.LastCols = item.Cols;
-        buffer.LastRows = item.Rows;
+            buffer.Write(item.Data.AsSpan(0, item.Length));
+            buffer.LastCols = item.Cols;
+            buffer.LastRows = item.Rows;
+        }
+        finally
+        {
+            if (item.OwnsBuffer)
+            {
+                ArrayPool<byte>.Shared.Return(item.Data);
+            }
+        }
     }
 
     private async Task FlushDueBuffersAsync(long nowTicks)
