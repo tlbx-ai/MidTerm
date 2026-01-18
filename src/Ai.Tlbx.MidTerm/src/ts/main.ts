@@ -65,7 +65,7 @@ import {
   initTrafficIndicator,
 } from './modules/sidebar';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
-import { initChatPanel, restoreChatPanelState } from './modules/chat';
+import { initChatPanel } from './modules/chat';
 import { toggleSettings, closeSettings, applyReceivedSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap } from './modules/bootstrap';
@@ -175,7 +175,6 @@ async function init(): Promise<void> {
   bindVoiceEvents();
   await initVoiceControls();
   initChatPanel();
-  restoreChatPanelState();
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
