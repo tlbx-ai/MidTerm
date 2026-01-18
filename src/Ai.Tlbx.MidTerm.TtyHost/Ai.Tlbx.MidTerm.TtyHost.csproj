@@ -72,9 +72,9 @@
     <LinkerArg Include="/OPT:ICF" />
   </ItemGroup>
 
-  <!-- Link common protocol sources -->
+  <!-- Link common protocol sources (exclude obj/bin to avoid duplicate assembly attributes) -->
   <ItemGroup>
-    <Compile Include="..\Ai.Tlbx.MidTerm.Common\**\*.cs" LinkBase="Common" />
+    <Compile Include="..\Ai.Tlbx.MidTerm.Common\**\*.cs" Exclude="..\Ai.Tlbx.MidTerm.Common\obj\**;..\Ai.Tlbx.MidTerm.Common\bin\**" LinkBase="Common" />
   </ItemGroup>
 
   <!-- Define WINDOWS for Windows builds (both native and cross-compile) -->
