@@ -3651,6 +3651,10 @@ html, body {
     font-size: 14px;
 }
 
+.voice-btn.hidden {
+    display: none;
+}
+
 .voice-status {
     font-size: 10.5px;
     color: var(--text-secondary);

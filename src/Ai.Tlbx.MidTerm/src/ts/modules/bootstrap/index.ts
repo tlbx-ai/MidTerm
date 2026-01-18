@@ -94,10 +94,10 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     // Check system health (TtyHost compatibility)
     checkTtyHostHealth(data);
 
-    // Legacy devMode logging
+    // Dev mode - shows sync button in voice section
     setDevMode(data.devMode);
 
-    // Check voice server availability and show section if available
+    // Check voice server availability (section always visible, just logs result)
     checkVoiceServerHealth().then((available) => {
       setVoiceSectionVisible(available);
     });

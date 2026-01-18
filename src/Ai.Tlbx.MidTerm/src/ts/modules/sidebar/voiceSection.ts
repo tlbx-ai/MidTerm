@@ -11,26 +11,33 @@ const log = createLogger('voiceSection');
 const STORAGE_KEY = 'midterm.voiceSectionCollapsed';
 
 let voiceSectionVisible = false;
+let devModeEnabled = false;
 
 /**
  * Show/hide the voice section based on voice server availability
  */
 export function setVoiceSectionVisible(visible: boolean): void {
   voiceSectionVisible = visible;
-  const section = document.getElementById('voice-section');
-  if (section) {
-    section.classList.toggle('hidden', !visible);
-    log.info(() => `Voice section ${visible ? 'shown' : 'hidden'}`);
-  }
+  log.info(() => `Voice server available: ${visible}`);
 }
 
 /**
- * Set dev mode to show/hide the voice section (legacy - now uses setVoiceSectionVisible)
+ * Set dev mode - shows the sync button for diagnostics
  */
 export function setDevMode(enabled: boolean): void {
-  // Legacy function - no longer hides voice section based on devMode
-  // Voice section visibility is now controlled by voice server availability
-  log.info(() => `DevMode=${enabled} (voice section controlled by server availability)`);
+  devModeEnabled = enabled;
+  const syncBtn = document.getElementById('btn-voice-sync');
+  if (syncBtn) {
+    syncBtn.classList.toggle('hidden', !enabled);
+  }
+  log.info(() => `DevMode=${enabled}`);
+}
+
+/**
+ * Check if dev mode is enabled
+ */
+export function isDevMode(): boolean {
+  return devModeEnabled;
 }
 
 /**

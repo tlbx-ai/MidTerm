@@ -446,6 +446,74 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 /**
+ * Test voice server connection and show diagnostic popup
+ */
+async function testVoiceServerConnection(): Promise<void> {
+  const host = window.location.hostname;
+  const healthUrl = `https://${host}:${VOICE_SERVER_PORT}/api/health`;
+
+  const results: string[] = [];
+  results.push(`Voice Server: https://${host}:${VOICE_SERVER_PORT}`);
+  results.push('');
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(healthUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      results.push('✓ Health endpoint: OK');
+      results.push(`  Version: ${data.version}`);
+
+      if (data.providers && Array.isArray(data.providers)) {
+        results.push('');
+        results.push('Providers:');
+        for (const p of data.providers) {
+          const status = p.available ? '✓' : '✗';
+          const voiceCount = p.voices?.length ?? 0;
+          results.push(`  ${status} ${p.name}: ${voiceCount} voices`);
+        }
+      }
+
+      if (data.defaults) {
+        results.push('');
+        results.push(`Defaults: ${data.defaults.provider}/${data.defaults.voice}`);
+      }
+
+      // Populate dropdown with the fetched data
+      if (data.providers) {
+        voiceProviders = data.providers;
+        populateVoiceDropdown();
+      }
+    } else {
+      results.push(`✗ Health endpoint: HTTP ${response.status}`);
+    }
+  } catch (err) {
+    if (err instanceof Error) {
+      if (err.name === 'AbortError') {
+        results.push('✗ Health endpoint: Timeout (5s)');
+      } else {
+        results.push(`✗ Health endpoint: ${err.message}`);
+      }
+    } else {
+      results.push('✗ Health endpoint: Unknown error');
+    }
+    results.push('');
+    results.push('Possible issues:');
+    results.push('  - Voice server not running');
+    results.push('  - HTTPS certificate not trusted');
+    results.push('  - CORS blocked');
+    results.push('');
+    results.push(`Try visiting: ${healthUrl}`);
+  }
+
+  alert(results.join('\n'));
+}
+
+/**
  * Bind voice button event handlers
  */
 export function bindVoiceEvents(): void {
@@ -477,6 +545,14 @@ export function bindVoiceEvents(): void {
       } else {
         await startVoiceSession();
       }
+    });
+  }
+
+  // Sync button (dev mode only) - test voice server connection
+  const syncBtn = document.getElementById('btn-voice-sync');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+      testVoiceServerConnection();
     });
   }
 
