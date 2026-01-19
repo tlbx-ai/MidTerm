@@ -3792,14 +3792,13 @@ html, body {
    ========================================================================== */
 
 .chat-panel {
-    order: -1;
     width: 280px;
     flex-shrink: 0;
     background-color: var(--bg-sidebar);
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    transition: width 0.2s ease, margin-left 0.2s ease;
+    transition: width 0.2s ease;
 }
 
 .chat-panel.hidden {
@@ -4131,8 +4130,7 @@ html, body {
     background-color: rgba(244, 67, 54, 0.15);
 }
 
-/* Adjust main content when chat panel is visible */
-/* Chat panel overlays the terminals area - no margin adjustment needed */
+/* Chat panel is a flex sibling - main-content shrinks automatically when chat opens */
 
 /* Certificate fingerprint inline display in settings */
 .cert-fingerprint-inline {
