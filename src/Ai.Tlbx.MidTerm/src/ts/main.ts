@@ -8,13 +8,7 @@
 import { initLoginPage } from './modules/login';
 import { initTrustPage } from './modules/trust';
 import { initThemeFromCookie } from './modules/theming';
-import {
-  initLogStorage,
-  createLogger,
-  setLogLevel,
-  setConsoleLogging,
-  LogLevel,
-} from './modules/logging';
+import { createLogger, setLogLevel, setConsoleLogging, LogLevel } from './modules/logging';
 import {
   connectStateWebSocket,
   connectMuxWebSocket,
@@ -141,8 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function init(): Promise<void> {
-  // Initialize logging first
-  await initLogStorage();
+  // Initialize logging
   setLogLevel(LogLevel.Info);
   setConsoleLogging(true);
   log.info(() => 'MidTerm frontend initializing');

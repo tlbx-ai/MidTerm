@@ -509,8 +509,6 @@ public static class EndpointSetup
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
-        var logFileWatcher = new LogFileWatcher(logDirectory, TimeSpan.FromMilliseconds(250));
-        var logHandler = new LogWebSocketHandler(logFileWatcher, sessionManager, settingsService, authService);
 
         app.Use(async (context, next) =>
         {
@@ -543,12 +541,6 @@ public static class EndpointSetup
             if (path == "/ws/mux")
             {
                 await muxHandler.HandleAsync(context);
-                return;
-            }
-
-            if (path == "/ws/logs")
-            {
-                await logHandler.HandleAsync(context);
                 return;
             }
 
