@@ -294,16 +294,8 @@ public static class TtyHostSpawner
     {
         processId = 0;
 
-        var sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == 0xFFFFFFFF)
+        if (!TryGetUserToken(out var userToken, out var sessionId))
         {
-            Log.Error(() => "TtyHostSpawner: No active console session");
-            return false;
-        }
-
-        if (!WTSQueryUserToken(sessionId, out var userToken))
-        {
-            Log.Error(() => $"TtyHostSpawner: WTSQueryUserToken failed: {Marshal.GetLastWin32Error()}");
             return false;
         }
 
@@ -382,6 +374,58 @@ public static class TtyHostSpawner
             return false;
         }
     }
+
+    [SupportedOSPlatform("windows")]
+    private static bool TryGetUserToken(out IntPtr userToken, out uint sessionId)
+    {
+        userToken = IntPtr.Zero;
+        sessionId = 0;
+
+        // First try: active console session (fastest path for normal desktop use)
+        var consoleSession = WTSGetActiveConsoleSessionId();
+        if (consoleSession != 0xFFFFFFFF && WTSQueryUserToken(consoleSession, out userToken))
+        {
+            sessionId = consoleSession;
+            Log.Info(() => $"TtyHostSpawner: Got user token from console session {consoleSession}");
+            return true;
+        }
+
+        // Fallback: enumerate all sessions (handles RDP disconnect scenario)
+        if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var pSessionInfo, out var sessionCount))
+        {
+            Log.Error(() => $"TtyHostSpawner: WTSEnumerateSessions failed: {Marshal.GetLastWin32Error()}");
+            return false;
+        }
+
+        try
+        {
+            var sessionInfoSize = Marshal.SizeOf<WTS_SESSION_INFO>();
+            for (var i = 0; i < sessionCount; i++)
+            {
+                var info = Marshal.PtrToStructure<WTS_SESSION_INFO>(pSessionInfo + i * sessionInfoSize);
+
+                // Only try Active or Disconnected sessions (disconnected = user logged in but RDP closed)
+                if (info.State is not (WTS_CONNECTSTATE_CLASS.WTSActive or WTS_CONNECTSTATE_CLASS.WTSDisconnected))
+                {
+                    continue;
+                }
+
+                if (WTSQueryUserToken(info.SessionId, out userToken))
+                {
+                    sessionId = info.SessionId;
+                    Log.Info(() => $"TtyHostSpawner: Got user token from session {info.SessionId} (state: {info.State})");
+                    return true;
+                }
+            }
+        }
+        finally
+        {
+            WTSFreeMemory(pSessionInfo);
+        }
+
+        Log.Error(() => "TtyHostSpawner: No session with accessible user token found");
+        return false;
+    }
 #endif
 
     private static string GetTtyHostPath()
@@ -436,6 +480,39 @@ public static class TtyHostSpawner
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSEnumerateSessions(
+        IntPtr hServer,
+        uint reserved,
+        uint version,
+        out IntPtr ppSessionInfo,
+        out int pCount);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr pMemory);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WTS_SESSION_INFO
+    {
+        public uint SessionId;
+        public IntPtr pWinStationName;
+        public WTS_CONNECTSTATE_CLASS State;
+    }
+
+    private enum WTS_CONNECTSTATE_CLASS
+    {
+        WTSActive,
+        WTSConnected,
+        WTSConnectQuery,
+        WTSShadow,
+        WTSDisconnected,
+        WTSIdle,
+        WTSListen,
+        WTSReset,
+        WTSDown,
+        WTSInit
+    }
 
     [DllImport("userenv.dll", SetLastError = true)]
     private static extern bool CreateEnvironmentBlock(out IntPtr lpEnvironment, IntPtr hToken, bool bInherit);
