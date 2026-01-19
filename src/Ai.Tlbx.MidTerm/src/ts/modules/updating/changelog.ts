@@ -178,13 +178,22 @@ function formatMarkdownLinks(escapedText: string): string {
  * links [text](url), and bullet lists (- item)
  */
 export function formatMarkdown(text: string): string {
-  return formatMarkdownLinks(escapeHtml(text))
+  let html = formatMarkdownLinks(escapeHtml(text))
     .replace(/^### (.+)$/gm, '<h4>$1</h4>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-    .replace(/\n{3,}/g, '\n\n') // Collapse 3+ newlines to 2
-    .replace(/\n\n/g, '<br><br>') // Double newline = paragraph break
-    .replace(/\n/g, '<br>'); // Single newline = line break
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // Convert list items, then wrap consecutive <li> in <ul>
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/((?:<li>.*?<\/li>\n?)+)/g, (match) => {
+    return '<ul>' + match.replace(/\n/g, '') + '</ul>';
+  });
+
+  // Clean up spacing
+  html = html.replace(/\n{2,}/g, '\n');
+  html = html.replace(/\n/g, '<br>');
+  html = html.replace(/<br>(<ul>)/g, '$1');
+  html = html.replace(/(<\/ul>)<br>/g, '$1');
+
+  return html;
 }
