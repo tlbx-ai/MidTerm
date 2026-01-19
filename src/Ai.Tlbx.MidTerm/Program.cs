@@ -131,7 +131,7 @@ public class Program
 
         ServerSetup.ConfigureMiddleware(app, settingsService, authService);
 
-        var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser);
+        var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService);
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
         var historyService = new HistoryService(settingsService);
 

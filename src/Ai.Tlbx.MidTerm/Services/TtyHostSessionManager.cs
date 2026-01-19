@@ -22,6 +22,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
+    private readonly string _dropsBasePath;
     private string? _runAsUser;
     private bool _disposed;
 
@@ -31,11 +32,22 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public event Action<string, ProcessEventPayload>? OnProcessEvent;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
 
-    public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null)
+    public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
     {
         _expectedTtyHostVersion = expectedVersion ?? TtyHostSpawner.GetTtyHostVersion();
         _minCompatibleVersion = minCompatibleVersion ?? GetMinCompatibleVersionFromManifest();
         _runAsUser = runAsUser;
+        _dropsBasePath = GetDropsBasePath(isServiceMode);
+    }
+
+    private static string GetDropsBasePath(bool isServiceMode)
+    {
+        if (isServiceMode && OperatingSystem.IsWindows())
+        {
+            var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            return Path.Combine(programData, "MidTerm", "drops");
+        }
+        return Path.Combine(Path.GetTempPath(), "mt-drops");
     }
 
     private static string? GetMinCompatibleVersionFromManifest()
@@ -356,7 +368,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         return _tempDirectories.GetOrAdd(sessionId, id =>
         {
-            var tempPath = Path.Combine(Path.GetTempPath(), "mt-drops", id);
+            var tempPath = Path.Combine(_dropsBasePath, id);
             Directory.CreateDirectory(tempPath);
             return tempPath;
         });
