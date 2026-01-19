@@ -17,7 +17,6 @@ internal sealed class LogWriter : IDisposable
     private readonly string _logDirectory;
     private readonly string _filePrefix;
     private readonly LogRotationPolicy _policy;
-    private readonly string _startTimestamp;
 
     private FileStream? _currentFile;
     private StreamWriter? _currentWriter;
@@ -29,7 +28,6 @@ internal sealed class LogWriter : IDisposable
         _filePrefix = filePrefix;
         _logDirectory = logDirectory;
         _policy = policy;
-        _startTimestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss");
 
         _queue = Channel.CreateBounded<LogEntry>(new BoundedChannelOptions(MaxQueuedEntries)
         {
@@ -50,6 +48,11 @@ internal sealed class LogWriter : IDisposable
 
     public void Write(LogSeverity level, string source, string message, bool immediateFlush)
     {
+        WriteRaw(DateTime.Now, level, source, message, immediateFlush);
+    }
+
+    public void WriteRaw(DateTime timestamp, LogSeverity level, string source, string message, bool immediateFlush = false)
+    {
         if (_cts.IsCancellationRequested)
         {
             return;
@@ -57,7 +60,7 @@ internal sealed class LogWriter : IDisposable
 
         var entry = new LogEntry
         {
-            Timestamp = DateTime.Now,
+            Timestamp = timestamp,
             Level = level,
             Source = source,
             Message = message,
@@ -200,7 +203,7 @@ internal sealed class LogWriter : IDisposable
         }
 
         Directory.CreateDirectory(_logDirectory);
-        _currentFilePath = Path.Combine(_logDirectory, $"{_filePrefix}-{_startTimestamp}.log");
+        _currentFilePath = Path.Combine(_logDirectory, $"{_filePrefix}.log");
 
         _currentFile = new FileStream(
             _currentFilePath,
@@ -223,7 +226,7 @@ internal sealed class LogWriter : IDisposable
 
         CloseCurrentFile();
 
-        var basePath = Path.Combine(_logDirectory, $"{_filePrefix}-{_startTimestamp}");
+        var basePath = Path.Combine(_logDirectory, _filePrefix);
 
         for (var i = _policy.MaxFileCount - 1; i >= 1; i--)
         {

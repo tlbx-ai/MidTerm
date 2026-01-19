@@ -5,4 +5,3 @@
  */
 
 export { initDiagnosticsPanel, stopDiagnosticsRefresh } from './panel';
-export { connectLogsWebSocket, disconnectLogsWebSocket, isConnected } from './logsChannel';

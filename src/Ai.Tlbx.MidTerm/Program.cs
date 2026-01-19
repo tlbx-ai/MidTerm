@@ -174,6 +174,7 @@ public class Program
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
+        LogEndpoints.MapLogEndpoints(app, logDirectory, sessionManager);
         EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, logDirectory);
 
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();

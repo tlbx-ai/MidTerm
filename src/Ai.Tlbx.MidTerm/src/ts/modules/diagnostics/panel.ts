@@ -2,31 +2,40 @@
  * Diagnostics Panel Module
  *
  * Handles the diagnostics log viewer UI in the settings panel.
- * Displays Server and Session logs via WebSocket.
+ * Uses HTTP polling for log file tailing.
  */
 
 import { LogLevel } from '../logging';
-import {
-  connectLogsWebSocket,
-  disconnectLogsWebSocket,
-  setOnLogEntry,
-  setOnHistory,
-  setOnSessions,
-  setOnConnectionChange,
-  subscribeMt,
-  unsubscribeMt,
-  subscribeSession,
-  unsubscribeSession,
-  requestHistory,
-  requestSessions,
-  isConnected,
-  type ServerLogEntry,
-  type LogHistoryResponse,
-  type LogSessionsResponse,
-  type LogSessionInfo,
-} from './logsChannel';
 
 type DiagnosticsTab = 'server' | 'sessions';
+
+interface LogFileInfo {
+  name: string;
+  source: string;
+  sessionId?: string;
+  size: number;
+  modified: string;
+  isActive: boolean;
+}
+
+interface LogEntry {
+  messageType: string;
+  source: string;
+  sessionId?: string;
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+interface LogReadResponse {
+  entries: LogEntry[];
+  position: number;
+  fileName: string;
+}
+
+interface LogFilesResponse {
+  files: LogFileInfo[];
+}
 
 interface DisplayEntry {
   timestamp: string;
@@ -40,8 +49,12 @@ let minLevel: LogLevel = LogLevel.Warn;
 let searchFilter = '';
 let liveTail = true;
 let displayedEntries: DisplayEntry[] = [];
-let selectedSessionId: string | null = null;
-let sessionsList: LogSessionInfo[] = [];
+let selectedFile: string | null = null;
+let logFiles: LogFileInfo[] = [];
+let tailPosition = 0;
+let pollTimer: number | null = null;
+
+const POLL_INTERVAL = 500;
 
 /**
  * Initialize the diagnostics panel
@@ -49,34 +62,151 @@ let sessionsList: LogSessionInfo[] = [];
 export function initDiagnosticsPanel(): void {
   bindTabEvents();
   bindControlEvents();
-  setupWebSocketCallbacks();
-
-  // Connect immediately since we default to server tab
-  connectLogsWebSocket();
-  subscribeMt();
-  requestHistory('mt');
+  loadLogFiles();
 }
 
 /**
- * Setup WebSocket callbacks
+ * Load available log files
  */
-function setupWebSocketCallbacks(): void {
-  setOnLogEntry(handleLogEntry);
-  setOnHistory(handleHistory);
-  setOnSessions(handleSessions);
-  setOnConnectionChange((connected) => {
-    if (connected) {
-      // Re-subscribe on reconnect
-      if (currentTab === 'server') {
-        subscribeMt();
-        requestHistory('mt');
-      } else if (currentTab === 'sessions' && selectedSessionId) {
-        subscribeSession(selectedSessionId);
-        requestHistory('mthost', selectedSessionId);
+async function loadLogFiles(): Promise<void> {
+  try {
+    const response = await fetch('/api/logs/files');
+    if (!response.ok) return;
+
+    const data = (await response.json()) as LogFilesResponse;
+    logFiles = data.files;
+
+    updateSessionPicker();
+
+    // Auto-select mt.log for server tab
+    if (currentTab === 'server') {
+      const mtFile = logFiles.find((f) => f.source === 'mt' && f.name === 'mt.log');
+      if (mtFile) {
+        selectedFile = mtFile.name;
+        await loadFileContent();
       }
-      requestSessions();
     }
-  });
+  } catch (e) {
+    console.error('Failed to load log files:', e);
+  }
+}
+
+/**
+ * Load content from selected file
+ */
+async function loadFileContent(): Promise<void> {
+  if (!selectedFile) {
+    displayedEntries = [];
+    updateDisplay();
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/logs/read?file=${encodeURIComponent(selectedFile)}&lines=200&fromEnd=true`,
+    );
+    if (!response.ok) return;
+
+    const data = (await response.json()) as LogReadResponse;
+    tailPosition = data.position;
+
+    displayedEntries = data.entries.filter(filterEntry).map((e) => ({
+      timestamp: e.timestamp,
+      level: e.level,
+      module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
+      message: e.message,
+    }));
+
+    updateDisplay();
+    if (liveTail) {
+      scrollToBottom();
+    }
+
+    startPolling();
+  } catch (e) {
+    console.error('Failed to load file content:', e);
+  }
+}
+
+/**
+ * Start polling for new content
+ */
+function startPolling(): void {
+  stopPolling();
+  if (liveTail && selectedFile) {
+    pollTimer = window.setInterval(pollForNewContent, POLL_INTERVAL);
+  }
+}
+
+/**
+ * Stop polling
+ */
+function stopPolling(): void {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+/**
+ * Poll for new content since last position
+ */
+async function pollForNewContent(): Promise<void> {
+  if (!selectedFile || !liveTail) return;
+
+  try {
+    const response = await fetch(
+      `/api/logs/tail?file=${encodeURIComponent(selectedFile)}&position=${tailPosition}`,
+    );
+    if (!response.ok) return;
+
+    const data = (await response.json()) as LogReadResponse;
+
+    if (data.entries.length > 0) {
+      tailPosition = data.position;
+
+      const newEntries = data.entries.filter(filterEntry).map((e) => ({
+        timestamp: e.timestamp,
+        level: e.level,
+        module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
+        message: e.message,
+      }));
+
+      displayedEntries.push(...newEntries);
+
+      // Limit displayed entries to prevent memory issues
+      if (displayedEntries.length > 2000) {
+        displayedEntries = displayedEntries.slice(-1500);
+      }
+
+      updateDisplay();
+      if (liveTail) {
+        scrollToBottom();
+      }
+    }
+  } catch {
+    // Ignore polling errors
+  }
+}
+
+/**
+ * Filter entry by level and search
+ */
+function filterEntry(entry: LogEntry): boolean {
+  const levelNum = levelStringToNumber(entry.level);
+  if (levelNum > minLevel) return false;
+
+  if (searchFilter) {
+    const lowerSearch = searchFilter.toLowerCase();
+    if (
+      !entry.message.toLowerCase().includes(lowerSearch) &&
+      !entry.source.toLowerCase().includes(lowerSearch)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -98,14 +228,8 @@ function bindTabEvents(): void {
  * Switch to a different tab
  */
 function switchTab(tab: DiagnosticsTab): void {
-  // Unsubscribe from current tab's streams
-  if (currentTab === 'server') {
-    unsubscribeMt();
-  } else if (currentTab === 'sessions' && selectedSessionId) {
-    unsubscribeSession(selectedSessionId);
-  }
-
   currentTab = tab;
+  stopPolling();
 
   // Update tab UI
   document.querySelectorAll('.diag-tab').forEach((t) => {
@@ -120,24 +244,16 @@ function switchTab(tab: DiagnosticsTab): void {
 
   // Clear and refresh
   displayedEntries = [];
-
-  // Connect/subscribe based on tab
-  if (!isConnected()) {
-    connectLogsWebSocket();
-  }
+  selectedFile = null;
 
   if (tab === 'server') {
-    subscribeMt();
-    requestHistory('mt');
-  } else if (tab === 'sessions') {
-    requestSessions();
-    if (selectedSessionId) {
-      subscribeSession(selectedSessionId);
-      requestHistory('mthost', selectedSessionId);
+    const mtFile = logFiles.find((f) => f.source === 'mt' && f.name === 'mt.log');
+    if (mtFile) {
+      selectedFile = mtFile.name;
     }
   }
 
-  refreshLogs();
+  loadFileContent();
 }
 
 /**
@@ -148,7 +264,7 @@ function bindControlEvents(): void {
   if (levelFilter) {
     levelFilter.addEventListener('change', () => {
       minLevel = parseInt(levelFilter.value, 10) as LogLevel;
-      refreshLogs();
+      loadFileContent();
     });
   }
 
@@ -159,7 +275,7 @@ function bindControlEvents(): void {
       if (searchTimeout) clearTimeout(searchTimeout);
       searchTimeout = window.setTimeout(() => {
         searchFilter = searchInput.value.toLowerCase();
-        refreshLogs();
+        loadFileContent();
       }, 200);
     });
   }
@@ -169,7 +285,10 @@ function bindControlEvents(): void {
     liveTailCheckbox.addEventListener('change', () => {
       liveTail = liveTailCheckbox.checked;
       if (liveTail) {
+        startPolling();
         scrollToBottom();
+      } else {
+        stopPolling();
       }
     });
   }
@@ -182,97 +301,16 @@ function bindControlEvents(): void {
   const sessionPicker = document.getElementById('diag-session-picker') as HTMLSelectElement | null;
   if (sessionPicker) {
     sessionPicker.addEventListener('change', () => {
-      // Unsubscribe from old session
-      if (selectedSessionId) {
-        unsubscribeSession(selectedSessionId);
+      const sessionId = sessionPicker.value;
+      if (sessionId) {
+        const sessionFile = logFiles.find((f) => f.sessionId === sessionId);
+        if (sessionFile) {
+          selectedFile = sessionFile.name;
+          loadFileContent();
+        }
       }
-
-      selectedSessionId = sessionPicker.value || null;
-      displayedEntries = [];
-
-      if (selectedSessionId) {
-        subscribeSession(selectedSessionId);
-        requestHistory('mthost', selectedSessionId);
-      }
-      refreshLogs();
     });
   }
-}
-
-/**
- * Handle incoming log entry from WebSocket
- */
-function handleLogEntry(entry: ServerLogEntry): void {
-  if (currentTab === 'server' && entry.source === 'mt') {
-    addDisplayEntry(entry);
-  } else if (
-    currentTab === 'sessions' &&
-    entry.source === 'mthost' &&
-    entry.sessionId === selectedSessionId
-  ) {
-    addDisplayEntry(entry);
-  }
-}
-
-/**
- * Add an entry to displayed logs
- */
-function addDisplayEntry(entry: ServerLogEntry): void {
-  const levelNum = levelStringToNumber(entry.level);
-  if (levelNum > minLevel) return;
-
-  const displayEntry: DisplayEntry = {
-    timestamp: entry.timestamp,
-    level: entry.level,
-    module: entry.source === 'mt' ? 'mt' : `mthost-${entry.sessionId?.slice(0, 4) || ''}`,
-    message: entry.message,
-  };
-
-  if (searchFilter && !matchesSearch(displayEntry)) return;
-
-  displayedEntries.push(displayEntry);
-  updateDisplay();
-
-  if (liveTail) {
-    scrollToBottom();
-  }
-}
-
-/**
- * Handle history response from WebSocket
- */
-function handleHistory(response: LogHistoryResponse): void {
-  const entries = response.entries.filter((e) => {
-    const levelNum = levelStringToNumber(e.level);
-    if (levelNum > minLevel) return false;
-    const displayEntry: DisplayEntry = {
-      timestamp: e.timestamp,
-      level: e.level,
-      module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
-      message: e.message,
-    };
-    return !searchFilter || matchesSearch(displayEntry);
-  });
-
-  displayedEntries = entries.map((e) => ({
-    timestamp: e.timestamp,
-    level: e.level,
-    module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
-    message: e.message,
-  }));
-
-  updateDisplay();
-  if (liveTail) {
-    scrollToBottom();
-  }
-}
-
-/**
- * Handle sessions list response from WebSocket
- */
-function handleSessions(response: LogSessionsResponse): void {
-  sessionsList = response.sessions;
-  updateSessionPicker();
 }
 
 /**
@@ -285,11 +323,13 @@ function updateSessionPicker(): void {
   const currentValue = picker.value;
   picker.innerHTML = '<option value="">Select session...</option>';
 
-  sessionsList.forEach((session) => {
+  const sessionFiles = logFiles.filter((f) => f.source === 'mthost' && f.sessionId);
+  sessionFiles.forEach((file) => {
     const option = document.createElement('option');
-    option.value = session.id;
-    option.textContent = `${session.id} ${session.active ? '(active)' : ''} - ${session.logCount} entries`;
-    if (session.id === currentValue) {
+    option.value = file.sessionId || '';
+    const sizeKb = Math.round(file.size / 1024);
+    option.textContent = `${file.sessionId?.slice(0, 8)} ${file.isActive ? '(active)' : ''} - ${sizeKb}KB`;
+    if (file.sessionId === currentValue) {
       option.selected = true;
     }
     picker.appendChild(option);
@@ -317,55 +357,22 @@ function levelStringToNumber(level: string): number {
 }
 
 /**
- * Check if entry matches search filter
- */
-function matchesSearch(entry: DisplayEntry): boolean {
-  return (
-    entry.message.toLowerCase().includes(searchFilter) ||
-    entry.module.toLowerCase().includes(searchFilter)
-  );
-}
-
-/**
- * Refresh logs from the current source
- */
-function refreshLogs(): void {
-  const content = document.getElementById('diag-log-content');
-  const countEl = document.getElementById('diag-entry-count');
-  if (!content) return;
-
-  if (currentTab === 'server') {
-    if (!isConnected()) {
-      content.innerHTML = '<div class="diag-connecting">Connecting to server...</div>';
-      if (countEl) countEl.textContent = '0 entries';
-      return;
-    }
-  } else if (currentTab === 'sessions') {
-    if (!selectedSessionId) {
-      content.innerHTML = '<div class="diag-empty">Select a session to view logs</div>';
-      if (countEl) countEl.textContent = '0 entries';
-      return;
-    }
-    if (!isConnected()) {
-      content.innerHTML = '<div class="diag-connecting">Connecting to server...</div>';
-      if (countEl) countEl.textContent = '0 entries';
-      return;
-    }
-  }
-
-  updateDisplay();
-}
-
-/**
  * Update the display with current entries
  */
 function updateDisplay(): void {
   const content = document.getElementById('diag-log-content');
   const countEl = document.getElementById('diag-entry-count');
+  const statusEl = document.getElementById('diag-connection-status');
   if (!content) return;
 
+  if (statusEl) {
+    statusEl.textContent = selectedFile ? `File: ${selectedFile}` : '';
+  }
+
   if (displayedEntries.length === 0) {
-    content.innerHTML = '<div class="diag-empty">No log entries</div>';
+    content.innerHTML = selectedFile
+      ? '<div class="diag-empty">No log entries match current filters</div>'
+      : '<div class="diag-empty">Select a log file to view</div>';
     if (countEl) countEl.textContent = '0 entries';
     return;
   }
@@ -435,5 +442,5 @@ async function copyAllLogs(): Promise<void> {
  * Cleanup when settings panel closes
  */
 export function stopDiagnosticsRefresh(): void {
-  disconnectLogsWebSocket();
+  stopPolling();
 }

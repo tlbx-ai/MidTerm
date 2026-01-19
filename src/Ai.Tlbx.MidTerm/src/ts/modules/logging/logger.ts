@@ -1,20 +1,21 @@
 /**
  * Logger Module
  *
- * Provides lazy-evaluated logging with IndexedDB persistence.
+ * Provides lazy-evaluated logging with console output.
  * The messageFactory lambda is only called if the log level is enabled,
  * avoiding string allocation overhead for disabled levels.
+ *
+ * Errors and exceptions are always logged to console regardless of settings.
  */
 
 import type { Logger, LogEntry } from './types';
 import { LogLevel, LOG_LEVEL_NAMES } from './types';
-import { writeLogEntry } from './storage';
 
 /** Current minimum log level (default: Warn) */
 let minLevel: LogLevel = LogLevel.Warn;
 
-/** Whether to also log to console (development mode) */
-let consoleEnabled = false;
+/** Whether to log info/verbose to console (development mode) */
+let consoleVerbose = false;
 
 /**
  * Set the minimum log level
@@ -31,10 +32,11 @@ export function getLogLevel(): LogLevel {
 }
 
 /**
- * Enable or disable console logging
+ * Enable or disable verbose console logging (info/verbose levels)
+ * Note: Errors and warnings are always logged to console
  */
 export function setConsoleLogging(enabled: boolean): void {
-  consoleEnabled = enabled;
+  consoleVerbose = enabled;
 }
 
 /**
@@ -58,20 +60,23 @@ function writeLog(level: LogLevel, module: string, message: string, data?: unkno
     data,
   };
 
-  // Write to IndexedDB (async, fire-and-forget)
-  writeLogEntry(entry);
+  const formatted = formatConsoleMessage(entry);
 
-  // Also log to console if enabled
-  if (consoleEnabled) {
-    const formatted = formatConsoleMessage(entry);
+  // Always log errors/exceptions to console
+  if (level <= LogLevel.Error) {
+    console.error(formatted, data ?? '');
+    return;
+  }
+
+  // Log warn to console always
+  if (level === LogLevel.Warn) {
+    console.warn(formatted, data ?? '');
+    return;
+  }
+
+  // Info/verbose only if verbose console enabled
+  if (consoleVerbose) {
     switch (level) {
-      case LogLevel.Exception:
-      case LogLevel.Error:
-        console.error(formatted, data ?? '');
-        break;
-      case LogLevel.Warn:
-        console.warn(formatted, data ?? '');
-        break;
       case LogLevel.Info:
         console.info(formatted, data ?? '');
         break;

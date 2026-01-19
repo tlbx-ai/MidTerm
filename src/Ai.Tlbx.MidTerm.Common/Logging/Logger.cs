@@ -4,9 +4,13 @@ namespace Ai.Tlbx.MidTerm.Common.Logging;
 
 public sealed class Logger : IDisposable
 {
+    private const int ContextDumpCooldownSeconds = 30;
+
     private readonly string _source;
     private readonly LogWriter _writer;
+    private readonly LogRingBuffer _ringBuffer = new();
     private LogSeverity _minLevel = LogSeverity.Warn;
+    private DateTime _lastContextDump = DateTime.MinValue;
 
     public LogSeverity MinLevel
     {
@@ -23,27 +27,53 @@ public sealed class Logger : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Log(LogSeverity level, Func<string> messageFactory)
     {
-        if (level > _minLevel)
+        // Only evaluate message if we'll use it (level passes OR ring buffer capture)
+        // Ring buffer only captures Info and above to avoid verbose spam
+        var captureInRingBuffer = level <= LogSeverity.Info;
+        var passesFilter = level <= _minLevel;
+
+        if (!captureInRingBuffer && !passesFilter)
         {
             return;
         }
 
         var message = messageFactory();
-        _writer.Write(level, _source, message, immediateFlush: level == LogSeverity.Exception);
-    }
 
-    public void Exception(Exception ex, string context)
-    {
-        if (LogSeverity.Exception > _minLevel)
+        if (captureInRingBuffer)
+        {
+            _ringBuffer.Add(level, _source, message);
+        }
+
+        if (!passesFilter)
         {
             return;
         }
 
+        _writer.Write(level, _source, message, immediateFlush: false);
+    }
+
+    public void Exception(Exception ex, string context)
+    {
         var message = $"[{context}] {ex.GetType().Name}: {ex.Message}\n  StackTrace: {ex.StackTrace}";
 
         if (ex.InnerException is not null)
         {
             message += $"\n  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
+        }
+
+        _ringBuffer.Add(LogSeverity.Exception, _source, message);
+
+        if (LogSeverity.Exception > _minLevel)
+        {
+            return;
+        }
+
+        // Flush context on exception, with cooldown to prevent spam
+        var now = DateTime.UtcNow;
+        if ((now - _lastContextDump).TotalSeconds >= ContextDumpCooldownSeconds)
+        {
+            _ringBuffer.FlushTo(_writer, _source);
+            _lastContextDump = now;
         }
 
         _writer.Write(LogSeverity.Exception, _source, message, immediateFlush: true);
