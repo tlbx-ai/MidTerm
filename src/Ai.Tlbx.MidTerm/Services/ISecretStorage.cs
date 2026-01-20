@@ -11,4 +11,9 @@ public interface ISecretStorage
     void SetSecret(string key, string value);
     /// <summary>Deletes a secret by key.</summary>
     void DeleteSecret(string key);
+
+    /// <summary>True if secret storage failed to load (file corruption, permission denied, etc.).</summary>
+    bool LoadFailed { get; }
+    /// <summary>Error message if LoadFailed is true, null otherwise.</summary>
+    string? LoadError { get; }
 }

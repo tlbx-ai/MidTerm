@@ -148,6 +148,14 @@ public static class AuthEndpoints
                 PasswordSet = !string.IsNullOrEmpty(statusSettings.PasswordHash)
             }, AppJsonContext.Default.AuthStatusResponse);
         });
+
+        // Security status endpoint - reports password/certificate health
+        // Accessible without authentication to allow monitoring
+        var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();
+        app.MapGet("/api/security/status", () =>
+        {
+            return Results.Json(securityStatusService.GetStatus(), AppJsonContext.Default.SecurityStatus);
+        });
     }
 
     private static bool IsPublicPath(string path)
@@ -157,6 +165,7 @@ public static class AuthEndpoints
                path == "/trust" ||
                path == "/trust.html" ||
                path == "/api/health" ||
+               path == "/api/security/status" ||
                path.StartsWith("/api/certificate/") ||
                path.StartsWith("/api/auth/") ||
                path.StartsWith("/css/") ||

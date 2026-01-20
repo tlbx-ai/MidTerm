@@ -15,6 +15,9 @@ public sealed class LinuxSecretStorage : ISecretStorage
     private readonly object _lock = new();
     private Dictionary<string, string>? _cache;
 
+    public bool LoadFailed { get; private set; }
+    public string? LoadError { get; private set; }
+
     public LinuxSecretStorage(string settingsDirectory)
     {
         _secretsPath = Path.Combine(settingsDirectory, "secrets.json");
@@ -79,7 +82,9 @@ public sealed class LinuxSecretStorage : ISecretStorage
         }
         catch (Exception ex)
         {
-            Log.Error(() => $"Failed to load secrets file: {ex.Message}");
+            LoadFailed = true;
+            LoadError = $"Failed to load secrets file '{_secretsPath}': {ex.Message}";
+            Log.Error(() => LoadError);
         }
     }
 

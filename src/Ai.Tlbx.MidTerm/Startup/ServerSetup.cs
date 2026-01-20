@@ -100,6 +100,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<AuthService>();
         builder.Services.AddSingleton<TempCleanupService>();
         builder.Services.AddSingleton<CertificateInfoService>();
+        builder.Services.AddSingleton<SecurityStatusService>();
 
         return builder;
     }

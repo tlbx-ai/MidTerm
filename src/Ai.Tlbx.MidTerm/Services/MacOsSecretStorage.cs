@@ -13,6 +13,11 @@ public sealed class MacOsSecretStorage : ISecretStorage
     private const int ErrSecItemNotFound = -25300;
     private const int ErrSecDuplicateItem = -25299;
 
+    // macOS uses Keychain which is queried on-demand, no "load" phase
+    // Individual operation failures are logged in each method
+    public bool LoadFailed => false;
+    public string? LoadError => null;
+
     public string? GetSecret(string key)
     {
         var status = SecKeychainFindGenericPassword(

@@ -352,7 +352,7 @@ public static class EndpointSetup
             {
                 try
                 {
-                    await Task.Delay(1000);
+                    await Task.Delay(3000);
                     UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
                     Environment.Exit(0);
                 }

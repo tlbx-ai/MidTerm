@@ -130,10 +130,11 @@ public sealed class SettingsService
                         Save(_cached);
                         File.Delete(oldPath);
                         LoadStatus = SettingsLoadStatus.MigratedFromOld;
+                        Log.Info(() => "Successfully migrated settings from .old file");
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Migration is best-effort, continue with loaded settings
+                        Log.Warn(() => $"Failed to migrate settings from .old file: {ex.Message}");
                     }
                 }
             }
@@ -188,6 +189,15 @@ public sealed class SettingsService
         current.BellStyle = old.BellStyle;
         current.CopyOnSelect = old.CopyOnSelect;
         current.RightClickPaste = old.RightClickPaste;
+
+        // Migrate certificate settings if not already set by installer
+        // These are critical for preserving trusted certificates across updates
+        if (string.IsNullOrEmpty(current.CertificatePath) && !string.IsNullOrEmpty(old.CertificatePath))
+        {
+            current.CertificatePath = old.CertificatePath;
+            current.KeyProtection = old.KeyProtection;
+            Log.Info(() => $"Migrated certificate path from old settings: {old.CertificatePath}");
+        }
 
         // Note: RunAsUser/RunAsUserSid/RunAsUid/RunAsGid are NOT migrated
         // They come from the installer which captures the current user

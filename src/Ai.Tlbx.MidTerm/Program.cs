@@ -126,6 +126,15 @@ public class Program
         Log.Initialize("mt", logDirectory, settings.LogLevel);
         Log.Info(() => $"MidTerm server starting (LogLevel: {settings.LogLevel})");
 
+        // Validate security state and log any warnings (informational only - does not block)
+        var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();
+        var securityStatus = securityStatusService.GetStatus();
+        foreach (var warning in securityStatus.Warnings)
+        {
+            Log.Warn(() => $"SECURITY: {warning}");
+            WriteEventLog($"Security Warning: {warning}", DiagLogLevel.Warning);
+        }
+
         WelcomeScreen.LogStartupStatus(settingsService, settings, port, bindAddress,
             ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
 

@@ -12,7 +12,7 @@ public static class UpdateScriptGenerator
     private const string ServiceName = "MidTerm";
     private const string LaunchdLabel = "ai.tlbx.midterm";
     private const string SystemdService = "midterm";
-    private const int MaxRetries = 15;
+    private const int MaxRetries = 30;
     private const int RetryDelaySeconds = 1;
 
     public static string GenerateUpdateScript(string extractedDir, string currentBinaryPath, UpdateType updateType = UpdateType.Full, bool deleteSourceAfter = true)
@@ -263,8 +263,35 @@ try {{
         Log 'version.json backed up'
     }}
 
+    # Backup credential files (critical for security persistence)
+    $settingsPath = Join-Path $InstallDir 'settings.json'
+    $secretsPath = Join-Path $InstallDir 'secrets.bin'
+    $certPath = Join-Path $InstallDir 'midterm.pem'
+    $keysDir = Join-Path $InstallDir 'keys'
+
+    if (Test-Path $settingsPath) {{
+        Log 'Backing up settings.json...'
+        Copy-Item $settingsPath ""$settingsPath.bak"" -Force -ErrorAction Stop
+        Log 'settings.json backed up'
+    }}
+    if (Test-Path $secretsPath) {{
+        Log 'Backing up secrets.bin...'
+        Copy-Item $secretsPath ""$secretsPath.bak"" -Force -ErrorAction Stop
+        Log 'secrets.bin backed up'
+    }}
+    if (Test-Path $certPath) {{
+        Log 'Backing up midterm.pem...'
+        Copy-Item $certPath ""$certPath.bak"" -Force -ErrorAction Stop
+        Log 'midterm.pem backed up'
+    }}
+    if (Test-Path $keysDir) {{
+        Log 'Backing up keys directory...'
+        Copy-Item $keysDir ""$keysDir.bak"" -Recurse -Force -ErrorAction Stop
+        Log 'keys directory backed up'
+    }}
+
     $rollbackNeeded = $true
-    Log 'All backups created'
+    Log 'All backups created (including credentials)'
 
     # ============================================
     # PHASE 4: Install new files
@@ -294,7 +321,7 @@ try {{
     if ($service) {{
         Log 'Starting MidTerm service...'
         Start-Service -Name '{ServiceName}' -ErrorAction Stop
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 8
 
         $service = Get-Service -Name '{ServiceName}'
         if ($service.Status -ne 'Running') {{
@@ -305,7 +332,7 @@ try {{
     }} else {{
         Log 'Starting mt.exe directly...'
         $proc = Start-Process -FilePath $CurrentMt -WindowStyle Hidden -PassThru
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 8
 
         # Verify process is running
         $running = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
@@ -325,6 +352,17 @@ try {{
     Remove-Item ""$CurrentMt.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentMthost.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentVersionJson.bak"" -Force -ErrorAction SilentlyContinue
+
+    # Clean up credential backups
+    $settingsPath = Join-Path $InstallDir 'settings.json'
+    $secretsPath = Join-Path $InstallDir 'secrets.bin'
+    $certPath = Join-Path $InstallDir 'midterm.pem'
+    $keysDir = Join-Path $InstallDir 'keys'
+    Remove-Item ""$settingsPath.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$secretsPath.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$certPath.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$keysDir.bak"" -Recurse -Force -ErrorAction SilentlyContinue
+
     if ($DeleteSource) {{
         Remove-Item -Path $ExtractedDir -Recurse -Force -ErrorAction SilentlyContinue
     }}
@@ -383,6 +421,50 @@ try {{
                 Log 'version.json restored'
             }} catch {{
                 Log ""Failed to restore version.json: $_"" 'ERROR'
+            }}
+        }}
+
+        # Restore credential files
+        $settingsPath = Join-Path $InstallDir 'settings.json'
+        $secretsPath = Join-Path $InstallDir 'secrets.bin'
+        $certPath = Join-Path $InstallDir 'midterm.pem'
+        $keysDir = Join-Path $InstallDir 'keys'
+
+        if (Test-Path ""$settingsPath.bak"") {{
+            Log 'Restoring settings.json from backup...'
+            try {{
+                Copy-Item ""$settingsPath.bak"" $settingsPath -Force -ErrorAction Stop
+                Log 'settings.json restored'
+            }} catch {{
+                Log ""Failed to restore settings.json: $_"" 'ERROR'
+            }}
+        }}
+        if (Test-Path ""$secretsPath.bak"") {{
+            Log 'Restoring secrets.bin from backup...'
+            try {{
+                Copy-Item ""$secretsPath.bak"" $secretsPath -Force -ErrorAction Stop
+                Log 'secrets.bin restored'
+            }} catch {{
+                Log ""Failed to restore secrets.bin: $_"" 'ERROR'
+            }}
+        }}
+        if (Test-Path ""$certPath.bak"") {{
+            Log 'Restoring midterm.pem from backup...'
+            try {{
+                Copy-Item ""$certPath.bak"" $certPath -Force -ErrorAction Stop
+                Log 'midterm.pem restored'
+            }} catch {{
+                Log ""Failed to restore midterm.pem: $_"" 'ERROR'
+            }}
+        }}
+        if (Test-Path ""$keysDir.bak"") {{
+            Log 'Restoring keys directory from backup...'
+            try {{
+                Remove-Item $keysDir -Recurse -Force -ErrorAction SilentlyContinue
+                Copy-Item ""$keysDir.bak"" $keysDir -Recurse -Force -ErrorAction Stop
+                Log 'keys directory restored'
+            }} catch {{
+                Log ""Failed to restore keys directory: $_"" 'ERROR'
             }}
         }}
 
@@ -620,6 +702,30 @@ cleanup() {{
             cp -f ""$CURRENT_VERSION_JSON.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
         fi
 
+        # Restore credential files
+        SETTINGS_PATH=""$INSTALL_DIR/settings.json""
+        SECRETS_PATH=""$INSTALL_DIR/secrets.json""
+        CERT_PATH=""$INSTALL_DIR/midterm.pem""
+        KEYS_DIR=""$INSTALL_DIR/keys""
+
+        if [[ -f ""$SETTINGS_PATH.bak"" ]]; then
+            log ""Restoring settings.json from backup...""
+            cp -f ""$SETTINGS_PATH.bak"" ""$SETTINGS_PATH"" 2>/dev/null || log ""Failed to restore settings.json"" ""ERROR""
+        fi
+        if [[ -f ""$SECRETS_PATH.bak"" ]]; then
+            log ""Restoring secrets.json from backup...""
+            cp -f ""$SECRETS_PATH.bak"" ""$SECRETS_PATH"" 2>/dev/null || log ""Failed to restore secrets.json"" ""ERROR""
+        fi
+        if [[ -f ""$CERT_PATH.bak"" ]]; then
+            log ""Restoring midterm.pem from backup...""
+            cp -f ""$CERT_PATH.bak"" ""$CERT_PATH"" 2>/dev/null || log ""Failed to restore midterm.pem"" ""ERROR""
+        fi
+        if [[ -d ""$KEYS_DIR.bak"" ]]; then
+            log ""Restoring keys directory from backup...""
+            rm -rf ""$KEYS_DIR"" 2>/dev/null || true
+            cp -rf ""$KEYS_DIR.bak"" ""$KEYS_DIR"" 2>/dev/null || log ""Failed to restore keys directory"" ""ERROR""
+        fi
+
         # Try to restart previous version
         log ""Attempting to restart previous version...""
         if $IS_MACOS; then
@@ -723,8 +829,35 @@ if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
     log ""version.json backed up""
 fi
 
+# Backup credential files (critical for security persistence)
+SETTINGS_PATH=""$INSTALL_DIR/settings.json""
+SECRETS_PATH=""$INSTALL_DIR/secrets.json""
+CERT_PATH=""$INSTALL_DIR/midterm.pem""
+KEYS_DIR=""$INSTALL_DIR/keys""
+
+if [[ -f ""$SETTINGS_PATH"" ]]; then
+    log ""Backing up settings.json...""
+    cp -f ""$SETTINGS_PATH"" ""$SETTINGS_PATH.bak""
+    log ""settings.json backed up""
+fi
+if [[ -f ""$SECRETS_PATH"" ]]; then
+    log ""Backing up secrets.json...""
+    cp -f ""$SECRETS_PATH"" ""$SECRETS_PATH.bak""
+    log ""secrets.json backed up""
+fi
+if [[ -f ""$CERT_PATH"" ]]; then
+    log ""Backing up midterm.pem...""
+    cp -f ""$CERT_PATH"" ""$CERT_PATH.bak""
+    log ""midterm.pem backed up""
+fi
+if [[ -d ""$KEYS_DIR"" ]]; then
+    log ""Backing up keys directory...""
+    cp -rf ""$KEYS_DIR"" ""$KEYS_DIR.bak""
+    log ""keys directory backed up""
+fi
+
 ROLLBACK_NEEDED=true
-log ""All backups created""
+log ""All backups created (including credentials)""
 
 # ============================================
 # PHASE 4: Install new files
@@ -761,7 +894,7 @@ log '=== PHASE 5: Starting new version ==='
 # Try to start service first
 log ""Starting service...""
 {startServiceCmd}
-sleep 3
+sleep 8
 
 # Check if service is running
 if {checkServiceCmd}; then
@@ -771,7 +904,7 @@ else
     # Service not running, start directly
     log ""Service not running, starting mt directly...""
     nohup ""$CURRENT_MT"" > /dev/null 2>&1 &
-    sleep 3
+    sleep 8
 
     if pgrep -f ""$CURRENT_MT"" > /dev/null 2>&1; then
         log ""mt started successfully (PID: $(pgrep -f ""$CURRENT_MT"" | head -1))""
@@ -792,6 +925,13 @@ log '=== PHASE 6: Cleanup ==='
 rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
 rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
 rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
+
+# Clean up credential backups
+rm -f ""$INSTALL_DIR/settings.json.bak"" 2>/dev/null || true
+rm -f ""$INSTALL_DIR/secrets.json.bak"" 2>/dev/null || true
+rm -f ""$INSTALL_DIR/midterm.pem.bak"" 2>/dev/null || true
+rm -rf ""$INSTALL_DIR/keys.bak"" 2>/dev/null || true
+
 if [[ ""$DELETE_SOURCE"" == ""true"" ]]; then
     rm -rf ""$EXTRACTED_DIR"" 2>/dev/null || true
 fi

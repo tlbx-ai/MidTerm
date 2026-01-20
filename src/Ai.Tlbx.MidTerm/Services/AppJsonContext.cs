@@ -45,6 +45,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(AuthStatusResponse))]
 [JsonSerializable(typeof(CertificateInfoResponse))]
 [JsonSerializable(typeof(CertificateDownloadInfo))]
+[JsonSerializable(typeof(SecurityStatus))]
 [JsonSerializable(typeof(SharePacketInfo))]
 [JsonSerializable(typeof(NetworkEndpointInfo))]
 [JsonSerializable(typeof(NetworkEndpointInfo[]))]

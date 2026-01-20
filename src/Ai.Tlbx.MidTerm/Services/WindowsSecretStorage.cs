@@ -15,6 +15,9 @@ public sealed class WindowsSecretStorage : ISecretStorage
     private readonly object _lock = new();
     private Dictionary<string, string>? _cache;
 
+    public bool LoadFailed { get; private set; }
+    public string? LoadError { get; private set; }
+
     public WindowsSecretStorage(string settingsDirectory, bool isServiceMode)
     {
         _secretsPath = Path.Combine(settingsDirectory, "secrets.bin");
@@ -96,7 +99,9 @@ public sealed class WindowsSecretStorage : ISecretStorage
         }
         catch (Exception ex)
         {
-            Log.Error(() => $"Failed to load secrets file: {ex.Message}");
+            LoadFailed = true;
+            LoadError = $"Failed to load secrets file '{_secretsPath}': {ex.Message}";
+            Log.Error(() => LoadError);
         }
     }
 
