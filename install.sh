@@ -496,6 +496,8 @@ write_service_settings() {
     local old_settings_path="$config_dir/settings.json.old"
 
     mkdir -p "$config_dir"
+    # Service runs as INSTALLING_USER, so they need write access to config dir
+    chown -R "$INSTALLING_USER" "$config_dir"
 
     # Backup existing settings for migration by the app
     if [ -f "$settings_path" ]; then
@@ -961,6 +963,8 @@ install_launchd() {
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>UserName</key>
+    <string>${INSTALLING_USER}</string>
     <key>StandardOutPath</key>
     <string>${log_dir}/MidTerm.log</string>
     <key>StandardErrorPath</key>
