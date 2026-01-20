@@ -72,8 +72,8 @@
     --btn-secondary-hover: #545C7E;
     --bg-hover: #24283B;
     --bg-dropdown: #1F2335;
-    --bg-session-hover: #2F3243;    /* --bg-dropdown + 7% white */
-    --bg-session-active: #454858;   /* --bg-hover + 15% white */
+    --bg-session-hover: #272B3C;    /* --bg-dropdown + 3.5% white */
+    --bg-session-active: #34384A;   /* --bg-hover + 7.5% white */
     --bg-settings: #14151E;
     --bg-success: #1A2F23;
     --border-success: #2D5A3D;
