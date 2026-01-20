@@ -41,7 +41,7 @@ public static class EndpointSetup
             var networks = GetNetworkInterfaces();
             var users = UserEnumerationService.GetSystemUsers();
 
-            var shells = shellRegistry.GetAllShells().Select(s => new ShellInfoDto
+            var shells = shellRegistry.GetPlatformShells().Select(s => new ShellInfoDto
             {
                 Type = s.ShellType.ToString(),
                 DisplayName = s.DisplayName,
@@ -469,7 +469,7 @@ public static class EndpointSetup
 
         app.MapGet("/api/shells", () =>
         {
-            var shells = shellRegistry.GetAllShells().Select(s => new ShellInfoDto
+            var shells = shellRegistry.GetPlatformShells().Select(s => new ShellInfoDto
             {
                 Type = s.ShellType.ToString(),
                 DisplayName = s.DisplayName,
