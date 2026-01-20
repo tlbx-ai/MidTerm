@@ -59,6 +59,7 @@ import {
   initSessionDrag,
   initTrafficIndicator,
 } from './modules/sidebar';
+import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
 import { toggleSettings, closeSettings, applyReceivedSettings } from './modules/settings';
@@ -148,6 +149,7 @@ async function init(): Promise<void> {
   setupSidebarResize();
   initializeSessionList();
   initializeSidebarUpdater();
+  initTabTitle();
   initSessionDrag();
   initializeCommandHistory();
   initHistoryDropdown(spawnFromHistory);

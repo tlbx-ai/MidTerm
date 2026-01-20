@@ -65,6 +65,7 @@ public static class EndpointSetup
                 TtyHostCompatible = conHostCompatible,
                 UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
                 Platform = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux",
+                Hostname = Environment.MachineName,
                 Settings = publicSettings,
                 Networks = networks,
                 Users = users,

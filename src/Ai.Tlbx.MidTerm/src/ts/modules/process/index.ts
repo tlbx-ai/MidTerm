@@ -5,7 +5,7 @@
  */
 
 export {
-  registerProcessStateCallback,
+  addProcessStateListener,
   getProcessState,
   handleProcessEvent,
   handleForegroundChange,

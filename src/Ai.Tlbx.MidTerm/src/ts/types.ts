@@ -107,6 +107,14 @@ export type BellStyle = 'notification' | 'sound' | 'visual' | 'both' | 'off';
 /** Clipboard shortcut options */
 export type ClipboardShortcuts = 'auto' | 'windows' | 'unix';
 
+/** Tab title mode options */
+export type TabTitleMode =
+  | 'hostname'
+  | 'static'
+  | 'sessionName'
+  | 'terminalTitle'
+  | 'foregroundProcess';
+
 /** Log level options (matching backend enum) */
 export type LogLevelSetting = 'exception' | 'error' | 'warn' | 'info' | 'verbose';
 
@@ -122,6 +130,7 @@ export interface Settings {
   cursorBlink: boolean;
   cursorInactiveStyle: CursorInactiveStyle;
   theme: ThemeName;
+  tabTitleMode: TabTitleMode;
   minimumContrastRatio: number;
   smoothScrolling: boolean;
   useWebGL: boolean;
@@ -234,6 +243,7 @@ export interface BootstrapResponse {
   ttyHostCompatible: boolean;
   uptimeSeconds: number;
   platform: string;
+  hostname: string;
   settings: Settings;
   networks: NetworkInterface[];
   users: UserInfo[];
