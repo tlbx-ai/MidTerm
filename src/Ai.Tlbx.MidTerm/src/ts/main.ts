@@ -26,6 +26,7 @@ import {
   createTerminalForSession,
   destroyTerminalForSession,
   preloadTerminalFont,
+  initCalibrationTerminal,
   registerTerminalCallbacks,
   applyTerminalScaling,
   fitSessionToScreen,
@@ -154,6 +155,9 @@ async function init(): Promise<void> {
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
+
+  // Initialize calibration terminal after fonts are ready for accurate measurements
+  fontPromise.then(() => initCalibrationTerminal());
 
   registerCallbacks();
   connectStateWebSocket();

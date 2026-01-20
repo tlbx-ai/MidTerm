@@ -54,6 +54,9 @@ let requestBufferRefresh: (sessionId: string) => void = () => {};
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
 
+// Calibration measurement from hidden terminal (accurate cell dimensions)
+let calibrationMeasurement: { cellWidth: number; cellHeight: number } | null = null;
+
 // Debounce timer for focus operations
 let focusDebounceTimer: number | null = null;
 
@@ -732,4 +735,58 @@ export function preloadTerminalFont(): Promise<void> {
   const promise = Promise.race([fontLoadPromise, timeoutPromise]);
   setFontsReadyPromise(promise);
   return promise;
+}
+
+/**
+ * Initialize a hidden calibration terminal to get accurate cell measurements.
+ * This creates a real xterm.js terminal, measures its rendered cell dimensions,
+ * then disposes it. The measurement is used for sizing new terminals before
+ * any real terminals exist.
+ */
+export function initCalibrationTerminal(): Promise<void> {
+  return new Promise((resolve) => {
+    const container = document.createElement('div');
+    container.style.cssText = `
+      position: absolute;
+      visibility: hidden;
+      left: -9999px;
+      width: 800px;
+      height: 600px;
+    `;
+    document.body.appendChild(container);
+
+    const terminal = new Terminal({
+      ...getTerminalOptions(),
+      cols: 80,
+      rows: 24,
+    });
+
+    terminal.open(container);
+
+    requestAnimationFrame(() => {
+      const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+      if (screen && terminal.cols > 0 && terminal.rows > 0) {
+        const cellWidth = screen.offsetWidth / terminal.cols;
+        const cellHeight = screen.offsetHeight / terminal.rows;
+        if (cellWidth >= 1 && cellHeight >= 1) {
+          calibrationMeasurement = { cellWidth, cellHeight };
+          console.log(
+            `[CALIBRATION] Cell size: ${cellWidth.toFixed(2)}×${cellHeight.toFixed(2)} px`,
+          );
+        }
+      }
+
+      terminal.dispose();
+      container.remove();
+      resolve();
+    });
+  });
+}
+
+/**
+ * Get the calibration measurement from the hidden terminal.
+ * Returns null if calibration hasn't run or failed.
+ */
+export function getCalibrationMeasurement(): { cellWidth: number; cellHeight: number } | null {
+  return calibrationMeasurement;
 }

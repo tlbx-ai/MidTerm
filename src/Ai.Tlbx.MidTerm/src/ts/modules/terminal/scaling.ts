@@ -19,6 +19,7 @@ import {
 import { sessionTerminals, fontsReadyPromise, dom, currentSettings } from '../../state';
 import { $activeSessionId, getSession } from '../../stores';
 import { throttle } from '../../utils';
+import { getCalibrationMeasurement } from './manager';
 
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
@@ -35,7 +36,7 @@ export function registerScalingCallbacks(callbacks: {
   if (callbacks.focusActiveTerminal) focusActiveTerminal = callbacks.focusActiveTerminal;
 }
 
-type MeasurementSource = 'existing-terminal' | 'font-probe';
+type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe';
 
 function logResizeDiagnostics(
   operation: 'create' | 'manual-resize',
@@ -153,18 +154,35 @@ export async function calculateOptimalDimensions(
     return null;
   }
 
-  // Get cell dimensions: prefer existing terminal, otherwise measure font directly
+  // Get cell dimensions - priority order:
+  // 1. Existing open terminal (most accurate, already rendered)
+  // 2. Calibration measurement (accurate, from hidden terminal at startup)
+  // 3. Font probe (fallback, less accurate)
   const existingMeasurement = measureFromExistingTerminal();
-  const measurementSource: MeasurementSource = existingMeasurement
-    ? 'existing-terminal'
-    : 'font-probe';
+  const calibration = getCalibrationMeasurement();
 
-  // When using font-probe, wait for fonts to be loaded first
-  if (!existingMeasurement && fontsReadyPromise) {
-    await fontsReadyPromise;
+  let measurementSource: MeasurementSource;
+  let cellWidth: number;
+  let cellHeight: number;
+
+  if (existingMeasurement) {
+    measurementSource = 'existing-terminal';
+    cellWidth = existingMeasurement.cellWidth;
+    cellHeight = existingMeasurement.cellHeight;
+  } else if (calibration) {
+    measurementSource = 'calibration';
+    cellWidth = calibration.cellWidth;
+    cellHeight = calibration.cellHeight;
+  } else {
+    // Fallback to font probe (inaccurate but better than nothing)
+    measurementSource = 'font-probe';
+    if (fontsReadyPromise) {
+      await fontsReadyPromise;
+    }
+    const fontMeasurement = measureFromFont(fontSize);
+    cellWidth = fontMeasurement.cellWidth;
+    cellHeight = fontMeasurement.cellHeight;
   }
-
-  const { cellWidth, cellHeight } = existingMeasurement ?? measureFromFont(fontSize);
 
   // Account for padding and scrollbar width
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
