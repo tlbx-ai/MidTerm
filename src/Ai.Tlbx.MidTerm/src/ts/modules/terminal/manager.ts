@@ -56,6 +56,7 @@ const pendingTitleUpdates = new Map<string, number>();
 
 // Calibration measurement from hidden terminal (accurate cell dimensions)
 let calibrationMeasurement: { cellWidth: number; cellHeight: number } | null = null;
+let calibrationPromise: Promise<void> | null = null;
 
 // Debounce timer for focus operations
 let focusDebounceTimer: number | null = null;
@@ -744,7 +745,7 @@ export function preloadTerminalFont(): Promise<void> {
  * any real terminals exist.
  */
 export function initCalibrationTerminal(): Promise<void> {
-  return new Promise((resolve) => {
+  calibrationPromise = new Promise((resolve) => {
     const container = document.createElement('div');
     container.style.cssText = `
       position: absolute;
@@ -781,6 +782,7 @@ export function initCalibrationTerminal(): Promise<void> {
       resolve();
     });
   });
+  return calibrationPromise;
 }
 
 /**
@@ -789,4 +791,12 @@ export function initCalibrationTerminal(): Promise<void> {
  */
 export function getCalibrationMeasurement(): { cellWidth: number; cellHeight: number } | null {
   return calibrationMeasurement;
+}
+
+/**
+ * Get the promise that resolves when calibration is complete.
+ * Returns null if calibration hasn't been started.
+ */
+export function getCalibrationPromise(): Promise<void> | null {
+  return calibrationPromise;
 }

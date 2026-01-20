@@ -19,7 +19,7 @@ import {
 import { sessionTerminals, fontsReadyPromise, dom, currentSettings } from '../../state';
 import { $activeSessionId, getSession } from '../../stores';
 import { throttle } from '../../utils';
-import { getCalibrationMeasurement } from './manager';
+import { getCalibrationMeasurement, getCalibrationPromise } from './manager';
 
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
@@ -159,7 +159,6 @@ export async function calculateOptimalDimensions(
   // 2. Calibration measurement (accurate, from hidden terminal at startup)
   // 3. Font probe (fallback, less accurate)
   const existingMeasurement = measureFromExistingTerminal();
-  const calibration = getCalibrationMeasurement();
 
   let measurementSource: MeasurementSource;
   let cellWidth: number;
@@ -169,19 +168,28 @@ export async function calculateOptimalDimensions(
     measurementSource = 'existing-terminal';
     cellWidth = existingMeasurement.cellWidth;
     cellHeight = existingMeasurement.cellHeight;
-  } else if (calibration) {
-    measurementSource = 'calibration';
-    cellWidth = calibration.cellWidth;
-    cellHeight = calibration.cellHeight;
   } else {
-    // Fallback to font probe (inaccurate but better than nothing)
-    measurementSource = 'font-probe';
-    if (fontsReadyPromise) {
-      await fontsReadyPromise;
+    // Wait for calibration to complete if it's running
+    const calibrationPromise = getCalibrationPromise();
+    if (calibrationPromise) {
+      await calibrationPromise;
     }
-    const fontMeasurement = measureFromFont(fontSize);
-    cellWidth = fontMeasurement.cellWidth;
-    cellHeight = fontMeasurement.cellHeight;
+
+    const calibration = getCalibrationMeasurement();
+    if (calibration) {
+      measurementSource = 'calibration';
+      cellWidth = calibration.cellWidth;
+      cellHeight = calibration.cellHeight;
+    } else {
+      // Fallback to font probe (inaccurate but better than nothing)
+      measurementSource = 'font-probe';
+      if (fontsReadyPromise) {
+        await fontsReadyPromise;
+      }
+      const fontMeasurement = measureFromFont(fontSize);
+      cellWidth = fontMeasurement.cellWidth;
+      cellHeight = fontMeasurement.cellHeight;
+    }
   }
 
   // Account for padding and scrollbar width
