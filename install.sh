@@ -39,6 +39,7 @@ INSTALLING_GID="${INSTALLING_GID:-}"
 PASSWORD_HASH="${PASSWORD_HASH:-}"
 PORT="${PORT:-2000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
+TRUST_CERT="${TRUST_CERT:-}"
 
 print_header() {
     echo ""
@@ -145,6 +146,34 @@ prompt_service_mode() {
                 ;;
         esac
     done
+}
+
+# Check if password exists without needing mt binary (for pre-elevation check)
+# This just checks file existence - actual hash is read later after binary install
+check_existing_password_file() {
+    local mode="$1"  # "service" or "user"
+    local secrets_path settings_path
+
+    if [ "$mode" = "service" ]; then
+        secrets_path="/usr/local/etc/MidTerm/secrets.bin"
+        settings_path="/usr/local/etc/MidTerm/settings.json"
+    else
+        secrets_path="$HOME/.MidTerm/secrets.bin"
+        settings_path="$HOME/.MidTerm/settings.json"
+    fi
+
+    # Check secrets.bin exists and has content
+    if [ -f "$secrets_path" ] && [ -s "$secrets_path" ]; then
+        return 0
+    fi
+
+    # Fall back to settings.json (legacy)
+    if [ -f "$settings_path" ]; then
+        if grep -q '"passwordHash"' "$settings_path" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
 }
 
 get_existing_password_hash() {
@@ -300,6 +329,64 @@ prompt_network_config() {
     echo -e "  ${GREEN}HTTPS: Enabled${NC}"
 }
 
+prompt_path_modification() {
+    local install_dir="$1"
+
+    echo ""
+    echo -e "  ${CYAN}PATH Configuration:${NC}"
+    echo -e "  ${YELLOW}$install_dir is not in your PATH.${NC}"
+    echo ""
+
+    # Detect current shell
+    local current_shell
+    current_shell=$(basename "$SHELL")
+    local profile_file
+
+    case "$current_shell" in
+        zsh)
+            profile_file="$HOME/.zshrc"
+            ;;
+        bash)
+            # On macOS, bash uses .bash_profile for login shells
+            if [ "$(uname -s)" = "Darwin" ] && [ -f "$HOME/.bash_profile" ]; then
+                profile_file="$HOME/.bash_profile"
+            else
+                profile_file="$HOME/.bashrc"
+            fi
+            ;;
+        *)
+            profile_file="$HOME/.profile"
+            ;;
+    esac
+
+    echo -e "  ${CYAN}[1] Add to $profile_file automatically${NC}"
+    echo -e "  ${CYAN}[2] Skip (I'll do it manually)${NC}"
+    echo ""
+
+    read -p "  Your choice [1/2]: " path_choice < /dev/tty
+
+    if [ "$path_choice" = "1" ]; then
+        local export_line="export PATH=\"\$HOME/.local/bin:\$PATH\""
+
+        # Check if already present
+        if grep -q '\.local/bin' "$profile_file" 2>/dev/null; then
+            echo -e "  ${GREEN}PATH entry already exists in $profile_file${NC}"
+        else
+            echo "" >> "$profile_file"
+            echo "# Added by MidTerm installer" >> "$profile_file"
+            echo "$export_line" >> "$profile_file"
+            echo -e "  ${GREEN}Added to $profile_file${NC}"
+            echo -e "  ${YELLOW}Run 'source $profile_file' or start a new terminal${NC}"
+        fi
+    else
+        echo ""
+        echo -e "  ${YELLOW}Add this to your shell profile ($profile_file):${NC}"
+        echo ""
+        echo -e "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+        echo ""
+    fi
+}
+
 show_certificate_fingerprint() {
     local cert_path="$1"
 
@@ -331,6 +418,7 @@ show_certificate_fingerprint() {
 generate_certificate() {
     local install_dir="$1"
     local settings_dir="$2"
+    local is_service="${3:-false}"
 
     mkdir -p "$settings_dir"
 
@@ -343,9 +431,15 @@ generate_certificate() {
         return 1
     fi
 
+    # Build args - service mode uses different paths
+    local cert_args="--generate-cert --force"
+    if [ "$is_service" = true ]; then
+        cert_args="--generate-cert --service-mode --force"
+    fi
+
     # Use mt --generate-cert to generate certificate with encrypted private key
     local output
-    output=$("$mt_path" --generate-cert 2>&1)
+    output=$("$mt_path" $cert_args 2>&1)
     local exit_code=$?
 
     if [ $exit_code -ne 0 ]; then
@@ -353,26 +447,18 @@ generate_certificate() {
         return 1
     fi
 
-    # Parse output for certificate path
-    CERT_PATH=$(echo "$output" | grep -o "Certificate saved to: .*\.pem" | sed 's/Certificate saved to: //' | tr -d ' ')
+    # Parse output for certificate path (matches PS regex pattern)
+    CERT_PATH=$(echo "$output" | grep -oE "Location:[[:space:]]*.*\.pem" | sed 's/Location:[[:space:]]*//' | tr -d ' ')
     if [ -z "$CERT_PATH" ]; then
-        # Default path
-        CERT_PATH="$settings_dir/midterm-cert.pem"
+        # Fallback: try alternate output format
+        CERT_PATH=$(echo "$output" | grep -o "Certificate saved to: .*\.pem" | sed 's/Certificate saved to: //' | tr -d ' ')
+    fi
+    if [ -z "$CERT_PATH" ]; then
+        # Default path (matches what mt generates)
+        CERT_PATH="$settings_dir/midterm.pem"
     fi
 
     echo -e "  ${GREEN}Certificate generated with OS-protected private key${NC}"
-
-    # Show trust instructions
-    if [ "$(uname -s)" = "Darwin" ]; then
-        echo ""
-        echo -e "  ${YELLOW}To trust the certificate (may require password):${NC}"
-        echo -e "  ${GRAY}sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \"$CERT_PATH\"${NC}"
-    else
-        echo ""
-        echo -e "  ${YELLOW}To trust the certificate on Linux:${NC}"
-        echo -e "  ${GRAY}sudo cp \"$CERT_PATH\" /usr/local/share/ca-certificates/midterm.crt${NC}"
-        echo -e "  ${GRAY}sudo update-ca-certificates${NC}"
-    fi
 
     return 0
 }
@@ -519,6 +605,51 @@ check_existing_certificate() {
     return 0
 }
 
+# Prompt for cert trust choice BEFORE elevation (returns via global TRUST_CERT)
+prompt_certificate_trust_choice() {
+    echo ""
+    echo -e "  ${CYAN}Certificate Trust:${NC}"
+    echo -e "  ${YELLOW}Trust the certificate to remove browser warnings?${NC}"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        echo -e "  ${GRAY}(Adds self-signed certificate to macOS System Keychain)${NC}"
+    else
+        echo -e "  ${GRAY}(Adds self-signed certificate to system CA store)${NC}"
+    fi
+    read -p "  Trust certificate? [Y/n]: " trust_choice < /dev/tty
+
+    if [[ "$trust_choice" != "n" && "$trust_choice" != "N" ]]; then
+        TRUST_CERT="true"
+    else
+        TRUST_CERT="false"
+    fi
+}
+
+# Execute cert trust (called after cert generation, in elevated context)
+execute_certificate_trust() {
+    local cert_path="$1"
+
+    if [ "$TRUST_CERT" != "true" ]; then
+        return 0
+    fi
+
+    if [ "$(uname -s)" = "Darwin" ]; then
+        if security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$cert_path" 2>/dev/null; then
+            echo -e "  ${GREEN}Certificate trusted${NC}"
+        else
+            echo -e "  ${YELLOW}Could not auto-trust certificate${NC}"
+        fi
+    else
+        if cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
+           update-ca-certificates 2>/dev/null; then
+            echo -e "  ${GREEN}Certificate trusted${NC}"
+        else
+            echo -e "  ${YELLOW}Could not auto-trust certificate${NC}"
+        fi
+    fi
+}
+
+# Legacy function for user mode (prompts and executes inline)
 prompt_certificate_trust() {
     local cert_path="$1"
 
@@ -543,6 +674,63 @@ prompt_certificate_trust() {
                 echo -e "  ${YELLOW}Could not auto-trust - use manual commands above${NC}"
             fi
         fi
+    fi
+}
+
+show_process_status() {
+    local port="$1"
+
+    echo ""
+    echo -e "${CYAN}Process Status:${NC}"
+
+    # Check service status
+    if [ "$(uname -s)" = "Darwin" ]; then
+        if launchctl list 2>/dev/null | grep -q "$LAUNCHD_LABEL"; then
+            echo -e "  Service    : ${GREEN}Running${NC}"
+        else
+            echo -e "  Service    : ${YELLOW}Starting...${NC}"
+        fi
+    else
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            echo -e "  Service    : ${GREEN}Running${NC}"
+        else
+            echo -e "  Service    : ${YELLOW}Starting...${NC}"
+        fi
+    fi
+
+    # Check mt process
+    local mt_pid
+    mt_pid=$(pgrep -f "^/usr/local/bin/mt" 2>/dev/null | head -1)
+    if [ -n "$mt_pid" ]; then
+        echo -e "  mt (web)   : ${GREEN}Running (PID $mt_pid)${NC}"
+    else
+        echo -e "  mt (web)   : ${YELLOW}Starting...${NC}"
+    fi
+
+    # Health check with version info
+    echo ""
+    echo -e "${CYAN}Health Check:${NC}"
+
+    sleep 2
+    local health_response
+    health_response=$(curl -fsSk "https://localhost:$port/api/health" 2>/dev/null)
+
+    if [ -n "$health_response" ]; then
+        local healthy version
+        healthy=$(echo "$health_response" | grep -o '"healthy"[[:space:]]*:[[:space:]]*true' || true)
+        version=$(echo "$health_response" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+
+        if [ -n "$healthy" ]; then
+            echo -e "  Status     : ${GREEN}Healthy${NC}"
+        else
+            echo -e "  Status     : ${RED}Unhealthy${NC}"
+        fi
+
+        if [ -n "$version" ]; then
+            echo -e "  ${GRAY}Version    : $version${NC}"
+        fi
+    else
+        echo -e "  Status     : ${YELLOW}Could not connect to https://localhost:$port${NC}"
     fi
 }
 
@@ -612,12 +800,14 @@ install_as_service() {
     if [ "$EUID" -ne 0 ]; then
         echo ""
         echo -e "${YELLOW}Requesting sudo privileges...${NC}"
-        # Re-exec with sudo, passing user info as environment variables
+        # Re-exec with sudo, passing all collected info as environment variables
         exec sudo env INSTALLING_USER="$INSTALLING_USER" \
                      INSTALLING_UID="$INSTALLING_UID" \
                      INSTALLING_GID="$INSTALLING_GID" \
+                     PASSWORD_HASH="$PASSWORD_HASH" \
                      PORT="$PORT" \
                      BIND_ADDRESS="$BIND_ADDRESS" \
+                     TRUST_CERT="$TRUST_CERT" \
                      "$SCRIPT_PATH" --service
     fi
 
@@ -626,22 +816,19 @@ install_as_service() {
     # Create lib directory for support files
     mkdir -p "$lib_dir"
 
-    # Now that binary is installed, handle password
+    # Handle password - either preserve existing or hash the pending one
     existing_hash=$(get_existing_password_hash || true)
     if [ -n "$existing_hash" ]; then
-        echo -e "  ${GREEN}Existing password found - preserving...${NC}"
+        echo -e "  ${GREEN}Existing password preserved${NC}"
         PASSWORD_HASH="$existing_hash"
-    else
-        MT_BINARY_PATH="$install_dir/mt" prompt_password
-    fi
-
-    # Hash pending password now that binary is installed
-    if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+    elif [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+        # Hash the password now that binary is installed
         local plain_password="${PASSWORD_HASH#__PENDING__:}"
         local hash
         hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
+            echo -e "  ${GRAY}Password: hashed${NC}"
         else
             echo -e "  ${RED}Failed to hash password${NC}"
             exit 1
@@ -658,16 +845,16 @@ install_as_service() {
     fi
 
     # Check existing certificate before generating
-    local existing_cert="$settings_dir/midterm-cert.pem"
+    local existing_cert="$settings_dir/midterm.pem"
     if check_existing_certificate "$existing_cert"; then
         CERT_PATH="$existing_cert"
-    elif ! generate_certificate "$install_dir" "$settings_dir"; then
+    elif ! generate_certificate "$install_dir" "$settings_dir" true; then
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
     else
         # Show fingerprint so user can verify connections from other devices
         show_certificate_fingerprint "$CERT_PATH"
-        # Offer to trust certificate
-        prompt_certificate_trust "$CERT_PATH"
+        # Execute trust if user chose to trust (choice made before elevation)
+        execute_certificate_trust "$CERT_PATH"
     fi
 
     # Write settings with runAsUser info
@@ -681,8 +868,8 @@ install_as_service() {
         install_systemd "$install_dir"
     fi
 
-    # Health check after service start
-    check_health "$PORT"
+    # Show detailed process status (like PS does)
+    show_process_status "$PORT"
 
     # Create uninstall script
     create_uninstall_script "$lib_dir" true
@@ -834,22 +1021,19 @@ install_as_user() {
 
     install_binary "$install_dir"
 
-    # Now that binary is installed, handle password
+    # Handle password - either preserve existing or hash the pending one
     existing_hash=$(get_existing_user_password_hash || true)
     if [ -n "$existing_hash" ]; then
-        echo -e "  ${GREEN}Existing password found - preserving...${NC}"
+        echo -e "  ${GREEN}Existing password preserved${NC}"
         PASSWORD_HASH="$existing_hash"
-    else
-        MT_BINARY_PATH="$install_dir/mt" prompt_password
-    fi
-
-    # Hash pending password now that binary is installed
-    if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+    elif [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+        # Hash the password now that binary is installed
         local plain_password="${PASSWORD_HASH#__PENDING__:}"
         local hash
         hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
+            echo -e "  ${GRAY}Password: hashed${NC}"
         else
             echo -e "  ${RED}Failed to hash password${NC}"
             exit 1
@@ -866,28 +1050,24 @@ install_as_user() {
     fi
 
     # Check existing certificate before generating
-    local existing_cert="$settings_dir/midterm-cert.pem"
+    local existing_cert="$settings_dir/midterm.pem"
     if check_existing_certificate "$existing_cert"; then
         CERT_PATH="$existing_cert"
-    elif ! generate_certificate "$install_dir" "$settings_dir"; then
+    elif ! generate_certificate "$install_dir" "$settings_dir" false; then
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
     else
         # Show fingerprint so user can verify connections from other devices
         show_certificate_fingerprint "$CERT_PATH"
-        # Offer to trust certificate (user mode - no sudo available, may fail)
+        # Offer to trust certificate (user mode - prompts inline since no elevation needed)
         prompt_certificate_trust "$CERT_PATH"
     fi
 
     # Write user settings
     write_user_settings
 
-    # Check if ~/.local/bin is in PATH
+    # Handle PATH modification
     if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-        echo ""
-        echo -e "${YELLOW}Add this to your shell profile (~/.bashrc or ~/.zshrc):${NC}"
-        echo ""
-        echo -e "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-        echo ""
+        prompt_path_modification "$install_dir"
     fi
 
     # Create uninstall script
@@ -900,6 +1080,7 @@ install_as_user() {
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
     echo -e "  ${GRAY}Location: $install_dir/mt${NC}"
+    echo -e "  ${CYAN}URL:      https://localhost:$PORT${NC}"
     echo -e "  ${YELLOW}Run 'mt' to start MidTerm${NC}"
     echo -e "  ${YELLOW}Note: Browser may show certificate warning until trusted${NC}"
     echo ""
@@ -1003,9 +1184,34 @@ get_latest_release
 prompt_service_mode
 
 if [ "$SERVICE_MODE" = true ]; then
-    # Prompt for network configuration (password handled after binary install)
-    prompt_network_config "/usr/local/etc/MidTerm"
+    # Check for existing password BEFORE elevation (like PS does)
+    if check_existing_password_file "service"; then
+        echo ""
+        echo -e "  ${GREEN}Existing password found - will preserve...${NC}"
+        # Password will be read/preserved after binary install
+    else
+        # New install - prompt for password before elevation
+        prompt_password
+    fi
+
+    # Prompt for network configuration
+    prompt_network_config
+
+    # Prompt for certificate trust choice (will be executed after cert generation)
+    prompt_certificate_trust_choice
+
     install_as_service
 else
+    # User mode: also do all prompts before install
+    if check_existing_password_file "user"; then
+        echo ""
+        echo -e "  ${GREEN}Existing password found - will preserve...${NC}"
+    else
+        prompt_password
+    fi
+
+    # Prompt for network configuration (was missing in user mode)
+    prompt_network_config
+
     install_as_user
 fi
