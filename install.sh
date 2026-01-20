@@ -594,6 +594,8 @@ copy_with_retry() {
     local delay_ms=500
 
     for ((i=0; i<max_retries; i++)); do
+        # Remove destination first to avoid macOS code signing corruption
+        rm -f "$dest" 2>/dev/null
         if cp "$src" "$dest" 2>/dev/null; then
             return 0
         fi
