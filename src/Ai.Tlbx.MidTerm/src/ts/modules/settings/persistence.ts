@@ -118,6 +118,7 @@ export function populateSettingsForm(settings: Settings): void {
   setElementValue('setting-font-family', settings.fontFamily || 'Cascadia Code');
   setElementValue('setting-cursor-style', settings.cursorStyle || 'bar');
   setElementChecked('setting-cursor-blink', settings.cursorBlink !== false);
+  setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle || 'outline');
   setElementValue('setting-theme', settings.theme || 'dark');
   setElementValue('setting-contrast', String(settings.minimumContrastRatio || 1));
   setElementValue('setting-scrollback', settings.scrollbackLines || 10000);
@@ -180,6 +181,7 @@ export function applySettingsToTerminals(): void {
   sessionTerminals.forEach((state: TerminalState) => {
     state.terminal.options.cursorBlink = settings.cursorBlink;
     state.terminal.options.cursorStyle = settings.cursorStyle;
+    state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
     state.terminal.options.fontFamily = fontFamily;
     state.terminal.options.fontSize = settings.fontSize;
     state.terminal.options.theme = theme;
@@ -233,6 +235,10 @@ export function saveAllSettings(): void {
     fontFamily: getElementValue('setting-font-family', 'Cascadia Code'),
     cursorStyle: getElementValue('setting-cursor-style', 'bar') as Settings['cursorStyle'],
     cursorBlink: getElementChecked('setting-cursor-blink'),
+    cursorInactiveStyle: getElementValue(
+      'setting-cursor-inactive',
+      'outline',
+    ) as Settings['cursorInactiveStyle'],
     theme: getElementValue('setting-theme', 'dark') as ThemeName,
     minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
     smoothScrolling: getElementChecked('setting-smooth-scrolling'),

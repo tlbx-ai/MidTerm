@@ -6,7 +6,13 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { THEMES, MOBILE_BREAKPOINT, TERMINAL_FONT_STACK } from '../../constants';
+import {
+  THEMES,
+  MOBILE_BREAKPOINT,
+  TERMINAL_FONT_STACK,
+  ACTIVE_SCROLLBACK,
+  BACKGROUND_SCROLLBACK,
+} from '../../constants';
 import {
   sessionTerminals,
   currentSettings,
@@ -16,6 +22,8 @@ import {
   dom,
   setFontsReadyPromise,
   windowsBuildNumber,
+  MAX_WEBGL_CONTEXTS,
+  terminalsWithWebgl,
 } from '../../state';
 import { $activeSessionId } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
@@ -28,6 +36,7 @@ import { Terminal, type ITerminalOptions } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 
 import {
   initSearchForTerminal,
@@ -116,7 +125,7 @@ export function getTerminalOptions(): ITerminalOptions {
   const options: ITerminalOptions = {
     cursorBlink: currentSettings?.cursorBlink ?? true,
     cursorStyle: currentSettings?.cursorStyle ?? 'bar',
-    cursorInactiveStyle: currentSettings?.cursorStyle ?? 'bar',
+    cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'outline',
     fontFamily: `'${fontFamily}', ${TERMINAL_FONT_STACK}`,
     fontSize: fontSize,
     letterSpacing: 0,
@@ -176,6 +185,11 @@ export function createTerminalForSession(
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
 
+  // Load Unicode11 addon for proper emoji and CJK character width handling
+  const unicode11 = new Unicode11Addon();
+  terminal.loadAddon(unicode11);
+  terminal.unicode.activeVersion = '11';
+
   // Get server dimensions from session info (if available)
   const serverCols = sessionInfo && sessionInfo.cols > 0 ? sessionInfo.cols : 0;
   const serverRows = sessionInfo && sessionInfo.rows > 0 ? sessionInfo.rows : 0;
@@ -208,14 +222,19 @@ export function createTerminalForSession(
 
     state.opened = true;
 
-    // Load WebGL addon for GPU-accelerated rendering (with fallback)
-    if (currentSettings?.useWebGL !== false) {
+    // Load WebGL addon for GPU-accelerated rendering (with context limit)
+    // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
+    if (currentSettings?.useWebGL !== false && terminalsWithWebgl.size < MAX_WEBGL_CONTEXTS) {
       try {
         const webglAddon = new WebglAddon();
         webglAddon.onContextLoss(() => {
+          terminalsWithWebgl.delete(sessionId);
+          state.hasWebgl = false;
           webglAddon.dispose();
         });
         terminal.loadAddon(webglAddon);
+        terminalsWithWebgl.add(sessionId);
+        state.hasWebgl = true;
       } catch {
         // WebGL not available, using canvas renderer
       }
@@ -510,11 +529,32 @@ export function destroyTerminalForSession(sessionId: string): void {
     pendingTitleUpdates.delete(sessionId);
   }
 
+  // Clean up WebGL context tracking
+  if (state.hasWebgl) {
+    terminalsWithWebgl.delete(sessionId);
+  }
+
   state.terminal.dispose();
   state.container.remove();
   sessionTerminals.delete(sessionId);
   pendingOutputFrames.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
+}
+
+/**
+ * Adjust terminal scrollback based on active/background state.
+ * Active terminals get full scrollback, background terminals get reduced
+ * scrollback to save memory when many terminals are open.
+ */
+export function setTerminalScrollback(sessionId: string, isActive: boolean): void {
+  const state = sessionTerminals.get(sessionId);
+  if (!state?.terminal) return;
+
+  const scrollback = isActive
+    ? (currentSettings?.scrollbackLines ?? ACTIVE_SCROLLBACK)
+    : BACKGROUND_SCROLLBACK;
+
+  state.terminal.options.scrollback = scrollback;
 }
 
 // WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin

@@ -38,6 +38,7 @@ import {
   scrollToBottom,
   focusActiveTerminal,
   calculateOptimalDimensions,
+  setTerminalScrollback,
 } from './modules/terminal';
 import {
   updateEmptyState,
@@ -345,8 +346,9 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     closeSettings();
   }
 
-  sessionTerminals.forEach((state) => {
+  sessionTerminals.forEach((state, id) => {
     state.container.classList.add('hidden');
+    setTerminalScrollback(id, false);
   });
 
   $activeSessionId.set(sessionId);
@@ -356,6 +358,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
   state.container.classList.remove('hidden');
+  setTerminalScrollback(sessionId, true);
 
   requestAnimationFrame(() => {
     state.terminal.focus();

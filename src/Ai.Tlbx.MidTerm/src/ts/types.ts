@@ -85,6 +85,7 @@ export interface TerminalState {
   opened: boolean;
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
+  hasWebgl?: boolean;
 }
 
 // =============================================================================
@@ -96,6 +97,9 @@ export type ThemeName = 'dark' | 'light' | 'solarizedDark' | 'solarizedLight';
 
 /** Cursor style options */
 export type CursorStyle = 'bar' | 'block' | 'underline';
+
+/** Cursor inactive style options (when terminal loses focus) */
+export type CursorInactiveStyle = 'outline' | 'block' | 'bar' | 'underline' | 'none';
 
 /** Bell style options */
 export type BellStyle = 'notification' | 'sound' | 'visual' | 'both' | 'off';
@@ -116,6 +120,7 @@ export interface Settings {
   fontFamily: string;
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
+  cursorInactiveStyle: CursorInactiveStyle;
   theme: ThemeName;
   minimumContrastRatio: number;
   smoothScrolling: boolean;

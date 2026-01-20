@@ -11,6 +11,15 @@ public enum CursorStyleSetting
     [JsonStringEnumMemberName("underline")] Underline
 }
 
+public enum CursorInactiveStyleSetting
+{
+    [JsonStringEnumMemberName("outline")] Outline,
+    [JsonStringEnumMemberName("block")] Block,
+    [JsonStringEnumMemberName("bar")] Bar,
+    [JsonStringEnumMemberName("underline")] Underline,
+    [JsonStringEnumMemberName("none")] None
+}
+
 public enum ThemeSetting
 {
     [JsonStringEnumMemberName("dark")] Dark,
@@ -67,6 +76,7 @@ public sealed class MidTermSettings
     public string FontFamily { get; set; } = "Cascadia Code";
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Bar;
     public bool CursorBlink { get; set; } = true;
+    public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.Outline;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;

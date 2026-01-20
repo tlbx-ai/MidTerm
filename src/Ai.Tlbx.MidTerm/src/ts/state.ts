@@ -65,6 +65,12 @@ export let windowsBuildNumber: number | null = null;
 /** Per-session terminal state */
 export const sessionTerminals = new Map<string, TerminalState>();
 
+/** Maximum simultaneous WebGL contexts (browser typically limits to 6-8) */
+export const MAX_WEBGL_CONTEXTS = 6;
+
+/** Track which terminals have active WebGL contexts */
+export const terminalsWithWebgl = new Set<string>();
+
 /** Sessions created in this browser session (use WebSocket buffering) */
 export const newlyCreatedSessions = new Set<string>();
 
