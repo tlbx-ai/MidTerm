@@ -11,12 +11,15 @@ public static class SecretStorageFactory
 #if WINDOWS
         return new WindowsSecretStorage(settingsDirectory, isServiceMode);
 #else
-        if (OperatingSystem.IsMacOS())
+        // macOS: Use Keychain for user mode, file-based for service mode
+        // Keychain access from launchd services is unreliable due to ACL restrictions
+        if (OperatingSystem.IsMacOS() && !isServiceMode)
         {
             return new MacOsSecretStorage();
         }
 
-        return new LinuxSecretStorage(settingsDirectory);
+        // Linux and macOS service mode use file-based storage
+        return new UnixFileSecretStorage(settingsDirectory);
 #endif
     }
 }

@@ -7,7 +7,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 [SupportedOSPlatform("linux")]
 [SupportedOSPlatform("freebsd")]
-public sealed class LinuxSecretStorage : ISecretStorage
+[SupportedOSPlatform("macos")]
+public sealed class UnixFileSecretStorage : ISecretStorage
 {
     private const int OwnerReadWrite = 0b110_000_000; // 0600 octal
 
@@ -18,7 +19,7 @@ public sealed class LinuxSecretStorage : ISecretStorage
     public bool LoadFailed { get; private set; }
     public string? LoadError { get; private set; }
 
-    public LinuxSecretStorage(string settingsDirectory)
+    public UnixFileSecretStorage(string settingsDirectory)
     {
         _secretsPath = Path.Combine(settingsDirectory, "secrets.json");
     }
