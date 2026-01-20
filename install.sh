@@ -924,8 +924,10 @@ install_launchd() {
 
     echo -e "${GRAY}Creating launchd service...${NC}"
 
-    # Create log directory
+    # Create log directory and ensure log file is owned by the service user
     mkdir -p "$log_dir"
+    touch "$log_dir/MidTerm.log"
+    chown "$INSTALLING_USER" "$log_dir/MidTerm.log"
 
     # Unload existing services if present
     launchctl unload "$plist_path" 2>/dev/null || true
