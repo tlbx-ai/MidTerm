@@ -18,6 +18,8 @@ public static class TtyHostSpawner
     private static readonly string TtyHostPath = GetTtyHostPath();
     private static bool _integrityVerified;
     private static readonly object _verifyLock = new();
+    private static string? _cachedVersion;
+    private static bool _versionChecked;
 
     /// <summary>
     /// Gets the expected full path to mthost for this mt installation.
@@ -27,8 +29,15 @@ public static class TtyHostSpawner
 
     public static string? GetTtyHostVersion()
     {
+        // Return cached version if already checked (version doesn't change at runtime)
+        if (_versionChecked)
+        {
+            return _cachedVersion;
+        }
+
         if (!File.Exists(TtyHostPath))
         {
+            _versionChecked = true;
             return null;
         }
 
@@ -36,14 +45,14 @@ public static class TtyHostSpawner
         {
             if (OperatingSystem.IsWindows())
             {
-                // Windows: read version from PE file metadata
+                // Windows: read version from PE file metadata (fast, no process spawn)
                 var versionInfo = FileVersionInfo.GetVersionInfo(TtyHostPath);
-                return versionInfo.ProductVersion ?? versionInfo.FileVersion;
+                _cachedVersion = versionInfo.ProductVersion ?? versionInfo.FileVersion;
             }
             else
             {
-                // macOS/Linux: PE metadata not available, run mthost --version
-                // This is fast (~10ms) and reliable
+                // macOS/Linux: PE metadata not available, run mthost --version once
+                // Result is cached to avoid spawning process on every health check
                 var psi = new ProcessStartInfo
                 {
                     FileName = TtyHostPath,
@@ -54,29 +63,27 @@ public static class TtyHostSpawner
                 };
 
                 using var process = Process.Start(psi);
-                if (process is null)
+                if (process is not null)
                 {
-                    return null;
+                    var output = process.StandardOutput.ReadToEnd().Trim();
+                    process.WaitForExit(5000);
+
+                    // Output is "mthost 6.7.10" - extract just the version
+                    if (!string.IsNullOrEmpty(output))
+                    {
+                        var parts = output.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        _cachedVersion = parts.Length >= 2 ? parts[1] : output;
+                    }
                 }
-
-                var output = process.StandardOutput.ReadToEnd().Trim();
-                process.WaitForExit(5000);
-
-                // Output is "mthost 6.7.10" - extract just the version
-                if (string.IsNullOrEmpty(output))
-                {
-                    return null;
-                }
-
-                // Handle "mthost X.Y.Z" format
-                var parts = output.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                return parts.Length >= 2 ? parts[1] : output;
             }
         }
         catch
         {
-            return null;
+            // Ignore errors, just return null
         }
+
+        _versionChecked = true;
+        return _cachedVersion;
     }
 
     /// <summary>
