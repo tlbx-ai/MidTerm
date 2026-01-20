@@ -496,6 +496,8 @@ write_service_settings() {
     local old_settings_path="$config_dir/settings.json.old"
 
     mkdir -p "$config_dir"
+    # Service runs as INSTALLING_USER, so they need write access to config dir
+    chown -R "$INSTALLING_USER" "$config_dir"
 
     # Backup existing settings for migration by the app
     if [ -f "$settings_path" ]; then
@@ -520,6 +522,8 @@ write_service_settings() {
 
     echo "$json_content" > "$settings_path"
     chmod 644 "$settings_path"
+    # Ensure settings file is owned by the service user (created by root)
+    chown "$INSTALLING_USER" "$settings_path"
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
     echo -e "  ${GRAY}Port: $PORT${NC}"
     if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
@@ -594,6 +598,8 @@ copy_with_retry() {
     local delay_ms=500
 
     for ((i=0; i<max_retries; i++)); do
+        # Remove destination first to avoid macOS code signing corruption
+        rm -f "$dest" 2>/dev/null
         if cp "$src" "$dest" 2>/dev/null; then
             return 0
         fi
@@ -918,8 +924,10 @@ install_launchd() {
 
     echo -e "${GRAY}Creating launchd service...${NC}"
 
-    # Create log directory
+    # Create log directory and ensure log file is owned by the service user
     mkdir -p "$log_dir"
+    touch "$log_dir/MidTerm.log"
+    chown "$INSTALLING_USER" "$log_dir/MidTerm.log"
 
     # Unload existing services if present
     launchctl unload "$plist_path" 2>/dev/null || true
@@ -959,6 +967,8 @@ install_launchd() {
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>UserName</key>
+    <string>${INSTALLING_USER}</string>
     <key>StandardOutPath</key>
     <string>${log_dir}/MidTerm.log</string>
     <key>StandardErrorPath</key>

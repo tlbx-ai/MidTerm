@@ -50,6 +50,15 @@ public enum KeyProtectionMethod
     [JsonStringEnumMemberName("legacyPfx")] LegacyPfx
 }
 
+public enum TabTitleModeSetting
+{
+    [JsonStringEnumMemberName("hostname")] Hostname,
+    [JsonStringEnumMemberName("static")] Static,
+    [JsonStringEnumMemberName("sessionName")] SessionName,
+    [JsonStringEnumMemberName("terminalTitle")] TerminalTitle,
+    [JsonStringEnumMemberName("foregroundProcess")] ForegroundProcess
+}
+
 public sealed class MidTermSettings
 {
     // Session Defaults
@@ -78,6 +87,7 @@ public sealed class MidTermSettings
     public bool CursorBlink { get; set; } = true;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.Outline;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
+    public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
     public bool UseWebGL { get; set; } = true;

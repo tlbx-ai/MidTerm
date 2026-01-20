@@ -248,6 +248,46 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Find endpoint by sessionId pattern and return the actual host PID.
+    /// Used when spawning via sudo where the returned PID is sudo's PID, not mthost's.
+    /// </summary>
+    private static int? FindEndpointPid(string sessionId)
+    {
+        try
+        {
+#if WINDOWS
+            var pipeDir = @"\\.\pipe\";
+            var pattern = $"mthost-{sessionId}-*";
+            var matches = Directory.GetFiles(pipeDir, pattern);
+            if (matches.Length == 0) return null;
+
+            var pipeName = Path.GetFileName(matches[0]);
+            var parts = pipeName.Split('-');
+            if (parts.Length >= 3 && int.TryParse(parts[2], out var pid))
+            {
+                return pid;
+            }
+#else
+            var pattern = $"/tmp/mthost-{sessionId}-*.sock";
+            var matches = Directory.GetFiles("/tmp", $"mthost-{sessionId}-*.sock");
+            if (matches.Length == 0) return null;
+
+            var fileName = Path.GetFileNameWithoutExtension(matches[0]);
+            var parts = fileName.Split('-');
+            if (parts.Length >= 3 && int.TryParse(parts[2], out var pid))
+            {
+                return pid;
+            }
+#endif
+        }
+        catch
+        {
+            // Ignore errors during scan
+        }
+        return null;
+    }
+
     private static void CleanupEndpoint(string sessionId, int hostPid)
     {
         try
@@ -297,17 +337,30 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
-        // Wait for IPC endpoint with exponential backoff (50ms initial, then 50ms, 100ms, 200ms)
-        // Initial delay ensures process has time to initialize before polling
+        // Wait for IPC endpoint with exponential backoff
+        // When using sudo -u, the returned PID is sudo's PID, not mthost's.
+        // So we scan for any socket matching the sessionId pattern.
         await Task.Delay(50, ct).ConfigureAwait(false);
+        int? actualPid = null;
         for (var wait = 50; wait < 500; wait *= 2)
         {
-            if (EndpointExists(sessionId, hostPid)) break;
+            // First try exact PID (direct spawn without sudo)
+            if (EndpointExists(sessionId, hostPid))
+            {
+                actualPid = hostPid;
+                break;
+            }
+            // Then scan for any matching socket (sudo spawn case)
+            actualPid = FindEndpointPid(sessionId);
+            if (actualPid is not null) break;
             await Task.Delay(wait, ct).ConfigureAwait(false);
         }
 
-        // Connect to the new session using sessionId + PID for endpoint
-        var client = new TtyHostClient(sessionId, hostPid);
+        // Use actual PID if found via scan, otherwise fall back to spawner PID
+        var connectPid = actualPid ?? hostPid;
+
+        // Connect to the new session using sessionId + actual PID for endpoint
+        var client = new TtyHostClient(sessionId, connectPid);
         var connected = false;
 
         for (var attempt = 0; attempt < 10 && !connected; attempt++)
@@ -321,8 +374,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         if (!connected)
         {
-            Log.Error(() => $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process {hostPid}");
-            KillProcess(hostPid);
+            Log.Error(() => $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process {connectPid}");
+            KillProcess(connectPid);
             await client.DisposeAsync().ConfigureAwait(false);
             return null;
         }
@@ -330,8 +383,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
         if (info is null)
         {
-            Log.Error(() => $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process {hostPid}");
-            KillProcess(hostPid);
+            Log.Error(() => $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process {connectPid}");
+            KillProcess(connectPid);
             await client.DisposeAsync().ConfigureAwait(false);
             return null;
         }
@@ -349,7 +402,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         await client.SetLogLevelAsync(Log.MinLevel, ct).ConfigureAwait(false);
         await client.SetOrderAsync((byte)(order % 256), ct).ConfigureAwait(false);
 
-        Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {hostPid})");
+        Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid})");
         OnStateChanged?.Invoke(sessionId);
         NotifyStateChange();
 

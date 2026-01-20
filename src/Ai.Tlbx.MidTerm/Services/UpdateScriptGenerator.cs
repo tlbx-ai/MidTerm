@@ -15,14 +15,19 @@ public static class UpdateScriptGenerator
     private const int MaxRetries = 30;
     private const int RetryDelaySeconds = 1;
 
-    public static string GenerateUpdateScript(string extractedDir, string currentBinaryPath, UpdateType updateType = UpdateType.Full, bool deleteSourceAfter = true)
+    public static string GenerateUpdateScript(
+        string extractedDir,
+        string currentBinaryPath,
+        string settingsDirectory,
+        UpdateType updateType = UpdateType.Full,
+        bool deleteSourceAfter = true)
     {
         if (OperatingSystem.IsWindows())
         {
             return GenerateWindowsScript(extractedDir, currentBinaryPath, updateType, deleteSourceAfter);
         }
 
-        return GenerateUnixScript(extractedDir, currentBinaryPath, updateType, deleteSourceAfter);
+        return GenerateUnixScript(extractedDir, currentBinaryPath, settingsDirectory, updateType, deleteSourceAfter);
     }
 
     private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, UpdateType updateType, bool deleteSourceAfter)
@@ -502,21 +507,34 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         return scriptPath;
     }
 
-    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, UpdateType updateType, bool deleteSourceAfter)
+    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, string settingsDirectory, UpdateType updateType, bool deleteSourceAfter)
     {
+        // IMPORTANT: Binary and config directories are DIFFERENT on Unix:
+        // - Binaries: /usr/local/bin/ (service) or ~/.local/bin/ (user)
+        // - Config/secrets: /usr/local/etc/midterm/ (service) or ~/.midterm/ (user)
+        // - Logs: /usr/local/var/log/ (service) or ~/.midterm/ (user)
+        // The settingsDirectory parameter tells us which mode we're in.
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? "/usr/local/bin";
+        var configDir = settingsDirectory;
+
+        // Determine log directory based on install mode
+        // Service mode: /usr/local/var/log/, User mode: same as config dir
+        var isServiceMode = configDir.StartsWith("/usr/local", StringComparison.Ordinal);
+        var logDir = isServiceMode ? "/usr/local/var/log" : configDir;
         var newMtPath = Path.Combine(extractedDir, "mt");
         var newMthostPath = Path.Combine(extractedDir, "mthost");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
-        var resultFilePath = Path.Combine(installDir, "update-result.json");
-        var logFilePath = Path.Combine(installDir, "update.log");
+        var resultFilePath = Path.Combine(logDir, "midterm-update-result.json");
+        var logFilePath = Path.Combine(logDir, "midterm-update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
         var isMacOs = OperatingSystem.IsMacOS();
         var isWebOnly = updateType == UpdateType.WebOnly;
 
+        // IMPORTANT: launchd service runs as user (not root) via UserName key in plist
+        // This means the service user needs write access to config/log files
         var stopServiceCmd = isMacOs
             ? $"launchctl bootout system/{LaunchdLabel} 2>/dev/null || launchctl unload /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
             : $"systemctl stop {SystemdService} 2>/dev/null || true";
@@ -533,11 +551,21 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 # MidTerm Update Script (Unix)
 # Type: {(isWebOnly ? "Web-only (sessions preserved)" : "Full (sessions will restart)")}
 # Generated: {DateTime.UtcNow:O}
+#
+# IMPORTANT NOTES:
+# - macOS: launchd service runs as USER (not root) via UserName key in plist
+# - Linux: systemd service runs as root (standard behavior)
+# - Binary dir (/usr/local/bin) != Config dir (/usr/local/etc/midterm)
+# - macOS requires codesign after binary copy to avoid SIGKILL on launch
+# - File ownership must be preserved for user-mode service access
 
 set -euo pipefail
 
 # === Configuration ===
-INSTALL_DIR='{EscapeForBash(installDir)}'
+# IMPORTANT: These directories are DIFFERENT - don't confuse them!
+INSTALL_DIR='{EscapeForBash(installDir)}'           # Binaries: mt, mthost
+CONFIG_DIR='{EscapeForBash(configDir)}'             # Settings, secrets, certs
+LOG_DIR='{EscapeForBash(logDir)}'                   # Log files
 CURRENT_MT='{EscapeForBash(currentBinaryPath)}'
 CURRENT_MTHOST='{EscapeForBash(currentMthostPath)}'
 CURRENT_VERSION_JSON='{EscapeForBash(currentVersionJsonPath)}'
@@ -554,6 +582,14 @@ DELETE_SOURCE={( deleteSourceAfter ? "true" : "false")}
 
 ROLLBACK_NEEDED=false
 STARTED_OK=false
+
+# Detect service user from existing config file ownership
+# On macOS, launchd service runs as user (via UserName in plist), not root
+# On Linux, systemd typically runs as root, but we preserve existing ownership
+SERVICE_USER=""""
+if [[ -f ""$CONFIG_DIR/settings.json"" ]]; then
+    SERVICE_USER=$(stat -f '%Su' ""$CONFIG_DIR/settings.json"" 2>/dev/null || stat -c '%U' ""$CONFIG_DIR/settings.json"" 2>/dev/null || echo """")
+fi
 
 # === Helper Functions ===
 
@@ -665,8 +701,20 @@ safe_copy() {{
         return 1
     fi
 
-    cp -f ""$src"" ""$dst""
+    # CRITICAL: On macOS, cp -f over existing binary corrupts code signature!
+    # The signature metadata gets mangled when overwriting in-place.
+    # Solution: Remove destination first, then copy fresh.
+    # This issue caused SIGKILL/SIGABRT crashes on macOS ARM64.
+    rm -f ""$dst"" 2>/dev/null || true
+    cp ""$src"" ""$dst""
     chmod +x ""$dst""
+
+    # macOS requires ad-hoc codesigning for binaries to run
+    # Without this, the binary gets killed immediately with SIGKILL
+    if $IS_MACOS; then
+        log ""Signing $desc for macOS...""
+        codesign -s - ""$dst"" 2>/dev/null || log ""Warning: codesign failed for $dst"" ""WARN""
+    fi
 
     if ! verify_copy ""$src"" ""$dst""; then
         return 1
@@ -702,11 +750,11 @@ cleanup() {{
             cp -f ""$CURRENT_VERSION_JSON.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
         fi
 
-        # Restore credential files
-        SETTINGS_PATH=""$INSTALL_DIR/settings.json""
-        SECRETS_PATH=""$INSTALL_DIR/secrets.json""
-        CERT_PATH=""$INSTALL_DIR/midterm.pem""
-        KEYS_DIR=""$INSTALL_DIR/keys""
+        # Restore credential files from CONFIG_DIR (not INSTALL_DIR!)
+        SETTINGS_PATH=""$CONFIG_DIR/settings.json""
+        SECRETS_PATH=""$CONFIG_DIR/secrets.json""
+        CERT_PATH=""$CONFIG_DIR/midterm.pem""
+        KEY_ENC_PATH=""$CONFIG_DIR/midterm.key.enc""
 
         if [[ -f ""$SETTINGS_PATH.bak"" ]]; then
             log ""Restoring settings.json from backup...""
@@ -720,10 +768,9 @@ cleanup() {{
             log ""Restoring midterm.pem from backup...""
             cp -f ""$CERT_PATH.bak"" ""$CERT_PATH"" 2>/dev/null || log ""Failed to restore midterm.pem"" ""ERROR""
         fi
-        if [[ -d ""$KEYS_DIR.bak"" ]]; then
-            log ""Restoring keys directory from backup...""
-            rm -rf ""$KEYS_DIR"" 2>/dev/null || true
-            cp -rf ""$KEYS_DIR.bak"" ""$KEYS_DIR"" 2>/dev/null || log ""Failed to restore keys directory"" ""ERROR""
+        if [[ -f ""$KEY_ENC_PATH.bak"" ]]; then
+            log ""Restoring midterm.key.enc from backup...""
+            cp -f ""$KEY_ENC_PATH.bak"" ""$KEY_ENC_PATH"" 2>/dev/null || log ""Failed to restore midterm.key.enc"" ""ERROR""
         fi
 
         # Try to restart previous version
@@ -750,12 +797,22 @@ trap cleanup EXIT
 
 # === Main Script ===
 
+# Ensure log directory exists and has correct ownership
+mkdir -p ""$LOG_DIR"" 2>/dev/null || true
+
 # Clear previous logs
 rm -f ""$LOG_FILE"" 2>/dev/null || true
 rm -f ""$RESULT_FILE"" 2>/dev/null || true
 
+# Create log file with correct ownership for service user
+touch ""$LOG_FILE"" 2>/dev/null || true
+if [[ -n ""$SERVICE_USER"" ]]; then
+    chown ""$SERVICE_USER"" ""$LOG_FILE"" 2>/dev/null || true
+fi
+
 log '=========================================='
 log 'MidTerm Update Script Starting'
+log ""Service user: ${{SERVICE_USER:-unknown}}""
 log ""Update type: $(if $IS_WEB_ONLY; then echo 'Web-only'; else echo 'Full'; fi)""
 log ""Platform: $(if $IS_MACOS; then echo 'macOS'; else echo 'Linux'; fi)""
 log '=========================================='
@@ -830,10 +887,12 @@ if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
 fi
 
 # Backup credential files (critical for security persistence)
-SETTINGS_PATH=""$INSTALL_DIR/settings.json""
-SECRETS_PATH=""$INSTALL_DIR/secrets.json""
-CERT_PATH=""$INSTALL_DIR/midterm.pem""
-KEYS_DIR=""$INSTALL_DIR/keys""
+# IMPORTANT: These are in CONFIG_DIR (/usr/local/etc/midterm), NOT INSTALL_DIR!
+# Common mistake: looking for settings in /usr/local/bin/ - that's wrong.
+SETTINGS_PATH=""$CONFIG_DIR/settings.json""
+SECRETS_PATH=""$CONFIG_DIR/secrets.json""
+CERT_PATH=""$CONFIG_DIR/midterm.pem""
+KEY_ENC_PATH=""$CONFIG_DIR/midterm.key.enc""
 
 if [[ -f ""$SETTINGS_PATH"" ]]; then
     log ""Backing up settings.json...""
@@ -850,10 +909,10 @@ if [[ -f ""$CERT_PATH"" ]]; then
     cp -f ""$CERT_PATH"" ""$CERT_PATH.bak""
     log ""midterm.pem backed up""
 fi
-if [[ -d ""$KEYS_DIR"" ]]; then
-    log ""Backing up keys directory...""
-    cp -rf ""$KEYS_DIR"" ""$KEYS_DIR.bak""
-    log ""keys directory backed up""
+if [[ -f ""$KEY_ENC_PATH"" ]]; then
+    log ""Backing up midterm.key.enc...""
+    cp -f ""$KEY_ENC_PATH"" ""$KEY_ENC_PATH.bak""
+    log ""midterm.key.enc backed up""
 fi
 
 ROLLBACK_NEEDED=true
@@ -896,6 +955,15 @@ log ""Starting service...""
 {startServiceCmd}
 sleep 8
 
+# Ensure main service log file has correct ownership BEFORE starting service
+# Without this, the service (running as user) can't write to root-owned log
+MAIN_LOG=""$LOG_DIR/MidTerm.log""
+touch ""$MAIN_LOG"" 2>/dev/null || true
+if [[ -n ""$SERVICE_USER"" ]]; then
+    chown ""$SERVICE_USER"" ""$MAIN_LOG"" 2>/dev/null || true
+    log ""Set $MAIN_LOG ownership to $SERVICE_USER""
+fi
+
 # Check if service is running
 if {checkServiceCmd}; then
     log ""Service started successfully""
@@ -926,11 +994,11 @@ rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
 rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
 rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
 
-# Clean up credential backups
-rm -f ""$INSTALL_DIR/settings.json.bak"" 2>/dev/null || true
-rm -f ""$INSTALL_DIR/secrets.json.bak"" 2>/dev/null || true
-rm -f ""$INSTALL_DIR/midterm.pem.bak"" 2>/dev/null || true
-rm -rf ""$INSTALL_DIR/keys.bak"" 2>/dev/null || true
+# Clean up credential backups (in CONFIG_DIR, not INSTALL_DIR!)
+rm -f ""$CONFIG_DIR/settings.json.bak"" 2>/dev/null || true
+rm -f ""$CONFIG_DIR/secrets.json.bak"" 2>/dev/null || true
+rm -f ""$CONFIG_DIR/midterm.pem.bak"" 2>/dev/null || true
+rm -f ""$CONFIG_DIR/midterm.key.enc.bak"" 2>/dev/null || true
 
 if [[ ""$DELETE_SOURCE"" == ""true"" ]]; then
     rm -rf ""$EXTRACTED_DIR"" 2>/dev/null || true

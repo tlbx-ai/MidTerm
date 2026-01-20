@@ -20,6 +20,9 @@ export let updateInfo: UpdateInfo | null = null;
 /** Auth status from server */
 export let authStatus: AuthStatus | null = null;
 
+/** Server hostname for tab title */
+export let serverHostname: string = '';
+
 // =============================================================================
 // WebSocket State
 // =============================================================================
@@ -121,6 +124,10 @@ export function setUpdateInfo(info: UpdateInfo | null): void {
 
 export function setAuthStatus(status: AuthStatus | null): void {
   authStatus = status;
+}
+
+export function setServerHostname(hostname: string): void {
+  serverHostname = hostname;
 }
 
 export function setStateWs(ws: WebSocket | null): void {

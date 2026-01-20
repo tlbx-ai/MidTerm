@@ -18,6 +18,7 @@ public sealed class MidTermSettingsPublic
     public CursorStyleSetting CursorStyle { get; set; }
     public bool CursorBlink { get; set; }
     public ThemeSetting Theme { get; set; }
+    public TabTitleModeSetting TabTitleMode { get; set; }
     public double MinimumContrastRatio { get; set; }
     public bool SmoothScrolling { get; set; }
     public bool UseWebGL { get; set; }
@@ -55,6 +56,7 @@ public sealed class MidTermSettingsPublic
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
             Theme = settings.Theme,
+            TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
             UseWebGL = settings.UseWebGL,
@@ -82,6 +84,7 @@ public sealed class MidTermSettingsPublic
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
         settings.Theme = Theme;
+        settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
         settings.SmoothScrolling = SmoothScrolling;
         settings.UseWebGL = UseWebGL;

@@ -42,6 +42,11 @@ public sealed class BootstrapResponse
     public string Platform { get; init; } = "";
 
     /// <summary>
+    /// Machine hostname for tab title display
+    /// </summary>
+    public string Hostname { get; init; } = "";
+
+    /// <summary>
     /// Public settings (replaces /api/settings)
     /// </summary>
     public MidTermSettingsPublic Settings { get; init; } = new();

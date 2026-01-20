@@ -49,7 +49,12 @@ public static class CliCommands
             }
 
             Console.WriteLine("Applying update...");
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), update.Type);
+            var settingsService = new SettingsService();
+            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
+                extractedDir,
+                UpdateService.GetCurrentBinaryPath(),
+                settingsService.SettingsDirectory,
+                update.Type);
             UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
             Console.WriteLine("Update script started. Exiting...");
             updateService.Dispose();

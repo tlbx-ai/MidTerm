@@ -41,7 +41,7 @@ public static class EndpointSetup
             var networks = GetNetworkInterfaces();
             var users = UserEnumerationService.GetSystemUsers();
 
-            var shells = shellRegistry.GetAllShells().Select(s => new ShellInfoDto
+            var shells = shellRegistry.GetPlatformShells().Select(s => new ShellInfoDto
             {
                 Type = s.ShellType.ToString(),
                 DisplayName = s.DisplayName,
@@ -65,6 +65,7 @@ public static class EndpointSetup
                 TtyHostCompatible = conHostCompatible,
                 UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
                 Platform = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux",
+                Hostname = Environment.MachineName,
                 Settings = publicSettings,
                 Networks = networks,
                 Users = users,
@@ -352,7 +353,12 @@ public static class EndpointSetup
                 updateType = update.Type;
             }
 
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), updateType, deleteSourceAfter);
+            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
+                extractedDir,
+                UpdateService.GetCurrentBinaryPath(),
+                settingsService.SettingsDirectory,
+                updateType,
+                deleteSourceAfter);
 
             _ = Task.Run(async () =>
             {
@@ -463,7 +469,7 @@ public static class EndpointSetup
 
         app.MapGet("/api/shells", () =>
         {
-            var shells = shellRegistry.GetAllShells().Select(s => new ShellInfoDto
+            var shells = shellRegistry.GetPlatformShells().Select(s => new ShellInfoDto
             {
                 Type = s.ShellType.ToString(),
                 DisplayName = s.DisplayName,

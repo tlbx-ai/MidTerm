@@ -77,6 +77,7 @@ public static class Program
 #endif
 
         Log.Info(() => $"mthost {VersionInfo.Version} starting, session={config.SessionId}");
+        Console.WriteLine($"[mthost] {VersionInfo.Version} starting, session={config.SessionId}");
 
         try
         {
@@ -104,6 +105,7 @@ public static class Program
         IProcessMonitor? processMonitor = null;
         try
         {
+            Console.WriteLine($"[mthost] Creating PTY: {shellConfig.ExecutablePath}");
             pty = PtyConnectionFactory.Create(
                 shellConfig.ExecutablePath,
                 shellConfig.Arguments,
@@ -111,10 +113,12 @@ public static class Program
                 config.Cols,
                 config.Rows,
                 shellConfig.GetEnvironmentVariables());
+            Console.WriteLine($"[mthost] PTY created, PID={pty.Pid}");
 
             processMonitor = CreateProcessMonitor();
             var session = new TerminalSession(config.SessionId, pty, shellConfig.ShellType, config.Cols, config.Rows, processMonitor);
             var endpoint = IpcEndpoint.GetSessionEndpoint(config.SessionId, Environment.ProcessId);
+            Console.WriteLine($"[mthost] Listening on: {endpoint}");
             Log.Info(() => $"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
 
             if (processMonitor is not null)

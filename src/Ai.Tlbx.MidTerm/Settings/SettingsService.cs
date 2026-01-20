@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
@@ -63,7 +62,9 @@ public sealed class SettingsService
         }
         else
         {
-            return getuid() == 0;
+            // Check if service settings file exists - this is written by the installer
+            // We can't rely on getuid() == 0 because macOS launchd services can run as non-root
+            return File.Exists("/usr/local/etc/midterm/settings.json");
         }
     }
 
@@ -85,8 +86,6 @@ public sealed class SettingsService
         }
     }
 
-    [DllImport("libc", EntryPoint = "getuid")]
-    private static extern uint getuid();
 
     public MidTermSettings Load()
     {

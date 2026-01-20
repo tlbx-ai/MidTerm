@@ -19,15 +19,15 @@ const MAX_RACING_LOG_ENTRIES = 10;
 
 const processStates = new Map<string, ProcessState>();
 
-let onProcessStateChanged: ((sessionId: string, state: ProcessState) => void) | null = null;
+const processStateListeners: ((sessionId: string, state: ProcessState) => void)[] = [];
 
 /**
- * Register callback for process state changes.
+ * Add a listener for process state changes.
  */
-export function registerProcessStateCallback(
+export function addProcessStateListener(
   callback: (sessionId: string, state: ProcessState) => void,
 ): void {
-  onProcessStateChanged = callback;
+  processStateListeners.push(callback);
 }
 
 /**
@@ -196,7 +196,7 @@ export function getForegroundInfo(sessionId: string): {
 }
 
 function notifyStateChange(sessionId: string, state: ProcessState): void {
-  if (onProcessStateChanged) {
-    onProcessStateChanged(sessionId, state);
+  for (const listener of processStateListeners) {
+    listener(sessionId, state);
   }
 }

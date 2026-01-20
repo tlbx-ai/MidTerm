@@ -33,6 +33,25 @@ public sealed class ShellRegistry
         return _shells.Values.Where(s => s.IsAvailable());
     }
 
+    public IEnumerable<IShellConfiguration> GetPlatformShells()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            yield return _shells[ShellType.Pwsh];
+            yield return _shells[ShellType.PowerShell];
+            yield return _shells[ShellType.Cmd];
+        }
+        else
+        {
+            if (_shells[ShellType.Pwsh].IsAvailable())
+            {
+                yield return _shells[ShellType.Pwsh];
+            }
+            yield return _shells[ShellType.Bash];
+            yield return _shells[ShellType.Zsh];
+        }
+    }
+
     public ShellType GetDefaultShell()
     {
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())

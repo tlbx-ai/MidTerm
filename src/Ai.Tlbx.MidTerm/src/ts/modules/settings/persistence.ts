@@ -8,6 +8,7 @@
 import type {
   Settings,
   ThemeName,
+  TabTitleMode,
   TerminalState,
   HealthResponse,
   LogLevelSetting,
@@ -17,6 +18,7 @@ import { currentSettings, setCurrentSettings, dom, sessionTerminals } from '../.
 import { $settingsOpen } from '../../stores';
 import { setCookie } from '../../utils';
 import { setLogLevel, LogLevel } from '../logging';
+import { updateTabTitle } from '../tabTitle';
 
 const LOG_LEVEL_MAP: Record<LogLevelSetting, LogLevel> = {
   exception: LogLevel.Exception,
@@ -120,6 +122,7 @@ export function populateSettingsForm(settings: Settings): void {
   setElementChecked('setting-cursor-blink', settings.cursorBlink !== false);
   setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle || 'outline');
   setElementValue('setting-theme', settings.theme || 'dark');
+  setElementValue('setting-tab-title', settings.tabTitleMode || 'hostname');
   setElementValue('setting-contrast', String(settings.minimumContrastRatio || 1));
   setElementValue('setting-scrollback', settings.scrollbackLines || 10000);
   setElementValue('setting-bell-style', settings.bellStyle || 'notification');
@@ -219,6 +222,7 @@ export function applyReceivedSettings(settings: Settings): void {
   setLogLevel(logLevel);
 
   applySettingsToTerminals();
+  updateTabTitle();
 }
 
 /**
@@ -240,6 +244,7 @@ export function saveAllSettings(): void {
       'outline',
     ) as Settings['cursorInactiveStyle'],
     theme: getElementValue('setting-theme', 'dark') as ThemeName,
+    tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleMode,
     minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
     smoothScrolling: getElementChecked('setting-smooth-scrolling'),
     useWebGL: getElementChecked('setting-webgl'),
@@ -268,6 +273,7 @@ export function saveAllSettings(): void {
         const theme = THEMES[settings.theme] || THEMES.dark;
         document.documentElement.style.setProperty('--terminal-bg', theme.background);
         applySettingsToTerminals();
+        updateTabTitle();
       }
     })
     .catch((e) => {

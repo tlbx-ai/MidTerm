@@ -10,7 +10,7 @@ import { pendingSessions, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
 import { icon } from '../../constants';
 import {
-  registerProcessStateCallback,
+  addProcessStateListener,
   getForegroundInfo,
   getRacingLogText,
   getFullRacingLog,
@@ -41,7 +41,7 @@ let mobileActionBackdrop: HTMLDivElement | null = null;
  * Initialize session list module
  */
 export function initializeSessionList(): void {
-  registerProcessStateCallback(handleProcessStateChange);
+  addProcessStateListener(handleProcessStateChange);
 }
 
 /**
