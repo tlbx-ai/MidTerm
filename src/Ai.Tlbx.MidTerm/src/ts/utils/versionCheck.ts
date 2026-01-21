@@ -43,52 +43,21 @@ function showUpdateBanner(serverVersion: string): void {
 
   const banner = document.createElement('div');
   banner.id = 'update-banner';
-  banner.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 10000;
-    background: linear-gradient(135deg, #2d5a9e 0%, #1e3a5f 100%);
-    color: white;
-    padding: 10px 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
-    font-size: 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  `;
+  banner.className = 'update-banner';
 
   const message = document.createElement('span');
   message.textContent = `MidTerm updated to v${serverVersion}. Refresh to apply changes.`;
 
   const refreshBtn = document.createElement('button');
   refreshBtn.textContent = 'Refresh Now';
-  refreshBtn.style.cssText = `
-    background: white;
-    color: #1e3a5f;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-  `;
+  refreshBtn.className = 'update-banner-btn';
   refreshBtn.onclick = () => location.reload();
 
   const dismissBtn = document.createElement('button');
   dismissBtn.textContent = 'Later';
-  dismissBtn.style.cssText = `
-    background: transparent;
-    color: white;
-    border: 1px solid rgba(255,255,255,0.5);
-    padding: 6px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-  `;
+  dismissBtn.className = 'update-banner-dismiss';
   dismissBtn.onclick = () => {
     banner.remove();
-    // Keep updateBannerShown true so we don't show again this session
   };
 
   banner.appendChild(message);

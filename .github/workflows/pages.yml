@@ -1,7 +1,10 @@
 name: Deploy Pages
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.0.0'  # Major releases only (v5.0.0, v6.0.0, etc.)
 
 permissions:
   contents: read

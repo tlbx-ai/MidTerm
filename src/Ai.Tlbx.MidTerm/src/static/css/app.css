@@ -86,6 +86,38 @@
     --progress-warning: #e69500;
     --warning-badge: #FFB17A;
 
+    /* Accent blue opacity variants */
+    --accent-blue-10: rgba(122, 162, 247, 0.1);
+    --accent-blue-15: rgba(122, 162, 247, 0.15);
+    --accent-blue-25: rgba(122, 162, 247, 0.25);
+    --accent-blue-40: rgba(122, 162, 247, 0.4);
+
+    /* Additional accent colors */
+    --accent-purple: #ab47bc;
+
+    /* Tool styling colors (chat/MCP features) */
+    --tool-yellow-bg: rgba(255, 193, 7, 0.1);
+    --tool-yellow-border: rgba(255, 193, 7, 0.2);
+    --tool-yellow-border-strong: rgba(255, 193, 7, 0.3);
+    --tool-yellow-border-emphasis: rgba(255, 193, 7, 0.4);
+    --tool-yellow-gradient: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.15));
+    --tool-purple-bg: rgba(156, 39, 176, 0.08);
+    --tool-purple-bg-light: rgba(156, 39, 176, 0.12);
+    --tool-purple-border: rgba(156, 39, 176, 0.15);
+    --tool-purple-border-strong: rgba(156, 39, 176, 0.35);
+    --tool-purple-gradient: linear-gradient(135deg, rgba(156, 39, 176, 0.12), rgba(103, 58, 183, 0.12));
+
+    /* Shadow/overlay system */
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --shadow-color-md: rgba(0, 0, 0, 0.4);
+    --shadow-color-lg: rgba(0, 0, 0, 0.5);
+    --overlay-bg: rgba(0, 0, 0, 0.6);
+    --overlay-bg-dark: rgba(0, 0, 0, 0.7);
+
+    /* White opacity variants */
+    --white-03: rgba(255, 255, 255, 0.03);
+    --white-60: rgba(255, 255, 255, 0.6);
+
     /* Spacing scale */
     --space-1: 4px;
     --space-2: 8px;
@@ -238,7 +270,7 @@ html, body {
     flex: 1;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: rgba(122, 162, 247, 0.25) var(--bg-sidebar);
+    scrollbar-color: var(--accent-blue-25) var(--bg-sidebar);
 }
 
 .session-list::-webkit-scrollbar {
@@ -251,12 +283,12 @@ html, body {
 }
 
 .session-list::-webkit-scrollbar-thumb {
-    background: rgba(122, 162, 247, 0.25);
+    background: var(--accent-blue-25);
     border-radius: 4px;
 }
 
 .session-list::-webkit-scrollbar-thumb:hover {
-    background: rgba(122, 162, 247, 0.4);
+    background: var(--accent-blue-40);
 }
 
 .session-item {
@@ -288,13 +320,13 @@ html, body {
 }
 
 .drag-handle:hover {
-    background-color: rgba(122, 162, 247, 0.15);
+    background-color: var(--accent-blue-15);
     opacity: 1;
 }
 
 .drag-handle:active {
     cursor: grabbing;
-    background-color: rgba(122, 162, 247, 0.25);
+    background-color: var(--accent-blue-25);
 }
 
 .drag-handle-dots {
@@ -506,7 +538,7 @@ html, body {
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px var(--shadow-color);
     z-index: 100;
     opacity: 0;
     visibility: hidden;
@@ -868,7 +900,7 @@ html, body {
 .terminal-container.drag-over {
     outline: 2px dashed var(--accent-blue);
     outline-offset: -2px;
-    background-color: rgba(122, 162, 247, 0.1);
+    background-color: var(--accent-blue-10);
 }
 
 .terminal-container.drag-over::after {
@@ -1107,7 +1139,7 @@ html, body {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.6);
+        background: var(--overlay-bg);
         z-index: 999;
         opacity: 0;
         pointer-events: none;
@@ -1358,7 +1390,7 @@ html, body {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--shadow-color-lg);
         z-index: 1000;
         -webkit-tap-highlight-color: transparent;
     }
@@ -1571,6 +1603,43 @@ html, body {
 
 .paste-indicator.active {
     opacity: 1;
+}
+
+/* Version update banner */
+.update-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    background: linear-gradient(135deg, #2d5a9e 0%, #1e3a5f 100%);
+    color: white;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    font-size: 14px;
+    box-shadow: 0 2px 8px var(--shadow-color);
+}
+
+.update-banner-btn {
+    background: white;
+    color: #1e3a5f;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.update-banner-dismiss {
+    background: transparent;
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
 }
 
 /* Host connection status indicator - prominent banner */
@@ -2312,7 +2381,7 @@ html, body {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.7);
+    background-color: var(--overlay-bg-dark);
 }
 
 .modal-content {
@@ -2325,7 +2394,7 @@ html, body {
     width: 90%;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 8px 32px var(--shadow-color-lg);
 }
 
 .modal-header {
@@ -2635,7 +2704,7 @@ html, body {
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 40px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 32px var(--shadow-color-md);
 }
 
 .login-header {
@@ -3082,7 +3151,7 @@ html, body {
     background: var(--bg-secondary);
     padding: 6px 10px;
     border-radius: 6px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px var(--shadow-color);
     border: 1px solid var(--border-color);
 }
 
@@ -3339,11 +3408,11 @@ html, body {
     display: flex;
     gap: 10px;
     padding: 3px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--white-03);
 }
 
 .diag-log-entry:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--white-03);
 }
 
 .diag-log-time {
@@ -3628,8 +3697,8 @@ html, body {
 }
 
 .warning-box {
-    background-color: rgba(255, 193, 7, 0.1);
-    border: 1px solid rgba(255, 193, 7, 0.3);
+    background-color: var(--tool-yellow-bg);
+    border: 1px solid var(--tool-yellow-border-strong);
     border-radius: 6px;
     padding: 16px;
     margin-top: 16px;
@@ -4093,8 +4162,8 @@ html, body {
 /* Tool Call Request (from assistant) */
 .chat-msg-tool-call {
     align-self: flex-start;
-    background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.15));
-    border: 1px solid rgba(255, 193, 7, 0.4);
+    background: var(--tool-yellow-gradient);
+    border: 1px solid var(--tool-yellow-border-emphasis);
     padding: 8px 12px;
     max-width: 90%;
     border-radius: 8px;
@@ -4103,8 +4172,8 @@ html, body {
 /* Tool Response */
 .chat-msg-tool-response {
     align-self: center;
-    background: linear-gradient(135deg, rgba(156, 39, 176, 0.12), rgba(103, 58, 183, 0.12));
-    border: 1px solid rgba(156, 39, 176, 0.35);
+    background: var(--tool-purple-gradient);
+    border: 1px solid var(--tool-purple-border-strong);
     padding: 8px 12px;
     max-width: 95%;
     border-radius: 8px;
@@ -4142,7 +4211,7 @@ html, body {
 }
 
 .chat-msg-tool-response .chat-msg-tool-name {
-    color: #ab47bc;
+    color: var(--accent-purple);
     font-weight: 600;
     font-size: 11px;
 }
@@ -4157,8 +4226,8 @@ html, body {
 
 /* Tool arguments display */
 .chat-msg-tool-args {
-    background-color: rgba(255, 193, 7, 0.1);
-    border: 1px solid rgba(255, 193, 7, 0.2);
+    background-color: var(--tool-yellow-bg);
+    border: 1px solid var(--tool-yellow-border);
     border-radius: 4px;
     padding: 6px 8px;
     margin: 4px 0;
@@ -4173,8 +4242,8 @@ html, body {
 
 /* Tool result display */
 .chat-msg-tool-result {
-    background-color: rgba(156, 39, 176, 0.08);
-    border: 1px solid rgba(156, 39, 176, 0.15);
+    background-color: var(--tool-purple-bg);
+    border: 1px solid var(--tool-purple-border);
     border-radius: 4px;
     padding: 6px 8px;
     margin: 4px 0;
@@ -4200,7 +4269,7 @@ html, body {
 
 .chat-msg-time {
     font-size: 9px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--white-60);
     margin-top: 4px;
     text-align: right;
 }
@@ -4553,7 +4622,7 @@ html, body {
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 8px;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 -4px 20px var(--shadow-color);
     z-index: 901;
     transform-origin: bottom center;
     animation: popup-in 0.15s ease-out;
@@ -4690,7 +4759,7 @@ html, body {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 6px;
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 -4px 16px var(--shadow-color);
     z-index: 1000;
     animation: popup-in 0.1s ease-out;
 }
