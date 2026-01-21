@@ -10,6 +10,12 @@ public static class CertificateGenerator
 {
     private const int ValidityYears = 2;
 
+    /// <summary>
+    /// The CN used for certificates. Uses reverse-DNS style to avoid collisions with other apps.
+    /// This is the single source of truth - all code should reference this constant.
+    /// </summary>
+    public const string CertificateSubject = "CN=ai.tlbx.midterm";
+
     public static X509Certificate2 GenerateSelfSigned(string[] dnsNames, string[] ipAddresses, bool useEcdsa = true)
     {
         AsymmetricAlgorithm key;
@@ -20,7 +26,7 @@ public static class CertificateGenerator
             var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP384);
             key = ecdsa;
             request = new CertificateRequest(
-                "CN=MidTerm",
+                CertificateSubject,
                 ecdsa,
                 HashAlgorithmName.SHA384);
         }
@@ -29,7 +35,7 @@ public static class CertificateGenerator
             var rsa = RSA.Create(4096);
             key = rsa;
             request = new CertificateRequest(
-                "CN=MidTerm",
+                CertificateSubject,
                 rsa,
                 HashAlgorithmName.SHA256,
                 RSASignaturePadding.Pkcs1);

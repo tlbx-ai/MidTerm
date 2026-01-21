@@ -310,6 +310,71 @@ try {{
     $rollbackNeeded = $true
     Log 'All backups created (including credentials)'
 
+    # === CERTIFICATE DIAGNOSTICS ===
+    Log ''
+    Log '=== Certificate Diagnostics ==='
+
+    # Check cert file
+    if (Test-Path $certPath) {{
+        $certInfo = Get-Item $certPath
+        Log ""  midterm.pem: Size=$($certInfo.Length) bytes, Modified=$($certInfo.LastWriteTime)""
+
+        # Get cert thumbprint
+        try {{
+            $content = Get-Content $certPath -Raw
+            $base64 = $content -replace ""-----BEGIN CERTIFICATE-----"","""" -replace ""-----END CERTIFICATE-----"","""" -replace ""`n"","""" -replace ""`r"",""""
+            $bytes = [Convert]::FromBase64String($base64)
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$bytes)
+            Log ""  Thumbprint: $($cert.Thumbprint)""
+            Log ""  Subject: $($cert.Subject)""
+            Log ""  NotAfter: $($cert.NotAfter)""
+            Log ""  NotBefore: $($cert.NotBefore)""
+        }} catch {{
+            Log ""  WARNING: Could not parse certificate: $_"" 'WARN'
+        }}
+    }} else {{
+        Log '  WARNING: midterm.pem does NOT exist!' 'WARN'
+    }}
+
+    # Check key file
+    $keyFile = Join-Path $keysDir 'midterm.dpapi'
+    if (Test-Path $keyFile) {{
+        $keyInfo = Get-Item $keyFile
+        Log ""  midterm.dpapi: Size=$($keyInfo.Length) bytes, Modified=$($keyInfo.LastWriteTime)""
+    }} else {{
+        Log '  WARNING: midterm.dpapi does NOT exist!' 'WARN'
+    }}
+
+    # Check settings.json for cert config
+    if (Test-Path $settingsPath) {{
+        try {{
+            $settingsJson = Get-Content $settingsPath -Raw | ConvertFrom-Json
+            Log ""  settings.certificatePath: $($settingsJson.certificatePath)""
+            Log ""  settings.keyProtection: $($settingsJson.keyProtection)""
+            Log ""  settings.isServiceInstall: $($settingsJson.isServiceInstall)""
+            Log ""  settings.certificateThumbprint: $($settingsJson.certificateThumbprint)""
+        }} catch {{
+            Log ""  WARNING: Could not parse settings.json: $_"" 'WARN'
+        }}
+    }}
+
+    # List MidTerm certs in Root store
+    Log '  Trusted MidTerm certificates in Root store:'
+    try {{
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store(""Root"",""LocalMachine"")
+        $store.Open(""ReadOnly"")
+        $midtermCerts = $store.Certificates | Where-Object {{ $_.Subject -eq ""{CertificateGenerator.CertificateSubject}"" }}
+        foreach ($c in $midtermCerts) {{
+            Log ""    - $($c.Thumbprint.Substring(0,8))... Expires: $($c.NotAfter)""
+        }}
+        if ($midtermCerts.Count -eq 0) {{
+            Log '    (none found)'
+        }}
+        $store.Close()
+    }} catch {{
+        Log ""  WARNING: Could not enumerate Root store: $_"" 'WARN'
+    }}
+
     # ============================================
     # PHASE 4: Install new files
     # ============================================
@@ -358,6 +423,33 @@ try {{
         }}
         Log ""mt.exe started successfully (PID: $($proc.Id))""
         $startedOk = $true
+    }}
+
+    # === POST-UPDATE CERTIFICATE VERIFICATION ===
+    Log ''
+    Log '=== Post-Update Certificate Verification ==='
+
+    # Check if cert file still exists and is valid
+    if (Test-Path $certPath) {{
+        try {{
+            $content = Get-Content $certPath -Raw
+            $base64 = $content -replace ""-----BEGIN CERTIFICATE-----"","""" -replace ""-----END CERTIFICATE-----"","""" -replace ""`n"","""" -replace ""`r"",""""
+            $bytes = [Convert]::FromBase64String($base64)
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$bytes)
+            Log ""  Certificate OK: $($cert.Thumbprint.Substring(0,8))... expires $($cert.NotAfter)""
+        }} catch {{
+            Log ""  WARNING: Certificate verification failed: $_"" 'WARN'
+        }}
+    }} else {{
+        Log '  WARNING: Certificate file missing after update!' 'WARN'
+    }}
+
+    # Check if key file still exists
+    if (Test-Path $keyFile) {{
+        $keyInfo = Get-Item $keyFile
+        Log ""  Key file OK: $($keyInfo.Length) bytes""
+    }} else {{
+        Log '  WARNING: Key file missing after update!' 'WARN'
     }}
 
     # ============================================
@@ -930,6 +1022,57 @@ fi
 ROLLBACK_NEEDED=true
 log ""All backups created (including credentials)""
 
+# === CERTIFICATE DIAGNOSTICS ===
+log """"
+log '=== Certificate Diagnostics ==='
+
+# Check cert file
+if [[ -f ""$CERT_PATH"" ]]; then
+    cert_size=$(stat -f%z ""$CERT_PATH"" 2>/dev/null || stat -c%s ""$CERT_PATH"" 2>/dev/null)
+    cert_mtime=$(stat -f%m ""$CERT_PATH"" 2>/dev/null || stat -c%Y ""$CERT_PATH"" 2>/dev/null)
+    log ""  midterm.pem: Size=$cert_size bytes""
+
+    # Get cert info using openssl
+    if command -v openssl &> /dev/null; then
+        thumbprint=$(openssl x509 -in ""$CERT_PATH"" -noout -fingerprint -sha1 2>/dev/null | cut -d= -f2 | tr -d ':')
+        subject=$(openssl x509 -in ""$CERT_PATH"" -noout -subject 2>/dev/null)
+        not_after=$(openssl x509 -in ""$CERT_PATH"" -noout -enddate 2>/dev/null | cut -d= -f2)
+        not_before=$(openssl x509 -in ""$CERT_PATH"" -noout -startdate 2>/dev/null | cut -d= -f2)
+        log ""  Thumbprint: $thumbprint""
+        log ""  Subject: $subject""
+        log ""  NotAfter: $not_after""
+        log ""  NotBefore: $not_before""
+    else
+        log ""  WARNING: openssl not available for cert parsing"" ""WARN""
+    fi
+else
+    log '  WARNING: midterm.pem does NOT exist!' ""WARN""
+fi
+
+# Check key file
+if [[ -f ""$KEY_ENC_PATH"" ]]; then
+    key_size=$(stat -f%z ""$KEY_ENC_PATH"" 2>/dev/null || stat -c%s ""$KEY_ENC_PATH"" 2>/dev/null)
+    log ""  midterm.key.enc: Size=$key_size bytes""
+else
+    log '  WARNING: midterm.key.enc does NOT exist!' ""WARN""
+fi
+
+# Check settings.json for cert config
+if [[ -f ""$SETTINGS_PATH"" ]]; then
+    if command -v jq &> /dev/null; then
+        cert_path_setting=$(jq -r '.certificatePath // empty' ""$SETTINGS_PATH"" 2>/dev/null)
+        key_protection=$(jq -r '.keyProtection // empty' ""$SETTINGS_PATH"" 2>/dev/null)
+        is_service=$(jq -r '.isServiceInstall // empty' ""$SETTINGS_PATH"" 2>/dev/null)
+        cert_thumbprint=$(jq -r '.certificateThumbprint // empty' ""$SETTINGS_PATH"" 2>/dev/null)
+        log ""  settings.certificatePath: $cert_path_setting""
+        log ""  settings.keyProtection: $key_protection""
+        log ""  settings.isServiceInstall: $is_service""
+        log ""  settings.certificateThumbprint: $cert_thumbprint""
+    else
+        log ""  (jq not available for settings parsing)""
+    fi
+fi
+
 # ============================================
 # PHASE 4: Install new files
 # ============================================
@@ -994,6 +1137,31 @@ else
         write_result false ""mt failed to start after installation""
         exit 1
     fi
+fi
+
+# === POST-UPDATE CERTIFICATE VERIFICATION ===
+log """"
+log '=== Post-Update Certificate Verification ==='
+
+# Check if cert file still exists and is valid
+if [[ -f ""$CERT_PATH"" ]]; then
+    if command -v openssl &> /dev/null; then
+        thumbprint=$(openssl x509 -in ""$CERT_PATH"" -noout -fingerprint -sha1 2>/dev/null | cut -d= -f2 | tr -d ':')
+        not_after=$(openssl x509 -in ""$CERT_PATH"" -noout -enddate 2>/dev/null | cut -d= -f2)
+        log ""  Certificate OK: ${{thumbprint:0:8}}... expires $not_after""
+    else
+        log ""  Certificate exists (openssl not available for verification)""
+    fi
+else
+    log '  WARNING: Certificate file missing after update!' ""WARN""
+fi
+
+# Check if key file still exists
+if [[ -f ""$KEY_ENC_PATH"" ]]; then
+    key_size=$(stat -f%z ""$KEY_ENC_PATH"" 2>/dev/null || stat -c%s ""$KEY_ENC_PATH"" 2>/dev/null)
+    log ""  Key file OK: $key_size bytes""
+else
+    log '  WARNING: Key file missing after update!' ""WARN""
 fi
 
 # ============================================

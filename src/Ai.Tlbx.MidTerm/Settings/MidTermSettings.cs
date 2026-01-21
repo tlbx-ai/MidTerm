@@ -124,6 +124,10 @@ public sealed class MidTermSettings
 
     public KeyProtectionMethod KeyProtection { get; set; } = KeyProtectionMethod.OsProtected;
 
+    // Certificate thumbprint - saved after generation for verification
+    // Used to detect if cert was silently regenerated during update failures
+    public string? CertificateThumbprint { get; set; }
+
     // Service mode flag - persisted to ensure DPAPI scope is consistent between
     // installer (which runs elevated) and runtime (which runs as service user).
     // Without this, runtime detection of IsSystem can fail for non-LocalSystem services.

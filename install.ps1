@@ -26,6 +26,8 @@ $WebBinaryName = "mt.exe"
 $TtyHostBinaryName = "mthost.exe"
 $LegacyHostBinaryName = "mt-host.exe"
 $AssetPattern = "mt-win-x64.zip"
+# Certificate subject CN - must match CertificateGenerator.CertificateSubject in C#
+$CertificateSubject = "CN=ai.tlbx.midterm"
 
 function Write-Header
 {
@@ -213,7 +215,7 @@ function Remove-OldMidTermCertificates
         $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
         $rootStore.Open("ReadWrite")
 
-        $oldCerts = $rootStore.Certificates | Where-Object { $_.Subject -eq "CN=MidTerm" }
+        $oldCerts = $rootStore.Certificates | Where-Object { $_.Subject -eq $CertificateSubject }
         $removed = 0
 
         foreach ($old in $oldCerts)

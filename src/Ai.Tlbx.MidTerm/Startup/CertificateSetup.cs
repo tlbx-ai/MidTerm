@@ -1,4 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -6,6 +7,13 @@ namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class CertificateSetup
 {
+    /// <summary>
+    /// Last error encountered during certificate loading.
+    /// Set when LoadOrGenerateCertificate returns null due to an error.
+    /// Can be exposed in UI/API for diagnostics.
+    /// </summary>
+    public static string? LastCertificateError { get; private set; }
+
     public static void GenerateCertificateCommand(bool force, bool serviceMode)
     {
         var settingsService = new SettingsService();
@@ -65,10 +73,12 @@ public static class CertificateSetup
         settings.CertificatePath = certPath;
         settings.CertificatePassword = null;
         settings.KeyProtection = KeyProtectionMethod.OsProtected;
+        settings.CertificateThumbprint = cert.Thumbprint;
         settingsService.Save(settings);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("Certificate generated successfully!");
+        Console.WriteLine($"  Thumbprint: {cert.Thumbprint}");
         Console.ResetColor();
 
         CertificateGenerator.PrintTrustInstructions(certPath, dnsNames, ipAddresses);
@@ -79,6 +89,7 @@ public static class CertificateSetup
         SettingsService settingsService,
         Action<string, bool>? writeEventLog = null)
     {
+        LastCertificateError = null;
         var settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
         const string keyId = "midterm";
 
@@ -88,8 +99,37 @@ public static class CertificateSetup
         {
             writeEventLog?.Invoke($"LoadOrGenerateCertificate: Certificate file exists at {settings.CertificatePath}", false);
 
+            // Pre-flight validation: check key file exists
+            var keyPath = OperatingSystem.IsWindows()
+                ? Path.Combine(settingsDir, "keys", "midterm.dpapi")
+                : Path.Combine(settingsDir, "midterm.key.enc");
+
+            if (!File.Exists(keyPath))
+            {
+                var msg = $"Private key file missing at {keyPath}";
+                writeEventLog?.Invoke($"LoadOrGenerateCertificate: {msg}", true);
+                LastCertificateError = msg;
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"Warning: {msg}. Run 'mt --generate-cert --force' to regenerate.");
+                Console.ResetColor();
+                return null;
+            }
+
+            var keyFileInfo = new FileInfo(keyPath);
+            if (keyFileInfo.Length < 50)
+            {
+                var msg = $"Key file appears corrupted (size={keyFileInfo.Length} bytes, expected >50)";
+                writeEventLog?.Invoke($"LoadOrGenerateCertificate: {msg}", true);
+                LastCertificateError = msg;
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"Warning: {msg}. Run 'mt --generate-cert --force' to regenerate.");
+                Console.ResetColor();
+                return null;
+            }
+
             try
             {
+                X509Certificate2 cert;
                 if (settings.KeyProtection == KeyProtectionMethod.OsProtected)
                 {
                     // Use persisted flag with runtime detection as fallback for existing installs
@@ -97,23 +137,62 @@ public static class CertificateSetup
                     var isServiceInstall = settings.IsServiceInstall || settingsService.IsRunningAsService;
                     writeEventLog?.Invoke($"LoadOrGenerateCertificate: Loading with OS-protected key, IsServiceInstall={settings.IsServiceInstall}, RuntimeIsService={settingsService.IsRunningAsService}, UsingScope={isServiceInstall}", false);
                     var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, isServiceInstall);
-                    var cert = protector.LoadCertificateWithPrivateKey(settings.CertificatePath, keyId);
-                    writeEventLog?.Invoke($"LoadOrGenerateCertificate: Successfully loaded certificate - HasPrivateKey={cert.HasPrivateKey}", false);
-                    return cert;
+                    cert = protector.LoadCertificateWithPrivateKey(settings.CertificatePath, keyId);
                 }
                 else
                 {
                     writeEventLog?.Invoke("LoadOrGenerateCertificate: Loading legacy PFX", false);
-                    return X509CertificateLoader.LoadPkcs12FromFile(
+                    cert = X509CertificateLoader.LoadPkcs12FromFile(
                         settings.CertificatePath,
                         settings.CertificatePassword);
                 }
+
+                writeEventLog?.Invoke($"LoadOrGenerateCertificate: Successfully loaded certificate - HasPrivateKey={cert.HasPrivateKey}, Thumbprint={cert.Thumbprint[..8]}...", false);
+
+                // Verify thumbprint matches saved value (detect silent regeneration)
+                if (settings.CertificateThumbprint is not null &&
+                    cert.Thumbprint != settings.CertificateThumbprint)
+                {
+                    var warnMsg = $"WARNING: Certificate thumbprint mismatch! Expected={settings.CertificateThumbprint[..8]}..., Got={cert.Thumbprint[..8]}.... Cert may have been silently regenerated.";
+                    writeEventLog?.Invoke(warnMsg, true);
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine(warnMsg);
+                    Console.ResetColor();
+                }
+                else if (settings.CertificateThumbprint is null)
+                {
+                    // First load after upgrade - save thumbprint for future verification
+                    settings.CertificateThumbprint = cert.Thumbprint;
+                    settingsService.Save(settings);
+                    writeEventLog?.Invoke($"LoadOrGenerateCertificate: Saved thumbprint to settings: {cert.Thumbprint[..8]}...", false);
+                }
+
+                return cert;
             }
             catch (Exception ex)
             {
-                writeEventLog?.Invoke($"LoadOrGenerateCertificate: FAILED - {ex.GetType().Name}: {ex.Message}", true);
+                var diagnostic = new StringBuilder();
+                diagnostic.AppendLine($"Certificate load failed: {ex.GetType().Name}: {ex.Message}");
+                diagnostic.AppendLine($"  CertificatePath: {settings.CertificatePath}");
+                diagnostic.AppendLine($"  KeyProtection: {settings.KeyProtection}");
+                diagnostic.AppendLine($"  IsServiceInstall: {settings.IsServiceInstall}");
+                diagnostic.AppendLine($"  RuntimeIsService: {settingsService.IsRunningAsService}");
+                diagnostic.AppendLine($"  Cert file exists: {File.Exists(settings.CertificatePath)}");
+                diagnostic.AppendLine($"  Key file exists: {File.Exists(keyPath)}");
+                if (File.Exists(keyPath))
+                {
+                    diagnostic.AppendLine($"  Key file size: {new FileInfo(keyPath).Length} bytes");
+                }
+                if (ex.InnerException is not null)
+                {
+                    diagnostic.AppendLine($"  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+                }
+
+                LastCertificateError = diagnostic.ToString();
+                writeEventLog?.Invoke($"LoadOrGenerateCertificate: FAILED\n{LastCertificateError}", true);
+
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"Error: Failed to load HTTPS certificate: {ex.Message}");
+                Console.WriteLine(LastCertificateError);
                 Console.ResetColor();
                 return null;
             }
@@ -140,14 +219,19 @@ public static class CertificateSetup
             protector.StorePrivateKey(privateKeyBytes, keyId);
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
 
+            var loadedCert = protector.LoadCertificateWithPrivateKey(certPath, keyId);
+
             settings.CertificatePath = certPath;
             settings.CertificatePassword = null;
             settings.KeyProtection = KeyProtectionMethod.OsProtected;
+            settings.CertificateThumbprint = loadedCert.Thumbprint;
             settingsService.Save(settings);
+
+            writeEventLog?.Invoke($"LoadOrGenerateCertificate: Generated new certificate, Thumbprint={loadedCert.Thumbprint[..8]}...", false);
 
             CertificateGenerator.PrintTrustInstructions(certPath, dnsNames, ipAddresses);
 
-            return protector.LoadCertificateWithPrivateKey(certPath, keyId);
+            return loadedCert;
         }
         catch (Exception ex)
         {

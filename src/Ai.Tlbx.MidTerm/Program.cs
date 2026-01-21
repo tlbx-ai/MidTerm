@@ -117,6 +117,12 @@ public class Program
         if (ServerSetup.LoadedCertificate is not null)
         {
             certInfoService.SetCertificate(ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
+
+            // Clean up old MidTerm certificates from trusted store (Windows only)
+            if (!ServerSetup.IsFallbackCertificate)
+            {
+                CertificateCleanupService.CleanupOldCertificates(ServerSetup.LoadedCertificate, WriteEventLogWrapper);
+            }
         }
 
         tempCleanupService.CleanupOrphanedFiles();
