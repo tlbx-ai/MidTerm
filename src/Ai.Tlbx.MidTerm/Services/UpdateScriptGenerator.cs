@@ -539,7 +539,7 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var currentMthostPath = Path.Combine(installDir, "mthost");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         var resultFilePath = Path.Combine(configDir, "update-result.json");
-        var logFilePath = Path.Combine(logDir, "midterm-update.log");
+        var logFilePath = Path.Combine(logDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
         var isMacOs = OperatingSystem.IsMacOS();
