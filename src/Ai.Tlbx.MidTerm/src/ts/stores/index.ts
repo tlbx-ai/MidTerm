@@ -39,6 +39,28 @@ export const $activeSessionId = atom<string | null>(null);
 export const $renamingSessionId = atom<string | null>(null);
 
 /**
+ * Pending renames awaiting server confirmation.
+ * Maps sessionId -> pending name (null means clearing the name).
+ * Protects optimistic updates from being overwritten by stale server state.
+ */
+const pendingRenames = new Map<string, string | null>();
+
+/**
+ * Mark a rename as pending (before optimistic update).
+ * The pending name will be preserved until server confirms it.
+ */
+export function setPendingRename(sessionId: string, name: string | null): void {
+  pendingRenames.set(sessionId, name);
+}
+
+/**
+ * Clear pending rename when server confirms or on rollback.
+ */
+export function clearPendingRename(sessionId: string): void {
+  pendingRenames.delete(sessionId);
+}
+
+/**
  * Sessions as a sorted array for rendering.
  * Sorted by _order (which is set from server's order field on load).
  */
@@ -165,11 +187,26 @@ export function removeSession(sessionId: string): void {
  * Set all sessions (replaces entire collection).
  * Used when receiving session list from server.
  * Uses server's order field if present, otherwise array index.
+ * Preserves pending rename names until server confirms them.
  */
 export function setSessions(sessionList: Session[]): void {
   const sessionsMap: Record<string, Session> = {};
   sessionList.forEach((session, i) => {
-    sessionsMap[session.id] = { ...session, _order: session.order ?? i };
+    let name = session.name;
+
+    // Check for pending rename
+    const pendingName = pendingRenames.get(session.id);
+    if (pendingName !== undefined) {
+      if (session.name === pendingName) {
+        // Server confirmed our rename - clear pending
+        pendingRenames.delete(session.id);
+      } else {
+        // Server still has old name - preserve our pending name
+        name = pendingName;
+      }
+    }
+
+    sessionsMap[session.id] = { ...session, name, _order: session.order ?? i };
   });
   $sessions.set(sessionsMap);
 }
