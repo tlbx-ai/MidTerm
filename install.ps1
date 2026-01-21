@@ -558,6 +558,7 @@ function Write-ServiceSettings
         runAsUser = $Username
         runAsUserSid = $UserSid
         authenticationEnabled = $true
+        isServiceInstall = $true
     }
 
     # HTTPS settings - always HTTPS, use OS-level key protection
@@ -846,7 +847,10 @@ function Install-MidTerm
         if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
 
         # Note: passwordHash goes to secure storage, not settings.json
-        $userSettings = @{ authenticationEnabled = $true }
+        $userSettings = @{
+            authenticationEnabled = $true
+            isServiceInstall = $false
+        }
         if ($CertPath) {
             $userSettings.certificatePath = $CertPath
             $userSettings.keyProtection = "osProtected"

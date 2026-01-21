@@ -92,8 +92,11 @@ public static class CertificateSetup
             {
                 if (settings.KeyProtection == KeyProtectionMethod.OsProtected)
                 {
-                    writeEventLog?.Invoke($"LoadOrGenerateCertificate: Loading with OS-protected key, IsService={settingsService.IsRunningAsService}", false);
-                    var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, settingsService.IsRunningAsService);
+                    // Use persisted flag with runtime detection as fallback for existing installs
+                    // This ensures DPAPI scope is consistent between installer and runtime
+                    var isServiceInstall = settings.IsServiceInstall || settingsService.IsRunningAsService;
+                    writeEventLog?.Invoke($"LoadOrGenerateCertificate: Loading with OS-protected key, IsServiceInstall={settings.IsServiceInstall}, RuntimeIsService={settingsService.IsRunningAsService}, UsingScope={isServiceInstall}", false);
+                    var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, isServiceInstall);
                     var cert = protector.LoadCertificateWithPrivateKey(settings.CertificatePath, keyId);
                     writeEventLog?.Invoke($"LoadOrGenerateCertificate: Successfully loaded certificate - HasPrivateKey={cert.HasPrivateKey}", false);
                     return cert;
@@ -128,7 +131,9 @@ public static class CertificateSetup
 
             CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
-            var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, settingsService.IsRunningAsService);
+            // Use persisted flag with runtime detection as fallback
+            var isServiceInstall = settings.IsServiceInstall || settingsService.IsRunningAsService;
+            var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, isServiceInstall);
             var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
                                   ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
                                   ?? throw new InvalidOperationException("Failed to export private key");

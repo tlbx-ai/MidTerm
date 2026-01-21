@@ -114,6 +114,9 @@ public sealed class SettingsService
                 // System.Text.Json leaves missing bool properties as false, not their initializer value
                 ApplyMissingDefaults(_cached, json);
 
+                // Migrate service install flag for existing installations
+                MigrateServiceInstallFlag(_cached, json);
+
                 // Load secrets from secure storage
                 LoadSecretsIntoSettings(_cached);
 
@@ -163,6 +166,28 @@ public sealed class SettingsService
         if (!json.Contains("\"useWebGL\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.UseWebGL = true;
+        }
+    }
+
+    private void MigrateServiceInstallFlag(MidTermSettings settings, string json)
+    {
+        // If isServiceInstall wasn't in the JSON, infer from directory location
+        // This ensures DPAPI scope is consistent for existing installations
+        if (!json.Contains("\"isServiceInstall\"", StringComparison.OrdinalIgnoreCase))
+        {
+            // Service mode settings are in ProgramData (Windows) or /usr/local/etc (Unix)
+            // User mode settings are in user profile directory
+            if (OperatingSystem.IsWindows())
+            {
+                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                settings.IsServiceInstall = _settingsPath.StartsWith(programData, StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                settings.IsServiceInstall = _settingsPath.StartsWith("/usr/local/", StringComparison.Ordinal);
+            }
+
+            Log.Info(() => $"Migrated isServiceInstall={settings.IsServiceInstall} based on settings path: {_settingsPath}");
         }
     }
 
