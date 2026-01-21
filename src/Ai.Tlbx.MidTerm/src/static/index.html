@@ -453,6 +453,10 @@
                                         <label for="setting-scrollback-protection">Claude Code scrollback glitch protection</label>
                                         <input type="checkbox" id="setting-scrollback-protection" />
                                     </div>
+                                    <div class="setting-row">
+                                        <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely.">File Radar (experimental)</label>
+                                        <input type="checkbox" id="setting-file-radar" />
+                                    </div>
                                 </div>
                             </section>
 
@@ -632,6 +636,31 @@
                         <button type="submit" id="btn-save-password" class="btn-primary">Save</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Viewer Modal -->
+    <div id="file-viewer-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content file-viewer-modal-content">
+            <div class="modal-header">
+                <div class="file-viewer-header-info">
+                    <h3 class="file-viewer-title">File</h3>
+                    <span class="file-viewer-path"></span>
+                </div>
+                <div class="file-viewer-header-actions">
+                    <button id="file-viewer-download" class="btn-icon" title="Download">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z"/>
+                            <path d="M2 13h12v1H2v-1z"/>
+                        </svg>
+                    </button>
+                    <button class="modal-close">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body file-viewer-body">
+                <div class="file-viewer-loading">Loading...</div>
             </div>
         </div>
     </div>

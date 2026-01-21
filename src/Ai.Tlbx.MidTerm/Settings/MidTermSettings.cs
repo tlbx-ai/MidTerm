@@ -100,6 +100,9 @@ public sealed class MidTermSettings
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public bool ScrollbackProtection { get; set; } = false;
 
+    // File Radar - Detects file paths in terminal output and makes them clickable
+    public bool FileRadar { get; set; } = false;
+
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }
     public string? RunAsUserSid { get; set; }  // Windows: User SID for token lookup

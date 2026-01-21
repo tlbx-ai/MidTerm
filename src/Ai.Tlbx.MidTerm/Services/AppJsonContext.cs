@@ -68,6 +68,12 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(List<LaunchEntry>))]
+[JsonSerializable(typeof(FileCheckRequest))]
+[JsonSerializable(typeof(FileCheckResponse))]
+[JsonSerializable(typeof(FilePathInfo))]
+[JsonSerializable(typeof(DirectoryListResponse))]
+[JsonSerializable(typeof(DirectoryEntry))]
+[JsonSerializable(typeof(Dictionary<string, FilePathInfo>))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

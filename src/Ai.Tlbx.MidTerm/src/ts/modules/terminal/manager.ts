@@ -46,6 +46,8 @@ import {
   cleanupSearchForTerminal,
 } from './search';
 
+import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
+
 // Forward declarations for functions from other modules
 let sendInput: (sessionId: string, data: string) => void = () => {};
 let showBellNotification: (sessionId: string) => void = () => {};
@@ -256,6 +258,9 @@ export function createTerminalForSession(
       // Web-Links addon failed to load
     }
 
+    // Register file link provider for clickable file paths
+    registerFileLinkProvider(terminal, sessionId);
+
     // Load Search addon for Ctrl+F search
     initSearchForTerminal(sessionId, terminal);
 
@@ -336,6 +341,10 @@ export function writeOutputFrame(
   // Write terminal data
   if (frame.data.length > 0) {
     state.terminal.write(frame.data);
+
+    // Scan output for file paths to make them clickable
+    // See fileLinks.ts for performance notes - can be disabled if needed
+    scanOutputForPaths(sessionId, frame.data);
   }
 }
 
@@ -537,6 +546,9 @@ export function destroyTerminalForSession(sessionId: string): void {
   if (state.hasWebgl) {
     terminalsWithWebgl.delete(sessionId);
   }
+
+  // Clean up file path allowlist
+  clearPathAllowlist(sessionId);
 
   state.terminal.dispose();
   state.container.remove();

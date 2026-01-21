@@ -82,6 +82,7 @@ import {
   type LaunchEntry,
 } from './modules/history';
 import { initTouchController } from './modules/touchController';
+import { initFileViewer } from './modules/fileViewer';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -146,6 +147,7 @@ async function init(): Promise<void> {
   cacheDOMElements();
   initTrafficIndicator();
   initBadges();
+  initFileViewer();
   restoreSidebarState();
   setupSidebarResize();
   initializeSessionList();

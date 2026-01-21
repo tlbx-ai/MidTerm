@@ -132,6 +132,7 @@ export function populateSettingsForm(settings: Settings): void {
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling === true);
   setElementChecked('setting-webgl', settings.useWebGL !== false);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
+  setElementChecked('setting-file-radar', settings.fileRadar === true);
   setElementValue('setting-run-as-user', settings.runAsUser || '');
   setElementValue('setting-log-level', settings.logLevel || 'warn');
 }
@@ -258,6 +259,7 @@ export function saveAllSettings(): void {
       'auto',
     ) as Settings['clipboardShortcuts'],
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
+    fileRadar: getElementChecked('setting-file-radar'),
     runAsUser: runAsUserValue || null,
     logLevel: getElementValue('setting-log-level', 'warn') as Settings['logLevel'],
   };

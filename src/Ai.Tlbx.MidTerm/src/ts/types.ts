@@ -140,6 +140,7 @@ export interface Settings {
   rightClickPaste: boolean;
   clipboardShortcuts: ClipboardShortcuts;
   scrollbackProtection: boolean;
+  fileRadar: boolean;
   runAsUser: string | null;
   logLevel: LogLevelSetting;
 }
@@ -526,6 +527,39 @@ export interface PendingToolConfirmation {
   justification?: string;
   displayText: string;
   resolve: (approved: boolean) => void;
+}
+
+// =============================================================================
+// File Viewer Types
+// =============================================================================
+
+/** File path info from server */
+export interface FilePathInfo {
+  exists: boolean;
+  size?: number;
+  isDirectory: boolean;
+  mimeType?: string;
+  modified?: string;
+}
+
+/** Response from /api/files/check */
+export interface FileCheckResponse {
+  results: Record<string, FilePathInfo>;
+}
+
+/** Directory entry from /api/files/list */
+export interface DirectoryEntry {
+  name: string;
+  isDirectory: boolean;
+  size?: number;
+  modified?: string;
+  mimeType?: string;
+}
+
+/** Response from /api/files/list */
+export interface DirectoryListResponse {
+  path: string;
+  entries: DirectoryEntry[];
 }
 
 // =============================================================================
