@@ -28,6 +28,7 @@ import {
 } from '../../constants';
 import type { ProcessEventPayload, ForegroundChangePayload } from '../../types';
 import { handleProcessEvent, handleForegroundChange } from '../process';
+import { scanOutputForPaths } from '../terminal/fileLinks';
 import {
   parseOutputFrame,
   parseCompressedOutputFrame,
@@ -271,6 +272,8 @@ function writeToTerminal(
   // Always write data if present
   if (data.length > 0) {
     state.terminal.write(data);
+    // Scan for file paths (File Radar feature)
+    scanOutputForPaths(sessionId, data);
   }
 
   // DISABLED: Was causing cursor to disappear in some cases
