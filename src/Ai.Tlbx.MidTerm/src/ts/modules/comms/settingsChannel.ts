@@ -6,7 +6,7 @@
  */
 
 import type { Settings, UpdateInfo } from '../../types';
-import { scheduleReconnect } from '../../utils';
+import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { setCurrentSettings, setUpdateInfo } from '../../state';
 
@@ -42,14 +42,11 @@ export function registerSettingsCallbacks(callbacks: {
  * Automatically reconnects with exponential backoff on disconnect.
  */
 export function connectSettingsWebSocket(): void {
-  if (settingsWs) {
-    settingsWs.onclose = null;
-    settingsWs.close();
-    settingsWs = null;
-  }
+  closeWebSocket(settingsWs, (ws) => {
+    settingsWs = ws;
+  });
 
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws/settings`);
+  const ws = new WebSocket(createWsUrl('/ws/settings'));
   settingsWs = ws;
 
   ws.onopen = () => {

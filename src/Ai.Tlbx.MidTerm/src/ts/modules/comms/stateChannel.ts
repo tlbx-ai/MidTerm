@@ -14,7 +14,7 @@ import type {
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
-import { scheduleReconnect } from '../../utils';
+import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 
@@ -90,15 +90,9 @@ export function registerStateCallbacks(callbacks: {
  * Automatically reconnects with exponential backoff on disconnect.
  */
 export function connectStateWebSocket(): void {
-  // Close existing WebSocket before creating new one
-  if (stateWs) {
-    stateWs.onclose = null; // Prevent reconnect loop
-    stateWs.close();
-    setStateWs(null);
-  }
+  closeWebSocket(stateWs, setStateWs);
 
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws/state`);
+  const ws = new WebSocket(createWsUrl('/ws/state'));
   setStateWs(ws);
 
   ws.onopen = () => {

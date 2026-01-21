@@ -28,6 +28,9 @@ const LOG_LEVEL_MAP: Record<LogLevelSetting, LogLevel> = {
   verbose: LogLevel.Verbose,
 };
 
+// AbortController for settings event listeners cleanup
+let settingsAbortController: AbortController | null = null;
+
 /**
  * Set the value of a form element by ID
  */
@@ -284,14 +287,21 @@ export function saveAllSettings(): void {
 }
 
 /**
- * Bind auto-save behavior to settings form elements
+ * Bind auto-save behavior to settings form elements.
+ * Uses AbortController for cleanup when settings panel closes.
  */
 export function bindSettingsAutoSave(): void {
+  // Clean up previous listeners first
+  unbindSettingsAutoSave();
+
   const settingsView = dom.settingsView;
   if (!settingsView) return;
 
+  settingsAbortController = new AbortController();
+  const { signal } = settingsAbortController;
+
   settingsView.querySelectorAll('select, input[type="checkbox"]').forEach((el) => {
-    el.addEventListener('change', saveAllSettings);
+    el.addEventListener('change', saveAllSettings, { signal });
   });
 
   settingsView.querySelectorAll('.text-input-wrapper').forEach((wrapper) => {
@@ -301,27 +311,53 @@ export function bindSettingsAutoSave(): void {
 
     let originalValue = '';
 
-    input.addEventListener('focus', () => {
-      originalValue = input.value;
-    });
+    input.addEventListener(
+      'focus',
+      () => {
+        originalValue = input.value;
+      },
+      { signal },
+    );
 
-    input.addEventListener('input', () => {
-      wrapper.classList.toggle('unsaved', input.value !== originalValue);
-    });
+    input.addEventListener(
+      'input',
+      () => {
+        wrapper.classList.toggle('unsaved', input.value !== originalValue);
+      },
+      { signal },
+    );
 
-    saveBtn.addEventListener('click', () => {
-      saveAllSettings();
-      wrapper.classList.remove('unsaved');
-      originalValue = input.value;
-    });
-
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
+    saveBtn.addEventListener(
+      'click',
+      () => {
         saveAllSettings();
         wrapper.classList.remove('unsaved');
         originalValue = input.value;
-      }
-    });
+      },
+      { signal },
+    );
+
+    input.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveAllSettings();
+          wrapper.classList.remove('unsaved');
+          originalValue = input.value;
+        }
+      },
+      { signal },
+    );
   });
+}
+
+/**
+ * Clean up settings event listeners
+ */
+export function unbindSettingsAutoSave(): void {
+  if (settingsAbortController) {
+    settingsAbortController.abort();
+    settingsAbortController = null;
+  }
 }

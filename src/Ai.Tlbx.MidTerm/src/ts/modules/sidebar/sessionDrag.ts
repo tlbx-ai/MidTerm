@@ -14,6 +14,9 @@ let dropIndicatorPosition: 'above' | 'below' | null = null;
 let dragImageElement: HTMLElement | null = null;
 let dragStartedFromHandle = false;
 
+// Track elements with active drop indicators (avoids full DOM scan)
+const activeIndicators = new Set<HTMLElement>();
+
 /**
  * Initialize drag-and-drop for the session list
  */
@@ -113,6 +116,7 @@ function handleDragOver(e: DragEvent): void {
   clearAllDropIndicators();
 
   sessionItem.classList.add('drag-over');
+  activeIndicators.add(sessionItem);
   if (isAbove) {
     sessionItem.classList.add('drag-over-above');
     dropIndicatorPosition = 'above';
@@ -130,6 +134,7 @@ function handleDragLeave(e: DragEvent): void {
     const relatedTarget = e.relatedTarget as HTMLElement;
     if (!relatedTarget || !sessionItem.contains(relatedTarget)) {
       sessionItem.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
+      activeIndicators.delete(sessionItem);
     }
   }
 }
@@ -172,8 +177,8 @@ function handleDrop(e: DragEvent): void {
 }
 
 function clearAllDropIndicators(): void {
-  const items = document.querySelectorAll('.session-item');
-  items.forEach((item) => {
+  activeIndicators.forEach((item) => {
     item.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
   });
+  activeIndicators.clear();
 }

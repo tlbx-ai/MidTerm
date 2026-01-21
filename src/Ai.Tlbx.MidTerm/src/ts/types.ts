@@ -86,6 +86,12 @@ export interface TerminalState {
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
   hasWebgl?: boolean;
+  /** xterm event disposables for cleanup */
+  disposables?: Array<{ dispose: () => void }>;
+  /** Mouse move handler for cursor hiding */
+  mouseMoveHandler?: () => void;
+  /** Mouse leave handler for cursor hiding */
+  mouseLeaveHandler?: () => void;
 }
 
 // =============================================================================

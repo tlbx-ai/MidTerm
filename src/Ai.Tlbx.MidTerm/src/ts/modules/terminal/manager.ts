@@ -347,27 +347,38 @@ export function setupTerminalEvents(
   terminal: Terminal,
   container: HTMLDivElement,
 ): void {
+  // Collect disposables for cleanup
+  const disposables: Array<{ dispose: () => void }> = [];
+
   // Wire up events
-  terminal.onData((data: string) => {
-    sendInput(sessionId, data);
-  });
+  disposables.push(
+    terminal.onData((data: string) => {
+      sendInput(sessionId, data);
+    }),
+  );
 
-  terminal.onBell(() => {
-    showBellNotification(sessionId);
-  });
+  disposables.push(
+    terminal.onBell(() => {
+      showBellNotification(sessionId);
+    }),
+  );
 
-  terminal.onSelectionChange(() => {
-    if (currentSettings?.copyOnSelect && terminal.hasSelection()) {
-      navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
-    }
-  });
+  disposables.push(
+    terminal.onSelectionChange(() => {
+      if (currentSettings?.copyOnSelect && terminal.hasSelection()) {
+        navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
+      }
+    }),
+  );
 
   // Auto-update session name from shell title
-  terminal.onTitleChange((title: string) => {
-    if (title && title.trim()) {
-      updateSessionNameAuto(sessionId, title.trim());
-    }
-  });
+  disposables.push(
+    terminal.onTitleChange((title: string) => {
+      if (title && title.trim()) {
+        updateSessionNameAuto(sessionId, title.trim());
+      }
+    }),
+  );
 
   // Keyboard shortcuts for copy/paste
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -465,13 +476,6 @@ export function setupTerminalEvents(
 
   container.addEventListener('contextmenu', contextMenuHandler);
 
-  // Store handler references for cleanup
-  const state = sessionTerminals.get(sessionId);
-  if (state) {
-    state.contextMenuHandler = contextMenuHandler;
-    state.pasteHandler = pasteHandler;
-  }
-
   // Defensive refocus when terminal loses focus unexpectedly
   const xtermElement = terminal.element;
   if (xtermElement) {
@@ -488,7 +492,7 @@ export function setupTerminalEvents(
   let cursorHideTimer: number | null = null;
   const CURSOR_HIDE_DELAY = 2000;
 
-  const showCursor = () => {
+  const mouseMoveHandler = () => {
     container.classList.remove('cursor-hidden');
     if (cursorHideTimer !== null) {
       window.clearTimeout(cursorHideTimer);
@@ -498,14 +502,26 @@ export function setupTerminalEvents(
     }, CURSOR_HIDE_DELAY);
   };
 
-  container.addEventListener('mousemove', showCursor);
-  container.addEventListener('mouseleave', () => {
+  const mouseLeaveHandler = () => {
     container.classList.remove('cursor-hidden');
     if (cursorHideTimer !== null) {
       window.clearTimeout(cursorHideTimer);
       cursorHideTimer = null;
     }
-  });
+  };
+
+  container.addEventListener('mousemove', mouseMoveHandler);
+  container.addEventListener('mouseleave', mouseLeaveHandler);
+
+  // Store handler references for cleanup
+  const state = sessionTerminals.get(sessionId);
+  if (state) {
+    state.contextMenuHandler = contextMenuHandler;
+    state.pasteHandler = pasteHandler;
+    state.disposables = disposables;
+    state.mouseMoveHandler = mouseMoveHandler;
+    state.mouseLeaveHandler = mouseLeaveHandler;
+  }
 }
 
 /**
@@ -515,12 +531,23 @@ export function destroyTerminalForSession(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  // Clean up event listeners
+  // Clean up xterm event disposables
+  if (state.disposables) {
+    state.disposables.forEach((d) => d.dispose());
+  }
+
+  // Clean up DOM event listeners
   if (state.contextMenuHandler) {
     state.container.removeEventListener('contextmenu', state.contextMenuHandler);
   }
   if (state.pasteHandler) {
     state.container.removeEventListener('paste', state.pasteHandler, true);
+  }
+  if (state.mouseMoveHandler) {
+    state.container.removeEventListener('mousemove', state.mouseMoveHandler);
+  }
+  if (state.mouseLeaveHandler) {
+    state.container.removeEventListener('mouseleave', state.mouseLeaveHandler);
   }
 
   // Clean up search addon state

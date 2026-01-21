@@ -33,6 +33,8 @@ import {
   parseCompressedOutputFrame,
   scheduleReconnect,
   checkVersionAndReload,
+  createWsUrl,
+  closeWebSocket,
 } from '../../utils';
 import {
   muxWs,
@@ -54,6 +56,9 @@ import {
 } from '../../stores';
 
 const log = createLogger('mux');
+
+// Cached TextDecoder to avoid allocation per frame
+const textDecoder = new TextDecoder();
 
 /**
  * Fetch fresh session list from server via REST API.
@@ -100,18 +105,38 @@ interface OutputFrameItem {
 
 const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
+// Compact array when this many items have been processed (amortizes O(n) splice cost)
+const COMPACT_THRESHOLD = 1000;
+
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
+let queueIndex = 0;
+
+/**
+ * Compact the queue by removing processed items.
+ * Called periodically to bound memory usage during high throughput.
+ */
+function compactQueue(): void {
+  if (queueIndex > 0) {
+    outputQueue.splice(0, queueIndex);
+    queueIndex = 0;
+  }
+}
 
 /**
  * Queue an output frame and trigger processing.
  * ALL frames go through this queue to guarantee strict ordering.
- * Drops oldest frames when queue is full to prevent OOM.
+ * Drops oldest unprocessed frames when queue is full to prevent OOM.
  */
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
-  if (outputQueue.length >= MAX_QUEUE_SIZE) {
+  const pendingCount = outputQueue.length - queueIndex;
+  if (pendingCount >= MAX_QUEUE_SIZE) {
     log.warn(() => 'Output queue full, dropping oldest frame');
-    outputQueue.shift();
+    queueIndex++; // Skip oldest unprocessed frame
+    // Compact to actually free memory
+    if (queueIndex >= COMPACT_THRESHOLD) {
+      compactQueue();
+    }
   }
   outputQueue.push({ sessionId, payload, compressed });
   processOutputQueue();
@@ -120,16 +145,25 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
 /**
  * Process output frames strictly in order.
  * Frames are processed one at a time - compressed frames block until decompressed.
+ * Uses cursor-based indexing with periodic compaction for O(1) amortized dequeue.
  */
 async function processOutputQueue(): Promise<void> {
   if (processingQueue) return;
   processingQueue = true;
 
   try {
-    while (outputQueue.length > 0) {
-      const item = outputQueue.shift()!;
+    while (queueIndex < outputQueue.length) {
+      const item = outputQueue[queueIndex++]!;
       await processOneFrame(item);
+
+      // Compact periodically to bound memory during sustained high throughput
+      if (queueIndex >= COMPACT_THRESHOLD) {
+        compactQueue();
+      }
     }
+    // Clear any remaining processed items
+    outputQueue.length = 0;
+    queueIndex = 0;
   } finally {
     processingQueue = false;
   }
@@ -207,7 +241,7 @@ function writeToTerminal(
 ): void {
   // Track bracketed paste mode by detecting escape sequences
   if (data.length > 0) {
-    const text = new TextDecoder().decode(data);
+    const text = textDecoder.decode(data);
     if (text.includes('\x1b[?2004h')) {
       bracketedPasteState.set(sessionId, true);
     }
@@ -254,15 +288,9 @@ function writeToTerminal(
  * Uses a binary protocol with 9-byte header.
  */
 export function connectMuxWebSocket(): void {
-  // Close existing WebSocket before creating new one
-  if (muxWs) {
-    muxWs.onclose = null; // Prevent reconnect loop
-    muxWs.close();
-    setMuxWs(null);
-  }
+  closeWebSocket(muxWs, setMuxWs);
 
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws/mux`);
+  const ws = new WebSocket(createWsUrl('/ws/mux'));
   ws.binaryType = 'arraybuffer';
   setMuxWs(ws);
 

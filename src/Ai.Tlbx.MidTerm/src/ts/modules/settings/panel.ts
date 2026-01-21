@@ -8,7 +8,7 @@
 import type { HealthResponse } from '../../types';
 import { sessionTerminals, dom, setWindowsBuildNumber } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
-import { fetchSettings } from './persistence';
+import { fetchSettings, unbindSettingsAutoSave } from './persistence';
 import { initSettingsTabs } from './tabs';
 import { createLogger } from '../logging';
 
@@ -60,6 +60,7 @@ export function openSettings(): void {
  * Close the settings panel
  */
 export function closeSettings(): void {
+  unbindSettingsAutoSave();
   $settingsOpen.set(false);
   if (dom.settingsBtn) dom.settingsBtn.classList.remove('active');
   if (dom.settingsView) dom.settingsView.classList.add('hidden');
