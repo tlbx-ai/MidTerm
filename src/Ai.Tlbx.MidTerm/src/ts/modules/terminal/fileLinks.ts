@@ -306,13 +306,10 @@ export function createFileLinkProvider(sessionId: string): ILinkProvider {
  * so toggling the setting works without recreating terminals.
  */
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
-  const allowlist = getPathAllowlist(sessionId);
-
   terminal.registerLinkProvider({
     provideLinks(lineNumber: number, callback: (links: ILink[] | undefined) => void): void {
-      console.log(
-        `[DIAG] provideLinks ENTRY: session=${sessionId}, line=${lineNumber}, allowlist=${allowlist.size}`,
-      );
+      // DIAGNOSTIC: Always log when called
+      console.log(`[DIAG] provideLinks: line=${lineNumber}, session=${sessionId}`);
 
       // Check setting inside callback so toggling works without recreating terminals
       if (!isFileRadarEnabled()) {
@@ -320,9 +317,11 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
         return;
       }
 
+      // Get fresh allowlist reference (in case it changed)
+      const currentAllowlist = getPathAllowlist(sessionId);
+
       // Early bailout if no paths detected yet
-      if (allowlist.size === 0) {
-        console.log(`[DIAG] provideLinks: empty allowlist, skipping`);
+      if (currentAllowlist.size === 0) {
         callback(undefined);
         return;
       }
@@ -336,7 +335,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
       const lineText = line.translateToString(true);
       console.log(
-        `[DIAG] provideLinks: line=${lineNumber}, allowlist=${allowlist.size}, text="${lineText.substring(0, 80)}"`,
+        `[DIAG] provideLinks: line=${lineNumber}, size=${currentAllowlist.size}, text="${lineText.substring(0, 60)}"`,
       );
 
       // Quick check before regex - does line contain path-like chars?
@@ -353,7 +352,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
         for (const match of lineText.matchAll(pattern)) {
           const path = match[1];
           if (!path) continue;
-          if (!allowlist.has(path)) continue;
+          if (!currentAllowlist.has(path)) continue;
 
           const matchStart = match.index! + match[0].indexOf(path);
           const matchEnd = matchStart + path.length;
