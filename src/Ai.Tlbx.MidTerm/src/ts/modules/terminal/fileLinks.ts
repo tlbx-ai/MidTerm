@@ -310,6 +310,10 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
   terminal.registerLinkProvider({
     provideLinks(lineNumber: number, callback: (links: ILink[] | undefined) => void): void {
+      console.log(
+        `[DIAG] provideLinks ENTRY: session=${sessionId}, line=${lineNumber}, allowlist=${allowlist.size}`,
+      );
+
       // Check setting inside callback so toggling works without recreating terminals
       if (!isFileRadarEnabled()) {
         callback(undefined);
@@ -318,6 +322,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
       // Early bailout if no paths detected yet
       if (allowlist.size === 0) {
+        console.log(`[DIAG] provideLinks: empty allowlist, skipping`);
         callback(undefined);
         return;
       }
