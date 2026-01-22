@@ -66,6 +66,7 @@
     --bg-session-hover: #2D3044;    /* Same as bg-hover */
     --bg-session-active: #363A50;   /* Same as bg-active */
     --bg-settings: #161821;         /* Same as bg-elevated */
+    --bg-tertiary: #1C1E2A;         /* Alias for bg-sidebar */
 
     /* === BORDERS === */
     --border-color: #1E202B;
@@ -114,6 +115,7 @@
     --warning-badge: #F5A962;
 
     /* === ACCENT BLUE OPACITY VARIANTS === */
+    --accent-blue-08: rgba(123, 162, 247, 0.08);
     --accent-blue-10: rgba(123, 162, 247, 0.1);
     --accent-blue-15: rgba(123, 162, 247, 0.15);
     --accent-blue-25: rgba(123, 162, 247, 0.25);
@@ -124,6 +126,19 @@
     --accent-gold-15: rgba(232, 180, 76, 0.15);
     --accent-gold-25: rgba(232, 180, 76, 0.25);
     --accent-gold-40: rgba(232, 180, 76, 0.4);
+
+    /* === ACCENT ORANGE OPACITY VARIANTS === */
+    --accent-orange-08: rgba(245, 169, 98, 0.08);
+    --accent-orange-10: rgba(245, 169, 98, 0.1);
+    --accent-orange-15: rgba(245, 169, 98, 0.15);
+
+    /* === ACCENT RED OPACITY VARIANTS === */
+    --accent-red-10: rgba(240, 122, 141, 0.1);
+    --accent-red-15: rgba(240, 122, 141, 0.15);
+
+    /* === ACCENT GREEN OPACITY VARIANTS === */
+    --accent-green-10: rgba(143, 214, 148, 0.1);
+    --accent-green-15: rgba(143, 214, 148, 0.15);
 
     /* === LEGACY COMPATIBILITY === */
     --accent-purple: #9D8CFF;       /* Now uses violet */
@@ -1646,7 +1661,7 @@ html, body {
     left: 0;
     right: 0;
     z-index: 10000;
-    background: linear-gradient(135deg, #2d5a9e 0%, #1e3a5f 100%);
+    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--bg-sidebar) 100%);
     color: white;
     padding: 10px 20px;
     display: flex;
@@ -1659,7 +1674,7 @@ html, body {
 
 .update-banner-btn {
     background: white;
-    color: #1e3a5f;
+    color: var(--bg-primary);
     border: none;
     padding: 6px 16px;
     border-radius: 4px;
@@ -1715,7 +1730,8 @@ html, body {
     bottom: 8px;
     left: 8px;
     padding: 4px 8px;
-    background-color: rgba(65, 72, 104, 0.9);
+    background-color: var(--btn-secondary);
+    opacity: 0.9;
     color: var(--text-secondary);
     font-size: 10px;
     border-radius: 4px;
@@ -1725,11 +1741,12 @@ html, body {
     display: flex;
     align-items: center;
     gap: 4px;
-    transition: background-color 0.15s ease;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
 }
 
 .scaled-overlay:hover {
-    background-color: rgba(65, 72, 104, 1);
+    background-color: var(--btn-secondary-hover);
+    opacity: 1;
     color: var(--text-primary);
 }
 
@@ -2307,7 +2324,7 @@ html, body {
 /* GitHub update card (blue theme) */
 .update-card.github {
     border-color: var(--accent-blue);
-    background: rgba(88, 166, 255, 0.08);
+    background: var(--accent-blue-08);
 }
 
 .update-card.github .update-card-title {
@@ -2342,7 +2359,7 @@ html, body {
 .update-card.local {
     border-color: var(--accent-orange);
     border-style: dashed;
-    background: rgba(255, 165, 0, 0.08);
+    background: var(--accent-orange-08);
 }
 
 .update-card.local .update-card-title {
@@ -2942,7 +2959,7 @@ html, body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--overlay-bg-dark);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2953,7 +2970,7 @@ html, body {
     position: relative;
     background: var(--bg-sidebar);
     border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 20px var(--shadow-color-lg);
     display: flex;
     flex-direction: column;
 }
@@ -3014,7 +3031,7 @@ html, body {
 
 .update-result-failed {
     border-color: var(--accent-red);
-    background: rgba(247, 118, 142, 0.1);
+    background: var(--accent-red-10);
 }
 
 .update-result-header {
@@ -4441,12 +4458,12 @@ html, body {
 
 .tool-status.accepted {
     color: var(--accent-green);
-    background-color: rgba(76, 175, 80, 0.15);
+    background-color: var(--accent-green-15);
 }
 
 .tool-status.declined {
     color: var(--accent-red);
-    background-color: rgba(244, 67, 54, 0.15);
+    background-color: var(--accent-red-15);
 }
 
 /* Chat panel is a flex sibling - main-content shrinks automatically when chat opens */
@@ -4755,7 +4772,7 @@ html, body {
     padding: 0;
     border: none;
     border-radius: 50%;
-    background: var(--error-color, #e74c3c);
+    background: var(--accent-red);
     color: white;
     font-size: 14px;
     line-height: 1;
