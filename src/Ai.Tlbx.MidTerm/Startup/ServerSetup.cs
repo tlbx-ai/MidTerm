@@ -202,14 +202,13 @@ public static class ServerSetup
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
             // Content Security Policy - strict but allows xterm.js inline styles
-            var voiceCsp = UpdateService.IsDevEnvironment ? " https://localhost:2010" : "";
             var csp = "default-src 'self'; " +
                       "script-src 'self'; " +
                       "worker-src 'self' blob:; " +
                       "style-src 'self' 'unsafe-inline'; " +
                       "img-src 'self' data:; " +
                       "font-src 'self' data:; " +
-                      $"connect-src 'self' ws: wss: https://api.github.com{voiceCsp}; " +
+                      "connect-src 'self' ws: wss: https://api.github.com https://localhost:2010; " +
                       "frame-ancestors 'none'";
             headers.ContentSecurityPolicy = csp;
 
