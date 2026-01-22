@@ -133,7 +133,9 @@ export function clearPathAllowlist(sessionId: string): void {
  * Keep this function as fast as possible - actual scanning is deferred.
  */
 export function scanOutputForPaths(sessionId: string, data: string | Uint8Array): void {
-  if (!isFileRadarEnabled()) {
+  const enabled = isFileRadarEnabled();
+  log.info(() => `scanOutputForPaths called, enabled=${enabled}, dataLen=${data.length}`);
+  if (!enabled) {
     return;
   }
 
@@ -185,6 +187,8 @@ function performScan(sessionId: string, text: string): void {
   // eslint-disable-next-line no-control-regex
   const cleanText = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 
+  log.info(() => `performScan: textLen=${text.length}, cleanLen=${cleanText.length}`);
+
   const allowlist = getPathAllowlist(sessionId);
   const initialSize = allowlist.size;
 
@@ -193,6 +197,7 @@ function performScan(sessionId: string, text: string): void {
   for (const match of cleanText.matchAll(UNIX_PATH_PATTERN)) {
     const path = match[1];
     if (!path) continue;
+    log.info(() => `Unix match: "${path}" valid=${isValidPath(path)}`);
     if (isValidPath(path)) {
       addToAllowlist(allowlist, path);
     }
@@ -203,13 +208,14 @@ function performScan(sessionId: string, text: string): void {
   for (const match of cleanText.matchAll(WIN_PATH_PATTERN)) {
     const path = match[1];
     if (!path) continue;
+    log.info(() => `Windows match: "${path}" valid=${isValidPath(path)}`);
     if (isValidPath(path)) {
       addToAllowlist(allowlist, path);
     }
   }
 
   if (allowlist.size > initialSize) {
-    log.verbose(
+    log.info(
       () => `Added ${allowlist.size - initialSize} paths to allowlist for session ${sessionId}`,
     );
   }
