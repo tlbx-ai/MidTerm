@@ -33,7 +33,7 @@
 
 import type { Terminal } from '@xterm/xterm';
 import { LinkProvider } from 'xterm-link-provider';
-import type { FilePathInfo, FileCheckResponse } from '../../types';
+import type { FilePathInfo, FileCheckResponse, FileResolveResponse } from '../../types';
 import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
 import { currentSettings } from '../../state';
@@ -108,6 +108,53 @@ const WIN_PATH_PATTERN = /([A-Za-z]:[\\/](?:[\w.-]+[\\/])*[\w.-]+(?:\.\w+)?)/;
 const UNIX_PATH_PATTERN_GLOBAL = /(?:^|[\s"'`(])(\/([\w.-]+\/)*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
 const WIN_PATH_PATTERN_GLOBAL =
   /(?:^|[\s"'`(])([A-Za-z]:[\\/](?:[\w.-]+[\\/])*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
+
+/**
+ * Relative path pattern - matches filenames with common file extensions.
+ * Resolves against session's working directory on hover (lazy filesystem access).
+ *
+ * Matches: output.pdf, result.mp4, ./data.json, src/main.ts, test/fixtures/data.csv
+ * Does NOT match: package (no extension), http://... (URLs), e.g. (abbreviations)
+ */
+const FILE_EXTENSIONS =
+  'pdf|txt|md|json|ya?ml|xml|csv|log|html?|css|s?css|less|jsx?|tsx?|mjs|cjs|vue|svelte|' +
+  'py|pyw|go|rs|c|cpp|cc|cxx|h|hpp|hxx|java|kt|kts|rb|php|sh|bash|zsh|ps1|psm1|' +
+  'png|jpe?g|gif|svg|webp|ico|bmp|tiff?|heic|raw|' +
+  'mp[34]|m4[av]|wav|ogg|flac|aac|webm|mkv|avi|mov|wmv|' +
+  'zip|tar|gz|bz2|xz|7z|rar|tgz|tbz2|' +
+  'exe|dll|so|dylib|o|a|lib|whl|jar|war|apk|ipa|dmg|iso|msi|' +
+  'doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|rtf|' +
+  'sql|db|sqlite|sqlite3|' +
+  'toml|ini|cfg|conf|env|lock|sum|mod|' +
+  'wasm|map|d\\.ts';
+
+const RELATIVE_PATH_PATTERN = new RegExp(
+  // Capture group 1: the full relative path
+  '(' +
+    '(?:\\.\\/|\\.\\.\\/)?' + // optional ./ or ../
+    '(?:[\\w.-]+\\/)?' + // optional single directory
+    '[\\w.-]+' + // filename (no leading dot to avoid matching .gitignore)
+    '\\.(?:' +
+    FILE_EXTENSIONS +
+    ')' +
+    ')',
+  'i',
+);
+
+/** Cache for resolved relative paths: key = "sessionId:relativePath" */
+const resolveCache = new Map<string, { response: FileResolveResponse; expires: number }>();
+
+/** Cache TTL for resolve results (ms) */
+const RESOLVE_CACHE_TTL = 10000;
+
+/** Hover delay before resolving relative paths (ms) - prevents spam during mouse movement */
+const RESOLVE_HOVER_DELAY_MS = 150;
+
+/** Pending resolve request - only one at a time, new hovers cancel previous */
+let pendingResolve: {
+  abort: AbortController;
+  timeout: number;
+} | null = null;
 
 // ===========================================================================
 // Toast Notification
@@ -312,7 +359,96 @@ async function checkPathExists(path: string): Promise<FilePathInfo | null> {
 }
 
 // ===========================================================================
-// Click Handler
+// Relative Path Resolution (lazy, on hover only, throttled)
+// ===========================================================================
+
+/**
+ * Resolve a relative path against the session's working directory.
+ * Called on hover - this is where filesystem access happens.
+ */
+async function resolveRelativePath(
+  sessionId: string,
+  relativePath: string,
+  signal?: AbortSignal,
+): Promise<FileResolveResponse | null> {
+  const cacheKey = `${sessionId}:${relativePath}`;
+  const cached = resolveCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    return cached.response;
+  }
+
+  try {
+    const url =
+      `/api/files/resolve?sessionId=${encodeURIComponent(sessionId)}` +
+      `&path=${encodeURIComponent(relativePath)}`;
+    const fetchOptions: RequestInit = {};
+    if (signal) fetchOptions.signal = signal;
+    const resp = await fetch(url, fetchOptions);
+
+    if (!resp.ok) {
+      const notFound: FileResolveResponse = { exists: false };
+      resolveCache.set(cacheKey, { response: notFound, expires: Date.now() + RESOLVE_CACHE_TTL });
+      return notFound;
+    }
+
+    const data: FileResolveResponse = await resp.json();
+    resolveCache.set(cacheKey, { response: data, expires: Date.now() + RESOLVE_CACHE_TTL });
+    return data;
+  } catch (e) {
+    // AbortError is expected when hover moves away
+    if (e instanceof Error && e.name === 'AbortError') {
+      return null;
+    }
+    log.error(() => `Failed to resolve relative path: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Throttled resolve - waits for hover to "settle" before making API call.
+ * New hovers cancel pending requests, preventing spam during rapid mouse movement.
+ */
+function throttledResolveRelativePath(
+  sessionId: string,
+  path: string,
+  matchText: string,
+  callback: (match: string | undefined) => void,
+): void {
+  // Cancel any pending resolve
+  if (pendingResolve) {
+    pendingResolve.abort.abort();
+    window.clearTimeout(pendingResolve.timeout);
+    pendingResolve = null;
+  }
+
+  // Check cache immediately - no delay needed for cached results
+  const cacheKey = `${sessionId}:${path}`;
+  const cached = resolveCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    callback(cached.response.exists ? matchText : undefined);
+    return;
+  }
+
+  // Schedule delayed resolve
+  const abort = new AbortController();
+  const timeout = window.setTimeout(async () => {
+    if (abort.signal.aborted) return;
+
+    const resolved = await resolveRelativePath(sessionId, path, abort.signal);
+    if (abort.signal.aborted) return;
+
+    callback(resolved?.exists ? matchText : undefined);
+
+    if (pendingResolve?.abort === abort) {
+      pendingResolve = null;
+    }
+  }, RESOLVE_HOVER_DELAY_MS);
+
+  pendingResolve = { abort, timeout };
+}
+
+// ===========================================================================
+// Click Handlers
 // ===========================================================================
 
 async function handlePathClick(path: string): Promise<void> {
@@ -324,6 +460,28 @@ async function handlePathClick(path: string): Promise<void> {
   }
 }
 
+async function handleRelativePathClick(relativePath: string): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    showFileNotFoundToast(relativePath);
+    return;
+  }
+
+  const resolved = await resolveRelativePath(sessionId, relativePath);
+  if (resolved?.exists && resolved.resolvedPath) {
+    const info: FilePathInfo = {
+      exists: true,
+      isDirectory: resolved.isDirectory ?? false,
+    };
+    if (resolved.size !== undefined) info.size = resolved.size;
+    if (resolved.mimeType !== undefined) info.mimeType = resolved.mimeType;
+    if (resolved.modified !== undefined) info.modified = resolved.modified;
+    openFile(resolved.resolvedPath, info);
+  } else {
+    showFileNotFoundToast(relativePath);
+  }
+}
+
 // ===========================================================================
 // Link Provider Registration
 // ===========================================================================
@@ -332,7 +490,7 @@ async function handlePathClick(path: string): Promise<void> {
  * Register the file link provider with xterm.js using xterm-link-provider.
  * This is called once per terminal session.
  */
-export function registerFileLinkProvider(terminal: Terminal, _sessionId: string): void {
+export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
 
   // Cast to 'any' because xterm-link-provider was built for xterm 4.x
@@ -354,7 +512,67 @@ export function registerFileLinkProvider(terminal: Terminal, _sessionId: string)
     }),
   );
 
+  // Relative paths (lazy resolution on hover)
+  // The matchCallback option validates paths on hover before showing as clickable
+  terminal.registerLinkProvider(
+    new LinkProvider(
+      term,
+      RELATIVE_PATH_PATTERN,
+      async (_event, relativePath) => {
+        await handleRelativePathClick(relativePath);
+      },
+      {
+        // Validate on hover - only create link if file exists
+        // Uses throttled resolution to prevent API spam during rapid mouse movement
+        matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
+          const path = match[1];
+          if (!path) {
+            callback(undefined);
+            return;
+          }
+
+          // Skip if it looks like an absolute path (already handled above)
+          if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
+            callback(undefined);
+            return;
+          }
+
+          // Skip common false positives
+          if (isLikelyFalsePositive(path)) {
+            callback(undefined);
+            return;
+          }
+
+          // Throttled resolution: waits 150ms for hover to settle before API call
+          throttledResolveRelativePath(sessionId, path, match[0], callback);
+        },
+      } as unknown as Record<string, unknown>,
+    ),
+  );
+
   log.verbose(() => `Registered file link provider`);
+}
+
+/**
+ * Filter out common false positives that look like files but aren't.
+ */
+function isLikelyFalsePositive(path: string): boolean {
+  // Version numbers like 1.2.3
+  if (/^\d+\.\d+(\.\d+)?$/.test(path)) return true;
+
+  // Common abbreviations
+  const lower = path.toLowerCase();
+  if (['e.g.', 'i.e.', 'etc.', 'vs.', 'inc.', 'ltd.', 'co.'].includes(lower)) return true;
+
+  // Domain-like patterns - but only if the "TLD" is actually a common TLD, not a file extension
+  // This prevents filtering out output.pdf, data.csv, etc.
+  if (/^[a-z]+\.[a-z]{2,}$/i.test(path)) {
+    const ext = path.split('.').pop()?.toLowerCase();
+    const commonTlds = ['com', 'org', 'net', 'io', 'co', 'dev', 'app', 'ai', 'edu', 'gov', 'me'];
+    if (ext && commonTlds.includes(ext)) return true;
+  }
+
+  return false;
 }
 
 // Legacy export for compatibility (unused but keeps API stable)

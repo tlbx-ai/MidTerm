@@ -57,3 +57,17 @@ public sealed class FileRegisterRequest
     public string SessionId { get; set; } = string.Empty;
     public string[] Paths { get; set; } = [];
 }
+
+/// <summary>
+/// Response for resolving a relative path against session's working directory.
+/// Used for lazy file existence checks on hover.
+/// </summary>
+public sealed class FileResolveResponse
+{
+    public bool Exists { get; set; }
+    public string? ResolvedPath { get; set; }
+    public bool IsDirectory { get; set; }
+    public long? Size { get; set; }
+    public string? MimeType { get; set; }
+    public DateTime? Modified { get; set; }
+}

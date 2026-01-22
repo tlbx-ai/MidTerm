@@ -71,6 +71,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(FileCheckRequest))]
 [JsonSerializable(typeof(FileCheckResponse))]
 [JsonSerializable(typeof(FileRegisterRequest))]
+[JsonSerializable(typeof(FileResolveResponse))]
 [JsonSerializable(typeof(FilePathInfo))]
 [JsonSerializable(typeof(DirectoryListResponse))]
 [JsonSerializable(typeof(DirectoryEntry))]

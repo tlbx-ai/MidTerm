@@ -128,6 +128,83 @@ public static class FileEndpoints
         {
             return ServeFile(path, inline: false, sessionId, sessionManager, allowlistService);
         });
+
+        // Resolve relative path against session's working directory (lazy, on hover only)
+        app.MapGet("/api/files/resolve", (string sessionId, string path) =>
+        {
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                return Results.Json(
+                    new FileResolveResponse { Exists = false },
+                    AppJsonContext.Default.FileResolveResponse);
+            }
+
+            var session = sessionManager.GetSession(sessionId);
+            if (session is null)
+            {
+                return Results.Json(
+                    new FileResolveResponse { Exists = false },
+                    AppJsonContext.Default.FileResolveResponse);
+            }
+
+            var cwd = session.CurrentDirectory;
+            if (string.IsNullOrEmpty(cwd))
+            {
+                return Results.Json(
+                    new FileResolveResponse { Exists = false },
+                    AppJsonContext.Default.FileResolveResponse);
+            }
+
+            // Block path traversal attempts
+            if (path.Contains(".."))
+            {
+                return Results.Json(
+                    new FileResolveResponse { Exists = false },
+                    AppJsonContext.Default.FileResolveResponse);
+            }
+
+            try
+            {
+                var resolvedPath = Path.GetFullPath(Path.Combine(cwd, path));
+
+                // Security: ensure resolved path stays within cwd tree
+                var normalizedCwd = Path.GetFullPath(cwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (!resolvedPath.StartsWith(normalizedCwd + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+                    !resolvedPath.Equals(normalizedCwd, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.Json(
+                        new FileResolveResponse { Exists = false },
+                        AppJsonContext.Default.FileResolveResponse);
+                }
+
+                var response = new FileResolveResponse { ResolvedPath = resolvedPath };
+
+                if (Directory.Exists(resolvedPath))
+                {
+                    var dirInfo = new DirectoryInfo(resolvedPath);
+                    response.Exists = true;
+                    response.IsDirectory = true;
+                    response.Modified = dirInfo.LastWriteTimeUtc;
+                }
+                else if (File.Exists(resolvedPath))
+                {
+                    var fileInfo = new FileInfo(resolvedPath);
+                    response.Exists = true;
+                    response.IsDirectory = false;
+                    response.Size = fileInfo.Length;
+                    response.Modified = fileInfo.LastWriteTimeUtc;
+                    response.MimeType = GetMimeType(fileInfo.Name);
+                }
+
+                return Results.Json(response, AppJsonContext.Default.FileResolveResponse);
+            }
+            catch
+            {
+                return Results.Json(
+                    new FileResolveResponse { Exists = false },
+                    AppJsonContext.Default.FileResolveResponse);
+            }
+        });
     }
 
     private static string? GetSessionWorkingDirectory(TtyHostSessionManager sessionManager, string? sessionId)

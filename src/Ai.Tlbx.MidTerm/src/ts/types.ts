@@ -569,6 +569,16 @@ export interface DirectoryListResponse {
   entries: DirectoryEntry[];
 }
 
+/** Response from /api/files/resolve - lazy resolution of relative paths */
+export interface FileResolveResponse {
+  exists: boolean;
+  resolvedPath?: string;
+  isDirectory?: boolean;
+  size?: number;
+  mimeType?: string;
+  modified?: string;
+}
+
 // =============================================================================
 // DOM Element Cache
 // =============================================================================
