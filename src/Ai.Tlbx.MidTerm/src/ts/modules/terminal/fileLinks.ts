@@ -326,6 +326,9 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       }
 
       const lineText = line.translateToString(true);
+      console.log(
+        `[DIAG] provideLinks: line=${lineNumber}, allowlist=${allowlist.size}, text="${lineText.substring(0, 80)}"`,
+      );
 
       // Quick check before regex - does line contain path-like chars?
       if (!QUICK_PATH_CHECK_UNIX.test(lineText) && !QUICK_PATH_CHECK_WIN.test(lineText)) {
