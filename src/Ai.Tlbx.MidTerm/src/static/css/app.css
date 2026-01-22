@@ -50,62 +50,95 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Tokyo Night Theme Variables */
+/* Midnight Harbor Theme Variables */
 :root {
-    --bg-primary: #101014;
-    --terminal-bg: #06060E;
-    --bg-sidebar: #1A1B26;
-    --bg-input: #1F2029;
-    --border-color: #101014;
-    --text-primary: #C0CAF5;
-    --text-terminal: #DCDCF5;
-    --text-secondary: #787C99;
-    --text-muted: #565B73;
-    --accent-blue: #7AA2F7;
-    --accent-cyan: #7DCFFF;
-    --accent-green: #9ECE6A;
-    --accent-orange: #FF9E64;
-    --accent-red: #F7768E;
-    --btn-primary: #7AA2F7;
-    --btn-primary-hover: #89B4FF;
-    --btn-secondary: #414868;
-    --btn-secondary-hover: #545C7E;
-    --bg-hover: #24283B;
-    --bg-dropdown: #1F2335;
-    --bg-session-hover: #272B3C;    /* --bg-dropdown + 3.5% white */
-    --bg-session-active: #34384A;   /* --bg-hover + 7.5% white */
-    --bg-settings: #14151E;
-    --bg-success: #1A2F23;
-    --border-success: #2D5A3D;
-    --bg-error: #2F1A1A;
-    --border-error: #5A2D2D;
-    --bg-warning: #3D2A1A;
-    --accent-warning: #ffc107;
-    --diag-exception: #ff6b6b;
-    --progress-bar: #4a90d9;
-    --progress-warning: #e69500;
-    --warning-badge: #FFB17A;
+    /* === BACKGROUNDS (17-point luminance spread) === */
+    --bg-terminal: #05050A;         /* L: 1.8% - The void */
+    --terminal-bg: #05050A;         /* Alias for compatibility */
+    --bg-primary: #0D0E14;          /* L: 3.5% - Main canvas */
+    --bg-elevated: #161821;         /* L: 6.5% - Cards, panels */
+    --bg-sidebar: #1C1E2A;          /* L: 9% - Sidebar */
+    --bg-surface: #242735;          /* L: 12.5% - Input fields, dropdowns */
+    --bg-input: #242735;            /* Alias for compatibility */
+    --bg-dropdown: #242735;         /* Alias for compatibility */
+    --bg-hover: #2D3044;            /* L: 16% - Hover states */
+    --bg-active: #363A50;           /* L: 19% - Active/selected */
+    --bg-session-hover: #2D3044;    /* Same as bg-hover */
+    --bg-session-active: #363A50;   /* Same as bg-active */
+    --bg-settings: #161821;         /* Same as bg-elevated */
 
-    /* Accent blue opacity variants */
-    --accent-blue-10: rgba(122, 162, 247, 0.1);
-    --accent-blue-15: rgba(122, 162, 247, 0.15);
-    --accent-blue-25: rgba(122, 162, 247, 0.25);
-    --accent-blue-40: rgba(122, 162, 247, 0.4);
+    /* === BORDERS === */
+    --border-color: #1E202B;
+    --border-default: #1E202B;
+    --border-subtle: #282B3A;
+    --border-emphasis: #3A3E52;
 
-    /* Additional accent colors */
-    --accent-purple: #ab47bc;
+    /* === TEXT (warmer primary) === */
+    --text-primary: #D4D7E8;        /* Warm lavender-white */
+    --text-terminal: #E0E2F0;       /* Slightly cooler for terminal */
+    --text-secondary: #8B8FA6;      /* Better contrast: 5.2:1 */
+    --text-muted: #6B7089;          /* Improved: 3.5:1 */
 
-    /* Tool styling colors (chat/MCP features) */
-    --tool-yellow-bg: rgba(255, 193, 7, 0.1);
-    --tool-yellow-border: rgba(255, 193, 7, 0.2);
-    --tool-yellow-border-strong: rgba(255, 193, 7, 0.3);
-    --tool-yellow-border-emphasis: rgba(255, 193, 7, 0.4);
-    --tool-yellow-gradient: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.15));
-    --tool-purple-bg: rgba(156, 39, 176, 0.08);
-    --tool-purple-bg-light: rgba(156, 39, 176, 0.12);
-    --tool-purple-border: rgba(156, 39, 176, 0.15);
-    --tool-purple-border-strong: rgba(156, 39, 176, 0.35);
-    --tool-purple-gradient: linear-gradient(135deg, rgba(156, 39, 176, 0.12), rgba(103, 58, 183, 0.12));
+    /* === PRIMARY ACCENTS === */
+    --accent-blue: #7BA2F7;         /* Signature blue */
+    --accent-blue-hover: #8FB5FF;
+    --accent-cyan: #7DCFFF;         /* Info */
+    --accent-green: #8FD694;        /* Success - slightly softer */
+    --accent-orange: #F5A962;       /* Warning - warmer */
+    --accent-red: #F07A8D;          /* Error - slightly softer */
+    --accent-violet: #9D8CFF;       /* Replaces purple - blue family */
+
+    /* === SIGNATURE GOLD (used sparingly) === */
+    --accent-gold: #E8B44C;         /* Warm dock light */
+    --accent-gold-muted: #C9A04A;
+
+    /* === BUTTONS === */
+    --btn-primary: #7BA2F7;
+    --btn-primary-hover: #8FB5FF;
+    --btn-secondary: #3A3E52;
+    --btn-secondary-hover: #4A4F68;
+
+    /* === STATUS BACKGROUNDS (warmer undertones) === */
+    --bg-success: #152A20;          /* Dark forest */
+    --border-success: #2B5A42;
+    --bg-error: #2A1519;            /* Dark burgundy */
+    --border-error: #5A3538;
+    --bg-warning: #2A2215;          /* Dark amber */
+    --border-warning: #5A4A2A;
+    --accent-warning: #E8B44C;      /* Uses gold for warnings */
+
+    /* === DIAGNOSTIC COLORS === */
+    --diag-exception: #F07A8D;
+    --progress-bar: #7BA2F7;
+    --progress-warning: #E8B44C;
+    --warning-badge: #F5A962;
+
+    /* === ACCENT BLUE OPACITY VARIANTS === */
+    --accent-blue-10: rgba(123, 162, 247, 0.1);
+    --accent-blue-15: rgba(123, 162, 247, 0.15);
+    --accent-blue-25: rgba(123, 162, 247, 0.25);
+    --accent-blue-40: rgba(123, 162, 247, 0.4);
+
+    /* === ACCENT GOLD OPACITY VARIANTS === */
+    --accent-gold-10: rgba(232, 180, 76, 0.1);
+    --accent-gold-15: rgba(232, 180, 76, 0.15);
+    --accent-gold-25: rgba(232, 180, 76, 0.25);
+    --accent-gold-40: rgba(232, 180, 76, 0.4);
+
+    /* === LEGACY COMPATIBILITY === */
+    --accent-purple: #9D8CFF;       /* Now uses violet */
+
+    /* === TOOL STYLING (chat/MCP features) === */
+    --tool-yellow-bg: rgba(232, 180, 76, 0.1);
+    --tool-yellow-border: rgba(232, 180, 76, 0.2);
+    --tool-yellow-border-strong: rgba(232, 180, 76, 0.3);
+    --tool-yellow-border-emphasis: rgba(232, 180, 76, 0.4);
+    --tool-yellow-gradient: linear-gradient(135deg, rgba(232, 180, 76, 0.15), rgba(201, 160, 74, 0.15));
+    --tool-purple-bg: rgba(157, 140, 255, 0.08);
+    --tool-purple-bg-light: rgba(157, 140, 255, 0.12);
+    --tool-purple-border: rgba(157, 140, 255, 0.15);
+    --tool-purple-border-strong: rgba(157, 140, 255, 0.35);
+    --tool-purple-gradient: linear-gradient(135deg, rgba(157, 140, 255, 0.12), rgba(123, 162, 247, 0.12));
 
     /* Shadow/overlay system */
     --shadow-color: rgba(0, 0, 0, 0.3);
@@ -264,6 +297,7 @@ html, body {
 
 .add-session-btn:hover {
     background-color: var(--btn-secondary-hover);
+    box-shadow: 0 0 8px var(--accent-gold-25);
 }
 
 .session-list {
@@ -392,7 +426,7 @@ html, body {
 
 .session-item.active {
     background-color: var(--bg-session-active);
-    border-left-color: var(--accent-blue);
+    border-left-color: var(--accent-gold);
 }
 
 .session-item.pending {

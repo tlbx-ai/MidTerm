@@ -54,14 +54,14 @@ export const WS_CLOSE_PROTOCOL_ERROR = 4400;
 /** Terminal color themes */
 export const THEMES: Record<ThemeName, TerminalTheme> = {
   dark: {
-    background: '#06060E',
-    foreground: '#DCDCF5',
-    cursor: '#DCDCF5',
-    cursorAccent: '#06060E',
-    selectionBackground: '#283457',
-    scrollbarSliderBackground: 'rgba(80, 90, 130, 0.5)',
-    scrollbarSliderHoverBackground: 'rgba(122, 162, 247, 0.5)',
-    scrollbarSliderActiveBackground: 'rgba(122, 162, 247, 0.7)',
+    background: '#05050A',
+    foreground: '#E0E2F0',
+    cursor: '#E0E2F0',
+    cursorAccent: '#05050A',
+    selectionBackground: '#2D3044',
+    scrollbarSliderBackground: 'rgba(58, 62, 82, 0.5)',
+    scrollbarSliderHoverBackground: 'rgba(123, 162, 247, 0.5)',
+    scrollbarSliderActiveBackground: 'rgba(123, 162, 247, 0.7)',
   },
   light: {
     background: '#D5D6DB',
