@@ -145,15 +145,22 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
   // Skip tiny frames (likely cursor moves, not real content)
   if (text.length < MIN_SCAN_FRAME_SIZE) return;
 
+  const hasUnix = QUICK_PATH_CHECK_UNIX.test(text);
+  const hasWin = QUICK_PATH_CHECK_WIN.test(text);
+  console.log(
+    `[DIAG] quickCheck: unix=${hasUnix}, win=${hasWin}, text="${text.substring(0, 100)}"`,
+  );
+
   // Quick check: does this text even contain path-like characters?
   // This avoids regex overhead for frames that are clearly not paths
-  if (!QUICK_PATH_CHECK_UNIX.test(text) && !QUICK_PATH_CHECK_WIN.test(text)) {
+  if (!hasUnix && !hasWin) {
     return;
   }
 
   // Append to pending text for this session
   const existing = pendingScanText.get(sessionId) || '';
   pendingScanText.set(sessionId, existing + text);
+  console.log(`[DIAG] accumulated: len=${(existing + text).length}`);
 
   // Debounce: reset timer and schedule scan
   const existingTimer = scanTimers.get(sessionId);
