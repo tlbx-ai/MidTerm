@@ -174,7 +174,9 @@ async function processOutputQueue(): Promise<void> {
  * Process a single frame - decompress if needed, then write to terminal.
  */
 async function processOneFrame(item: OutputFrameItem): Promise<void> {
-  console.log(`[DIAG] processOneFrame: session=${item.sessionId}, payloadLen=${item.payload.length}`);
+  console.log(
+    `[DIAG] processOneFrame: session=${item.sessionId}, payloadLen=${item.payload.length}`,
+  );
   try {
     let cols: number;
     let rows: number;
