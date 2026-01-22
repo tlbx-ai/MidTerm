@@ -190,9 +190,13 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
  */
 function performScan(sessionId: string, text: string): void {
   // Strip ANSI escape sequences before regex matching
-  // Handles SGR (colors), cursor movement, and other control sequences
-  // eslint-disable-next-line no-control-regex
-  const cleanText = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  // Handles CSI sequences (colors, cursor), OSC sequences (hyperlinks, titles), and other controls
+  /* eslint-disable no-control-regex */
+  const cleanText = text
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') // CSI sequences: \x1b[...m, \x1b[...H, etc.
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '') // OSC sequences: \x1b]...BEL or \x1b]...\x1b\\
+    .replace(/\x1b\][^\x07]*/g, ''); // Incomplete OSC (no terminator yet)
+  /* eslint-enable no-control-regex */
 
   console.log(`[DIAG] performScan: cleanText="${cleanText.substring(0, 200)}"`);
 
