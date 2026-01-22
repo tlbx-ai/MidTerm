@@ -240,6 +240,7 @@ function writeToTerminal(
   rows: number,
   data: Uint8Array,
 ): void {
+  log.info(() => `writeToTerminal: session=${sessionId.substring(0, 8)}, dataLen=${data.length}`);
   // Track bracketed paste mode by detecting escape sequences
   if (data.length > 0) {
     const text = textDecoder.decode(data);
