@@ -38,7 +38,6 @@ export const MUX_TYPE_RESYNC = 0x05; // Server -> Client: Clear terminals, buffe
 export const MUX_TYPE_BUFFER_REQUEST = 0x06; // Client -> Server: Request buffer refresh
 export const MUX_TYPE_COMPRESSED_OUTPUT = 0x07; // Server -> Client: GZip compressed output
 export const MUX_TYPE_ACTIVE_HINT = 0x08; // Client -> Server: Hint which session is active
-export const MUX_TYPE_PROCESS_EVENT = 0x09; // Server -> Client: Process lifecycle event
 export const MUX_TYPE_FOREGROUND_CHANGE = 0x0a; // Server -> Client: Foreground process changed
 export const MUX_TYPE_DATA_LOSS = 0x0b; // Server -> Client: Background session lost data
 

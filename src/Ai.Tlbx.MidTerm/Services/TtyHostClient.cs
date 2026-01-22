@@ -83,7 +83,6 @@ public sealed class TtyHostClient : IAsyncDisposable
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnDisconnected;
     public event Action<string>? OnReconnected;
-    public event Action<string, ProcessEventPayload>? OnProcessEvent;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
 
     public TtyHostClient(string sessionId, int hostPid)
@@ -592,21 +591,6 @@ public sealed class TtyHostClient : IAsyncDisposable
                 catch (Exception ex)
                 {
                     Log.Exception(ex, $"TtyHostClient.OnStateChanged({_sessionId})");
-                }
-                break;
-
-            case TtyHostMessageType.ProcessEvent:
-                try
-                {
-                    var processEvent = TtyHostProtocol.ParseProcessEvent(payload.Span);
-                    if (processEvent is not null)
-                    {
-                        OnProcessEvent?.Invoke(_sessionId, processEvent);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.Exception(ex, $"TtyHostClient.OnProcessEvent({_sessionId})");
                 }
                 break;
 

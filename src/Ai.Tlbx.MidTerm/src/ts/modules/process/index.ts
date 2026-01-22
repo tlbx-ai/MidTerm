@@ -1,18 +1,14 @@
 /**
  * Process Module
  *
- * Exports process monitoring functionality.
+ * Exports foreground process monitoring functionality.
  */
 
 export {
   addProcessStateListener,
   getProcessState,
-  handleProcessEvent,
   handleForegroundChange,
   clearProcessState,
   initializeFromSession,
-  getRacingLogText,
-  getFullRacingLog,
-  isRacingLogVisible,
   getForegroundInfo,
 } from './processMonitor';

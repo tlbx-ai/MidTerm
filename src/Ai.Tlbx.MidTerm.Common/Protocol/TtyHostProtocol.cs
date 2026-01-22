@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Common.Logging;
-using Ai.Tlbx.MidTerm.Common.Process;
 
 namespace Ai.Tlbx.MidTerm.Common.Protocol;
 
@@ -28,6 +27,7 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.Info, json);
     }
 
+    [Obsolete("Use WriteInputMessage with callback for zero-allocation")]
     public static byte[] CreateInputMessage(ReadOnlySpan<byte> data)
     {
         return CreateFrame(TtyHostMessageType.Input, data.ToArray());
@@ -42,6 +42,27 @@ public static class TtyHostProtocol
         destination[0] = (byte)TtyHostMessageType.Input;
         BinaryPrimitives.WriteInt32LittleEndian(destination.Slice(1, 4), data.Length);
         data.CopyTo(destination.Slice(HeaderSize));
+    }
+
+    /// <summary>
+    /// Creates an input message using a pooled buffer. Zero allocations.
+    /// Callback receives the frame; buffer is returned to pool after callback.
+    /// </summary>
+    public static void WriteInputMessage(ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> callback)
+    {
+        var frameSize = HeaderSize + data.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        try
+        {
+            buffer[0] = (byte)TtyHostMessageType.Input;
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(1, 4), data.Length);
+            data.CopyTo(buffer.AsSpan(HeaderSize));
+            callback(buffer.AsSpan(0, frameSize));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     [Obsolete("Use WriteOutputMessage with callback for zero-allocation")]
@@ -212,17 +233,6 @@ public static class TtyHostProtocol
         return Encoding.UTF8.GetString(payload);
     }
 
-    public static byte[] CreateProcessEvent(ProcessEventPayload payload)
-    {
-        var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.ProcessEventPayload);
-        return CreateFrame(TtyHostMessageType.ProcessEvent, json);
-    }
-
-    public static ProcessEventPayload? ParseProcessEvent(ReadOnlySpan<byte> payload)
-    {
-        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ProcessEventPayload);
-    }
-
     public static byte[] CreateForegroundChange(ForegroundChangePayload payload)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.ForegroundChangePayload);
@@ -232,17 +242,6 @@ public static class TtyHostProtocol
     public static ForegroundChangePayload? ParseForegroundChange(ReadOnlySpan<byte> payload)
     {
         return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ForegroundChangePayload);
-    }
-
-    public static byte[] CreateProcessSnapshot(ProcessSnapshotPayload payload)
-    {
-        var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.ProcessSnapshotPayload);
-        return CreateFrame(TtyHostMessageType.ProcessSnapshot, json);
-    }
-
-    public static ProcessSnapshotPayload? ParseProcessSnapshot(ReadOnlySpan<byte> payload)
-    {
-        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ProcessSnapshotPayload);
     }
 
     public static byte[] CreateSetLogLevelMessage(LogSeverity level)
@@ -352,20 +351,6 @@ public sealed class StateChangePayload
 }
 
 /// <summary>
-/// Payload for process lifecycle events (fork/exec/exit).
-/// </summary>
-public sealed class ProcessEventPayload
-{
-    public ProcessEventType Type { get; set; }
-    public int Pid { get; set; }
-    public int ParentPid { get; set; }
-    public string? Name { get; set; }
-    public string? CommandLine { get; set; }
-    public int? ExitCode { get; set; }
-    public DateTime Timestamp { get; set; }
-}
-
-/// <summary>
 /// Payload for foreground process change notifications.
 /// </summary>
 public sealed class ForegroundChangePayload
@@ -376,37 +361,9 @@ public sealed class ForegroundChangePayload
     public string? Cwd { get; set; }
 }
 
-/// <summary>
-/// Payload for process tree snapshot.
-/// </summary>
-public sealed class ProcessSnapshotPayload
-{
-    public int ShellPid { get; set; }
-    public string? ShellCwd { get; set; }
-    public ForegroundChangePayload? Foreground { get; set; }
-    public List<ProcessInfoPayload> Processes { get; set; } = [];
-}
-
-/// <summary>
-/// Basic process info in a snapshot.
-/// </summary>
-public sealed class ProcessInfoPayload
-{
-    public int Pid { get; set; }
-    public int ParentPid { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string? CommandLine { get; set; }
-    public string? Cwd { get; set; }
-}
-
 [JsonSerializable(typeof(SessionInfo))]
 [JsonSerializable(typeof(StateChangePayload))]
-[JsonSerializable(typeof(ProcessEventType))]
-[JsonSerializable(typeof(ProcessEventPayload))]
 [JsonSerializable(typeof(ForegroundChangePayload))]
-[JsonSerializable(typeof(ProcessSnapshotPayload))]
-[JsonSerializable(typeof(ProcessInfoPayload))]
-[JsonSerializable(typeof(List<ProcessInfoPayload>))]
 public partial class TtyHostJsonContext : JsonSerializerContext
 {
 }

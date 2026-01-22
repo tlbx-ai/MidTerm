@@ -1,64 +1,34 @@
 namespace Ai.Tlbx.MidTerm.Common.Process;
 
 /// <summary>
-/// Platform abstraction for monitoring process events and retrieving process information.
+/// Platform abstraction for monitoring the shell's direct child process.
+/// No grandchildren tracking - monitors only the immediate foreground process.
 /// </summary>
 public interface IProcessMonitor : IDisposable
 {
     /// <summary>
-    /// Fired when a process event (fork, exec, exit) occurs for a descendant of the monitored root process.
-    /// </summary>
-    event Action<ProcessEvent>? OnProcessEvent;
-
-    /// <summary>
-    /// Fired when the foreground process changes.
+    /// Fired when the foreground process changes (new child spawned or child exited).
     /// </summary>
     event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
     /// <summary>
-    /// Start monitoring process events for descendants of the specified root PID.
+    /// Start monitoring the shell process for direct child changes.
     /// </summary>
-    void StartMonitoring(int rootPid);
+    void StartMonitoring(int shellPid);
 
     /// <summary>
-    /// Stop monitoring process events.
+    /// Stop monitoring.
     /// </summary>
     void StopMonitoring();
 
     /// <summary>
-    /// Get the current working directory of a process.
-    /// Returns null if the CWD cannot be determined.
+    /// Get current foreground process info synchronously.
+    /// Returns shell info if no child process is running.
     /// </summary>
-    string? GetProcessCwd(int pid);
+    ForegroundProcessInfo GetCurrentForeground();
 
     /// <summary>
-    /// Get the name/executable of a process.
+    /// Get the current working directory of the shell process.
     /// </summary>
-    string? GetProcessName(int pid);
-
-    /// <summary>
-    /// Get the command line of a process.
-    /// </summary>
-    string? GetProcessCommandLine(int pid);
-
-    /// <summary>
-    /// Get immediate child process PIDs of a process.
-    /// </summary>
-    IReadOnlyList<int> GetChildProcesses(int pid);
-
-    /// <summary>
-    /// Get the "foreground" process - the leaf process attached to the PTY.
-    /// Returns the shell PID if no foreground process can be identified.
-    /// </summary>
-    int GetForegroundProcess(int shellPid);
-
-    /// <summary>
-    /// Get a complete snapshot of the process tree.
-    /// </summary>
-    ProcessTreeSnapshot GetProcessTreeSnapshot(int shellPid);
-
-    /// <summary>
-    /// Whether real-time event monitoring is available (vs polling fallback).
-    /// </summary>
-    bool SupportsRealTimeEvents { get; }
+    string? GetShellCwd();
 }

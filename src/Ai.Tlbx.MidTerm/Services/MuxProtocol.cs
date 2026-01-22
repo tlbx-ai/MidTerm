@@ -37,7 +37,6 @@ public static class MuxProtocol
     public const byte TypeBufferRequest = 0x06; // Client -> Server: request buffer refresh for session
     public const byte TypeCompressedOutput = 0x07; // Server -> Client: GZip compressed terminal output
     public const byte TypeActiveSessionHint = 0x08; // Client -> Server: hint which session is active (for priority)
-    public const byte TypeProcessEvent = 0x09; // Server -> Client: process lifecycle event (fork/exec/exit)
     public const byte TypeForegroundChange = 0x0A; // Server -> Client: foreground process changed
     public const byte TypeDataLoss = 0x0B; // Server -> Client: background session dropped data, resync recommended
 
@@ -285,19 +284,6 @@ public static class MuxProtocol
         BitConverter.TryWriteBytes(payload.AsSpan(0, 2), (ushort)cols);
         BitConverter.TryWriteBytes(payload.AsSpan(2, 2), (ushort)rows);
         return payload;
-    }
-
-    /// <summary>
-    /// Creates a process event frame.
-    /// Format: [type:1][sessionId:8][json-payload]
-    /// </summary>
-    public static byte[] CreateProcessEventFrame(string sessionId, byte[] jsonPayload)
-    {
-        var frame = new byte[HeaderSize + jsonPayload.Length];
-        frame[0] = TypeProcessEvent;
-        WriteSessionId(frame.AsSpan(1, 8), sessionId);
-        jsonPayload.CopyTo(frame.AsSpan(HeaderSize));
-        return frame;
     }
 
     /// <summary>

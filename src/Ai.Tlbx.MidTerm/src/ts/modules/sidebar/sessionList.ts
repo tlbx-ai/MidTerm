@@ -9,13 +9,7 @@ import type { Session, ProcessState } from '../../types';
 import { pendingSessions, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
 import { icon } from '../../constants';
-import {
-  addProcessStateListener,
-  getForegroundInfo,
-  getRacingLogText,
-  getFullRacingLog,
-  isRacingLogVisible,
-} from '../process';
+import { addProcessStateListener, getForegroundInfo } from '../process';
 
 // =============================================================================
 // Callback Types
@@ -113,16 +107,6 @@ function updateSessionProcessInfo(sessionId: string): void {
   if (fgInfo.name) {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
-  }
-
-  // Racing subprocess log (single line, full history on hover)
-  const racingText = getRacingLogText(sessionId);
-  if (racingText && isRacingLogVisible(sessionId)) {
-    const racingLog = document.createElement('span');
-    racingLog.className = 'session-racing-log truncate';
-    racingLog.textContent = `\u26A1 ${racingText}`;
-    racingLog.title = getFullRacingLog(sessionId);
-    processInfoEl.appendChild(racingLog);
   }
 }
 
@@ -296,16 +280,6 @@ function createSessionItem(
   if (fgInfo.name) {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfo.appendChild(fgIndicator);
-  }
-
-  // Racing subprocess log (single line, full history on hover)
-  const racingText = getRacingLogText(session.id);
-  if (racingText && isRacingLogVisible(session.id)) {
-    const racingLog = document.createElement('span');
-    racingLog.className = 'session-racing-log truncate';
-    racingLog.textContent = `\u26A1 ${racingText}`;
-    racingLog.title = getFullRacingLog(session.id);
-    processInfo.appendChild(racingLog);
   }
 
   // Always add processInfo container so updateSessionProcessInfo can find it later

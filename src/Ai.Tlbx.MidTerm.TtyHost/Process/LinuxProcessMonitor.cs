@@ -1,438 +1,164 @@
 #if LINUX
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Process;
 
 namespace Ai.Tlbx.MidTerm.TtyHost.Process;
 
 /// <summary>
-/// Linux implementation of process monitoring using /proc filesystem.
-/// Uses polling approach for compatibility (netlink requires CAP_NET_ADMIN).
+/// Linux process monitor using simple polling with /proc filesystem.
+/// Monitors shell's direct child only.
 /// </summary>
 public sealed class LinuxProcessMonitor : IProcessMonitor
 {
-    private readonly object _lock = new();
-    private readonly ConcurrentDictionary<int, ProcessInfo> _processTree = new();
-    private int _rootPid;
-    private bool _monitoring;
+    private int _shellPid;
+    private int? _currentChildPid;
+    private string? _currentCwd;
+    private Timer? _timer;
     private bool _disposed;
-    private CancellationTokenSource? _pollCts;
-    private Task? _pollTask;
 
-    public event Action<ProcessEvent>? OnProcessEvent;
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
-    public bool SupportsRealTimeEvents => false;
-
-    public void StartMonitoring(int rootPid)
+    public void StartMonitoring(int shellPid)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(LinuxProcessMonitor));
 
-        lock (_lock)
-        {
-            _rootPid = rootPid;
-            _monitoring = true;
-
-            _pollCts = new CancellationTokenSource();
-            _pollTask = Task.Run(() => PollProcessTreeAsync(_pollCts.Token));
-        }
+        _shellPid = shellPid;
+        _timer = new Timer(_ => Poll(), null, 0, 500);
     }
 
     public void StopMonitoring()
     {
-        lock (_lock)
-        {
-            _monitoring = false;
-            _pollCts?.Cancel();
-            try
-            {
-                _pollTask?.Wait(1000);
-            }
-            catch { }
-            _pollCts?.Dispose();
-            _pollCts = null;
-            _pollTask = null;
-        }
+        _timer?.Dispose();
+        _timer = null;
     }
 
-    private async Task PollProcessTreeAsync(CancellationToken ct)
+    public ForegroundProcessInfo GetCurrentForeground()
     {
-        var previousPids = new HashSet<int>();
-        int? previousForeground = null;
-
-        while (!ct.IsCancellationRequested && _monitoring)
+        var childPid = GetFirstDirectChild(_shellPid);
+        if (childPid is null)
         {
-            try
+            return new ForegroundProcessInfo
             {
-                await Task.Delay(500, ct);
-
-                var currentPids = new HashSet<int>();
-                var descendants = GetDescendantProcesses(_rootPid);
-
-                foreach (var pid in descendants)
-                {
-                    currentPids.Add(pid);
-
-                    if (!previousPids.Contains(pid))
-                    {
-                        var name = GetProcessName(pid);
-                        var cmdLine = GetProcessCommandLine(pid);
-                        var parentPid = GetParentPid(pid);
-
-                        var info = new ProcessInfo
-                        {
-                            Pid = pid,
-                            ParentPid = parentPid,
-                            Name = name ?? "unknown",
-                            CommandLine = cmdLine,
-                            Cwd = GetProcessCwd(pid)
-                        };
-                        _processTree[pid] = info;
-
-                        OnProcessEvent?.Invoke(new ProcessEvent
-                        {
-                            Type = ProcessEventType.Exec,
-                            Pid = pid,
-                            ParentPid = parentPid,
-                            Name = info.Name,
-                            CommandLine = cmdLine,
-                            Timestamp = DateTime.UtcNow
-                        });
-                    }
-                }
-
-                foreach (var pid in previousPids)
-                {
-                    if (!currentPids.Contains(pid))
-                    {
-                        _processTree.TryRemove(pid, out var exitedInfo);
-                        OnProcessEvent?.Invoke(new ProcessEvent
-                        {
-                            Type = ProcessEventType.Exit,
-                            Pid = pid,
-                            ParentPid = exitedInfo?.ParentPid ?? 0,
-                            Name = exitedInfo?.Name,
-                            Timestamp = DateTime.UtcNow
-                        });
-                    }
-                }
-
-                previousPids = currentPids;
-
-                var foreground = GetForegroundProcess(_rootPid);
-                if (foreground != previousForeground)
-                {
-                    previousForeground = foreground;
-                    var fgName = GetProcessName(foreground);
-                    var fgCwd = GetProcessCwd(foreground);
-                    var fgCmd = GetProcessCommandLine(foreground);
-
-                    OnForegroundChanged?.Invoke(new ForegroundProcessInfo
-                    {
-                        Pid = foreground,
-                        Name = fgName ?? "shell",
-                        CommandLine = fgCmd,
-                        Cwd = fgCwd
-                    });
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(() => $"Process polling error: {ex.Message}");
-            }
+                Pid = _shellPid,
+                Name = "shell",
+                Cwd = GetShellCwd()
+            };
         }
+
+        return new ForegroundProcessInfo
+        {
+            Pid = childPid.Value,
+            Name = GetProcessName(childPid.Value) ?? "unknown",
+            CommandLine = GetProcessCommandLine(childPid.Value),
+            Cwd = GetProcessCwd(childPid.Value) ?? GetShellCwd()
+        };
     }
 
-    public string? GetProcessCwd(int pid)
+    public string? GetShellCwd() => GetProcessCwd(_shellPid);
+
+    private void Poll()
     {
-        if (_disposed) return null;
+        if (_disposed) return;
 
         try
         {
-            var cwdPath = $"/proc/{pid}/cwd";
-            if (!File.Exists(cwdPath) && !Directory.Exists(Path.GetDirectoryName(cwdPath)))
-            {
-                return null;
-            }
+            var childPid = GetFirstDirectChild(_shellPid);
+            var cwd = GetShellCwd();
 
-            var target = ReadLink(cwdPath);
-            return target;
+            if (childPid != _currentChildPid || cwd != _currentCwd)
+            {
+                _currentChildPid = childPid;
+                _currentCwd = cwd;
+                OnForegroundChanged?.Invoke(GetCurrentForeground());
+            }
         }
         catch (Exception ex)
         {
-            Log.Verbose(() => $"GetProcessCwd({pid}) failed: {ex.Message}");
+            Log.Warn(() => $"Process poll error: {ex.Message}");
+        }
+    }
+
+    private static int? GetFirstDirectChild(int parentPid)
+    {
+        var childrenPath = $"/proc/{parentPid}/task/{parentPid}/children";
+        try
+        {
+            if (File.Exists(childrenPath))
+            {
+                var content = File.ReadAllText(childrenPath).Trim();
+                if (!string.IsNullOrEmpty(content))
+                {
+                    var firstSpace = content.IndexOf(' ');
+                    var firstPidStr = firstSpace >= 0 ? content[..firstSpace] : content;
+                    if (int.TryParse(firstPidStr, out var childPid))
+                        return childPid;
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private static string? GetProcessName(int pid)
+    {
+        try
+        {
+            var commPath = $"/proc/{pid}/comm";
+            return File.Exists(commPath) ? File.ReadAllText(commPath).Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? GetProcessCwd(int pid)
+    {
+        try
+        {
+            return ReadLink($"/proc/{pid}/cwd");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? GetProcessCommandLine(int pid)
+    {
+        try
+        {
+            var cmdlinePath = $"/proc/{pid}/cmdline";
+            if (!File.Exists(cmdlinePath)) return null;
+
+            var content = File.ReadAllBytes(cmdlinePath);
+            if (content.Length == 0) return null;
+
+            // Replace null bytes with spaces, skip first arg (executable path)
+            var firstNull = Array.IndexOf(content, (byte)0);
+            if (firstNull < 0 || firstNull >= content.Length - 1) return null;
+
+            var argsStart = firstNull + 1;
+            for (int i = argsStart; i < content.Length; i++)
+            {
+                if (content[i] == 0) content[i] = (byte)' ';
+            }
+
+            return Encoding.UTF8.GetString(content, argsStart, content.Length - argsStart).Trim();
+        }
+        catch
+        {
             return null;
         }
     }
 
     private static string? ReadLink(string path)
     {
-        try
-        {
-            var buffer = new byte[4096];
-            var len = readlink(path, buffer, buffer.Length - 1);
-            if (len < 0)
-            {
-                return null;
-            }
-            return System.Text.Encoding.UTF8.GetString(buffer, 0, len);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public string? GetProcessName(int pid)
-    {
-        if (_disposed) return null;
-
-        try
-        {
-            var commPath = $"/proc/{pid}/comm";
-            if (!File.Exists(commPath))
-            {
-                return null;
-            }
-
-            return File.ReadAllText(commPath).Trim();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public string? GetProcessCommandLine(int pid)
-    {
-        if (_disposed) return null;
-
-        try
-        {
-            var cmdlinePath = $"/proc/{pid}/cmdline";
-            if (!File.Exists(cmdlinePath))
-            {
-                return null;
-            }
-
-            var content = File.ReadAllBytes(cmdlinePath);
-            if (content.Length == 0)
-            {
-                return null;
-            }
-
-            for (int i = 0; i < content.Length; i++)
-            {
-                if (content[i] == 0)
-                {
-                    content[i] = (byte)' ';
-                }
-            }
-
-            return System.Text.Encoding.UTF8.GetString(content).Trim();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public IReadOnlyList<int> GetChildProcesses(int pid)
-    {
-        if (_disposed) return [];
-
-        var children = new List<int>();
-        try
-        {
-            var childrenPath = $"/proc/{pid}/task/{pid}/children";
-            if (File.Exists(childrenPath))
-            {
-                var content = File.ReadAllText(childrenPath).Trim();
-                if (!string.IsNullOrEmpty(content))
-                {
-                    foreach (var pidStr in content.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                    {
-                        if (int.TryParse(pidStr, out var childPid))
-                        {
-                            children.Add(childPid);
-                        }
-                    }
-                }
-                return children;
-            }
-
-            foreach (var dir in Directory.GetDirectories("/proc"))
-            {
-                var dirName = Path.GetFileName(dir);
-                if (!int.TryParse(dirName, out var procPid))
-                {
-                    continue;
-                }
-
-                var statPath = Path.Combine(dir, "stat");
-                if (!File.Exists(statPath))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var stat = File.ReadAllText(statPath);
-                    var parentPid = ParsePpidFromStat(stat);
-                    if (parentPid == pid)
-                    {
-                        children.Add(procPid);
-                    }
-                }
-                catch { }
-            }
-        }
-        catch { }
-
-        return children;
-    }
-
-    private static int ParsePpidFromStat(string stat)
-    {
-        var closeParenIndex = stat.LastIndexOf(')');
-        if (closeParenIndex < 0)
-        {
-            return 0;
-        }
-
-        var afterComm = stat[(closeParenIndex + 2)..];
-        var fields = afterComm.Split(' ');
-        if (fields.Length >= 2 && int.TryParse(fields[1], out var ppid))
-        {
-            return ppid;
-        }
-
-        return 0;
-    }
-
-    private int GetParentPid(int pid)
-    {
-        try
-        {
-            var statPath = $"/proc/{pid}/stat";
-            if (!File.Exists(statPath))
-            {
-                return 0;
-            }
-
-            var stat = File.ReadAllText(statPath);
-            return ParsePpidFromStat(stat);
-        }
-        catch
-        {
-            return 0;
-        }
-    }
-
-    private IReadOnlyList<int> GetDescendantProcesses(int rootPid)
-    {
-        var descendants = new List<int>();
-        var toVisit = new Queue<int>();
-        toVisit.Enqueue(rootPid);
-
-        while (toVisit.Count > 0)
-        {
-            var pid = toVisit.Dequeue();
-            var children = GetChildProcesses(pid);
-            foreach (var child in children)
-            {
-                if (!descendants.Contains(child))
-                {
-                    descendants.Add(child);
-                    toVisit.Enqueue(child);
-                }
-            }
-        }
-
-        return descendants;
-    }
-
-    public int GetForegroundProcess(int shellPid)
-    {
-        if (_disposed) return shellPid;
-
-        var descendants = GetDescendantProcesses(shellPid);
-        if (descendants.Count == 0)
-        {
-            return shellPid;
-        }
-
-        var childrenMap = new Dictionary<int, List<int>>();
-        childrenMap[shellPid] = [];
-
-        foreach (var pid in descendants)
-        {
-            var parent = GetParentPid(pid);
-            if (!childrenMap.ContainsKey(parent))
-            {
-                childrenMap[parent] = [];
-            }
-            childrenMap[parent].Add(pid);
-            if (!childrenMap.ContainsKey(pid))
-            {
-                childrenMap[pid] = [];
-            }
-        }
-
-        int FindLeaf(int current)
-        {
-            if (!childrenMap.TryGetValue(current, out var children) || children.Count == 0)
-            {
-                return current;
-            }
-            return FindLeaf(children[0]);
-        }
-
-        return FindLeaf(shellPid);
-    }
-
-    public ProcessTreeSnapshot GetProcessTreeSnapshot(int shellPid)
-    {
-        var processes = new List<ProcessInfo>();
-        var descendants = GetDescendantProcesses(shellPid);
-
-        foreach (var pid in descendants)
-        {
-            processes.Add(new ProcessInfo
-            {
-                Pid = pid,
-                ParentPid = GetParentPid(pid),
-                Name = GetProcessName(pid) ?? "unknown",
-                CommandLine = GetProcessCommandLine(pid),
-                Cwd = GetProcessCwd(pid)
-            });
-        }
-
-        var foregroundPid = GetForegroundProcess(shellPid);
-        ForegroundProcessInfo? foreground = null;
-        if (foregroundPid != shellPid)
-        {
-            foreground = new ForegroundProcessInfo
-            {
-                Pid = foregroundPid,
-                Name = GetProcessName(foregroundPid) ?? "unknown",
-                CommandLine = GetProcessCommandLine(foregroundPid),
-                Cwd = GetProcessCwd(foregroundPid)
-            };
-        }
-
-        return new ProcessTreeSnapshot
-        {
-            ShellPid = shellPid,
-            ShellCwd = GetProcessCwd(shellPid),
-            Foreground = foreground,
-            Processes = processes
-        };
+        var buffer = new byte[4096];
+        var len = readlink(path, buffer, buffer.Length - 1);
+        return len > 0 ? Encoding.UTF8.GetString(buffer, 0, len) : null;
     }
 
     public void Dispose()
@@ -442,14 +168,7 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
         StopMonitoring();
     }
 
-    #region Native Interop
-
     [DllImport("libc", SetLastError = true)]
-    private static extern int readlink(
-        [MarshalAs(UnmanagedType.LPStr)] string path,
-        byte[] buf,
-        int bufsiz);
-
-    #endregion
+    private static extern int readlink([MarshalAs(UnmanagedType.LPStr)] string path, byte[] buf, int bufsiz);
 }
 #endif

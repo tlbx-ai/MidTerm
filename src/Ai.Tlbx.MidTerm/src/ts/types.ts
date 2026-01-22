@@ -35,20 +35,6 @@ export interface Session {
 // Process Monitoring Types
 // =============================================================================
 
-/** Process event type */
-export type ProcessEventType = 'Fork' | 'Exec' | 'Exit';
-
-/** Process lifecycle event from server */
-export interface ProcessEventPayload {
-  Type: ProcessEventType;
-  Pid: number;
-  ParentPid: number;
-  Name: string | null;
-  CommandLine: string | null;
-  ExitCode: number | null;
-  Timestamp: string;
-}
-
 /** Foreground process change from server */
 export interface ForegroundChangePayload {
   Pid: number;
@@ -63,16 +49,6 @@ export interface ProcessState {
   foregroundName: string | null;
   foregroundCommandLine: string | null;
   foregroundCwd: string | null;
-  recentProcesses: RacingLogEntry[];
-  showRacingLog: boolean;
-}
-
-/** Entry in the racing subprocess log */
-export interface RacingLogEntry {
-  pid: number;
-  name: string;
-  commandLine: string | null;
-  timestamp: number;
 }
 
 /** Terminal state for a session */

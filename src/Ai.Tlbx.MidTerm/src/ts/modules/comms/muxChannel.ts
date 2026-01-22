@@ -21,13 +21,12 @@ import {
   MUX_TYPE_BUFFER_REQUEST,
   MUX_TYPE_COMPRESSED_OUTPUT,
   MUX_TYPE_ACTIVE_HINT,
-  MUX_TYPE_PROCESS_EVENT,
   MUX_TYPE_FOREGROUND_CHANGE,
   MUX_TYPE_DATA_LOSS,
   WS_CLOSE_SERVER_SHUTDOWN,
 } from '../../constants';
-import type { ProcessEventPayload, ForegroundChangePayload } from '../../types';
-import { handleProcessEvent, handleForegroundChange } from '../process';
+import type { ForegroundChangePayload } from '../../types';
+import { handleForegroundChange } from '../process';
 import { scanOutputForPaths } from '../terminal/fileLinks';
 import {
   parseOutputFrame,
@@ -404,17 +403,6 @@ export function connectMuxWebSocket(): void {
       // Queue ALL output frames to guarantee strict ordering
       if (payload.length >= 4) {
         queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
-      }
-    } else if (type === MUX_TYPE_PROCESS_EVENT) {
-      try {
-        const jsonStr = new TextDecoder().decode(payload);
-        const eventPayload = JSON.parse(jsonStr) as ProcessEventPayload;
-        log.verbose(
-          () => `ProcessEvent: ${eventPayload.Type} ${eventPayload.Name} (${eventPayload.Pid})`,
-        );
-        handleProcessEvent(sessionId, eventPayload);
-      } catch (e) {
-        log.error(() => `Failed to parse process event: ${e}`);
       }
     } else if (type === MUX_TYPE_FOREGROUND_CHANGE) {
       try {

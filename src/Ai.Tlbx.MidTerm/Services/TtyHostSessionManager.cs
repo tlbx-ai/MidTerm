@@ -29,7 +29,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnSessionClosed;
-    public event Action<string, ProcessEventPayload>? OnProcessEvent;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
 
     public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
@@ -637,7 +636,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private void SubscribeToClient(TtyHostClient client)
     {
         client.OnOutput += HandleClientOutput;
-        client.OnProcessEvent += HandleClientProcessEvent;
         client.OnForegroundChanged += HandleClientForegroundChanged;
         client.OnStateChanged += HandleClientStateChanged;
     }
@@ -645,11 +643,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
     {
         OnOutput?.Invoke(sessionId, cols, rows, data);
-    }
-
-    private void HandleClientProcessEvent(string sessionId, ProcessEventPayload payload)
-    {
-        OnProcessEvent?.Invoke(sessionId, payload);
     }
 
     private void HandleClientForegroundChanged(string sessionId, ForegroundChangePayload payload)

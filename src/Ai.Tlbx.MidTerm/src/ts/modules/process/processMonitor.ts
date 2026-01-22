@@ -1,21 +1,14 @@
 /**
  * Process Monitor Module
  *
- * Manages process state for terminal sessions.
- * Tracks foreground process and subprocess activity for UI display.
+ * Manages foreground process state for terminal sessions.
+ * Tracks the direct child process for UI display (sidebar).
  */
 
-import type {
-  ProcessState,
-  ProcessEventPayload,
-  ForegroundChangePayload,
-  RacingLogEntry,
-} from '../../types';
+import type { ProcessState, ForegroundChangePayload } from '../../types';
 import { createLogger } from '../logging';
 
 const log = createLogger('process');
-
-const MAX_RACING_LOG_ENTRIES = 10;
 
 const processStates = new Map<string, ProcessState>();
 
@@ -41,8 +34,6 @@ export function getProcessState(sessionId: string): ProcessState {
       foregroundName: null,
       foregroundCommandLine: null,
       foregroundCwd: null,
-      recentProcesses: [],
-      showRacingLog: false,
     };
     processStates.set(sessionId, state);
   }
@@ -50,36 +41,7 @@ export function getProcessState(sessionId: string): ProcessState {
 }
 
 /**
- * Handle process event from server.
- */
-export function handleProcessEvent(sessionId: string, payload: ProcessEventPayload): void {
-  const state = getProcessState(sessionId);
-
-  if (payload.Type === 'Exec' && payload.Name) {
-    const entry: RacingLogEntry = {
-      pid: payload.Pid,
-      name: payload.Name,
-      commandLine: payload.CommandLine,
-      timestamp: Date.now(),
-    };
-
-    state.recentProcesses.push(entry);
-    if (state.recentProcesses.length > MAX_RACING_LOG_ENTRIES) {
-      state.recentProcesses.shift();
-    }
-
-    state.showRacingLog = true;
-    notifyStateChange(sessionId, state);
-
-    log.info(() => `Racing log now has ${state.recentProcesses.length} entries for ${sessionId}`);
-  } else if (payload.Type === 'Exit') {
-    log.verbose(() => `Process exit: ${payload.Pid}`);
-  }
-}
-
-/**
  * Handle foreground process change from server.
- * Backend records history automatically via OnForegroundChanged event.
  */
 export function handleForegroundChange(sessionId: string, payload: ForegroundChangePayload): void {
   const state = getProcessState(sessionId);
@@ -132,51 +94,6 @@ export function initializeFromSession(
     notifyStateChange(sessionId, state);
     log.verbose(() => `Initialized from session: ${foregroundName} in ${currentDirectory}`);
   }
-}
-
-/**
- * Get racing log display text (single line - latest entry only).
- */
-export function getRacingLogText(sessionId: string): string {
-  const state = processStates.get(sessionId);
-  if (!state || state.recentProcesses.length === 0) {
-    return '';
-  }
-
-  const latest = state.recentProcesses[state.recentProcesses.length - 1]!;
-  if (latest.commandLine) {
-    return latest.commandLine.length > 40
-      ? latest.commandLine.slice(0, 40) + '\u2026'
-      : latest.commandLine;
-  }
-  return latest.name;
-}
-
-/**
- * Get full racing log for hover tooltip (all entries).
- */
-export function getFullRacingLog(sessionId: string): string {
-  const state = processStates.get(sessionId);
-  if (!state || state.recentProcesses.length === 0) {
-    return '';
-  }
-
-  return state.recentProcesses
-    .map((e) => {
-      if (e.commandLine) {
-        return e.commandLine.length > 60 ? e.commandLine.slice(0, 60) + '\u2026' : e.commandLine;
-      }
-      return e.name;
-    })
-    .join('\n');
-}
-
-/**
- * Check if racing log has entries.
- */
-export function isRacingLogVisible(sessionId: string): boolean {
-  const state = processStates.get(sessionId);
-  return (state?.recentProcesses.length ?? 0) > 0;
 }
 
 /**

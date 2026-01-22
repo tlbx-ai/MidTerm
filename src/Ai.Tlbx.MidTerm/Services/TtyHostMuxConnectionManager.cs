@@ -35,7 +35,6 @@ public sealed class TtyHostMuxConnectionManager
         _sessionManager = sessionManager;
         _sessionManager.OnOutput += HandleOutput;
         _sessionManager.OnSessionClosed += HandleSessionClosed;
-        _sessionManager.OnProcessEvent += HandleProcessEvent;
         _sessionManager.OnForegroundChanged += HandleForegroundChanged;
 
         _cts = new CancellationTokenSource();
@@ -55,20 +54,6 @@ public sealed class TtyHostMuxConnectionManager
         var buffer = ArrayPool<byte>.Shared.Rent(data.Length);
         data.Span.CopyTo(buffer);
         _outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, cols, rows, buffer, data.Length));
-    }
-
-    private void HandleProcessEvent(string sessionId, ProcessEventPayload payload)
-    {
-        var jsonPayload = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.ProcessEventPayload);
-        var frame = MuxProtocol.CreateProcessEventFrame(sessionId, jsonPayload);
-
-        foreach (var client in _clients.Values)
-        {
-            if (client.WebSocket.State == WebSocketState.Open)
-            {
-                client.QueueFrame(frame);
-            }
-        }
     }
 
     private void HandleForegroundChanged(string sessionId, ForegroundChangePayload payload)

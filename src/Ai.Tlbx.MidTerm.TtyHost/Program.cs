@@ -326,33 +326,6 @@ public static class Program
                 catch (Exception ex) { Log.Exception(ex, "OnStateChange"); }
             }
 
-            void OnProcessEvent(ProcessEvent evt)
-            {
-                try
-                {
-                    if (client.IsConnected && handshakeComplete)
-                    {
-                        var payload = new ProcessEventPayload
-                        {
-                            Type = evt.Type,
-                            Pid = evt.Pid,
-                            ParentPid = evt.ParentPid,
-                            Name = evt.Name,
-                            CommandLine = evt.CommandLine,
-                            ExitCode = evt.ExitCode,
-                            Timestamp = evt.Timestamp
-                        };
-                        var msg = TtyHostProtocol.CreateProcessEvent(payload);
-                        lock (stream)
-                        {
-                            stream.Write(msg);
-                            stream.Flush();
-                        }
-                    }
-                }
-                catch (Exception ex) { Log.Exception(ex, "OnProcessEvent"); }
-            }
-
             void OnForegroundChanged(ForegroundProcessInfo info)
             {
                 try
@@ -432,7 +405,6 @@ public static class Program
                     {
                         stateChangeSubscribed = true;
                         session.OnStateChanged += OnStateChange;
-                        session.OnProcessEvent += OnProcessEvent;
                         session.OnForegroundChanged += OnForegroundChanged;
                     }
                 }).ConfigureAwait(false);
@@ -441,7 +413,6 @@ public static class Program
             {
                 session.OnOutput -= OnOutput;
                 session.OnStateChanged -= OnStateChange;
-                session.OnProcessEvent -= OnProcessEvent;
                 session.OnForegroundChanged -= OnForegroundChanged;
             }
         }
@@ -814,7 +785,6 @@ internal sealed class TerminalSession
 
     public event Action<ReadOnlyMemory<byte>>? OnOutput;
     public event Action? OnStateChanged;
-    public event Action<ProcessEvent>? OnProcessEvent;
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
     public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows, IProcessMonitor? processMonitor = null)
@@ -828,7 +798,6 @@ internal sealed class TerminalSession
 
         if (_processMonitor is not null)
         {
-            _processMonitor.OnProcessEvent += evt => OnProcessEvent?.Invoke(evt);
             _processMonitor.OnForegroundChanged += info => OnForegroundChanged?.Invoke(info);
         }
     }
@@ -939,22 +908,17 @@ internal sealed class TerminalSession
 
         if (_processMonitor is not null)
         {
-            info.CurrentDirectory = _processMonitor.GetProcessCwd(Pid);
-            var foregroundPid = _processMonitor.GetForegroundProcess(Pid);
-            if (foregroundPid != Pid)
+            info.CurrentDirectory = _processMonitor.GetShellCwd();
+            var foreground = _processMonitor.GetCurrentForeground();
+            if (foreground.Pid != Pid)
             {
-                info.ForegroundPid = foregroundPid;
-                info.ForegroundName = _processMonitor.GetProcessName(foregroundPid);
-                info.ForegroundCommandLine = _processMonitor.GetProcessCommandLine(foregroundPid);
+                info.ForegroundPid = foreground.Pid;
+                info.ForegroundName = foreground.Name;
+                info.ForegroundCommandLine = foreground.CommandLine;
             }
         }
 
         return info;
-    }
-
-    public ProcessTreeSnapshot? GetProcessSnapshot()
-    {
-        return _processMonitor?.GetProcessTreeSnapshot(Pid);
     }
 
     public void Kill()
