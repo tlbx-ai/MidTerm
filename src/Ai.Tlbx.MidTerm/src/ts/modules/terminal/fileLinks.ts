@@ -198,7 +198,7 @@ function performScan(sessionId: string, text: string): void {
     const path = match[1];
     if (!path) continue;
     if (isValidPath(path)) {
-      log.verbose(() => `Path detected: ${path}`);
+      console.log(`[FileRadar] Path detected: ${path}`);
       addToAllowlist(allowlist, path);
     }
   }
@@ -209,12 +209,13 @@ function performScan(sessionId: string, text: string): void {
     const path = match[1];
     if (!path) continue;
     if (isValidPath(path)) {
-      log.verbose(() => `Path detected: ${path}`);
+      console.log(`[FileRadar] Path detected: ${path}`);
       addToAllowlist(allowlist, path);
     }
   }
 
   if (allowlist.size > initialSize) {
+    console.log(`[FileRadar] Allowlist now has ${allowlist.size} paths for session ${sessionId}`);
     log.verbose(
       () => `Added ${allowlist.size - initialSize} paths to allowlist for session ${sessionId}`,
     );
@@ -305,6 +306,9 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
       // Get fresh allowlist reference (in case it changed)
       const currentAllowlist = getPathAllowlist(sessionId);
+      console.log(
+        `[FileRadar] provideLinks called: line=${lineNumber}, session=${sessionId}, allowlist=${currentAllowlist.size}`,
+      );
 
       // Early bailout if no paths detected yet
       if (currentAllowlist.size === 0) {
@@ -320,9 +324,11 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       }
 
       const lineText = line.translateToString(true);
+      console.log(`[FileRadar] Line text: "${lineText.substring(0, 80)}"`);
 
       // Quick check before regex - does line contain path-like chars?
       if (!QUICK_PATH_CHECK_UNIX.test(lineText) && !QUICK_PATH_CHECK_WIN.test(lineText)) {
+        console.log(`[FileRadar] No path-like chars in line, skipping`);
         callback(undefined);
         return;
       }
@@ -371,7 +377,9 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       findLinks(WIN_PATH_PATTERN);
 
       if (links.length > 0) {
-        log.verbose(() => `Providing ${links.length} link(s) for line ${lineNumber}`);
+        console.log(`[FileRadar] Providing ${links.length} link(s) for line ${lineNumber}`);
+      } else {
+        console.log(`[FileRadar] No matching paths in allowlist for this line`);
       }
       callback(links.length > 0 ? links : undefined);
     },
