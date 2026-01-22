@@ -48,10 +48,11 @@ const log = createLogger('fileLinks');
 /**
  * Check if File Radar is enabled via settings.
  * Controlled by Settings > Behavior > "File Radar"
- * Default: ON
+ * Default: ON (true if settings not yet loaded, since server default is true)
  */
 function isFileRadarEnabled(): boolean {
-  return currentSettings?.fileRadar === true;
+  if (currentSettings === null) return true;
+  return currentSettings.fileRadar === true;
 }
 
 /** Minimum frame size in bytes to bother scanning (skip tiny cursor moves) */
