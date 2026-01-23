@@ -147,24 +147,54 @@ public static class FileEndpoints
             }
 
             // Strategy 1: Try exact path relative to CWD (always)
-            var exactPath = Path.GetFullPath(Path.Combine(cwd, path));
-            if (IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
+            // Try original path first, then with normalized slashes (WSL/AI tools may use wrong style)
+            foreach (var tryPath in GetSlashVariants(path))
             {
-                return Results.Json(BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
+                var exactPath = Path.GetFullPath(Path.Combine(cwd, tryPath));
+                if (IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
+                {
+                    return Results.Json(BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
+                }
             }
 
             // Strategy 2: Search CWD tree (only on click, when deep=true)
             if (deep)
             {
-                var found = SearchTree(cwd, path, maxDepth: 5);
-                if (found is not null && IsWithinDirectory(found, cwd))
+                foreach (var tryPath in GetSlashVariants(path))
                 {
-                    return Results.Json(BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
+                    var found = SearchTree(cwd, tryPath, maxDepth: 5);
+                    if (found is not null && IsWithinDirectory(found, cwd))
+                    {
+                        return Results.Json(BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
+                    }
                 }
             }
 
             return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
         });
+    }
+
+    private static IEnumerable<string> GetSlashVariants(string path)
+    {
+        yield return path;
+
+        // Try opposite slash style (WSL/AI tools may use wrong slashes)
+        if (path.Contains('/'))
+        {
+            var windowsPath = path.Replace('/', '\\');
+            if (windowsPath != path)
+            {
+                yield return windowsPath;
+            }
+        }
+        else if (path.Contains('\\'))
+        {
+            var unixPath = path.Replace('\\', '/');
+            if (unixPath != path)
+            {
+                yield return unixPath;
+            }
+        }
     }
 
     private static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
