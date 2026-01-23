@@ -62,7 +62,6 @@ public sealed class SystemTrayService : IDisposable
     private readonly int _port;
     private readonly bool _isServiceMode;
     private readonly string _version;
-    private readonly DateTime _startTime;
 
     private Thread? _messageThread;
     private IntPtr _hwnd;
@@ -99,7 +98,6 @@ public sealed class SystemTrayService : IDisposable
         _port = port;
         _version = version;
         _isServiceMode = settingsService.IsRunningAsService;
-        _startTime = DateTime.UtcNow;
     }
 
     public void Start()
@@ -295,7 +293,7 @@ public sealed class SystemTrayService : IDisposable
         try
         {
             // All data here is already in memory - no slow operations
-            var uptime = DateTime.UtcNow - _startTime;
+            var uptime = DateTime.UtcNow - Process.GetCurrentProcess().StartTime.ToUniversalTime();
             var uptimeStr = FormatUptime(uptime);
             AppendMenu(hMenu, MF_STRING | MF_GRAYED, IDM_UPTIME, $"Runs since: {uptimeStr}");
 
