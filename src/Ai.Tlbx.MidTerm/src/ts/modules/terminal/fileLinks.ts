@@ -135,7 +135,7 @@ const RELATIVE_PATH_PATTERN = new RegExp(
   // Capture group 1: the full relative path
   '(' +
     '(?:\\.\\/|\\.\\.\\/)?' + // optional ./ or ../
-    '(?:[\\w.-]+\\/)?' + // optional single directory
+    '(?:[\\w.-]+\\/)*' + // zero or more directories
     '[\\w.-]+' + // filename (no leading dot to avoid matching .gitignore)
     '\\.(?:' +
     FILE_EXTENSIONS +
@@ -463,9 +463,30 @@ async function handlePathClick(path: string): Promise<void> {
   const info = await checkPathExists(path);
   if (info?.exists) {
     openFile(path, info);
-  } else {
-    showFileNotFoundToast(path);
+    return;
   }
+
+  // Fallback: Unix-style paths on Windows (e.g., /foo/bar.cs) aren't truly absolute
+  // Try resolving as relative path with deep search
+  const sessionId = $activeSessionId.get();
+  if (sessionId) {
+    // Strip leading slash for relative resolution
+    const relativePath = path.startsWith('/') ? path.slice(1) : path;
+    const resolved = await resolveRelativePath(sessionId, relativePath, true);
+    if (resolved?.exists && resolved.resolvedPath) {
+      const resolvedInfo: FilePathInfo = {
+        exists: true,
+        isDirectory: resolved.isDirectory ?? false,
+      };
+      if (resolved.size !== undefined) resolvedInfo.size = resolved.size;
+      if (resolved.mimeType !== undefined) resolvedInfo.mimeType = resolved.mimeType;
+      if (resolved.modified !== undefined) resolvedInfo.modified = resolved.modified;
+      openFile(resolved.resolvedPath, resolvedInfo);
+      return;
+    }
+  }
+
+  showFileNotFoundToast(path);
 }
 
 async function handleRelativePathClick(relativePath: string): Promise<void> {
