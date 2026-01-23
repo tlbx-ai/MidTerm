@@ -58,18 +58,21 @@ public static class TrayHelperService
     private static IntPtr _icon;
     private static HttpClient? _httpClient;
     private static string? _version;
-    private static long _uptimeSeconds;
+    private static long _serverUptimeAtRefresh;
+    private static DateTime _lastRefreshTime;
     private static bool _updateAvailable;
     private static string? _latestVersion;
     private static List<SessionInfoDto>? _sessions;
     private static List<NetworkInterfaceDto>? _networks;
     private static WndProcDelegate? _wndProcDelegate;
+    private static Timer? _refreshTimer;
 
     private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     public static int Run(int port)
     {
         _port = port;
+        _lastRefreshTime = DateTime.UtcNow;
 
         var handler = new HttpClientHandler
         {
@@ -78,8 +81,17 @@ public static class TrayHelperService
         _httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri($"https://localhost:{port}/"),
-            Timeout = TimeSpan.FromSeconds(10)
+            Timeout = TimeSpan.FromSeconds(5)
         };
+
+        // Initial data fetch (non-blocking if it fails)
+        RefreshDataFromApi();
+
+        // Background refresh every 10 seconds
+        _refreshTimer = new Timer(_ =>
+        {
+            try { RefreshDataFromApi(); } catch { }
+        }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
 
         try
         {
@@ -88,6 +100,7 @@ public static class TrayHelperService
         }
         finally
         {
+            _refreshTimer?.Dispose();
             _httpClient.Dispose();
         }
     }
@@ -135,7 +148,9 @@ public static class TrayHelperService
                 var mouseMsg = (uint)(lParam.ToInt64() & 0xFFFF);
                 if (mouseMsg == WM_RBUTTONUP || mouseMsg == WM_LBUTTONUP)
                 {
-                    ShowContextMenu();
+                    // Capture cursor position IMMEDIATELY before any other work
+                    GetCursorPos(out var clickPos);
+                    ShowContextMenu(clickPos);
                 }
                 return IntPtr.Zero;
 
@@ -222,10 +237,9 @@ public static class TrayHelperService
         }
     }
 
-    private static void ShowContextMenu()
+    private static void ShowContextMenu(POINT clickPos)
     {
-        RefreshDataFromApi();
-
+        // Use cached data - refreshed in background, not here
         var hMenu = CreatePopupMenu();
         if (hMenu == IntPtr.Zero)
         {
@@ -234,7 +248,10 @@ public static class TrayHelperService
 
         try
         {
-            var uptimeStr = FormatUptime(TimeSpan.FromSeconds(_uptimeSeconds));
+            // Calculate current uptime from cached server uptime + elapsed since last refresh
+            var elapsedSinceRefresh = (long)(DateTime.UtcNow - _lastRefreshTime).TotalSeconds;
+            var currentUptime = TimeSpan.FromSeconds(_serverUptimeAtRefresh + elapsedSinceRefresh);
+            var uptimeStr = FormatUptime(currentUptime);
             AppendMenu(hMenu, MF_STRING | MF_GRAYED, IDM_UPTIME, $"Runs since: {uptimeStr}");
 
             var networkMenu = CreateNetworkSubmenu();
@@ -269,10 +286,10 @@ public static class TrayHelperService
 
             AppendMenu(hMenu, MF_STRING, IDM_CLOSE, "Close");
 
-            GetCursorPos(out var pt);
             SetForegroundWindow(_hwnd);
 
-            TrackPopupMenuEx(hMenu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN, pt.X, pt.Y, _hwnd, IntPtr.Zero);
+            // Use position captured at click time, not current cursor position
+            TrackPopupMenuEx(hMenu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN, clickPos.X, clickPos.Y, _hwnd, IntPtr.Zero);
 
             PostMessage(_hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero);
         }
@@ -296,20 +313,22 @@ public static class TrayHelperService
 
             if (doc.RootElement.TryGetProperty("uptimeSeconds", out var uptimeProp))
             {
-                _uptimeSeconds = uptimeProp.GetInt64();
+                _serverUptimeAtRefresh = uptimeProp.GetInt64();
+                _lastRefreshTime = DateTime.UtcNow;
             }
 
             if (doc.RootElement.TryGetProperty("networks", out var networksProp))
             {
-                _networks = [];
+                var networks = new List<NetworkInterfaceDto>();
                 foreach (var net in networksProp.EnumerateArray())
                 {
-                    _networks.Add(new NetworkInterfaceDto
+                    networks.Add(new NetworkInterfaceDto
                     {
                         Name = net.GetProperty("name").GetString() ?? "",
                         Ip = net.GetProperty("ip").GetString() ?? ""
                     });
                 }
+                _networks = networks;
             }
 
             var sessionsJson = _httpClient.GetStringAsync("api/sessions").GetAwaiter().GetResult();
@@ -317,14 +336,15 @@ public static class TrayHelperService
 
             if (sessionsDoc.RootElement.TryGetProperty("sessions", out var sessionsProp))
             {
-                _sessions = [];
+                var sessions = new List<SessionInfoDto>();
                 foreach (var sess in sessionsProp.EnumerateArray())
                 {
-                    _sessions.Add(new SessionInfoDto
+                    sessions.Add(new SessionInfoDto
                     {
                         Id = sess.GetProperty("id").GetString() ?? ""
                     });
                 }
+                _sessions = sessions;
             }
         }
         catch

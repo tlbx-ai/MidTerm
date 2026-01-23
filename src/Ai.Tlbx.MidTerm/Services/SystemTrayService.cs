@@ -72,6 +72,10 @@ public sealed class SystemTrayService : IDisposable
     private string? _latestVersion;
     private WndProcDelegate? _wndProcDelegate;
 
+    // Cached data for instant menu display
+    private List<(string Name, string Ip)> _cachedNetworks = [];
+    private Timer? _networkRefreshTimer;
+
     // For service mode: track spawned tray helpers per session
     private readonly Dictionary<uint, int> _helperProcesses = new();
     private readonly object _helperLock = new();
@@ -112,6 +116,21 @@ public sealed class SystemTrayService : IDisposable
 
     private void StartDirectMode()
     {
+        // Cache network interfaces at startup
+        _cachedNetworks = GetNetworkInterfaces();
+
+        // Refresh networks in background every 30 seconds
+        _networkRefreshTimer = new Timer(_ =>
+        {
+            try
+            {
+                _cachedNetworks = GetNetworkInterfaces();
+            }
+            catch
+            {
+            }
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+
         _messageThread = new Thread(MessageLoop)
         {
             Name = "SystemTrayMessageLoop",
@@ -175,7 +194,9 @@ public sealed class SystemTrayService : IDisposable
                 var mouseMsg = (uint)(lParam.ToInt64() & 0xFFFF);
                 if (mouseMsg == WM_RBUTTONUP || mouseMsg == WM_LBUTTONUP)
                 {
-                    ShowContextMenu();
+                    // Capture cursor position IMMEDIATELY before any other work
+                    GetCursorPos(out var clickPos);
+                    ShowContextMenu(clickPos);
                 }
                 return IntPtr.Zero;
 
@@ -263,7 +284,7 @@ public sealed class SystemTrayService : IDisposable
         }
     }
 
-    private void ShowContextMenu()
+    private void ShowContextMenu(POINT clickPos)
     {
         var hMenu = CreatePopupMenu();
         if (hMenu == IntPtr.Zero)
@@ -273,6 +294,7 @@ public sealed class SystemTrayService : IDisposable
 
         try
         {
+            // All data here is already in memory - no slow operations
             var uptime = DateTime.UtcNow - _startTime;
             var uptimeStr = FormatUptime(uptime);
             AppendMenu(hMenu, MF_STRING | MF_GRAYED, IDM_UPTIME, $"Runs since: {uptimeStr}");
@@ -308,10 +330,10 @@ public sealed class SystemTrayService : IDisposable
 
             AppendMenu(hMenu, MF_STRING, IDM_CLOSE, "Close");
 
-            GetCursorPos(out var pt);
             SetForegroundWindow(_hwnd);
 
-            TrackPopupMenuEx(hMenu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN, pt.X, pt.Y, _hwnd, IntPtr.Zero);
+            // Use position captured at click time, not current cursor position
+            TrackPopupMenuEx(hMenu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN, clickPos.X, clickPos.Y, _hwnd, IntPtr.Zero);
 
             PostMessage(_hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero);
         }
@@ -329,23 +351,17 @@ public sealed class SystemTrayService : IDisposable
             return IntPtr.Zero;
         }
 
-        try
+        // Use cached networks - refreshed in background, not here
+        uint id = IDM_NETWORK_SUBMENU + 1;
+
+        foreach (var (name, ip) in _cachedNetworks)
         {
-            var networks = GetNetworkInterfaces();
-            uint id = IDM_NETWORK_SUBMENU + 1;
-
-            foreach (var (name, ip) in networks)
-            {
-                AppendMenu(hMenu, MF_STRING | MF_GRAYED, id++, $"{name}: {ip}");
-            }
-
-            if (networks.Count == 0)
-            {
-                AppendMenu(hMenu, MF_STRING | MF_GRAYED, id, "(No network interfaces)");
-            }
+            AppendMenu(hMenu, MF_STRING | MF_GRAYED, id++, $"{name}: {ip}");
         }
-        catch
+
+        if (_cachedNetworks.Count == 0)
         {
+            AppendMenu(hMenu, MF_STRING | MF_GRAYED, id, "(No network interfaces)");
         }
 
         return hMenu;
@@ -743,6 +759,8 @@ public sealed class SystemTrayService : IDisposable
         }
 
         _disposed = true;
+
+        _networkRefreshTimer?.Dispose();
 
         lock (_helperLock)
         {
