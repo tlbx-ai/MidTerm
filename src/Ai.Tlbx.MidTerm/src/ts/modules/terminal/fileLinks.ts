@@ -119,14 +119,16 @@ const WIN_PATH_PATTERN_GLOBAL =
  */
 const FILE_EXTENSIONS =
   'pdf|txt|md|json|ya?ml|xml|csv|log|html?|css|s?css|less|jsx?|tsx?|mjs|cjs|vue|svelte|' +
-  'py|pyw|go|rs|c|cpp|cc|cxx|h|hpp|hxx|java|kt|kts|rb|php|sh|bash|zsh|ps1|psm1|' +
+  'py|pyw|pyi|go|rs|swift|scala|cljs?|exs?|erl|hrl|hs|lua|jl|pl|pm|r|' +
+  'cpp|cc|cxx|cs|fs|fsx|vb|hpp|hxx|c|h|java|kt|kts|rb|php|' +
+  'bash|zsh|sh|ps1|psm1|' +
   'png|jpe?g|gif|svg|webp|ico|bmp|tiff?|heic|raw|' +
   'mp[34]|m4[av]|wav|ogg|flac|aac|webm|mkv|avi|mov|wmv|' +
   'zip|tar|gz|bz2|xz|7z|rar|tgz|tbz2|' +
   'exe|dll|so|dylib|o|a|lib|whl|jar|war|apk|ipa|dmg|iso|msi|' +
-  'doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|rtf|' +
-  'sql|db|sqlite|sqlite3|' +
-  'toml|ini|cfg|conf|env|lock|sum|mod|' +
+  'docx?|xlsx?|pptx?|odt|ods|odp|rtf|' +
+  'sqlite3?|sql|db|' +
+  'toml|ini|cfg|conf|env|lock|sum|mod|proto|graphql|gql|prisma|tf|tfvars|' +
   'wasm|map|d\\.ts';
 
 const RELATIVE_PATH_PATTERN = new RegExp(
