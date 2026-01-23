@@ -68,6 +68,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(List<LaunchEntry>))]
+[JsonSerializable(typeof(CreateHistoryRequest))]
 [JsonSerializable(typeof(FileCheckRequest))]
 [JsonSerializable(typeof(FileCheckResponse))]
 [JsonSerializable(typeof(FileRegisterRequest))]

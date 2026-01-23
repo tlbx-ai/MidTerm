@@ -712,6 +712,20 @@ html, body {
     cursor: wait;
 }
 
+.history-section-header {
+    padding: 6px 12px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-top: 1px solid var(--border-color);
+}
+
+.history-section-header:first-child {
+    border-top: none;
+}
+
 .session-rename-input {
     font-size: 13px;
     padding: 2px 4px;
@@ -750,6 +764,7 @@ html, body {
     background: linear-gradient(to right, transparent, var(--bg-session-active) 8px, var(--bg-session-active));
 }
 
+.session-pin,
 .session-resize,
 .session-rename,
 .session-close {
@@ -765,6 +780,15 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+.session-pin {
+    font-size: 14px;
+}
+
+.session-pin:hover {
+    background-color: var(--accent-orange);
+    color: white;
 }
 
 .session-resize:hover {
@@ -1383,6 +1407,7 @@ html, body {
     }
 
     /* Show all action buttons on mobile when menu is open */
+    .session-actions .session-pin,
     .session-actions .session-resize,
     .session-actions .session-rename,
     .session-actions .session-close {
@@ -1392,6 +1417,11 @@ html, body {
         font-size: 20px;
         border-radius: 8px;
         background-color: var(--btn-secondary);
+    }
+
+    .session-actions .session-pin:active {
+        background-color: var(--accent-orange);
+        color: white;
     }
 
     .session-actions .session-resize:active {
@@ -4865,6 +4895,7 @@ html, body {
 .sidebar-btn:focus-visible,
 .btn-history:focus-visible,
 .history-item:focus-visible,
+.session-pin:focus-visible,
 .session-resize:focus-visible,
 .session-rename:focus-visible,
 .session-close:focus-visible,
@@ -4880,6 +4911,7 @@ html, body {
 .sidebar-btn:focus,
 .btn-history:focus,
 .history-item:focus,
+.session-pin:focus,
 .session-resize:focus,
 .session-rename:focus,
 .session-close:focus,

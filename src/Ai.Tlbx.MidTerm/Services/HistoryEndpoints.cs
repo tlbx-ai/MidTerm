@@ -11,6 +11,27 @@ public static class HistoryEndpoints
             return Results.Json(historyService.GetEntries(), AppJsonContext.Default.ListLaunchEntry);
         });
 
+        app.MapPost("/api/history", (CreateHistoryRequest request) =>
+        {
+            var id = historyService.RecordEntry(
+                request.ShellType,
+                request.Executable,
+                request.CommandLine,
+                request.WorkingDirectory);
+
+            if (id is null)
+            {
+                return Results.BadRequest("Invalid history entry");
+            }
+
+            if (request.IsStarred)
+            {
+                historyService.SetStarred(id, true);
+            }
+
+            return Results.Ok(new { id });
+        });
+
         // PATCH /api/history/{id} - update history entry (currently only supports isStarred)
         app.MapPatch("/api/history/{id}", (string id, HistoryPatchRequest request) =>
         {

@@ -104,9 +104,10 @@ function renderDropdownContent(): void {
   const empty = dropdownEl.querySelector('.history-dropdown-empty');
   if (!content || !empty) return;
 
-  const entries = cachedEntries.slice(0, 10);
+  const pinnedEntries = cachedEntries.filter((e) => e.isStarred);
+  const recentEntries = cachedEntries.filter((e) => !e.isStarred).slice(0, 5);
 
-  if (entries.length === 0) {
+  if (pinnedEntries.length === 0 && recentEntries.length === 0) {
     content.classList.add('hidden');
     empty.classList.remove('hidden');
     return;
@@ -116,72 +117,94 @@ function renderDropdownContent(): void {
   empty.classList.add('hidden');
   content.innerHTML = '';
 
-  entries.forEach((entry) => {
-    const item = document.createElement('div');
-    item.className = 'history-item';
-    item.dataset.id = entry.id;
+  if (pinnedEntries.length > 0) {
+    const pinnedHeader = document.createElement('div');
+    pinnedHeader.className = 'history-section-header';
+    pinnedHeader.textContent = '\u2b50 Pinned';
+    content.appendChild(pinnedHeader);
 
-    const starBtn = document.createElement('button');
-    starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
-    starBtn.title = entry.isStarred ? 'Unstar' : 'Star';
-    starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
-    starBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      starBtn.disabled = true;
-      starBtn.classList.add('loading');
-      await toggleStar(entry.id);
-      await loadHistory();
-      renderDropdownContent();
+    pinnedEntries.forEach((entry) => {
+      content.appendChild(createHistoryItem(entry));
     });
-    item.appendChild(starBtn);
+  }
 
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'history-item-info';
+  if (recentEntries.length > 0) {
+    const recentHeader = document.createElement('div');
+    recentHeader.className = 'history-section-header';
+    recentHeader.textContent = '\ud83d\udd70 Recent';
+    content.appendChild(recentHeader);
 
-    const fgIndicator = createForegroundIndicator(
-      entry.workingDirectory,
-      entry.commandLine,
-      entry.executable,
-    );
-    infoDiv.appendChild(fgIndicator);
-
-    const meta = document.createElement('span');
-    meta.className = 'history-item-meta';
-    meta.textContent = `${entry.weight}x`;
-    infoDiv.appendChild(meta);
-
-    item.appendChild(infoDiv);
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'history-item-delete';
-    deleteBtn.title = 'Remove';
-    deleteBtn.innerHTML = icon('close');
-    deleteBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (entry.isStarred) {
-        if (!confirm('Delete starred item?')) {
-          return;
-        }
-      }
-      await removeHistoryEntry(entry.id);
-      await loadHistory();
-      renderDropdownContent();
+    recentEntries.forEach((entry) => {
+      content.appendChild(createHistoryItem(entry));
     });
-    item.appendChild(deleteBtn);
+  }
+}
 
-    item.addEventListener('click', (e) => {
-      const target = e.target as Element;
-      if (target.closest('.history-item-delete') || target.closest('.history-item-star')) {
+function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.dataset.id = entry.id;
+
+  const starBtn = document.createElement('button');
+  starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
+  starBtn.title = entry.isStarred ? 'Unstar' : 'Star';
+  starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
+  starBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    starBtn.disabled = true;
+    starBtn.classList.add('loading');
+    await toggleStar(entry.id);
+    await loadHistory();
+    renderDropdownContent();
+  });
+  item.appendChild(starBtn);
+
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'history-item-info';
+
+  const fgIndicator = createForegroundIndicator(
+    entry.workingDirectory,
+    entry.commandLine,
+    entry.executable,
+  );
+  infoDiv.appendChild(fgIndicator);
+
+  const meta = document.createElement('span');
+  meta.className = 'history-item-meta';
+  meta.textContent = `${entry.weight}x`;
+  infoDiv.appendChild(meta);
+
+  item.appendChild(infoDiv);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'history-item-delete';
+  deleteBtn.title = 'Remove';
+  deleteBtn.innerHTML = icon('close');
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (entry.isStarred) {
+      if (!confirm('Delete starred item?')) {
         return;
       }
-      if (onSpawnSession) {
-        closeHistoryDropdown();
-        onSpawnSession(entry);
-      }
-    });
-
-    content.appendChild(item);
+    }
+    await removeHistoryEntry(entry.id);
+    await loadHistory();
+    renderDropdownContent();
   });
+  item.appendChild(deleteBtn);
+
+  item.addEventListener('click', (e) => {
+    const target = e.target as Element;
+    if (target.closest('.history-item-delete') || target.closest('.history-item-star')) {
+      return;
+    }
+    if (onSpawnSession) {
+      closeHistoryDropdown();
+      onSpawnSession(entry);
+    }
+  });
+
+  return item;
 }
 
 /**

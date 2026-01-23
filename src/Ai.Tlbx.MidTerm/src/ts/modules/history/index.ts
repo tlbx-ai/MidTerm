@@ -14,7 +14,7 @@ export {
   type LaunchEntry,
 } from './historyDropdown';
 
-export { fetchHistory, toggleStar, removeHistoryEntry } from './historyApi';
+export { fetchHistory, toggleStar, removeHistoryEntry, createHistoryEntry } from './historyApi';
 
 // Deprecated: No-op for backwards compatibility
 export function initializeCommandHistory(): void {

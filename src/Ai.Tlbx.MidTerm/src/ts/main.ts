@@ -80,8 +80,11 @@ import {
   initializeCommandHistory,
   initHistoryDropdown,
   toggleHistoryDropdown,
+  createHistoryEntry,
+  refreshHistory,
   type LaunchEntry,
 } from './modules/history';
+import { getForegroundInfo } from './modules/process';
 import { initTouchController } from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
 import {
@@ -243,6 +246,7 @@ function registerCallbacks(): void {
     onDelete: deleteSession,
     onRename: startInlineRename,
     onResize: fitSessionToScreen,
+    onPinToHistory: pinSessionToHistory,
     onCloseSidebar: closeSidebar,
   });
 }
@@ -536,6 +540,33 @@ function promptRenameSession(sessionId: string): void {
 
   if (newName !== null) {
     renameSession(sessionId, newName);
+  }
+}
+
+async function pinSessionToHistory(sessionId: string): Promise<void> {
+  const session = getSession(sessionId);
+  if (!session) {
+    log.warn(() => `pinSessionToHistory: session ${sessionId} not found`);
+    return;
+  }
+
+  const fgInfo = getForegroundInfo(sessionId);
+  if (!fgInfo.name) {
+    log.info(() => `pinSessionToHistory: no foreground process for ${sessionId}`);
+    return;
+  }
+
+  const id = await createHistoryEntry({
+    shellType: session.shellType,
+    executable: fgInfo.name,
+    commandLine: fgInfo.commandLine,
+    workingDirectory: fgInfo.cwd ?? '',
+    isStarred: true,
+  });
+
+  if (id) {
+    refreshHistory();
+    log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
   }
 }
 

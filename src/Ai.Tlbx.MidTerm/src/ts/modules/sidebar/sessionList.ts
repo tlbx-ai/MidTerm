@@ -21,6 +21,7 @@ export interface SessionListCallbacks {
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
   onResize: (sessionId: string) => void;
+  onPinToHistory: (sessionId: string) => void;
   onCloseSidebar: () => void;
 }
 
@@ -289,6 +290,18 @@ function createSessionItem(
   actions.className = 'session-actions';
 
   if (!isPending) {
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'session-pin';
+    pinBtn.textContent = '\u2606';
+    pinBtn.title = 'Pin to QuickLaunch';
+    pinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      if (callbacks) {
+        callbacks.onPinToHistory(session.id);
+      }
+    });
+
     const resizeBtn = document.createElement('button');
     resizeBtn.className = 'session-resize';
     resizeBtn.innerHTML = icon('resize');
@@ -325,6 +338,7 @@ function createSessionItem(
       }
     });
 
+    actions.appendChild(pinBtn);
     actions.appendChild(resizeBtn);
     actions.appendChild(renameBtn);
     actions.appendChild(closeBtn);

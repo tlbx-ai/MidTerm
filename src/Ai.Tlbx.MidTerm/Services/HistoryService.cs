@@ -67,14 +67,14 @@ public sealed class HistoryService
         }
     }
 
-    public void RecordEntry(string shellType, string executable, string? commandLine, string workingDirectory)
+    public string? RecordEntry(string shellType, string executable, string? commandLine, string workingDirectory)
     {
         Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
             Log.Info(() => "RecordEntry skipped: empty executable or workingDirectory");
-            return;
+            return null;
         }
 
         // Strip .exe extension for cleaner display
@@ -86,7 +86,7 @@ public sealed class HistoryService
         if (cleanExecutable.Equals(shellType, StringComparison.OrdinalIgnoreCase))
         {
             Log.Info(() => $"RecordEntry skipped: exe matches shell ({cleanExecutable})");
-            return;
+            return null;
         }
         executable = cleanExecutable;
 
@@ -122,6 +122,7 @@ public sealed class HistoryService
         }
 
         Log.Verbose(() => $"Recorded history: {executable} in {workingDirectory}");
+        return id;
     }
 
     public List<LaunchEntry> GetEntries()
