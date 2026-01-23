@@ -1,4 +1,5 @@
 #if WINDOWS
+using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -9,6 +10,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost.Process;
 
 /// <summary>
 /// Windows process monitor using simple polling. Monitors shell's direct child only.
+/// Optimized: single snapshot per poll cycle, reusable buffers via ArrayPool.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsProcessMonitor : IProcessMonitor
@@ -16,8 +18,18 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     private int _shellPid;
     private int? _currentChildPid;
     private string? _currentCwd;
+    private ForegroundProcessInfo? _cachedForeground;
     private Timer? _timer;
     private bool _disposed;
+
+    // Reusable buffers for ReadProcessMemory (thread-safe via ThreadStatic)
+    [ThreadStatic]
+    private static byte[]? _pebBuffer;
+    [ThreadStatic]
+    private static byte[]? _paramsBuffer;
+
+    private static byte[] PebBuffer => _pebBuffer ??= new byte[0x30];
+    private static byte[] ParamsBuffer => _paramsBuffer ??= new byte[0x80];
 
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
@@ -37,8 +49,12 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
     public ForegroundProcessInfo GetCurrentForeground()
     {
-        var childPid = GetFirstDirectChild(_shellPid);
-        if (childPid is null)
+        if (_cachedForeground is not null)
+            return _cachedForeground;
+
+        // Initial call before first Poll() - compute fresh (rare case)
+        var hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (hSnapshot == IntPtr.Zero || hSnapshot == INVALID_HANDLE_VALUE)
         {
             return new ForegroundProcessInfo
             {
@@ -48,13 +64,31 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
             };
         }
 
-        return new ForegroundProcessInfo
+        try
         {
-            Pid = childPid.Value,
-            Name = GetProcessName(childPid.Value) ?? "unknown",
-            CommandLine = StripExecutablePath(GetProcessCommandLine(childPid.Value)),
-            Cwd = GetProcessCwd(childPid.Value) ?? GetShellCwd()
-        };
+            var childPid = GetFirstDirectChild(_shellPid, hSnapshot);
+            if (childPid is null)
+            {
+                return new ForegroundProcessInfo
+                {
+                    Pid = _shellPid,
+                    Name = "shell",
+                    Cwd = GetShellCwd()
+                };
+            }
+
+            return new ForegroundProcessInfo
+            {
+                Pid = childPid.Value,
+                Name = GetProcessName(childPid.Value, hSnapshot) ?? "unknown",
+                CommandLine = StripExecutablePath(GetProcessCommandLine(childPid.Value)),
+                Cwd = GetProcessCwd(childPid.Value) ?? GetShellCwd()
+            };
+        }
+        finally
+        {
+            CloseHandle(hSnapshot);
+        }
     }
 
     public string? GetShellCwd() => GetProcessCwd(_shellPid);
@@ -65,14 +99,50 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
         try
         {
-            var childPid = GetFirstDirectChild(_shellPid);
-            var cwd = GetShellCwd();
+            // Take a single snapshot for this entire poll cycle
+            var hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (hSnapshot == IntPtr.Zero || hSnapshot == INVALID_HANDLE_VALUE)
+                return;
 
-            if (childPid != _currentChildPid || cwd != _currentCwd)
+            try
             {
-                _currentChildPid = childPid;
-                _currentCwd = cwd;
-                OnForegroundChanged?.Invoke(GetCurrentForeground());
+                var childPid = GetFirstDirectChild(_shellPid, hSnapshot);
+                var cwd = GetShellCwd();
+
+                if (childPid != _currentChildPid || cwd != _currentCwd)
+                {
+                    _currentChildPid = childPid;
+                    _currentCwd = cwd;
+
+                    // Compute foreground info with same snapshot (no extra snapshots)
+                    ForegroundProcessInfo info;
+                    if (childPid is null)
+                    {
+                        info = new ForegroundProcessInfo
+                        {
+                            Pid = _shellPid,
+                            Name = "shell",
+                            Cwd = cwd
+                        };
+                    }
+                    else
+                    {
+                        info = new ForegroundProcessInfo
+                        {
+                            Pid = childPid.Value,
+                            Name = GetProcessName(childPid.Value, hSnapshot) ?? "unknown",
+                            CommandLine = StripExecutablePath(GetProcessCommandLine(childPid.Value)),
+                            Cwd = GetProcessCwd(childPid.Value) ?? cwd
+                        };
+                    }
+
+                    _cachedForeground = info;
+                    OnForegroundChanged?.Invoke(info);
+                }
+            }
+            finally
+            {
+                CloseHandle(hSnapshot);
             }
         }
         catch (Exception ex)
@@ -81,59 +151,37 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         }
     }
 
-    private static int? GetFirstDirectChild(int parentPid)
+    private static int? GetFirstDirectChild(int parentPid, IntPtr hSnapshot)
     {
-        var hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if (hSnapshot == IntPtr.Zero || hSnapshot == INVALID_HANDLE_VALUE)
-            return null;
-
-        try
+        var pe = new PROCESSENTRY32W { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>() };
+        if (Process32FirstW(hSnapshot, ref pe))
         {
-            var pe = new PROCESSENTRY32W { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>() };
-            if (Process32FirstW(hSnapshot, ref pe))
+            do
             {
-                do
-                {
-                    if ((int)pe.th32ParentProcessID == parentPid)
-                        return (int)pe.th32ProcessID;
-                } while (Process32NextW(hSnapshot, ref pe));
-            }
-            return null;
+                if ((int)pe.th32ParentProcessID == parentPid)
+                    return (int)pe.th32ProcessID;
+            } while (Process32NextW(hSnapshot, ref pe));
         }
-        finally
-        {
-            CloseHandle(hSnapshot);
-        }
+        return null;
     }
 
-    private static string? GetProcessName(int pid)
+    private static string? GetProcessName(int pid, IntPtr hSnapshot)
     {
-        var hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if (hSnapshot == IntPtr.Zero || hSnapshot == INVALID_HANDLE_VALUE)
-            return null;
-
-        try
+        var pe = new PROCESSENTRY32W { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>() };
+        if (Process32FirstW(hSnapshot, ref pe))
         {
-            var pe = new PROCESSENTRY32W { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>() };
-            if (Process32FirstW(hSnapshot, ref pe))
+            do
             {
-                do
+                if ((int)pe.th32ProcessID == pid)
                 {
-                    if ((int)pe.th32ProcessID == pid)
-                    {
-                        var name = pe.szExeFile;
-                        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                            name = name[..^4];
-                        return name;
-                    }
-                } while (Process32NextW(hSnapshot, ref pe));
-            }
-            return null;
+                    var name = pe.szExeFile;
+                    if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                        name = name[..^4];
+                    return name;
+                }
+            } while (Process32NextW(hSnapshot, ref pe));
         }
-        finally
-        {
-            CloseHandle(hSnapshot);
-        }
+        return null;
     }
 
     private static string? GetProcessCwd(int pid)
@@ -148,27 +196,34 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                 return null;
             if (pbi.PebBaseAddress == IntPtr.Zero) return null;
 
-            var pebData = new byte[0x30];
-            if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, pebData.Length, out _))
+            var pebData = PebBuffer;
+            if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, 0x30, out _))
                 return null;
 
             var procParamsPtr = (IntPtr)BitConverter.ToInt64(pebData, 0x20);
             if (procParamsPtr == IntPtr.Zero) return null;
 
-            var paramsData = new byte[0x50];
-            if (!ReadProcessMemory(hProcess, procParamsPtr, paramsData, paramsData.Length, out _))
+            var paramsData = ParamsBuffer;
+            if (!ReadProcessMemory(hProcess, procParamsPtr, paramsData, 0x50, out _))
                 return null;
 
             var cwdLength = BitConverter.ToUInt16(paramsData, 0x38);
             var cwdBufferPtr = (IntPtr)BitConverter.ToInt64(paramsData, 0x38 + 8);
             if (cwdLength == 0 || cwdBufferPtr == IntPtr.Zero) return null;
 
-            var buffer = new byte[cwdLength];
-            if (!ReadProcessMemory(hProcess, cwdBufferPtr, buffer, buffer.Length, out _))
-                return null;
+            var buffer = ArrayPool<byte>.Shared.Rent(cwdLength);
+            try
+            {
+                if (!ReadProcessMemory(hProcess, cwdBufferPtr, buffer, cwdLength, out _))
+                    return null;
 
-            var cwd = Encoding.Unicode.GetString(buffer).TrimEnd('\0');
-            return cwd.EndsWith('\\') && cwd.Length > 3 ? cwd.TrimEnd('\\') : cwd;
+                var cwd = Encoding.Unicode.GetString(buffer, 0, cwdLength).TrimEnd('\0');
+                return cwd.EndsWith('\\') && cwd.Length > 3 ? cwd.TrimEnd('\\') : cwd;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
         catch
         {
@@ -192,26 +247,33 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                 return null;
             if (pbi.PebBaseAddress == IntPtr.Zero) return null;
 
-            var pebData = new byte[0x30];
-            if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, pebData.Length, out _))
+            var pebData = PebBuffer;
+            if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, 0x30, out _))
                 return null;
 
             var procParamsPtr = (IntPtr)BitConverter.ToInt64(pebData, 0x20);
             if (procParamsPtr == IntPtr.Zero) return null;
 
-            var paramsData = new byte[0x80];
-            if (!ReadProcessMemory(hProcess, procParamsPtr, paramsData, paramsData.Length, out _))
+            var paramsData = ParamsBuffer;
+            if (!ReadProcessMemory(hProcess, procParamsPtr, paramsData, 0x80, out _))
                 return null;
 
             var cmdLength = BitConverter.ToUInt16(paramsData, 0x70);
             var cmdBufferPtr = (IntPtr)BitConverter.ToInt64(paramsData, 0x70 + 8);
             if (cmdLength == 0 || cmdBufferPtr == IntPtr.Zero) return null;
 
-            var buffer = new byte[cmdLength];
-            if (!ReadProcessMemory(hProcess, cmdBufferPtr, buffer, buffer.Length, out _))
-                return null;
+            var buffer = ArrayPool<byte>.Shared.Rent(cmdLength);
+            try
+            {
+                if (!ReadProcessMemory(hProcess, cmdBufferPtr, buffer, cmdLength, out _))
+                    return null;
 
-            return Encoding.Unicode.GetString(buffer).TrimEnd('\0');
+                return Encoding.Unicode.GetString(buffer, 0, cmdLength).TrimEnd('\0');
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
         catch
         {

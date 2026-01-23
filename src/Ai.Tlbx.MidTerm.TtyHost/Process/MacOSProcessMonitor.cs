@@ -9,6 +9,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost.Process;
 /// <summary>
 /// macOS process monitor using kqueue for event-driven child process detection.
 /// Falls back to timer for CWD changes since kqueue can't watch filesystem operations.
+/// Optimized: reusable buffers for proc_pidpath and sysctl.
 /// </summary>
 public sealed class MacOSProcessMonitor : IProcessMonitor
 {
@@ -19,6 +20,18 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     private Thread? _eventThread;
     private Timer? _cwdTimer;
     private volatile bool _disposed;
+
+    // Reusable buffers (thread-safe via ThreadStatic)
+    [ThreadStatic]
+    private static byte[]? _pathBuffer;
+    [ThreadStatic]
+    private static byte[]? _argmaxBuffer;
+    [ThreadStatic]
+    private static int[]? _childPidBuffer;
+
+    private static byte[] PathBuffer => _pathBuffer ??= new byte[PROC_PIDPATHINFO_MAXSIZE];
+    private static byte[] ArgmaxBuffer => _argmaxBuffer ??= new byte[256 * 1024]; // 256KB for KERN_ARGMAX
+    private static int[] ChildPidBuffer => _childPidBuffer ??= new int[64]; // max children to check
 
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
@@ -184,8 +197,9 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         var count = proc_listchildpids(parentPid, null, 0);
         if (count <= 0) return null;
 
-        var pids = new int[count];
-        var actualCount = proc_listchildpids(parentPid, pids, count * sizeof(int));
+        var pids = ChildPidBuffer;
+        var maxCount = Math.Min(count, pids.Length);
+        var actualCount = proc_listchildpids(parentPid, pids, maxCount * sizeof(int));
         if (actualCount <= 0) return null;
 
         var numPids = actualCount / sizeof(int);
@@ -194,7 +208,7 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
 
     private static string? GetProcessName(int pid)
     {
-        var buffer = new byte[PROC_PIDPATHINFO_MAXSIZE];
+        var buffer = PathBuffer;
         var len = proc_pidpath(pid, buffer, buffer.Length);
         if (len <= 0) return null;
         return Path.GetFileName(Encoding.UTF8.GetString(buffer, 0, len));
@@ -211,16 +225,10 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     {
         try
         {
-            var argmax = new int[1];
-            var size = (IntPtr)sizeof(int);
-            var mib = new int[] { CTL_KERN, KERN_ARGMAX };
-
-            if (sysctl(mib, 2, argmax, ref size, IntPtr.Zero, IntPtr.Zero) != 0)
-                return null;
-
-            var buffer = new byte[argmax[0]];
-            size = (IntPtr)buffer.Length;
-            mib = new int[] { CTL_KERN, KERN_PROCARGS2, pid };
+            // Use pre-allocated 256KB buffer instead of querying KERN_ARGMAX each time
+            var buffer = ArgmaxBuffer;
+            var size = (IntPtr)buffer.Length;
+            var mib = new int[] { CTL_KERN, KERN_PROCARGS2, pid };
 
             if (sysctl(mib, 3, buffer, ref size, IntPtr.Zero, IntPtr.Zero) != 0)
                 return null;

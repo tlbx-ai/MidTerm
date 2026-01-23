@@ -1,4 +1,5 @@
 #if LINUX
+using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -9,6 +10,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost.Process;
 /// <summary>
 /// Linux process monitor using simple polling with /proc filesystem.
 /// Monitors shell's direct child only.
+/// Optimized: reusable buffers for readlink and file reads.
 /// </summary>
 public sealed class LinuxProcessMonitor : IProcessMonitor
 {
@@ -17,6 +19,11 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
     private string? _currentCwd;
     private Timer? _timer;
     private bool _disposed;
+
+    // Reusable buffer for readlink (thread-safe via ThreadStatic)
+    [ThreadStatic]
+    private static byte[]? _linkBuffer;
+    private static byte[] LinkBuffer => _linkBuffer ??= new byte[4096];
 
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
@@ -156,7 +163,7 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
 
     private static string? ReadLink(string path)
     {
-        var buffer = new byte[4096];
+        var buffer = LinkBuffer;
         var len = readlink(path, buffer, buffer.Length - 1);
         return len > 0 ? Encoding.UTF8.GetString(buffer, 0, len) : null;
     }

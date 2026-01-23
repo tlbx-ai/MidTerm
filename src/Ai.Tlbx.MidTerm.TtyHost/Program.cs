@@ -247,8 +247,7 @@ public static class Program
     private static async Task HandleClientAsync(TerminalSession session, IIpcClientConnection client, CancellationToken ct, Action? onSubscribed = null)
     {
         const int MaxPendingOutputSize = 1_000_000; // 1MB max during handshake
-        var pendingOutput = new List<byte[]>();
-        var pendingOutputSize = 0;
+        using var pendingOutput = new MemoryStream();
         var outputLock = new object();
         var handshakeComplete = false;
         var stream = client.Stream;
@@ -268,19 +267,14 @@ public static class Program
                         if (!handshakeComplete)
                         {
                             // Buffer output until handshake completes (bounded)
-                            if (pendingOutputSize < MaxPendingOutputSize)
+                            if (pendingOutput.Length < MaxPendingOutputSize)
                             {
-                                if (data.Length < 50)
-                                {
-                                    Log.Verbose(() => $"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
-                                }
-                                var copy = data.ToArray();
-                                pendingOutput.Add(copy);
-                                pendingOutputSize += copy.Length;
+                                Log.Verbose(() => $"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
+                                pendingOutput.Write(data.Span);
                             }
                             else
                             {
-                                Log.Warn(() => $"Warning: dropping {data.Length} bytes during handshake (buffer full: {pendingOutputSize}/{MaxPendingOutputSize})");
+                                Log.Warn(() => $"Warning: dropping {data.Length} bytes during handshake (buffer full: {pendingOutput.Length}/{MaxPendingOutputSize})");
                             }
                             return;
                         }
@@ -357,32 +351,27 @@ public static class Program
                     handshakeComplete = true;
                     Log.Verbose(() => $"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
 
-                    // Send any buffered output (buffered before handshake, all at same initial dimensions)
-                    if (pendingOutput.Count > 0)
+                    // Send any buffered output as single chunk (all at same initial dimensions)
+                    if (pendingOutput.Length > 0 && client.IsConnected)
                     {
-                        foreach (var data in pendingOutput)
+                        try
                         {
-                            try
+                            var bufferedData = pendingOutput.ToArray();
+                            Log.Verbose(() => $"[HANDSHAKE] Sending {bufferedData.Length} buffered bytes");
+                            TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, bufferedData, frame =>
                             {
-                                if (client.IsConnected)
+                                lock (stream)
                                 {
-                                    TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, data, frame =>
-                                    {
-                                        lock (stream)
-                                        {
-                                            stream.Write(frame);
-                                            stream.Flush();
-                                        }
-                                    });
+                                    stream.Write(frame);
+                                    stream.Flush();
                                 }
-                            }
-                            catch (Exception ex)
-                            {
-                                Log.Error(() => $"Buffered output write failed: {ex.Message}");
-                                Log.Exception(ex, "OnHandshakeComplete.BufferedWrite");
-                            }
+                            });
                         }
-                        pendingOutput.Clear();
+                        catch (Exception ex)
+                        {
+                            Log.Error(() => $"Buffered output write failed: {ex.Message}");
+                            Log.Exception(ex, "OnHandshakeComplete.BufferedWrite");
+                        }
                     }
                 }
             }
@@ -582,10 +571,7 @@ public static class Program
 
                     case TtyHostMessageType.Input:
                         var inputSlice = payloadBuffer.AsMemory(0, payloadLength);
-                        if (inputSlice.Length < 20)
-                        {
-                            Log.Verbose(() => $"[IPC-INPUT] {BitConverter.ToString(inputSlice.ToArray())}");
-                        }
+                        Log.Verbose(() => $"[IPC-INPUT] {inputSlice.Length} bytes");
                         await session.SendInputAsync(inputSlice, ct).ConfigureAwait(false);
                         break;
 
@@ -830,10 +816,7 @@ internal sealed class TerminalSession
                 }
 
                 var data = buffer.AsMemory(0, bytesRead);
-                if (bytesRead < 50)
-                {
-                    Log.Verbose(() => $"[PTY-READ] {BitConverter.ToString(data.ToArray())}");
-                }
+                Log.Verbose(() => $"[PTY-READ] {bytesRead} bytes");
 
                 lock (_bufferLock)
                 {
@@ -852,10 +835,7 @@ internal sealed class TerminalSession
 
     public async Task SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
     {
-        if (data.Length < 20)
-        {
-            Log.Verbose(() => $"[PTY-WRITE] {BitConverter.ToString(data.ToArray())}");
-        }
+        Log.Verbose(() => $"[PTY-WRITE] {data.Length} bytes");
         await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
         await _pty.WriterStream.FlushAsync(ct).ConfigureAwait(false);
     }
