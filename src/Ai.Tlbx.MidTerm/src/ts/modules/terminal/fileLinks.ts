@@ -94,8 +94,9 @@ const scanTimers = new Map<string, number>();
 /**
  * Unix absolute paths: /path/to/file or /path/to/file.ext
  * Pattern for xterm-link-provider (uses capture group 1 for the link text)
+ * Negative lookbehind prevents matching /foo/bar inside src/foo/bar (relative paths)
  */
-const UNIX_PATH_PATTERN = /(\/(?:[\w.-]+\/)*[\w.-]+(?:\.\w+)?)/;
+const UNIX_PATH_PATTERN = /(?<![a-zA-Z0-9_.-])(\/(?:[\w.-]+\/)*[\w.-]+(?:\.\w+)?)/;
 
 /**
  * Windows absolute paths: C:\path\file or C:/path/file
