@@ -91,7 +91,9 @@ function logResizeDiagnostics(
  * Measure actual cell dimensions from an existing terminal.
  * Returns null if no terminal is available or measurements are invalid.
  */
-function measureFromExistingTerminal(fontSize: number): { cellWidth: number; cellHeight: number } | null {
+function measureFromExistingTerminal(
+  fontSize: number,
+): { cellWidth: number; cellHeight: number } | null {
   for (const state of sessionTerminals.values()) {
     if (!state.opened) continue;
 
