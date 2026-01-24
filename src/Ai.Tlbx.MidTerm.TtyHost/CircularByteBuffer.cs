@@ -1,18 +1,25 @@
+using System.Buffers;
+
 namespace Ai.Tlbx.MidTerm.TtyHost;
 
 /// <summary>
 /// Fixed-size circular buffer for terminal scrollback.
 /// Single allocation at creation, O(1) trim, no GC pressure during writes.
 /// </summary>
-public sealed class CircularByteBuffer
+public sealed class CircularByteBuffer : IDisposable
 {
     private readonly byte[] _buffer;
+    private readonly int _capacity;
+    private bool _disposed;
     private int _head;  // next write position
     private int _tail;  // oldest data position
     private int _count; // bytes currently stored
+    private long _totalBytesWritten;
 
     public int Count => _count;
-    public int Capacity => _buffer.Length;
+    public int Capacity => _capacity;
+    public long TotalBytesWritten => _totalBytesWritten;
+    public long TailPosition => _totalBytesWritten - _count;
 
     public CircularByteBuffer(int capacity)
     {
@@ -20,19 +27,27 @@ public sealed class CircularByteBuffer
         {
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be positive");
         }
-        _buffer = new byte[capacity];
+
+        _buffer = ArrayPool<byte>.Shared.Rent(capacity);
+        if (_buffer.Length < capacity)
+        {
+            ArrayPool<byte>.Shared.Return(_buffer);
+            throw new InvalidOperationException("ArrayPool returned a smaller buffer than requested");
+        }
+
+        _capacity = capacity;
     }
 
     public void Write(ReadOnlySpan<byte> data)
     {
         if (data.Length == 0) return;
 
-        var capacity = _buffer.Length;
+        var capacity = _capacity;
 
         // If data >= capacity, only keep last (capacity) bytes
         if (data.Length >= capacity)
         {
-            data.Slice(data.Length - capacity).CopyTo(_buffer);
+            data.Slice(data.Length - capacity).CopyTo(_buffer.AsSpan(0, capacity));
             _head = 0;
             _tail = 0;
             _count = capacity;
@@ -60,6 +75,7 @@ public sealed class CircularByteBuffer
 
         _head = (_head + data.Length) % capacity;
         _count += data.Length;
+        _totalBytesWritten += data.Length;
     }
 
     public byte[] ToArray()
@@ -75,7 +91,7 @@ public sealed class CircularByteBuffer
         else
         {
             // Wrapped: [###HEAD.....TAIL####]
-            var tailToEnd = _buffer.Length - _tail;
+            var tailToEnd = _capacity - _tail;
             Array.Copy(_buffer, _tail, result, 0, tailToEnd);
             Array.Copy(_buffer, 0, result, tailToEnd, _head);
         }
@@ -88,5 +104,66 @@ public sealed class CircularByteBuffer
         _head = 0;
         _tail = 0;
         _count = 0;
+        _totalBytesWritten = 0;
+    }
+
+    public void CopyTo(Span<byte> destination)
+    {
+        if (destination.Length < _count)
+        {
+            throw new ArgumentException("Destination span too small", nameof(destination));
+        }
+
+        if (_count == 0)
+        {
+            return;
+        }
+
+        if (_tail < _head)
+        {
+            _buffer.AsSpan(_tail, _count).CopyTo(destination);
+        }
+        else
+        {
+            var tailToEnd = _capacity - _tail;
+            _buffer.AsSpan(_tail, tailToEnd).CopyTo(destination);
+            _buffer.AsSpan(0, _head).CopyTo(destination.Slice(tailToEnd));
+        }
+    }
+
+    public bool TryCopySince(long position, Span<byte> destination, out int bytesCopied)
+    {
+        var availableStart = TailPosition;
+        if (position < availableStart)
+        {
+            bytesCopied = 0;
+            return false;
+        }
+
+        var offset = (int)(position - availableStart);
+        if (offset >= _count)
+        {
+            bytesCopied = 0;
+            return true;
+        }
+
+        var physical = (_tail + offset) % _capacity;
+        var contiguous = Math.Min(_count - offset, _capacity - physical);
+        var toCopy = Math.Min(contiguous, destination.Length);
+
+        _buffer.AsSpan(physical, toCopy).CopyTo(destination);
+        bytesCopied = toCopy;
+        return true;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        ArrayPool<byte>.Shared.Return(_buffer, clearArray: false);
     }
 }

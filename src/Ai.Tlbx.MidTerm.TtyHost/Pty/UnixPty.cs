@@ -1,6 +1,7 @@
 #if !WINDOWS
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.TtyHost.Pty;
 
@@ -217,7 +218,10 @@ public sealed class UnixPty : IPtyConnection
                     _process.Kill(entireProcessTree: true);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Failed to terminate process {Pid}: {ex.Message}");
+            }
         }
     }
 

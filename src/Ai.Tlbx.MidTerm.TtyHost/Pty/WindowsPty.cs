@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using static Ai.Tlbx.MidTerm.TtyHost.Pty.ConPtyNative;
 
 namespace Ai.Tlbx.MidTerm.TtyHost.Pty;
@@ -306,7 +307,10 @@ public sealed class WindowsPty : IPtyConnection
                 {
                     TerminateProcess(_processHandle, 1);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log.Warn(() => $"Failed to terminate process {Pid}: {ex.Message}");
+                }
             }
         }
     }

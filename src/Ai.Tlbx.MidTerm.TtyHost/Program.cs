@@ -33,6 +33,9 @@ public static class Program
 
     private const int HeartbeatIntervalMs = 5000;
     private const int ReadTimeoutMs = 10000;
+    private const int HandshakeTimeoutMs = 10000;
+    private const int MinScrollbackBytes = 64 * 1024;
+    private const int MaxScrollbackBytes = 64 * 1024 * 1024;
 
     private static CancellationTokenSource? _shutdownCts;
 
@@ -103,6 +106,7 @@ public static class Program
 
         IPtyConnection? pty = null;
         IProcessMonitor? processMonitor = null;
+        TerminalSession? session = null;
         try
         {
             Console.WriteLine($"[mthost] Creating PTY: {shellConfig.ExecutablePath}");
@@ -116,7 +120,7 @@ public static class Program
             Console.WriteLine($"[mthost] PTY created, PID={pty.Pid}");
 
             processMonitor = CreateProcessMonitor();
-            var session = new TerminalSession(config.SessionId, pty, shellConfig.ShellType, config.Cols, config.Rows, processMonitor);
+            session = new TerminalSession(config.SessionId, pty, shellConfig.ShellType, config.Cols, config.Rows, config.ScrollbackBytes, processMonitor);
             var endpoint = IpcEndpoint.GetSessionEndpoint(config.SessionId, Environment.ProcessId);
             Console.WriteLine($"[mthost] Listening on: {endpoint}");
             Log.Info(() => $"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
@@ -149,6 +153,7 @@ public static class Program
         }
         finally
         {
+            session?.Dispose();
             processMonitor?.StopMonitoring();
             processMonitor?.Dispose();
             pty?.Dispose();
@@ -186,6 +191,7 @@ public static class Program
     {
         var firstClientSubscribed = false;
         var connectionCount = 0;
+        var clientTasks = new List<Task>();
 
         using var server = IpcServerFactory.Create(endpoint);
 
@@ -210,7 +216,7 @@ public static class Program
 
                 // Create a linked CTS that combines shutdown token with this client's token
                 // This is created outside the lock and passed directly to HandleClientAsync
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
+                var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
                 var clientToken = linkedCts.Token;
 
                 // Start the read loop when the first client subscribes to output
@@ -229,7 +235,24 @@ public static class Program
 
                 // Run HandleClientAsync synchronously (don't fire-and-forget)
                 // This ensures the linked CTS stays alive for the duration of the handler
-                await HandleClientAsync(session, client, clientToken, onSubscribed).ConfigureAwait(false);
+                var handlerTask = HandleClientAsync(session, client, clientToken, onSubscribed);
+                lock (clientTasks)
+                {
+                    clientTasks.Add(handlerTask);
+                }
+
+                _ = handlerTask.ContinueWith(t =>
+                {
+                    linkedCts.Dispose();
+                    if (t.Exception is not null)
+                    {
+                        Log.Exception(t.Exception.Flatten().InnerException ?? t.Exception, "HandleClient.Task");
+                    }
+                    lock (clientTasks)
+                    {
+                        clientTasks.Remove(t);
+                    }
+                }, TaskScheduler.Default);
             }
             catch (OperationCanceledException)
             {
@@ -242,18 +265,40 @@ public static class Program
                 await Task.Delay(100, ct).ConfigureAwait(false);
             }
         }
+
+        Task[] remaining;
+        lock (clientTasks)
+        {
+            remaining = clientTasks.ToArray();
+        }
+
+        if (remaining.Length > 0)
+        {
+            await Task.WhenAll(remaining).ConfigureAwait(false);
+        }
     }
 
     private static async Task HandleClientAsync(TerminalSession session, IIpcClientConnection client, CancellationToken ct, Action? onSubscribed = null)
     {
-        const int MaxPendingOutputSize = 1_000_000; // 1MB max during handshake
-        using var pendingOutput = new MemoryStream();
         var outputLock = new object();
         var handshakeComplete = false;
         var stream = client.Stream;
+        var handshakeCursor = session.GetOutputCursor();
 
         // CTS that heartbeat can cancel to terminate message processing
         using var clientCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var handshakeTimeoutCts = new CancellationTokenSource(HandshakeTimeoutMs);
+        using var handshakeTimeoutRegistration = handshakeTimeoutCts.Token.Register(() =>
+        {
+            lock (outputLock)
+            {
+                if (!handshakeComplete)
+                {
+                    Log.Warn(() => "Handshake timeout - closing client connection");
+                    clientCts.Cancel();
+                }
+            }
+        });
         var heartbeatTask = HeartbeatLoopAsync(client, clientCts);
 
         try
@@ -266,16 +311,6 @@ public static class Program
                     {
                         if (!handshakeComplete)
                         {
-                            // Buffer output until handshake completes (bounded)
-                            if (pendingOutput.Length < MaxPendingOutputSize)
-                            {
-                                Log.Verbose(() => $"[BUFFER] Buffering {data.Length} bytes (handshake pending)");
-                                pendingOutput.Write(data.Span);
-                            }
-                            else
-                            {
-                                Log.Warn(() => $"Warning: dropping {data.Length} bytes during handshake (buffer full: {pendingOutput.Length}/{MaxPendingOutputSize})");
-                            }
                             return;
                         }
                     }
@@ -346,33 +381,50 @@ public static class Program
 
             void OnHandshakeComplete()
             {
+                var shouldReplay = false;
                 lock (outputLock)
                 {
-                    handshakeComplete = true;
-                    Log.Verbose(() => $"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
-
-                    // Send any buffered output as single chunk (all at same initial dimensions)
-                    if (pendingOutput.Length > 0 && client.IsConnected)
+                    if (!handshakeComplete)
                     {
-                        try
-                        {
-                            var bufferedData = pendingOutput.ToArray();
-                            Log.Verbose(() => $"[HANDSHAKE] Sending {bufferedData.Length} buffered bytes");
-                            TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, bufferedData, frame =>
-                            {
-                                lock (stream)
-                                {
-                                    stream.Write(frame);
-                                    stream.Flush();
-                                }
-                            });
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error(() => $"Buffered output write failed: {ex.Message}");
-                            Log.Exception(ex, "OnHandshakeComplete.BufferedWrite");
-                        }
+                        handshakeComplete = true;
+                        shouldReplay = true;
                     }
+                }
+
+                if (!shouldReplay)
+                {
+                    return;
+                }
+
+                handshakeTimeoutCts.Cancel();
+
+                Log.Verbose(() => $"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
+
+                if (!client.IsConnected)
+                {
+                    return;
+                }
+
+                var replayed = session.TryReplayOutputSince(handshakeCursor, bufferedSegment =>
+                {
+                    if (!client.IsConnected)
+                    {
+                        return;
+                    }
+
+                    TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, bufferedSegment.Span, frame =>
+                    {
+                        lock (stream)
+                        {
+                            stream.Write(frame);
+                            stream.Flush();
+                        }
+                    });
+                });
+
+                if (!replayed)
+                {
+                    Log.Warn(() => "Buffered output dropped before handshake completed (scrollback too small)");
                 }
             }
 
@@ -532,11 +584,17 @@ public static class Program
                 break;
             }
 
+            if (payloadLength < 0 || payloadLength > TtyHostProtocol.MaxPayloadSize)
+            {
+                Log.Warn(() => $"Invalid payload length: {payloadLength}");
+                break;
+            }
+
             // Read payload - allocate dynamically based on actual size
-            byte[] payloadBuffer = [];
+            byte[]? payloadBuffer = null;
             if (payloadLength > 0)
             {
-                payloadBuffer = new byte[payloadLength];
+                payloadBuffer = ArrayPool<byte>.Shared.Rent(payloadLength);
                 var totalRead = 0;
                 while (totalRead < payloadLength)
                 {
@@ -547,11 +605,14 @@ public static class Program
 
                 if (totalRead < payloadLength)
                 {
+                    ArrayPool<byte>.Shared.Return(payloadBuffer);
                     break;
                 }
             }
 
-            var payload = payloadBuffer.AsSpan(0, payloadLength);
+            var payload = payloadLength > 0
+                ? payloadBuffer.AsSpan(0, payloadLength)
+                : ReadOnlySpan<byte>.Empty;
 
             // Process message - wrap in try-catch for robustness
             try
@@ -570,7 +631,9 @@ public static class Program
                         break;
 
                     case TtyHostMessageType.Input:
-                        var inputSlice = payloadBuffer.AsMemory(0, payloadLength);
+                        var inputSlice = payloadLength > 0 && payloadBuffer is not null
+                            ? payloadBuffer.AsMemory(0, payloadLength)
+                            : ReadOnlyMemory<byte>.Empty;
                         Log.Verbose(() => $"[IPC-INPUT] {inputSlice.Length} bytes");
                         await session.SendInputAsync(inputSlice, ct).ConfigureAwait(false);
                         break;
@@ -587,15 +650,53 @@ public static class Program
                         break;
 
                     case TtyHostMessageType.GetBuffer:
-                        var buffer = session.GetBuffer();
-                        TtyHostProtocol.WriteBufferResponse(buffer, frame =>
+                        byte[]? snapshot = null;
+                        try
                         {
-                            lock (stream)
+                            var guess = session.GetBufferLength();
+                            if (guess <= 0)
                             {
-                                stream.Write(frame);
-                                stream.Flush();
+                                TtyHostProtocol.WriteBufferResponse(ReadOnlySpan<byte>.Empty, frame =>
+                                {
+                                    lock (stream)
+                                    {
+                                        stream.Write(frame);
+                                        stream.Flush();
+                                    }
+                                });
+                                break;
                             }
-                        });
+
+                            while (true)
+                            {
+                                snapshot = ArrayPool<byte>.Shared.Rent(Math.Max(guess, 1));
+                                var written = session.CopyBufferSnapshot(snapshot);
+                                if (written >= 0)
+                                {
+                                    var payloadSlice = snapshot.AsSpan(0, written);
+                                    TtyHostProtocol.WriteBufferResponse(payloadSlice, frame =>
+                                    {
+                                        lock (stream)
+                                        {
+                                            stream.Write(frame);
+                                            stream.Flush();
+                                        }
+                                    });
+                                    break;
+                                }
+
+                                ArrayPool<byte>.Shared.Return(snapshot, clearArray: false);
+                                snapshot = null;
+                                guess = -written;
+                            }
+                        }
+                        finally
+                        {
+                            if (snapshot is not null)
+                            {
+                                ArrayPool<byte>.Shared.Return(snapshot, clearArray: false);
+                            }
+                        }
                         break;
 
                     case TtyHostMessageType.SetName:
@@ -656,6 +757,13 @@ public static class Program
                 Log.Error(() => $"Error processing message type {msgType}: {ex.Message}");
                 Log.Exception(ex, $"ProcessMessage.{msgType}");
             }
+            finally
+            {
+                if (payloadBuffer is not null)
+                {
+                    ArrayPool<byte>.Shared.Return(payloadBuffer);
+                }
+            }
         }
     }
 
@@ -667,6 +775,7 @@ public static class Program
         int cols = 80;
         int rows = 24;
         var logLevel = LogSeverity.Warn;
+        var scrollbackBytes = TerminalSession.DefaultBufferCapacity;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -689,6 +798,14 @@ public static class Program
                     rows = r;
                     i++;
                     break;
+                case "--scrollback" when i + 1 < args.Length && int.TryParse(args[i + 1], out var sb):
+                    scrollbackBytes = sb;
+                    i++;
+                    break;
+                case "--scrollback-bytes" when i + 1 < args.Length && int.TryParse(args[i + 1], out var sbBytes):
+                    scrollbackBytes = sbBytes;
+                    i++;
+                    break;
                 case "--loglevel" when i + 1 < args.Length && Enum.TryParse<LogSeverity>(args[i + 1], ignoreCase: true, out var level):
                     logLevel = level;
                     i++;
@@ -701,8 +818,9 @@ public static class Program
 
         sessionId ??= Environment.ProcessId.ToString();
         workingDir ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        scrollbackBytes = Math.Clamp(scrollbackBytes, MinScrollbackBytes, MaxScrollbackBytes);
 
-        return new SessionConfig(sessionId, shellType, workingDir, cols, rows, logLevel);
+        return new SessionConfig(sessionId, shellType, workingDir, cols, rows, logLevel, scrollbackBytes);
     }
 
     private static void PrintHelp()
@@ -721,6 +839,8 @@ public static class Program
               --cwd <path>      Working directory
               --cols <n>        Terminal columns (default: 80)
               --rows <n>        Terminal rows (default: 24)
+              --scrollback <b>  Scrollback buffer in bytes (default: 10485760)
+              --scrollback-bytes <b>  Alias for --scrollback
               --loglevel <lvl>  Log level: exception, error, warn, info, verbose (default: warn)
               --debug           Shortcut for --loglevel verbose
               -h, --help        Show this help
@@ -745,17 +865,18 @@ public static class Program
     }
 #endif
 
-    private sealed record SessionConfig(string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows, LogSeverity LogSeverity);
+    private sealed record SessionConfig(string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows, LogSeverity LogSeverity, int ScrollbackBytes);
 }
 
-internal sealed class TerminalSession
+internal sealed class TerminalSession : IDisposable
 {
-    private const int BufferCapacity = 10 * 1024 * 1024; // 10MB fixed buffer
+    internal const int DefaultBufferCapacity = 10 * 1024 * 1024; // 10MB fixed buffer
 
     private readonly IPtyConnection _pty;
     private readonly IProcessMonitor? _processMonitor;
-    private readonly CircularByteBuffer _outputBuffer = new(BufferCapacity);
+    private readonly CircularByteBuffer _outputBuffer;
     private readonly object _bufferLock = new();
+    private readonly int _scrollbackBytes;
 
     public string Id { get; }
     public ShellType ShellType { get; }
@@ -773,7 +894,7 @@ internal sealed class TerminalSession
     public event Action? OnStateChanged;
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
-    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows, IProcessMonitor? processMonitor = null)
+    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows, int scrollbackBytes, IProcessMonitor? processMonitor = null)
     {
         Id = id;
         _pty = pty;
@@ -781,6 +902,8 @@ internal sealed class TerminalSession
         ShellType = shellType;
         Cols = cols;
         Rows = rows;
+        _scrollbackBytes = scrollbackBytes;
+        _outputBuffer = new CircularByteBuffer(scrollbackBytes);
 
         if (_processMonitor is not null)
         {
@@ -860,12 +983,83 @@ internal sealed class TerminalSession
         Order = order;
     }
 
-    public byte[] GetBuffer()
+    public int GetBufferLength()
     {
         lock (_bufferLock)
         {
-            return _outputBuffer.ToArray();
+            return _outputBuffer.Count;
         }
+    }
+
+    public int CopyBufferSnapshot(Span<byte> destination)
+    {
+        lock (_bufferLock)
+        {
+            var length = _outputBuffer.Count;
+            if (length == 0)
+            {
+                return 0;
+            }
+
+            if (destination.Length < length)
+            {
+                return -length;
+            }
+
+            _outputBuffer.CopyTo(destination.Slice(0, length));
+            return length;
+        }
+    }
+
+    public long GetOutputCursor()
+    {
+        lock (_bufferLock)
+        {
+            return _outputBuffer.TotalBytesWritten;
+        }
+    }
+
+    public bool TryReplayOutputSince(long cursor, Action<ReadOnlyMemory<byte>> consumer)
+    {
+        var chunkSize = Math.Min(_scrollbackBytes, 64 * 1024);
+        if (chunkSize <= 0)
+        {
+            chunkSize = 4096;
+        }
+
+        var scratch = ArrayPool<byte>.Shared.Rent(chunkSize);
+        try
+        {
+            long position = cursor;
+            while (true)
+            {
+                int copied;
+                lock (_bufferLock)
+                {
+                    if (!_outputBuffer.TryCopySince(position, scratch, out copied))
+                    {
+                        return false;
+                    }
+                }
+
+                if (copied == 0)
+                {
+                    return true;
+                }
+
+                consumer(new ReadOnlyMemory<byte>(scratch, 0, copied));
+                position += copied;
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(scratch);
+        }
+    }
+
+    public void Dispose()
+    {
+        _outputBuffer.Dispose();
     }
 
     public SessionInfo GetInfo()
