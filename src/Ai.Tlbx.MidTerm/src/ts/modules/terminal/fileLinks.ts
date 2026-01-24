@@ -112,38 +112,23 @@ const WIN_PATH_PATTERN_GLOBAL =
   /(?:^|[\s"'`(])([A-Za-z]:[\\/](?:[\w.-]+[\\/])*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
 
 /**
- * Relative path pattern - matches filenames with common file extensions.
+ * Relative path pattern - matches any filename.extension pattern.
  * Resolves against session's working directory on hover (lazy filesystem access).
  *
- * Matches: output.pdf, ./data.json, src/main.ts, src\Ai\Services\Foo.cs (Windows paths)
- * Does NOT match: package (no extension), http://... (URLs), e.g. (abbreviations)
+ * Matches: output.pdf, ./data.json, src/main.ts, src\Ai\Services\Foo.cs
+ * Does NOT match: package (no extension), http://... (URLs)
+ * False positives (1.2.3, e.g., google.com) filtered by isLikelyFalsePositive()
+ *
+ * Extension: 1-10 chars, must start with letter (avoids matching "file.1" or pure numbers)
+ * Supports both / and \ path separators for cross-platform compatibility.
  */
-const FILE_EXTENSIONS =
-  'pdf|txt|md|json|ya?ml|xml|csv|log|html?|css|s?css|less|jsx?|tsx?|mjs|cjs|vue|svelte|' +
-  'py|pyw|pyi|go|rs|swift|scala|cljs?|exs?|erl|hrl|hs|lua|jl|pl|pm|r|' +
-  'cpp|cc|cxx|cs|fs|fsx|vb|hpp|hxx|c|h|java|kt|kts|rb|php|' +
-  'bash|zsh|sh|ps1|psm1|' +
-  'png|jpe?g|gif|svg|webp|ico|bmp|tiff?|heic|raw|' +
-  'mp[34]|m4[av]|wav|ogg|flac|aac|webm|mkv|avi|mov|wmv|' +
-  'zip|tar|gz|bz2|xz|7z|rar|tgz|tbz2|' +
-  'exe|dll|so|dylib|o|a|lib|whl|jar|war|apk|ipa|dmg|iso|msi|' +
-  'docx?|xlsx?|pptx?|odt|ods|odp|rtf|' +
-  'sqlite3?|sql|db|' +
-  'toml|ini|cfg|conf|env|lock|sum|mod|proto|graphql|gql|prisma|tf|tfvars|' +
-  'wasm|map|d\\.ts';
+const RELATIVE_PATH_PATTERN = /((?:\.\.?[/\\])?(?:[\w.-]+[/\\])*[\w.-]+\.[a-zA-Z][a-zA-Z0-9]{0,9})/;
 
-const RELATIVE_PATH_PATTERN = new RegExp(
-  // Capture group 1: the full relative path
-  '(' +
-    '(?:\\.[/\\\\]|\\.\\.[/\\\\])?' + // optional ./ or ../ or .\ or ..\
-    '(?:[\\w.-]+[/\\\\])*' + // zero or more directories (supports / and \)
-    '[\\w.-]+' + // filename (no leading dot to avoid matching .gitignore)
-    '\\.(?:' +
-    FILE_EXTENSIONS +
-    ')' +
-    ')',
-  'i',
-);
+/**
+ * Folder path pattern - matches paths ending with / like docs/, src/components/
+ * Must have at least one word character before the trailing slash.
+ */
+const FOLDER_PATH_PATTERN = /((?:\.\.?\/)?(?:[\w.-]+\/)+)/;
 
 /** Cache for resolved relative paths: key = "sessionId:relativePath" */
 const resolveCache = new Map<string, { response: FileResolveResponse; expires: number }>();
@@ -523,6 +508,29 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
   }
 }
 
+async function handleFolderPathClick(folderPath: string): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    showFileNotFoundToast(folderPath);
+    return;
+  }
+
+  // Remove trailing slash for resolution
+  const pathWithoutSlash = folderPath.replace(/\/+$/, '');
+
+  // Try to resolve the folder path
+  const resolved = await resolveRelativePath(sessionId, pathWithoutSlash, true);
+  if (resolved?.exists && resolved.resolvedPath && resolved.isDirectory) {
+    const info: FilePathInfo = {
+      exists: true,
+      isDirectory: true,
+    };
+    openFile(resolved.resolvedPath, info);
+  } else {
+    showFileNotFoundToast(folderPath);
+  }
+}
+
 // ===========================================================================
 // Link Provider Registration
 // ===========================================================================
@@ -586,6 +594,41 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
           // Throttled resolution: waits 150ms for hover to settle before API call
           throttledResolveRelativePath(sessionId, path, match[0], callback);
+        },
+      } as unknown as Record<string, unknown>,
+    ),
+  );
+
+  // Folder paths (e.g., docs/, src/components/)
+  terminal.registerLinkProvider(
+    new LinkProvider(
+      term,
+      FOLDER_PATH_PATTERN,
+      async (_event, folderPath) => {
+        await handleFolderPathClick(folderPath);
+      },
+      {
+        matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
+          const path = match[1];
+          if (!path) {
+            callback(undefined);
+            return;
+          }
+
+          // Skip absolute paths (already handled above)
+          if (/^[A-Za-z]:/.test(path)) {
+            callback(undefined);
+            return;
+          }
+
+          // Skip common false positives like http://, https://, file://
+          if (/^[a-z]+:\/\//i.test(path)) {
+            callback(undefined);
+            return;
+          }
+
+          // Throttled resolution for folders
+          throttledResolveRelativePath(sessionId, path.replace(/\/+$/, ''), match[0], callback);
         },
       } as unknown as Record<string, unknown>,
     ),

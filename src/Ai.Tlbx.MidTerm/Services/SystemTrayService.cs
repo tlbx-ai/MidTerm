@@ -78,6 +78,7 @@ public sealed class SystemTrayService : IDisposable
     // For service mode: track spawned tray helpers per session
     private readonly Dictionary<uint, int> _helperProcesses = new();
     private readonly object _helperLock = new();
+    private Timer? _sessionMonitorTimer;
 
     private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -626,6 +627,48 @@ public sealed class SystemTrayService : IDisposable
     {
         Log.Info(() => "SystemTray: Starting in helper manager mode (service)");
         SpawnHelpersForActiveSessions();
+
+        // Monitor for new user sessions (e.g., user logs in after service starts)
+        _sessionMonitorTimer = new Timer(_ =>
+        {
+            try
+            {
+                SpawnHelpersForActiveSessions();
+                CleanupDeadHelpers();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"SystemTray: Session monitor error: {ex.Message}");
+            }
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10));
+    }
+
+    private void CleanupDeadHelpers()
+    {
+        lock (_helperLock)
+        {
+            var deadSessions = new List<uint>();
+            foreach (var (sessionId, pid) in _helperProcesses)
+            {
+                try
+                {
+                    var process = Process.GetProcessById(pid);
+                    if (process.HasExited)
+                    {
+                        deadSessions.Add(sessionId);
+                    }
+                }
+                catch
+                {
+                    deadSessions.Add(sessionId);
+                }
+            }
+
+            foreach (var sessionId in deadSessions)
+            {
+                _helperProcesses.Remove(sessionId);
+            }
+        }
     }
 
     private void SpawnHelpersForActiveSessions()
@@ -759,6 +802,7 @@ public sealed class SystemTrayService : IDisposable
         _disposed = true;
 
         _networkRefreshTimer?.Dispose();
+        _sessionMonitorTimer?.Dispose();
 
         lock (_helperLock)
         {

@@ -91,13 +91,16 @@ function logResizeDiagnostics(
  * Measure actual cell dimensions from an existing terminal.
  * Returns null if no terminal is available or measurements are invalid.
  */
-function measureFromExistingTerminal(): { cellWidth: number; cellHeight: number } | null {
+function measureFromExistingTerminal(fontSize: number): { cellWidth: number; cellHeight: number } | null {
   for (const state of sessionTerminals.values()) {
     if (!state.opened) continue;
 
     const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
     const cols = state.terminal.cols;
     const rows = state.terminal.rows;
+
+    // Only trust measurements from terminals using the same font size we plan to apply.
+    if (state.terminal.options.fontSize !== fontSize) continue;
 
     if (screen && cols > 0 && rows > 0) {
       const cellWidth = screen.offsetWidth / cols;
@@ -149,16 +152,21 @@ export async function calculateOptimalDimensions(
   fontSize: number,
   sessionIdForLog?: string,
 ): Promise<{ cols: number; rows: number } | null> {
-  const rect = container.getBoundingClientRect();
+  // Allow layout to settle for very small containers before giving up
+  let rect = container.getBoundingClientRect();
   if (rect.width < 100 || rect.height < 100) {
-    return null;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    rect = container.getBoundingClientRect();
+    if (rect.width < 100 || rect.height < 100) {
+      return null;
+    }
   }
 
   // Get cell dimensions - priority order:
   // 1. Existing open terminal (most accurate, already rendered)
   // 2. Calibration measurement (accurate, from hidden terminal at startup)
   // 3. Font probe (fallback, less accurate)
-  const existingMeasurement = measureFromExistingTerminal();
+  const existingMeasurement = measureFromExistingTerminal(fontSize);
 
   let measurementSource: MeasurementSource;
   let cellWidth: number;
@@ -203,7 +211,8 @@ export async function calculateOptimalDimensions(
   const clampedCols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
   const clampedRows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
 
-  if (clampedCols <= MIN_TERMINAL_COLS || clampedRows <= MIN_TERMINAL_ROWS) {
+  // Reject only if we cannot reach the minimum, not when we exactly equal it.
+  if (clampedCols < MIN_TERMINAL_COLS || clampedRows < MIN_TERMINAL_ROWS) {
     return null;
   }
 
@@ -366,13 +375,18 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   // Calculate scale (shrink only, never enlarge)
   const scaleX = availWidth / termWidth;
   const scaleY = availHeight / termHeight;
-  const scale = Math.min(scaleX, scaleY, 1);
+  let scale = Math.min(scaleX, scaleY, 1);
+
+  // Treat tiny floating point error as a perfect fit to avoid unnecessary overlay.
+  if (scale > 0.995) {
+    scale = 1;
+  }
 
   // Find or create overlay element
   let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
 
-  // Use 0.97 threshold to account for rounding errors between fit calculation and actual render
-  if (scale < 0.97) {
+  // Use a slightly higher threshold to suppress overlay when we're essentially full size
+  if (scale < 0.985) {
     // Use transform: scale() with explicit transform-origin for predictable behavior
     xterm.style.transform = `scale(${scale})`;
     xterm.style.transformOrigin = 'top left';
