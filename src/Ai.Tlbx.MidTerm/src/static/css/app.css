@@ -266,7 +266,8 @@ html, body {
     display: flex;
     align-items: center;
     padding: 6px 12px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
     background-color: var(--terminal-bg);
     position: relative;
 }
@@ -284,6 +285,11 @@ html, body {
     height: 32px;
     width: auto;
     flex-shrink: 0;
+    transition: filter 0.2s;
+}
+
+.sidebar-brand:hover .sidebar-logo {
+    filter: drop-shadow(0 0 8px var(--accent-blue-40));
 }
 
 .sidebar-title {
@@ -437,6 +443,7 @@ html, body {
 
 .session-item:hover {
     background-color: var(--bg-session-hover);
+    transform: translateX(2px);
 }
 
 .session-item.active {
@@ -1529,7 +1536,8 @@ html, body {
 
     .settings-tab.active {
         border-left-color: transparent !important;
-        border-bottom-color: var(--accent-blue) !important;
+        border-bottom-color: var(--accent-gold) !important;
+        color: var(--accent-gold);
     }
 
     .settings-tab .icon {
@@ -1633,23 +1641,61 @@ html, body {
     display: none;
 }
 
+.empty-state-logo {
+    width: 64px;
+    height: 64px;
+    opacity: 0.4;
+    margin-bottom: 16px;
+    animation: float 4s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
 .empty-state p {
     margin-bottom: 16px;
 }
 
-.empty-state button {
-    padding: 8px 24px;
-    background-color: var(--btn-primary);
-    color: var(--bg-primary);
-    border: none;
+.empty-state-hint {
+    margin-top: 24px !important;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.empty-state kbd {
+    display: inline-block;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
+    padding: 2px 6px;
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    box-shadow: 0 1px 2px var(--shadow-color);
+}
+
+.empty-state button {
+    padding: 10px 28px;
+    background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-muted));
+    color: #0D0E14;
+    border: none;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
+    box-shadow: 0 4px 16px var(--accent-gold-25);
+    transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .empty-state button:hover {
-    background-color: var(--btn-primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px var(--accent-gold-40);
+}
+
+.empty-state button:active:not(:disabled) {
+    transform: scale(0.96);
 }
 
 /* Status badges - shared base styles */
@@ -1847,18 +1893,24 @@ html, body {
 }
 
 .sidebar-btn.primary {
-    background-color: var(--btn-primary);
-    color: var(--bg-primary);
+    background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-muted));
+    color: #0D0E14;
     font-size: 18px;
+    transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .sidebar-btn.primary:hover {
-    background-color: var(--btn-primary-hover);
+    box-shadow: 0 4px 16px var(--accent-gold-25);
+    transform: translateY(-1px);
 }
 
 .sidebar-btn.active {
     background-color: var(--accent-blue);
     color: var(--bg-primary);
+}
+
+.sidebar-btn:active:not(:disabled) {
+    transform: scale(0.96);
 }
 
 .sidebar-btn:disabled {
@@ -1929,8 +1981,8 @@ html, body {
 
 .settings-tab.active {
     background: var(--bg-active);
-    color: var(--accent-blue);
-    border-left-color: var(--accent-blue);
+    color: var(--accent-gold);
+    border-left-color: var(--accent-gold);
 }
 
 .settings-tab .icon {
@@ -1954,6 +2006,12 @@ html, body {
 /* Settings panel (each tab's content) */
 .settings-panel {
     max-width: 600px;
+    animation: panel-fade 0.2s ease both;
+}
+
+@keyframes panel-fade {
+    from { opacity: 0; transform: translateX(10px); }
+    to { opacity: 1; transform: translateX(0); }
 }
 
 .settings-panel.hidden {
@@ -1968,11 +2026,15 @@ html, body {
 }
 
 .settings-section {
-    margin-bottom: 28px;
+    margin-bottom: 20px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 20px;
 }
 
 .settings-section h3 {
-    margin: 0 0 12px 0;
+    margin: 0 0 16px 0;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -1984,9 +2046,16 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 0;
+    padding: 10px 12px;
+    margin: 0 -12px;
     border-bottom: 1px solid var(--bg-dropdown);
+    border-radius: 6px;
     gap: 16px;
+    transition: background-color 0.15s;
+}
+
+.setting-row:hover {
+    background-color: var(--bg-hover);
 }
 
 .setting-row:last-child {
@@ -2017,6 +2086,7 @@ html, body {
 .setting-row select:focus {
     outline: none;
     border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px var(--accent-gold-10);
 }
 
 /* Inline text input with save button */
@@ -2118,6 +2188,7 @@ html, body {
 .setting-row input[type="number"]:focus {
     outline: none;
     border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px var(--accent-gold-10);
 }
 
 .setting-row input[type="checkbox"] {
@@ -2512,6 +2583,12 @@ html, body {
     display: flex;
     flex-direction: column;
     box-shadow: 0 8px 32px var(--shadow-color-lg);
+    animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes modal-in {
+    0% { opacity: 0; transform: scale(0.95) translateY(-10px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .modal-header {
@@ -2807,7 +2884,14 @@ html, body {
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    background-color: var(--bg-primary);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, #0A0B12 50%, var(--bg-primary) 100%);
+    background-size: 400% 400%;
+    animation: harbor-drift 30s ease infinite;
+}
+
+@keyframes harbor-drift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
 }
 
 .login-container {
@@ -2822,6 +2906,24 @@ html, body {
     border-radius: 12px;
     padding: 40px;
     box-shadow: 0 8px 32px var(--shadow-color-md);
+    animation: card-rise 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+}
+
+@keyframes card-rise {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+.login-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 24px;
+    animation: logo-appear 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes logo-appear {
+    0% { opacity: 0; transform: scale(0.8) translateY(20px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .login-header {
@@ -2864,23 +2966,31 @@ html, body {
 }
 
 .login-form input[type="password"]:focus {
-    border-color: var(--accent-blue);
+    border-color: var(--accent-gold);
+    box-shadow: 0 0 0 3px var(--accent-gold-15);
 }
 
 .login-btn {
     width: 100%;
     padding: 12px;
-    background-color: var(--btn-primary);
-    color: var(--bg-primary);
+    background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-muted));
+    color: #0D0E14;
     border: none;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
+    box-shadow: 0 4px 16px var(--accent-gold-25);
+    transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .login-btn:hover {
-    background-color: var(--btn-primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px var(--accent-gold-40);
+}
+
+.login-btn:active:not(:disabled) {
+    transform: scale(0.96);
 }
 
 .login-btn:disabled {
