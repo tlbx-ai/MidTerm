@@ -118,7 +118,7 @@ $currentVersion = $versionJson.web
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 
 # Parse current version - strip any existing prerelease suffix
-$baseVersion = $currentVersion -replace '-dev\.\d+$', ''
+$baseVersion = $currentVersion -replace '-dev(\.\d+)?$', ''
 $parts = $baseVersion.Split('.')
 $major = [int]$parts[0]
 $minor = [int]$parts[1]
