@@ -795,18 +795,11 @@ html, body {
     font-size: 14px;
 }
 
-.session-pin:hover {
-    background-color: var(--accent-orange);
-    color: white;
-}
-
-.session-resize:hover {
-    background-color: var(--accent-blue);
-    color: white;
-}
-
+.session-pin:hover,
+.session-resize:hover,
 .session-rename:hover {
-    background-color: var(--btn-secondary);
+    background-color: var(--accent-gold);
+    color: #0D0E14;
 }
 
 .session-close:hover {
