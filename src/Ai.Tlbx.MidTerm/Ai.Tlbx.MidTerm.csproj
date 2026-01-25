@@ -90,7 +90,7 @@
       <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
     </Exec>
     <PropertyGroup>
-      <Version>6.10.38-dev</Version>
+      <Version>6.10.39-dev</Version>
     </PropertyGroup>
   </Target>
 
