@@ -2093,14 +2093,13 @@ html, body {
 
 /* Inline text input with save button */
 .text-input-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    position: relative;
+    width: 200px;
 }
 
 .text-input-wrapper input[type="text"],
 .text-input-wrapper input[type="number"] {
-    width: 200px;
+    width: 100%;
 }
 
 .text-input-wrapper.unsaved input {
@@ -2108,6 +2107,10 @@ html, body {
 }
 
 .inline-save-btn {
+    position: absolute;
+    right: -36px;
+    top: 50%;
+    transform: translateY(-50%);
     width: 28px;
     height: 28px;
     border: none;
@@ -2121,7 +2124,6 @@ html, body {
     justify-content: center;
     opacity: 0;
     transition: opacity 0.15s, background-color 0.15s;
-    flex-shrink: 0;
 }
 
 .text-input-wrapper.unsaved .inline-save-btn {
