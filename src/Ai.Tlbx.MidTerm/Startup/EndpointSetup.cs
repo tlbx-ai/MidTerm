@@ -72,7 +72,8 @@ public static class EndpointSetup
                 Shells = shells,
                 UpdateResult = updateResult,
                 DevMode = UpdateService.IsDevEnvironment,
-                Features = features
+                Features = features,
+                VoicePassword = UpdateService.IsDevEnvironment ? settings.VoiceServerPassword : null
             };
 
             return Results.Json(response, AppJsonContext.Default.BootstrapResponse);

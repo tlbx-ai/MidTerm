@@ -23,6 +23,9 @@ export let authStatus: AuthStatus | null = null;
 /** Server hostname for tab title */
 export let serverHostname: string = '';
 
+/** Voice server password for authentication */
+export let voiceServerPassword: string | null = null;
+
 // =============================================================================
 // WebSocket State
 // =============================================================================
@@ -134,6 +137,10 @@ export function setAuthStatus(status: AuthStatus | null): void {
 
 export function setServerHostname(hostname: string): void {
   serverHostname = hostname;
+}
+
+export function setVoiceServerPassword(password: string | null): void {
+  voiceServerPassword = password;
 }
 
 export function setStateWs(ws: WebSocket | null): void {

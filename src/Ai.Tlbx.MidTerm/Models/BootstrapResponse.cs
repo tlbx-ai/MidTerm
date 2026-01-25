@@ -81,6 +81,12 @@ public sealed class BootstrapResponse
     /// Feature flags for conditional UI features
     /// </summary>
     public FeatureFlags Features { get; init; } = new();
+
+    /// <summary>
+    /// Voice server password (only included in dev mode).
+    /// Browser appends this to WebSocket URL for MidTerm.Voice authentication.
+    /// </summary>
+    public string? VoicePassword { get; init; }
 }
 
 /// <summary>

@@ -138,4 +138,8 @@ public sealed class MidTermSettings
 
     // Update channel: "stable" (default) or "dev" (prereleases)
     public string UpdateChannel { get; set; } = "stable";
+
+    // Voice server password (shared secret for MidTerm.Voice authentication)
+    [JsonIgnore]
+    public string? VoiceServerPassword { get; set; }
 }

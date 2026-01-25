@@ -237,6 +237,7 @@ export interface BootstrapResponse {
   updateResult?: UpdateResult;
   devMode: boolean;
   features: FeatureFlags;
+  voicePassword?: string;
 }
 
 /** Minimal startup data for login page from GET /api/bootstrap/login */
