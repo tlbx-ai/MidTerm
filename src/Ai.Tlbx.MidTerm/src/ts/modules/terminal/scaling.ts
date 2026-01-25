@@ -369,8 +369,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   const xterm = container.querySelector('.xterm') as HTMLElement | null;
   if (!xterm) return;
 
-  const availWidth = container.clientWidth - 8;
-  const availHeight = container.clientHeight - 8;
+  // Use a larger buffer (16px) to trigger scaling before content clips
+  const availWidth = container.clientWidth - 16;
+  const availHeight = container.clientHeight - 16;
   const termWidth = xterm.offsetWidth;
   const termHeight = xterm.offsetHeight;
 
@@ -379,16 +380,16 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   const scaleY = availHeight / termHeight;
   let scale = Math.min(scaleX, scaleY, 1);
 
-  // Treat tiny floating point error as a perfect fit to avoid unnecessary overlay.
-  if (scale > 0.995) {
+  // Treat small differences as perfect fit (3% tolerance for rendering variance)
+  if (scale > 0.97) {
     scale = 1;
   }
 
   // Find or create overlay element
   let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
 
-  // Use a slightly higher threshold to suppress overlay when we're essentially full size
-  if (scale < 0.985) {
+  // Only show badge when scaled down significantly (5% threshold)
+  if (scale < 0.95) {
     // Use transform: scale() with explicit transform-origin for predictable behavior
     xterm.style.transform = `scale(${scale})`;
     xterm.style.transformOrigin = 'top left';
