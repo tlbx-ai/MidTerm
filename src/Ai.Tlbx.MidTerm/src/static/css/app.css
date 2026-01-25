@@ -2094,13 +2094,11 @@ html, body {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 200px;
 }
 
 .text-input-wrapper input[type="text"],
 .text-input-wrapper input[type="number"] {
-    flex: 1;
-    min-width: 0;
+    width: 200px;
 }
 
 .text-input-wrapper.unsaved input {
