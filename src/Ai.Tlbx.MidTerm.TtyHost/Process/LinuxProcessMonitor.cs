@@ -32,7 +32,7 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
         if (_disposed) throw new ObjectDisposedException(nameof(LinuxProcessMonitor));
 
         _shellPid = shellPid;
-        _timer = new Timer(_ => Poll(), null, 0, 500);
+        _timer = new Timer(_ => Poll(), null, 0, 1000);
     }
 
     public void StopMonitoring()

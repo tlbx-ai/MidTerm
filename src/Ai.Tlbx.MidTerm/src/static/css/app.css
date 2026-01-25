@@ -964,6 +964,8 @@ html, body {
     flex-direction: column;
     min-width: 0;
     background-color: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
 }
 
 /* Terminals area */
@@ -1591,6 +1593,19 @@ html, body {
     /* Connection status - above safe area */
     .connection-status {
         bottom: calc(8px + env(safe-area-inset-bottom, 0));
+    }
+
+    /* File viewer dock - hide on mobile (no room for side-by-side) */
+    #file-viewer-dock-btn {
+        display: none;
+    }
+
+    .file-viewer-dock {
+        display: none !important;
+    }
+
+    .terminal-page.file-viewer-docked .terminals-area {
+        margin-right: 0;
     }
 }
 
@@ -5458,7 +5473,7 @@ html, body {
 
 /* Terminal shrinks when dock is open */
 .terminal-page.file-viewer-docked .terminals-area {
-    right: 400px;
+    margin-right: 400px;
 }
 
 /* Icon button for file viewer download */

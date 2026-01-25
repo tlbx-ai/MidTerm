@@ -40,6 +40,7 @@ public static class Program
 
     private const int HeartbeatIntervalMs = 5000;
     private const int ReadTimeoutMs = 10000;
+    private const int HandshakeTimeoutMs = 10000;
     private const int MinScrollbackBytes = 64 * 1024;
     private const int MaxScrollbackBytes = 64 * 1024 * 1024;
 
@@ -78,7 +79,6 @@ public static class Program
 
         var logDirectory = LogPaths.GetLogDirectory(isWindowsService: false);
         Log.Initialize($"mthost-{config.SessionId}", logDirectory, config.LogSeverity);
-        Log.SetupCrashHandlers();
 
 #if !WINDOWS
         // Register Unix signal handlers for graceful shutdown
@@ -202,6 +202,7 @@ public static class Program
     {
         var firstClientSubscribed = false;
         var connectionCount = 0;
+        var clientTasks = new List<Task>();
 
         using var server = IpcServerFactory.Create(endpoint);
 
@@ -225,7 +226,8 @@ public static class Program
                 }
 
                 // Create a linked CTS that combines shutdown token with this client's token
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
+                // This is created outside the lock and passed directly to HandleClientAsync
+                var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
                 var clientToken = linkedCts.Token;
 
                 // Start the read loop when the first client subscribes to output
@@ -242,8 +244,26 @@ public static class Program
                     };
                 }
 
-                // Await the handler - ensures linkedCts stays alive and only one client at a time
-                await HandleClientAsync(session, client, clientToken, onSubscribed).ConfigureAwait(false);
+                // Run HandleClientAsync synchronously (don't fire-and-forget)
+                // This ensures the linked CTS stays alive for the duration of the handler
+                var handlerTask = HandleClientAsync(session, client, clientToken, onSubscribed);
+                lock (clientTasks)
+                {
+                    clientTasks.Add(handlerTask);
+                }
+
+                _ = handlerTask.ContinueWith(t =>
+                {
+                    linkedCts.Dispose();
+                    if (t.Exception is not null)
+                    {
+                        Log.Exception(t.Exception.Flatten().InnerException ?? t.Exception, "HandleClient.Task");
+                    }
+                    lock (clientTasks)
+                    {
+                        clientTasks.Remove(t);
+                    }
+                }, TaskScheduler.Default);
             }
             catch (OperationCanceledException)
             {
@@ -257,10 +277,16 @@ public static class Program
             }
         }
 
-        var exitReason = ct.IsCancellationRequested ? "shutdown requested" :
-                         !session.IsRunning ? $"shell exited (code={session.ExitCode})" :
-                         "loop ended";
-        Log.Info(() => $"Accept loop exiting: {exitReason}");
+        Task[] remaining;
+        lock (clientTasks)
+        {
+            remaining = clientTasks.ToArray();
+        }
+
+        if (remaining.Length > 0)
+        {
+            await Task.WhenAll(remaining).ConfigureAwait(false);
+        }
     }
 
     private static async Task HandleClientAsync(TerminalSession session, IIpcClientConnection client, CancellationToken ct, Action? onSubscribed = null)
@@ -272,6 +298,18 @@ public static class Program
 
         // CTS that heartbeat can cancel to terminate message processing
         using var clientCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var handshakeTimeoutCts = new CancellationTokenSource(HandshakeTimeoutMs);
+        using var handshakeTimeoutRegistration = handshakeTimeoutCts.Token.Register(() =>
+        {
+            lock (outputLock)
+            {
+                if (!handshakeComplete)
+                {
+                    Log.Warn(() => "Handshake timeout - closing client connection");
+                    clientCts.Cancel();
+                }
+            }
+        });
         var heartbeatTask = HeartbeatLoopAsync(client, clientCts);
 
         try
@@ -368,6 +406,8 @@ public static class Program
                 {
                     return;
                 }
+
+                handshakeTimeoutCts.Cancel();
 
                 Log.Verbose(() => $"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
 

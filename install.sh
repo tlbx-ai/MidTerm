@@ -1038,10 +1038,12 @@ After=network.target
 
 [Service]
 Type=simple
+User=${INSTALLING_USER}
+WorkingDirectory=/tmp
 ExecStart=${install_dir}/mt --port ${PORT} --bind ${BIND_ADDRESS}
 Restart=always
 RestartSec=5
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target
