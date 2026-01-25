@@ -1659,8 +1659,11 @@ html, body {
 }
 
 .empty-state-logo {
-    width: 64px;
-    height: 64px;
+    max-width: 96px;
+    max-height: 96px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
     opacity: 0.4;
     margin-bottom: 16px;
     animation: float 4s ease-in-out infinite;

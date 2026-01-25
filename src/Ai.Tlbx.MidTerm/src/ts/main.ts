@@ -735,6 +735,14 @@ function bindEvents(): void {
 
   bindClick('btn-history', toggleHistoryDropdown);
 
+  // Global keyboard shortcut: Alt+T to create new terminal
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 't') {
+      e.preventDefault();
+      createSession();
+    }
+  });
+
   import('./modules/settings').then((mod) => {
     mod.bindSettingsAutoSave();
   });
