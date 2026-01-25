@@ -155,6 +155,7 @@ public class Program
         var settings = settingsService.Load();
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, settings.LogLevel);
+        Log.SetupCrashHandlers();
         Log.Info(() => $"MidTerm server starting (LogLevel: {settings.LogLevel})");
 
         // Validate security state and log any warnings (informational only - does not block)

@@ -88,12 +88,13 @@ public sealed class UpdateService : IDisposable
         }
 
         // Fallback: assume web and pty are same version
+        // Use permissive MinCompatiblePty to avoid killing sessions when version.json is missing (dev)
         return new VersionManifest
         {
             Web = version,
             Pty = version,
             Protocol = 1,
-            MinCompatiblePty = version
+            MinCompatiblePty = "2.0.0"
         };
     }
 

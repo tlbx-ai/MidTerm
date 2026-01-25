@@ -58,7 +58,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
         catch
         {
-            return null;
+            // Fallback to permissive minimum to avoid killing sessions when manifest can't be read
+            return "2.0.0";
         }
     }
 
