@@ -121,6 +121,101 @@ scripts/                             Build and release scripts
 docs/                                Documentation and marketing assets
 ```
 
+## Services Overview
+
+The `Services/` folder contains ~45 files organized by responsibility. When adding new functionality, check if an existing service already handles that domain.
+
+| Category | Services | Purpose |
+|----------|----------|---------|
+| **Authentication** | `AuthService`, `AuthEndpoints` | Password hashing (PBKDF2), session tokens, login/logout |
+| **Sessions** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
+| **WebSockets** | `MuxWebSocketHandler`, `StateWebSocketHandler`, `SettingsWebSocketHandler`, `MuxClient`, `MuxProtocol` | Binary mux protocol, JSON state sync, settings broadcast |
+| **Settings** | `SettingsService` (in Settings/) | Load/save settings.json, settings validation |
+| **Security** | `SecurityStatusService`, `UserValidationService`, `UserEnumerationService` | Security posture checks, RunAsUser validation |
+| **Secrets** | `ISecretStorage`, `WindowsSecretStorage`, `MacOsSecretStorage`, `UnixFileSecretStorage`, `SecretStorageFactory` | Platform-specific secure storage (DPAPI, Keychain, file) |
+| **Certificates** | `CertificateGenerator`, `CertificateInfoService`, `CertificateCleanupService` | HTTPS cert generation, trust info |
+| **Updates** | `UpdateService`, `UpdateVerification`, `UpdateScriptGenerator` | GitHub release check, script generation, signature verification |
+| **Static Files** | `CompressedStaticFilesMiddleware`, `EmbeddedWebRootFileProvider`, `EmbeddedFileInfo` | Serve Brotli-compressed embedded assets |
+| **System** | `SingleInstanceGuard`, `ShutdownService`, `TempCleanupService` | Instance locking, graceful shutdown, temp file cleanup |
+| **Tray** | `SystemTrayService`, `TrayHelperService` | Windows/macOS system tray integration |
+| **History** | `HistoryService`, `HistoryEndpoints` | Command launch history |
+| **Files** | `FileEndpoints`, `FileRadarAllowlistService` | File uploads, path validation for FileRadar |
+| **Logging** | `LogEndpoints` | Log streaming WebSocket, log file access |
+| **JSON Contexts** | `AppJsonContext`, `GitHubReleaseContext`, `SecretsJsonContext`, `VersionManifestContext` | AOT-safe JSON serialization (see below) |
+
+## Settings Model Pattern
+
+Two settings classes exist for security reasons:
+
+| Class | Location | Purpose |
+|-------|----------|---------|
+| `MidTermSettings` | `Settings/MidTermSettings.cs` | **Internal** - Full settings including secrets (`PasswordHash`, `SessionSecret`, `CertificatePassword`). Secrets are `[JsonIgnore]` so they're excluded from settings.json but included internally. |
+| `MidTermSettingsPublic` | `Settings/MidTermSettingsPublic.cs` | **API** - Safe subset exposed to frontend. No sensitive fields. Used for `GET/PUT /api/settings`. |
+
+**When adding a new setting:**
+
+1. Add to `MidTermSettings.cs` with default value
+2. If user-editable (not sensitive), also add to `MidTermSettingsPublic.cs`
+3. Update `FromSettings()` to copy internal → public
+4. Update `ApplyTo()` to copy public → internal (with validation if needed)
+5. Add to `AppJsonContext` if it's a new type
+
+## AOT JSON Serialization
+
+**CRITICAL:** All types serialized via `System.Text.Json` must be registered in a source-generated context for Native AOT compatibility. Failing to do this causes runtime failures that only appear in AOT builds.
+
+**When adding a new serializable type:**
+
+```csharp
+// In Services/AppJsonContext.cs, add a new [JsonSerializable] attribute:
+[JsonSerializable(typeof(YourNewType))]
+[JsonSerializable(typeof(List<YourNewType>))]  // If used in lists
+public partial class AppJsonContext : JsonSerializerContext { }
+```
+
+**Other JSON contexts:**
+- `GitHubReleaseContext` - GitHub API response types
+- `SecretsJsonContext` - Secret storage serialization
+- `SettingsJsonContext` - Settings file serialization
+- `VersionManifestContext` - Version manifest files
+
+**Red flags that indicate missing context:**
+- Works in debug but fails in AOT publish
+- `JsonException` mentioning "metadata" or "reflection"
+- Serialization returns `{}`
+
+## TypeScript Module Architecture
+
+The `src/ts/modules/` folder uses feature-based organization. Each module is self-contained with its own index.ts barrel export.
+
+| Module | Purpose |
+|--------|---------|
+| `auth/` | Login/logout, password change, auth status |
+| `badges/` | Session badges (activity indicators) |
+| `bootstrap/` | Initial data fetch combining multiple API calls |
+| `chat/` | AI chat panel integration |
+| `comms/` | WebSocket connections: `muxChannel.ts` (binary I/O), `stateChannel.ts` (session state), `settingsChannel.ts` (settings sync) |
+| `diagnostics/` | Diagnostics panel for debugging |
+| `fileViewer/` | In-terminal file preview |
+| `history/` | Command history dropdown and API |
+| `logging/` | Client-side logger with levels |
+| `process/` | Foreground process monitoring |
+| `settings/` | Settings panel UI, tabs, persistence |
+| `sidebar/` | Session list, collapse/expand, drag reorder, network section |
+| `terminal/` | xterm.js lifecycle, scaling, search, file drop, file links |
+| `theming/` | Theme application and persistence |
+| `touchController/` | Mobile touch bar, gestures, favorites |
+| `updating/` | Update checking, changelog display, apply |
+| `voice.ts`, `voiceTools.ts` | Voice input/output |
+| `login.ts`, `trust.ts`, `tabTitle.ts` | Standalone page handlers |
+
+**When adding new functionality:**
+
+1. Check if an existing module handles that domain
+2. If adding to existing module, export from its `index.ts`
+3. If creating new module, add `index.ts` barrel and import in `main.ts`
+4. Register any callbacks needed in `main.ts` `registerCallbacks()`
+
 ## API Endpoints
 
 ```
