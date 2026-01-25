@@ -156,11 +156,7 @@ if ($isPtyBreaking) {
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray
 
-# Update web csproj
-$content = Get-Content $webCsprojPath -Raw
-$content = $content -replace "<Version>[^<]+</Version>", "<Version>$newVersion</Version>"
-Set-Content $webCsprojPath $content -NoNewline
-Write-Host "  Updated: Ai.Tlbx.MidTerm.csproj" -ForegroundColor Gray
+# Web csproj reads version dynamically from version.json - no update needed
 
 # Update TtyHost files only for PTY-breaking changes
 if ($isPtyBreaking) {
