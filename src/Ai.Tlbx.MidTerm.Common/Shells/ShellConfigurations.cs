@@ -79,6 +79,12 @@ public abstract class ShellConfigurationBase : IShellConfiguration
             // TODO: Test with Claude Code on Mac/Linux and adjust if needed
             env["TERM"] = "xterm-256color";
             env["COLORTERM"] = "truecolor";
+            // Set SHELL to this shell's executable so child processes know the login shell
+            var resolved = ResolveExecutablePath();
+            if (resolved is not null)
+            {
+                env["SHELL"] = resolved;
+            }
         }
 
         env["LANG"] = "en_US.UTF-8";
@@ -238,7 +244,10 @@ public sealed class ZshShellConfiguration : ShellConfigurationBase
     public override Dictionary<string, string> GetEnvironmentVariables()
     {
         var env = base.GetEnvironmentVariables();
-        env["precmd"] = "() { print -Pn \"\\e]7;file://%m%~\\a\" }";
+        // Zsh doesn't support precmd via env var like bash's PROMPT_COMMAND.
+        // Use zsh's prompt expansion: %{ ... %} wraps zero-width output.
+        // This outputs OSC-7 CWD on every prompt without affecting prompt display.
+        env["PROMPT"] = "%{$(print -Pn \"\\e]7;file://%m%~\\a\")%}%(?..[%?] )%n@%m %~ %# ";
         return env;
     }
 

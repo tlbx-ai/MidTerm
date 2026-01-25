@@ -196,20 +196,22 @@ Write-Host "Publishing mt.exe and mthost.exe..." -ForegroundColor Gray
 
 $repoRoot = "$PSScriptRoot\.."
 $mtJob = Start-Job -ScriptBlock {
-    param($rid, $path, $ver, $envPath)
+    param($rid, $path, $envPath)
     $env:PATH = $envPath
     Set-Location $path
-    dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r $rid "-p:IsPublishing=true" "-p:Version=$ver" --verbosity quiet 2>&1
+    # Version is read from version.json by the csproj at build time
+    dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r $rid "-p:IsPublishing=true" --verbosity quiet 2>&1
     $LASTEXITCODE
-} -ArgumentList $RID, $repoRoot, $localWebVersion, $env:PATH
+} -ArgumentList $RID, $repoRoot, $env:PATH
 
 $mthostJob = Start-Job -ScriptBlock {
-    param($rid, $path, $ver, $envPath)
+    param($rid, $path, $envPath)
     $env:PATH = $envPath
     Set-Location $path
-    dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r $rid "-p:IsPublishing=true" "-p:Version=$ver" --verbosity quiet 2>&1
+    # Version is read from version.json by the csproj at build time
+    dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r $rid "-p:IsPublishing=true" --verbosity quiet 2>&1
     $LASTEXITCODE
-} -ArgumentList $RID, $repoRoot, $localPtyVersion, $env:PATH
+} -ArgumentList $RID, $repoRoot, $env:PATH
 
 $mtResult = Receive-Job -Job $mtJob -Wait
 $mthostResult = Receive-Job -Job $mthostJob -Wait

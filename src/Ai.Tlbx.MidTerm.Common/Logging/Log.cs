@@ -29,6 +29,26 @@ public static class Log
         }
     }
 
+    /// <summary>
+    /// Registers global exception handlers to capture crash tombstones.
+    /// Call after Initialize() to ensure crashes are logged before process dies.
+    /// </summary>
+    public static void SetupCrashHandlers()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            var ex = e.ExceptionObject as Exception;
+            Exception(ex ?? new Exception($"Unknown exception: {e.ExceptionObject}"), "UNHANDLED_CRASH");
+            Shutdown();
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Exception(e.Exception, "UNOBSERVED_TASK");
+            e.SetObserved();
+        };
+    }
+
     public static void Shutdown()
     {
         lock (_lock)

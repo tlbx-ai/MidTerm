@@ -40,7 +40,7 @@ public static class WelcomeScreen
         if (UpdateService.IsDevEnvironment)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.Write(" (DEV)");
+            Console.Write(" [LOCAL]");
             Console.ResetColor();
         }
         Console.WriteLine();

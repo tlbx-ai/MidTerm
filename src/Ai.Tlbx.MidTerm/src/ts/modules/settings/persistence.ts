@@ -71,7 +71,7 @@ export function populateVersionInfo(
   hostVersion: string | null,
   frontendVersion: string,
 ): void {
-  // Strip git hash suffix but preserve (DEV) indicator
+  // Strip git hash suffix but preserve [LOCAL] indicator
   const formatVersion = (v: string) => 'v' + v.replace(/[+-][a-f0-9]+$/i, '');
 
   const serverEl = document.getElementById('version-server');

@@ -13,7 +13,12 @@ import type {
   UpdateResult,
 } from '../../types';
 import { JS_BUILD_VERSION } from '../../constants';
-import { setCurrentSettings, setAuthStatus, setServerHostname } from '../../state';
+import {
+  setCurrentSettings,
+  setAuthStatus,
+  setServerHostname,
+  setVoiceServerPassword,
+} from '../../state';
 import { createLogger } from '../logging';
 import {
   populateSettingsForm,
@@ -75,6 +80,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     // Initialize auth status
     setAuthStatus(data.auth);
     setServerHostname(data.hostname);
+    setVoiceServerPassword(data.voicePassword ?? null);
     updateSecurityWarning();
     updatePasswordStatus();
 

@@ -903,7 +903,7 @@ function Install-MidTerm
 
     Write-Log "=== PHASE 4: Certificate configuration ==="
     # Always generate certificate now that mt.exe is installed (always HTTPS)
-    $settingsDir = if ($AsService) { "$env:ProgramData\MidTerm" } else { "$env:USERPROFILE\.MidTerm" }
+    $settingsDir = if ($AsService) { "$env:ProgramData\MidTerm" } else { "$env:USERPROFILE\.midterm" }
     Write-Log "Settings directory: $settingsDir"
     $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService -TrustCert $TrustCert
     if (-not $CertPath)
@@ -964,7 +964,7 @@ function Install-MidTerm
     else
     {
         # Write user settings
-        $userSettingsDir = Join-Path $env:USERPROFILE ".MidTerm"
+        $userSettingsDir = Join-Path $env:USERPROFILE ".midterm"
         $userSettingsPath = Join-Path $userSettingsDir "settings.json"
         if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
 
@@ -1433,7 +1433,7 @@ if ($asService)
 else
 {
     # User install - still require password
-    $userSettingsDir = Join-Path $env:USERPROFILE ".MidTerm"
+    $userSettingsDir = Join-Path $env:USERPROFILE ".midterm"
     $userSecretsPath = Join-Path $userSettingsDir "secrets.bin"
 
     # Check for existing password in secure storage

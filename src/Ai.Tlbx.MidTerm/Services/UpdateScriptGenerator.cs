@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -618,13 +619,13 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         // - Config/secrets: /usr/local/etc/midterm/ (service) or ~/.midterm/ (user)
         // - Logs: /usr/local/var/log/ (service) or ~/.midterm/ (user)
         // The settingsDirectory parameter tells us which mode we're in.
+        // Path logic is centralized in LogPaths.cs - shell scripts must match.
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? "/usr/local/bin";
         var configDir = settingsDirectory;
 
-        // Determine log directory based on install mode
-        // Service mode: /usr/local/var/log/, User mode: same as config dir
+        // Determine log directory based on install mode using centralized LogPaths
         var isServiceMode = configDir.StartsWith("/usr/local", StringComparison.Ordinal);
-        var logDir = isServiceMode ? "/usr/local/var/log" : configDir;
+        var logDir = LogPaths.GetLogDirectory(false, isServiceMode);
         var newMtPath = Path.Combine(extractedDir, "mt");
         var newMthostPath = Path.Combine(extractedDir, "mthost");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
@@ -805,27 +806,29 @@ safe_copy() {{
         return 1
     fi
 
-    # CRITICAL: On macOS, cp -f over existing binary corrupts code signature!
-    # The signature metadata gets mangled when overwriting in-place.
-    # Solution: Remove destination first, then copy fresh.
-    # This issue caused SIGKILL/SIGABRT crashes on macOS ARM64.
-    rm -f ""$dst"" 2>/dev/null || true
-    cp ""$src"" ""$dst""
-    chmod +x ""$dst""
+    # Atomic update: copy to temp, sign if needed, then mv (atomic rename)
+    # This ensures the destination is never in a partial state.
+    local tmp_dst=""$dst.new""
+    cp ""$src"" ""$tmp_dst""
+    chmod +x ""$tmp_dst""
 
     # macOS requires ad-hoc codesigning for binaries to run
     # Without this, the binary gets killed immediately with SIGKILL
     if $IS_MACOS; then
         log ""Signing $desc for macOS...""
-        if ! codesign -s - ""$dst"" 2>/dev/null; then
-            log ""WARNING: codesign failed for $dst"" ""WARN""
+        if ! codesign -s - ""$tmp_dst"" 2>/dev/null; then
+            log ""WARNING: codesign failed for $tmp_dst"" ""WARN""
         fi
-        if ! codesign --verify ""$dst"" 2>/dev/null; then
-            log ""ERROR: Signature verification failed for $dst"" ""ERROR""
+        if ! codesign --verify ""$tmp_dst"" 2>/dev/null; then
+            log ""ERROR: Signature verification failed for $tmp_dst"" ""ERROR""
+            rm -f ""$tmp_dst"" 2>/dev/null || true
             return 1
         fi
         log ""Signature verified for $desc""
     fi
+
+    # Atomic rename - either succeeds completely or fails
+    mv -f ""$tmp_dst"" ""$dst""
 
     if ! verify_copy ""$src"" ""$dst""; then
         return 1

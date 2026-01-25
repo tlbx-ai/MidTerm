@@ -20,7 +20,7 @@
       <Output TaskParameter="ConsoleOutput" PropertyName="PtyVersion" />
     </Exec>
     <PropertyGroup>
-      <Version>6.10.39-dev</Version>
+      <Version>$(PtyVersion)</Version>
       <FileVersion Condition="$(PtyVersion.Split('.').Length) == 3">$(PtyVersion).0</FileVersion>
       <FileVersion Condition="$(PtyVersion.Split('.').Length) == 4">$(PtyVersion)</FileVersion>
     </PropertyGroup>

@@ -98,6 +98,40 @@ PASSWORD_HASH="${PASSWORD_HASH:-}"
 PORT="${PORT:-2000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 TRUST_CERT="${TRUST_CERT:-}"
+LOGGING_STARTED="${LOGGING_STARTED:-}"
+
+setup_logging() {
+    local mode="$1"
+    local log_dir log_file
+
+    # Log paths - MUST match LogPaths.cs in C# codebase (source of truth)
+    # Service mode: /usr/local/var/log/update.log
+    # User mode: ~/.midterm/update.log
+    if [ "$mode" = "service" ]; then
+        log_dir="/usr/local/var/log"
+    else
+        log_dir="$HOME/.midterm"
+    fi
+
+    log_file="$log_dir/update.log"
+
+    mkdir -p "$log_dir"
+
+    echo "" >> "$log_file"
+    echo "========================================" >> "$log_file"
+    echo "MidTerm Installer - $(date '+%Y-%m-%d %H:%M:%S')" >> "$log_file"
+    echo "Mode: $mode" >> "$log_file"
+    echo "========================================" >> "$log_file"
+
+    # For service mode, ensure log file is owned by service user so launchd can write to it
+    if [ "$mode" = "service" ] && [ -n "$INSTALLING_USER" ]; then
+        chown "$INSTALLING_USER" "$log_file" 2>/dev/null || true
+    fi
+
+    exec > >(tee -a "$log_file") 2>&1
+    LOGGING_STARTED=true
+    export LOGGING_STARTED
+}
 
 print_header() {
     echo ""
@@ -260,8 +294,8 @@ check_existing_password_file() {
         secrets_path="/usr/local/etc/MidTerm/secrets.bin"
         settings_path="/usr/local/etc/MidTerm/settings.json"
     else
-        secrets_path="$HOME/.MidTerm/secrets.bin"
-        settings_path="$HOME/.MidTerm/settings.json"
+        secrets_path="$HOME/.midterm/secrets.bin"
+        settings_path="$HOME/.midterm/settings.json"
     fi
 
     # Check secrets.bin exists and has content
@@ -647,7 +681,7 @@ write_service_settings() {
 }
 
 write_user_settings() {
-    local config_dir="$HOME/.MidTerm"
+    local config_dir="$HOME/.midterm"
     local settings_path="$config_dir/settings.json"
     local old_settings_path="$config_dir/settings.json.old"
 
@@ -679,7 +713,7 @@ write_user_settings() {
 }
 
 get_existing_user_password_hash() {
-    local settings_dir="$HOME/.MidTerm"
+    local settings_dir="$HOME/.midterm"
     local secrets_path="$settings_dir/secrets.bin"
     local settings_path="$settings_dir/settings.json"
     local mt_path="$HOME/.local/bin/mt"
@@ -1311,10 +1345,12 @@ After=network.target
 
 [Service]
 Type=simple
+User=${INSTALLING_USER}
+WorkingDirectory=/tmp
 ExecStart=${install_dir}/mt --port ${PORT} --bind ${BIND_ADDRESS}
 Restart=always
 RestartSec=5
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target
@@ -1341,7 +1377,7 @@ EOF
 
 install_as_user() {
     local install_dir="$HOME/.local/bin"
-    local settings_dir="$HOME/.MidTerm"
+    local settings_dir="$HOME/.midterm"
 
     # Initialize logging
     init_log "user"
@@ -1535,6 +1571,10 @@ done
 # Handle --service flag for sudo re-exec
 if [[ " $* " == *" --service "* ]] || [ "$1" = "--service" ]; then
     SERVICE_MODE=true
+    # Start logging to update.log (service mode)
+    if [ -z "$LOGGING_STARTED" ]; then
+        setup_logging "service"
+    fi
     # Re-read release info (lost during sudo)
     detect_platform
     get_latest_release
@@ -1570,6 +1610,11 @@ fi
 detect_platform
 get_latest_release
 prompt_service_mode
+
+# Start logging for user mode (service mode logging starts after sudo elevation)
+if [ "$SERVICE_MODE" != true ]; then
+    setup_logging "user"
+fi
 
 if [ "$SERVICE_MODE" = true ]; then
     # Check for existing password BEFORE elevation (like PS does)

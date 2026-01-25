@@ -108,9 +108,7 @@ if ($localCommit -ne $remoteCommit) {
 
 # Files to update
 $versionJsonPath = "$PSScriptRoot\..\version.json"
-$webCsprojPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj"
-$ttyHostCsprojPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj"
-$ttyHostProgramPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm.TtyHost\Program.cs"
+# Csproj files read version dynamically from version.json - no paths needed
 
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
@@ -156,28 +154,13 @@ if ($isPtyBreaking) {
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray
 
-# Update web csproj
-$content = Get-Content $webCsprojPath -Raw
-$content = $content -replace "<Version>[^<]+</Version>", "<Version>$newVersion</Version>"
-Set-Content $webCsprojPath $content -NoNewline
-Write-Host "  Updated: Ai.Tlbx.MidTerm.csproj" -ForegroundColor Gray
+# Web csproj reads version dynamically from version.json - no update needed
 
-# Update TtyHost files only for PTY-breaking changes
+# TtyHost csproj reads version dynamically from version.json - no update needed
 if ($isPtyBreaking) {
-    $content = Get-Content $ttyHostCsprojPath -Raw
-    $content = $content -replace "<Version>[^<]+</Version>", "<Version>$newVersion</Version>"
-    # FileVersion must be exactly 4 parts - use base version + 0
-    $fileVersion = "$major.$minor.$patch.0"
-    $content = $content -replace "<FileVersion>[^<]+</FileVersion>", "<FileVersion>$fileVersion</FileVersion>"
-    Set-Content $ttyHostCsprojPath $content -NoNewline
-    Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost.csproj" -ForegroundColor Gray
-
-    $content = Get-Content $ttyHostProgramPath -Raw
-    $content = $content -replace 'public const string Version = "[^"]+"', "public const string Version = `"$newVersion`""
-    Set-Content $ttyHostProgramPath $content -NoNewline
-    Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost\Program.cs" -ForegroundColor Gray
+    Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  Skipped: TtyHost files (web-only release)" -ForegroundColor DarkGray
+    Write-Host "  TtyHost: skipped (web-only release)" -ForegroundColor DarkGray
 }
 
 # Git operations

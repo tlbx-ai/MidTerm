@@ -111,7 +111,8 @@ public sealed class UnixFileSecretStorage : ISecretStorage
             var result = chmod(_secretsPath, OwnerReadWrite);
             if (result != 0)
             {
-                Log.Warn(() => $"Failed to set permissions on secrets file: errno {Marshal.GetLastWin32Error()}");
+                var errno = Marshal.GetLastWin32Error();
+                throw new InvalidOperationException($"Failed to set permissions on secrets file '{_secretsPath}': errno {errno}");
             }
         }
         catch (Exception ex)

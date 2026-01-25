@@ -964,6 +964,8 @@ html, body {
     flex-direction: column;
     min-width: 0;
     background-color: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
 }
 
 /* Terminals area */
@@ -1592,6 +1594,19 @@ html, body {
     .connection-status {
         bottom: calc(8px + env(safe-area-inset-bottom, 0));
     }
+
+    /* File viewer dock - hide on mobile (no room for side-by-side) */
+    #file-viewer-dock-btn {
+        display: none;
+    }
+
+    .file-viewer-dock {
+        display: none !important;
+    }
+
+    .terminal-page.file-viewer-docked .terminals-area {
+        margin-right: 0;
+    }
 }
 
 /* ============================================================================
@@ -1644,8 +1659,11 @@ html, body {
 }
 
 .empty-state-logo {
-    width: 64px;
-    height: 64px;
+    max-width: 96px;
+    max-height: 96px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
     opacity: 0.4;
     margin-bottom: 16px;
     animation: float 4s ease-in-out infinite;
@@ -2093,14 +2111,13 @@ html, body {
 
 /* Inline text input with save button */
 .text-input-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    position: relative;
+    width: 200px;
 }
 
 .text-input-wrapper input[type="text"],
 .text-input-wrapper input[type="number"] {
-    width: 200px;
+    width: 100%;
 }
 
 .text-input-wrapper.unsaved input {
@@ -2108,6 +2125,10 @@ html, body {
 }
 
 .inline-save-btn {
+    position: absolute;
+    right: -36px;
+    top: 50%;
+    transform: translateY(-50%);
     width: 28px;
     height: 28px;
     border: none;
@@ -2121,7 +2142,6 @@ html, body {
     justify-content: center;
     opacity: 0;
     transition: opacity 0.15s, background-color 0.15s;
-    flex-shrink: 0;
 }
 
 .text-input-wrapper.unsaved .inline-save-btn {
@@ -5456,7 +5476,7 @@ html, body {
 
 /* Terminal shrinks when dock is open */
 .terminal-page.file-viewer-docked .terminals-area {
-    right: 400px;
+    margin-right: 400px;
 }
 
 /* Icon button for file viewer download */
