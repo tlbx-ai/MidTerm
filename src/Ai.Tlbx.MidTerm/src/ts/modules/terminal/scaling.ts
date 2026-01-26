@@ -16,8 +16,8 @@ import {
   TERMINAL_FONT_STACK,
   icon,
 } from '../../constants';
-import { sessionTerminals, fontsReadyPromise, dom, currentSettings } from '../../state';
-import { $activeSessionId, getSession } from '../../stores';
+import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
+import { $activeSessionId, $currentSettings, getSession } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise } from './manager';
 
@@ -248,7 +248,7 @@ export function fitSessionToScreen(sessionId: string): void {
   if (!state) return;
 
   // Capture fontSize for diagnostics
-  const fontSize = currentSettings?.fontSize ?? 14;
+  const fontSize = $currentSettings.get()?.fontSize ?? 14;
 
   // Wait for terminal to be opened before fitting
   if (!state.opened) {

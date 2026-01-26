@@ -6,7 +6,7 @@
  */
 
 import type { UpdateInfo } from '../../types';
-import { updateInfo, setUpdateInfo } from '../../state';
+import { $updateInfo } from '../../stores';
 import { createLogger } from '../logging';
 
 const log = createLogger('updating');
@@ -22,7 +22,8 @@ export function renderUpdatePanel(): void {
   const panel = document.getElementById('update-panel');
   if (!panel) return;
 
-  if (!updateInfo || !updateInfo.available) {
+  const info = $updateInfo.get();
+  if (!info || !info.available) {
     panel.classList.add('hidden');
     return;
   }
@@ -33,10 +34,10 @@ export function renderUpdatePanel(): void {
   const noteEl = panel.querySelector('.update-note');
   const headerEl = panel.querySelector('.update-header');
 
-  if (currentEl) currentEl.textContent = updateInfo.currentVersion;
-  if (latestEl) latestEl.textContent = updateInfo.latestVersion;
+  if (currentEl) currentEl.textContent = info.currentVersion;
+  if (latestEl) latestEl.textContent = info.latestVersion;
 
-  if (updateInfo.sessionsPreserved) {
+  if (info.sessionsPreserved) {
     if (headerEl) headerEl.textContent = 'Quick Update';
     if (noteEl) {
       noteEl.textContent = 'Terminals stay connected';
@@ -57,7 +58,8 @@ export function renderUpdatePanel(): void {
  * Apply the available update and restart the server
  */
 export function applyUpdate(): void {
-  if (!updateInfo || !updateInfo.available) return;
+  const info = $updateInfo.get();
+  if (!info || !info.available) return;
 
   const panel = document.getElementById('update-panel');
   const btn = panel?.querySelector('.update-btn') as HTMLButtonElement | null;
@@ -139,7 +141,7 @@ export function checkForUpdates(e?: MouseEvent): void {
         btn.textContent = 'Check for Updates';
       }
 
-      setUpdateInfo(update);
+      $updateInfo.set(update);
       renderUpdatePanel();
       renderUpdateCards(update);
     })
@@ -284,7 +286,7 @@ export function applyLocalUpdate(): void {
  * Handle incoming update info from WebSocket
  */
 export function handleUpdateInfo(update: UpdateInfo): void {
-  setUpdateInfo(update);
+  $updateInfo.set(update);
   renderUpdatePanel();
   renderUpdateCards(update);
 }

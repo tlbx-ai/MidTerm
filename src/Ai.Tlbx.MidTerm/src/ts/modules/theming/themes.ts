@@ -6,14 +6,15 @@
 
 import type { ThemeName, TerminalTheme } from '../../types';
 import { THEMES } from '../../constants';
-import { sessionTerminals, currentSettings } from '../../state';
+import { sessionTerminals } from '../../state';
+import { $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 
 /**
  * Get the current theme based on settings
  */
 export function getCurrentTheme(): TerminalTheme {
-  const themeName = currentSettings?.theme || 'dark';
+  const themeName = $currentSettings.get()?.theme || 'dark';
   return THEMES[themeName] || THEMES.dark;
 }
 

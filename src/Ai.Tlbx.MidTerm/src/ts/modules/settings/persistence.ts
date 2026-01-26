@@ -14,8 +14,8 @@ import type {
   LogLevelSetting,
 } from '../../types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
-import { currentSettings, setCurrentSettings, dom, sessionTerminals } from '../../state';
-import { $settingsOpen } from '../../stores';
+import { dom, sessionTerminals } from '../../state';
+import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { setLogLevel, LogLevel } from '../logging';
 import { updateTabTitle } from '../tabTitle';
@@ -164,7 +164,7 @@ export async function fetchSettings(): Promise<void> {
         })),
     ]);
 
-    setCurrentSettings(settings);
+    $currentSettings.set(settings);
     populateUserDropdown(users, settings.runAsUser);
     populateSettingsForm(settings);
     populateVersionInfo(version, health.ttyHostVersion ?? null, JS_BUILD_VERSION);
@@ -180,8 +180,8 @@ export async function fetchSettings(): Promise<void> {
  * Apply current settings to all open terminals
  */
 export function applySettingsToTerminals(): void {
-  if (!currentSettings) return;
-  const settings = currentSettings;
+  const settings = $currentSettings.get();
+  if (!settings) return;
 
   const theme = THEMES[settings.theme] || THEMES.dark;
   const fontFamily = `'${settings.fontFamily || 'Cascadia Code'}', ${TERMINAL_FONT_STACK}`;
@@ -235,10 +235,11 @@ export function applyReceivedSettings(settings: Settings): void {
  */
 export function saveAllSettings(): void {
   const runAsUserValue = getElementValue('setting-run-as-user', '');
+  const prevSettings = $currentSettings.get();
   const settings: Settings = {
     defaultShell: getElementValue('setting-default-shell', 'Pwsh'),
-    defaultCols: currentSettings?.defaultCols ?? 120,
-    defaultRows: currentSettings?.defaultRows ?? 30,
+    defaultCols: prevSettings?.defaultCols ?? 120,
+    defaultRows: prevSettings?.defaultRows ?? 30,
     defaultWorkingDirectory: getElementValue('setting-working-dir', ''),
     fontSize: parseInt(getElementValue('setting-font-size', '14'), 10) || 14,
     fontFamily: getElementValue('setting-font-family', 'Cascadia Code'),
@@ -276,7 +277,7 @@ export function saveAllSettings(): void {
   })
     .then((r) => {
       if (r.ok) {
-        setCurrentSettings(settings);
+        $currentSettings.set(settings);
         const theme = THEMES[settings.theme] || THEMES.dark;
         document.documentElement.style.setProperty('--terminal-bg', theme.background);
         applySettingsToTerminals();

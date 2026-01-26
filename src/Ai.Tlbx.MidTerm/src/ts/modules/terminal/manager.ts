@@ -15,17 +15,15 @@ import {
 } from '../../constants';
 import {
   sessionTerminals,
-  currentSettings,
   pendingOutputFrames,
   sessionsNeedingResync,
   fontsReadyPromise,
   dom,
   setFontsReadyPromise,
-  windowsBuildNumber,
   MAX_WEBGL_CONTEXTS,
   terminalsWithWebgl,
 } from '../../state';
-import { $activeSessionId } from '../../stores';
+import { $activeSessionId, $currentSettings, $windowsBuildNumber } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScaling, applyTerminalScalingSync } from './scaling';
 import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
@@ -122,6 +120,8 @@ export function registerTerminalCallbacks(callbacks: {
  * Get terminal options based on current settings
  */
 export function getTerminalOptions(): ITerminalOptions {
+  const currentSettings = $currentSettings.get();
+  const windowsBuildNumber = $windowsBuildNumber.get();
   const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
   const baseFontSize = currentSettings?.fontSize ?? 14;
   const fontSize = isMobile ? Math.max(baseFontSize - 2, 10) : baseFontSize;
@@ -236,7 +236,10 @@ export function createTerminalForSession(
 
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
-    if (currentSettings?.useWebGL !== false && terminalsWithWebgl.size < MAX_WEBGL_CONTEXTS) {
+    if (
+      $currentSettings.get()?.useWebGL !== false &&
+      terminalsWithWebgl.size < MAX_WEBGL_CONTEXTS
+    ) {
       try {
         const webglAddon = new WebglAddon();
         webglAddon.onContextLoss(() => {
@@ -387,7 +390,7 @@ export function setupTerminalEvents(
 
   disposables.push(
     terminal.onSelectionChange(() => {
-      if (currentSettings?.copyOnSelect && terminal.hasSelection()) {
+      if ($currentSettings.get()?.copyOnSelect && terminal.hasSelection()) {
         navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
       }
     }),
@@ -412,7 +415,7 @@ export function setupTerminalEvents(
       return false;
     }
 
-    const style = getClipboardStyle(currentSettings?.clipboardShortcuts ?? 'auto');
+    const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
 
     if (style === 'windows') {
       // Ctrl+C: copy if selected, else let terminal handle (SIGINT)
@@ -490,7 +493,8 @@ export function setupTerminalEvents(
 
   // Right-click paste (images uploaded, text pasted)
   const contextMenuHandler = (e: MouseEvent) => {
-    if (!currentSettings || currentSettings.rightClickPaste !== false) {
+    const settings = $currentSettings.get();
+    if (!settings || settings.rightClickPaste !== false) {
       e.preventDefault();
       handleClipboardPaste(sessionId);
     }
@@ -612,7 +616,7 @@ export function setTerminalScrollback(sessionId: string, isActive: boolean): voi
   if (!state?.terminal) return;
 
   const scrollback = isActive
-    ? (currentSettings?.scrollbackLines ?? ACTIVE_SCROLLBACK)
+    ? ($currentSettings.get()?.scrollbackLines ?? ACTIVE_SCROLLBACK)
     : BACKGROUND_SCROLLBACK;
 
   state.terminal.options.scrollback = scrollback;

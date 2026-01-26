@@ -6,8 +6,7 @@
  */
 
 import type { Session, TabTitleMode, ProcessState } from '../types';
-import { currentSettings, serverHostname } from '../state';
-import { $activeSession, $activeSessionId } from '../stores';
+import { $activeSession, $activeSessionId, $currentSettings, $serverHostname } from '../stores';
 import { addProcessStateListener } from './process';
 
 /**
@@ -20,8 +19,10 @@ function getTabTitle(mode: TabTitleMode, session: Session | null): string {
     case 'static':
       return base;
 
-    case 'hostname':
-      return serverHostname ? `${base} - ${serverHostname}` : base;
+    case 'hostname': {
+      const hostname = $serverHostname.get();
+      return hostname ? `${base} - ${hostname}` : base;
+    }
 
     case 'sessionName':
       return session?.name ? `${base} - ${session.name}` : base;
@@ -41,7 +42,7 @@ function getTabTitle(mode: TabTitleMode, session: Session | null): string {
  * Update the browser tab title based on current settings and session
  */
 export function updateTabTitle(): void {
-  const mode = currentSettings?.tabTitleMode ?? 'hostname';
+  const mode = $currentSettings.get()?.tabTitleMode ?? 'hostname';
   const session = $activeSession.get();
   const title = getTabTitle(mode, session);
 

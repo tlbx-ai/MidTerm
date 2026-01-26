@@ -26,7 +26,6 @@ import {
   newlyCreatedSessions,
   setStateWs,
   setStateReconnectTimer,
-  setUpdateInfo,
 } from '../../state';
 
 const COMMAND_TIMEOUT_MS = 30000;
@@ -43,6 +42,7 @@ import {
   $stateWsConnected,
   $activeSessionId,
   $sessionList,
+  $updateInfo,
   setSessions,
 } from '../../stores';
 
@@ -214,7 +214,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
  * Updates the stored update info and renders the update panel.
  */
 export function handleUpdateInfo(update: UpdateInfo | null): void {
-  setUpdateInfo(update);
+  $updateInfo.set(update);
   renderUpdatePanel();
 }
 

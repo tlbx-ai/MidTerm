@@ -13,14 +13,7 @@
  */
 
 import { atom, map, computed } from 'nanostores';
-import type {
-  Session,
-  Settings,
-  UpdateInfo,
-  AuthStatus,
-  ProcessState,
-  TerminalState,
-} from '../types';
+import type { Session, Settings, UpdateInfo, AuthStatus, ProcessState } from '../types';
 
 // =============================================================================
 // Session Stores
@@ -75,16 +68,6 @@ export const $activeSession = computed([$sessions, $activeSessionId], (sessions,
 
 /** Whether there are any sessions */
 export const $hasSessions = computed($sessionList, (list) => list.length > 0);
-
-// =============================================================================
-// Terminal State Store
-// =============================================================================
-
-/**
- * Terminal state collection keyed by session ID.
- * Contains xterm.js Terminal instances, FitAddons, containers.
- */
-export const $sessionTerminals = map<Record<string, TerminalState>>({});
 
 // =============================================================================
 // Process State Store
@@ -160,6 +143,15 @@ export const $authStatus = atom<AuthStatus | null>(null);
 /** Windows build number for ConPTY configuration (null on non-Windows) */
 export const $windowsBuildNumber = atom<number | null>(null);
 
+/** Server hostname for tab title */
+export const $serverHostname = atom<string>('');
+
+/** Voice server password for authentication */
+export const $voiceServerPassword = atom<string | null>(null);
+
+/** Settings WebSocket connected flag */
+export const $settingsWsConnected = atom<boolean>(false);
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
@@ -218,29 +210,6 @@ export function setSessions(sessionList: Session[]): void {
     sessionsMap[session.id] = { ...session, name, _order: session.order ?? i };
   });
   $sessions.set(sessionsMap);
-}
-
-/**
- * Get terminal state by session ID.
- */
-export function getTerminalState(sessionId: string): TerminalState | undefined {
-  return $sessionTerminals.get()[sessionId];
-}
-
-/**
- * Set terminal state for a session.
- */
-export function setTerminalState(sessionId: string, state: TerminalState): void {
-  $sessionTerminals.setKey(sessionId, state);
-}
-
-/**
- * Remove terminal state for a session.
- */
-export function removeTerminalState(sessionId: string): void {
-  const terminals = { ...$sessionTerminals.get() };
-  delete terminals[sessionId];
-  $sessionTerminals.set(terminals);
 }
 
 /**

@@ -7,13 +7,8 @@
 
 import { createLogger } from './logging';
 import { sendInput } from './comms/muxChannel';
-import {
-  $sessionList,
-  $activeSessionId,
-  $updateInfo,
-  getSession,
-  getTerminalState,
-} from '../stores';
+import { sessionTerminals } from '../state';
+import { $sessionList, $activeSessionId, $updateInfo, getSession } from '../stores';
 import type {
   VoiceToolRequest,
   VoiceToolResponse,
@@ -53,7 +48,7 @@ export function recordBell(sessionId: string): void {
  * Returns descriptive message if terminal isn't rendered yet.
  */
 function getTerminalViewport(sessionId: string): string {
-  const termState = getTerminalState(sessionId);
+  const termState = sessionTerminals.get(sessionId);
   if (!termState?.terminal) {
     return '[terminal not in view - ask user to switch to this session to see content]';
   }
@@ -161,7 +156,7 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
 async function handleReadScrollback(args: ReadScrollbackArgs): Promise<ReadScrollbackResult> {
   const { sessionId, start = 'bottom', lines = 40 } = args;
 
-  const termState = getTerminalState(sessionId);
+  const termState = sessionTerminals.get(sessionId);
   if (!termState?.terminal) {
     return {
       content: `Session ${sessionId} not found`,

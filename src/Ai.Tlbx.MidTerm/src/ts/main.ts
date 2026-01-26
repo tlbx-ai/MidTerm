@@ -90,7 +90,6 @@ import { initFileViewer } from './modules/fileViewer';
 import {
   cacheDOMElements,
   sessionTerminals,
-  currentSettings,
   dom,
   setFontsReadyPromise,
   newlyCreatedSessions,
@@ -104,6 +103,7 @@ import {
   $activeSessionId,
   $sessionList,
   $renamingSessionId,
+  $currentSettings,
   setSession,
   removeSession,
   getSession,
@@ -125,7 +125,7 @@ window.mmDebug = {
     return $activeSessionId.get();
   },
   get settings() {
-    return currentSettings;
+    return $currentSettings.get();
   },
 };
 
@@ -256,7 +256,7 @@ function registerCallbacks(): void {
 // =============================================================================
 
 function applyScrollbackProtection(): void {
-  if (currentSettings?.scrollbackProtection !== true) return;
+  if ($currentSettings.get()?.scrollbackProtection !== true) return;
 
   const activeId = $activeSessionId.get();
   const state = activeId ? sessionTerminals.get(activeId) : null;
@@ -304,14 +304,15 @@ function setupVisibilityChangeHandler(): void {
 // =============================================================================
 
 async function createSession(): Promise<void> {
-  let cols = currentSettings?.defaultCols ?? 120;
-  let rows = currentSettings?.defaultRows ?? 30;
+  const settings = $currentSettings.get();
+  let cols = settings?.defaultCols ?? 120;
+  let rows = settings?.defaultRows ?? 30;
 
   // Generate tempId early so we can use it for logging
   const tempId = 'pending-' + crypto.randomUUID();
 
   if (dom.terminalsArea) {
-    const fontSize = currentSettings?.fontSize ?? 14;
+    const fontSize = settings?.fontSize ?? 14;
     const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
@@ -571,11 +572,12 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
 }
 
 async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
-  let cols = currentSettings?.defaultCols ?? 120;
-  let rows = currentSettings?.defaultRows ?? 30;
+  const settings = $currentSettings.get();
+  let cols = settings?.defaultCols ?? 120;
+  let rows = settings?.defaultRows ?? 30;
 
   if (dom.terminalsArea) {
-    const fontSize = currentSettings?.fontSize ?? 14;
+    const fontSize = settings?.fontSize ?? 14;
     const logId = 'history-' + crypto.randomUUID().slice(0, 8);
     const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
@@ -624,10 +626,11 @@ function requestNotificationPermission(): void {
 }
 
 function showBellNotification(sessionId: string): void {
-  if (!currentSettings) return;
+  const settings = $currentSettings.get();
+  if (!settings) return;
   if (bellNotificationsSuppressed) return;
 
-  const bellStyle = currentSettings.bellStyle || 'notification';
+  const bellStyle = settings.bellStyle || 'notification';
   const session = getSession(sessionId);
   const title = session ? getSessionDisplayName(session) : 'Terminal';
 

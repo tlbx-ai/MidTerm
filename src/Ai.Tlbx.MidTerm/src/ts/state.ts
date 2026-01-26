@@ -5,26 +5,7 @@
  * terminal Maps, DOM cache, etc. Reactive state lives in stores/index.ts.
  */
 
-import type { TerminalState, Settings, UpdateInfo, AuthStatus, DOMElements } from './types';
-
-// =============================================================================
-// Server Data State (NOT migrated - currentSettings used for terminal options)
-// =============================================================================
-
-/** User settings from server */
-export let currentSettings: Settings | null = null;
-
-/** Update info from server */
-export let updateInfo: UpdateInfo | null = null;
-
-/** Auth status from server */
-export let authStatus: AuthStatus | null = null;
-
-/** Server hostname for tab title */
-export let serverHostname: string = '';
-
-/** Voice server password for authentication */
-export let voiceServerPassword: string | null = null;
+import type { TerminalState, DOMElements } from './types';
 
 // =============================================================================
 // WebSocket State
@@ -67,9 +48,6 @@ export let wsRxRateEma = 0;
 // =============================================================================
 // Terminal State
 // =============================================================================
-
-/** Windows build number for ConPTY configuration (null on non-Windows) */
-export let windowsBuildNumber: number | null = null;
 
 /** Per-session terminal state */
 export const sessionTerminals = new Map<string, TerminalState>();
@@ -123,26 +101,6 @@ export const dom: DOMElements = {
 // State Setters
 // =============================================================================
 
-export function setCurrentSettings(settings: Settings | null): void {
-  currentSettings = settings;
-}
-
-export function setUpdateInfo(info: UpdateInfo | null): void {
-  updateInfo = info;
-}
-
-export function setAuthStatus(status: AuthStatus | null): void {
-  authStatus = status;
-}
-
-export function setServerHostname(hostname: string): void {
-  serverHostname = hostname;
-}
-
-export function setVoiceServerPassword(password: string | null): void {
-  voiceServerPassword = password;
-}
-
 export function setStateWs(ws: WebSocket | null): void {
   stateWs = ws;
 }
@@ -165,10 +123,6 @@ export function setServerProtocolVersion(version: number | null): void {
 
 export function setFontsReadyPromise(promise: Promise<void>): void {
   fontsReadyPromise = promise;
-}
-
-export function setWindowsBuildNumber(build: number | null): void {
-  windowsBuildNumber = build;
 }
 
 export function setBellNotificationsSuppressed(suppressed: boolean): void {

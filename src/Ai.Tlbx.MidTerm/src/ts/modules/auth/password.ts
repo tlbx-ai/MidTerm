@@ -4,7 +4,7 @@
  * Handles password set/change modal and form submission.
  */
 
-import { authStatus } from '../../state';
+import { $authStatus } from '../../stores';
 import { bindClick } from '../../utils';
 import { checkAuthStatus, dismissSecurityWarning } from './status';
 
@@ -21,7 +21,7 @@ export function showPasswordModal(_isInitialSetup: boolean): void {
 
   if (!modal) return;
 
-  passwordModalHasPassword = authStatus?.passwordSet ?? false;
+  passwordModalHasPassword = $authStatus.get()?.passwordSet ?? false;
 
   if (title) {
     title.textContent = passwordModalHasPassword ? 'Change Password' : 'Set Password';

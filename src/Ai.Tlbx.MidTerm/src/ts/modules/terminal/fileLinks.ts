@@ -36,8 +36,7 @@ import { LinkProvider } from 'xterm-link-provider';
 import type { FilePathInfo, FileCheckResponse, FileResolveResponse } from '../../types';
 import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
-import { currentSettings } from '../../state';
-import { $activeSessionId } from '../../stores';
+import { $activeSessionId, $currentSettings } from '../../stores';
 
 const log = createLogger('fileLinks');
 
@@ -51,8 +50,9 @@ const log = createLogger('fileLinks');
  * Default: ON (true if settings not yet loaded, since server default is true)
  */
 function isFileRadarEnabled(): boolean {
-  if (currentSettings === null) return true;
-  return currentSettings.fileRadar === true;
+  const settings = $currentSettings.get();
+  if (settings === null) return true;
+  return settings.fileRadar === true;
 }
 
 /** Minimum frame size in bytes to bother scanning (skip tiny cursor moves) */

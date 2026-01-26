@@ -4,7 +4,7 @@
  * Handles authentication status checking and security warning display.
  */
 
-import { authStatus, setAuthStatus } from '../../state';
+import { $authStatus } from '../../stores';
 import type { AuthStatus } from '../../types';
 
 /**
@@ -20,7 +20,7 @@ export async function checkAuthStatus(): Promise<void> {
     }
 
     const status: AuthStatus = await response.json();
-    setAuthStatus(status);
+    $authStatus.set(status);
     updateSecurityWarning();
     updatePasswordStatus();
   } catch (e) {
@@ -35,7 +35,8 @@ export function updateSecurityWarning(): void {
   const warning = document.getElementById('security-warning');
   if (!warning) return;
 
-  if (authStatus && authStatus.authenticationEnabled && !authStatus.passwordSet) {
+  const status = $authStatus.get();
+  if (status && status.authenticationEnabled && !status.passwordSet) {
     warning.classList.remove('hidden');
   } else {
     warning.classList.add('hidden');
@@ -49,13 +50,14 @@ export function updatePasswordStatus(): void {
   const statusEl = document.getElementById('password-status-text');
   if (!statusEl) return;
 
-  if (!authStatus) {
+  const status = $authStatus.get();
+  if (!status) {
     statusEl.textContent = 'Checking...';
     statusEl.className = '';
     return;
   }
 
-  if (authStatus.passwordSet) {
+  if (status.passwordSet) {
     statusEl.textContent = 'Password is set';
     statusEl.className = 'status-set';
   } else {

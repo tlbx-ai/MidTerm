@@ -8,7 +8,7 @@
 import type { Settings, UpdateInfo } from '../../types';
 import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
-import { setCurrentSettings, setUpdateInfo } from '../../state';
+import { $currentSettings, $updateInfo, $settingsWsConnected } from '../../stores';
 
 const log = createLogger('settings-ws');
 
@@ -21,7 +21,6 @@ interface SettingsWsMessage {
 
 let settingsWs: WebSocket | null = null;
 let settingsReconnectTimer: number | undefined;
-let settingsWsConnected = false;
 
 let applyReceivedSettings: (settings: Settings) => void = () => {};
 let applyReceivedUpdate: (update: UpdateInfo) => void = () => {};
@@ -50,7 +49,7 @@ export function connectSettingsWebSocket(): void {
   settingsWs = ws;
 
   ws.onopen = () => {
-    settingsWsConnected = true;
+    $settingsWsConnected.set(true);
     log.info(() => 'Settings WebSocket connected');
   };
 
@@ -65,7 +64,7 @@ export function connectSettingsWebSocket(): void {
   };
 
   ws.onclose = () => {
-    settingsWsConnected = false;
+    $settingsWsConnected.set(false);
     log.info(() => 'Settings WebSocket disconnected');
     scheduleSettingsReconnect();
   };
@@ -77,10 +76,10 @@ export function connectSettingsWebSocket(): void {
 
 function handleMessage(message: SettingsWsMessage): void {
   if (message.type === 'settings' && message.settings) {
-    setCurrentSettings(message.settings);
+    $currentSettings.set(message.settings);
     applyReceivedSettings(message.settings);
   } else if (message.type === 'update' && message.update) {
-    setUpdateInfo(message.update);
+    $updateInfo.set(message.update);
     applyReceivedUpdate(message.update);
   }
 }
@@ -96,5 +95,5 @@ function scheduleSettingsReconnect(): void {
 }
 
 export function isSettingsWsConnected(): boolean {
-  return settingsWsConnected;
+  return $settingsWsConnected.get();
 }

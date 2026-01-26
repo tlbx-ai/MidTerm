@@ -9,7 +9,7 @@ import { createLogger } from './logging';
 import { setVoiceStatus, setToggleRecording } from './sidebar/voiceSection';
 import { addChatMessage, showChatPanel, toggleChatPanel, showToolConfirmation } from './chat';
 import { processToolRequest } from './voiceTools';
-import { voiceServerPassword } from '../state';
+import { $voiceServerPassword } from '../stores';
 import type { VoiceToolName } from '../types';
 import type { VoiceHealthResponse, VoiceProvider } from '../types';
 
@@ -277,8 +277,9 @@ export async function startVoiceSession(): Promise<void> {
     let wsUrl = `wss://${host}:${VOICE_SERVER_PORT}/voice`;
 
     // Append password if configured
-    if (voiceServerPassword) {
-      wsUrl += `?password=${encodeURIComponent(voiceServerPassword)}`;
+    const password = $voiceServerPassword.get();
+    if (password) {
+      wsUrl += `?password=${encodeURIComponent(password)}`;
     }
 
     // Reset counters

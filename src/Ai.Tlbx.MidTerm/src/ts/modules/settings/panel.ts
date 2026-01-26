@@ -6,8 +6,8 @@
  */
 
 import type { HealthResponse } from '../../types';
-import { sessionTerminals, dom, setWindowsBuildNumber } from '../../state';
-import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
+import { sessionTerminals, dom } from '../../state';
+import { $settingsOpen, $activeSessionId, $sessionList, $windowsBuildNumber } from '../../stores';
 import { fetchSettings, unbindSettingsAutoSave } from './persistence';
 import { initSettingsTabs } from './tabs';
 import { createLogger } from '../logging';
@@ -216,7 +216,7 @@ export function checkSystemHealth(): void {
     .then((health) => {
       updateTtyHostWarning(health);
       if (health.windowsBuildNumber !== undefined) {
-        setWindowsBuildNumber(health.windowsBuildNumber);
+        $windowsBuildNumber.set(health.windowsBuildNumber);
       }
     })
     .catch((e) => log.warn(() => `Failed to check system health: ${e}`));
