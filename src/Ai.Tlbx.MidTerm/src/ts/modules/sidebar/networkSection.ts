@@ -19,9 +19,24 @@ export function initNetworkSection(): void {
     return;
   }
 
-  const isCollapsed = localStorage.getItem(STORAGE_KEY) === 'true';
-  if (isCollapsed) {
-    section.classList.add('collapsed');
+  const isUntrusted = !window.isSecureContext;
+
+  if (isUntrusted) {
+    section.classList.add('untrusted');
+
+    const trustLink = document.getElementById('trust-link');
+    if (trustLink) {
+      trustLink.classList.add('trust-warning');
+      const helpText = document.createElement('span');
+      helpText.className = 'trust-help-text';
+      helpText.textContent = 'Click to enable clipboard & secure features';
+      trustLink.parentElement?.insertBefore(helpText, trustLink.nextSibling);
+    }
+  } else {
+    const isCollapsed = localStorage.getItem(STORAGE_KEY) === 'true';
+    if (isCollapsed) {
+      section.classList.add('collapsed');
+    }
   }
 
   toggleBtn.addEventListener('click', () => {
@@ -30,5 +45,5 @@ export function initNetworkSection(): void {
     log.info(() => `Network section ${nowCollapsed ? 'collapsed' : 'expanded'}`);
   });
 
-  log.info(() => `Network section initialized (collapsed=${isCollapsed})`);
+  log.info(() => `Network section initialized (untrusted=${isUntrusted})`);
 }

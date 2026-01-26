@@ -4082,6 +4082,40 @@ html, body {
     font-size: 11px;
 }
 
+/* Trust warning state (untrusted HTTPS) */
+.trust-warning {
+    color: var(--accent-red) !important;
+    animation: trust-pulse 2s ease-in-out infinite;
+}
+
+.trust-warning:hover {
+    color: var(--accent-red) !important;
+    opacity: 0.85;
+}
+
+.trust-warning .icon {
+    color: inherit;
+}
+
+@keyframes trust-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.trust-help-text {
+    display: block;
+    font-size: 9px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    margin-left: 17px;
+}
+
+.network-section.untrusted .network-section-title::after {
+    content: ' (not trusted)';
+    color: var(--accent-red);
+    font-size: 9px;
+}
+
 /* Share Access Link (subtle) */
 .share-access-link {
     display: flex;
