@@ -26,7 +26,7 @@ public static class WelcomeScreen
         Console.WriteLine(@"       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|");
         Console.Write(@"      //               \\   ");
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("by J. Schmidt - https://github.com/tlbx-ai");
+        Console.WriteLine("by J. Schmidt - https://github.com/tlbx-ai/MidTerm");
 
         Console.ResetColor();
         Console.WriteLine();

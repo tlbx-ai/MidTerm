@@ -345,7 +345,12 @@ read_password_masked() {
 
     printf "%s" "$prompt"
 
-    while IFS= read -r -s -n1 char < /dev/tty; do
+    # Explicitly disable echo via stty (more reliable than read -s in sudo contexts)
+    local saved_stty
+    saved_stty=$(stty -g < /dev/tty 2>/dev/null) || true
+    stty -echo < /dev/tty 2>/dev/null || true
+
+    while IFS= read -r -n1 char < /dev/tty; do
         if [[ -z "$char" ]]; then
             # Enter pressed
             break
@@ -360,6 +365,9 @@ read_password_masked() {
             printf '*'
         fi
     done
+
+    # Restore terminal settings
+    [ -n "$saved_stty" ] && stty "$saved_stty" < /dev/tty 2>/dev/null || true
     echo
 
     REPLY="$password"
@@ -403,8 +411,9 @@ prompt_password() {
             fi
         fi
 
-        # Binary not available yet - use pending marker (hash after install)
-        PASSWORD_HASH="__PENDING__:$password"
+        # Binary not available yet - use pending marker with base64 encoding
+        # (base64 avoids shell escaping issues when passing through sudo env)
+        PASSWORD_HASH="__PENDING64__:$(printf '%s' "$password" | base64)"
         return 0
     done
 
@@ -1006,10 +1015,7 @@ install_as_service() {
     local lib_dir="/usr/local/lib/MidTerm"
     local settings_dir="/usr/local/etc/MidTerm"
 
-    # Initialize logging (needs to happen early, even before root check for re-exec)
-    init_log "service"
-
-    # Check for root
+    # Check for root FIRST - don't initialize logging until elevated (requires write to /usr/local)
     if [ "$EUID" -ne 0 ]; then
         echo ""
         echo -e "${YELLOW}Requesting sudo privileges...${NC}"
@@ -1028,6 +1034,9 @@ install_as_service() {
                      "$SCRIPT_PATH" --service $dev_flag
     fi
 
+    # Now running as root - initialize logging
+    init_log "service"
+
     log "=== PHASE 1: Installing binaries ==="
     install_binary "$install_dir"
     log "Binaries installed to $install_dir"
@@ -1042,12 +1051,14 @@ install_as_service() {
         log "Existing password hash found and preserved"
         echo -e "  ${GREEN}Existing password preserved${NC}"
         PASSWORD_HASH="$existing_hash"
-    elif [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
-        # Hash the password now that binary is installed
+    elif [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
+        # Hash the password now that binary is installed (decode from base64)
         log "Hashing new password..."
-        local plain_password="${PASSWORD_HASH#__PENDING__:}"
+        local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
+        local plain_password
+        plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
         local hash
-        hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+        hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
             log "Password hashed successfully"
@@ -1058,25 +1069,13 @@ install_as_service() {
             exit 1
         fi
     else
-        # Broken install: password file existed but couldn't read hash
-        # Prompt for new password now that binary is installed
-        log "Could not read existing password - prompting for new one" "WARN"
-        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
-        MT_BINARY_PATH="$install_dir/mt" prompt_password
-        if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
-            local plain_password="${PASSWORD_HASH#__PENDING__:}"
-            local hash
-            hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
-            if [[ "$hash" == '$PBKDF2$'* ]]; then
-                PASSWORD_HASH="$hash"
-                log "Password hashed successfully (after re-prompt)"
-                echo -e "  ${GRAY}Password: hashed${NC}"
-            else
-                log "Failed to hash password after re-prompt" "ERROR"
-                echo -e "  ${RED}Failed to hash password${NC}"
-                exit 1
-            fi
-        fi
+        # PASSWORD_HASH should have been passed through sudo - if empty, that's a bug
+        log "PASSWORD_HASH not passed through sudo correctly" "ERROR"
+        log "PASSWORD_HASH value: '${PASSWORD_HASH:0:20}...'" "DEBUG"
+        echo -e "  ${RED}Error: Password was not passed through sudo correctly.${NC}"
+        echo -e "  ${RED}This is a bug in the installer. Please report this issue.${NC}"
+        echo -e "  ${GRAY}Workaround: Run the installer again.${NC}"
+        exit 1
     fi
 
     # Store password in secrets.bin (secure storage)
@@ -1393,12 +1392,14 @@ install_as_user() {
         log "Existing password hash found and preserved"
         echo -e "  ${GREEN}Existing password preserved${NC}"
         PASSWORD_HASH="$existing_hash"
-    elif [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
-        # Hash the password now that binary is installed
+    elif [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
+        # Hash the password now that binary is installed (decode from base64)
         log "Hashing new password..."
-        local plain_password="${PASSWORD_HASH#__PENDING__:}"
+        local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
+        local plain_password
+        plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
         local hash
-        hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+        hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
             log "Password hashed successfully"
@@ -1409,25 +1410,13 @@ install_as_user() {
             exit 1
         fi
     else
-        # Broken install: password file existed but couldn't read hash
-        # Prompt for new password now that binary is installed
-        log "Could not read existing password - prompting for new one" "WARN"
-        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
-        MT_BINARY_PATH="$install_dir/mt" prompt_password
-        if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
-            local plain_password="${PASSWORD_HASH#__PENDING__:}"
-            local hash
-            hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
-            if [[ "$hash" == '$PBKDF2$'* ]]; then
-                PASSWORD_HASH="$hash"
-                log "Password hashed successfully (after re-prompt)"
-                echo -e "  ${GRAY}Password: hashed${NC}"
-            else
-                log "Failed to hash password after re-prompt" "ERROR"
-                echo -e "  ${RED}Failed to hash password${NC}"
-                exit 1
-            fi
-        fi
+        # PASSWORD_HASH should have been set during prompting - if empty, that's a bug
+        log "PASSWORD_HASH not set correctly" "ERROR"
+        log "PASSWORD_HASH value: '${PASSWORD_HASH:0:20}...'" "DEBUG"
+        echo -e "  ${RED}Error: Password was not set correctly.${NC}"
+        echo -e "  ${RED}This is a bug in the installer. Please report this issue.${NC}"
+        echo -e "  ${GRAY}Workaround: Run the installer again.${NC}"
+        exit 1
     fi
 
     # Store password in secrets.bin (secure storage)
