@@ -1828,8 +1828,8 @@ html, body {
 }
 
 @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
+    0%, 100% { translate: 0 0; }
+    50% { translate: 0 -10px; }
 }
 
 .empty-state p {
@@ -3134,13 +3134,13 @@ html, body {
 }
 
 @keyframes logo-appear {
-    0% { opacity: 0; transform: scale(0.8) translateY(20px); }
-    100% { opacity: 1; transform: scale(1) translateY(0); }
+    0% { opacity: 0; transform: scale(0.8); }
+    100% { opacity: 1; transform: scale(1); }
 }
 
 @keyframes logo-float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
+    0%, 100% { translate: 0 0; }
+    50% { translate: 0 -10px; }
 }
 
 .login-header {
