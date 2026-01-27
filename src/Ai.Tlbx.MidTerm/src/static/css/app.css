@@ -5290,6 +5290,13 @@ html, body {
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
     }
+
+    /* Exempt subtle ambient animations */
+    .login-logo,
+    .empty-state-logo {
+        animation-duration: 4s !important;
+        animation-iteration-count: infinite !important;
+    }
 }
 
 /* =============================================================================
