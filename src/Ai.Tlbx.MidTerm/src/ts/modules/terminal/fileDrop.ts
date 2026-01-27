@@ -6,6 +6,7 @@
  */
 
 import { $activeSessionId } from '../../stores';
+import { isSessionDragActive } from '../sidebar/sessionDrag';
 
 // =============================================================================
 // Constants
@@ -302,14 +303,19 @@ async function handleFileDrop(files: FileList): Promise<void> {
  * Set up drag-and-drop handlers for a terminal container
  */
 export function setupFileDrop(container: HTMLElement): void {
-  // Prevent default drag behaviors
+  // Prevent default drag behaviors - but only show indicator for file drags
   container.addEventListener('dragover', (e) => {
+    // Don't show file drop indicator during session docking
+    if (isSessionDragActive()) return;
+
     e.preventDefault();
     e.stopPropagation();
     container.classList.add('drag-over');
   });
 
   container.addEventListener('dragleave', (e) => {
+    if (isSessionDragActive()) return;
+
     e.preventDefault();
     e.stopPropagation();
     container.classList.remove('drag-over');
@@ -319,8 +325,11 @@ export function setupFileDrop(container: HTMLElement): void {
     container.classList.remove('drag-over');
   });
 
-  // Handle drop
+  // Handle drop - only process actual file drops, not session docking
   container.addEventListener('drop', async (e) => {
+    // Session docking is handled by sessionDrag.ts global handler
+    if (isSessionDragActive()) return;
+
     e.preventDefault();
     e.stopPropagation();
     container.classList.remove('drag-over');

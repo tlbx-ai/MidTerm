@@ -22,6 +22,14 @@ let dropIndicatorPosition: 'above' | 'below' | null = null;
 let dragImageElement: HTMLElement | null = null;
 let dragStartedFromHandle = false;
 
+/**
+ * Check if a session drag is currently in progress.
+ * Used by fileDrop to avoid showing file upload indicator during session docking.
+ */
+export function isSessionDragActive(): boolean {
+  return draggedSessionId !== null;
+}
+
 // Track elements with active drop indicators (avoids full DOM scan)
 const activeIndicators = new Set<HTMLElement>();
 
