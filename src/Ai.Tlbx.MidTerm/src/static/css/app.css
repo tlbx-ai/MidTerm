@@ -3129,8 +3129,7 @@ html, body {
     max-width: 100%;
     object-fit: contain;
     margin-bottom: 24px;
-    animation: logo-appear 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both,
-               logo-float 4s ease-in-out 0.8s infinite;
+    animation: logo-float 4s ease-in-out infinite;
 }
 
 @keyframes logo-appear {
