@@ -88,6 +88,15 @@ import { getForegroundInfo } from './modules/process';
 import { initTouchController } from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
 import {
+  initLayoutRenderer,
+  initDockOverlay,
+  handleSessionClosed,
+  isSessionInLayout,
+  isLayoutActive,
+  focusLayoutSession,
+  registerLayoutCallbacks,
+} from './modules/layout';
+import {
   cacheDOMElements,
   sessionTerminals,
   dom,
@@ -162,6 +171,8 @@ async function init(): Promise<void> {
   initializeSidebarUpdater();
   initTabTitle();
   initSessionDrag();
+  initLayoutRenderer();
+  initDockOverlay();
   initializeCommandHistory();
   initHistoryDropdown(spawnFromHistory);
 
@@ -239,6 +250,11 @@ function registerCallbacks(): void {
       sendResize(sessionId, terminal.cols, terminal.rows);
     },
     focusActiveTerminal,
+  });
+
+  registerLayoutCallbacks({
+    createTerminalForSession,
+    sendActiveSessionHint,
   });
 
   setSessionListCallbacks({
@@ -391,9 +407,23 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     closeSettings();
   }
 
+  // If session is in layout, focus it there instead of switching to standalone
+  if (isSessionInLayout(sessionId)) {
+    focusLayoutSession(sessionId);
+    sendActiveSessionHint(sessionId);
+    // Ensure terminal exists
+    const sessionInfo = getSession(sessionId);
+    createTerminalForSession(sessionId, sessionInfo);
+    return;
+  }
+
+  // Standalone mode - hide all terminals except selected
   sessionTerminals.forEach((state, id) => {
-    state.container.classList.add('hidden');
-    setTerminalScrollback(id, false);
+    // Don't hide terminals that are in the layout
+    if (!isSessionInLayout(id)) {
+      state.container.classList.add('hidden');
+    }
+    setTerminalScrollback(id, id === sessionId);
   });
 
   $activeSessionId.set(sessionId);
@@ -402,7 +432,11 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const sessionInfo = getSession(sessionId);
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
-  state.container.classList.remove('hidden');
+
+  // Only show if not in layout (layout handles visibility)
+  if (!isLayoutActive()) {
+    state.container.classList.remove('hidden');
+  }
   setTerminalScrollback(sessionId, true);
 
   requestAnimationFrame(() => {
@@ -419,6 +453,9 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 }
 
 function deleteSession(sessionId: string): void {
+  // Remove from layout if present
+  handleSessionClosed(sessionId);
+
   // Optimistic UI: remove session immediately for better UX
   destroyTerminalForSession(sessionId);
 

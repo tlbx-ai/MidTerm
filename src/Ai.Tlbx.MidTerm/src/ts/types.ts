@@ -561,6 +561,37 @@ export interface FileResolveResponse {
 }
 
 // =============================================================================
+// Layout Types
+// =============================================================================
+
+/** Direction of a split layout */
+export type LayoutDirection = 'horizontal' | 'vertical';
+
+/** Position for docking a session relative to another */
+export type DockPosition = 'top' | 'bottom' | 'left' | 'right';
+
+/** A pane can be either a terminal session or a nested split */
+export type LayoutNode = LayoutLeaf | LayoutSplit;
+
+/** Leaf node - contains a terminal session */
+export interface LayoutLeaf {
+  type: 'leaf';
+  sessionId: string;
+}
+
+/** Split node - contains children arranged in a direction */
+export interface LayoutSplit {
+  type: 'split';
+  direction: LayoutDirection;
+  children: LayoutNode[];
+}
+
+/** Root layout for the display (null = single standalone session) */
+export interface DisplayLayout {
+  root: LayoutNode | null;
+}
+
+// =============================================================================
 // DOM Element Cache
 // =============================================================================
 

@@ -1,12 +1,20 @@
 /**
  * Session Drag-and-Drop Module
  *
- * Handles drag-and-drop reordering of sidebar session items.
+ * Handles drag-and-drop reordering of sidebar session items
+ * and docking sessions into multi-panel layouts.
  */
 
 import { dom } from '../../state';
 import { reorderSessions, $sessionList } from '../../stores';
 import { persistSessionOrder } from '../comms/stateChannel';
+import {
+  showDockOverlay,
+  hideDockOverlay,
+  getDockTarget,
+  isDockOverlayVisible,
+} from '../layout/dockOverlay';
+import { dockSession } from '../layout/layoutStore';
 
 let draggedSessionId: string | null = null;
 let draggedElement: HTMLElement | null = null;
@@ -35,6 +43,10 @@ export function initSessionDrag(): void {
   sessionList.addEventListener('dragover', handleDragOver);
   sessionList.addEventListener('dragleave', handleDragLeave);
   sessionList.addEventListener('drop', handleDrop);
+
+  // Global listeners for dock-to-layout (terminals area)
+  document.addEventListener('dragover', handleGlobalDragOver);
+  document.addEventListener('drop', handleGlobalDrop);
 }
 
 function handleDragStart(e: DragEvent): void {
@@ -85,6 +97,7 @@ function handleDragEnd(_e: DragEvent): void {
   }
 
   clearAllDropIndicators();
+  hideDockOverlay();
 
   draggedSessionId = null;
   draggedElement = null;
@@ -181,4 +194,51 @@ function clearAllDropIndicators(): void {
     item.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
   });
   activeIndicators.clear();
+}
+
+/**
+ * Check if a point is over the terminals area (not sidebar).
+ */
+function isOverTerminalsArea(x: number, y: number): boolean {
+  if (!dom.terminalsArea) return false;
+  const rect = dom.terminalsArea.getBoundingClientRect();
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+/**
+ * Handle global dragover for dock-to-layout.
+ */
+function handleGlobalDragOver(e: DragEvent): void {
+  if (!draggedSessionId) return;
+
+  // Check if over terminals area
+  if (isOverTerminalsArea(e.clientX, e.clientY)) {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+    // Show dock overlay
+    showDockOverlay(e.clientX, e.clientY, draggedSessionId);
+  } else if (isDockOverlayVisible()) {
+    // Hide dock overlay when leaving terminals area
+    hideDockOverlay();
+  }
+}
+
+/**
+ * Handle global drop for dock-to-layout.
+ */
+function handleGlobalDrop(e: DragEvent): void {
+  if (!draggedSessionId) return;
+
+  // Check if drop is on dock overlay
+  const dockTarget = getDockTarget();
+  if (dockTarget && isOverTerminalsArea(e.clientX, e.clientY)) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Perform dock operation
+    dockSession(dockTarget.targetSessionId, draggedSessionId, dockTarget.position);
+    hideDockOverlay();
+  }
 }

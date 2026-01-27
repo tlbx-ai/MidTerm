@@ -17,7 +17,7 @@ import {
   icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
-import { $activeSessionId, $currentSettings, getSession } from '../../stores';
+import { $currentSettings, getSession } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise } from './manager';
 
@@ -361,6 +361,75 @@ export function fitSessionToScreen(sessionId: string): void {
 }
 
 /**
+ * Fit a terminal to a specific container (e.g., layout pane).
+ * Resizes the terminal (cols/rows) and notifies the server.
+ * Used when docking terminals into a layout.
+ */
+export function fitTerminalToContainer(sessionId: string, container: HTMLElement): void {
+  const state = sessionTerminals.get(sessionId);
+  if (!state || !state.opened) return;
+
+  // Get cell dimensions from the terminal's rendered size
+  const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+  const terminalCols = state.terminal.cols;
+  const terminalRows = state.terminal.rows;
+
+  let cellWidth: number | null = null;
+  let cellHeight: number | null = null;
+
+  if (screen && terminalCols > 0 && terminalRows > 0) {
+    cellWidth = screen.offsetWidth / terminalCols;
+    cellHeight = screen.offsetHeight / terminalRows;
+  }
+
+  if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
+    // Fallback to fitAddon if measurements aren't valid
+    try {
+      state.fitAddon.fit();
+      sendResize(sessionId, state.terminal);
+    } catch {
+      // FitAddon may fail if terminal isn't fully initialized
+    }
+    return;
+  }
+
+  // Calculate available space in the container
+  const rect = container.getBoundingClientRect();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+  const availHeight = rect.height - TERMINAL_PADDING;
+
+  // Calculate cols/rows that fit
+  let cols = Math.floor(availWidth / cellWidth);
+  let rows = Math.floor(availHeight / cellHeight);
+
+  // Clamp to valid range
+  cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
+  rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
+
+  // Resize terminal and notify server
+  try {
+    if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
+      state.terminal.resize(cols, rows);
+      state.serverCols = cols;
+      state.serverRows = rows;
+      sendResize(sessionId, state.terminal);
+    }
+  } catch {
+    // Resize may fail if terminal is disposed
+  }
+
+  // Clear any scaling since we just resized to fit
+  const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
+  if (xterm) {
+    xterm.style.transform = '';
+    xterm.style.transformOrigin = '';
+    state.container.classList.remove('scaled');
+    const overlay = state.container.querySelector('.scaled-overlay');
+    if (overlay) overlay.remove();
+  }
+}
+
+/**
  * Apply CSS scaling to a terminal synchronously.
  * Use this when already inside a requestAnimationFrame callback.
  */
@@ -401,9 +470,18 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       overlay.className = 'scaled-overlay';
       overlay.innerHTML = `${icon('resize')} Scaled view - click to resize`;
       overlay.addEventListener('click', () => {
-        const activeId = $activeSessionId.get();
-        if (activeId) {
-          fitSessionToScreen(activeId);
+        // Get sessionId from container ID (format: "terminal-{sessionId}")
+        const sessionId = container.id.replace('terminal-', '');
+        if (!sessionId) return;
+
+        // Check if session is in a layout pane
+        const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+        if (layoutPane) {
+          // Fit to the layout pane
+          fitTerminalToContainer(sessionId, layoutPane);
+        } else {
+          // Fit to full screen
+          fitSessionToScreen(sessionId);
         }
       });
       container.appendChild(overlay);

@@ -13,7 +13,14 @@
  */
 
 import { atom, map, computed } from 'nanostores';
-import type { Session, Settings, UpdateInfo, AuthStatus, ProcessState } from '../types';
+import type {
+  Session,
+  Settings,
+  UpdateInfo,
+  AuthStatus,
+  ProcessState,
+  DisplayLayout,
+} from '../types';
 
 // =============================================================================
 // Session Stores
@@ -257,3 +264,13 @@ export function reorderSessions(fromIndex: number, toIndex: number): void {
   });
   $sessions.set(sessionsMap);
 }
+
+// =============================================================================
+// Layout Stores
+// =============================================================================
+
+/** The current layout tree (null root when showing standalone session) */
+export const $layout = atom<DisplayLayout>({ root: null });
+
+/** Focused session within the layout (for keyboard input routing) */
+export const $focusedSessionId = atom<string | null>(null);

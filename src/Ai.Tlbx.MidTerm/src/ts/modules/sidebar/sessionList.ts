@@ -10,6 +10,7 @@ import { pendingSessions, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
 import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
+import { isSessionInLayout, undockSession } from '../layout/layoutStore';
 
 // =============================================================================
 // Callback Types
@@ -222,8 +223,13 @@ function createSessionItem(
   isActive: boolean,
   isPending: boolean,
 ): HTMLDivElement {
+  const inLayout = isSessionInLayout(session.id);
   const item = document.createElement('div');
-  item.className = 'session-item' + (isActive ? ' active' : '') + (isPending ? ' pending' : '');
+  item.className =
+    'session-item' +
+    (isActive ? ' active' : '') +
+    (isPending ? ' pending' : '') +
+    (inLayout ? ' in-layout' : '');
   item.dataset.sessionId = session.id;
   item.draggable = !isPending;
 
@@ -258,10 +264,22 @@ function createSessionItem(
 
   const displayInfo = getSessionDisplayInfo(session);
 
+  const titleRow = document.createElement('div');
+  titleRow.className = 'session-title-row';
+
   const title = document.createElement('span');
   title.className = 'session-title truncate';
   title.textContent = displayInfo.primary;
-  info.appendChild(title);
+  titleRow.appendChild(title);
+
+  // Layout badge (shown when session is in layout)
+  const layoutBadge = document.createElement('span');
+  layoutBadge.className = 'layout-badge';
+  layoutBadge.textContent = 'SPLIT';
+  layoutBadge.title = 'Session is in a split layout';
+  titleRow.appendChild(layoutBadge);
+
+  info.appendChild(titleRow);
 
   if (displayInfo.secondary) {
     item.classList.add('two-line');
@@ -338,9 +356,21 @@ function createSessionItem(
       }
     });
 
+    // Undock button (only shown when in layout)
+    const undockBtn = document.createElement('button');
+    undockBtn.className = 'session-undock';
+    undockBtn.textContent = 'Undock';
+    undockBtn.title = 'Remove from split layout';
+    undockBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      undockSession(session.id);
+    });
+
     actions.appendChild(pinBtn);
     actions.appendChild(resizeBtn);
     actions.appendChild(renameBtn);
+    actions.appendChild(undockBtn);
     actions.appendChild(closeBtn);
   }
 
@@ -408,9 +438,10 @@ export function renderSessionList(): void {
     const isPending = pendingSessions.has(session.id);
 
     if (existingItem) {
-      // Update active state and pending state
+      // Update active state, pending state, and layout state
       existingItem.classList.toggle('active', session.id === activeSessionId);
       existingItem.classList.toggle('pending', isPending);
+      existingItem.classList.toggle('in-layout', isSessionInLayout(session.id));
 
       // Ensure correct order
       if (previousElement) {

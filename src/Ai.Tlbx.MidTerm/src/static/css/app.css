@@ -478,6 +478,12 @@ html, body {
     min-width: 0;
 }
 
+.session-title-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .session-title {
     font-size: 12.5px;
     color: var(--text-primary);
@@ -1059,6 +1065,165 @@ html, body {
 
 .terminal-error button:hover {
     background: var(--btn-primary-hover);
+}
+
+/* ============================================================================
+   Multi-Panel Layout
+   ============================================================================ */
+
+/* Layout root container - holds the entire layout tree */
+.layout-root {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+.layout-root.hidden {
+    display: none;
+}
+
+/* Split container - flexbox in horizontal or vertical direction */
+.layout-split {
+    display: flex;
+    gap: 2px;
+    width: 100%;
+    height: 100%;
+}
+
+.layout-split.horizontal {
+    flex-direction: row;
+}
+
+.layout-split.vertical {
+    flex-direction: column;
+}
+
+/* All children get equal flex sizing */
+.layout-split > * {
+    flex: 1;
+    min-width: 100px;
+    min-height: 50px;
+}
+
+/* Leaf node - contains a terminal session */
+.layout-leaf {
+    position: relative;
+    background-color: var(--terminal-bg);
+}
+
+/* Terminal container inside a leaf */
+.layout-leaf .terminal-container {
+    position: absolute;
+    inset: 0;
+}
+
+/* Focus indicator for active pane */
+.layout-leaf.focused {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -2px;
+}
+
+/* Dock overlay - shown during drag to indicate drop zones */
+.dock-overlay {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+.dock-overlay.hidden {
+    display: none;
+}
+
+/* Dock zone base styles */
+.dock-zone {
+    position: absolute;
+    background-color: transparent;
+    transition: background-color 0.15s ease;
+}
+
+/* Zone positions - each takes 25% of the edge */
+.dock-zone.top {
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 25%;
+}
+
+.dock-zone.bottom {
+    bottom: 0;
+    left: 20%;
+    right: 20%;
+    height: 25%;
+}
+
+.dock-zone.left {
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 25%;
+}
+
+.dock-zone.right {
+    right: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 25%;
+}
+
+/* Highlighted zone - visual feedback for drop target */
+.dock-zone.highlighted {
+    background-color: var(--accent-blue-25);
+    border: 2px dashed var(--accent-blue);
+    border-radius: var(--radius-md);
+}
+
+/* Center indicator - shows target session */
+.dock-center {
+    position: absolute;
+    top: 25%;
+    left: 25%;
+    right: 25%;
+    bottom: 25%;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-tertiary);
+}
+
+/* Sidebar session item - layout indicator */
+.session-item .layout-badge {
+    display: none;
+    margin-left: 4px;
+    padding: 1px 4px;
+    font-size: 9px;
+    background-color: var(--accent-blue-15);
+    color: var(--accent-blue);
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+}
+
+.session-item.in-layout .layout-badge {
+    display: inline-block;
+}
+
+/* Undock button - visible when session is in layout */
+.session-undock {
+    display: none;
+    padding: 2px 6px;
+    font-size: 11px;
+    background-color: var(--btn-secondary);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.session-item.in-layout .session-undock {
+    display: inline-block;
+}
+
+.session-undock:hover {
+    background-color: var(--btn-secondary-hover);
+    color: var(--text-primary);
 }
 
 /* ============================================================================
