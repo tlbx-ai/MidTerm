@@ -2267,6 +2267,37 @@ html, body {
     box-shadow: 0 0 0 3px var(--accent-gold-10);
 }
 
+/* Path value display */
+.path-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background-color: var(--bg-input);
+    padding: 6px 10px;
+    border-radius: 4px;
+    word-break: break-all;
+    max-width: 400px;
+}
+
+.path-value-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.path-value-row .btn-icon {
+    flex-shrink: 0;
+}
+
+.btn-icon.spinning .icon {
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* Inline text input with save button */
 .text-input-wrapper {
     position: relative;

@@ -516,6 +516,34 @@ public static class EndpointSetup
             }
         });
 
+        app.MapPost("/api/settings/reload", () =>
+        {
+            settingsService.InvalidateCache();
+            var settings = settingsService.Load();
+            var publicSettings = Settings.MidTermSettingsPublic.FromSettings(settings);
+            return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
+        });
+
+        app.MapGet("/api/paths", () =>
+        {
+            var settings = settingsService.Load();
+            var isWindowsService = settingsService.IsRunningAsService && OperatingSystem.IsWindows();
+            var isUnixService = settingsService.IsRunningAsService && !OperatingSystem.IsWindows();
+
+            var secretsFile = OperatingSystem.IsWindows()
+                ? Path.Combine(settingsService.SettingsDirectory, "secrets.bin")
+                : Path.Combine(settingsService.SettingsDirectory, "secrets.json");
+
+            var response = new PathsResponse
+            {
+                SettingsFile = settingsService.SettingsPath,
+                SecretsFile = secretsFile,
+                CertificateFile = settings.CertificatePath ?? "",
+                LogDirectory = LogPaths.GetLogDirectory(isWindowsService, isUnixService)
+            };
+            return Results.Json(response, AppJsonContext.Default.PathsResponse);
+        });
+
         app.MapGet("/api/users", () =>
         {
             var users = UserEnumerationService.GetSystemUsers();

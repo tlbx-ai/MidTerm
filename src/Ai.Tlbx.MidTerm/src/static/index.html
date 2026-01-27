@@ -534,6 +534,32 @@
                             <section class="settings-panel hidden" data-panel="diagnostics">
                                 <h2>Diagnostics</h2>
 
+                                <!-- Paths -->
+                                <div class="settings-section">
+                                    <h3>File Paths</h3>
+                                    <div class="setting-row">
+                                        <label>Settings</label>
+                                        <div class="path-value-row">
+                                            <code class="path-value" id="path-settings">-</code>
+                                            <button id="btn-reload-settings" class="btn-icon" title="Reload settings from file">
+                                                <span class="icon">&#xe9bd;</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Secrets</label>
+                                        <code class="path-value" id="path-secrets">-</code>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Certificate</label>
+                                        <code class="path-value" id="path-certificate">-</code>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Log Directory</label>
+                                        <code class="path-value" id="path-logs">-</code>
+                                    </div>
+                                </div>
+
                                 <!-- Capture Settings -->
                                 <div class="settings-section diag-capture-section">
                                     <h3>Server Capture Level</h3>
