@@ -3129,7 +3129,10 @@ html, body {
     max-width: 100%;
     object-fit: contain;
     margin-bottom: 24px;
-    animation: logo-float 4s ease-in-out infinite;
+    animation-name: logo-float !important;
+    animation-duration: 4s !important;
+    animation-timing-function: ease-in-out !important;
+    animation-iteration-count: infinite !important;
 }
 
 @keyframes logo-appear {
