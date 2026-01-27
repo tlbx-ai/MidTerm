@@ -202,20 +202,13 @@ public static class ServerSetup
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
             // Content Security Policy - strict but allows xterm.js inline styles
-            // Voice server runs on same host as MT but port 2010 (dev mode only)
-            var voiceCsp = "";
-            if (UpdateService.IsDevEnvironment)
-            {
-                var host = context.Request.Host.Host;
-                voiceCsp = $" https://{host}:2010";
-            }
             var csp = "default-src 'self'; " +
                       "script-src 'self'; " +
                       "worker-src 'self' blob:; " +
                       "style-src 'self' 'unsafe-inline'; " +
                       "img-src 'self' data:; " +
                       "font-src 'self' data:; " +
-                      $"connect-src 'self' ws: wss: https://api.github.com{voiceCsp}; " +
+                      "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
                       "frame-ancestors 'none'";
             headers.ContentSecurityPolicy = csp;
 

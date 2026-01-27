@@ -14,7 +14,7 @@ import type { VoiceToolName } from '../types';
 import type { VoiceHealthResponse, VoiceProvider } from '../types';
 
 const log = createLogger('voice');
-const VOICE_SERVER_PORT = 2010;
+const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
 
 let ws: WebSocket | null = null;
 let isSessionActive = false;
@@ -33,9 +33,7 @@ let selectedSpeed = 1.0;
  */
 export async function checkVoiceServerHealth(): Promise<boolean> {
   try {
-    // Voice server is always HTTPS
-    const host = window.location.hostname;
-    const url = `https://${host}:${VOICE_SERVER_PORT}/api/health`;
+    const url = `${VOICE_SERVER_URL}/api/health`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
@@ -272,9 +270,7 @@ export async function startVoiceSession(): Promise<void> {
   }
 
   try {
-    // Voice server is always HTTPS/WSS
-    const host = window.location.hostname;
-    let wsUrl = `wss://${host}:${VOICE_SERVER_PORT}/voice`;
+    let wsUrl = `wss://midterm.tlbx.ai/voice`;
 
     // Append password if configured
     const password = $voiceServerPassword.get();
@@ -587,11 +583,10 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
  * Test voice server connection and show diagnostic popup
  */
 async function testVoiceServerConnection(): Promise<void> {
-  const host = window.location.hostname;
-  const healthUrl = `https://${host}:${VOICE_SERVER_PORT}/api/health`;
+  const healthUrl = `${VOICE_SERVER_URL}/api/health`;
 
   const results: string[] = [];
-  results.push(`Voice Server: https://${host}:${VOICE_SERVER_PORT}`);
+  results.push(`Voice Server: ${VOICE_SERVER_URL}`);
   results.push('');
 
   try {
