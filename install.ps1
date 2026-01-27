@@ -653,6 +653,21 @@ function Write-ServiceSettings
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
+    # Read updateChannel from existing settings before backup (preserve dev channel users)
+    $existingUpdateChannel = $null
+    if (Test-Path $settingsPath)
+    {
+        try
+        {
+            $existingSettings = Get-Content -Path $settingsPath -Raw | ConvertFrom-Json
+            if ($existingSettings.updateChannel)
+            {
+                $existingUpdateChannel = $existingSettings.updateChannel
+            }
+        }
+        catch { }
+    }
+
     # Backup existing settings for migration by the app
     if (Test-Path $settingsPath)
     {
@@ -675,6 +690,12 @@ function Write-ServiceSettings
     {
         $settings.certificatePath = $CertPath
         $settings.keyProtection = "osProtected"
+    }
+
+    # Preserve updateChannel if it existed (keep dev channel users on dev)
+    if ($existingUpdateChannel)
+    {
+        $settings.updateChannel = $existingUpdateChannel
     }
 
     $json = $settings | ConvertTo-Json -Depth 10

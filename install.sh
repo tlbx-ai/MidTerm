@@ -675,6 +675,12 @@ write_service_settings() {
     # Service runs as INSTALLING_USER, so they need write access to config dir
     chown -R "$INSTALLING_USER" "$config_dir"
 
+    # Read updateChannel from existing settings before backup (preserve dev channel users)
+    local existing_update_channel=""
+    if [ -f "$settings_path" ]; then
+        existing_update_channel=$(grep -o '"updateChannel"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' || true)
+    fi
+
     # Backup existing settings for migration by the app
     if [ -f "$settings_path" ]; then
         echo -e "  ${GRAY}Backing up existing settings...${NC}"
@@ -691,6 +697,12 @@ write_service_settings() {
   \"certificatePath\": \"$CERT_PATH\",
   \"keyProtection\": \"osProtected\""
         echo -e "  ${GREEN}HTTPS: enabled (OS-protected key)${NC}"
+    fi
+
+    # Preserve updateChannel if it existed (keep dev channel users on dev)
+    if [ -n "$existing_update_channel" ]; then
+        json_content="$json_content,
+  \"updateChannel\": \"$existing_update_channel\""
     fi
 
     json_content="$json_content
@@ -717,6 +729,12 @@ write_user_settings() {
 
     mkdir -p "$config_dir"
 
+    # Read updateChannel from existing settings before backup (preserve dev channel users)
+    local existing_update_channel=""
+    if [ -f "$settings_path" ]; then
+        existing_update_channel=$(grep -o '"updateChannel"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' || true)
+    fi
+
     # Backup existing settings for migration by the app
     if [ -f "$settings_path" ]; then
         echo -e "  ${GRAY}Backing up existing settings...${NC}"
@@ -732,6 +750,12 @@ write_user_settings() {
   \"certificatePath\": \"$CERT_PATH\",
   \"keyProtection\": \"osProtected\""
         echo -e "  ${GREEN}HTTPS: enabled (OS-protected key)${NC}"
+    fi
+
+    # Preserve updateChannel if it existed (keep dev channel users on dev)
+    if [ -n "$existing_update_channel" ]; then
+        json_content="$json_content,
+  \"updateChannel\": \"$existing_update_channel\""
     fi
 
     json_content="$json_content
