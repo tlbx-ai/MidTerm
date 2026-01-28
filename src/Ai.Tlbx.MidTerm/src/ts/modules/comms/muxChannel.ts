@@ -338,6 +338,7 @@ export function connectMuxWebSocket(): void {
       sessionTerminals.forEach((state) => {
         if (state.opened) {
           state.terminal.clear();
+          state.terminal.write('\x1b[0m');
         }
         state.serverCols = 0;
         state.serverRows = 0;
@@ -414,6 +415,7 @@ export function connectMuxWebSocket(): void {
       sessionTerminals.forEach((state) => {
         if (state.opened) {
           state.terminal.clear();
+          state.terminal.write('\x1b[0m');
         }
       });
       pendingOutputFrames.clear();

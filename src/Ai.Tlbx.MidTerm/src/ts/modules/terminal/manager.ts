@@ -246,6 +246,7 @@ export function createTerminalForSession(
           terminalsWithWebgl.delete(sessionId);
           state.hasWebgl = false;
           webglAddon.dispose();
+          requestBufferRefresh(sessionId);
         });
         terminal.loadAddon(webglAddon);
         terminalsWithWebgl.add(sessionId);

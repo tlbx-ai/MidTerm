@@ -71,6 +71,14 @@ public sealed class MuxWebSocketHandler
         await client.TrySendAsync(initFrame);
     }
 
+    private static readonly byte[] SgrReset = Encoding.ASCII.GetBytes("\x1b[0m");
+
+    private async Task SendSgrResetFrameAsync(MuxClient client, string sessionId, int cols, int rows)
+    {
+        var frame = MuxProtocol.CreateOutputFrame(sessionId, cols, rows, SgrReset);
+        await client.TrySendAsync(frame);
+    }
+
     private async Task SendInitialBuffersAsync(MuxClient client)
     {
         var sessions = _sessionManager.GetAllSessions();
@@ -81,6 +89,8 @@ public sealed class MuxWebSocketHandler
             {
                 var buffer = await _sessionManager.GetBufferAsync(sessionInfo.Id);
                 if (buffer is null || buffer.Length == 0) continue;
+
+                await SendSgrResetFrameAsync(client, sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows);
 
                 // Chunk large buffers and compress each chunk
                 for (var offset = 0; offset < buffer.Length; offset += MuxProtocol.CompressionChunkSize)
@@ -236,6 +246,8 @@ public sealed class MuxWebSocketHandler
             }
             if (buffer.Length > 0)
             {
+                await SendSgrResetFrameAsync(client, sessionId, session.Cols, session.Rows);
+
                 // Chunk and compress buffer response
                 for (var offset = 0; offset < buffer.Length; offset += MuxProtocol.CompressionChunkSize)
                 {
