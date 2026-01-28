@@ -1297,24 +1297,18 @@ write_result true ""Update completed successfully""
 
     private static string FindPowerShellPath()
     {
-        // Try pwsh first (PowerShell Core/7+)
-        var pwshPaths = new[]
-        {
-            @"C:\Program Files\PowerShell\7\pwsh.exe",
-            @"C:\Program Files\PowerShell\pwsh.exe",
-            Environment.ExpandEnvironmentVariables(@"%ProgramFiles%\PowerShell\7\pwsh.exe")
-        };
+        // Use Windows PowerShell — guaranteed present on all Windows versions
+        // The generated update script uses only PS 5.1-compatible syntax
+        var windowsPowerShell = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell", "v1.0", "powershell.exe");
 
-        foreach (var path in pwshPaths)
+        if (File.Exists(windowsPowerShell))
         {
-            if (File.Exists(path))
-            {
-                return path;
-            }
+            return windowsPowerShell;
         }
 
-        // Fall back to pwsh in PATH
-        return "pwsh";
+        return "powershell.exe";
     }
 
     private static string EscapeForPowerShell(string value)

@@ -62,9 +62,14 @@ Your PC                          Anywhere
 curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell 5.1+ or pwsh):**
 ```powershell
 irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
+```
+
+**Windows (cmd):**
+```cmd
+powershell -c "irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex"
 ```
 
 The installer will:

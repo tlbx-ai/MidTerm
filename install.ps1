@@ -1,4 +1,3 @@
-#!/usr/bin/env pwsh
 # MidTerm Windows Installer
 # Usage: irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 # Dev:   & ([scriptblock]::Create((irm https://tlbx-ai.github.io/MidTerm/install.ps1))) -Dev
@@ -17,6 +16,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+# Ensure TLS 1.2 for GitHub API/downloads (PS 5.1 defaults to TLS 1.0)
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 # Logging
 $script:UpdateLogFile = $null
@@ -230,7 +232,7 @@ function Test-ExistingCertificate
     )
 
     $certPath = Join-Path $SettingsDir "midterm.pem"
-    $keyPath = Join-Path $SettingsDir "keys" "midterm.dpapi"
+    $keyPath = Join-Path (Join-Path $SettingsDir "keys") "midterm.dpapi"
 
     # Check if both cert and key exist
     if (-not (Test-Path $certPath))
@@ -989,12 +991,46 @@ function Install-MidTerm
         # Check health endpoint (HTTPS with self-signed cert requires SkipCertificateCheck)
         try
         {
-            $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
-            Write-Host ""
-            Write-Host "Health Check:" -ForegroundColor Cyan
-            if ($health.healthy) { Write-Host "  Status     : Healthy" -ForegroundColor Green }
-            else { Write-Host "  Status     : Unhealthy" -ForegroundColor Red; if ($health.hostError) { Write-Host "  Error      : $($health.hostError)" -ForegroundColor Red } }
-            Write-Host "  Version    : $($health.version)" -ForegroundColor Gray
+            if ($PSVersionTable.PSVersion.Major -ge 6)
+            {
+                $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
+            }
+            else
+            {
+                # PS 5.1 workaround for self-signed certs
+                try
+                {
+                    Add-Type @"
+using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCerts {
+    public static void Ignore() {
+        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+    }
+    public static void Restore() {
+        ServicePointManager.ServerCertificateValidationCallback = null;
+    }
+}
+"@ -ErrorAction SilentlyContinue
+                    [TrustAllCerts]::Ignore()
+                    $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -ErrorAction Stop
+                    [TrustAllCerts]::Restore()
+                }
+                catch
+                {
+                    $health = $null
+                }
+            }
+
+            if ($health)
+            {
+                Write-Host ""
+                Write-Host "Health Check:" -ForegroundColor Cyan
+                if ($health.healthy) { Write-Host "  Status     : Healthy" -ForegroundColor Green }
+                else { Write-Host "  Status     : Unhealthy" -ForegroundColor Red; if ($health.hostError) { Write-Host "  Error      : $($health.hostError)" -ForegroundColor Red } }
+                Write-Host "  Version    : $($health.version)" -ForegroundColor Gray
+            }
         }
         catch
         {
@@ -1436,7 +1472,8 @@ if ($asService)
         if ($Dev) { $arguments += "-Dev" }
 
         # Start elevated process hidden
-        $elevatedProcess = Start-Process pwsh -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
+        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+        $elevatedProcess = Start-Process $psExe -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
 
         # Stream output from log file to original terminal
         $linesRead = 0
