@@ -36,71 +36,78 @@
             <h2>Step 2: Install Certificate</h2>
             <p class="platform-detected">Detected: <span id="detected-platform">Unknown</span></p>
 
-            <!-- iOS panel -->
-            <div id="ios-panel" class="platform-panel hidden">
-                <h3>iOS / iPadOS</h3>
-                <button type="button" class="install-btn" id="btn-install-ios">
-                    Install Profile
-                </button>
-                <ol class="install-steps">
-                    <li>Tap "Install Profile" above</li>
-                    <li>Open <strong>Settings</strong> app</li>
-                    <li>Tap <strong>Profile Downloaded</strong> (near the top)</li>
-                    <li>Tap <strong>Install</strong>, enter passcode if prompted</li>
-                    <li>Go to <strong>Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings</strong></li>
-                    <li>Enable full trust for <strong>MidTerm Certificate</strong></li>
-                </ol>
-            </div>
+            <!-- Mobile section -->
+            <div class="platform-group">
+                <h3 class="platform-group-title">Mobile</h3>
 
-            <!-- Android panel -->
-            <div id="android-panel" class="platform-panel hidden">
-                <h3>Android</h3>
-                <button type="button" class="install-btn" id="btn-install-android">
-                    Download Certificate
-                </button>
-                <ol class="install-steps">
-                    <li>Tap "Download Certificate" above</li>
-                    <li>Open <strong>Settings &rarr; Security &rarr; Encryption & credentials</strong></li>
-                    <li>Tap <strong>Install a certificate &rarr; CA certificate</strong></li>
-                    <li>Select the downloaded <code>midterm.pem</code> file</li>
-                    <li>Verify the fingerprint shown matches the one above</li>
-                </ol>
-                <p class="install-note">Note: Menu names vary by Android version and manufacturer.</p>
-            </div>
-
-            <!-- Desktop panel -->
-            <div id="desktop-panel" class="platform-panel hidden">
-                <h3>Desktop</h3>
-                <div class="os-tabs">
-                    <button type="button" class="os-tab active" data-os="windows">Windows</button>
-                    <button type="button" class="os-tab" data-os="macos">macOS</button>
-                    <button type="button" class="os-tab" data-os="linux">Linux</button>
+                <!-- iOS panel -->
+                <div id="ios-panel" class="platform-panel">
+                    <h4>iOS / iPadOS <span id="ios-detected" class="detected-badge hidden">(Detected)</span></h4>
+                    <button type="button" class="install-btn" id="btn-install-ios">
+                        Install Profile
+                    </button>
+                    <ol class="install-steps">
+                        <li>Tap "Install Profile" above</li>
+                        <li>Open <strong>Settings</strong> app</li>
+                        <li>Tap <strong>Profile Downloaded</strong> (near the top)</li>
+                        <li>Tap <strong>Install</strong>, enter passcode if prompted</li>
+                        <li>Go to <strong>Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings</strong></li>
+                        <li>Enable full trust for <strong>MidTerm Certificate</strong></li>
+                    </ol>
                 </div>
 
-                <div class="os-instructions" id="windows-instructions">
-                    <button type="button" class="install-btn" id="btn-download-pem-desktop">
+                <!-- Android panel -->
+                <div id="android-panel" class="platform-panel">
+                    <h4>Android <span id="android-detected" class="detected-badge hidden">(Detected)</span></h4>
+                    <button type="button" class="install-btn" id="btn-install-android">
                         Download Certificate
                     </button>
-                    <p>Then run as Administrator in the download folder:</p>
-                    <code class="command-block">certutil -addstore Root midterm.pem</code>
+                    <ol class="install-steps">
+                        <li>Tap "Download Certificate" above</li>
+                        <li>Open <strong>Settings &rarr; Security &rarr; Encryption & credentials</strong></li>
+                        <li>Tap <strong>Install a certificate &rarr; CA certificate</strong></li>
+                        <li>Select the downloaded <code>midterm.pem</code> file</li>
+                        <li>Verify the fingerprint shown matches the one above</li>
+                    </ol>
+                    <p class="install-note">Note: Menu names vary by Android version and manufacturer.</p>
                 </div>
+            </div>
 
-                <div class="os-instructions hidden" id="macos-instructions">
-                    <button type="button" class="install-btn" id="btn-download-pem-macos">
-                        Download Certificate
-                    </button>
-                    <p>Then run in Terminal from the download folder:</p>
-                    <code class="command-block">sudo security add-trusted-cert -d -r trustRoot \
+            <!-- Desktop section -->
+            <div class="platform-group">
+                <h3 class="platform-group-title">Desktop <span id="desktop-detected" class="detected-badge hidden">(Detected)</span></h3>
+                <div id="desktop-panel" class="platform-panel">
+                    <div class="os-tabs">
+                        <button type="button" class="os-tab active" data-os="windows">Windows</button>
+                        <button type="button" class="os-tab" data-os="macos">macOS</button>
+                        <button type="button" class="os-tab" data-os="linux">Linux</button>
+                    </div>
+
+                    <div class="os-instructions" id="windows-instructions">
+                        <button type="button" class="install-btn" id="btn-download-pem-desktop">
+                            Download Certificate
+                        </button>
+                        <p>Then run as Administrator in the download folder:</p>
+                        <code class="command-block">certutil -addstore Root midterm.pem</code>
+                    </div>
+
+                    <div class="os-instructions hidden" id="macos-instructions">
+                        <button type="button" class="install-btn" id="btn-download-pem-macos">
+                            Download Certificate
+                        </button>
+                        <p>Then run in Terminal from the download folder:</p>
+                        <code class="command-block">sudo security add-trusted-cert -d -r trustRoot \
     -k /Library/Keychains/System.keychain midterm.pem</code>
-                </div>
+                    </div>
 
-                <div class="os-instructions hidden" id="linux-instructions">
-                    <button type="button" class="install-btn" id="btn-download-pem-linux">
-                        Download Certificate
-                    </button>
-                    <p>Then run in Terminal from the download folder:</p>
-                    <code class="command-block">sudo cp midterm.pem /usr/local/share/ca-certificates/midterm.crt
+                    <div class="os-instructions hidden" id="linux-instructions">
+                        <button type="button" class="install-btn" id="btn-download-pem-linux">
+                            Download Certificate
+                        </button>
+                        <p>Then run in Terminal from the download folder:</p>
+                        <code class="command-block">sudo cp midterm.pem /usr/local/share/ca-certificates/midterm.crt
 sudo update-ca-certificates</code>
+                    </div>
                 </div>
             </div>
         </section>

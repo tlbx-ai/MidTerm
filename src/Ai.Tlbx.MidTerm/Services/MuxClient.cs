@@ -60,8 +60,8 @@ public sealed class MuxClient : IAsyncDisposable
     private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
-    private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(1000);
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<OutputItem> _inputChannel;

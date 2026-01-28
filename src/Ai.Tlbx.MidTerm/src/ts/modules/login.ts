@@ -16,6 +16,9 @@ export function initLoginPage(): void {
 
   if (!form || !passwordInput || !errorDiv || !loginBtn) return;
 
+  // Load version and insider info
+  loadVersionAndPaths();
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -103,5 +106,36 @@ async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
     certInfoDiv.classList.remove('hidden');
   } catch {
     // Silently fail - this is optional info
+  }
+}
+
+async function loadVersionAndPaths(): Promise<void> {
+  const versionEl = document.getElementById('login-version');
+  const insiderEl = document.getElementById('login-insider');
+
+  // Fetch version (public endpoint)
+  try {
+    const versionRes = await fetch('/api/version');
+    if (versionRes.ok) {
+      const version = await versionRes.text();
+      if (versionEl) versionEl.textContent = `v${version}`;
+    }
+  } catch {
+    // Silently fail
+  }
+
+  // Fetch paths for insider info (may require auth, that's ok)
+  try {
+    const pathsRes = await fetch('/api/paths');
+    if (pathsRes.ok && insiderEl) {
+      const paths = await pathsRes.json();
+      const lines = [
+        `settings: ${paths.settingsFile || 'n/a'}`,
+        `logs: ${paths.logDirectory || 'n/a'}`,
+      ];
+      insiderEl.textContent = lines.join('\n');
+    }
+  } catch {
+    // Silently fail - insider info is optional
   }
 }

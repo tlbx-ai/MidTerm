@@ -379,3 +379,130 @@ export function focusLayoutSession(sessionId: string): void {
 export function isLayoutActive(): boolean {
   return $layout.get().root !== null;
 }
+
+// =============================================================================
+// Layout Persistence (localStorage)
+// =============================================================================
+
+const LAYOUT_STORAGE_KEY = 'midterm-layout';
+const FOCUSED_STORAGE_KEY = 'midterm-layout-focused';
+
+/**
+ * Save current layout to localStorage.
+ */
+export function saveLayoutToStorage(): void {
+  const layout = $layout.get();
+  if (layout.root) {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+    const focusedId = $focusedSessionId.get();
+    if (focusedId) {
+      localStorage.setItem(FOCUSED_STORAGE_KEY, focusedId);
+    }
+  } else {
+    localStorage.removeItem(LAYOUT_STORAGE_KEY);
+    localStorage.removeItem(FOCUSED_STORAGE_KEY);
+  }
+}
+
+/**
+ * Collect session IDs from a layout node.
+ */
+function collectSessionIdsFromNode(node: LayoutNode | null, ids: string[]): void {
+  if (!node) return;
+  if (node.type === 'leaf') {
+    ids.push(node.sessionId);
+  } else {
+    for (const child of node.children) {
+      collectSessionIdsFromNode(child, ids);
+    }
+  }
+}
+
+/**
+ * Filter layout tree to only include valid sessions.
+ * Returns null if fewer than 2 sessions remain.
+ */
+function filterLayoutToValidSessions(node: LayoutNode | null): LayoutNode | null {
+  if (!node) return null;
+
+  if (node.type === 'leaf') {
+    return getSession(node.sessionId) ? node : null;
+  }
+
+  const validChildren: LayoutNode[] = [];
+  for (const child of node.children) {
+    const filtered = filterLayoutToValidSessions(child);
+    if (filtered) {
+      validChildren.push(filtered);
+    }
+  }
+
+  if (validChildren.length === 0) return null;
+  if (validChildren.length === 1) return validChildren[0]!;
+  return { ...node, children: validChildren };
+}
+
+/**
+ * Restore layout from localStorage.
+ * Validates that sessions still exist before restoring.
+ * Falls back to separate sessions on any failure.
+ */
+export function restoreLayoutFromStorage(): void {
+  const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
+  if (!stored) return;
+
+  try {
+    const layout = JSON.parse(stored) as { root: LayoutNode | null };
+    if (!layout.root) {
+      clearLayoutStorage();
+      return;
+    }
+
+    // Filter to only valid (existing) sessions
+    const filteredRoot = filterLayoutToValidSessions(layout.root);
+
+    // Need at least 2 sessions for a layout
+    if (!filteredRoot || filteredRoot.type !== 'split') {
+      clearLayoutStorage();
+      return;
+    }
+
+    const ids: string[] = [];
+    collectSessionIdsFromNode(filteredRoot, ids);
+    if (ids.length < 2) {
+      clearLayoutStorage();
+      return;
+    }
+
+    // Restore layout
+    $layout.set({ root: filteredRoot });
+
+    // Restore focused session if valid
+    const focusedId = localStorage.getItem(FOCUSED_STORAGE_KEY);
+    if (focusedId && ids.includes(focusedId)) {
+      $focusedSessionId.set(focusedId);
+      $activeSessionId.set(focusedId);
+    } else {
+      $focusedSessionId.set(ids[0] ?? null);
+      $activeSessionId.set(ids[0] ?? null);
+    }
+  } catch {
+    // Any error - clear storage and fall back to separate sessions
+    clearLayoutStorage();
+  }
+}
+
+/**
+ * Clear layout data from localStorage.
+ */
+function clearLayoutStorage(): void {
+  localStorage.removeItem(LAYOUT_STORAGE_KEY);
+  localStorage.removeItem(FOCUSED_STORAGE_KEY);
+}
+
+/**
+ * Initialize layout persistence - subscribe to changes.
+ */
+export function initLayoutPersistence(): void {
+  $layout.subscribe(() => saveLayoutToStorage());
+}

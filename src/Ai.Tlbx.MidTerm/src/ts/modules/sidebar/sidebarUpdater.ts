@@ -7,7 +7,7 @@
  */
 
 import type { Session } from '../../types';
-import { $sessions, $activeSessionId, $renamingSessionId } from '../../stores';
+import { $sessions, $activeSessionId, $renamingSessionId, $layout } from '../../stores';
 import { createLogger } from '../logging';
 import {
   renderSessionList,
@@ -15,6 +15,7 @@ import {
   updateMobileTitle,
   getSessionDisplayInfo,
 } from './sessionList';
+import { isSessionInLayout } from '../layout/layoutStore';
 
 const log = createLogger('sidebarUpdater');
 
@@ -261,5 +262,26 @@ export function initializeSidebarUpdater(): void {
     }
   });
 
+  // Subscribe to layout changes to update in-layout class on session items
+  $layout.subscribe(() => {
+    updateLayoutStates();
+  });
+
   log.info(() => 'Sidebar updater initialized');
+}
+
+/**
+ * Update in-layout class on all session items based on current layout state.
+ */
+function updateLayoutStates(): void {
+  const sessionList = document.getElementById('session-list');
+  if (!sessionList) return;
+
+  const items = sessionList.querySelectorAll('.session-item');
+  items.forEach((item) => {
+    const sessionId = (item as HTMLElement).dataset.sessionId;
+    if (sessionId) {
+      item.classList.toggle('in-layout', isSessionInLayout(sessionId));
+    }
+  });
 }

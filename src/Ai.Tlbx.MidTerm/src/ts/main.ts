@@ -30,6 +30,7 @@ import {
   registerTerminalCallbacks,
   applyTerminalScaling,
   fitSessionToScreen,
+  fitTerminalToContainer,
   setupResizeObserver,
   setupVisualViewport,
   registerScalingCallbacks,
@@ -95,6 +96,7 @@ import {
   isLayoutActive,
   focusLayoutSession,
   registerLayoutCallbacks,
+  initLayoutPersistence,
 } from './modules/layout';
 import {
   cacheDOMElements,
@@ -172,6 +174,7 @@ async function init(): Promise<void> {
   initTabTitle();
   initSessionDrag();
   initLayoutRenderer();
+  initLayoutPersistence();
   initDockOverlay();
   initializeCommandHistory();
   initHistoryDropdown(spawnFromHistory);
@@ -261,7 +264,7 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
-    onResize: fitSessionToScreen,
+    onResize: resizeSessionToFit,
     onPinToHistory: pinSessionToHistory,
     onCloseSidebar: closeSidebar,
   });
@@ -478,6 +481,20 @@ function deleteSession(sessionId: string): void {
   fetch('/api/sessions/' + sessionId, { method: 'DELETE' }).catch((e) => {
     log.error(() => `Failed to delete session ${sessionId}: ${e}`);
   });
+}
+
+/**
+ * Resize a session to fit its container (pane if in layout, full screen otherwise).
+ */
+function resizeSessionToFit(sessionId: string): void {
+  if (isSessionInLayout(sessionId)) {
+    const pane = document.querySelector(`.layout-leaf[data-session-id="${sessionId}"]`);
+    if (pane) {
+      fitTerminalToContainer(sessionId, pane as HTMLElement);
+      return;
+    }
+  }
+  fitSessionToScreen(sessionId);
 }
 
 function renameSession(sessionId: string, newName: string | null): void {

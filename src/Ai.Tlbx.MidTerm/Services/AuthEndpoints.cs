@@ -165,6 +165,8 @@ public static class AuthEndpoints
                path == "/trust" ||
                path == "/trust.html" ||
                path == "/api/health" ||
+               path == "/api/version" ||
+               path == "/api/paths" ||
                path == "/api/security/status" ||
                path == "/api/shutdown" ||
                path.StartsWith("/api/certificate/") ||

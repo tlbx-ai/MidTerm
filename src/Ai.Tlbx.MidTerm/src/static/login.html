@@ -15,9 +15,11 @@
     <div class="login-container">
         <div class="login-card">
             <div class="login-header">
-                <img src="/img/logo.png" alt="" class="login-logo" />
+                <div class="login-logo-wrapper">
+                    <img src="/img/logo.png" alt="" class="login-logo" />
+                </div>
                 <h1>MidTerm</h1>
-                <p>Terminal Multiplexer</p>
+                <p class="login-tagline">Terminal Multiplexer</p>
             </div>
 
             <form id="login-form" class="login-form">
@@ -31,6 +33,8 @@
 
                 <button type="submit" id="login-btn" class="login-btn">Login</button>
             </form>
+
+            <div class="login-version" id="login-version"></div>
         </div>
 
         <div id="cert-info" class="cert-info hidden">
@@ -48,6 +52,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Insider info: visible only when selecting all text (Ctrl+A) -->
+    <div class="login-insider" id="login-insider" aria-hidden="true"></div>
 
     <script src="js/terminal.min.js"></script>
 </body>

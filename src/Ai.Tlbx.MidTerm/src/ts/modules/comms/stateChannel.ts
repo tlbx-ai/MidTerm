@@ -45,6 +45,10 @@ import {
   $updateInfo,
   setSessions,
 } from '../../stores';
+import { restoreLayoutFromStorage } from '../layout/layoutStore';
+
+// Track if we've restored layout from storage (only do once on first session list)
+let layoutRestoredFromStorage = false;
 
 // Forward declarations for functions from other modules
 // These will be imported when those modules are created
@@ -187,6 +191,12 @@ export function handleStateUpdate(newSessions: Session[]): void {
   // Update store - sidebarUpdater subscription handles rendering
   setSessions(newSessions);
   updateEmptyState();
+
+  // Restore layout from localStorage on first session list (after page load)
+  if (!layoutRestoredFromStorage && newSessions.length >= 2) {
+    layoutRestoredFromStorage = true;
+    restoreLayoutFromStorage();
+  }
 
   // Auto-select first session if none active (but not if settings are open)
   const isSettingsOpen = $settingsOpen.get();

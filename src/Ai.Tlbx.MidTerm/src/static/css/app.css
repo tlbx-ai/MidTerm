@@ -1117,9 +1117,9 @@ html, body {
     inset: 0;
 }
 
-/* Focus indicator for active pane */
+/* Focus indicator for active pane - subtle grey */
 .layout-leaf.focused {
-    outline: 2px solid var(--accent-blue);
+    outline: 2px solid var(--border-color-light);
     outline-offset: -2px;
 }
 
@@ -1134,11 +1134,16 @@ html, body {
     display: none;
 }
 
+/* Animated marching ants for dock zones */
+@keyframes marching-ants {
+    0% { background-position: 0 0, 0 100%, 0 0, 100% 0; }
+    100% { background-position: 40px 0, -40px 100%, 0 -40px, 100% 40px; }
+}
+
 /* Dock zone base styles */
 .dock-zone {
     position: absolute;
     background-color: transparent;
-    transition: background-color 0.15s ease;
 }
 
 /* Zone positions - each takes 25% of the edge */
@@ -1170,39 +1175,43 @@ html, body {
     width: 25%;
 }
 
-/* Highlighted zone - visual feedback for drop target */
+/* Highlighted zone - gold marching ants border */
 .dock-zone.highlighted {
-    background-color: var(--accent-blue-25);
-    border: 2px dashed var(--accent-blue);
+    background-color: rgba(255, 193, 7, 0.08);
     border-radius: var(--radius-md);
+    background-image:
+        repeating-linear-gradient(90deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px),
+        repeating-linear-gradient(90deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px),
+        repeating-linear-gradient(0deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px),
+        repeating-linear-gradient(0deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px);
+    background-size: 12px 2px, 12px 2px, 2px 12px, 2px 12px;
+    background-position: 0 0, 0 100%, 0 0, 100% 0;
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    animation: marching-ants 0.4s linear infinite;
 }
 
-/* Center indicator - shows target session */
+/* Center indicator - subtle outline for target area */
 .dock-center {
     position: absolute;
     top: 25%;
     left: 25%;
     right: 25%;
     bottom: 25%;
-    border: 1px solid var(--border-color);
+    border: 1px dashed var(--border-color);
     border-radius: var(--radius-md);
-    background-color: var(--bg-tertiary);
+    background-color: transparent;
 }
 
-/* Sidebar session item - layout indicator */
+/* Sessions in layout - visual grouping */
+.session-item.in-layout {
+    background-color: var(--bg-tertiary);
+    margin-left: 6px;
+    border-left: 2px solid var(--border-color-light);
+}
+
+/* Hide layout badge - visual grouping is enough */
 .session-item .layout-badge {
     display: none;
-    margin-left: 4px;
-    padding: 1px 4px;
-    font-size: 9px;
-    background-color: var(--accent-blue-15);
-    color: var(--accent-blue);
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-}
-
-.session-item.in-layout .layout-badge {
-    display: inline-block;
 }
 
 /* Undock button - visible when session is in layout */
@@ -3105,15 +3114,15 @@ html, body {
 
 .login-container {
     width: 100%;
-    max-width: 400px;
+    max-width: 380px;
     padding: 20px;
 }
 
 .login-card {
     background-color: var(--bg-sidebar);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 40px;
+    border-radius: 16px;
+    padding: 48px 40px 36px;
     box-shadow: 0 8px 32px var(--shadow-color-md);
     animation: card-rise 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
 }
@@ -3123,12 +3132,23 @@ html, body {
     100% { opacity: 1; transform: translateY(0); }
 }
 
+.login-logo-wrapper {
+    width: 148px;
+    height: 148px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 24px;
+    background-color: var(--bg-primary);
+    border-radius: 24px;
+    border: 1px solid var(--border-subtle);
+}
+
 .login-logo {
-    width: 80px;
-    height: 80px;
+    width: 123px;
+    height: 123px;
     max-width: 100%;
     object-fit: contain;
-    margin-bottom: 24px;
     animation-name: logo-float !important;
     animation-duration: 4s !important;
     animation-timing-function: ease-in-out !important;
@@ -3141,47 +3161,78 @@ html, body {
 }
 
 @keyframes logo-float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
+    0%, 100% { transform: translateY(7px); }
+    50% { transform: translateY(-7px); }
 }
 
 .login-header {
     text-align: center;
-    margin-bottom: 32px;
+    margin-bottom: 28px;
 }
 
 .login-header h1 {
-    margin: 0 0 8px 0;
-    font-size: 24px;
+    margin: 0 0 6px 0;
+    font-size: 26px;
+    font-weight: 600;
     color: var(--text-primary);
+    letter-spacing: -0.5px;
 }
 
-.login-header p {
+.login-tagline {
     margin: 0;
-    font-size: 14px;
-    color: var(--text-secondary);
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.login-version {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+/* Insider info - black on black, visible only on text selection */
+.login-insider {
+    position: fixed;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--bg-primary);
+    text-align: center;
+    line-height: 1.6;
+    user-select: text;
+    pointer-events: none;
+    white-space: pre-line;
 }
 
 .login-form .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 18px;
 }
 
 .login-form label {
     display: block;
-    font-size: 13px;
-    color: var(--text-secondary);
+    font-size: 12px;
+    color: var(--text-muted);
     margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .login-form input[type="password"] {
     width: 100%;
-    padding: 12px 16px;
+    padding: 14px 16px;
     background-color: var(--bg-input);
     color: var(--text-primary);
-    border: 1px solid var(--btn-secondary);
-    border-radius: 6px;
-    font-size: 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    font-size: 15px;
     outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .login-form input[type="password"]:focus {
@@ -3191,14 +3242,16 @@ html, body {
 
 .login-btn {
     width: 100%;
-    padding: 12px;
+    padding: 14px;
+    margin-top: 6px;
     background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-muted));
     color: #0D0E14;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
+    letter-spacing: 0.3px;
     box-shadow: 0 4px 16px var(--accent-gold-25);
     transition: transform 0.15s, box-shadow 0.15s;
 }
@@ -4024,11 +4077,48 @@ html, body {
     font-weight: 500;
 }
 
-.platform-panel {
-    margin-top: 16px;
+.platform-group {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
 }
 
-.platform-panel.hidden {
+.platform-group:first-of-type {
+    margin-top: 16px;
+    padding-top: 0;
+    border-top: none;
+}
+
+.platform-group-title {
+    margin: 0 0 16px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.platform-panel {
+    margin-top: 16px;
+    padding: 16px;
+    background-color: var(--bg-primary);
+    border-radius: 6px;
+}
+
+.platform-panel h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.detected-badge {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent-green);
+    margin-left: 8px;
+}
+
+.detected-badge.hidden {
     display: none;
 }
 

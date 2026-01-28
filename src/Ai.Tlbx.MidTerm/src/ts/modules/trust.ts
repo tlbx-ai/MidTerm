@@ -17,19 +17,18 @@ export function initTrustPage(): void {
   const isLinux = /linux/.test(ua) && !isAndroid;
 
   const detectedPlatformEl = document.getElementById('detected-platform');
-  const iosPanel = document.getElementById('ios-panel');
-  const androidPanel = document.getElementById('android-panel');
-  const desktopPanel = document.getElementById('desktop-panel');
 
   if (!detectedPlatformEl) return;
 
+  // Show detected platform text and badge
   if (isIOS) {
     detectedPlatformEl.textContent = 'iOS / iPadOS';
-    iosPanel?.classList.remove('hidden');
+    document.getElementById('ios-detected')?.classList.remove('hidden');
   } else if (isAndroid) {
     detectedPlatformEl.textContent = 'Android';
-    androidPanel?.classList.remove('hidden');
+    document.getElementById('android-detected')?.classList.remove('hidden');
   } else {
+    document.getElementById('desktop-detected')?.classList.remove('hidden');
     if (isMac) {
       detectedPlatformEl.textContent = 'macOS';
       showDesktopTab('macos');
@@ -40,7 +39,6 @@ export function initTrustPage(): void {
       detectedPlatformEl.textContent = 'Windows';
       showDesktopTab('windows');
     }
-    desktopPanel?.classList.remove('hidden');
   }
 
   // Desktop OS tabs
