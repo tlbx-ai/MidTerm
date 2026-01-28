@@ -25,7 +25,7 @@ import {
 } from '../../state';
 import { $activeSessionId, $currentSettings, $windowsBuildNumber } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
-import { applyTerminalScaling, applyTerminalScalingSync } from './scaling';
+import { applyTerminalScalingSync } from './scaling';
 import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
 import { isBracketedPasteEnabled, sendCommand } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
@@ -289,9 +289,12 @@ export function createTerminalForSession(
           // Resize may fail if terminal not fully initialized
         }
       }
-      applyTerminalScalingSync(state); // Sync version - already in rAF context
 
-      setupTerminalEvents(sessionId, terminal, container);
+      // Double-rAF: let the resize paint before measuring for scaling
+      requestAnimationFrame(() => {
+        applyTerminalScalingSync(state);
+        setupTerminalEvents(sessionId, terminal, container);
+      });
     });
   });
 
@@ -340,7 +343,12 @@ export function writeOutputFrame(
         state.terminal.resize(frame.cols, frame.rows);
         state.serverCols = frame.cols;
         state.serverRows = frame.rows;
-        applyTerminalScaling(sessionId, state);
+        // Double-rAF: let resize paint before measuring for scaling
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            applyTerminalScalingSync(state);
+          });
+        });
       } catch {
         // Ignore resize errors - terminal may not be fully initialized
       }

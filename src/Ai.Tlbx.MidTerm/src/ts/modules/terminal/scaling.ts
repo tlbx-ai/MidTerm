@@ -21,6 +21,8 @@ import { $currentSettings, getSession } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise } from './manager';
 
+const SCALE_TOLERANCE = 0.97;
+
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
 let focusActiveTerminal: () => void = () => {};
@@ -438,9 +440,8 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   const xterm = container.querySelector('.xterm') as HTMLElement | null;
   if (!xterm) return;
 
-  // Use a larger buffer (16px) to trigger scaling before content clips
-  const availWidth = container.clientWidth - 16;
-  const availHeight = container.clientHeight - 16;
+  const availWidth = container.clientWidth - TERMINAL_PADDING;
+  const availHeight = container.clientHeight - TERMINAL_PADDING;
   const termWidth = xterm.offsetWidth;
   const termHeight = xterm.offsetHeight;
 
@@ -450,15 +451,14 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   let scale = Math.min(scaleX, scaleY, 1);
 
   // Treat small differences as perfect fit (3% tolerance for rendering variance)
-  if (scale > 0.97) {
+  if (scale > SCALE_TOLERANCE) {
     scale = 1;
   }
 
   // Find or create overlay element
   let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
 
-  // Only show badge when scaled down significantly (5% threshold)
-  if (scale < 0.95) {
+  if (scale < 1) {
     // Use transform: scale() with explicit transform-origin for predictable behavior
     xterm.style.transform = `scale(${scale})`;
     xterm.style.transformOrigin = 'top left';
