@@ -183,6 +183,7 @@ export const ICONS = {
   tabDiagnostics: '\ue9ce', // eye
   more: '\ue918', // more_vert (vertical dots)
   history: '\ue967', // history (clock with arrow)
+  undock: '\ue920', // close_fullscreen
 } as const;
 
 /** Creates an icon span element */

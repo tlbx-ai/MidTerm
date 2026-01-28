@@ -782,6 +782,7 @@ html, body {
 .session-pin,
 .session-resize,
 .session-rename,
+.session-undock,
 .session-close {
     width: 26px;
     height: 26px;
@@ -1217,22 +1218,15 @@ html, body {
 /* Undock button - visible when session is in layout */
 .session-undock {
     display: none;
-    padding: 2px 6px;
-    font-size: 11px;
-    background-color: var(--btn-secondary);
-    border: none;
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    cursor: pointer;
 }
 
 .session-item.in-layout .session-undock {
-    display: inline-block;
+    display: flex;
 }
 
 .session-undock:hover {
-    background-color: var(--btn-secondary-hover);
-    color: var(--text-primary);
+    background-color: var(--accent-green);
+    color: #0D0E14;
 }
 
 /* ============================================================================
@@ -1588,6 +1582,7 @@ html, body {
     .session-actions .session-pin,
     .session-actions .session-resize,
     .session-actions .session-rename,
+    .session-actions .session-undock,
     .session-actions .session-close {
         display: flex;
         width: 56px;
@@ -1609,6 +1604,11 @@ html, body {
 
     .session-actions .session-rename:active {
         background-color: var(--btn-secondary-hover);
+    }
+
+    .session-actions .session-undock:active {
+        background-color: var(--accent-green);
+        color: #0D0E14;
     }
 
     .session-actions .session-close:active {
@@ -5351,6 +5351,7 @@ html, body {
 .session-pin:focus-visible,
 .session-resize:focus-visible,
 .session-rename:focus-visible,
+.session-undock:focus-visible,
 .session-close:focus-visible,
 .add-session-btn:focus-visible,
 .settings-tab:focus-visible {
@@ -5367,6 +5368,7 @@ html, body {
 .session-pin:focus,
 .session-resize:focus,
 .session-rename:focus,
+.session-undock:focus,
 .session-close:focus,
 .add-session-btn:focus,
 .settings-tab:focus {

@@ -359,7 +359,7 @@ function createSessionItem(
     // Undock button (only shown when in layout)
     const undockBtn = document.createElement('button');
     undockBtn.className = 'session-undock';
-    undockBtn.textContent = 'Undock';
+    undockBtn.innerHTML = icon('undock');
     undockBtn.title = 'Remove from split layout';
     undockBtn.addEventListener('click', (e) => {
       e.stopPropagation();
