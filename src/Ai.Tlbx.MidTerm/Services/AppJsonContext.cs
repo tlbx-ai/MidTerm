@@ -83,24 +83,3 @@ public partial class AppJsonContext : JsonSerializerContext
 {
 }
 
-/// <summary>
-/// Wrapper message for settings WebSocket that can carry settings or update info.
-/// </summary>
-public sealed class SettingsWsMessage
-{
-    /// <summary>
-    /// Message type: "settings" or "update"
-    /// </summary>
-    public string Type { get; init; } = "";
-
-    /// <summary>
-    /// Settings payload (when Type = "settings")
-    /// </summary>
-    public MidTermSettings? Settings { get; init; }
-
-    /// <summary>
-    /// Update info payload (when Type = "update")
-    /// </summary>
-    public UpdateInfo? Update { get; init; }
-}
-
