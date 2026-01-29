@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Settings;
 
@@ -9,7 +8,6 @@ namespace Ai.Tlbx.MidTerm.Settings;
 [JsonSerializable(typeof(BellStyleSetting))]
 [JsonSerializable(typeof(ClipboardShortcutsSetting))]
 [JsonSerializable(typeof(KeyProtectionMethod))]
-[JsonSerializable(typeof(LogSeverity))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,

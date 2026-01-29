@@ -244,22 +244,6 @@ public static class TtyHostProtocol
         return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ForegroundChangePayload);
     }
 
-    public static byte[] CreateSetLogLevelMessage(LogSeverity level)
-    {
-        var payload = new byte[1] { (byte)level };
-        return CreateFrame(TtyHostMessageType.SetLogLevel, payload);
-    }
-
-    public static byte[] CreateSetLogLevelAck()
-    {
-        return CreateFrame(TtyHostMessageType.SetLogLevelAck, []);
-    }
-
-    public static LogSeverity ParseSetLogLevel(ReadOnlySpan<byte> payload)
-    {
-        return payload.Length > 0 ? (LogSeverity)payload[0] : LogSeverity.Warn;
-    }
-
     public static byte[] CreateSetOrder(byte order)
     {
         return CreateFrame(TtyHostMessageType.SetOrder, [order]);
@@ -302,10 +286,6 @@ public enum TtyHostMessageType : byte
     ProcessEvent = 0x50,
     ForegroundChange = 0x51,
     ProcessSnapshot = 0x52,
-
-    // Settings updates
-    SetLogLevel = 0x60,
-    SetLogLevelAck = 0x61,
 
     // Display order
     SetOrder = 0x24,

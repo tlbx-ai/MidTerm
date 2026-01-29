@@ -559,72 +559,24 @@
                                     </div>
                                 </div>
 
-                                <!-- Capture Settings -->
-                                <div class="settings-section diag-capture-section">
-                                    <h3>Server Capture Level</h3>
-                                    <div class="diag-capture-row">
-                                        <select id="setting-log-level">
-                                            <option value="exception">Exception only</option>
-                                            <option value="error">Error+</option>
-                                            <option value="warn">Warn+ (default)</option>
-                                            <option value="info">Info+</option>
-                                            <option value="verbose">Verbose (all)</option>
-                                        </select>
-                                        <span class="diag-capture-hint">Changes apply immediately to server logging</span>
+                                <!-- Frontend Logging -->
+                                <div class="settings-section">
+                                    <h3>Frontend Logging</h3>
+                                    <p class="diag-help-text">
+                                        Use the browser console (<kbd>F12</kbd>) to control frontend logging.
+                                        Errors and warnings always appear. Info and verbose output is per-module.
+                                    </p>
+                                    <div class="diag-help-commands">
+                                        <code>mtlog.list()</code> <span>Show all modules and their state</span>
+                                        <code>mtlog.enable('mux')</code> <span>Enable logging for a module</span>
+                                        <code>mtlog.enable('*')</code> <span>Enable all modules</span>
+                                        <code>mtlog.disable('mux')</code> <span>Disable a module</span>
+                                        <code>mtlog.level('info')</code> <span>Set minimum level (exception, error, warn, info, verbose)</span>
+                                        <code>mtlog.reset()</code> <span>Reset to defaults</span>
                                     </div>
+                                    <p class="diag-help-text">Settings persist in localStorage across page reloads.</p>
                                 </div>
 
-                                <!-- Log Viewer -->
-                                <div class="settings-section diag-viewer-section">
-                                    <div class="diag-viewer-header">
-                                        <h3>Log Viewer</h3>
-                                        <div class="diag-source-tabs">
-                                            <button class="diag-tab active" data-tab="server">Server</button>
-                                            <button class="diag-tab" data-tab="sessions">Sessions</button>
-                                        </div>
-                                    </div>
-
-                                    <div class="diag-filter-bar">
-                                        <label class="diag-filter-label">
-                                            Show:
-                                            <select id="diag-level-filter">
-                                                <option value="4">All levels</option>
-                                                <option value="3">Info+</option>
-                                                <option value="2" selected>Warn+</option>
-                                                <option value="1">Error+</option>
-                                                <option value="0">Exception</option>
-                                            </select>
-                                        </label>
-                                        <input type="text" id="diag-search" placeholder="Search..." />
-                                        <div class="diag-filter-actions">
-                                            <label class="diag-live-tail-label" title="Auto-scroll to new entries">
-                                                <input type="checkbox" id="diag-live-tail" checked />
-                                                Live
-                                            </label>
-                                            <button id="diag-copy-all" class="btn-icon" title="Copy all visible logs">
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div id="diag-session-select" class="diag-session-select hidden">
-                                        <select id="diag-session-picker">
-                                            <option value="">Select session...</option>
-                                        </select>
-                                    </div>
-
-                                    <div id="diag-log-viewer" class="diag-log-viewer">
-                                        <div class="diag-log-content" id="diag-log-content"></div>
-                                    </div>
-
-                                    <div class="diag-status-bar">
-                                        <span id="diag-entry-count">0 entries</span>
-                                        <span id="diag-connection-status"></span>
-                                    </div>
-                                </div>
                             </section>
 
                         </div>

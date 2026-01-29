@@ -99,9 +99,6 @@ export type TabTitleMode =
   | 'terminalTitle'
   | 'foregroundProcess';
 
-/** Log level options (matching backend enum) */
-export type LogLevelSetting = 'exception' | 'error' | 'warn' | 'info' | 'verbose';
-
 /** User settings from server */
 export interface Settings {
   defaultShell: string;
@@ -126,7 +123,6 @@ export interface Settings {
   scrollbackProtection: boolean;
   fileRadar: boolean;
   runAsUser: string | null;
-  logLevel: LogLevelSetting;
 }
 
 // =============================================================================

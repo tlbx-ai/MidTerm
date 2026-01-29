@@ -78,7 +78,7 @@ public static class Program
         }
 
         var logDirectory = LogPaths.GetLogDirectory(isWindowsService: false);
-        Log.Initialize($"mthost-{config.SessionId}", logDirectory, config.LogSeverity);
+        Log.Initialize($"mthost-{config.SessionId}", logDirectory, LogSeverity.Exception);
 
 #if !WINDOWS
         // Register Unix signal handlers for graceful shutdown
@@ -731,18 +731,6 @@ public static class Program
                             stream.Flush();
                         }
                         Log.Verbose(() => $"Order set to {order}");
-                        break;
-
-                    case TtyHostMessageType.SetLogLevel:
-                        var newLevel = TtyHostProtocol.ParseSetLogLevel(payload);
-                        Log.Info(() => $"Log level changed via IPC: {Log.MinLevel} -> {newLevel}");
-                        Log.MinLevel = newLevel;
-                        var levelAck = TtyHostProtocol.CreateSetLogLevelAck();
-                        lock (stream)
-                        {
-                            stream.Write(levelAck);
-                            stream.Flush();
-                        }
                         break;
 
                     case TtyHostMessageType.Close:

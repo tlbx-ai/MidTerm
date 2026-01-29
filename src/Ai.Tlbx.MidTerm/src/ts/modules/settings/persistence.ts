@@ -5,28 +5,12 @@
  * Communicates with the server API to persist settings changes.
  */
 
-import type {
-  Settings,
-  ThemeName,
-  TabTitleMode,
-  TerminalState,
-  HealthResponse,
-  LogLevelSetting,
-} from '../../types';
+import type { Settings, ThemeName, TabTitleMode, TerminalState, HealthResponse } from '../../types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
-import { setLogLevel, LogLevel } from '../logging';
 import { updateTabTitle } from '../tabTitle';
-
-const LOG_LEVEL_MAP: Record<LogLevelSetting, LogLevel> = {
-  exception: LogLevel.Exception,
-  error: LogLevel.Error,
-  warn: LogLevel.Warn,
-  info: LogLevel.Info,
-  verbose: LogLevel.Verbose,
-};
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
@@ -137,7 +121,6 @@ export function populateSettingsForm(settings: Settings): void {
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
   setElementChecked('setting-file-radar', settings.fileRadar === true);
   setElementValue('setting-run-as-user', settings.runAsUser || '');
-  setElementValue('setting-log-level', settings.logLevel || 'warn');
 }
 
 /**
@@ -223,9 +206,6 @@ export function applyReceivedSettings(settings: Settings): void {
   document.documentElement.style.setProperty('--terminal-bg', theme.background);
   setCookie('mm-theme', settings.theme);
 
-  const logLevel = LOG_LEVEL_MAP[settings.logLevel] ?? LogLevel.Warn;
-  setLogLevel(logLevel);
-
   applySettingsToTerminals();
   updateTabTitle();
 }
@@ -265,7 +245,6 @@ export function saveAllSettings(): void {
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
     fileRadar: getElementChecked('setting-file-radar'),
     runAsUser: runAsUserValue || null,
-    logLevel: getElementValue('setting-log-level', 'warn') as Settings['logLevel'],
   };
 
   setCookie('mm-theme', settings.theme);

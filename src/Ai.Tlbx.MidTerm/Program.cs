@@ -129,9 +129,9 @@ public class Program
 
         var settings = settingsService.Load();
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
-        Log.Initialize("mt", logDirectory, settings.LogLevel);
+        Log.Initialize("mt", logDirectory, LogSeverity.Exception);
         Log.SetupCrashHandlers();
-        Log.Info(() => $"MidTerm server starting (LogLevel: {settings.LogLevel})");
+        Log.Info(() => "MidTerm server starting");
 
         // Validate security state and log any warnings (informational only - does not block)
         var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();
@@ -168,16 +168,6 @@ public class Program
 
         settingsService.AddSettingsListener(newSettings =>
         {
-            // Propagate log level changes immediately
-            if (Log.MinLevel != newSettings.LogLevel)
-            {
-                Log.Info(() => $"Log level changed: {Log.MinLevel} -> {newSettings.LogLevel}");
-                Log.MinLevel = newSettings.LogLevel;
-
-                // Propagate to all running mthost processes
-                _ = sessionManager.SetLogLevelForAllAsync(newSettings.LogLevel);
-            }
-
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);
             if (isValid)
             {
@@ -197,9 +187,8 @@ public class Program
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
-        LogEndpoints.MapLogEndpoints(app, logDirectory, sessionManager);
         FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, logDirectory);
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService);
 
         lifetime.ApplicationStarted.Register(() =>
         {

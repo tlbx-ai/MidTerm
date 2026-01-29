@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 
 namespace Ai.Tlbx.MidTerm.Settings;
@@ -132,9 +131,6 @@ public sealed class MidTermSettings
     // installer (which runs elevated) and runtime (which runs as service user).
     // Without this, runtime detection of IsSystem can fail for non-LocalSystem services.
     public bool IsServiceInstall { get; set; } = false;
-
-    // Diagnostics
-    public LogSeverity LogLevel { get; set; } = LogSeverity.Warn;
 
     // Update channel: "stable" (default) or "dev" (prereleases)
     public string UpdateChannel { get; set; } = "stable";

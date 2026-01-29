@@ -1,4 +1,3 @@
-using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Services;
 
@@ -42,9 +41,6 @@ public sealed class MidTermSettingsPublic
     // HTTPS (always enabled - no CertificatePassword exposed)
     public string? CertificatePath { get; set; }
 
-    // Diagnostics
-    public LogSeverity LogLevel { get; set; }
-
     public static MidTermSettingsPublic FromSettings(MidTermSettings settings)
     {
         return new MidTermSettingsPublic
@@ -72,8 +68,7 @@ public sealed class MidTermSettingsPublic
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
             AuthenticationEnabled = settings.AuthenticationEnabled,
-            CertificatePath = settings.CertificatePath,
-            LogLevel = settings.LogLevel
+            CertificatePath = settings.CertificatePath
         };
     }
 
@@ -120,6 +115,5 @@ public sealed class MidTermSettingsPublic
 
         settings.AuthenticationEnabled = AuthenticationEnabled;
         settings.CertificatePath = CertificatePath;
-        settings.LogLevel = LogLevel;
     }
 }
