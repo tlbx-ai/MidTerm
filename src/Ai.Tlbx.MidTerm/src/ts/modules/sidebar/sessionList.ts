@@ -196,7 +196,7 @@ interface SessionDisplayInfo {
  * Get display info for a session (primary title and optional secondary subtitle)
  */
 export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
-  const termTitle = session.terminalTitle || session.shellType;
+  const termTitle = session.terminalTitle || session.shellType || 'Terminal';
   if (session.name) {
     return { primary: session.name, secondary: termTitle };
   }
@@ -223,14 +223,15 @@ function createSessionItem(
   isActive: boolean,
   isPending: boolean,
 ): HTMLDivElement {
-  const inLayout = isSessionInLayout(session.id);
+  const sessionId = session.id;
+  const inLayout = isSessionInLayout(sessionId);
   const item = document.createElement('div');
   item.className =
     'session-item' +
     (isActive ? ' active' : '') +
     (isPending ? ' pending' : '') +
     (inLayout ? ' in-layout' : '');
-  item.dataset.sessionId = session.id;
+  item.dataset.sessionId = sessionId;
   item.draggable = !isPending;
 
   if (!isPending) {
@@ -238,8 +239,8 @@ function createSessionItem(
       // Don't select if clicking on drag handle
       if ((e.target as HTMLElement).closest('.drag-handle')) return;
       closeMobileActionMenu();
-      if (callbacks) {
-        callbacks.onSelect(session.id);
+      if (callbacks && sessionId) {
+        callbacks.onSelect(sessionId);
         callbacks.onCloseSidebar();
       }
     });
@@ -292,10 +293,10 @@ function createSessionItem(
   // Process indicator container
   const processInfo = document.createElement('div');
   processInfo.className = 'session-process-info';
-  processInfo.dataset.sessionId = session.id;
+  processInfo.dataset.sessionId = sessionId;
 
   // Foreground process indicator
-  const fgInfo = getForegroundInfo(session.id);
+  const fgInfo = getForegroundInfo(sessionId);
   if (fgInfo.name) {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfo.appendChild(fgIndicator);
@@ -307,7 +308,7 @@ function createSessionItem(
   const actions = document.createElement('div');
   actions.className = 'session-actions';
 
-  if (!isPending) {
+  if (!isPending && sessionId) {
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
     pinBtn.textContent = '\u2606';
@@ -316,7 +317,7 @@ function createSessionItem(
       e.stopPropagation();
       closeMobileActionMenu();
       if (callbacks) {
-        callbacks.onPinToHistory(session.id);
+        callbacks.onPinToHistory(sessionId);
       }
     });
 
@@ -328,7 +329,7 @@ function createSessionItem(
       e.stopPropagation();
       closeMobileActionMenu();
       if (callbacks) {
-        callbacks.onResize(session.id);
+        callbacks.onResize(sessionId);
       }
     });
 
@@ -340,7 +341,7 @@ function createSessionItem(
       e.stopPropagation();
       closeMobileActionMenu();
       if (callbacks) {
-        callbacks.onRename(session.id);
+        callbacks.onRename(sessionId);
       }
     });
 
@@ -352,7 +353,7 @@ function createSessionItem(
       e.stopPropagation();
       closeMobileActionMenu();
       if (callbacks) {
-        callbacks.onDelete(session.id);
+        callbacks.onDelete(sessionId);
       }
     });
 
@@ -364,7 +365,7 @@ function createSessionItem(
     undockBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
-      undockSession(session.id);
+      undockSession(sessionId);
     });
 
     actions.appendChild(pinBtn);
@@ -432,16 +433,17 @@ export function renderSessionList(): void {
   // Add/update items in order
   let previousElement: Element | null = null;
   sessions.forEach((session) => {
+    const id = session.id;
     const existingItem = sessionList.querySelector(
-      `[data-session-id="${session.id}"]`,
+      `[data-session-id="${id}"]`,
     ) as HTMLElement | null;
-    const isPending = pendingSessions.has(session.id);
+    const isPending = pendingSessions.has(id);
 
     if (existingItem) {
       // Update active state, pending state, and layout state
-      existingItem.classList.toggle('active', session.id === activeSessionId);
+      existingItem.classList.toggle('active', id === activeSessionId);
       existingItem.classList.toggle('pending', isPending);
-      existingItem.classList.toggle('in-layout', isSessionInLayout(session.id));
+      existingItem.classList.toggle('in-layout', isSessionInLayout(id));
 
       // Ensure correct order
       if (previousElement) {
@@ -454,7 +456,7 @@ export function renderSessionList(): void {
       previousElement = existingItem;
     } else {
       // Create new item
-      const item = createSessionItem(session, session.id === activeSessionId, isPending);
+      const item = createSessionItem(session, id === activeSessionId, isPending);
       if (previousElement) {
         previousElement.after(item);
       } else {

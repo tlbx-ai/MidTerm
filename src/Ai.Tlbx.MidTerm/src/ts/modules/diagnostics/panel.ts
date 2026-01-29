@@ -4,12 +4,7 @@
  * Displays file paths and reload settings button.
  */
 
-interface PathsResponse {
-  settingsFile: string;
-  secretsFile: string;
-  certificateFile: string;
-  logDirectory: string;
-}
+import { getPaths, reloadSettings } from '../../api/client';
 
 export function initDiagnosticsPanel(): void {
   loadPaths();
@@ -18,10 +13,8 @@ export function initDiagnosticsPanel(): void {
 
 async function loadPaths(): Promise<void> {
   try {
-    const response = await fetch('/api/paths');
-    if (!response.ok) return;
-
-    const data = (await response.json()) as PathsResponse;
+    const { data, response } = await getPaths();
+    if (!response.ok || !data) return;
 
     const settingsEl = document.getElementById('path-settings');
     const secretsEl = document.getElementById('path-secrets');
@@ -44,7 +37,7 @@ function bindReloadSettingsButton(): void {
   btn.addEventListener('click', async () => {
     btn.classList.add('spinning');
     try {
-      const response = await fetch('/api/settings/reload', { method: 'POST' });
+      const { response } = await reloadSettings();
       if (response.ok) {
         window.location.reload();
       }

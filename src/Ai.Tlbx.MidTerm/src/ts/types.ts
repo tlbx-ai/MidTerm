@@ -1,35 +1,62 @@
 /**
  * Type Definitions
  *
- * Shared interfaces and types used across all modules.
- * This file defines the contract between the server and client.
+ * Client-only interfaces and types used across all modules.
+ * API types are imported from api/types.ts which re-exports from generated types.
  */
 
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 
-// =============================================================================
-// Session Types
-// =============================================================================
+// Import types needed for local use
+import type {
+  Session as SessionType,
+  MidTermSettingsPublic as MidTermSettingsPublicType,
+  AuthStatusResponse as AuthStatusResponseType,
+  UpdateInfo as UpdateInfoType,
+} from './api/types';
 
-/** Session data from server */
-export interface Session {
-  id: string;
-  name: string | null;
-  terminalTitle: string | null;
-  shellType: string;
-  cols: number;
-  rows: number;
-  manuallyNamed?: boolean;
-  currentDirectory?: string;
-  foregroundPid?: number;
-  foregroundName?: string;
-  foregroundCommandLine?: string;
-  /** Server-side ordering index (persists across reconnects) */
-  order?: number;
-  /** Client-side ordering index (used for local sorting) */
-  _order?: number;
-}
+// Re-export API types for convenience
+export type {
+  Session,
+  MidTermSettingsPublic,
+  AuthStatusResponse,
+  UpdateInfo,
+  LocalUpdateInfo,
+  UpdateResult,
+  SystemHealth,
+  ShellInfoDto,
+  CertificateInfoResponse,
+  BootstrapResponse,
+  BootstrapLoginResponse,
+  NetworkInterfaceDto,
+  UserInfo,
+  FeatureFlags,
+  FilePathInfo,
+  FileCheckResponse,
+  DirectoryEntry,
+  DirectoryListResponse,
+  FileResolveResponse,
+  ThemeSetting,
+  CursorStyleSetting,
+  CursorInactiveStyleSetting,
+  BellStyleSetting,
+  ClipboardShortcutsSetting,
+  TabTitleModeSetting,
+  // Backward compat aliases
+  Settings,
+  AuthStatus,
+  HealthResponse,
+  ShellInfo,
+  CertificateInfo,
+  NetworkInterface,
+  ThemeName,
+  CursorStyle,
+  CursorInactiveStyle,
+  BellStyle,
+  ClipboardShortcuts,
+  TabTitleMode,
+} from './api/types';
 
 // =============================================================================
 // Process Monitoring Types
@@ -62,183 +89,10 @@ export interface TerminalState {
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
   hasWebgl?: boolean;
-  /** xterm event disposables for cleanup */
   disposables?: Array<{ dispose: () => void }>;
-  /** Mouse move handler for cursor hiding */
   mouseMoveHandler?: () => void;
-  /** Mouse leave handler for cursor hiding */
   mouseLeaveHandler?: () => void;
-  /** Early onData handler (registered immediately, disposed when full handlers set up) */
   earlyDataDisposable?: { dispose: () => void };
-}
-
-// =============================================================================
-// Settings Types
-// =============================================================================
-
-/** Theme names */
-export type ThemeName = 'dark' | 'light' | 'solarizedDark' | 'solarizedLight';
-
-/** Cursor style options */
-export type CursorStyle = 'bar' | 'block' | 'underline';
-
-/** Cursor inactive style options (when terminal loses focus) */
-export type CursorInactiveStyle = 'outline' | 'block' | 'bar' | 'underline' | 'none';
-
-/** Bell style options */
-export type BellStyle = 'notification' | 'sound' | 'visual' | 'both' | 'off';
-
-/** Clipboard shortcut options */
-export type ClipboardShortcuts = 'auto' | 'windows' | 'unix';
-
-/** Tab title mode options */
-export type TabTitleMode =
-  | 'hostname'
-  | 'static'
-  | 'sessionName'
-  | 'terminalTitle'
-  | 'foregroundProcess';
-
-/** User settings from server */
-export interface Settings {
-  defaultShell: string;
-  defaultCols: number;
-  defaultRows: number;
-  defaultWorkingDirectory: string;
-  fontSize: number;
-  fontFamily: string;
-  cursorStyle: CursorStyle;
-  cursorBlink: boolean;
-  cursorInactiveStyle: CursorInactiveStyle;
-  theme: ThemeName;
-  tabTitleMode: TabTitleMode;
-  minimumContrastRatio: number;
-  smoothScrolling: boolean;
-  useWebGL: boolean;
-  scrollbackLines: number;
-  bellStyle: BellStyle;
-  copyOnSelect: boolean;
-  rightClickPaste: boolean;
-  clipboardShortcuts: ClipboardShortcuts;
-  scrollbackProtection: boolean;
-  fileRadar: boolean;
-  runAsUser: string | null;
-}
-
-// =============================================================================
-// Authentication Types
-// =============================================================================
-
-/** Auth status from server */
-export interface AuthStatus {
-  authenticationEnabled: boolean;
-  passwordSet: boolean;
-}
-
-// =============================================================================
-// Update Types
-// =============================================================================
-
-/** Local update info (dev environment only) */
-export interface LocalUpdateInfo {
-  available: boolean;
-  version: string;
-  path: string;
-  type: 'None' | 'WebOnly' | 'Full';
-  sessionsPreserved: boolean;
-}
-
-/** Update info from server */
-export interface UpdateInfo {
-  available: boolean;
-  currentVersion: string;
-  latestVersion: string;
-  releaseUrl: string;
-  downloadUrl?: string;
-  assetName?: string;
-  releaseNotes?: string;
-  type: 'None' | 'WebOnly' | 'Full';
-  sessionsPreserved: boolean;
-  environment?: string;
-  localUpdate?: LocalUpdateInfo;
-}
-
-// =============================================================================
-// Health/Status Types
-// =============================================================================
-
-/** Health check response (legacy, use BootstrapResponse for new code) */
-export interface HealthResponse {
-  status: string;
-  memoryMB: number;
-  uptime: string;
-  sessionCount: number;
-  ttyHostVersion?: string;
-  webVersion?: string;
-  versionMismatch?: boolean;
-  windowsBuildNumber?: number;
-  healthy?: boolean;
-  uptimeSeconds?: number;
-  mode?: string;
-  platform?: string;
-  webProcessId?: number;
-  ttyHostCompatible?: boolean;
-  ttyHostExpected?: string;
-}
-
-/** Shell info from server */
-export interface ShellInfo {
-  type: string;
-  displayName: string;
-  isAvailable: boolean;
-  supportsOsc7: boolean;
-}
-
-/** Certificate info */
-export interface CertificateInfo {
-  fingerprint?: string;
-  notBefore?: string;
-  notAfter?: string;
-  isFallbackCertificate?: boolean;
-}
-
-/** Update result from previous update */
-export interface UpdateResult {
-  found: boolean;
-  success: boolean;
-  message: string;
-  details: string;
-  timestamp: string;
-  logFile: string;
-}
-
-/** Feature flags for conditional UI features */
-export interface FeatureFlags {
-  voiceChat: boolean;
-}
-
-/** Consolidated startup data from GET /api/bootstrap */
-export interface BootstrapResponse {
-  auth: AuthStatus;
-  version: string;
-  ttyHostVersion?: string;
-  ttyHostCompatible: boolean;
-  uptimeSeconds: number;
-  platform: string;
-  hostname: string;
-  settings: Settings;
-  networks: NetworkInterface[];
-  users: UserInfo[];
-  shells: ShellInfo[];
-  updateResult?: UpdateResult;
-  devMode: boolean;
-  features: FeatureFlags;
-  voicePassword?: string;
-}
-
-/** Minimal startup data for login page from GET /api/bootstrap/login */
-export interface BootstrapLoginResponse {
-  certificate?: CertificateInfo;
 }
 
 // =============================================================================
@@ -255,24 +109,15 @@ export interface WsCommand {
 
 /** Payload for WebSocket commands */
 export interface WsCommandPayload {
-  // session.create
   cols?: number;
   rows?: number;
   shell?: string;
   workingDirectory?: string;
-
-  // session.close, session.rename
   sessionId?: string;
-
-  // session.rename
   name?: string | null;
   auto?: boolean;
-
-  // session.reorder
   sessionIds?: string[];
-
-  // settings.save
-  settings?: Settings;
+  settings?: MidTermSettingsPublicType;
 }
 
 /** WebSocket command response from server */
@@ -289,18 +134,6 @@ export interface WsSessionCreatedData {
   id: string;
   pid: number;
   shellType: string;
-}
-
-/** Network interface info */
-export interface NetworkInterface {
-  name: string;
-  ip: string;
-}
-
-/** User info for dropdown */
-export interface UserInfo {
-  username: string;
-  displayName: string;
 }
 
 // =============================================================================
@@ -332,12 +165,12 @@ export interface UIState {
 
 /** Full application state */
 export interface AppState {
-  sessions: Session[];
+  sessions: SessionType[];
   activeSessionId: string | null;
-  settings: Settings | null;
+  settings: MidTermSettingsPublicType | null;
   ui: UIState;
-  update: UpdateInfo | null;
-  auth: AuthStatus | null;
+  update: UpdateInfoType | null;
+  auth: AuthStatusResponseType | null;
 }
 
 // =============================================================================
@@ -509,51 +342,6 @@ export interface PendingToolConfirmation {
   justification?: string;
   displayText: string;
   resolve: (approved: boolean) => void;
-}
-
-// =============================================================================
-// File Viewer Types
-// =============================================================================
-
-/** File path info from server */
-export interface FilePathInfo {
-  exists: boolean;
-  size?: number;
-  isDirectory: boolean;
-  mimeType?: string;
-  modified?: string;
-  isText?: boolean;
-}
-
-/** Response from /api/files/check */
-export interface FileCheckResponse {
-  results: Record<string, FilePathInfo>;
-}
-
-/** Directory entry from /api/files/list */
-export interface DirectoryEntry {
-  name: string;
-  isDirectory: boolean;
-  size?: number;
-  modified?: string;
-  mimeType?: string;
-}
-
-/** Response from /api/files/list */
-export interface DirectoryListResponse {
-  path: string;
-  entries: DirectoryEntry[];
-}
-
-/** Response from /api/files/resolve - lazy resolution of relative paths */
-export interface FileResolveResponse {
-  exists: boolean;
-  resolvedPath?: string;
-  isDirectory?: boolean;
-  size?: number;
-  mimeType?: string;
-  modified?: string;
-  isText?: boolean;
 }
 
 // =============================================================================

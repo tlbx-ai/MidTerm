@@ -72,25 +72,25 @@ export function clearProcessState(sessionId: string): void {
  */
 export function initializeFromSession(
   sessionId: string,
-  foregroundPid: number | undefined,
-  foregroundName: string | undefined,
-  foregroundCommandLine: string | undefined,
-  currentDirectory: string | undefined,
+  foregroundPid: number | null,
+  foregroundName: string | null,
+  foregroundCommandLine: string | null,
+  currentDirectory: string | null,
 ): void {
   if (!foregroundPid && !foregroundName) return;
 
   const state = getProcessState(sessionId);
   const changed =
-    state.foregroundPid !== (foregroundPid ?? null) ||
-    state.foregroundName !== (foregroundName ?? null) ||
-    state.foregroundCommandLine !== (foregroundCommandLine ?? null) ||
-    state.foregroundCwd !== (currentDirectory ?? null);
+    state.foregroundPid !== foregroundPid ||
+    state.foregroundName !== foregroundName ||
+    state.foregroundCommandLine !== foregroundCommandLine ||
+    state.foregroundCwd !== currentDirectory;
 
   if (changed) {
-    state.foregroundPid = foregroundPid ?? null;
-    state.foregroundName = foregroundName ?? null;
-    state.foregroundCommandLine = foregroundCommandLine ?? null;
-    state.foregroundCwd = currentDirectory ?? null;
+    state.foregroundPid = foregroundPid;
+    state.foregroundName = foregroundName;
+    state.foregroundCommandLine = foregroundCommandLine;
+    state.foregroundCwd = currentDirectory;
     notifyStateChange(sessionId, state);
     log.verbose(() => `Initialized from session: ${foregroundName} in ${currentDirectory}`);
   }

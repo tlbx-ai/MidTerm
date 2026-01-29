@@ -121,8 +121,14 @@ import {
   setPendingRename,
   clearPendingRename,
 } from './stores';
+import type { Session } from './types';
 import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
 import { bindClick } from './utils';
+import {
+  createSession as apiCreateSession,
+  deleteSession as apiDeleteSession,
+  renameSession as apiRenameSession,
+} from './api/client';
 
 // Create logger for main module
 const log = createLogger('main');
@@ -338,33 +344,43 @@ async function createSession(): Promise<void> {
   }
 
   // Optimistic UI: add temporary session with spinner
-  const tempSession = {
+  const tempSession: Session = {
     id: tempId,
-    name: null,
-    terminalTitle: null,
+    pid: 0,
+    createdAt: new Date().toISOString(),
+    isRunning: false,
+    exitCode: null,
+    name: '',
+    terminalTitle: '',
+    currentDirectory: '',
+    foregroundPid: null,
+    foregroundName: null,
+    foregroundCommandLine: null,
     shellType: 'Loading...',
     cols: cols,
     rows: rows,
+    manuallyNamed: false,
+    order: Date.now(),
   };
   setSession(tempSession);
   pendingSessions.add(tempId);
   // Subscription handles renderSessionList via store change
   closeSidebar();
 
-  fetch('/api/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Cols: cols, Rows: rows }),
-  })
-    .then((r) => r.json())
-    .then((session) => {
+  apiCreateSession({ cols, rows })
+    .then(({ data, error }) => {
       // Remove temporary session
       pendingSessions.delete(tempId);
       removeSession(tempId);
 
-      newlyCreatedSessions.add(session.id);
+      if (error || !data || !data.id) {
+        log.error(() => `Failed to create session: ${error}`);
+        return;
+      }
+
+      newlyCreatedSessions.add(data.id);
       // Wait for session to appear in store (WebSocket update race condition)
-      selectSessionWithRetry(session.id);
+      selectSessionWithRetry(data.id);
     })
     .catch((e) => {
       // Remove temporary session on error
@@ -468,7 +484,7 @@ function deleteSession(sessionId: string): void {
     $activeSessionId.set(null);
     const sessions = $sessionList.get();
     const firstSession = sessions[0];
-    if (firstSession) {
+    if (firstSession?.id) {
       selectSession(firstSession.id, { closeSettingsPanel: false });
     }
   }
@@ -476,7 +492,7 @@ function deleteSession(sessionId: string): void {
   // Subscription handles renderSessionList, updateEmptyState, updateMobileTitle via store change
 
   // Send delete request to server
-  fetch('/api/sessions/' + sessionId, { method: 'DELETE' }).catch((e) => {
+  apiDeleteSession(sessionId).catch((e) => {
     log.error(() => `Failed to delete session ${sessionId}: ${e}`);
   });
 }
@@ -500,7 +516,7 @@ function renameSession(sessionId: string, newName: string | null): void {
   if (!session) return;
 
   const trimmedName = (newName || '').trim();
-  const nameToSend = trimmedName === '' || trimmedName === session.shellType ? null : trimmedName;
+  const nameToSend = trimmedName === '' || trimmedName === session.shellType ? '' : trimmedName;
 
   // Store previous values for rollback
   const previousName = session.name;
@@ -513,11 +529,7 @@ function renameSession(sessionId: string, newName: string | null): void {
   setSession({ ...session, name: nameToSend, manuallyNamed: true });
   // Subscription handles renderSessionList and updateMobileTitle via store change
 
-  fetch('/api/sessions/' + sessionId + '/name', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: nameToSend }),
-  }).catch((e) => {
+  apiRenameSession(sessionId, nameToSend).catch((e) => {
     // Clear pending and rollback on error
     clearPendingRename(sessionId);
     const currentSession = getSession(sessionId);
@@ -640,24 +652,24 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
   closeSidebar();
 
-  fetch('/api/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      Cols: cols,
-      Rows: rows,
-      ShellType: entry.shellType,
-      WorkingDirectory: entry.workingDirectory,
-    }),
+  apiCreateSession({
+    cols,
+    rows,
+    shell: entry.shellType || null,
+    workingDirectory: entry.workingDirectory || null,
   })
-    .then((r) => r.json())
-    .then((session) => {
-      newlyCreatedSessions.add(session.id);
-      selectSession(session.id);
+    .then(({ data, error }) => {
+      if (error || !data || !data.id) {
+        log.error(() => `Failed to spawn from history: ${error}`);
+        return;
+      }
+
+      newlyCreatedSessions.add(data.id);
+      selectSession(data.id);
 
       if (entry.commandLine) {
         setTimeout(() => {
-          sendInput(session.id, entry.commandLine!);
+          sendInput(data.id!, entry.commandLine!);
         }, 100);
       }
     })

@@ -4,6 +4,7 @@
  * Handles password set/change modal and form submission.
  */
 
+import { changePassword } from '../../api/client';
 import { $authStatus } from '../../stores';
 import { bindClick } from '../../utils';
 import { checkAuthStatus, dismissSecurityWarning, logout } from './status';
@@ -63,7 +64,7 @@ export function hidePasswordModal(): void {
 /**
  * Handle password form submission
  */
-export function handlePasswordSubmit(e: Event): void {
+export async function handlePasswordSubmit(e: Event): Promise<void> {
   e.preventDefault();
 
   const currentPw = document.getElementById('current-password') as HTMLInputElement | null;
@@ -89,42 +90,34 @@ export function handlePasswordSubmit(e: Event): void {
     return;
   }
 
-  const payload = {
-    currentPassword: passwordModalHasPassword && currentPw ? currentPw.value : null,
-    newPassword: newPassword,
-  };
+  const currentPassword = passwordModalHasPassword && currentPw ? currentPw.value : null;
 
   if (saveBtn) {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
   }
 
-  fetch('/api/auth/change-password', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-    .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
-    .then((result) => {
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
-      }
+  try {
+    const { data, response } = await changePassword(currentPassword, newPassword);
 
-      if (result.ok && result.data.success) {
-        hidePasswordModal();
-        checkAuthStatus();
-      } else {
-        showPasswordError(result.data.error || 'Failed to change password');
-      }
-    })
-    .catch(() => {
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
-      }
-      showPasswordError('Connection error');
-    });
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
+
+    if (response.ok && data?.success) {
+      hidePasswordModal();
+      checkAuthStatus();
+    } else {
+      showPasswordError(data?.error ?? 'Failed to change password');
+    }
+  } catch {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
+    showPasswordError('Connection error');
+  }
 }
 
 /**

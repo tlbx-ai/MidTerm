@@ -127,6 +127,8 @@ export function getTerminalOptions(): ITerminalOptions {
   const fontSize = isMobile ? Math.max(baseFontSize - 2, 10) : baseFontSize;
   const themeName = currentSettings?.theme ?? 'dark';
   const fontFamily = currentSettings?.fontFamily ?? 'Cascadia Code';
+  const scrollback = currentSettings?.scrollbackLines ?? 10000;
+  const contrast = currentSettings?.minimumContrastRatio ?? 1;
 
   const options: ITerminalOptions = {
     cursorBlink: currentSettings?.cursorBlink ?? true,
@@ -136,8 +138,8 @@ export function getTerminalOptions(): ITerminalOptions {
     fontSize: fontSize,
     letterSpacing: 0,
     lineHeight: 1,
-    scrollback: currentSettings?.scrollbackLines ?? 10000,
-    minimumContrastRatio: currentSettings?.minimumContrastRatio ?? 1,
+    scrollback: scrollback,
+    minimumContrastRatio: contrast,
     smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
     allowProposedApi: true,
     customGlyphs: true,
@@ -197,15 +199,15 @@ export function createTerminalForSession(
   terminal.unicode.activeVersion = '11';
 
   // Get server dimensions from session info (if available)
-  const serverCols = sessionInfo && sessionInfo.cols > 0 ? sessionInfo.cols : 0;
-  const serverRows = sessionInfo && sessionInfo.rows > 0 ? sessionInfo.rows : 0;
+  const serverCols = sessionInfo?.cols ?? 0;
+  const serverRows = sessionInfo?.rows ?? 0;
 
   const state: TerminalState = {
     terminal: terminal,
     fitAddon: fitAddon,
     container: container,
-    serverCols: serverCols,
-    serverRows: serverRows,
+    serverCols: serverCols > 0 ? serverCols : 0,
+    serverRows: serverRows > 0 ? serverRows : 0,
     opened: false,
   };
 

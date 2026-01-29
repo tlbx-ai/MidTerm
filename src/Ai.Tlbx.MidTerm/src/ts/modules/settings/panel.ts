@@ -11,6 +11,7 @@ import { $settingsOpen, $activeSessionId, $sessionList, $windowsBuildNumber } fr
 import { fetchSettings, unbindSettingsAutoSave } from './persistence';
 import { initSettingsTabs } from './tabs';
 import { createLogger } from '../logging';
+import { getHealth, getSharePacket } from '../../api/client';
 
 const log = createLogger('settings');
 
@@ -111,7 +112,7 @@ export function updateTtyHostWarning(health: HealthResponse): void {
     }
   }
 
-  if (health.ttyHostVersion && health.ttyHostCompatible === false) {
+  if (health.ttyHostVersion !== '' && health.ttyHostCompatible === false) {
     banner.innerHTML =
       '<strong>Version mismatch:</strong> mmttyhost is ' +
       health.ttyHostVersion +
@@ -131,15 +132,15 @@ export function fetchSystemStatus(): void {
   const container = document.getElementById('system-status-content');
   if (!container) return;
 
-  fetch('/api/health')
-    .then((response) => response.json() as Promise<HealthResponse>)
-    .then((health) => {
+  getHealth()
+    .then(({ data }) => {
+      const health = data as HealthResponse;
       const statusClass = health.healthy ? 'status-healthy' : 'status-error';
       const statusText = health.healthy ? 'Healthy' : 'Unhealthy';
-      const uptimeStr = formatUptime(health.uptimeSeconds || 0);
+      const uptimeStr = formatUptime(health.uptimeSeconds);
 
       let ttyHostHtml = '';
-      if (health.ttyHostVersion !== null && health.ttyHostVersion !== undefined) {
+      if (health.ttyHostVersion !== '') {
         const versionClass = health.ttyHostCompatible ? '' : 'status-error';
         ttyHostHtml =
           '<div class="status-detail-row">' +
@@ -211,11 +212,11 @@ export function fetchSystemStatus(): void {
  * Check system health on startup for version mismatches
  */
 export function checkSystemHealth(): void {
-  fetch('/api/health')
-    .then((response) => response.json() as Promise<HealthResponse>)
-    .then((health) => {
+  getHealth()
+    .then(({ data }) => {
+      const health = data as HealthResponse;
       updateTtyHostWarning(health);
-      if (health.windowsBuildNumber !== undefined) {
+      if (health.windowsBuildNumber != null) {
         $windowsBuildNumber.set(health.windowsBuildNumber);
       }
     })
@@ -231,27 +232,20 @@ export function fetchCertificateInfo(): void {
 
   if (!fingerprintEl && !validityEl) return;
 
-  fetch('/api/certificate/share-packet')
-    .then((response) => {
-      if (!response.ok) throw new Error('Failed to fetch certificate info');
-      return response.json();
-    })
-    .then((info) => {
-      if (fingerprintEl) {
-        fingerprintEl.textContent = info.certificate.fingerprintFormatted;
+  getSharePacket()
+    .then(({ data, response }) => {
+      if (!response.ok || !data) throw new Error('Failed to fetch certificate info');
+      if (fingerprintEl && data.certificate?.fingerprintFormatted) {
+        fingerprintEl.textContent = data.certificate.fingerprintFormatted;
       }
-      if (validityEl) {
-        const notBefore = new Date(info.certificate.notBefore);
-        const notAfter = new Date(info.certificate.notAfter);
+      if (validityEl && data.certificate?.notAfter) {
+        const notAfter = new Date(data.certificate.notAfter);
         const dateOpts: Intl.DateTimeFormatOptions = {
           year: 'numeric',
           month: 'short',
           day: 'numeric',
         };
-        validityEl.textContent =
-          notBefore.toLocaleDateString(undefined, dateOpts) +
-          ' - ' +
-          notAfter.toLocaleDateString(undefined, dateOpts);
+        validityEl.textContent = 'expires ' + notAfter.toLocaleDateString(undefined, dateOpts);
       }
     })
     .catch(() => {

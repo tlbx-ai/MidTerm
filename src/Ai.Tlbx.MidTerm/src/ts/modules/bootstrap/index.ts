@@ -5,13 +5,16 @@
  * Replaces multiple individual API calls with a single request.
  */
 
-import type {
-  BootstrapResponse,
-  BootstrapLoginResponse,
-  NetworkInterface,
-  ShellInfo,
-  UpdateResult,
-} from '../../types';
+import {
+  getBootstrap,
+  getBootstrapLogin,
+  type BootstrapResponse,
+  type BootstrapLoginResponse,
+  type NetworkInterfaceDto,
+  type ShellInfoDto,
+  type UpdateResult,
+  type UserInfo,
+} from '../../api/client';
 import { JS_BUILD_VERSION } from '../../constants';
 import { $currentSettings, $authStatus, $serverHostname, $voiceServerPassword } from '../../stores';
 import { createLogger } from '../logging';
@@ -29,7 +32,7 @@ import { escapeHtml } from '../../utils';
 const log = createLogger('bootstrap');
 
 let bootstrapData: BootstrapResponse | null = null;
-let shellsList: ShellInfo[] = [];
+let shellsList: ShellInfoDto[] = [];
 
 /**
  * Get the cached bootstrap data
@@ -41,7 +44,7 @@ export function getBootstrapData(): BootstrapResponse | null {
 /**
  * Get the list of available shells
  */
-export function getShells(): ShellInfo[] {
+export function getShells(): ShellInfoDto[] {
   return shellsList;
 }
 
@@ -51,29 +54,39 @@ export function getShells(): ShellInfo[] {
  */
 export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
   try {
-    const response = await fetch('/api/bootstrap');
+    const { data, response } = await getBootstrap();
 
     if (response.status === 401) {
       window.location.href = '/login.html';
       return null;
     }
 
-    if (!response.ok) {
+    if (!data) {
       throw new Error(`Bootstrap failed: ${response.status}`);
     }
 
-    const data: BootstrapResponse = await response.json();
     bootstrapData = data;
     shellsList = data.shells;
 
     // Initialize settings
-    $currentSettings.set(data.settings);
-    populateUserDropdown(data.users, data.settings.runAsUser);
-    populateSettingsForm(data.settings);
-    populateVersionInfo(data.version, data.ttyHostVersion ?? null, JS_BUILD_VERSION);
+    if (data.settings) {
+      $currentSettings.set(data.settings);
+      const users = data.users.map((u: UserInfo) => ({
+        username: u.username,
+        displayName: u.username,
+      }));
+      populateUserDropdown(users, data.settings.runAsUser ?? null);
+      populateSettingsForm(data.settings);
+    }
+    populateVersionInfo(data.version, data.ttyHostVersion || null, JS_BUILD_VERSION);
 
     // Initialize auth status
-    $authStatus.set(data.auth);
+    if (data.auth) {
+      $authStatus.set({
+        authenticationEnabled: data.auth.authenticationEnabled,
+        passwordSet: data.auth.passwordSet,
+      });
+    }
     $serverHostname.set(data.hostname);
     $voiceServerPassword.set(data.voicePassword ?? null);
     updateSecurityWarning();
@@ -86,7 +99,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     renderNetworks(data.networks);
 
     // Populate shell dropdown
-    populateShellDropdown(data.shells, data.settings.defaultShell);
+    populateShellDropdown(data.shells, data.settings?.defaultShell ?? '');
 
     // Handle update result if present
     if (data.updateResult?.found) {
@@ -103,7 +116,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     setDevMode(data.devMode);
 
     // Check voice server availability (only relevant if voice chat is enabled)
-    if (data.features.voiceChat) {
+    if (data.features?.voiceChat) {
       checkVoiceServerHealth().then((available) => {
         setVoiceSectionVisible(available);
       });
@@ -132,7 +145,7 @@ function renderVersion(version: string): void {
 /**
  * Render network interfaces list
  */
-function renderNetworks(networks: NetworkInterface[]): void {
+function renderNetworks(networks: NetworkInterfaceDto[]): void {
   const list = document.getElementById('network-list');
   if (!list) return;
 
@@ -164,7 +177,7 @@ function renderNetworks(networks: NetworkInterface[]): void {
 /**
  * Populate shell dropdown with available shells
  */
-function populateShellDropdown(shells: ShellInfo[], defaultShell: string): void {
+function populateShellDropdown(shells: ShellInfoDto[], defaultShell: string): void {
   const select = document.getElementById('setting-default-shell') as HTMLSelectElement | null;
   if (!select) return;
 
@@ -185,7 +198,8 @@ function populateShellDropdown(shells: ShellInfo[], defaultShell: string): void 
  * Handle update result from previous update
  */
 function handleUpdateResult(result: UpdateResult): void {
-  log.info(() => `Update result: ${result.success ? 'success' : 'failed'} - ${result.message}`);
+  const status = result.success ? 'success' : 'failed';
+  log.info(() => `Update result: ${status} - ${result.message || 'no error'}`);
 }
 
 /**
@@ -195,7 +209,7 @@ function checkTtyHostHealth(data: BootstrapResponse): void {
   const warning = document.getElementById('ttyhost-warning');
   if (!warning) return;
 
-  if (data.ttyHostVersion && !data.ttyHostCompatible) {
+  if (data.ttyHostVersion !== '' && !data.ttyHostCompatible) {
     warning.classList.remove('hidden');
     const msgEl = warning.querySelector('.warning-message');
     if (msgEl) {
@@ -211,9 +225,8 @@ function checkTtyHostHealth(data: BootstrapResponse): void {
  */
 export async function fetchBootstrapLogin(): Promise<BootstrapLoginResponse | null> {
   try {
-    const response = await fetch('/api/bootstrap/login');
-    if (!response.ok) return null;
-    return await response.json();
+    const { data } = await getBootstrapLogin();
+    return data ?? null;
   } catch {
     return null;
   }

@@ -5,11 +5,23 @@
  * Communicates with the server API to persist settings changes.
  */
 
-import type { Settings, ThemeName, TabTitleMode, TerminalState, HealthResponse } from '../../types';
+import type { TerminalState } from '../../types';
+import type {
+  MidTermSettingsPublic,
+  MidTermSettingsUpdate,
+  UserInfo,
+  ThemeSetting,
+  CursorStyleSetting,
+  CursorInactiveStyleSetting,
+  BellStyleSetting,
+  ClipboardShortcutsSetting,
+  TabTitleModeSetting,
+} from '../../api/types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
+import { getSettings, getUsers, getVersion, getHealth, updateSettings } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
 
 // AbortController for settings event listeners cleanup
@@ -100,27 +112,27 @@ export function populateUserDropdown(
 /**
  * Populate the settings form with current settings
  */
-export function populateSettingsForm(settings: Settings): void {
-  setElementValue('setting-default-shell', settings.defaultShell || 'Pwsh');
-  setElementValue('setting-working-dir', settings.defaultWorkingDirectory || '');
-  setElementValue('setting-font-size', settings.fontSize || 14);
-  setElementValue('setting-font-family', settings.fontFamily || 'Cascadia Code');
-  setElementValue('setting-cursor-style', settings.cursorStyle || 'bar');
+export function populateSettingsForm(settings: MidTermSettingsPublic): void {
+  setElementValue('setting-default-shell', settings.defaultShell ?? 'Pwsh');
+  setElementValue('setting-working-dir', settings.defaultWorkingDirectory ?? '');
+  setElementValue('setting-font-size', settings.fontSize ?? 14);
+  setElementValue('setting-font-family', settings.fontFamily ?? 'Cascadia Code');
+  setElementValue('setting-cursor-style', settings.cursorStyle ?? 'bar');
   setElementChecked('setting-cursor-blink', settings.cursorBlink !== false);
-  setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle || 'outline');
-  setElementValue('setting-theme', settings.theme || 'dark');
-  setElementValue('setting-tab-title', settings.tabTitleMode || 'hostname');
-  setElementValue('setting-contrast', String(settings.minimumContrastRatio || 1));
-  setElementValue('setting-scrollback', settings.scrollbackLines || 10000);
-  setElementValue('setting-bell-style', settings.bellStyle || 'notification');
+  setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle ?? 'outline');
+  setElementValue('setting-theme', settings.theme ?? 'dark');
+  setElementValue('setting-tab-title', settings.tabTitleMode ?? 'hostname');
+  setElementValue('setting-contrast', String(settings.minimumContrastRatio ?? 1));
+  setElementValue('setting-scrollback', settings.scrollbackLines ?? 10000);
+  setElementValue('setting-bell-style', settings.bellStyle ?? 'notification');
   setElementChecked('setting-copy-on-select', settings.copyOnSelect === true);
   setElementChecked('setting-right-click-paste', settings.rightClickPaste !== false);
-  setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts || 'auto');
+  setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts ?? 'auto');
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling === true);
   setElementChecked('setting-webgl', settings.useWebGL !== false);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
-  setElementChecked('setting-file-radar', settings.fileRadar === true);
-  setElementValue('setting-run-as-user', settings.runAsUser || '');
+  setElementChecked('setting-file-radar', settings.fileRadar !== false);
+  setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
 
 /**
@@ -128,29 +140,29 @@ export function populateSettingsForm(settings: Settings): void {
  */
 export async function fetchSettings(): Promise<void> {
   try {
-    const [settings, users, version, health] = await Promise.all([
-      fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
-      fetch('/api/users')
-        .then((r) => r.json() as Promise<Array<{ username: string }>>)
-        .catch(() => [] as Array<{ username: string }>),
-      fetch('/api/version')
-        .then((r) => r.text())
-        .catch(() => null),
-      fetch('/api/health')
-        .then((r) => r.json() as Promise<HealthResponse>)
-        .catch(() => ({
-          status: '',
-          memoryMB: 0,
-          uptime: '',
-          sessionCount: 0,
-          ttyHostVersion: undefined,
-        })),
+    const { data: settingsData, response } = await getSettings();
+    if (!settingsData || !response.ok) {
+      console.error('Error fetching settings:', response.status);
+      return;
+    }
+
+    const [usersRes, versionRes, healthRes] = await Promise.all([
+      getUsers(),
+      getVersion(),
+      getHealth(),
     ]);
 
-    $currentSettings.set(settings);
-    populateUserDropdown(users, settings.runAsUser);
-    populateSettingsForm(settings);
-    populateVersionInfo(version, health.ttyHostVersion ?? null, JS_BUILD_VERSION);
+    const users = (usersRes.data ?? []).map((u: UserInfo) => ({
+      username: u.username,
+      displayName: u.username,
+    }));
+    const version = versionRes.data ?? null;
+    const health = healthRes.data;
+
+    $currentSettings.set(settingsData);
+    populateUserDropdown(users, settingsData.runAsUser ?? null);
+    populateSettingsForm(settingsData);
+    populateVersionInfo(version, health?.ttyHostVersion ?? null, JS_BUILD_VERSION);
 
     // Apply settings to any terminals that were created before settings loaded
     applySettingsToTerminals();
@@ -166,17 +178,20 @@ export function applySettingsToTerminals(): void {
   const settings = $currentSettings.get();
   if (!settings) return;
 
-  const theme = THEMES[settings.theme] || THEMES.dark;
-  const fontFamily = `'${settings.fontFamily || 'Cascadia Code'}', ${TERMINAL_FONT_STACK}`;
+  const themeName = settings.theme ?? 'dark';
+  const theme = THEMES[themeName] || THEMES.dark;
+  const fontFamily = `'${settings.fontFamily ?? 'Cascadia Code'}', ${TERMINAL_FONT_STACK}`;
+  const fontSize = settings.fontSize ?? 14;
+  const contrastRatio = settings.minimumContrastRatio ?? 1;
 
   sessionTerminals.forEach((state: TerminalState) => {
-    state.terminal.options.cursorBlink = settings.cursorBlink;
-    state.terminal.options.cursorStyle = settings.cursorStyle;
-    state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
+    state.terminal.options.cursorBlink = settings.cursorBlink ?? true;
+    state.terminal.options.cursorStyle = settings.cursorStyle ?? 'bar';
+    state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle ?? 'outline';
     state.terminal.options.fontFamily = fontFamily;
-    state.terminal.options.fontSize = settings.fontSize;
+    state.terminal.options.fontSize = fontSize;
     state.terminal.options.theme = theme;
-    state.terminal.options.minimumContrastRatio = settings.minimumContrastRatio;
+    state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
 
     // Trigger re-render after font changes
@@ -197,14 +212,15 @@ export function applySettingsToTerminals(): void {
  * Apply settings received from WebSocket sync.
  * Updates the form if settings panel is open, applies to terminals, and updates theme.
  */
-export function applyReceivedSettings(settings: Settings): void {
+export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
   if ($settingsOpen.get()) {
     populateSettingsForm(settings);
   }
 
-  const theme = THEMES[settings.theme] || THEMES.dark;
+  const themeName = settings.theme ?? 'dark';
+  const theme = THEMES[themeName] || THEMES.dark;
   document.documentElement.style.setProperty('--terminal-bg', theme.background);
-  setCookie('mm-theme', settings.theme);
+  setCookie('mm-theme', themeName);
 
   applySettingsToTerminals();
   updateTabTitle();
@@ -216,51 +232,61 @@ export function applyReceivedSettings(settings: Settings): void {
 export function saveAllSettings(): void {
   const runAsUserValue = getElementValue('setting-run-as-user', '');
   const prevSettings = $currentSettings.get();
-  const settings: Settings = {
-    defaultShell: getElementValue('setting-default-shell', 'Pwsh'),
-    defaultCols: prevSettings?.defaultCols ?? 120,
-    defaultRows: prevSettings?.defaultRows ?? 30,
+  const prevDefaultCols = prevSettings?.defaultCols ?? 120;
+  const prevDefaultRows = prevSettings?.defaultRows ?? 30;
+
+  const defaultShellValue = getElementValue('setting-default-shell', 'Pwsh');
+  const validShells = ['Pwsh', 'PowerShell', 'Cmd', 'Bash', 'Zsh'];
+  const defaultShell = validShells.includes(defaultShellValue)
+    ? (defaultShellValue as 'Pwsh' | 'PowerShell' | 'Cmd' | 'Bash' | 'Zsh')
+    : null;
+
+  const settings: MidTermSettingsUpdate = {
+    defaultShell,
+    defaultCols: prevDefaultCols,
+    defaultRows: prevDefaultRows,
     defaultWorkingDirectory: getElementValue('setting-working-dir', ''),
     fontSize: parseInt(getElementValue('setting-font-size', '14'), 10) || 14,
     fontFamily: getElementValue('setting-font-family', 'Cascadia Code'),
-    cursorStyle: getElementValue('setting-cursor-style', 'bar') as Settings['cursorStyle'],
+    cursorStyle: getElementValue('setting-cursor-style', 'bar') as CursorStyleSetting,
     cursorBlink: getElementChecked('setting-cursor-blink'),
     cursorInactiveStyle: getElementValue(
       'setting-cursor-inactive',
       'outline',
-    ) as Settings['cursorInactiveStyle'],
-    theme: getElementValue('setting-theme', 'dark') as ThemeName,
-    tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleMode,
+    ) as CursorInactiveStyleSetting,
+    theme: getElementValue('setting-theme', 'dark') as ThemeSetting,
+    tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleModeSetting,
     minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
     smoothScrolling: getElementChecked('setting-smooth-scrolling'),
     useWebGL: getElementChecked('setting-webgl'),
     scrollbackLines: parseInt(getElementValue('setting-scrollback', '10000'), 10) || 10000,
-    bellStyle: getElementValue('setting-bell-style', 'notification') as Settings['bellStyle'],
+    bellStyle: getElementValue('setting-bell-style', 'notification') as BellStyleSetting,
     copyOnSelect: getElementChecked('setting-copy-on-select'),
     rightClickPaste: getElementChecked('setting-right-click-paste'),
     clipboardShortcuts: getElementValue(
       'setting-clipboard-shortcuts',
       'auto',
-    ) as Settings['clipboardShortcuts'],
+    ) as ClipboardShortcutsSetting,
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
     fileRadar: getElementChecked('setting-file-radar'),
     runAsUser: runAsUserValue || null,
   };
 
-  setCookie('mm-theme', settings.theme);
+  const themeName = settings.theme ?? 'dark';
+  setCookie('mm-theme', themeName);
 
-  fetch('/api/settings', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings),
-  })
-    .then((r) => {
-      if (r.ok) {
-        $currentSettings.set(settings);
-        const theme = THEMES[settings.theme] || THEMES.dark;
+  updateSettings(settings)
+    .then(({ response, error }) => {
+      if (response.ok) {
+        if (prevSettings) {
+          $currentSettings.set({ ...prevSettings, ...settings });
+        }
+        const theme = THEMES[themeName] || THEMES.dark;
         document.documentElement.style.setProperty('--terminal-bg', theme.background);
         applySettingsToTerminals();
         updateTabTitle();
+      } else {
+        console.error('Settings save failed:', response.status, error);
       }
     })
     .catch((e) => {

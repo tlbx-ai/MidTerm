@@ -40,16 +40,16 @@ export const $renamingSessionId = atom<string | null>(null);
 
 /**
  * Pending renames awaiting server confirmation.
- * Maps sessionId -> pending name (null means clearing the name).
+ * Maps sessionId -> pending name (empty string means clearing the name).
  * Protects optimistic updates from being overwritten by stale server state.
  */
-const pendingRenames = new Map<string, string | null>();
+const pendingRenames = new Map<string, string>();
 
 /**
  * Mark a rename as pending (before optimistic update).
  * The pending name will be preserved until server confirms it.
  */
-export function setPendingRename(sessionId: string, name: string | null): void {
+export function setPendingRename(sessionId: string, name: string): void {
   pendingRenames.set(sessionId, name);
 }
 
@@ -177,9 +177,11 @@ export function getSession(sessionId: string): Session | undefined {
  * Preserves _order for existing sessions, assigns high order for new ones.
  */
 export function setSession(session: Session): void {
-  const existing = $sessions.get()[session.id];
+  const id = session.id;
+  if (!id) return;
+  const existing = $sessions.get()[id];
   const order = session._order ?? existing?._order ?? Date.now();
-  $sessions.setKey(session.id, { ...session, _order: order });
+  $sessions.setKey(id, { ...session, _order: order });
 }
 
 /**
@@ -200,21 +202,24 @@ export function removeSession(sessionId: string): void {
 export function setSessions(sessionList: Session[]): void {
   const sessionsMap: Record<string, Session> = {};
   sessionList.forEach((session, i) => {
-    let name = session.name;
+    const id = session.id;
+    if (!id) return;
+
+    let name: string = session.name ?? '';
 
     // Check for pending rename
-    const pendingName = pendingRenames.get(session.id);
+    const pendingName = pendingRenames.get(id);
     if (pendingName !== undefined) {
       if (session.name === pendingName) {
         // Server confirmed our rename - clear pending
-        pendingRenames.delete(session.id);
+        pendingRenames.delete(id);
       } else {
         // Server still has old name - preserve our pending name
         name = pendingName;
       }
     }
 
-    sessionsMap[session.id] = { ...session, name, _order: session.order ?? i };
+    sessionsMap[id] = { ...session, name, _order: session.order ?? i };
   });
   $sessions.set(sessionsMap);
 }
@@ -260,7 +265,9 @@ export function reorderSessions(fromIndex: number, toIndex: number): void {
 
   const sessionsMap: Record<string, Session> = {};
   reordered.forEach((session, i) => {
-    sessionsMap[session.id] = { ...session, _order: i };
+    const id = session.id;
+    if (!id) return;
+    sessionsMap[id] = { ...session, _order: i };
   });
   $sessions.set(sessionsMap);
 }
