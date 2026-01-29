@@ -403,6 +403,10 @@ public static class Program
                     return;
                 }
 
+                // Dispose the timeout registration BEFORE cancelling the CTS.
+                // The registration checks handshakeComplete (still false here) and would
+                // incorrectly cancel the client connection if it fires.
+                handshakeTimeoutRegistration.Dispose();
                 handshakeTimeoutCts.Cancel();
 
                 Log.Verbose(() => $"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
