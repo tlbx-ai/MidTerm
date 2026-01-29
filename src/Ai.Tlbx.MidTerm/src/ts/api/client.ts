@@ -114,7 +114,7 @@ export async function reloadSettings() {
 // --- System ---
 
 export async function getVersion() {
-  return client.GET('/api/version');
+  return client.GET('/api/version', { parseAs: 'text' });
 }
 
 export async function getVersionDetails() {
@@ -178,7 +178,7 @@ export async function deleteUpdateResult() {
 }
 
 export async function getUpdateLog() {
-  return client.GET('/api/update/log');
+  return client.GET('/api/update/log', { parseAs: 'text' });
 }
 
 // --- History ---
