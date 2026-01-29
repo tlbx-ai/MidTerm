@@ -273,6 +273,11 @@ export function fitSessionToScreen(sessionId: string): void {
     state.container.classList.remove('hidden');
   }
 
+  // Force reflow after clearing transform so measurements reflect the unscaled layout
+  if (xterm) {
+    void xterm.offsetHeight;
+  }
+
   // Use terminalsArea for measurement
   if (!dom.terminalsArea) {
     if (wasHidden) {
