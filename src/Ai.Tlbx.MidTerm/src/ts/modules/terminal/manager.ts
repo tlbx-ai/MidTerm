@@ -843,9 +843,6 @@ export function initCalibrationTerminal(): Promise<void> {
         const cellHeight = screen.offsetHeight / terminal.rows;
         if (cellWidth >= 1 && cellHeight >= 1) {
           calibrationMeasurement = { cellWidth, cellHeight };
-          console.log(
-            `[CALIBRATION] Cell size: ${cellWidth.toFixed(2)}×${cellHeight.toFixed(2)} px`,
-          );
         }
       }
 
