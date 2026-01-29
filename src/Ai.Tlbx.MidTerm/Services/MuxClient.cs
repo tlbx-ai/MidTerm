@@ -76,6 +76,7 @@ public sealed class MuxClient : IAsyncDisposable
         ((CancellationTokenSource?)state)?.Cancel();
 
     private volatile string? _activeSessionId;
+    private volatile bool _flushSuspended;
     private int _droppedFrameCount;
 
     public string Id { get; }
@@ -164,7 +165,7 @@ public sealed class MuxClient : IAsyncDisposable
         {
             SingleReader = true,
             SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropOldest
+            FullMode = BoundedChannelFullMode.DropWrite
         });
         _processor = ProcessLoopAsync(_cts.Token);
     }
@@ -208,6 +209,23 @@ public sealed class MuxClient : IAsyncDisposable
     public void SetActiveSession(string? sessionId)
     {
         _activeSessionId = sessionId;
+    }
+
+    /// <summary>
+    /// Suspend flushing — ProcessLoop continues draining into buffers but won't send.
+    /// Used during buffer replay to prevent live output from interleaving with replay frames.
+    /// </summary>
+    public void SuspendFlush()
+    {
+        _flushSuspended = true;
+    }
+
+    /// <summary>
+    /// Resume flushing — next ProcessLoop iteration will flush all accumulated data.
+    /// </summary>
+    public void ResumeFlush()
+    {
+        _flushSuspended = false;
     }
 
     /// <summary>
@@ -306,6 +324,7 @@ public sealed class MuxClient : IAsyncDisposable
     private async Task FlushDueBuffersAsync(long nowTicks)
     {
         if (WebSocket.State != WebSocketState.Open) return;
+        if (_flushSuspended) return;
 
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {

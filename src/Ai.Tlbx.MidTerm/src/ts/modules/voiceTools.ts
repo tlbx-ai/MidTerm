@@ -99,11 +99,11 @@ async function handleStateOfThings(): Promise<StateOfThingsResult> {
 
   const sessionStates: VoiceSessionState[] = sessions.map((s) => ({
     id: s.id,
-    userTitle: s.name,
-    terminalTitle: s.terminalTitle,
+    userTitle: s.name || null,
+    terminalTitle: s.terminalTitle || null,
     foregroundName: s.foregroundName ?? null,
     foregroundCommandLine: s.foregroundCommandLine ?? null,
-    currentDirectory: s.currentDirectory ?? null,
+    currentDirectory: s.currentDirectory || null,
     shell: s.shellType,
     cols: s.cols,
     rows: s.rows,

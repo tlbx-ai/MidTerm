@@ -151,6 +151,7 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
   starBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    if (!entry.id) return;
     starBtn.disabled = true;
     starBtn.classList.add('loading');
     await toggleStar(entry.id);
@@ -163,9 +164,9 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   infoDiv.className = 'history-item-info';
 
   const fgIndicator = createForegroundIndicator(
-    entry.workingDirectory,
-    entry.commandLine,
-    entry.executable,
+    entry.workingDirectory ?? '',
+    entry.commandLine ?? null,
+    entry.executable ?? '',
   );
   infoDiv.appendChild(fgIndicator);
 
@@ -182,6 +183,7 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   deleteBtn.innerHTML = icon('close');
   deleteBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    if (!entry.id) return;
     if (entry.isStarred) {
       if (!confirm('Delete starred item?')) {
         return;

@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -73,7 +74,7 @@ public sealed class SettingsWebSocketHandler
         void OnSettingsChange(MidTermSettings s) => _ = SendMessageAsync(new SettingsWsMessage
         {
             Type = "settings",
-            Settings = s
+            Settings = MidTermSettingsPublic.FromSettings(s)
         });
 
         void OnUpdateChange(UpdateInfo u) => _ = SendMessageAsync(new SettingsWsMessage
@@ -91,7 +92,7 @@ public sealed class SettingsWebSocketHandler
             await SendMessageAsync(new SettingsWsMessage
             {
                 Type = "settings",
-                Settings = _settingsService.Load()
+                Settings = MidTermSettingsPublic.FromSettings(_settingsService.Load())
             });
 
             var latestUpdate = _updateService.LatestUpdate;

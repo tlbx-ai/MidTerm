@@ -1,7 +1,7 @@
 /**
  * Diagnostics Module
  *
- * Provides log viewing UI for frontend and backend logs.
+ * Displays file paths and reload settings.
  */
 
-export { initDiagnosticsPanel, stopDiagnosticsRefresh } from './panel';
+export { initDiagnosticsPanel } from './panel';

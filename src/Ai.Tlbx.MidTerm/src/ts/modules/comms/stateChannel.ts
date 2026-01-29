@@ -147,8 +147,11 @@ export function connectStateWebSocket(): void {
  * Creates terminals proactively for all sessions so they receive data in the background.
  */
 export function handleStateUpdate(newSessions: Session[]): void {
+  // Filter out sessions without required id field
+  const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
+
   // Remove terminals for deleted sessions
-  const newIds = new Set(newSessions.map((s) => s.id));
+  const newIds = new Set(validSessions.map((s) => s.id));
   sessionTerminals.forEach((_, id) => {
     if (!newIds.has(id)) {
       destroyTerminalForSession(id);
@@ -159,7 +162,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
   // Update dimensions and resize terminals when server dimensions change
   // Also create terminals proactively for sessions that don't have one yet
   // Initialize process state from session data (for reconnect scenarios)
-  newSessions.forEach((session) => {
+  validSessions.forEach((session) => {
     // Initialize process monitor state from session data
     initializeFromSession(
       session.id,
@@ -189,7 +192,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
   });
 
   // Update store - sidebarUpdater subscription handles rendering
-  setSessions(newSessions);
+  setSessions(validSessions);
   updateEmptyState();
 
   // Restore layout from localStorage on first session list (after page load)
@@ -203,7 +206,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
   const activeId = $activeSessionId.get();
   const sessionList = $sessionList.get();
   const firstSession = sessionList[0];
-  if (!activeId && firstSession && !isSettingsOpen) {
+  if (!activeId && firstSession?.id && !isSettingsOpen) {
     selectSession(firstSession.id, { closeSettingsPanel: false });
   }
 
@@ -211,7 +214,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
   if (activeId && !sessionList.find((s) => s.id === activeId)) {
     $activeSessionId.set(null);
     const nextSession = sessionList[0];
-    if (nextSession && !isSettingsOpen) {
+    if (nextSession?.id && !isSettingsOpen) {
       selectSession(nextSession.id, { closeSettingsPanel: false });
     }
   }

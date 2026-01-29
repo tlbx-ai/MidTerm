@@ -288,12 +288,10 @@ function performScan(sessionId: string, text: string): void {
  * Fire-and-forget - we don't block on this request.
  */
 function registerPathsWithBackend(sessionId: string, paths: string[]): void {
-  fetch('/api/files/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, paths }),
-  }).catch((e) => {
-    log.warn(() => `Failed to register paths: ${e}`);
+  import('../../api/client').then(({ registerFilePaths }) => {
+    registerFilePaths(sessionId, paths).catch((e) => {
+      log.warn(() => `Failed to register paths: ${e}`);
+    });
   });
 }
 
@@ -337,7 +335,7 @@ async function checkPathExists(path: string): Promise<FilePathInfo | null> {
     }
 
     const data: FileCheckResponse = await resp.json();
-    const info = data.results[path] || null;
+    const info = data.results?.[path] || null;
 
     existenceCache.set(path, { info, expires: Date.now() + EXISTENCE_CACHE_TTL });
     return info;
@@ -377,7 +375,15 @@ async function resolveRelativePath(
     const resp = await fetch(url, fetchOptions);
 
     if (!resp.ok) {
-      const notFound: FileResolveResponse = { exists: false };
+      const notFound: FileResolveResponse = {
+        exists: false,
+        isDirectory: false,
+        resolvedPath: '',
+        size: null,
+        mimeType: '',
+        modified: null,
+        isText: false,
+      };
       resolveCache.set(cacheKey, { response: notFound, expires: Date.now() + RESOLVE_CACHE_TTL });
       return notFound;
     }
@@ -468,11 +474,11 @@ async function handlePathClick(path: string): Promise<void> {
       const resolvedInfo: FilePathInfo = {
         exists: true,
         isDirectory: resolved.isDirectory ?? false,
+        size: resolved.size ?? null,
+        mimeType: resolved.mimeType ?? '',
+        modified: resolved.modified ?? null,
+        isText: resolved.isText ?? false,
       };
-      if (resolved.size !== undefined) resolvedInfo.size = resolved.size;
-      if (resolved.mimeType !== undefined) resolvedInfo.mimeType = resolved.mimeType;
-      if (resolved.modified !== undefined) resolvedInfo.modified = resolved.modified;
-      if (resolved.isText !== undefined) resolvedInfo.isText = resolved.isText;
       openFile(resolved.resolvedPath, resolvedInfo);
       return;
     }
@@ -497,11 +503,11 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
     const info: FilePathInfo = {
       exists: true,
       isDirectory: resolved.isDirectory ?? false,
+      size: resolved.size ?? null,
+      mimeType: resolved.mimeType ?? '',
+      modified: resolved.modified ?? null,
+      isText: resolved.isText ?? false,
     };
-    if (resolved.size !== undefined) info.size = resolved.size;
-    if (resolved.mimeType !== undefined) info.mimeType = resolved.mimeType;
-    if (resolved.modified !== undefined) info.modified = resolved.modified;
-    if (resolved.isText !== undefined) info.isText = resolved.isText;
     openFile(resolved.resolvedPath, info);
   } else {
     showFileNotFoundToast(relativePath);
@@ -524,6 +530,10 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
     const info: FilePathInfo = {
       exists: true,
       isDirectory: true,
+      size: null,
+      mimeType: '',
+      modified: null,
+      isText: false,
     };
     openFile(resolved.resolvedPath, info);
   } else {

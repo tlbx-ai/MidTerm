@@ -78,7 +78,7 @@ public static class Program
         }
 
         var logDirectory = LogPaths.GetLogDirectory(isWindowsService: false);
-        Log.Initialize($"mthost-{config.SessionId}", logDirectory, config.LogSeverity);
+        Log.Initialize($"mthost-{config.SessionId}", logDirectory, LogSeverity.Exception);
 
 #if !WINDOWS
         // Register Unix signal handlers for graceful shutdown
@@ -392,30 +392,34 @@ public static class Program
 
             void OnHandshakeComplete()
             {
-                var shouldReplay = false;
+                bool alreadyComplete;
                 lock (outputLock)
                 {
-                    if (!handshakeComplete)
-                    {
-                        handshakeComplete = true;
-                        shouldReplay = true;
-                    }
+                    alreadyComplete = handshakeComplete;
                 }
 
-                if (!shouldReplay)
+                if (alreadyComplete)
                 {
                     return;
                 }
 
+                // Dispose the timeout registration BEFORE cancelling the CTS.
+                // The registration checks handshakeComplete (still false here) and would
+                // incorrectly cancel the client connection if it fires.
+                handshakeTimeoutRegistration.Dispose();
                 handshakeTimeoutCts.Cancel();
 
                 Log.Verbose(() => $"[HANDSHAKE] Complete, client connected: {client.IsConnected}");
 
                 if (!client.IsConnected)
                 {
+                    lock (outputLock) { handshakeComplete = true; }
                     return;
                 }
 
+                // Replay buffered output BEFORE enabling live forwarding.
+                // While handshakeComplete is false, OnOutput callbacks return early,
+                // so replay frames won't interleave with live output on the IPC stream.
                 var replayed = session.TryReplayOutputSince(handshakeCursor, bufferedSegment =>
                 {
                     if (!client.IsConnected)
@@ -436,6 +440,12 @@ public static class Program
                 if (!replayed)
                 {
                     Log.Warn(() => "Buffered output dropped before handshake completed (scrollback too small)");
+                }
+
+                // Now enable live forwarding — all replay data has been sent
+                lock (outputLock)
+                {
+                    handshakeComplete = true;
                 }
             }
 
@@ -731,18 +741,6 @@ public static class Program
                             stream.Flush();
                         }
                         Log.Verbose(() => $"Order set to {order}");
-                        break;
-
-                    case TtyHostMessageType.SetLogLevel:
-                        var newLevel = TtyHostProtocol.ParseSetLogLevel(payload);
-                        Log.Info(() => $"Log level changed via IPC: {Log.MinLevel} -> {newLevel}");
-                        Log.MinLevel = newLevel;
-                        var levelAck = TtyHostProtocol.CreateSetLogLevelAck();
-                        lock (stream)
-                        {
-                            stream.Write(levelAck);
-                            stream.Flush();
-                        }
                         break;
 
                     case TtyHostMessageType.Close:

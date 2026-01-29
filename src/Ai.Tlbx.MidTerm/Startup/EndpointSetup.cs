@@ -558,8 +558,7 @@ public static class EndpointSetup
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
-        ShutdownService shutdownService,
-        string logDirectory)
+        ShutdownService shutdownService)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService);

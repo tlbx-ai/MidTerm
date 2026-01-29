@@ -1,0 +1,2703 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "MidTerm API",
+    "description": "MidTerm terminal multiplexer API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/change-password": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/status": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/status": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CreateSessionRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfoDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/resize": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResizeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/name": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "auto",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/upload": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file"
+                ],
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "$ref": "#/components/schemas/IFormFile"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileUploadResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LaunchEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchEntry"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/{id}": {
+      "patch": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchEntry"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/history/{id}/star": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchEntry"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/register": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/files/check": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileCheckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/list": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/view": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/files/download": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/files/resolve": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deep",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResolveResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs/files": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogFilesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs/read": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "file",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "fromEnd",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogReadResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs/tail": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "file",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "position",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogReadResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bootstrap": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bootstrap/login": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapLoginResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemHealth"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version/details": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionManifest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/certificate/info": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateInfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/certificate/download/pem": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/certificate/download/mobileconfig": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/certificate/share-packet": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharePacketInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/networks": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NetworkInterfaceDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shells": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShellInfoDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MidTermSettingsPublic"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MidTermSettingsPublic"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/settings/reload": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/paths": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update/check": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update/apply": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/update/result": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "clear",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateResult"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/update/log": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthResponse": {
+        "required": [
+          "success",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "AuthStatusResponse": {
+        "required": [
+          "authenticationEnabled",
+          "passwordSet"
+        ],
+        "type": "object",
+        "properties": {
+          "authenticationEnabled": {
+            "type": "boolean"
+          },
+          "passwordSet": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BellStyleSetting": {
+        "enum": [
+          "notification",
+          "sound",
+          "visual",
+          "both",
+          "off"
+        ]
+      },
+      "BootstrapLoginResponse": {
+        "required": [
+          "certificate"
+        ],
+        "type": "object",
+        "properties": {
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateInfoResponse"
+              }
+            ]
+          }
+        }
+      },
+      "BootstrapResponse": {
+        "required": [
+          "auth",
+          "version",
+          "ttyHostVersion",
+          "ttyHostCompatible",
+          "uptimeSeconds",
+          "platform",
+          "hostname",
+          "settings",
+          "networks",
+          "users",
+          "shells",
+          "updateResult",
+          "devMode",
+          "features",
+          "voicePassword"
+        ],
+        "type": "object",
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/AuthStatusResponse"
+          },
+          "version": {
+            "type": "string"
+          },
+          "ttyHostVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ttyHostCompatible": {
+            "type": "boolean"
+          },
+          "uptimeSeconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/MidTermSettingsPublic"
+          },
+          "networks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetworkInterfaceDto"
+            }
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserInfo"
+            }
+          },
+          "shells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShellInfoDto"
+            }
+          },
+          "updateResult": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateResult"
+              }
+            ]
+          },
+          "devMode": {
+            "type": "boolean"
+          },
+          "features": {
+            "$ref": "#/components/schemas/FeatureFlags"
+          },
+          "voicePassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CertificateDownloadInfo": {
+        "required": [
+          "fingerprint",
+          "fingerprintFormatted",
+          "notBefore",
+          "notAfter",
+          "keyProtection",
+          "dnsNames",
+          "ipAddresses",
+          "isFallbackCertificate"
+        ],
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "fingerprintFormatted": {
+            "type": "string"
+          },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "keyProtection": {
+            "type": "string"
+          },
+          "dnsNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ipAddresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isFallbackCertificate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CertificateInfoResponse": {
+        "required": [
+          "fingerprint",
+          "notBefore",
+          "notAfter",
+          "isFallbackCertificate"
+        ],
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "notBefore": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "notAfter": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "isFallbackCertificate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ChangePasswordRequest": {
+        "required": [
+          "newPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "newPassword": {
+            "type": "string"
+          }
+        }
+      },
+      "ClipboardShortcutsSetting": {
+        "enum": [
+          "auto",
+          "windows",
+          "unix"
+        ]
+      },
+      "CreateHistoryRequest": {
+        "required": [
+          "shellType",
+          "executable",
+          "workingDirectory",
+          "isStarred"
+        ],
+        "type": "object",
+        "properties": {
+          "shellType": {
+            "type": "string"
+          },
+          "executable": {
+            "type": "string"
+          },
+          "commandLine": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workingDirectory": {
+            "type": "string"
+          },
+          "isStarred": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateSessionRequest": {
+        "required": [
+          "cols",
+          "rows"
+        ],
+        "type": "object",
+        "properties": {
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shell": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workingDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CursorInactiveStyleSetting": {
+        "enum": [
+          "outline",
+          "block",
+          "bar",
+          "underline",
+          "none"
+        ]
+      },
+      "CursorStyleSetting": {
+        "enum": [
+          "bar",
+          "block",
+          "underline"
+        ]
+      },
+      "DirectoryEntry": {
+        "required": [
+          "name",
+          "isDirectory",
+          "size",
+          "modified",
+          "mimeType"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "isDirectory": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "modified": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "DirectoryListResponse": {
+        "required": [
+          "path",
+          "entries"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectoryEntry"
+            }
+          }
+        }
+      },
+      "FeatureFlags": {
+        "required": [
+          "voiceChat"
+        ],
+        "type": "object",
+        "properties": {
+          "voiceChat": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FileCheckRequest": {
+        "required": [
+          "paths"
+        ],
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FileCheckResponse": {
+        "required": [
+          "results"
+        ],
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FilePathInfo"
+            }
+          }
+        }
+      },
+      "FilePathInfo": {
+        "required": [
+          "exists",
+          "size",
+          "isDirectory",
+          "mimeType",
+          "modified",
+          "isText"
+        ],
+        "type": "object",
+        "properties": {
+          "exists": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "isDirectory": {
+            "type": "boolean"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "modified": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "isText": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "FileRegisterRequest": {
+        "required": [
+          "sessionId",
+          "paths"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FileResolveResponse": {
+        "required": [
+          "exists",
+          "resolvedPath",
+          "isDirectory",
+          "size",
+          "mimeType",
+          "modified",
+          "isText"
+        ],
+        "type": "object",
+        "properties": {
+          "exists": {
+            "type": "boolean"
+          },
+          "resolvedPath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isDirectory": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "modified": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "isText": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "FileUploadResponse": {
+        "required": [
+          "path"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "HistoryPatchRequest": {
+        "type": "object",
+        "properties": {
+          "isStarred": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "IFormFile": {
+        "type": "string",
+        "format": "binary"
+      },
+      "LaunchEntry": {
+        "required": [
+          "id",
+          "shellType",
+          "executable",
+          "commandLine",
+          "workingDirectory",
+          "isStarred",
+          "weight",
+          "lastUsed"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "shellType": {
+            "type": "string"
+          },
+          "executable": {
+            "type": "string"
+          },
+          "commandLine": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workingDirectory": {
+            "type": "string"
+          },
+          "isStarred": {
+            "type": "boolean"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastUsed": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LocalUpdateInfo": {
+        "required": [
+          "available",
+          "version",
+          "path",
+          "type",
+          "sessionsPreserved"
+        ],
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/UpdateType"
+          },
+          "sessionsPreserved": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LogEntryMessage": {
+        "required": [
+          "messageType",
+          "source",
+          "sessionId",
+          "timestamp",
+          "level",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "messageType": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "LogFileInfo": {
+        "required": [
+          "name",
+          "source",
+          "sessionId",
+          "size",
+          "modified",
+          "isActive"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "modified": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LogFilesResponse": {
+        "required": [
+          "files"
+        ],
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogFileInfo"
+            }
+          }
+        }
+      },
+      "LogReadResponse": {
+        "required": [
+          "entries",
+          "position",
+          "fileName"
+        ],
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogEntryMessage"
+            }
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fileName": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginRequest": {
+        "required": [
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "MidTermSettingsPublic": {
+        "required": [
+          "defaultShell",
+          "defaultCols",
+          "defaultRows",
+          "defaultWorkingDirectory",
+          "fontSize",
+          "fontFamily",
+          "cursorStyle",
+          "cursorBlink",
+          "cursorInactiveStyle",
+          "theme",
+          "tabTitleMode",
+          "minimumContrastRatio",
+          "smoothScrolling",
+          "useWebGL",
+          "scrollbackLines",
+          "bellStyle",
+          "copyOnSelect",
+          "rightClickPaste",
+          "clipboardShortcuts",
+          "scrollbackProtection",
+          "fileRadar",
+          "runAsUser",
+          "runAsUserSid",
+          "authenticationEnabled",
+          "certificatePath"
+        ],
+        "type": "object",
+        "properties": {
+          "defaultShell": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ShellType"
+              }
+            ]
+          },
+          "defaultCols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultRows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultWorkingDirectory": {
+            "type": "string"
+          },
+          "fontSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fontFamily": {
+            "type": "string"
+          },
+          "cursorStyle": {
+            "$ref": "#/components/schemas/CursorStyleSetting"
+          },
+          "cursorBlink": {
+            "type": "boolean"
+          },
+          "cursorInactiveStyle": {
+            "$ref": "#/components/schemas/CursorInactiveStyleSetting"
+          },
+          "theme": {
+            "$ref": "#/components/schemas/ThemeSetting"
+          },
+          "tabTitleMode": {
+            "$ref": "#/components/schemas/TabTitleModeSetting"
+          },
+          "minimumContrastRatio": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothScrolling": {
+            "type": "boolean"
+          },
+          "useWebGL": {
+            "type": "boolean"
+          },
+          "scrollbackLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bellStyle": {
+            "$ref": "#/components/schemas/BellStyleSetting"
+          },
+          "copyOnSelect": {
+            "type": "boolean"
+          },
+          "rightClickPaste": {
+            "type": "boolean"
+          },
+          "clipboardShortcuts": {
+            "$ref": "#/components/schemas/ClipboardShortcutsSetting"
+          },
+          "scrollbackProtection": {
+            "type": "boolean"
+          },
+          "fileRadar": {
+            "type": "boolean"
+          },
+          "runAsUser": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "runAsUserSid": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "authenticationEnabled": {
+            "type": "boolean"
+          },
+          "certificatePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "NetworkEndpointInfo": {
+        "required": [
+          "name",
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "NetworkInterfaceDto": {
+        "required": [
+          "name",
+          "ip"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          }
+        }
+      },
+      "PathsResponse": {
+        "required": [
+          "settingsFile",
+          "secretsFile",
+          "certificateFile",
+          "logDirectory"
+        ],
+        "type": "object",
+        "properties": {
+          "settingsFile": {
+            "type": "string"
+          },
+          "secretsFile": {
+            "type": "string"
+          },
+          "certificateFile": {
+            "type": "string"
+          },
+          "logDirectory": {
+            "type": "string"
+          }
+        }
+      },
+      "RenameSessionRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ResizeRequest": {
+        "required": [
+          "cols",
+          "rows"
+        ],
+        "type": "object",
+        "properties": {
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "viewerId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ResizeResponse": {
+        "required": [
+          "accepted",
+          "cols",
+          "rows"
+        ],
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SecurityStatus": {
+        "required": [
+          "passwordProtected",
+          "certificateTrusted",
+          "warnings"
+        ],
+        "type": "object",
+        "properties": {
+          "passwordProtected": {
+            "type": "boolean"
+          },
+          "certificateTrusted": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SessionInfoDto": {
+        "required": [
+          "id",
+          "pid",
+          "createdAt",
+          "isRunning",
+          "exitCode",
+          "cols",
+          "rows",
+          "shellType",
+          "name",
+          "terminalTitle",
+          "manuallyNamed",
+          "currentDirectory",
+          "foregroundPid",
+          "foregroundName",
+          "foregroundCommandLine",
+          "order"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isRunning": {
+            "type": "boolean"
+          },
+          "exitCode": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shellType": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "terminalTitle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "manuallyNamed": {
+            "type": "boolean"
+          },
+          "currentDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundPid": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "foregroundName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundCommandLine": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "order": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SessionListDto": {
+        "required": [
+          "sessions"
+        ],
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionInfoDto"
+            }
+          }
+        }
+      },
+      "SharePacketInfo": {
+        "required": [
+          "certificate",
+          "endpoints",
+          "trustPageUrl",
+          "port"
+        ],
+        "type": "object",
+        "properties": {
+          "certificate": {
+            "$ref": "#/components/schemas/CertificateDownloadInfo"
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetworkEndpointInfo"
+            }
+          },
+          "trustPageUrl": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ShellInfoDto": {
+        "required": [
+          "type",
+          "displayName",
+          "isAvailable",
+          "supportsOsc7"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "isAvailable": {
+            "type": "boolean"
+          },
+          "supportsOsc7": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ShellType": {
+        "enum": [
+          "Pwsh",
+          "PowerShell",
+          "Cmd",
+          "Bash",
+          "Zsh",
+          null
+        ]
+      },
+      "SystemHealth": {
+        "required": [
+          "healthy",
+          "mode",
+          "sessionCount",
+          "version",
+          "webProcessId",
+          "uptimeSeconds",
+          "platform",
+          "ttyHostVersion",
+          "ttyHostExpected",
+          "ttyHostCompatible",
+          "windowsBuildNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "healthy": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "sessionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "version": {
+            "type": "string"
+          },
+          "webProcessId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "uptimeSeconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "ttyHostVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ttyHostExpected": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ttyHostCompatible": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "windowsBuildNumber": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SystemResponse": {
+        "required": [
+          "healthy",
+          "version",
+          "manifest",
+          "sessionCount",
+          "uptimeSeconds",
+          "platform",
+          "ttyHost",
+          "webProcessId",
+          "windowsBuildNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "healthy": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/VersionManifest"
+          },
+          "sessionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "uptimeSeconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "ttyHost": {
+            "$ref": "#/components/schemas/TtyHostInfo"
+          },
+          "webProcessId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "windowsBuildNumber": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "TabTitleModeSetting": {
+        "enum": [
+          "hostname",
+          "static",
+          "sessionName",
+          "terminalTitle",
+          "foregroundProcess"
+        ]
+      },
+      "ThemeSetting": {
+        "enum": [
+          "dark",
+          "light",
+          "solarizedDark",
+          "solarizedLight"
+        ]
+      },
+      "TtyHostInfo": {
+        "required": [
+          "version",
+          "expected",
+          "compatible"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expected": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "compatible": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdateInfo": {
+        "required": [
+          "available",
+          "currentVersion",
+          "latestVersion",
+          "releaseUrl",
+          "downloadUrl",
+          "assetName",
+          "releaseNotes",
+          "type",
+          "sessionsPreserved",
+          "environment",
+          "localUpdate",
+          "isDowngrade"
+        ],
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "currentVersion": {
+            "type": "string"
+          },
+          "latestVersion": {
+            "type": "string"
+          },
+          "releaseUrl": {
+            "type": "string"
+          },
+          "downloadUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "assetName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "releaseNotes": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "type": {
+            "$ref": "#/components/schemas/UpdateType"
+          },
+          "sessionsPreserved": {
+            "type": "boolean"
+          },
+          "environment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "localUpdate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LocalUpdateInfo"
+              }
+            ]
+          },
+          "isDowngrade": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdateResult": {
+        "required": [
+          "found",
+          "success",
+          "message",
+          "details",
+          "timestamp",
+          "logFile"
+        ],
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "logFile": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateType": {
+        "enum": [
+          "none",
+          "webOnly",
+          "full"
+        ]
+      },
+      "UserInfo": {
+        "required": [
+          "username",
+          "sid",
+          "uid",
+          "gid"
+        ],
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "sid": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "uid": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "gid": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "VersionManifest": {
+        "required": [
+          "web",
+          "pty",
+          "protocol",
+          "minCompatiblePty",
+          "checksums",
+          "signature"
+        ],
+        "type": "object",
+        "properties": {
+          "web": {
+            "type": "string"
+          },
+          "pty": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minCompatiblePty": {
+            "type": "string"
+          },
+          "checksums": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "signature": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Ai.Tlbx.MidTerm.OpenApi"
+    }
+  ]
+}

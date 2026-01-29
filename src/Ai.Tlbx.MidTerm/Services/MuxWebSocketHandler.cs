@@ -49,8 +49,10 @@ public sealed class MuxWebSocketHandler
 
         try
         {
+            client.SuspendFlush();
             await SendInitFrameAsync(client, clientId);
             await SendInitialBuffersAsync(client);
+            client.ResumeFlush();
             await ProcessMessagesAsync(ws, clientId, client);
         }
         finally
@@ -174,6 +176,8 @@ public sealed class MuxWebSocketHandler
         {
             Log.Info(() => $"[MuxHandler] {client.Id}: Performing resync");
 
+            client.SuspendFlush();
+
             // Send clear screen command
             var clearFrame = MuxProtocol.CreateClearScreenFrame();
             await client.TrySendAsync(clearFrame);
@@ -181,12 +185,14 @@ public sealed class MuxWebSocketHandler
             // Send fresh buffers
             await SendInitialBuffersAsync(client);
 
+            client.ResumeFlush();
+
             Log.Verbose(() => $"[MuxHandler] {client.Id}: Resync complete");
         }
         catch (Exception ex)
         {
+            client.ResumeFlush();
             Log.Error(() => $"[MuxHandler] {client.Id}: Resync failed: {ex.Message}");
-            // Don't rethrow - keep the connection alive
         }
     }
 

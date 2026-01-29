@@ -6,31 +6,9 @@
  */
 
 import { createLogger } from '../logging';
+import { getSharePacket, type SharePacketInfo } from '../../api/client';
 
 const log = createLogger('shareAccess');
-
-interface NetworkEndpointInfo {
-  name: string;
-  url: string;
-}
-
-interface CertificateDownloadInfo {
-  fingerprint: string;
-  fingerprintFormatted: string;
-  notBefore: string;
-  notAfter: string;
-  keyProtection: string;
-  dnsNames: string[];
-  ipAddresses: string[];
-  isFallbackCertificate: boolean;
-}
-
-interface SharePacketInfo {
-  certificate: CertificateDownloadInfo;
-  endpoints: NetworkEndpointInfo[];
-  trustPageUrl: string;
-  port: number;
-}
 
 export function initShareAccessButton(): void {
   const el = document.getElementById('btn-share-access');
@@ -45,14 +23,14 @@ export function initShareAccessButton(): void {
 
 async function openShareEmail(): Promise<void> {
   try {
-    const response = await fetch('/api/certificate/share-packet');
-    if (!response.ok) {
+    const { data, response } = await getSharePacket();
+    if (!response.ok || !data) {
       log.error(() => 'Failed to fetch share packet');
       showFallbackMessage('Failed to load connection info');
       return;
     }
 
-    const info: SharePacketInfo = await response.json();
+    const info = data;
     const subject = `MidTerm Terminal Access - ${location.hostname}`;
     const body = generateEmailBody(info);
     const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -66,7 +44,7 @@ async function openShareEmail(): Promise<void> {
     setTimeout(() => {
       if (document.hasFocus()) {
         log.info(() => 'Page still has focus - email client may not have opened');
-        showCopyFallback(subject, body, info.trustPageUrl);
+        showCopyFallback(subject, body, info.trustPageUrl ?? location.href);
       }
     }, 1000);
   } catch (e) {
@@ -105,20 +83,25 @@ function showCopyFallback(subject: string, body: string, trustPageUrl: string): 
 }
 
 function generateEmailBody(info: SharePacketInfo): string {
-  const endpointsList = info.endpoints.map((ep) => `• ${ep.name}: ${ep.url}`).join('\n');
+  const endpointsList = (info.endpoints ?? []).map((ep) => `• ${ep.name}: ${ep.url}`).join('\n');
 
-  const validUntil = new Date(info.certificate.notAfter).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const notAfter = info.certificate?.notAfter;
+  const validUntil = notAfter
+    ? new Date(notAfter).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : 'Unknown';
+
+  const thumbprint = info.certificate?.fingerprint ?? 'Unknown';
 
   return `MidTerm Terminal Access
 =======================
 
 SECURITY: VERIFY FINGERPRINT FIRST
 ----------------------------------
-SHA-256: ${info.certificate.fingerprintFormatted}
+SHA-256: ${thumbprint}
 
 Compare this with your browser's certificate fingerprint before entering any passwords.
 Click the padlock icon in your browser's address bar > Certificate > SHA-256 fingerprint.
@@ -129,7 +112,7 @@ ${endpointsList}
 
 INSTALL CERTIFICATE
 -------------------
-Visit: ${info.trustPageUrl}
+Visit: ${info.trustPageUrl ?? location.href}
 
 This page will detect your device and guide you through installation.
 

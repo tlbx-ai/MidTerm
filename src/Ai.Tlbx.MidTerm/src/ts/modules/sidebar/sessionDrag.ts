@@ -193,7 +193,10 @@ function handleDrop(e: DragEvent): void {
   clearAllDropIndicators();
 
   // Persist new order to server
-  const newOrder = $sessionList.get().map((s) => s.id);
+  const newOrder = $sessionList
+    .get()
+    .map((s) => s.id)
+    .filter((id): id is string => !!id);
   persistSessionOrder(newOrder);
 }
 

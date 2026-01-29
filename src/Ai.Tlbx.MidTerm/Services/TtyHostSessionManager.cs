@@ -69,17 +69,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         Log.Info(() => $"TtyHostSessionManager: RunAsUser updated to: {runAsUser ?? "(none)"}");
     }
 
-    public async Task SetLogLevelForAllAsync(LogSeverity level, CancellationToken ct = default)
-    {
-        Log.Info(() => $"Broadcasting log level change to {_clients.Count} sessions: {level}");
-
-        var tasks = _clients.Values
-            .Select(client => client.SetLogLevelAsync(level, ct))
-            .ToList();
-
-        await Task.WhenAll(tasks).ConfigureAwait(false);
-    }
-
     /// <summary>
     /// Discover and connect to existing mmttyhost sessions.
     /// Kills incompatible or unresponsive processes, cleans up stale endpoints.
@@ -398,8 +387,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var order = Interlocked.Increment(ref _nextOrder);
         _sessionOrder[sessionId] = order;
 
-        // Send current log level and order to new session
-        await client.SetLogLevelAsync(Log.MinLevel, ct).ConfigureAwait(false);
         await client.SetOrderAsync((byte)(order % 256), ct).ConfigureAwait(false);
 
         Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid})");

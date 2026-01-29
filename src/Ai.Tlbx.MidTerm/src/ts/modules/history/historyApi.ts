@@ -4,50 +4,38 @@
  * API client for backend-persisted launch history.
  */
 
-export interface LaunchEntry {
-  id: string;
-  shellType: string;
-  executable: string;
-  commandLine: string | null;
-  workingDirectory: string;
-  isStarred: boolean;
-  weight: number;
-  lastUsed: string;
-}
+import {
+  getHistory,
+  createHistoryEntry as apiCreateHistoryEntry,
+  toggleHistoryStar,
+  deleteHistoryEntry,
+  type LaunchEntry,
+  type CreateHistoryRequest,
+} from '../../api/client';
+
+// Re-export types for consumers
+export type { LaunchEntry, CreateHistoryRequest };
 
 export async function fetchHistory(): Promise<LaunchEntry[]> {
-  const res = await fetch('/api/history');
-  if (!res.ok) {
-    throw new Error(`Failed to fetch history: ${res.status}`);
+  const { data, response } = await getHistory();
+  if (!response.ok || !data) {
+    throw new Error(`Failed to fetch history: ${response.status}`);
   }
-  return res.json();
+  return data;
 }
 
 export async function toggleStar(id: string): Promise<boolean> {
-  const res = await fetch(`/api/history/${id}/star`, { method: 'PUT' });
-  return res.ok;
+  const { response } = await toggleHistoryStar(id);
+  return response.ok;
 }
 
 export async function removeHistoryEntry(id: string): Promise<boolean> {
-  const res = await fetch(`/api/history/${id}`, { method: 'DELETE' });
-  return res.ok;
-}
-
-export interface CreateHistoryRequest {
-  shellType: string;
-  executable: string;
-  commandLine: string | null;
-  workingDirectory: string;
-  isStarred: boolean;
+  const { response } = await deleteHistoryEntry(id);
+  return response.ok;
 }
 
 export async function createHistoryEntry(request: CreateHistoryRequest): Promise<string | null> {
-  const res = await fetch('/api/history', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.id;
+  const { data, response } = await apiCreateHistoryEntry(request);
+  if (!response.ok || !data) return null;
+  return data.id ?? null;
 }

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Source-link Common for shared types (LogSeverity, ShellType) -->
+  <ItemGroup>
+    <Compile Include="..\Ai.Tlbx.MidTerm.Common\Logging\LogSeverity.cs" LinkBase="Common\Logging" />
+    <Compile Include="..\Ai.Tlbx.MidTerm.Common\Shells\ShellType.cs" LinkBase="Common\Shells" />
+  </ItemGroup>
+
+  <!-- Source-link runtime models (single source of truth for OpenAPI generation) -->
+  <ItemGroup>
+    <Compile Include="..\Ai.Tlbx.MidTerm\Models\**\*.cs" LinkBase="Models" />
+    <Compile Remove="..\Ai.Tlbx.MidTerm\Models\WebSocketCommand.cs" />
+    <Compile Include="..\Ai.Tlbx.MidTerm\Settings\SettingsEnums.cs" LinkBase="Settings" />
+    <Compile Include="..\Ai.Tlbx.MidTerm\Settings\MidTermSettingsPublic.cs" LinkBase="Settings" />
+  </ItemGroup>
+
+</Project>

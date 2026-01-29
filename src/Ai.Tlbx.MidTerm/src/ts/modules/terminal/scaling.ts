@@ -339,26 +339,28 @@ export function fitSessionToScreen(sessionId: string): void {
       // Resize may fail if terminal is disposed
     }
 
-    // Re-apply scaling check (fixes badge persistence bug)
-    applyTerminalScalingSync(state);
+    // Defer scaling check to next frame so the browser has laid out the resized terminal
+    requestAnimationFrame(() => {
+      applyTerminalScalingSync(state);
 
-    logResizeDiagnostics(
-      'manual-resize',
-      sessionId,
-      dom.terminalsArea!,
-      fontSize,
-      cellWidth,
-      cellHeight,
-      'existing-terminal',
-      cols,
-      rows,
-      state,
-    );
+      logResizeDiagnostics(
+        'manual-resize',
+        sessionId,
+        dom.terminalsArea!,
+        fontSize,
+        cellWidth,
+        cellHeight,
+        'existing-terminal',
+        cols,
+        rows,
+        state,
+      );
 
-    if (wasHidden) {
-      state.container.classList.add('hidden');
-    }
-    focusActiveTerminal();
+      if (wasHidden) {
+        state.container.classList.add('hidden');
+      }
+      focusActiveTerminal();
+    });
   });
 }
 

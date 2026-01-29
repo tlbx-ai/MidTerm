@@ -54,6 +54,7 @@
     <Compile Include="..\Ai.Tlbx.MidTerm.Common\**\*.cs" Exclude="..\Ai.Tlbx.MidTerm.Common\obj\**;..\Ai.Tlbx.MidTerm.Common\bin\**" LinkBase="Common" />
   </ItemGroup>
 
+
   <ItemGroup>
     <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.Tests" />
     <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.UnitTests" />

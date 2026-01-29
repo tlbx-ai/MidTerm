@@ -1448,15 +1448,11 @@ if ($asService)
 
         # Download script to temp file and run elevated with parameters
         $tempScript = Join-Path $env:TEMP "mt-install-elevated.ps1"
-        $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
         $scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.ps1"
         Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript
 
-        # Clear any existing log file
-        if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
-
-        # Run elevated with user info passed as parameters (hidden window, output to log file)
-        $arguments = @(
+        # Build common arguments (without -LogFile; that's only for RunAs path)
+        $baseArguments = @(
             "-NoProfile"
             "-ExecutionPolicy", "Bypass"
             "-File", $tempScript
@@ -1466,45 +1462,91 @@ if ($asService)
             "-PasswordHash", $passwordHash
             "-Port", $port
             "-BindAddress", $bindAddress
-            "-LogFile", $tempLogFile
         )
-        if ($trustCert) { $arguments += "-TrustCert" }
-        if ($Dev) { $arguments += "-Dev" }
+        if ($trustCert) { $baseArguments += "-TrustCert" }
+        if ($Dev) { $baseArguments += "-Dev" }
 
-        # Start elevated process hidden
         $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
-        $elevatedProcess = Start-Process $psExe -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
+        $elevated = $false
 
-        # Stream output from log file to original terminal
-        $linesRead = 0
-        while (-not $elevatedProcess.HasExited)
+        # Strategy 1: Try sudo (Windows 11 24H2+, keeps output in same terminal)
+        if (Get-Command sudo -ErrorAction SilentlyContinue)
         {
-            Start-Sleep -Milliseconds 200
-            if (Test-Path $tempLogFile)
+            try
             {
-                $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
-                if ($lines -and $lines.Count -gt $linesRead)
-                {
-                    $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
-                    $linesRead = $lines.Count
-                }
+                Write-Host "  Using sudo for elevation..." -ForegroundColor Gray
+                & sudo $psExe @baseArguments
+                $elevated = $true
+            }
+            catch
+            {
+                Write-Host "  sudo failed, trying UAC elevation..." -ForegroundColor Yellow
             }
         }
 
-        # Final read to catch any remaining output
-        Start-Sleep -Milliseconds 300
-        if (Test-Path $tempLogFile)
+        # Strategy 2: Start-Process -Verb RunAs (UAC prompt, streams output via log file)
+        if (-not $elevated)
         {
-            $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
-            if ($lines -and $lines.Count -gt $linesRead)
+            $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
+            if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
+
+            $runAsArguments = $baseArguments + @("-LogFile", $tempLogFile)
+
+            try
             {
-                $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                $elevatedProcess = Start-Process $psExe -ArgumentList $runAsArguments -Verb RunAs -WindowStyle Hidden -PassThru
+                $elevated = $true
+
+                # Stream output from log file to original terminal
+                $linesRead = 0
+                while (-not $elevatedProcess.HasExited)
+                {
+                    Start-Sleep -Milliseconds 200
+                    if (Test-Path $tempLogFile)
+                    {
+                        $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
+                        if ($lines -and $lines.Count -gt $linesRead)
+                        {
+                            $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                            $linesRead = $lines.Count
+                        }
+                    }
+                }
+
+                # Final read to catch any remaining output
+                Start-Sleep -Milliseconds 300
+                if (Test-Path $tempLogFile)
+                {
+                    $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
+                    if ($lines -and $lines.Count -gt $linesRead)
+                    {
+                        $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                    }
+                }
+
+                Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
+            }
+            catch
+            {
+                Write-Host ""
+                Write-Host "  ERROR: Could not obtain administrator privileges." -ForegroundColor Red
+                Write-Host ""
+                Write-Host "  This can happen when:" -ForegroundColor Yellow
+                Write-Host "    - UAC is disabled and you're not an administrator" -ForegroundColor Gray
+                Write-Host "    - Running in a non-interactive session (SSH, container)" -ForegroundColor Gray
+                Write-Host "    - The UAC prompt was cancelled" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  Options:" -ForegroundColor White
+                Write-Host "    1. Run this script from an elevated (Admin) terminal" -ForegroundColor White
+                Write-Host "    2. Re-run the installer and choose [2] (user install, no admin needed)" -ForegroundColor White
+                Write-Host ""
+                Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+                exit 1
             }
         }
 
         # Cleanup
         Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
-        Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
         return
     }
 

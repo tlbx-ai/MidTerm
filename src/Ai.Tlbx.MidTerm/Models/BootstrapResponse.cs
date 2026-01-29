@@ -1,5 +1,4 @@
 using Ai.Tlbx.MidTerm.Models.Update;
-using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Models;
