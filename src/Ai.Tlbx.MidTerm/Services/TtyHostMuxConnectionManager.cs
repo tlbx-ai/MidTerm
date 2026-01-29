@@ -24,7 +24,7 @@ public sealed class TtyHostMuxConnectionManager
     private const int MaxQueuedOutputs = 1000;
     private readonly Channel<PooledOutputItem> _outputQueue =
         Channel.CreateBounded<PooledOutputItem>(
-            new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropOldest });
+            new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropWrite });
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
     private readonly Action<string, int, int, ReadOnlyMemory<byte>> _outputHandler;

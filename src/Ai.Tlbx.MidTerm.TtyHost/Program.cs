@@ -392,17 +392,13 @@ public static class Program
 
             void OnHandshakeComplete()
             {
-                var shouldReplay = false;
+                bool alreadyComplete;
                 lock (outputLock)
                 {
-                    if (!handshakeComplete)
-                    {
-                        handshakeComplete = true;
-                        shouldReplay = true;
-                    }
+                    alreadyComplete = handshakeComplete;
                 }
 
-                if (!shouldReplay)
+                if (alreadyComplete)
                 {
                     return;
                 }
@@ -413,9 +409,13 @@ public static class Program
 
                 if (!client.IsConnected)
                 {
+                    lock (outputLock) { handshakeComplete = true; }
                     return;
                 }
 
+                // Replay buffered output BEFORE enabling live forwarding.
+                // While handshakeComplete is false, OnOutput callbacks return early,
+                // so replay frames won't interleave with live output on the IPC stream.
                 var replayed = session.TryReplayOutputSince(handshakeCursor, bufferedSegment =>
                 {
                     if (!client.IsConnected)
@@ -436,6 +436,12 @@ public static class Program
                 if (!replayed)
                 {
                     Log.Warn(() => "Buffered output dropped before handshake completed (scrollback too small)");
+                }
+
+                // Now enable live forwarding — all replay data has been sent
+                lock (outputLock)
+                {
+                    handshakeComplete = true;
                 }
             }
 
