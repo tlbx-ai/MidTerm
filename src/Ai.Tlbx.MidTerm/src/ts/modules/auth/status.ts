@@ -4,23 +4,27 @@
  * Handles authentication status checking and security warning display.
  */
 
+import { getAuthStatus, logout as apiLogout } from '../../api/client';
 import { $authStatus } from '../../stores';
-import type { AuthStatus } from '../../types';
 
 /**
  * Check authentication status from server
  */
 export async function checkAuthStatus(): Promise<void> {
   try {
-    const response = await fetch('/api/auth/status');
+    const { data, response } = await getAuthStatus();
 
     if (response.status === 401) {
       window.location.href = '/login.html';
       return;
     }
 
-    const status: AuthStatus = await response.json();
-    $authStatus.set(status);
+    if (data) {
+      $authStatus.set({
+        authenticationEnabled: data.authenticationEnabled ?? false,
+        passwordSet: data.passwordSet ?? false,
+      });
+    }
     updateSecurityWarning();
     updatePasswordStatus();
   } catch (e) {
@@ -81,7 +85,7 @@ export function dismissSecurityWarning(): void {
  */
 export async function logout(): Promise<void> {
   try {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await apiLogout();
   } catch {
     // Ignore errors - we're logging out anyway
   }

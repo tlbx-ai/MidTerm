@@ -7,6 +7,7 @@
 
 import { JS_BUILD_VERSION } from '../constants';
 import { createLogger } from '../modules/logging';
+import { getVersion } from '../api/client';
 
 const log = createLogger('version');
 
@@ -20,10 +21,10 @@ export async function checkVersionAndReload(): Promise<void> {
   if (updateBannerShown) return;
 
   try {
-    const response = await fetch('/api/version', { cache: 'no-store' });
-    if (!response.ok) return;
+    const { data, response } = await getVersion();
+    if (!response.ok || !data) return;
 
-    const serverVersion = await response.text();
+    const serverVersion = data;
     if (serverVersion && serverVersion !== JS_BUILD_VERSION) {
       log.info(() => `Version mismatch: client=${JS_BUILD_VERSION}, server=${serverVersion}`);
       showUpdateBanner(serverVersion);

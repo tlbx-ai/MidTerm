@@ -10,7 +10,9 @@
     "build": "npm run typecheck && npx esbuild src/Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=src/Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
     "build:dev": "npm run typecheck && npx esbuild src/Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=src/Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
     "watch": "npx esbuild src/Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --sourcemap=linked --outfile=src/Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020 --watch",
-    "watch:typecheck": "tsc --noEmit -p src/Ai.Tlbx.MidTerm/tsconfig.json --watch"
+    "watch:typecheck": "tsc --noEmit -p src/Ai.Tlbx.MidTerm/tsconfig.json --watch",
+    "generate:types": "npx openapi-typescript src/Ai.Tlbx.MidTerm/openapi/openapi.json -o src/Ai.Tlbx.MidTerm/src/ts/api.generated.ts && npx prettier --write src/Ai.Tlbx.MidTerm/src/ts/api.generated.ts",
+    "generate:openapi": "dotnet build src/Ai.Tlbx.MidTerm.OpenApi/Ai.Tlbx.MidTerm.OpenApi.csproj && npm run generate:types"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
@@ -26,6 +28,7 @@
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
+    "openapi-typescript": "^7.4.4",
     "prettier": "^3.7.4",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.53.0"
@@ -33,6 +36,7 @@
   "dependencies": {
     "midterm": "file:",
     "nanostores": "^1.1.0",
+    "openapi-fetch": "^0.15.0",
     "xterm-link-provider": "^1.3.1"
   }
 }

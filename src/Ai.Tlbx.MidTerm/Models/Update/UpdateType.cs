@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Ai.Tlbx.MidTerm.Models.Update;
 
 /// <summary>
@@ -6,9 +8,9 @@ namespace Ai.Tlbx.MidTerm.Models.Update;
 public enum UpdateType
 {
     /// <summary>No update available.</summary>
-    None,
+    [JsonStringEnumMemberName("none")] None,
     /// <summary>Web server update only; terminal sessions are preserved.</summary>
-    WebOnly,
+    [JsonStringEnumMemberName("webOnly")] WebOnly,
     /// <summary>Full update including PTY host; terminal sessions will restart.</summary>
-    Full
+    [JsonStringEnumMemberName("full")] Full
 }

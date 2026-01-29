@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Models;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -306,24 +307,3 @@ public static partial class LogEndpoints
     private static partial Regex LogLineRegex();
 }
 
-public sealed class LogFilesResponse
-{
-    public List<LogFileInfo> Files { get; init; } = [];
-}
-
-public sealed class LogFileInfo
-{
-    public string Name { get; init; } = "";
-    public string Source { get; init; } = "";
-    public string? SessionId { get; init; }
-    public long Size { get; init; }
-    public string Modified { get; init; } = "";
-    public bool IsActive { get; init; }
-}
-
-public sealed class LogReadResponse
-{
-    public List<LogEntryMessage> Entries { get; init; } = [];
-    public long Position { get; init; }
-    public string FileName { get; init; } = "";
-}

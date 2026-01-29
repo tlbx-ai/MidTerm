@@ -1,14 +1,7 @@
 using System.Runtime.InteropServices;
+using Ai.Tlbx.MidTerm.Models;
 
 namespace Ai.Tlbx.MidTerm.Services;
-
-public sealed class UserInfo
-{
-    public required string Username { get; init; }
-    public string? Sid { get; init; }      // Windows only
-    public int? Uid { get; init; }          // Unix only
-    public int? Gid { get; init; }          // Unix only
-}
 
 public static class UserEnumerationService
 {

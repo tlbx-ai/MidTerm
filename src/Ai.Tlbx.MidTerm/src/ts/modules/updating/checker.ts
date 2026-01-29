@@ -5,9 +5,17 @@
  * and applying updates with server restart.
  */
 
-import type { UpdateInfo } from '../../types';
+import type { UpdateInfo, UpdateResult } from '../../api/types';
 import { $updateInfo } from '../../stores';
 import { createLogger } from '../logging';
+import {
+  applyUpdate as apiApplyUpdate,
+  checkUpdate,
+  getVersion,
+  getUpdateResult,
+  deleteUpdateResult,
+  getUpdateLog,
+} from '../../api/client';
 
 const log = createLogger('updating');
 
@@ -69,9 +77,9 @@ export function applyUpdate(): void {
     btn.textContent = 'Updating...';
   }
 
-  fetch('/api/update/apply', { method: 'POST' })
-    .then((r) => {
-      if (r.ok) {
+  apiApplyUpdate()
+    .then(({ response }) => {
+      if (response.ok) {
         if (btn) btn.textContent = 'Restarting...';
         waitForServerAndReload();
       } else {
@@ -99,9 +107,9 @@ export function waitForServerAndReload(): void {
 
   function checkServer(): void {
     attempts++;
-    fetch('/api/version', { cache: 'no-store' })
-      .then((r) => {
-        if (r.ok) {
+    getVersion()
+      .then(({ response }) => {
+        if (response.ok) {
           location.reload();
         } else if (attempts < MAX_RELOAD_ATTEMPTS) {
           setTimeout(checkServer, RELOAD_INTERVAL_MS);
@@ -133,17 +141,20 @@ export function checkForUpdates(e?: MouseEvent): void {
     btn.textContent = 'Checking...';
   }
 
-  fetch('/api/update/check')
-    .then((r) => r.json())
-    .then((update: UpdateInfo) => {
+  checkUpdate()
+    .then(({ data }) => {
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Check for Updates';
       }
 
-      $updateInfo.set(update);
-      renderUpdatePanel();
-      renderUpdateCards(update);
+      if (data) {
+        $updateInfo.set(data);
+        renderUpdatePanel();
+        renderUpdateCards(data);
+      } else {
+        renderUpdateCards(null, 'Failed to check for updates');
+      }
     })
     .catch((e) => {
       if (btn) {
@@ -254,12 +265,12 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
  * Apply local update from C:\temp\mtlocalrelease
  */
 export function applyLocalUpdate(): void {
-  fetch('/api/update/apply?source=local', { method: 'POST' })
-    .then((r) => {
+  apiApplyUpdate('local')
+    .then(({ response }) => {
       const btn = document.querySelector(
         '#update-card-local .btn-update',
       ) as HTMLButtonElement | null;
-      if (r.ok) {
+      if (response.ok) {
         if (btn) btn.textContent = 'Restarting...';
         waitForServerAndReload();
       } else {
@@ -291,15 +302,6 @@ export function handleUpdateInfo(update: UpdateInfo): void {
   renderUpdateCards(update);
 }
 
-interface UpdateResult {
-  found: boolean;
-  success: boolean;
-  message: string;
-  details: string;
-  timestamp: string;
-  logFile: string;
-}
-
 let lastUpdateResult: UpdateResult | null = null;
 
 /**
@@ -313,17 +315,16 @@ export function getLastUpdateResult(): UpdateResult | null {
  * Check for update results on startup and store for display.
  */
 export function checkUpdateResult(): void {
-  fetch('/api/update/result')
-    .then((r) => r.json())
-    .then((result: UpdateResult) => {
-      if (!result.found) return;
+  getUpdateResult()
+    .then(({ data }) => {
+      if (!data?.found) return;
 
       // Store for settings panel display
-      lastUpdateResult = result;
+      lastUpdateResult = data;
       renderUpdateResult();
 
       // Clear the result file after storing
-      fetch('/api/update/result', { method: 'DELETE' }).catch((e) => {
+      deleteUpdateResult().catch((e) => {
         log.verbose(() => `Failed to clear update result: ${e}`);
       });
     })
@@ -391,9 +392,9 @@ export async function showUpdateLog(): Promise<void> {
 
   const logContent = modal.querySelector('.update-log-content') as HTMLPreElement;
   try {
-    const response = await fetch('/api/update/log');
-    if (response.ok) {
-      logContent.textContent = await response.text();
+    const { data, response } = await getUpdateLog();
+    if (response.ok && data) {
+      logContent.textContent = data;
     } else {
       logContent.textContent = 'No update log found';
     }

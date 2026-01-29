@@ -102,19 +102,20 @@ function bindDownload(id: string, url: string): void {
 
 async function loadCertificateInfo(): Promise<void> {
   try {
-    const response = await fetch('/api/certificate/share-packet');
-    if (!response.ok) return;
+    const { getSharePacket } = await import('../api/client');
+    const { data, response } = await getSharePacket();
+    if (!response.ok || !data) return;
 
-    const info = await response.json();
+    const info = data;
 
     // Display fingerprint
     const fpEl = document.getElementById('fingerprint');
-    if (fpEl) fpEl.textContent = info.certificate.fingerprintFormatted;
+    if (fpEl) fpEl.textContent = info.certificate?.fingerprint ?? '';
 
     // Display validity
-    const validUntil = new Date(info.certificate.notAfter);
+    const validUntil = info.certificate?.notAfter ? new Date(info.certificate.notAfter) : null;
     const validEl = document.getElementById('cert-valid-until');
-    if (validEl) {
+    if (validEl && validUntil) {
       validEl.textContent =
         'Certificate valid until: ' +
         validUntil.toLocaleDateString(undefined, {
@@ -127,8 +128,10 @@ async function loadCertificateInfo(): Promise<void> {
     // Display trusted addresses from certificate SANs
     const endpointsList = document.getElementById('endpoints-list');
     if (endpointsList) {
-      const cert = info.certificate;
-      const allAddresses = [...(cert.dnsNames || []), ...(cert.ipAddresses || [])];
+      const allAddresses = [
+        ...(info.certificate?.dnsNames ?? []),
+        ...(info.certificate?.ipAddresses ?? []),
+      ];
       if (allAddresses.length > 0) {
         endpointsList.innerHTML = allAddresses
           .map(

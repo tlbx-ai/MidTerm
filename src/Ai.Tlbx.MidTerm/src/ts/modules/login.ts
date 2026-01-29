@@ -4,7 +4,7 @@
  * Handles login form submission and certificate TOFU display.
  */
 
-import type { BootstrapLoginResponse } from '../types';
+import { login, getBootstrapLogin } from '../api/client';
 
 const CERT_HIDDEN_KEY = 'mt-cert-info-hidden';
 
@@ -33,18 +33,12 @@ export function initLoginPage(): void {
     errorDiv.classList.add('hidden');
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
+      const { data, response } = await login(password);
 
-      const result = await response.json();
-
-      if (response.ok && result.success) {
+      if (response.ok && data?.success) {
         window.location.href = '/';
       } else {
-        showError(errorDiv, result.error || 'Login failed');
+        showError(errorDiv, data?.error ?? 'Login failed');
         passwordInput.value = '';
         passwordInput.focus();
       }
@@ -79,12 +73,8 @@ function showError(errorDiv: HTMLElement, msg: string): void {
 
 async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
   try {
-    // Use bootstrap/login endpoint for certificate info
-    const response = await fetch('/api/bootstrap/login');
-    if (!response.ok) return;
-
-    const data: BootstrapLoginResponse = await response.json();
-    if (!data.certificate?.fingerprint) return;
+    const { data } = await getBootstrapLogin();
+    if (!data?.certificate?.fingerprint) return;
 
     // Format fingerprint with colons every 2 chars
     const fp = data.certificate.fingerprint.match(/.{1,2}/g)?.join(':') ?? '';
@@ -92,7 +82,7 @@ async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
     if (fpEl) fpEl.textContent = fp;
 
     // Format dates
-    const formatDate = (iso: string | undefined): string => {
+    const formatDate = (iso: string | null): string => {
       if (!iso) return '';
       const d = new Date(iso);
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });

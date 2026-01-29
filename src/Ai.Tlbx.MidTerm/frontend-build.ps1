@@ -45,6 +45,48 @@ if ($Publish) {
 }
 
 # ===========================================
+# PHASE 0.5: Generate API types from OpenAPI spec
+# ===========================================
+Write-Host "Generating API types from OpenAPI spec..." -ForegroundColor Cyan
+
+$OpenApiProject = Join-Path $PSScriptRoot "..\Ai.Tlbx.MidTerm.OpenApi\Ai.Tlbx.MidTerm.OpenApi.csproj"
+$OpenApiSpec = Join-Path $PSScriptRoot "openapi\openapi.json"
+$GeneratedTypes = Join-Path $TsSource "api.generated.ts"
+
+# Build OpenAPI project to regenerate spec
+Write-Host "  Building OpenAPI project..." -ForegroundColor DarkGray
+$buildOutput = & dotnet build $OpenApiProject --verbosity quiet 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host $buildOutput -ForegroundColor Red
+    Write-Error "OpenAPI project build failed"
+    exit $LASTEXITCODE
+}
+
+# Verify spec was generated
+if (-not (Test-Path $OpenApiSpec)) {
+    Write-Error "OpenAPI spec not generated at $OpenApiSpec"
+    exit 1
+}
+
+# Generate TypeScript types
+Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
+& npx openapi-typescript $OpenApiSpec -o $GeneratedTypes
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "openapi-typescript failed"
+    exit $LASTEXITCODE
+}
+
+# Format with prettier
+Write-Host "  Formatting generated types..." -ForegroundColor DarkGray
+& npx prettier --write $GeneratedTypes 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "prettier formatting failed"
+    exit $LASTEXITCODE
+}
+
+Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
+
+# ===========================================
 # PHASE 1: TypeScript type-check
 # ===========================================
 Write-Host "Type-checking TypeScript..." -ForegroundColor Cyan

@@ -299,7 +299,7 @@ export function closeViewer(): void {
   navigationHistory = [];
 }
 
-export async function openFile(path: string, info?: FilePathInfo): Promise<void> {
+export async function openFile(path: string, info?: FilePathInfo | null): Promise<void> {
   if (!modal) {
     log.error(() => 'File viewer modal not initialized');
     return;
@@ -323,7 +323,7 @@ export async function openFile(path: string, info?: FilePathInfo): Promise<void>
   }
 
   if (!info) {
-    info = (await checkFilePath(path)) ?? undefined;
+    info = await checkFilePath(path);
   }
 
   if (!info || !info.exists) {
@@ -397,17 +397,20 @@ function renderDirectoryListing(
           : ''
       }
       ${entries
-        .map(
-          (entry) => `
-        <div class="file-list-item ${entry.isDirectory ? 'file-list-dir' : 'file-list-file'}"
-             data-path="${escapeHtml(joinPath(basePath, entry.name))}"
-             data-is-dir="${entry.isDirectory}">
-          <span class="file-icon">${entry.isDirectory ? '📁' : getFileIcon(entry.name)}</span>
-          <span class="file-name">${escapeHtml(entry.name)}</span>
-          ${!entry.isDirectory && entry.size != null ? `<span class="file-size">${formatSize(entry.size)}</span>` : ''}
+        .map((entry) => {
+          const name = entry.name;
+          const isDir = entry.isDirectory;
+          const size = entry.size ?? null;
+          return `
+        <div class="file-list-item ${isDir ? 'file-list-dir' : 'file-list-file'}"
+             data-path="${escapeHtml(joinPath(basePath, name))}"
+             data-is-dir="${isDir}">
+          <span class="file-icon">${isDir ? '📁' : getFileIcon(name)}</span>
+          <span class="file-name">${escapeHtml(name)}</span>
+          ${!isDir && size != null ? `<span class="file-size">${formatSize(size)}</span>` : ''}
         </div>
-      `,
-        )
+      `;
+        })
         .join('')}
       ${entries.length === 0 ? '<div class="file-list-empty">Empty directory</div>' : ''}
     </div>
@@ -521,12 +524,13 @@ async function renderTextFile(path: string, container: Element): Promise<void> {
 }
 
 function renderBinaryFile(info: FilePathInfo, container: Element): void {
+  const size = info.size ?? null;
   container.innerHTML = `
     <div class="file-viewer-binary">
       <div class="file-viewer-binary-icon">📄</div>
       <div class="file-viewer-binary-info">
         <div class="file-viewer-binary-type">${info.mimeType || 'Binary file'}</div>
-        ${info.size != null ? `<div class="file-viewer-binary-size">${formatSize(info.size)}</div>` : ''}
+        ${size != null ? `<div class="file-viewer-binary-size">${formatSize(size)}</div>` : ''}
         ${info.modified ? `<div class="file-viewer-binary-modified">Modified: ${formatDate(info.modified)}</div>` : ''}
       </div>
       <p class="file-viewer-binary-hint">Use the download button to save this file.</p>
@@ -548,9 +552,9 @@ function downloadFile(path: string): void {
   document.body.removeChild(link);
 }
 
-function isTextFile(ext: string, mime: string, serverIsText?: boolean): boolean {
+function isTextFile(ext: string, mime: string, serverIsText?: boolean | null): boolean {
   // Server null-byte check is authoritative if available
-  if (serverIsText !== undefined) return serverIsText;
+  if (serverIsText != null) return serverIsText;
   // Fallback to extension/MIME heuristics
   if (TEXT_EXTENSIONS.has(ext)) return true;
   if (mime.startsWith('text/')) return true;

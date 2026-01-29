@@ -80,11 +80,11 @@ const MAX_PENDING_INPUT = 100;
  */
 async function refreshSessionList(): Promise<void> {
   try {
-    const response = await fetch('/api/sessions');
-    if (!response.ok) return;
+    const { getSessions } = await import('../../api/client');
+    const { data, response } = await getSessions();
+    if (!response.ok || !data) return;
 
-    const data = await response.json();
-    const sessions = data?.sessions ?? [];
+    const sessions = data.sessions ?? [];
 
     // Import dynamically to avoid circular dependency
     const { handleStateUpdate } = await import('./stateChannel');

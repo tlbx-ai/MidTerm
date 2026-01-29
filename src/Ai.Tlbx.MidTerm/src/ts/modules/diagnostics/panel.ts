@@ -6,6 +6,7 @@
  */
 
 import { LogLevel } from '../logging';
+import { getLogFiles, readLogFile, tailLogFile, getPaths, reloadSettings } from '../../api/client';
 
 type DiagnosticsTab = 'server' | 'sessions';
 
@@ -27,16 +28,6 @@ interface LogEntry {
   message: string;
 }
 
-interface LogReadResponse {
-  entries: LogEntry[];
-  position: number;
-  fileName: string;
-}
-
-interface LogFilesResponse {
-  files: LogFileInfo[];
-}
-
 interface DisplayEntry {
   timestamp: string;
   level: string;
@@ -56,13 +47,6 @@ let pollTimer: number | null = null;
 
 const POLL_INTERVAL = 500;
 
-interface PathsResponse {
-  settingsFile: string;
-  secretsFile: string;
-  certificateFile: string;
-  logDirectory: string;
-}
-
 /**
  * Initialize the diagnostics panel
  */
@@ -79,11 +63,10 @@ export function initDiagnosticsPanel(): void {
  */
 async function loadLogFiles(): Promise<void> {
   try {
-    const response = await fetch('/api/logs/files');
-    if (!response.ok) return;
+    const { data, response } = await getLogFiles();
+    if (!response.ok || !data) return;
 
-    const data = (await response.json()) as LogFilesResponse;
-    logFiles = data.files;
+    logFiles = (data.files ?? []) as LogFileInfo[];
 
     updateSessionPicker();
 
@@ -111,19 +94,16 @@ async function loadFileContent(): Promise<void> {
   }
 
   try {
-    const response = await fetch(
-      `/api/logs/read?file=${encodeURIComponent(selectedFile)}&lines=200&fromEnd=true`,
-    );
-    if (!response.ok) return;
+    const { data, response } = await readLogFile(selectedFile, 200, true);
+    if (!response.ok || !data) return;
+    tailPosition = Number(data.position ?? 0);
 
-    const data = (await response.json()) as LogReadResponse;
-    tailPosition = data.position;
-
-    displayedEntries = data.entries.filter(filterEntry).map((e) => ({
-      timestamp: e.timestamp,
-      level: e.level,
+    const entries = (data.entries ?? []) as LogEntry[];
+    displayedEntries = entries.filter(filterEntry).map((e) => ({
+      timestamp: e.timestamp ?? '',
+      level: e.level ?? 'info',
       module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
-      message: e.message,
+      message: e.message ?? '',
     }));
 
     updateDisplay();
@@ -164,21 +144,18 @@ async function pollForNewContent(): Promise<void> {
   if (!selectedFile || !liveTail) return;
 
   try {
-    const response = await fetch(
-      `/api/logs/tail?file=${encodeURIComponent(selectedFile)}&position=${tailPosition}`,
-    );
-    if (!response.ok) return;
+    const { data, response } = await tailLogFile(selectedFile, tailPosition);
+    if (!response.ok || !data) return;
 
-    const data = (await response.json()) as LogReadResponse;
+    const entries = (data.entries ?? []) as LogEntry[];
+    if (entries.length > 0) {
+      tailPosition = Number(data.position ?? tailPosition);
 
-    if (data.entries.length > 0) {
-      tailPosition = data.position;
-
-      const newEntries = data.entries.filter(filterEntry).map((e) => ({
-        timestamp: e.timestamp,
-        level: e.level,
+      const newEntries = entries.filter(filterEntry).map((e) => ({
+        timestamp: e.timestamp ?? '',
+        level: e.level ?? 'info',
         module: e.source === 'mt' ? 'mt' : `mthost-${e.sessionId?.slice(0, 4) || ''}`,
-        message: e.message,
+        message: e.message ?? '',
       }));
 
       displayedEntries.push(...newEntries);
@@ -452,10 +429,8 @@ async function copyAllLogs(): Promise<void> {
  */
 async function loadPaths(): Promise<void> {
   try {
-    const response = await fetch('/api/paths');
-    if (!response.ok) return;
-
-    const data = (await response.json()) as PathsResponse;
+    const { data, response } = await getPaths();
+    if (!response.ok || !data) return;
 
     const settingsEl = document.getElementById('path-settings');
     const secretsEl = document.getElementById('path-secrets');
@@ -481,7 +456,7 @@ function bindReloadSettingsButton(): void {
   btn.addEventListener('click', async () => {
     btn.classList.add('spinning');
     try {
-      const response = await fetch('/api/settings/reload', { method: 'POST' });
+      const { response } = await reloadSettings();
       if (response.ok) {
         window.location.reload();
       }
