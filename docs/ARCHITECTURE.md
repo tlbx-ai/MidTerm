@@ -452,9 +452,190 @@ The project has two test projects:
 
 ## Build System
 
-- `version.json` — Central version management for coordinated mt/mthost versioning
-- MSBuild targets for frontend build integration
-- AOT publish scripts per platform (`build-aot.cmd`, `build-aot-linux.sh`, `build-aot-macos.sh`)
+The build pipeline transforms C# source types into a fully typed, compressed frontend bundle embedded in the native AOT binary.
+
+```
+C# DTOs (Models/*.cs)
+  │
+  ▼
+Ai.Tlbx.MidTerm.Api          Shared endpoint definitions + handler interfaces
+  │
+  ▼
+Ai.Tlbx.MidTerm.OpenApi      Stub app → Microsoft.AspNetCore.OpenApi → openapi.json
+  │
+  ▼
+openapi-typescript            openapi.json → api.generated.ts (TypeScript types)
+  │
+  ▼
+tsc --noEmit                  Type-check all TypeScript (catches API drift)
+  │
+  ▼
+ESLint + Prettier             Lint and format
+  │
+  ▼
+esbuild                       Bundle → terminal.min.js (~200 KB)
+  │
+  ▼
+Brotli (publish only)         Compress all text assets → .br files
+  │
+  ▼
+EmbeddedResource              MSBuild embeds wwwroot/** into the binary
+```
+
+### frontend-build.ps1 Phases
+
+| Phase | What it does |
+|-------|-------------|
+| 0 | Clean/create `wwwroot/` output directory |
+| 0.5 | Build OpenAPI project → generate `openapi.json` → run `openapi-typescript` → `api.generated.ts` |
+| 1 | `tsc --noEmit` — Type-check all TypeScript |
+| 2 | ESLint (includes Prettier via plugin) |
+| 3 | `esbuild` — Bundle + minify → `terminal.min.js` with `BUILD_VERSION` injected |
+| 4 | Copy binary assets (fonts, images, favicons) |
+| 5 | Process text assets (HTML, CSS, license files). CSS minified via esbuild. Publish: Brotli-compress all text files |
+| 6 | Publish only: Brotli-compress generated JS + source map, delete uncompressed originals |
+
+### MSBuild Re-Invocation Pattern
+
+Static `<ItemGroup>` elements are evaluated when MSBuild loads the project, but `.br` files are created by a target that runs later. Chicken-and-egg problem.
+
+Solution: The `EnsureFrontendPublish` target runs `frontend-build.ps1`, then re-invokes MSBuild with `_FrontendReady=true`. The second invocation evaluates ItemGroups fresh and sees the generated files. `_FrontendReady=true` prevents infinite recursion.
+
+Debug builds only re-invoke on the first build after clean (when `terminal.min.js` doesn't exist yet). Subsequent builds skip re-invocation since the ItemGroup already found the files.
+
+### Debug vs Publish
+
+| | Debug | Publish |
+|---|-------|---------|
+| Asset format | Uncompressed files in `wwwroot/` | Brotli `.br` files only |
+| Embedding | `wwwroot\**\*` | `wwwroot\**\*.br` + non-compressible binaries |
+| Serving | `EmbeddedWebRootFileProvider` decompresses on demand | `CompressedStaticFilesMiddleware` serves `.br` with `Content-Encoding: br` |
+| CSS originals deleted | No | Yes (only `.br` embedded) |
+| JS originals deleted | No | Yes (only `.br` embedded) |
+
+### Version Management
+
+`version.json` at the repository root is the single source of truth:
+
+```json
+{
+  "web": "6.14.9",
+  "pty": "6.14.5-dev",
+  "protocol": 1,
+  "minCompatiblePty": "2.0.0",
+  "webOnly": true
+}
+```
+
+Both csproj files read their version dynamically via a `ReadVersionJson` MSBuild target that runs `node -p "require('./version.json').web"`. No hardcoded `<Version>` tags in csproj files. Release scripts only update `version.json`.
+
+### AOT Publish
+
+Platform-specific scripts handle the full publish:
+
+- `build-aot.cmd` (Windows) — `dotnet publish -r win-x64 -c Release`
+- `build-aot-linux.sh` (Linux) — `dotnet publish -r linux-x64 -c Release`
+- `build-aot-macos.sh` (macOS) — `dotnet publish -r osx-arm64 -c Release`
+
+These pass `-p:IsPublishing=true` which activates the AOT optimizations PropertyGroup and the Brotli compression path in `frontend-build.ps1`.
+
+## Type-Safe API Bridge
+
+### The Problem
+
+A C# backend and a TypeScript frontend need to agree on API shapes. Manual type definitions drift. Runtime errors show up in production instead of at build time.
+
+### The Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│  Ai.Tlbx.MidTerm.Api (shared project)            │
+│  ├─ Models/          C# DTOs (single source)     │
+│  ├─ Endpoints/       Route definitions            │
+│  ├─ Handlers/        Handler interfaces           │
+│  └─ AppJsonContext   AOT JSON registration        │
+│                                                    │
+│  Referenced by:                                    │
+│    • Main web server (implements handlers)         │
+│    • OpenAPI project (generates spec)              │
+└──────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────────────────┐
+│  Ai.Tlbx.MidTerm.OpenApi                         │
+│  ├─ Registers stub handlers (no-op)              │
+│  ├─ Builds endpoints from Api project            │
+│  ├─ Microsoft.AspNetCore.OpenApi generates spec   │
+│  └─ Schema transformers fix nullability/unions    │
+│                                                    │
+│  Output: openapi/openapi.json                     │
+└──────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────────────────┐
+│  openapi-typescript (npm)                         │
+│  Converts openapi.json → api.generated.ts         │
+│  ├─ paths: typed route definitions                │
+│  └─ components.schemas: all DTOs as TS types      │
+└──────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────────────────┐
+│  openapi-fetch client (src/ts/api/client.ts)      │
+│  createClient<paths>() provides typed methods:     │
+│  • client.POST('/api/sessions', { body })         │
+│  • client.GET('/api/auth/status')                 │
+│  Full IntelliSense on routes, params, responses    │
+└──────────────────────────────────────────────────┘
+```
+
+### What This Means
+
+If a C# DTO changes — a field renamed, a type changed, a property removed — the OpenAPI spec regenerates, `openapi-typescript` emits new types, and `tsc --noEmit` fails if TypeScript code uses the old shape. The build breaks before the code ships.
+
+No manual type definitions. No `any` casts. No runtime surprises from API drift.
+
+### Example: CreateSessionRequest
+
+**1. C# definition** (`Models/CreateSessionRequest.cs`):
+```csharp
+public sealed class CreateSessionRequest
+{
+    public int Cols { get; set; } = 120;
+    public int Rows { get; set; } = 30;
+    public string? Shell { get; set; }
+    public string? WorkingDirectory { get; set; }
+}
+```
+
+**2. Endpoint definition** (`Endpoints/SessionEndpointDefinitions.cs`):
+```csharp
+app.MapPost("/api/sessions", async (CreateSessionRequest? request, ISessionHandler handler) =>
+    await handler.CreateSessionAsync(request))
+    .Produces<SessionInfoDto>(StatusCodes.Status200OK);
+```
+
+**3. Generated TypeScript** (`api.generated.ts`):
+```typescript
+components: {
+  schemas: {
+    CreateSessionRequest: {
+      cols: number;
+      rows: number;
+      shell?: null | string;
+      workingDirectory?: null | string;
+    };
+  };
+}
+```
+
+**4. Typed client usage**:
+```typescript
+import { createSession } from '../../api/client';
+
+const { data, response } = await createSession({ cols: 120, rows: 30, shell: 'pwsh' });
+// data is SessionInfoDto | undefined — fully typed
+```
 
 ## File Reference
 
@@ -479,3 +660,11 @@ The project has two test projects:
 | Touch | `src/Ai.Tlbx.MidTerm/src/ts/modules/touchController/` |
 | File links | `src/Ai.Tlbx.MidTerm/src/ts/modules/fileLinks.ts` |
 | History (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/history/` |
+| API contract | `src/Ai.Tlbx.MidTerm.Api/` (Models, Endpoints, Handlers) |
+| OpenAPI generator | `src/Ai.Tlbx.MidTerm.OpenApi/Program.cs` |
+| OpenAPI spec | `src/Ai.Tlbx.MidTerm/openapi/openapi.json` |
+| Generated TS types | `src/Ai.Tlbx.MidTerm/src/ts/api.generated.ts` |
+| API client (TS) | `src/Ai.Tlbx.MidTerm/src/ts/api/client.ts` |
+| API type exports | `src/Ai.Tlbx.MidTerm/src/ts/api/types.ts` |
+| Frontend build | `src/Ai.Tlbx.MidTerm/frontend-build.ps1` |
+| Version source | `version.json` |
