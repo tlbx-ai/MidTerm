@@ -7,6 +7,7 @@
 import { getPaths, reloadSettings } from '../../api/client';
 import { measureLatency } from '../comms/muxChannel';
 import { $activeSessionId, getSession } from '../../stores';
+import { getSessionDisplayInfo } from '../sidebar/sessionList';
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -37,8 +38,16 @@ async function runLatencyPing(): Promise<void> {
   const mthostEl = document.getElementById('diag-mthost-rtt');
 
   const session = getSession(sessionId);
-  const label = session?.name || session?.shellType || sessionId;
-  if (sessionEl) sessionEl.textContent = label;
+  if (sessionEl) {
+    if (session) {
+      const display = getSessionDisplayInfo(session);
+      sessionEl.textContent = display.secondary
+        ? `${display.primary} — ${display.secondary}`
+        : display.primary;
+    } else {
+      sessionEl.textContent = sessionId;
+    }
+  }
 
   const result = await measureLatency(sessionId);
 
