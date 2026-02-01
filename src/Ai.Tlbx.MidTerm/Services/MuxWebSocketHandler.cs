@@ -227,9 +227,41 @@ public sealed class MuxWebSocketHandler
                 client.SetActiveSession(sessionId);
                 break;
 
+            case MuxProtocol.TypePing:
+                await HandlePingAsync(sessionId, data.Slice(MuxProtocol.HeaderSize), client);
+                break;
+
             default:
                 Log.Warn(() => $"[Mux] Unknown frame type 0x{type:X2} from {client.Id}");
                 break;
+        }
+    }
+
+    private async Task HandlePingAsync(string sessionId, ReadOnlyMemory<byte> payload, MuxClient client)
+    {
+        if (payload.Length < 1) return;
+
+        var span = payload.Span;
+        var mode = span[0];
+        var pingData = payload.Length > 1 ? payload.Slice(1).ToArray() : Array.Empty<byte>();
+
+        if (mode == 0)
+        {
+            // Server echo: respond immediately with pong
+            var pong = new byte[MuxProtocol.HeaderSize + 1 + pingData.Length];
+            pong[0] = MuxProtocol.TypePong;
+            MuxProtocol.WriteSessionId(pong.AsSpan(1, 8), sessionId);
+            pong[MuxProtocol.HeaderSize] = 0; // mode = server
+            if (pingData.Length > 0)
+            {
+                pingData.CopyTo(pong.AsSpan(MuxProtocol.HeaderSize + 1));
+            }
+            await client.TrySendAsync(pong);
+        }
+        else if (mode == 1)
+        {
+            // MTHost echo: forward to mthost via IPC
+            await _muxManager.HandlePingAsync(sessionId, pingData, client);
         }
     }
 

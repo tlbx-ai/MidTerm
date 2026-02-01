@@ -1,14 +1,53 @@
 /**
  * Diagnostics Panel Module
  *
- * Displays file paths and reload settings button.
+ * Displays file paths, reload settings button, and latency measurements.
  */
 
 import { getPaths, reloadSettings } from '../../api/client';
+import { measureLatency } from '../comms/muxChannel';
+import { $activeSessionId } from '../../stores';
+
+let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
 export function initDiagnosticsPanel(): void {
   loadPaths();
   bindReloadSettingsButton();
+}
+
+export function startLatencyMeasurement(): void {
+  stopLatencyMeasurement();
+  runLatencyPing();
+  latencyInterval = setInterval(runLatencyPing, 2000);
+}
+
+export function stopLatencyMeasurement(): void {
+  if (latencyInterval !== null) {
+    clearInterval(latencyInterval);
+    latencyInterval = null;
+  }
+}
+
+async function runLatencyPing(): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+
+  const sessionEl = document.getElementById('diag-ping-session');
+  const serverEl = document.getElementById('diag-server-rtt');
+  const mthostEl = document.getElementById('diag-mthost-rtt');
+
+  if (sessionEl) sessionEl.textContent = sessionId;
+
+  const result = await measureLatency(sessionId);
+
+  if (serverEl) {
+    serverEl.textContent =
+      result.serverRtt !== null ? `${result.serverRtt.toFixed(1)} ms` : 'timeout';
+  }
+  if (mthostEl) {
+    mthostEl.textContent =
+      result.mthostRtt !== null ? `${result.mthostRtt.toFixed(1)} ms` : 'timeout';
+  }
 }
 
 async function loadPaths(): Promise<void> {

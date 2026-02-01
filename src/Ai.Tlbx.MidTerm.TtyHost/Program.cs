@@ -743,6 +743,15 @@ public static class Program
                         Log.Verbose(() => $"Order set to {order}");
                         break;
 
+                    case TtyHostMessageType.Ping:
+                        var pongMsg = TtyHostProtocol.CreatePong(payload);
+                        lock (stream)
+                        {
+                            stream.Write(pongMsg);
+                            stream.Flush();
+                        }
+                        break;
+
                     case TtyHostMessageType.Close:
                         Log.Info(() => "Received close request, shutting down");
                         var closeAck = TtyHostProtocol.CreateCloseAck();

@@ -127,6 +127,19 @@ public sealed class TtyHostMuxConnectionManager
         await _sessionManager.SendInputAsync(sessionId, data).ConfigureAwait(false);
     }
 
+    public async Task HandlePingAsync(string sessionId, byte[] pingData, MuxClient client)
+    {
+        var pongData = await _sessionManager.PingAsync(sessionId, pingData);
+        if (pongData is null) return;
+
+        var pong = new byte[MuxProtocol.HeaderSize + 1 + pongData.Length];
+        pong[0] = MuxProtocol.TypePong;
+        MuxProtocol.WriteSessionId(pong.AsSpan(1, 8), sessionId);
+        pong[MuxProtocol.HeaderSize] = 1; // mode = mthost
+        pongData.CopyTo(pong.AsSpan(MuxProtocol.HeaderSize + 1));
+        await client.TrySendAsync(pong);
+    }
+
     public async Task HandleResizeAsync(string sessionId, int cols, int rows)
     {
         await _sessionManager.ResizeSessionAsync(sessionId, cols, rows).ConfigureAwait(false);

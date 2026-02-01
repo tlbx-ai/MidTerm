@@ -531,6 +531,15 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
+    public async Task<byte[]?> PingAsync(string sessionId, byte[] pingData, CancellationToken ct = default)
+    {
+        if (!_clients.TryGetValue(sessionId, out var client))
+        {
+            return null;
+        }
+        return await client.PingAsync(pingData, ct).ConfigureAwait(false);
+    }
+
     public async Task<byte[]?> GetBufferAsync(string sessionId, CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))

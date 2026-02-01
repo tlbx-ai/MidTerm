@@ -21,8 +21,10 @@ import {
   MUX_TYPE_BUFFER_REQUEST,
   MUX_TYPE_COMPRESSED_OUTPUT,
   MUX_TYPE_ACTIVE_HINT,
+  MUX_TYPE_PING,
   MUX_TYPE_FOREGROUND_CHANGE,
   MUX_TYPE_DATA_LOSS,
+  MUX_TYPE_PONG,
   WS_CLOSE_SERVER_SHUTDOWN,
 } from '../../constants';
 import type { ForegroundChangePayload } from '../../types';
@@ -93,6 +95,78 @@ async function refreshSessionList(): Promise<void> {
   } catch (e) {
     log.warn(() => `Failed to refresh session list: ${e}`);
   }
+}
+
+// =============================================================================
+// Latency Measurement (Ping/Pong)
+// =============================================================================
+
+export interface LatencyResult {
+  serverRtt: number | null;
+  mthostRtt: number | null;
+}
+
+type PongCallback = (mode: number, rtt: number) => void;
+let pongCallback: PongCallback | null = null;
+
+/**
+ * Send a ping to measure roundtrip latency.
+ * Mode 0 = server echo only, mode 1 = full mthost roundtrip.
+ * Returns promise with RTT in milliseconds.
+ */
+export function sendPing(sessionId: string, mode: 0 | 1): Promise<number> {
+  return new Promise((resolve, reject) => {
+    if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
+      reject(new Error('WebSocket not connected'));
+      return;
+    }
+
+    const timestamp = performance.now();
+    const timestampBytes = new Float64Array([timestamp]);
+    const timestampBuffer = new Uint8Array(timestampBytes.buffer);
+
+    // Frame: [type:1][sessionId:8][mode:1][timestamp:8]
+    const frame = new Uint8Array(MUX_HEADER_SIZE + 1 + 8);
+    frame[0] = MUX_TYPE_PING;
+    encodeSessionId(frame, 1, sessionId);
+    frame[MUX_HEADER_SIZE] = mode;
+    frame.set(timestampBuffer, MUX_HEADER_SIZE + 1);
+    sendFrame(frame);
+
+    const timeout = setTimeout(() => {
+      pongCallback = null;
+      reject(new Error('Ping timeout'));
+    }, 5000);
+
+    pongCallback = (pongMode, rtt) => {
+      if (pongMode === mode) {
+        clearTimeout(timeout);
+        pongCallback = null;
+        resolve(rtt);
+      }
+    };
+  });
+}
+
+/**
+ * Measure both server and mthost RTT for a session.
+ */
+export async function measureLatency(sessionId: string): Promise<LatencyResult> {
+  const result: LatencyResult = { serverRtt: null, mthostRtt: null };
+
+  try {
+    result.serverRtt = await sendPing(sessionId, 0);
+  } catch {
+    /* timeout or disconnect */
+  }
+
+  try {
+    result.mthostRtt = await sendPing(sessionId, 1);
+  } catch {
+    /* timeout or disconnect */
+  }
+
+  return result;
 }
 
 // Forward declarations for functions from other modules
@@ -436,6 +510,14 @@ export function connectMuxWebSocket(): void {
         handleForegroundChange(sessionId, changePayload);
       } catch (e) {
         log.error(() => `Failed to parse foreground change: ${e}`);
+      }
+    } else if (type === MUX_TYPE_PONG) {
+      if (payload.length >= 9 && pongCallback) {
+        const pongMode = payload[0]!;
+        const timestampBytes = payload.slice(1, 9);
+        const timestamp = new Float64Array(timestampBytes.buffer, timestampBytes.byteOffset, 1)[0]!;
+        const rtt = performance.now() - timestamp;
+        pongCallback(pongMode, rtt);
       }
     } else if (type === MUX_TYPE_DATA_LOSS) {
       const droppedBytes =

@@ -4,6 +4,8 @@
  * Manages the tabbed interface for the settings panel.
  */
 
+import { startLatencyMeasurement, stopLatencyMeasurement } from '../diagnostics';
+
 export type SettingsTab = 'general' | 'appearance' | 'behavior' | 'security' | 'diagnostics';
 
 const STORAGE_KEY = 'settings-tab';
@@ -40,6 +42,12 @@ export function switchSettingsTab(tab: SettingsTab): void {
     const isActive = panel.getAttribute('data-panel') === tab;
     panel.classList.toggle('hidden', !isActive);
   });
+
+  if (tab === 'diagnostics') {
+    startLatencyMeasurement();
+  } else {
+    stopLatencyMeasurement();
+  }
 }
 
 export function getActiveSettingsTab(): SettingsTab {

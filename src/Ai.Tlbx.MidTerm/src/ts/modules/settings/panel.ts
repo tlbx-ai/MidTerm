@@ -10,6 +10,7 @@ import { sessionTerminals, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList, $windowsBuildNumber } from '../../stores';
 import { fetchSettings, unbindSettingsAutoSave } from './persistence';
 import { initSettingsTabs } from './tabs';
+import { stopLatencyMeasurement } from '../diagnostics';
 import { createLogger } from '../logging';
 import { getHealth, getSharePacket } from '../../api/client';
 
@@ -62,6 +63,7 @@ export function openSettings(): void {
  */
 export function closeSettings(): void {
   unbindSettingsAutoSave();
+  stopLatencyMeasurement();
   $settingsOpen.set(false);
   if (dom.settingsBtn) dom.settingsBtn.classList.remove('active');
   if (dom.settingsView) dom.settingsView.classList.add('hidden');

@@ -1,7 +1,7 @@
 /**
  * Diagnostics Module
  *
- * Displays file paths and reload settings.
+ * Displays file paths, reload settings, and latency measurements.
  */
 
-export { initDiagnosticsPanel } from './panel';
+export { initDiagnosticsPanel, startLatencyMeasurement, stopLatencyMeasurement } from './panel';
