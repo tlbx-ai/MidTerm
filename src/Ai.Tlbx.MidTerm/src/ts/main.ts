@@ -41,6 +41,7 @@ import {
   focusActiveTerminal,
   calculateOptimalDimensions,
   setTerminalScrollback,
+  rescaleAllTerminalsImmediate,
 } from './modules/terminal';
 import {
   updateEmptyState,
@@ -64,7 +65,12 @@ import {
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
-import { toggleSettings, closeSettings, applyReceivedSettings } from './modules/settings';
+import {
+  toggleSettings,
+  closeSettings,
+  applyReceivedSettings,
+  registerSettingsAppliedCallback,
+} from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap } from './modules/bootstrap';
 import {
@@ -262,6 +268,12 @@ function registerCallbacks(): void {
   registerLayoutCallbacks({
     createTerminalForSession,
     sendActiveSessionHint,
+  });
+
+  registerSettingsAppliedCallback(() => {
+    const activeId = $activeSessionId.get();
+    if (activeId) fitSessionToScreen(activeId);
+    rescaleAllTerminalsImmediate();
   });
 
   setSessionListCallbacks({

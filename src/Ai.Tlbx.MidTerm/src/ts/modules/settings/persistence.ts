@@ -27,6 +27,12 @@ import { updateTabTitle } from '../tabTitle';
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
 
+let _onSettingsApplied: (() => void) | null = null;
+
+export function registerSettingsAppliedCallback(callback: () => void): void {
+  _onSettingsApplied = callback;
+}
+
 /**
  * Set the value of a form element by ID
  */
@@ -193,19 +199,10 @@ export function applySettingsToTerminals(): void {
     state.terminal.options.theme = theme;
     state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
-
-    // Trigger re-render after font changes
-    if (state.opened) {
-      try {
-        const dims = state.fitAddon.proposeDimensions();
-        if (dims?.cols && dims?.rows) {
-          state.fitAddon.fit();
-        }
-      } catch {
-        // FitAddon may fail if terminal render service isn't initialized
-      }
-    }
+    state.terminal.options.scrollback = settings.scrollbackLines ?? 10000;
   });
+
+  _onSettingsApplied?.();
 }
 
 /**
