@@ -15,18 +15,18 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-14
-            rid: osx-arm64
-            ext: ''
-          - os: macos-14
-            rid: osx-x64
-            ext: ''
-          - os: windows-latest
+          # - os: macos-14
+          #   rid: osx-arm64
+          #   ext: ''
+          # - os: macos-14
+          #   rid: osx-x64
+          #   ext: ''
+          - os: [self-hosted, Windows, X64]
             rid: win-x64
             ext: '.exe'
-          - os: ubuntu-latest
-            rid: linux-x64
-            ext: ''
+          # - os: ubuntu-latest
+          #   rid: linux-x64
+          #   ext: ''
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -103,12 +103,12 @@ jobs:
         run: |
           cd artifacts
           zip -j mt-win-x64.zip win-x64/*
-          tar -czvf mt-osx-arm64.tar.gz -C osx-arm64 .
-          tar -czvf mt-osx-x64.tar.gz -C osx-x64 .
-          tar -czvf mt-linux-x64.tar.gz -C linux-x64 .
+          # tar -czvf mt-osx-arm64.tar.gz -C osx-arm64 .
+          # tar -czvf mt-osx-x64.tar.gz -C osx-x64 .
+          # tar -czvf mt-linux-x64.tar.gz -C linux-x64 .
 
           echo "# SHA256 Checksums" > checksums.txt
-          for rid in win-x64 osx-arm64 osx-x64 linux-x64; do
+          for rid in win-x64; do
             echo "## $rid" >> checksums.txt
             cat $rid/SHA256SUMS.txt >> checksums.txt
           done
@@ -139,8 +139,5 @@ jobs:
             ## What's Changed
             ${{ steps.notes.outputs.body }}
           files: |
-            artifacts/mt-osx-arm64.tar.gz
-            artifacts/mt-osx-x64.tar.gz
             artifacts/mt-win-x64.zip
-            artifacts/mt-linux-x64.tar.gz
             artifacts/checksums.txt
