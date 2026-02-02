@@ -170,8 +170,8 @@ export async function fetchSettings(): Promise<void> {
     populateSettingsForm(settingsData);
     populateVersionInfo(version, health?.ttyHostVersion ?? null, JS_BUILD_VERSION);
 
-    // Apply settings to any terminals that were created before settings loaded
     applySettingsToTerminals();
+    bindSettingsAutoSave();
   } catch (e) {
     console.error('Error fetching settings:', e);
   }

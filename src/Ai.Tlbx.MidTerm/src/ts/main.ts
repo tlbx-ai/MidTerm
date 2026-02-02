@@ -820,8 +820,4 @@ function bindEvents(): void {
       createSession();
     }
   });
-
-  import('./modules/settings').then((mod) => {
-    mod.bindSettingsAutoSave();
-  });
 }
