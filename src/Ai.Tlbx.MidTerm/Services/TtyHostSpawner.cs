@@ -190,7 +190,7 @@ public static class TtyHostSpawner
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
-        return SpawnWindows(args, out processId);
+        return SpawnWindows(args, runAsUser, out processId);
 #else
         return SpawnUnix(args, runAsUser, out processId);
 #endif
@@ -282,14 +282,14 @@ public static class TtyHostSpawner
 
 #if WINDOWS
     [SupportedOSPlatform("windows")]
-    private static bool SpawnWindows(string args, out int processId)
+    private static bool SpawnWindows(string args, string? runAsUser, out int processId)
     {
         processId = 0;
         var commandLine = $"\"{TtyHostPath}\" {args}";
 
         if (IsRunningAsSystem())
         {
-            return SpawnAsUser(commandLine, out processId);
+            return SpawnAsUser(commandLine, runAsUser, out processId);
         }
         else
         {
@@ -333,11 +333,11 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool SpawnAsUser(string commandLine, out int processId)
+    private static bool SpawnAsUser(string commandLine, string? runAsUser, out int processId)
     {
         processId = 0;
 
-        if (!TryGetUserToken(out var userToken, out var sessionId))
+        if (!TryGetUserToken(runAsUser, out var userToken, out var sessionId))
         {
             return false;
         }
@@ -419,21 +419,26 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool TryGetUserToken(out IntPtr userToken, out uint sessionId)
+    private static bool TryGetUserToken(string? runAsUser, out IntPtr userToken, out uint sessionId)
     {
         userToken = IntPtr.Zero;
         sessionId = 0;
 
-        // First try: active console session (fastest path for normal desktop use)
-        var consoleSession = WTSGetActiveConsoleSessionId();
-        if (consoleSession != 0xFFFFFFFF && WTSQueryUserToken(consoleSession, out userToken))
+        var hasTargetUser = !string.IsNullOrEmpty(runAsUser);
+
+        // Fast path when no specific user requested: try active console session
+        if (!hasTargetUser)
         {
-            sessionId = consoleSession;
-            Log.Info(() => $"TtyHostSpawner: Got user token from console session {consoleSession}");
-            return true;
+            var consoleSession = WTSGetActiveConsoleSessionId();
+            if (consoleSession != 0xFFFFFFFF && WTSQueryUserToken(consoleSession, out userToken))
+            {
+                sessionId = consoleSession;
+                Log.Info(() => $"TtyHostSpawner: Got user token from console session {consoleSession}");
+                return true;
+            }
         }
 
-        // Fallback: enumerate all sessions (handles RDP disconnect scenario)
+        // Enumerate all sessions to find the right user (or any user as fallback)
         if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var pSessionInfo, out var sessionCount))
         {
             Log.Error(() => $"TtyHostSpawner: WTSEnumerateSessions failed: {Marshal.GetLastWin32Error()}");
@@ -443,22 +448,67 @@ public static class TtyHostSpawner
         try
         {
             var sessionInfoSize = Marshal.SizeOf<WTS_SESSION_INFO>();
+            IntPtr fallbackToken = IntPtr.Zero;
+            uint fallbackSessionId = 0;
+
             for (var i = 0; i < sessionCount; i++)
             {
                 var info = Marshal.PtrToStructure<WTS_SESSION_INFO>(pSessionInfo + i * sessionInfoSize);
 
-                // Only try Active or Disconnected sessions (disconnected = user logged in but RDP closed)
                 if (info.State is not (WTS_CONNECTSTATE_CLASS.WTSActive or WTS_CONNECTSTATE_CLASS.WTSDisconnected))
                 {
                     continue;
                 }
 
-                if (WTSQueryUserToken(info.SessionId, out userToken))
+                if (hasTargetUser)
                 {
-                    sessionId = info.SessionId;
-                    Log.Info(() => $"TtyHostSpawner: Got user token from session {info.SessionId} (state: {info.State})");
-                    return true;
+                    var sessionUser = GetSessionUsername(info.SessionId);
+                    if (sessionUser is null)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(sessionUser, runAsUser, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (WTSQueryUserToken(info.SessionId, out userToken))
+                        {
+                            sessionId = info.SessionId;
+                            Log.Info(() => $"TtyHostSpawner: Got token for user '{runAsUser}' from session {info.SessionId}");
+                            // Clean up any fallback token we acquired
+                            if (fallbackToken != IntPtr.Zero)
+                            {
+                                CloseHandle(fallbackToken);
+                            }
+                            return true;
+                        }
+                    }
+                    else if (fallbackToken == IntPtr.Zero)
+                    {
+                        // Keep first available token as fallback
+                        if (WTSQueryUserToken(info.SessionId, out fallbackToken))
+                        {
+                            fallbackSessionId = info.SessionId;
+                        }
+                    }
                 }
+                else
+                {
+                    if (WTSQueryUserToken(info.SessionId, out userToken))
+                    {
+                        sessionId = info.SessionId;
+                        Log.Info(() => $"TtyHostSpawner: Got user token from session {info.SessionId} (state: {info.State})");
+                        return true;
+                    }
+                }
+            }
+
+            // Target user not found in any session — fall back to any available user
+            if (hasTargetUser && fallbackToken != IntPtr.Zero)
+            {
+                userToken = fallbackToken;
+                sessionId = fallbackSessionId;
+                Log.Warn(() => $"TtyHostSpawner: User '{runAsUser}' has no active session, falling back to session {fallbackSessionId}");
+                return true;
             }
         }
         finally
@@ -468,6 +518,28 @@ public static class TtyHostSpawner
 
         Log.Error(() => "TtyHostSpawner: No session with accessible user token found");
         return false;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? GetSessionUsername(uint sessionId)
+    {
+        if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, WTS_INFO_CLASS.WTSUserName, out var buffer, out var bytesReturned))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (bytesReturned <= 2)
+            {
+                return null;
+            }
+            return Marshal.PtrToStringUni(buffer);
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
+        }
     }
 #endif
 
@@ -534,6 +606,19 @@ public static class TtyHostSpawner
 
     [DllImport("wtsapi32.dll")]
     private static extern void WTSFreeMemory(IntPtr pMemory);
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSQuerySessionInformation(
+        IntPtr hServer,
+        uint sessionId,
+        WTS_INFO_CLASS wtsInfoClass,
+        out IntPtr ppBuffer,
+        out int pBytesReturned);
+
+    private enum WTS_INFO_CLASS
+    {
+        WTSUserName = 5
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WTS_SESSION_INFO
