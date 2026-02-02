@@ -77,7 +77,7 @@ export function initializeFromSession(
   foregroundCommandLine: string | null,
   currentDirectory: string | null,
 ): void {
-  if (!foregroundPid && !foregroundName) return;
+  if (!foregroundPid && !foregroundName && !currentDirectory) return;
 
   const state = getProcessState(sessionId);
   const changed =

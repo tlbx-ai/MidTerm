@@ -18,6 +18,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     private int _shellPid;
     private int? _currentChildPid;
     private string? _currentCwd;
+    private string? _currentChildCwd;
     private ForegroundProcessInfo? _cachedForeground;
     private Timer? _timer;
     private bool _disposed;
@@ -108,13 +109,14 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
             {
                 var childPid = GetFirstDirectChild(_shellPid, hSnapshot);
                 var cwd = GetShellCwd();
+                var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
 
-                if (childPid != _currentChildPid || cwd != _currentCwd)
+                if (childPid != _currentChildPid || cwd != _currentCwd || childCwd != _currentChildCwd)
                 {
                     _currentChildPid = childPid;
                     _currentCwd = cwd;
+                    _currentChildCwd = childCwd;
 
-                    // Compute foreground info with same snapshot (no extra snapshots)
                     ForegroundProcessInfo info;
                     if (childPid is null)
                     {
@@ -132,7 +134,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                             Pid = childPid.Value,
                             Name = GetProcessName(childPid.Value, hSnapshot) ?? "unknown",
                             CommandLine = StripExecutablePath(GetProcessCommandLine(childPid.Value)),
-                            Cwd = GetProcessCwd(childPid.Value) ?? cwd
+                            Cwd = childCwd ?? cwd
                         };
                     }
 
