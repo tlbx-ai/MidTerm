@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Channels;
 #if WINDOWS
 using Microsoft.Win32.SafeHandles;
 using System.IO.Pipes;
@@ -289,12 +290,67 @@ public static class Program
         }
     }
 
+    private readonly record struct PooledFrame(byte[] Buffer, int Length);
+
+    private static void EnqueueFrame(ChannelWriter<PooledFrame> writer, ReadOnlySpan<byte> frame)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(frame.Length);
+        frame.CopyTo(buffer);
+        if (!writer.TryWrite(new PooledFrame(buffer, frame.Length)))
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static async Task DrainWriteChannelAsync(Stream stream, ChannelReader<PooledFrame> reader, CancellationToken ct)
+    {
+        try
+        {
+            while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            {
+                while (reader.TryRead(out var frame))
+                {
+                    try
+                    {
+                        await stream.WriteAsync(frame.Buffer.AsMemory(0, frame.Length), ct).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(frame.Buffer);
+                    }
+                }
+                await stream.FlushAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Log.Error(() => $"Drain loop error: {ex.Message}");
+            Log.Exception(ex, "DrainWriteChannel");
+        }
+        finally
+        {
+            // Drain and return any remaining pooled buffers
+            while (reader.TryRead(out var remaining))
+            {
+                ArrayPool<byte>.Shared.Return(remaining.Buffer);
+            }
+        }
+    }
+
     private static async Task HandleClientAsync(TerminalSession session, IIpcClientConnection client, CancellationToken ct, Action? onSubscribed = null)
     {
         var outputLock = new object();
         var handshakeComplete = false;
         var stream = client.Stream;
         var handshakeCursor = session.GetOutputCursor();
+
+        var writeChannel = Channel.CreateUnbounded<PooledFrame>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+        var channelWriter = writeChannel.Writer;
 
         // CTS that heartbeat can cancel to terminate message processing
         using var clientCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -310,6 +366,8 @@ public static class Program
                 }
             }
         });
+
+        var drainTask = DrainWriteChannelAsync(stream, writeChannel.Reader, clientCts.Token);
         var heartbeatTask = HeartbeatLoopAsync(client, clientCts);
 
         try
@@ -330,11 +388,7 @@ public static class Program
                     {
                         TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, data.Span, frame =>
                         {
-                            lock (stream)
-                            {
-                                stream.Write(frame);
-                                stream.Flush();
-                            }
+                            EnqueueFrame(channelWriter, frame);
                         });
                     }
                     else
@@ -356,11 +410,7 @@ public static class Program
                     if (client.IsConnected)
                     {
                         var msg = TtyHostProtocol.CreateStateChange(session.IsRunning, session.ExitCode);
-                        lock (stream)
-                        {
-                            stream.Write(msg);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, msg);
                     }
                 }
                 catch (Exception ex) { Log.Exception(ex, "OnStateChange"); }
@@ -380,11 +430,7 @@ public static class Program
                             Cwd = info.Cwd
                         };
                         var msg = TtyHostProtocol.CreateForegroundChange(payload);
-                        lock (stream)
-                        {
-                            stream.Write(msg);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, msg);
                     }
                 }
                 catch (Exception ex) { Log.Exception(ex, "OnForegroundChanged"); }
@@ -429,11 +475,7 @@ public static class Program
 
                     TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, bufferedSegment.Span, frame =>
                     {
-                        lock (stream)
-                        {
-                            stream.Write(frame);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, frame);
                     });
                 });
 
@@ -442,7 +484,7 @@ public static class Program
                     Log.Warn(() => "Buffered output dropped before handshake completed (scrollback too small)");
                 }
 
-                // Now enable live forwarding — all replay data has been sent
+                // Now enable live forwarding — all replay data has been enqueued
                 lock (outputLock)
                 {
                     handshakeComplete = true;
@@ -458,7 +500,7 @@ public static class Program
 
             try
             {
-                await ProcessMessagesAsync(session, stream, clientCts.Token, () =>
+                await ProcessMessagesAsync(session, stream, channelWriter, clientCts.Token, () =>
                 {
                     OnHandshakeComplete();
                     // Only subscribe once - repeated GetInfo requests must not add duplicate handlers
@@ -485,6 +527,8 @@ public static class Program
         }
         finally
         {
+            channelWriter.Complete();
+            try { await drainTask.ConfigureAwait(false); } catch { }
             clientCts.Cancel();
             // Await heartbeat completion; exceptions are expected during cancellation
             try { await heartbeatTask.ConfigureAwait(false); } catch { }
@@ -564,7 +608,7 @@ public static class Program
         }
     }
 
-    private static async Task ProcessMessagesAsync(TerminalSession session, Stream stream, CancellationToken ct, Action? onHandshakeComplete = null)
+    private static async Task ProcessMessagesAsync(TerminalSession session, Stream stream, ChannelWriter<PooledFrame> channelWriter, CancellationToken ct, Action? onHandshakeComplete = null)
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
 
@@ -643,11 +687,7 @@ public static class Program
                     case TtyHostMessageType.GetInfo:
                         var info = session.GetInfo();
                         var infoMsg = TtyHostProtocol.CreateInfoResponse(info);
-                        lock (stream)
-                        {
-                            stream.Write(infoMsg);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, infoMsg);
                         onHandshakeComplete?.Invoke();
                         break;
 
@@ -663,11 +703,7 @@ public static class Program
                         var (cols, rows) = TtyHostProtocol.ParseResize(payload);
                         session.Resize(cols, rows);
                         var resizeAck = TtyHostProtocol.CreateResizeAck();
-                        lock (stream)
-                        {
-                            stream.Write(resizeAck);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, resizeAck);
                         break;
 
                     case TtyHostMessageType.GetBuffer:
@@ -679,11 +715,7 @@ public static class Program
                             {
                                 TtyHostProtocol.WriteBufferResponse(ReadOnlySpan<byte>.Empty, frame =>
                                 {
-                                    lock (stream)
-                                    {
-                                        stream.Write(frame);
-                                        stream.Flush();
-                                    }
+                                    EnqueueFrame(channelWriter, frame);
                                 });
                                 break;
                             }
@@ -697,11 +729,7 @@ public static class Program
                                     var payloadSlice = snapshot.AsSpan(0, written);
                                     TtyHostProtocol.WriteBufferResponse(payloadSlice, frame =>
                                     {
-                                        lock (stream)
-                                        {
-                                            stream.Write(frame);
-                                            stream.Flush();
-                                        }
+                                        EnqueueFrame(channelWriter, frame);
                                     });
                                     break;
                                 }
@@ -724,33 +752,26 @@ public static class Program
                         var name = TtyHostProtocol.ParseSetName(payload);
                         session.SetName(string.IsNullOrEmpty(name) ? null : name);
                         var nameAck = TtyHostProtocol.CreateSetNameAck();
-                        lock (stream)
-                        {
-                            stream.Write(nameAck);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, nameAck);
                         break;
 
                     case TtyHostMessageType.SetOrder:
                         var order = TtyHostProtocol.ParseSetOrder(payload);
                         session.SetOrder(order);
                         var orderAck = TtyHostProtocol.CreateSetOrderAck();
-                        lock (stream)
-                        {
-                            stream.Write(orderAck);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, orderAck);
                         Log.Verbose(() => $"Order set to {order}");
+                        break;
+
+                    case TtyHostMessageType.Ping:
+                        var pongMsg = TtyHostProtocol.CreatePong(payload);
+                        EnqueueFrame(channelWriter, pongMsg);
                         break;
 
                     case TtyHostMessageType.Close:
                         Log.Info(() => "Received close request, shutting down");
                         var closeAck = TtyHostProtocol.CreateCloseAck();
-                        lock (stream)
-                        {
-                            stream.Write(closeAck);
-                            stream.Flush();
-                        }
+                        EnqueueFrame(channelWriter, closeAck);
                         session.Kill();
                         // Signal graceful shutdown - let finally blocks run
                         _shutdownCts?.Cancel();

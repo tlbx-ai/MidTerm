@@ -339,6 +339,21 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
+    public async Task<byte[]?> PingAsync(byte[] pingData, CancellationToken ct = default)
+    {
+        if (!IsConnected) return null;
+
+        try
+        {
+            var msg = TtyHostProtocol.CreatePing(pingData);
+            return await SendRequestAsync(msg, TtyHostMessageType.Pong, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<bool> CloseAsync(CancellationToken ct = default)
     {
         _intentionalDisconnect = true;
@@ -599,6 +614,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.SetOrderAck:
             case TtyHostMessageType.CloseAck:
             case TtyHostMessageType.Info:
+            case TtyHostMessageType.Pong:
                 lock (_responseLock)
                 {
                     _pendingResponse?.TrySetResult((msgType, payload.ToArray()));

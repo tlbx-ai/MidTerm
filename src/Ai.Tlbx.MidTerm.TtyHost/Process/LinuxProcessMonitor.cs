@@ -17,6 +17,7 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
     private int _shellPid;
     private int? _currentChildPid;
     private string? _currentCwd;
+    private string? _currentChildCwd;
     private Timer? _timer;
     private bool _disposed;
 
@@ -73,11 +74,13 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
         {
             var childPid = GetFirstDirectChild(_shellPid);
             var cwd = GetShellCwd();
+            var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
 
-            if (childPid != _currentChildPid || cwd != _currentCwd)
+            if (childPid != _currentChildPid || cwd != _currentCwd || childCwd != _currentChildCwd)
             {
                 _currentChildPid = childPid;
                 _currentCwd = cwd;
+                _currentChildCwd = childCwd;
                 OnForegroundChanged?.Invoke(GetCurrentForeground());
             }
         }

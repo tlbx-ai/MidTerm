@@ -206,6 +206,7 @@ public sealed class MuxWebSocketHandler
         switch (type)
         {
             case MuxProtocol.TypeTerminalInput:
+                client.SetActiveSession(sessionId);
                 var payloadMemory = data.Slice(MuxProtocol.HeaderSize);
                 if (payloadMemory.Length < 20)
                 {
@@ -227,9 +228,49 @@ public sealed class MuxWebSocketHandler
                 client.SetActiveSession(sessionId);
                 break;
 
+            case MuxProtocol.TypePing:
+                await HandlePingAsync(sessionId, data.Slice(MuxProtocol.HeaderSize), client);
+                break;
+
             default:
                 Log.Warn(() => $"[Mux] Unknown frame type 0x{type:X2} from {client.Id}");
                 break;
+        }
+    }
+
+    private async Task HandlePingAsync(string sessionId, ReadOnlyMemory<byte> payload, MuxClient client)
+    {
+        if (payload.Length < 1) return;
+
+        var span = payload.Span;
+        var mode = span[0];
+        var pingData = payload.Length > 1 ? payload.Slice(1).ToArray() : Array.Empty<byte>();
+
+        if (mode == 0)
+        {
+            // Server echo: respond with pong + diagnostics (flush delay + server input→output RTT)
+            var flushDelay = (ushort)Math.Clamp(client.GetFlushDelay(sessionId), 0, 65535);
+            var serverRtt = (ushort)Math.Clamp(_muxManager.GetServerRtt(sessionId), 0, 65535);
+            var pong = new byte[MuxProtocol.HeaderSize + 1 + pingData.Length + 4];
+            pong[0] = MuxProtocol.TypePong;
+            MuxProtocol.WriteSessionId(pong.AsSpan(1, 8), sessionId);
+            pong[MuxProtocol.HeaderSize] = 0; // mode = server
+            if (pingData.Length > 0)
+            {
+                pingData.CopyTo(pong.AsSpan(MuxProtocol.HeaderSize + 1));
+            }
+            // Append diagnostics as uint16 LE: [flushDelay:2][serverRtt:2]
+            var diagOffset = MuxProtocol.HeaderSize + 1 + pingData.Length;
+            pong[diagOffset] = (byte)(flushDelay & 0xFF);
+            pong[diagOffset + 1] = (byte)((flushDelay >> 8) & 0xFF);
+            pong[diagOffset + 2] = (byte)(serverRtt & 0xFF);
+            pong[diagOffset + 3] = (byte)((serverRtt >> 8) & 0xFF);
+            await client.TrySendAsync(pong);
+        }
+        else if (mode == 1)
+        {
+            // MTHost echo: forward to mthost via IPC
+            await _muxManager.HandlePingAsync(sessionId, pingData, client);
         }
     }
 

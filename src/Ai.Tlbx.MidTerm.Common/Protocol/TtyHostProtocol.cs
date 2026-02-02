@@ -244,6 +244,16 @@ public static class TtyHostProtocol
         return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ForegroundChangePayload);
     }
 
+    public static byte[] CreatePing(ReadOnlySpan<byte> payload)
+    {
+        return CreateFrame(TtyHostMessageType.Ping, payload.ToArray());
+    }
+
+    public static byte[] CreatePong(ReadOnlySpan<byte> payload)
+    {
+        return CreateFrame(TtyHostMessageType.Pong, payload.ToArray());
+    }
+
     public static byte[] CreateSetOrder(byte order)
     {
         return CreateFrame(TtyHostMessageType.SetOrder, [order]);
@@ -289,7 +299,11 @@ public enum TtyHostMessageType : byte
 
     // Display order
     SetOrder = 0x24,
-    SetOrderAck = 0x25
+    SetOrderAck = 0x25,
+
+    // Latency measurement
+    Ping = 0x60,
+    Pong = 0x61
 }
 
 /// <summary>

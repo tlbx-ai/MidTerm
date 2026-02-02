@@ -1,14 +1,66 @@
 /**
  * Diagnostics Panel Module
  *
- * Displays file paths and reload settings button.
+ * Displays file paths, reload settings button, and latency measurements.
  */
 
 import { getPaths, reloadSettings } from '../../api/client';
+import { measureLatency, onOutputRtt } from '../comms/muxChannel';
+import { $activeSessionId, getSession } from '../../stores';
+import { getSessionDisplayInfo } from '../sidebar/sessionList';
+import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
+
+let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
 export function initDiagnosticsPanel(): void {
   loadPaths();
   bindReloadSettingsButton();
+  bindOverlayToggle();
+}
+
+export function startLatencyMeasurement(): void {
+  stopLatencyMeasurement();
+  runLatencyPing();
+  latencyInterval = setInterval(runLatencyPing, 2000);
+}
+
+export function stopLatencyMeasurement(): void {
+  if (latencyInterval !== null) {
+    clearInterval(latencyInterval);
+    latencyInterval = null;
+  }
+}
+
+async function runLatencyPing(): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+
+  const sessionEl = document.getElementById('diag-ping-session');
+  const serverEl = document.getElementById('diag-server-rtt');
+  const mthostEl = document.getElementById('diag-mthost-rtt');
+
+  const session = getSession(sessionId);
+  if (sessionEl) {
+    if (session) {
+      const display = getSessionDisplayInfo(session);
+      sessionEl.textContent = display.secondary
+        ? `${display.primary} — ${display.secondary}`
+        : display.primary;
+    } else {
+      sessionEl.textContent = sessionId;
+    }
+  }
+
+  const result = await measureLatency(sessionId);
+
+  if (serverEl) {
+    serverEl.textContent =
+      result.serverRtt !== null ? `${result.serverRtt.toFixed(1)} ms` : 'timeout';
+  }
+  if (mthostEl) {
+    mthostEl.textContent =
+      result.mthostRtt !== null ? `${result.mthostRtt.toFixed(1)} ms` : 'timeout';
+  }
 }
 
 async function loadPaths(): Promise<void> {
@@ -27,6 +79,34 @@ async function loadPaths(): Promise<void> {
     if (logsEl) logsEl.textContent = data.logDirectory || '-';
   } catch (e) {
     console.error('Failed to load paths:', e);
+  }
+}
+
+function bindOverlayToggle(): void {
+  const toggle = document.getElementById('diag-overlay-toggle') as HTMLInputElement | null;
+  if (!toggle) return;
+
+  const saved = localStorage.getItem('latency-overlay-enabled') === 'true';
+  toggle.checked = saved;
+  if (saved) {
+    enableLatencyOverlay();
+  }
+
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      enableLatencyOverlay();
+      localStorage.setItem('latency-overlay-enabled', 'true');
+    } else {
+      disableLatencyOverlay();
+      localStorage.removeItem('latency-overlay-enabled');
+    }
+  });
+
+  const outputRttEl = document.getElementById('diag-output-rtt');
+  if (outputRttEl) {
+    onOutputRtt((_sessionId, rtt) => {
+      outputRttEl.textContent = `${rtt.toFixed(1)} ms`;
+    });
   }
 }
 

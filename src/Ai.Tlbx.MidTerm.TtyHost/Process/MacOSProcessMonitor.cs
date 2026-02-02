@@ -17,6 +17,7 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     private int _kq = -1;
     private int? _currentChildPid;
     private string? _currentCwd;
+    private string? _currentChildCwd;
     private readonly object _stateLock = new();
     private Thread? _eventThread;
     private Timer? _cwdTimer;
@@ -148,15 +149,17 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         {
             var childPid = GetFirstDirectChild(_shellPid);
             var cwd = GetShellCwd();
+            var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
 
             bool shouldNotify;
             lock (_stateLock)
             {
-                shouldNotify = childPid != _currentChildPid || cwd != _currentCwd;
+                shouldNotify = childPid != _currentChildPid || cwd != _currentCwd || childCwd != _currentChildCwd;
                 if (shouldNotify)
                 {
                     _currentChildPid = childPid;
                     _currentCwd = cwd;
+                    _currentChildCwd = childCwd;
                 }
             }
 
@@ -178,14 +181,18 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         try
         {
             var cwd = GetShellCwd();
+            int? childPid;
+            lock (_stateLock) { childPid = _currentChildPid; }
+            var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
 
             bool shouldNotify;
             lock (_stateLock)
             {
-                shouldNotify = cwd != _currentCwd;
+                shouldNotify = cwd != _currentCwd || childCwd != _currentChildCwd;
                 if (shouldNotify)
                 {
                     _currentCwd = cwd;
+                    _currentChildCwd = childCwd;
                 }
             }
 
@@ -203,15 +210,17 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
 
         var childPid = GetFirstDirectChild(_shellPid);
         var cwd = GetShellCwd();
+        var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
 
         bool shouldNotify;
         lock (_stateLock)
         {
-            shouldNotify = childPid != _currentChildPid || cwd != _currentCwd;
+            shouldNotify = childPid != _currentChildPid || cwd != _currentCwd || childCwd != _currentChildCwd;
             if (shouldNotify)
             {
                 _currentChildPid = childPid;
                 _currentCwd = cwd;
+                _currentChildCwd = childCwd;
             }
         }
 

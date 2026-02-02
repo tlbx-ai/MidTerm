@@ -121,7 +121,7 @@ public class Program
             // Clean up old MidTerm certificates from trusted store (Windows only)
             if (!ServerSetup.IsFallbackCertificate)
             {
-                CertificateCleanupService.CleanupOldCertificates(ServerSetup.LoadedCertificate, WriteEventLogWrapper);
+                CertificateCleanupService.EnsureCertificateTrust(ServerSetup.LoadedCertificate, WriteEventLogWrapper);
             }
         }
 

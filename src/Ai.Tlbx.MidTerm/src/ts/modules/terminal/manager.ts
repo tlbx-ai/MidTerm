@@ -752,19 +752,6 @@ export function scrollToBottom(sessionId: string): void {
 }
 
 /**
- * Apply current settings to all existing terminals
- */
-export function applySettingsToTerminals(): void {
-  const options = getTerminalOptions();
-  sessionTerminals.forEach((state) => {
-    state.terminal.options.cursorBlink = options.cursorBlink ?? true;
-    state.terminal.options.cursorStyle = options.cursorStyle ?? 'bar';
-    state.terminal.options.fontSize = options.fontSize ?? 14;
-    state.terminal.options.theme = options.theme ?? {};
-  });
-}
-
-/**
  * Refresh the active terminal buffer by clearing and requesting via WebSocket.
  * Using WebSocket ensures the buffer arrives in-order with live terminal data.
  */

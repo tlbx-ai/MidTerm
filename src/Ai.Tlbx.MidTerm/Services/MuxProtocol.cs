@@ -37,8 +37,10 @@ public static class MuxProtocol
     public const byte TypeBufferRequest = 0x06; // Client -> Server: request buffer refresh for session
     public const byte TypeCompressedOutput = 0x07; // Server -> Client: GZip compressed terminal output
     public const byte TypeActiveSessionHint = 0x08; // Client -> Server: hint which session is active (for priority)
+    public const byte TypePing = 0x09; // Client -> Server: latency measurement ping
     public const byte TypeForegroundChange = 0x0A; // Server -> Client: foreground process changed
     public const byte TypeDataLoss = 0x0B; // Server -> Client: background session dropped data, resync recommended
+    public const byte TypePong = 0x0C; // Server -> Client: latency measurement pong
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
@@ -313,7 +315,7 @@ public static class MuxProtocol
         return frame;
     }
 
-    private static void WriteSessionId(Span<byte> dest, string sessionId)
+    internal static void WriteSessionId(Span<byte> dest, string sessionId)
     {
         for (var i = 0; i < 8 && i < sessionId.Length; i++)
         {

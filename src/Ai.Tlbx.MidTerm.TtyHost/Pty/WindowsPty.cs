@@ -119,13 +119,13 @@ public sealed class WindowsPty : IPtyConnection
 
         try
         {
-            if (!CreatePipe(out inputReadHandle, out var inputWriteHandle, IntPtr.Zero, 0))
+            if (!CreatePipe(out inputReadHandle, out var inputWriteHandle, IntPtr.Zero, 65536))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create input pipe");
             }
             _inputWriteHandle = inputWriteHandle;
 
-            if (!CreatePipe(out var outputReadHandle, out outputWriteHandle, IntPtr.Zero, 0))
+            if (!CreatePipe(out var outputReadHandle, out outputWriteHandle, IntPtr.Zero, 65536))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create output pipe");
             }
