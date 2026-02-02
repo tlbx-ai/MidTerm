@@ -41,7 +41,6 @@ import {
   focusActiveTerminal,
   calculateOptimalDimensions,
   setTerminalScrollback,
-  rescaleAllTerminalsImmediate,
 } from './modules/terminal';
 import {
   updateEmptyState,
@@ -271,9 +270,9 @@ function registerCallbacks(): void {
   });
 
   registerSettingsAppliedCallback(() => {
-    const activeId = $activeSessionId.get();
-    if (activeId) fitSessionToScreen(activeId);
-    rescaleAllTerminalsImmediate();
+    sessionTerminals.forEach((_state, sessionId) => {
+      fitSessionToScreen(sessionId);
+    });
   });
 
   setSessionListCallbacks({
