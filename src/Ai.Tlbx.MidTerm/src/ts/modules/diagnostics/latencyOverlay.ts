@@ -6,7 +6,13 @@
  * Toggled via Settings > Diagnostics.
  */
 
-import { onOutputRtt, offOutputRtt, measureLatency, getLastFlushDelay } from '../comms/muxChannel';
+import {
+  onOutputRtt,
+  offOutputRtt,
+  measureLatency,
+  getLastFlushDelay,
+  getLastServerIoRtt,
+} from '../comms/muxChannel';
 import { $activeSessionId } from '../../stores';
 import { sessionTerminals } from '../../state';
 
@@ -20,6 +26,7 @@ interface MetricElements {
   outputRtt: HTMLSpanElement;
   serverRtt: HTMLSpanElement;
   mthostRtt: HTMLSpanElement;
+  serverIo: HTMLSpanElement;
   flushDelay: HTMLSpanElement;
   scrollback: HTMLSpanElement;
 }
@@ -69,6 +76,7 @@ function ensureOverlay(): void {
     { label: 'Out', id: 'outputRtt' },
     { label: 'Srv', id: 'serverRtt' },
     { label: 'Host', id: 'mthostRtt' },
+    { label: 'I/O', id: 'serverIo' },
     { label: 'Flush', id: 'flushDelay' },
     { label: 'Buf', id: 'scrollback' },
   ] as const;
@@ -149,6 +157,12 @@ async function runPingAndScrollback(): Promise<void> {
   if (flushDelay !== null) {
     metricEls.flushDelay.textContent = `${flushDelay} ms`;
     applyColor(metricEls.flushDelay, flushDelay < 5 ? 'good' : flushDelay < 50 ? 'warn' : 'bad');
+  }
+
+  const serverIo = getLastServerIoRtt();
+  if (serverIo !== null && serverIo >= 0) {
+    metricEls.serverIo.textContent = `${serverIo} ms`;
+    applyColor(metricEls.serverIo, serverIo < 30 ? 'good' : serverIo < 100 ? 'warn' : 'bad');
   }
 }
 

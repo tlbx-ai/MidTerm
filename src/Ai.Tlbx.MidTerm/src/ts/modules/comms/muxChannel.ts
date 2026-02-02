@@ -179,6 +179,7 @@ type OutputRttListener = (sessionId: string, rtt: number) => void;
 const outputRttListeners = new Set<OutputRttListener>();
 
 let lastFlushDelayMs: number | null = null;
+let lastServerIoRttMs: number | null = null;
 
 export function getLastOutputRtt(): number | null {
   return lastOutputRtt;
@@ -186,6 +187,10 @@ export function getLastOutputRtt(): number | null {
 
 export function getLastFlushDelay(): number | null {
   return lastFlushDelayMs;
+}
+
+export function getLastServerIoRtt(): number | null {
+  return lastServerIoRttMs;
 }
 
 export function onOutputRtt(cb: OutputRttListener | null): void {
@@ -565,9 +570,10 @@ export function connectMuxWebSocket(): void {
         const timestampBytes = payload.slice(1, 9);
         const timestamp = new Float64Array(timestampBytes.buffer, timestampBytes.byteOffset, 1)[0]!;
         const rtt = performance.now() - timestamp;
-        // Server pong (mode 0) includes flush delay as uint16 LE after timestamp
-        if (pongMode === 0 && payload.length >= 11) {
+        // Server pong (mode 0) includes diagnostics: [flushDelay:2][serverRtt:2]
+        if (pongMode === 0 && payload.length >= 13) {
           lastFlushDelayMs = payload[9]! | (payload[10]! << 8);
+          lastServerIoRttMs = payload[11]! | (payload[12]! << 8);
         }
         pongCallback(pongMode, rtt);
       }

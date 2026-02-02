@@ -21,6 +21,8 @@ public sealed class TtyHostMuxConnectionManager
 
     private readonly TtyHostSessionManager _sessionManager;
     private readonly ConcurrentDictionary<string, MuxClient> _clients = new();
+    private readonly ConcurrentDictionary<string, long> _inputTimestamps = new();
+    private readonly ConcurrentDictionary<string, int> _lastServerRttMs = new();
     private const int MaxQueuedOutputs = 1000;
     private readonly Channel<PooledOutputItem> _outputQueue =
         Channel.CreateBounded<PooledOutputItem>(
@@ -56,6 +58,11 @@ public sealed class TtyHostMuxConnectionManager
 
     private void HandleOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
     {
+        if (_inputTimestamps.TryRemove(sessionId, out var inputTicks))
+        {
+            _lastServerRttMs[sessionId] = (int)(Environment.TickCount64 - inputTicks);
+        }
+
         var shared = SharedOutputBuffer.Rent(data.Length);
         data.Span.CopyTo(shared.WriteSpan);
 
@@ -124,7 +131,13 @@ public sealed class TtyHostMuxConnectionManager
 
     public async Task HandleInputAsync(string sessionId, ReadOnlyMemory<byte> data)
     {
+        _inputTimestamps[sessionId] = Environment.TickCount64;
         await _sessionManager.SendInputAsync(sessionId, data).ConfigureAwait(false);
+    }
+
+    public int GetServerRtt(string sessionId)
+    {
+        return _lastServerRttMs.TryGetValue(sessionId, out var rtt) ? rtt : -1;
     }
 
     public async Task HandlePingAsync(string sessionId, byte[] pingData, MuxClient client)
