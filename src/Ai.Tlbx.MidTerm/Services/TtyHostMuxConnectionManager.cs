@@ -50,6 +50,9 @@ public sealed class TtyHostMuxConnectionManager
 
     private void HandleSessionClosed(string sessionId)
     {
+        _inputTimestamps.TryRemove(sessionId, out _);
+        _lastServerRttMs.TryRemove(sessionId, out _);
+
         foreach (var client in _clients.Values)
         {
             client.RemoveSession(sessionId);

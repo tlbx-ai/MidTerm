@@ -249,6 +249,7 @@ public sealed class MuxClient : IAsyncDisposable
     /// </summary>
     public void RemoveSession(string sessionId)
     {
+        _lastFlushDelayMs.Remove(sessionId);
         _sessionsToRemove.Enqueue(sessionId);
     }
 
