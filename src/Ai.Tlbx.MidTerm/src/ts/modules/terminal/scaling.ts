@@ -448,6 +448,8 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   const termWidth = xterm.offsetWidth;
   const termHeight = xterm.offsetHeight;
 
+  if (availWidth <= 0 || availHeight <= 0 || termWidth <= 0 || termHeight <= 0) return;
+
   // Calculate scale (shrink only, never enlarge)
   const scaleX = availWidth / termWidth;
   const scaleY = availHeight / termHeight;
