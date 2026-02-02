@@ -58,21 +58,22 @@ jobs:
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Stage artifacts
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p staging
-          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/
-          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
-          cp version.json staging/
+          New-Item -ItemType Directory -Path staging -Force | Out-Null
+          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }}" staging/
+          Copy-Item "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }}" staging/
+          Copy-Item version.json staging/
 
-          cd staging
-          if command -v sha256sum &> /dev/null; then
-            sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
-          else
-            shasum -a 256 mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
-          fi
-          echo "=== ${{ matrix.rid }} ==="
-          cat SHA256SUMS.txt
+          Push-Location staging
+          $hashes = @("mt${{ matrix.ext }}", "mthost${{ matrix.ext }}") | ForEach-Object {
+            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
+            "$hash  $_"
+          }
+          $hashes | Set-Content SHA256SUMS.txt
+          Write-Host "=== ${{ matrix.rid }} ==="
+          Get-Content SHA256SUMS.txt
+          Pop-Location
 
       - uses: actions/upload-artifact@v4
         with:
