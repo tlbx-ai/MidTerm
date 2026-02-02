@@ -60,8 +60,8 @@ public sealed class MuxClient : IAsyncDisposable
     private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
-    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(20);
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(30);
+    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(5);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<OutputItem> _inputChannel;
@@ -338,34 +338,34 @@ public sealed class MuxClient : IAsyncDisposable
         if (WebSocket.State != WebSocketState.Open) return;
         if (_flushSuspended) return;
 
+        // Active session first — ensures it gets WebSocket priority ahead of background flushes
+        var activeId = _activeSessionId;
+        if (activeId is not null
+            && _sessionBuffers.TryGetValue(activeId, out var activeBuffer)
+            && activeBuffer.TotalBytes > 0)
+        {
+            _lastFlushDelayMs[activeId] = (int)(nowTicks - activeBuffer.QueuedAtTicks);
+            await FlushBufferAsync(activeId, activeBuffer, compress: false).ConfigureAwait(false);
+            activeBuffer.LastFlushTicks = nowTicks;
+        }
+
+        // Background sessions: flush if size threshold OR time elapsed
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {
-            if (buffer.TotalBytes == 0) continue;
+            if (buffer.TotalBytes == 0 || sessionId == activeId) continue;
 
-            bool shouldFlush;
-            if (sessionId == _activeSessionId)
-            {
-                // Active: ALWAYS flush immediately
-                shouldFlush = true;
-            }
-            else
-            {
-                // Background: flush if size threshold OR time elapsed
-                var elapsedMs = nowTicks - buffer.LastFlushTicks;
-                shouldFlush = buffer.TotalBytes >= FlushThresholdBytes
-                           || elapsedMs >= (long)FlushInterval.TotalMilliseconds;
-            }
-
-            if (shouldFlush)
+            var elapsedMs = nowTicks - buffer.LastFlushTicks;
+            if (buffer.TotalBytes >= FlushThresholdBytes
+                || elapsedMs >= (long)FlushInterval.TotalMilliseconds)
             {
                 _lastFlushDelayMs[sessionId] = (int)(nowTicks - buffer.QueuedAtTicks);
-                await FlushBufferAsync(sessionId, buffer).ConfigureAwait(false);
+                await FlushBufferAsync(sessionId, buffer, compress: true).ConfigureAwait(false);
                 buffer.LastFlushTicks = nowTicks;
             }
         }
     }
 
-    private async Task FlushBufferAsync(string sessionId, SessionBuffer buffer)
+    private async Task FlushBufferAsync(string sessionId, SessionBuffer buffer, bool compress)
     {
         if (buffer.TotalBytes == 0) return;
 
@@ -381,8 +381,8 @@ public sealed class MuxClient : IAsyncDisposable
         // Get data directly from pooled buffer (zero-copy until frame creation)
         var data = buffer.GetData();
 
-        // Rent buffer for frame, write, send, return
-        var useCompression = data.Length > MuxProtocol.CompressionThreshold;
+        // Active sessions skip compression to avoid client-side decompression latency
+        var useCompression = compress && data.Length > MuxProtocol.CompressionThreshold;
         var maxFrameSize = useCompression
             ? MuxProtocol.CompressedOutputHeaderSize + data.Length + 100
             : MuxProtocol.OutputHeaderSize + data.Length;
