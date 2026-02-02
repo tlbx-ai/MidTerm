@@ -993,6 +993,28 @@ html, body {
     display: flex;
 }
 
+.latency-overlay {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 10;
+    padding: 2px 8px;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    line-height: 1.4;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--text-secondary, #999);
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.latency-overlay.latency-good { color: #7ba2f7; }
+.latency-overlay.latency-warn { color: #e0af68; }
+.latency-overlay.latency-bad { color: #f7768e; }
+
 .terminal-container.hidden {
     display: none;
 }

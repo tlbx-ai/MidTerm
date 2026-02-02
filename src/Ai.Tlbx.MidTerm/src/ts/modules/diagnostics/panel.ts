@@ -5,15 +5,17 @@
  */
 
 import { getPaths, reloadSettings } from '../../api/client';
-import { measureLatency } from '../comms/muxChannel';
+import { measureLatency, onOutputRtt } from '../comms/muxChannel';
 import { $activeSessionId, getSession } from '../../stores';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
+import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
 export function initDiagnosticsPanel(): void {
   loadPaths();
   bindReloadSettingsButton();
+  bindOverlayToggle();
 }
 
 export function startLatencyMeasurement(): void {
@@ -77,6 +79,34 @@ async function loadPaths(): Promise<void> {
     if (logsEl) logsEl.textContent = data.logDirectory || '-';
   } catch (e) {
     console.error('Failed to load paths:', e);
+  }
+}
+
+function bindOverlayToggle(): void {
+  const toggle = document.getElementById('diag-overlay-toggle') as HTMLInputElement | null;
+  if (!toggle) return;
+
+  const saved = localStorage.getItem('latency-overlay-enabled') === 'true';
+  toggle.checked = saved;
+  if (saved) {
+    enableLatencyOverlay();
+  }
+
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      enableLatencyOverlay();
+      localStorage.setItem('latency-overlay-enabled', 'true');
+    } else {
+      disableLatencyOverlay();
+      localStorage.removeItem('latency-overlay-enabled');
+    }
+  });
+
+  const outputRttEl = document.getElementById('diag-output-rtt');
+  if (outputRttEl) {
+    onOutputRtt((_sessionId, rtt) => {
+      outputRttEl.textContent = `${rtt.toFixed(1)} ms`;
+    });
   }
 }
 

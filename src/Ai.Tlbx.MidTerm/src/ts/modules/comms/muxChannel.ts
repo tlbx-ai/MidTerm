@@ -169,6 +169,44 @@ export async function measureLatency(sessionId: string): Promise<LatencyResult> 
   return result;
 }
 
+// =============================================================================
+// Input→Output RTT Tracking
+// =============================================================================
+
+const lastInputTimestamp = new Map<string, number>();
+let lastOutputRtt: number | null = null;
+type OutputRttListener = (sessionId: string, rtt: number) => void;
+const outputRttListeners = new Set<OutputRttListener>();
+
+export function getLastOutputRtt(): number | null {
+  return lastOutputRtt;
+}
+
+export function onOutputRtt(cb: OutputRttListener | null): void {
+  if (cb) {
+    outputRttListeners.add(cb);
+  }
+}
+
+export function offOutputRtt(cb: OutputRttListener): void {
+  outputRttListeners.delete(cb);
+}
+
+function recordInputTimestamp(sessionId: string): void {
+  lastInputTimestamp.set(sessionId, performance.now());
+}
+
+function measureOutputRtt(sessionId: string): void {
+  const sent = lastInputTimestamp.get(sessionId);
+  if (sent !== undefined) {
+    lastOutputRtt = performance.now() - sent;
+    lastInputTimestamp.delete(sessionId);
+    for (const listener of outputRttListeners) {
+      listener(sessionId, lastOutputRtt);
+    }
+  }
+}
+
 // Forward declarations for functions from other modules
 let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
 
@@ -499,6 +537,7 @@ export function connectMuxWebSocket(): void {
     }
 
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
+      measureOutputRtt(sessionId);
       // Queue ALL output frames to guarantee strict ordering
       if (payload.length >= 4) {
         queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
@@ -571,6 +610,8 @@ export function sendInput(sessionId: string, data: string): void {
     }
     return;
   }
+
+  recordInputTimestamp(sessionId);
 
   const payload = new TextEncoder().encode(data);
   const frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
