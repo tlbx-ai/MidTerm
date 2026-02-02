@@ -82,7 +82,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     permissions:
       contents: write
 
@@ -96,41 +96,47 @@ jobs:
           path: artifacts
 
       - name: Sign release artifacts
+        shell: pwsh
         env:
           SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
-        run: pwsh ./scripts/sign-release.ps1 -ArtifactsPath artifacts
+        run: ./scripts/sign-release.ps1 -ArtifactsPath artifacts
 
       - name: Package
+        shell: pwsh
         run: |
-          cd artifacts
-          zip -j mt-win-x64.zip win-x64/*
+          Push-Location artifacts
+          Compress-Archive -Path win-x64/* -DestinationPath mt-win-x64.zip -Force
           # tar -czvf mt-osx-arm64.tar.gz -C osx-arm64 .
           # tar -czvf mt-osx-x64.tar.gz -C osx-x64 .
           # tar -czvf mt-linux-x64.tar.gz -C linux-x64 .
 
-          echo "# SHA256 Checksums" > checksums.txt
-          for rid in win-x64; do
-            echo "## $rid" >> checksums.txt
-            cat $rid/SHA256SUMS.txt >> checksums.txt
-          done
-          cat checksums.txt
+          $checksums = "# SHA256 Checksums`n"
+          foreach ($rid in @('win-x64')) {
+            $checksums += "## $rid`n"
+            $checksums += (Get-Content "$rid/SHA256SUMS.txt" -Raw)
+          }
+          $checksums | Set-Content checksums.txt
+          Get-Content checksums.txt
+          Pop-Location
 
       - name: Get release notes
         id: notes
+        shell: pwsh
         run: |
-          TAG_BODY=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          echo "$TAG_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          $tagBody = git tag -l --format='%(contents:body)' ${{ github.ref_name }}
+          "body<<EOF" | Out-File -Append $env:GITHUB_OUTPUT
+          $tagBody | Out-File -Append $env:GITHUB_OUTPUT
+          "EOF" | Out-File -Append $env:GITHUB_OUTPUT
 
       - name: Detect prerelease
         id: prerelease
+        shell: pwsh
         run: |
-          if [[ "${{ github.ref_name }}" == *"-dev"* ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-          fi
+          if ("${{ github.ref_name }}" -match '-dev') {
+            "is_prerelease=true" | Out-File -Append $env:GITHUB_OUTPUT
+          } else {
+            "is_prerelease=false" | Out-File -Append $env:GITHUB_OUTPUT
+          }
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
