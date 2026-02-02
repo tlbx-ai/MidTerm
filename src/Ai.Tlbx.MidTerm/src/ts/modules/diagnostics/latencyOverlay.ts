@@ -2,11 +2,11 @@
  * Latency Overlay Module
  *
  * Floating overlay on the terminal showing real-time diagnostics:
- * output RTT, server ping, mthost ping, and scrollback buffer fill.
+ * output RTT, server ping, mthost ping, flush delay, and scrollback buffer fill.
  * Toggled via Settings > Diagnostics.
  */
 
-import { onOutputRtt, offOutputRtt, measureLatency } from '../comms/muxChannel';
+import { onOutputRtt, offOutputRtt, measureLatency, getLastFlushDelay } from '../comms/muxChannel';
 import { $activeSessionId } from '../../stores';
 import { sessionTerminals } from '../../state';
 
@@ -20,6 +20,7 @@ interface MetricElements {
   outputRtt: HTMLSpanElement;
   serverRtt: HTMLSpanElement;
   mthostRtt: HTMLSpanElement;
+  flushDelay: HTMLSpanElement;
   scrollback: HTMLSpanElement;
 }
 
@@ -68,6 +69,7 @@ function ensureOverlay(): void {
     { label: 'Out', id: 'outputRtt' },
     { label: 'Srv', id: 'serverRtt' },
     { label: 'Host', id: 'mthostRtt' },
+    { label: 'Flush', id: 'flushDelay' },
     { label: 'Buf', id: 'scrollback' },
   ] as const;
 
@@ -141,6 +143,12 @@ async function runPingAndScrollback(): Promise<void> {
   }
   if (result.mthostRtt !== null) {
     setMetric(metricEls.mthostRtt, result.mthostRtt);
+  }
+
+  const flushDelay = getLastFlushDelay();
+  if (flushDelay !== null) {
+    metricEls.flushDelay.textContent = `${flushDelay} ms`;
+    applyColor(metricEls.flushDelay, flushDelay < 5 ? 'good' : flushDelay < 50 ? 'warn' : 'bad');
   }
 }
 

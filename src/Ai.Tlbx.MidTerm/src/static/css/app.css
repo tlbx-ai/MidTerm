@@ -1017,7 +1017,7 @@ html, body {
 
 .latency-overlay-label {
     color: #888;
-    min-width: 32px;
+    min-width: 38px;
 }
 
 .latency-overlay-value {

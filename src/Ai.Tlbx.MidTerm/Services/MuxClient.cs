@@ -60,7 +60,7 @@ public sealed class MuxClient : IAsyncDisposable
     private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
-    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(20);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
@@ -78,6 +78,7 @@ public sealed class MuxClient : IAsyncDisposable
     private volatile string? _activeSessionId;
     private volatile bool _flushSuspended;
     private int _droppedFrameCount;
+    private readonly Dictionary<string, int> _lastFlushDelayMs = new();
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
@@ -97,6 +98,7 @@ public sealed class MuxClient : IAsyncDisposable
         public int LastCols { get; set; }
         public int LastRows { get; set; }
         public long LastFlushTicks { get; set; } = Environment.TickCount64;
+        public long QueuedAtTicks { get; set; }
         public int DroppedBytes { get; set; }
 
         public SessionBuffer()
@@ -211,6 +213,11 @@ public sealed class MuxClient : IAsyncDisposable
         _activeSessionId = sessionId;
     }
 
+    public int GetFlushDelay(string sessionId)
+    {
+        return _lastFlushDelayMs.TryGetValue(sessionId, out var delay) ? delay : -1;
+    }
+
     /// <summary>
     /// Suspend flushing — ProcessLoop continues draining into buffers but won't send.
     /// Used during buffer replay to prevent live output from interleaving with replay frames.
@@ -311,6 +318,10 @@ public sealed class MuxClient : IAsyncDisposable
                 _sessionBuffers[item.SessionId] = buffer;
             }
 
+            if (buffer.TotalBytes == 0)
+            {
+                buffer.QueuedAtTicks = Environment.TickCount64;
+            }
             buffer.Write(item.Buffer.Span);
             buffer.LastCols = item.Cols;
             buffer.LastRows = item.Rows;
@@ -346,6 +357,7 @@ public sealed class MuxClient : IAsyncDisposable
 
             if (shouldFlush)
             {
+                _lastFlushDelayMs[sessionId] = (int)(nowTicks - buffer.QueuedAtTicks);
                 await FlushBufferAsync(sessionId, buffer).ConfigureAwait(false);
                 buffer.LastFlushTicks = nowTicks;
             }

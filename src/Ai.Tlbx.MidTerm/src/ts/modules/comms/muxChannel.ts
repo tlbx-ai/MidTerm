@@ -178,8 +178,14 @@ let lastOutputRtt: number | null = null;
 type OutputRttListener = (sessionId: string, rtt: number) => void;
 const outputRttListeners = new Set<OutputRttListener>();
 
+let lastFlushDelayMs: number | null = null;
+
 export function getLastOutputRtt(): number | null {
   return lastOutputRtt;
+}
+
+export function getLastFlushDelay(): number | null {
+  return lastFlushDelayMs;
 }
 
 export function onOutputRtt(cb: OutputRttListener | null): void {
@@ -206,6 +212,9 @@ function measureOutputRtt(sessionId: string): void {
     }
   }
 }
+
+// Track last hinted session to avoid redundant hints
+let lastHintedSessionId: string | null = null;
 
 // Forward declarations for functions from other modules
 let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
@@ -556,6 +565,10 @@ export function connectMuxWebSocket(): void {
         const timestampBytes = payload.slice(1, 9);
         const timestamp = new Float64Array(timestampBytes.buffer, timestampBytes.byteOffset, 1)[0]!;
         const rtt = performance.now() - timestamp;
+        // Server pong (mode 0) includes flush delay as uint16 LE after timestamp
+        if (pongMode === 0 && payload.length >= 11) {
+          lastFlushDelayMs = payload[9]! | (payload[10]! << 8);
+        }
         pongCallback(pongMode, rtt);
       }
     } else if (type === MUX_TYPE_DATA_LOSS) {
@@ -573,6 +586,7 @@ export function connectMuxWebSocket(): void {
 
   ws.onclose = (event) => {
     $muxWsConnected.set(false);
+    lastHintedSessionId = null;
 
     // Log close reason
     if (event.code === WS_CLOSE_SERVER_SHUTDOWN) {
@@ -609,6 +623,11 @@ export function sendInput(sessionId: string, data: string): void {
       pendingInputQueue.push({ sessionId, data });
     }
     return;
+  }
+
+  if (sessionId !== lastHintedSessionId) {
+    sendActiveSessionHint(sessionId);
+    lastHintedSessionId = sessionId;
   }
 
   recordInputTimestamp(sessionId);
