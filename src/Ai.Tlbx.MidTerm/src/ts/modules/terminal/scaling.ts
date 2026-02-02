@@ -20,6 +20,7 @@ import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
 import { $currentSettings, getSession } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise } from './manager';
+import { isDevMode } from '../sidebar/voiceSection';
 
 const SCALE_TOLERANCE = 0.97;
 
@@ -466,28 +467,35 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     xterm.style.transformOrigin = 'top left';
     container.classList.add('scaled');
 
-    // Add clickable overlay if not present
     if (!overlay) {
       overlay = document.createElement('button');
       overlay.className = 'scaled-overlay';
-      overlay.innerHTML = `${icon('resize')} Scaled view - click to resize`;
       overlay.addEventListener('click', () => {
-        // Get sessionId from container ID (format: "terminal-{sessionId}")
         const sessionId = container.id.replace('terminal-', '');
         if (!sessionId) return;
-
-        // Check if session is in a layout pane
         const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
         if (layoutPane) {
-          // Fit to the layout pane
           fitTerminalToContainer(sessionId, layoutPane);
         } else {
-          // Fit to full screen
           fitSessionToScreen(sessionId);
         }
       });
       container.appendChild(overlay);
     }
+
+    const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+    let diagHtml = '';
+    if (isDevMode() && screen) {
+      const cols = state.terminal.cols;
+      const rows = state.terminal.rows;
+      const cellW = (screen.offsetWidth / cols).toFixed(2);
+      const cellH = (screen.offsetHeight / rows).toFixed(2);
+      const termPx = `${screen.offsetWidth}×${screen.offsetHeight}`;
+      const containerPx = `${container.clientWidth}×${container.clientHeight}`;
+      const scaleTxt = scale.toPrecision(5);
+      diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
+    }
+    overlay.innerHTML = `${icon('resize')} Scaled view - click to resize${diagHtml}`;
   } else {
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
