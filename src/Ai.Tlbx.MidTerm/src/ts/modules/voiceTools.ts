@@ -9,12 +9,20 @@ import { createLogger } from './logging';
 import { sendInput } from './comms/muxChannel';
 import { sessionTerminals } from '../state';
 import { $sessionList, $activeSessionId, $updateInfo, getSession } from '../stores';
+import {
+  createSession as apiCreateSession,
+  deleteSession as apiDeleteSession,
+  getHistory,
+} from '../api/client';
 import type {
   VoiceToolRequest,
   VoiceToolResponse,
   MakeInputArgs,
   ReadScrollbackArgs,
   InteractiveReadArgs,
+  CreateSessionArgs,
+  CloseSessionArgs,
+  BookmarksArgs,
   StateOfThingsResult,
   VoiceSessionState,
   MakeInputResult,
@@ -68,6 +76,59 @@ function getTerminalViewport(sessionId: string): string {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Named key map for {Key} syntax expansion.
+ * Maps case-insensitive key names to terminal escape sequences.
+ */
+const NAMED_KEYS: Record<string, string> = {
+  enter: '\r',
+  tab: '\t',
+  escape: '\x1b',
+  esc: '\x1b',
+  backspace: '\x7f',
+  delete: '\x1b[3~',
+  up: '\x1b[A',
+  down: '\x1b[B',
+  right: '\x1b[C',
+  left: '\x1b[D',
+  home: '\x1b[H',
+  end: '\x1b[F',
+  pageup: '\x1b[5~',
+  pagedown: '\x1b[6~',
+  space: ' ',
+  'shift+tab': '\x1b[Z',
+};
+
+/**
+ * Expand {Key} named syntax into terminal escape sequences.
+ * Supports: {Enter}, {Ctrl+C}, {Alt+F}, {Shift+Tab}, etc.
+ * Unrecognized keys are left as-is (literal text).
+ */
+function expandNamedKeys(text: string): string {
+  return text.replace(/\{([^}]+)\}/g, (match, keyName: string) => {
+    const lower = keyName.toLowerCase().trim();
+
+    if (NAMED_KEYS[lower] !== undefined) {
+      return NAMED_KEYS[lower]!;
+    }
+
+    const ctrlMatch = lower.match(/^ctrl\+([a-z])$/);
+    if (ctrlMatch) {
+      const code = ctrlMatch[1]!.charCodeAt(0) - 96;
+      return String.fromCharCode(code);
+    }
+
+    const altMatch = lower.match(/^alt\+(.+)$/);
+    if (altMatch) {
+      const altKey = altMatch[1]!;
+      if (altKey === 'enter') return '\x1b\r';
+      if (altKey.length === 1) return '\x1b' + altKey;
+    }
+
+    return match;
+  });
 }
 
 /**
@@ -137,7 +198,7 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
     };
   }
 
-  const parsedText = parseEscapeSequences(text);
+  const parsedText = parseEscapeSequences(expandNamedKeys(text));
   sendInput(sessionId, parsedText);
 
   await sleep(delayMs);
@@ -218,7 +279,7 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
       switch (op.type) {
         case 'input':
           if (op.data) {
-            const parsed = parseEscapeSequences(op.data);
+            const parsed = parseEscapeSequences(expandNamedKeys(op.data));
             sendInput(sessionId, parsed);
           }
           results.push({ index: i, success: true });
@@ -250,6 +311,122 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
 }
 
 /**
+ * Handle create_session tool - create a new terminal session.
+ */
+async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
+  const sessions = $sessionList.get();
+  const refSession = sessions[0];
+  const cols = refSession?.cols ?? 120;
+  const rows = refSession?.rows ?? 30;
+
+  const { data, error } = await apiCreateSession({
+    cols,
+    rows,
+    shell: args.shellType ?? null,
+    workingDirectory: args.workingDirectory ?? null,
+  });
+
+  if (error || !data?.id) {
+    return { success: false, error: error ?? 'Failed to create session' };
+  }
+
+  return { success: true, sessionId: data.id, shell: data.shellType ?? null };
+}
+
+/**
+ * Handle close_session tool - close a terminal session.
+ */
+async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return { success: false, error: `Session ${args.sessionId} not found` };
+  }
+
+  const { error } = await apiDeleteSession(args.sessionId);
+  if (error) {
+    return { success: false, error: String(error) };
+  }
+
+  return { success: true };
+}
+
+/**
+ * Handle bookmarks tool - list or launch bookmarks (starred history entries).
+ */
+async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
+  if (args.action === 'list') {
+    const { data, error } = await getHistory();
+    if (error || !data) {
+      return { success: false, error: error ?? 'Failed to fetch history' };
+    }
+
+    const starred = (data as Array<Record<string, unknown>>).filter((e) => e.isStarred === true);
+
+    return {
+      success: true,
+      bookmarks: starred.map((e) => ({
+        id: e.id,
+        shellType: e.shellType,
+        executable: e.executable,
+        commandLine: e.commandLine,
+        workingDirectory: e.workingDirectory,
+      })),
+    };
+  }
+
+  if (args.action === 'launch') {
+    if (!args.bookmarkId) {
+      return { success: false, error: 'bookmarkId is required for launch action' };
+    }
+
+    const { data: historyData, error: historyError } = await getHistory();
+    if (historyError || !historyData) {
+      return { success: false, error: historyError ?? 'Failed to fetch history' };
+    }
+
+    const entries = historyData as Array<Record<string, unknown>>;
+    const bookmark = entries.find((e) => e.id === args.bookmarkId && e.isStarred === true);
+    if (!bookmark) {
+      return { success: false, error: `Bookmark ${args.bookmarkId} not found` };
+    }
+
+    const sessions = $sessionList.get();
+    const refSession = sessions[0];
+    const cols = refSession?.cols ?? 120;
+    const rows = refSession?.rows ?? 30;
+
+    const { data: sessionData, error: sessionError } = await apiCreateSession({
+      cols,
+      rows,
+      shell: (bookmark.shellType as string) || null,
+      workingDirectory: (bookmark.workingDirectory as string) || null,
+    });
+
+    if (sessionError || !sessionData?.id) {
+      return { success: false, error: sessionError ?? 'Failed to create session' };
+    }
+
+    const commandLine = bookmark.commandLine as string | null;
+    if (commandLine) {
+      await sleep(300);
+      sendInput(sessionData.id, commandLine + '\r');
+    }
+
+    return {
+      success: true,
+      sessionId: sessionData.id,
+      launched: {
+        executable: bookmark.executable,
+        commandLine: bookmark.commandLine,
+        workingDirectory: bookmark.workingDirectory,
+      },
+    };
+  }
+
+  return { success: false, error: `Unknown action: ${args.action}. Use 'list' or 'launch'.` };
+}
+
+/**
  * Process a tool request from the voice server.
  * Returns a tool response to send back.
  */
@@ -274,6 +451,18 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
 
       case 'interactive_read':
         result = await handleInteractiveRead(request.args as unknown as InteractiveReadArgs);
+        break;
+
+      case 'create_session':
+        result = await handleCreateSession(request.args as unknown as CreateSessionArgs);
+        break;
+
+      case 'close_session':
+        result = await handleCloseSession(request.args as unknown as CloseSessionArgs);
+        break;
+
+      case 'bookmarks':
+        result = await handleBookmarks(request.args as unknown as BookmarksArgs);
         break;
 
       default:

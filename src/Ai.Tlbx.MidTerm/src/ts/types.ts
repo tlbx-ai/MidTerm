@@ -226,7 +226,10 @@ export type VoiceToolName =
   | 'state_of_things'
   | 'make_input'
   | 'read_scrollback'
-  | 'interactive_read';
+  | 'interactive_read'
+  | 'create_session'
+  | 'close_session'
+  | 'bookmarks';
 
 /** Tool request from voice server to browser */
 export interface VoiceToolRequest {
@@ -332,6 +335,24 @@ export interface InteractiveOpResult {
   index: number;
   success: boolean;
   screenshot?: string;
+}
+
+/** Args for create_session tool */
+export interface CreateSessionArgs {
+  shellType?: string;
+  workingDirectory?: string;
+}
+
+/** Args for close_session tool */
+export interface CloseSessionArgs {
+  sessionId: string;
+  justification: string;
+}
+
+/** Args for bookmarks tool */
+export interface BookmarksArgs {
+  action: string;
+  bookmarkId?: string;
 }
 
 /** Pending tool confirmation request */
