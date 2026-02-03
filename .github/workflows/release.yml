@@ -15,18 +15,18 @@ jobs:
     strategy:
       matrix:
         include:
-          # - os: macos-14
-          #   rid: osx-arm64
-          #   ext: ''
-          # - os: macos-14
-          #   rid: osx-x64
-          #   ext: ''
-          - os: [self-hosted, Windows, X64]
+          - os: macos-14
+            rid: osx-arm64
+            ext: ''
+          - os: macos-14
+            rid: osx-x64
+            ext: ''
+          - os: windows-latest
             rid: win-x64
             ext: '.exe'
-          # - os: ubuntu-latest
-          #   rid: linux-x64
-          #   ext: ''
+          - os: ubuntu-latest
+            rid: linux-x64
+            ext: ''
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -58,22 +58,21 @@ jobs:
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Stage artifacts
-        shell: pwsh
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Path staging -Force | Out-Null
-          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }}" staging/
-          Copy-Item "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }}" staging/
-          Copy-Item version.json staging/
+          mkdir -p staging
+          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/
+          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
+          cp version.json staging/
 
-          Push-Location staging
-          $hashes = @("mt${{ matrix.ext }}", "mthost${{ matrix.ext }}") | ForEach-Object {
-            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
-            "$hash  $_"
-          }
-          $hashes | Set-Content SHA256SUMS.txt
-          Write-Host "=== ${{ matrix.rid }} ==="
-          Get-Content SHA256SUMS.txt
-          Pop-Location
+          cd staging
+          if command -v sha256sum &> /dev/null; then
+            sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+          else
+            shasum -a 256 mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+          fi
+          echo "=== ${{ matrix.rid }} ==="
+          cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -82,7 +81,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -96,47 +95,41 @@ jobs:
           path: artifacts
 
       - name: Sign release artifacts
-        shell: pwsh
         env:
           SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
-        run: ./scripts/sign-release.ps1 -ArtifactsPath artifacts
+        run: pwsh ./scripts/sign-release.ps1 -ArtifactsPath artifacts
 
       - name: Package
-        shell: pwsh
         run: |
-          Push-Location artifacts
-          Compress-Archive -Path win-x64/* -DestinationPath mt-win-x64.zip -Force
-          # tar -czvf mt-osx-arm64.tar.gz -C osx-arm64 .
-          # tar -czvf mt-osx-x64.tar.gz -C osx-x64 .
-          # tar -czvf mt-linux-x64.tar.gz -C linux-x64 .
+          cd artifacts
+          zip -j mt-win-x64.zip win-x64/*
+          tar -czvf mt-osx-arm64.tar.gz -C osx-arm64 .
+          tar -czvf mt-osx-x64.tar.gz -C osx-x64 .
+          tar -czvf mt-linux-x64.tar.gz -C linux-x64 .
 
-          $checksums = "# SHA256 Checksums`n"
-          foreach ($rid in @('win-x64')) {
-            $checksums += "## $rid`n"
-            $checksums += (Get-Content "$rid/SHA256SUMS.txt" -Raw)
-          }
-          $checksums | Set-Content checksums.txt
-          Get-Content checksums.txt
-          Pop-Location
+          echo "# SHA256 Checksums" > checksums.txt
+          for rid in win-x64 osx-arm64 osx-x64 linux-x64; do
+            echo "## $rid" >> checksums.txt
+            cat $rid/SHA256SUMS.txt >> checksums.txt
+          done
+          cat checksums.txt
 
       - name: Get release notes
         id: notes
-        shell: pwsh
         run: |
-          $tagBody = git tag -l --format='%(contents:body)' ${{ github.ref_name }}
-          "body<<EOF" | Out-File -Append $env:GITHUB_OUTPUT
-          $tagBody | Out-File -Append $env:GITHUB_OUTPUT
-          "EOF" | Out-File -Append $env:GITHUB_OUTPUT
+          TAG_BODY=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAG_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Detect prerelease
         id: prerelease
-        shell: pwsh
         run: |
-          if ("${{ github.ref_name }}" -match '-dev') {
-            "is_prerelease=true" | Out-File -Append $env:GITHUB_OUTPUT
-          } else {
-            "is_prerelease=false" | Out-File -Append $env:GITHUB_OUTPUT
-          }
+          if [[ "${{ github.ref_name }}" == *"-dev"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -146,5 +139,8 @@ jobs:
             ## What's Changed
             ${{ steps.notes.outputs.body }}
           files: |
+            artifacts/mt-osx-arm64.tar.gz
+            artifacts/mt-osx-x64.tar.gz
             artifacts/mt-win-x64.zip
+            artifacts/mt-linux-x64.tar.gz
             artifacts/checksums.txt
