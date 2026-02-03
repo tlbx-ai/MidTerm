@@ -40,7 +40,6 @@ public static class Program
 #endif
 
     private const int HeartbeatIntervalMs = 5000;
-    private const int ReadTimeoutMs = 10000;
     private const int HandshakeTimeoutMs = 10000;
     private const int MinScrollbackBytes = 64 * 1024;
     private const int MaxScrollbackBytes = 64 * 1024 * 1024;
@@ -376,12 +375,9 @@ public static class Program
             {
                 try
                 {
-                    lock (outputLock)
+                    if (!Volatile.Read(ref handshakeComplete))
                     {
-                        if (!handshakeComplete)
-                        {
-                            return;
-                        }
+                        return;
                     }
 
                     if (client.IsConnected)
@@ -943,7 +939,7 @@ internal sealed class TerminalSession : IDisposable
 
     public async Task StartReadLoopAsync(CancellationToken ct)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(8192);
+        var buffer = ArrayPool<byte>.Shared.Rent(65536);
         try
         {
             while (!ct.IsCancellationRequested)

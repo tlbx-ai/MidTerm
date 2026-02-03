@@ -143,8 +143,8 @@ public sealed class UnixPty : IPtyConnection
         // Use a single SafeFileHandle for both streams to avoid double-close risk
         // ownsHandle: false because we manage the FD lifecycle manually with close()
         _masterHandle = new Microsoft.Win32.SafeHandles.SafeFileHandle((IntPtr)_masterFd, ownsHandle: false);
-        _writerStream = new FileStream(_masterHandle, FileAccess.Write, bufferSize: 16384, isAsync: false);
-        _readerStream = new FileStream(_masterHandle, FileAccess.Read, bufferSize: 16384, isAsync: false);
+        _writerStream = new FileStream(_masterHandle, FileAccess.Write, bufferSize: 16384, isAsync: true);
+        _readerStream = new FileStream(_masterHandle, FileAccess.Read, bufferSize: 16384, isAsync: true);
 
         // Self-invoke mthost in PTY exec mode (unified for macOS and Linux)
         // mthost --pty-exec <slave-path> <shell> [shell-args...]

@@ -80,7 +80,10 @@ try {
         $sigFile = [System.IO.Path]::GetTempFileName()
         try {
             $checksumJson | Set-Content $msgFile -NoNewline -Encoding UTF8
-            & openssl dgst -sha256 -sign $keyFile -out $sigFile $msgFile
+            $opensslCmd = if (Get-Command openssl -ErrorAction SilentlyContinue) { 'openssl' }
+                          elseif (Test-Path 'C:\Program Files\Git\usr\bin\openssl.exe') { 'C:\Program Files\Git\usr\bin\openssl.exe' }
+                          else { throw 'openssl not found' }
+            & $opensslCmd dgst -sha256 -sign $keyFile -out $sigFile $msgFile
             if ($LASTEXITCODE -ne 0) { throw "openssl signing failed" }
             $signature = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($sigFile))
         } finally {
