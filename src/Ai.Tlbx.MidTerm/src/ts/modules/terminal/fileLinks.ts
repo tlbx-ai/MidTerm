@@ -133,9 +133,9 @@ const FOLDER_PATH_PATTERN = /((?:\.\.?[/\\])?(?:[\w.@-]+[/\\])+)/;
 
 /**
  * Well-known files without extensions that should be detected as clickable links.
- * Checked via matchCallback to avoid false positives on arbitrary words.
+ * The regex is built from this list so only exact filenames match (no broad patterns).
  */
-const KNOWN_EXTENSIONLESS_FILES = new Set([
+const KNOWN_EXTENSIONLESS_LIST = [
   'Dockerfile',
   'Makefile',
   'Vagrantfile',
@@ -170,13 +170,17 @@ const KNOWN_EXTENSIONLESS_FILES = new Set([
   '.eslintrc',
   '.babelrc',
   '.browserslistrc',
-]);
+];
+
+const KNOWN_FILE_NAMES_ALTERNATION = KNOWN_EXTENSIONLESS_LIST.map((f) =>
+  f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+).join('|');
 
 /**
- * Pattern for extensionless known files - matches word/dot sequences.
- * The matchCallback validates against KNOWN_EXTENSIONLESS_FILES.
+ * Pattern for extensionless known files - only matches exact known filenames,
+ * optionally preceded by a directory path (e.g., src/Dockerfile).
  */
-const KNOWN_FILE_PATTERN = /((?:[\w.@-]+[/\\])*\.?[\w][\w.-]*)/;
+const KNOWN_FILE_PATTERN = new RegExp(`((?:[\\w.@-]+[/\\\\])*(?:${KNOWN_FILE_NAMES_ALTERNATION}))`);
 
 /** Cache for resolved relative paths: key = "sessionId:relativePath" */
 const resolveCache = new Map<string, { response: FileResolveResponse; expires: number }>();
@@ -653,19 +657,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
           const path = match[1];
-          if (!path) {
-            callback(undefined);
-            return;
-          }
-
-          if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
-            callback(undefined);
-            return;
-          }
-
-          const parts = path.split(/[/\\]/);
-          const filename = parts[parts.length - 1] ?? '';
-          if (!KNOWN_EXTENSIONLESS_FILES.has(filename)) {
+          if (!path || path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
             callback(undefined);
             return;
           }
