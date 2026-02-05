@@ -612,8 +612,8 @@ export function connectMuxWebSocket(): void {
     } else if (type === MUX_TYPE_PONG) {
       if (payload.length >= 9 && pongCallback) {
         const pongMode = payload[0]!;
-        const timestampBytes = new Uint8Array(payload.buffer, payload.byteOffset + 1, 8);
-        const timestamp = new Float64Array(timestampBytes.buffer, timestampBytes.byteOffset, 1)[0]!;
+        const timestampBytes = payload.slice(1, 9); // must copy — Float64Array needs 8-byte alignment
+        const timestamp = new Float64Array(timestampBytes.buffer)[0]!;
         const rtt = performance.now() - timestamp;
         // Server pong (mode 0) includes diagnostics: [flushDelay:2][serverRtt:2]
         if (pongMode === 0 && payload.length >= 13) {
