@@ -464,9 +464,13 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
 
   if (scale < 1) {
-    // Use transform: scale() with explicit transform-origin for predictable behavior
-    xterm.style.transform = `scale(${scale})`;
-    xterm.style.transformOrigin = 'top left';
+    // Center the scaled terminal within the available space
+    const visualWidth = termWidth * scale;
+    const visualHeight = termHeight * scale;
+    const offsetX = Math.max(0, (availWidth - visualWidth) / 2);
+    const offsetY = Math.max(0, (availHeight - visualHeight) / 2);
+    xterm.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    xterm.style.transformOrigin = '0 0';
     container.classList.add('scaled');
 
     if (!overlay) {

@@ -412,8 +412,10 @@ html, body {
     display: none;
 }
 
-.session-item:hover .drag-handle {
-    opacity: 1;
+@media (hover: hover) {
+    .session-item:hover .drag-handle {
+        opacity: 1;
+    }
 }
 
 .session-item.dragging .drag-handle {
@@ -443,9 +445,11 @@ html, body {
     transition: transform 0.2s ease;
 }
 
-.session-item:hover {
-    background-color: var(--bg-session-hover);
-    transform: translateX(2px);
+@media (hover: hover) {
+    .session-item:hover {
+        background-color: var(--bg-session-hover);
+        transform: translateX(2px);
+    }
 }
 
 .session-item.active {
@@ -770,9 +774,11 @@ html, body {
     transition: opacity 0.15s;
 }
 
-.session-item:hover .session-actions {
-    opacity: 1;
-    pointer-events: auto;
+@media (hover: hover) {
+    .session-item:hover .session-actions {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }
 
 .session-item.active .session-actions {
@@ -832,8 +838,10 @@ html, body {
     transition: opacity 0.15s;
 }
 
-.session-item:hover .session-action-hint {
-    opacity: 0;
+@media (hover: hover) {
+    .session-item:hover .session-action-hint {
+        opacity: 0;
+    }
 }
 
 .session-name {
@@ -948,13 +956,15 @@ html, body {
     flex-shrink: 0;
 }
 
-.session-item:hover .close-session-btn {
-    opacity: 1;
-}
+@media (hover: hover) {
+    .session-item:hover .close-session-btn {
+        opacity: 1;
+    }
 
-.close-session-btn:hover {
-    background-color: var(--accent-red);
-    color: white;
+    .close-session-btn:hover {
+        background-color: var(--accent-red);
+        color: white;
+    }
 }
 
 /* Main content */
