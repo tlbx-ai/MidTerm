@@ -6,13 +6,7 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import {
-  THEMES,
-  MOBILE_BREAKPOINT,
-  TERMINAL_FONT_STACK,
-  ACTIVE_SCROLLBACK,
-  BACKGROUND_SCROLLBACK,
-} from '../../constants';
+import { THEMES, MOBILE_BREAKPOINT, TERMINAL_FONT_STACK } from '../../constants';
 import {
   sessionTerminals,
   pendingOutputFrames,
@@ -615,22 +609,6 @@ export function destroyTerminalForSession(sessionId: string): void {
   sessionTerminals.delete(sessionId);
   pendingOutputFrames.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
-}
-
-/**
- * Adjust terminal scrollback based on active/background state.
- * Active terminals get full scrollback, background terminals get reduced
- * scrollback to save memory when many terminals are open.
- */
-export function setTerminalScrollback(sessionId: string, isActive: boolean): void {
-  const state = sessionTerminals.get(sessionId);
-  if (!state?.terminal) return;
-
-  const scrollback = isActive
-    ? ($currentSettings.get()?.scrollbackLines ?? ACTIVE_SCROLLBACK)
-    : BACKGROUND_SCROLLBACK;
-
-  state.terminal.options.scrollback = scrollback;
 }
 
 // WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin

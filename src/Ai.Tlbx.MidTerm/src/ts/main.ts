@@ -20,6 +20,8 @@ import {
   sendResize,
   requestBufferRefresh,
   sendActiveSessionHint,
+  isSessionStale,
+  clearStaleSession,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -40,7 +42,6 @@ import {
   scrollToBottom,
   focusActiveTerminal,
   calculateOptimalDimensions,
-  setTerminalScrollback,
 } from './modules/terminal';
 import {
   updateEmptyState,
@@ -451,7 +452,6 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     if (!isSessionInLayout(id)) {
       state.container.classList.add('hidden');
     }
-    setTerminalScrollback(id, id === sessionId);
   });
 
   $activeSessionId.set(sessionId);
@@ -461,11 +461,20 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
 
+  // If output was skipped while this session was in background, resync from server
+  if (isSessionStale(sessionId)) {
+    clearStaleSession(sessionId);
+    if (state.opened) {
+      state.terminal.clear();
+      state.terminal.write('\x1b[0m');
+    }
+    requestBufferRefresh(sessionId);
+  }
+
   // Only show if not in layout (layout handles visibility)
   if (!isLayoutActive()) {
     state.container.classList.remove('hidden');
   }
-  setTerminalScrollback(sessionId, true);
 
   requestAnimationFrame(() => {
     state.terminal.focus();

@@ -234,8 +234,14 @@ export function registerMuxCallbacks(callbacks: {
 }
 
 // =============================================================================
-// Strictly Ordered Output Queue
+// Priority Output Queue
 // =============================================================================
+//
+// Active session frames are processed first (tight loop, minimum latency).
+// Background session frames are processed with periodic yielding to keep
+// the browser responsive (keyboard input, paint, rAF).
+// Per-session ordering is preserved; cross-session reordering is safe since
+// each session has its own xterm instance.
 
 interface OutputFrameItem {
   sessionId: string;
@@ -245,17 +251,24 @@ interface OutputFrameItem {
 
 const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
-// Compact array when this many items have been processed (amortizes O(n) splice cost)
 const COMPACT_THRESHOLD = 1000;
+const YIELD_BUDGET_MS = 8;
+const STALE_QUEUE_DEPTH = 50;
 
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
 let queueIndex = 0;
 
-/**
- * Compact the queue by removing processed items.
- * Called periodically to bound memory usage during high throughput.
- */
+const staleSessions = new Set<string>();
+
+export function isSessionStale(sessionId: string): boolean {
+  return staleSessions.has(sessionId);
+}
+
+export function clearStaleSession(sessionId: string): void {
+  staleSessions.delete(sessionId);
+}
+
 function compactQueue(): void {
   if (queueIndex > 0) {
     outputQueue.splice(0, queueIndex);
@@ -263,11 +276,10 @@ function compactQueue(): void {
   }
 }
 
-/**
- * Queue an output frame and trigger processing.
- * ALL frames go through this queue to guarantee strict ordering.
- * Drops oldest unprocessed frames when queue is full to prevent OOM.
- */
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const pendingCount = outputQueue.length - queueIndex;
   if (pendingCount >= MAX_QUEUE_SIZE) {
@@ -275,12 +287,10 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
     log.warn(
       () => `Output queue full, dropping oldest frame for session ${droppedItem?.sessionId}`,
     );
-    // Notify UI of data loss
     if (droppedItem) {
       $dataLossDetected.set({ sessionId: droppedItem.sessionId, timestamp: Date.now() });
     }
-    queueIndex++; // Skip oldest unprocessed frame
-    // Compact to actually free memory
+    queueIndex++;
     if (queueIndex >= COMPACT_THRESHOLD) {
       compactQueue();
     }
@@ -289,26 +299,38 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   processOutputQueue();
 }
 
-/**
- * Process output frames strictly in order.
- * Frames are processed one at a time - compressed frames block until decompressed.
- * Uses cursor-based indexing with periodic compaction for O(1) amortized dequeue.
- */
 async function processOutputQueue(): Promise<void> {
   if (processingQueue) return;
   processingQueue = true;
 
   try {
     while (queueIndex < outputQueue.length) {
-      const item = outputQueue[queueIndex++]!;
-      await processOneFrame(item);
+      const activeId = $activeSessionId.get();
 
-      // Compact periodically to bound memory during sustained high throughput
-      if (queueIndex >= COMPACT_THRESHOLD) {
-        compactQueue();
+      // Phase 1: process active session frames immediately (low latency)
+      while (queueIndex < outputQueue.length) {
+        const item = outputQueue[queueIndex];
+        if (!item || item.sessionId !== activeId) break;
+        queueIndex++;
+        await processOneFrame(item);
+        if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
+      }
+
+      // Phase 2: process background frames with yielding
+      let batchStart = performance.now();
+      while (queueIndex < outputQueue.length) {
+        const item = outputQueue[queueIndex];
+        if (item && item.sessionId === $activeSessionId.get()) break;
+        queueIndex++;
+        if (item) await processOneFrame(item);
+        if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
+
+        if (performance.now() - batchStart > YIELD_BUDGET_MS) {
+          await yieldToMain();
+          batchStart = performance.now();
+        }
       }
     }
-    // Clear any remaining processed items
     outputQueue.length = 0;
     queueIndex = 0;
   } finally {
@@ -321,6 +343,14 @@ async function processOutputQueue(): Promise<void> {
  */
 async function processOneFrame(item: OutputFrameItem): Promise<void> {
   try {
+    // When queue is backed up, skip background sessions entirely.
+    // They'll get a fresh buffer replay when activated.
+    const pendingCount = outputQueue.length - queueIndex;
+    if (item.sessionId !== $activeSessionId.get() && pendingCount > STALE_QUEUE_DEPTH) {
+      staleSessions.add(item.sessionId);
+      return;
+    }
+
     let cols: number;
     let rows: number;
     let data: Uint8Array;

@@ -134,12 +134,6 @@ export const TERMINAL_PADDING = 8;
 /** Reserved space for xterm's overlay scrollbar (0 = scrollbar overlays text) */
 export const SCROLLBAR_WIDTH = 0;
 
-/** Default scrollback for active terminal (uses user setting or this default) */
-export const ACTIVE_SCROLLBACK = 10000;
-
-/** Reduced scrollback for background terminals to save memory */
-export const BACKGROUND_SCROLLBACK = 1000;
-
 /** Minimum terminal columns */
 export const MIN_TERMINAL_COLS = 10;
 
