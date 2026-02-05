@@ -71,6 +71,7 @@ public sealed class TtyHostMuxConnectionManager
 
         if (!_outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, cols, rows, shared)))
         {
+            Log.Warn(() => $"[MuxManager] Output queue full, dropping frame for {sessionId} ({data.Length} bytes)");
             shared.Release();
         }
     }

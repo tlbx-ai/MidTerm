@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Channels;
@@ -60,8 +61,8 @@ public sealed class MuxClient : IAsyncDisposable
     private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
-    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(30);
-    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(5);
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
+    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(2);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<OutputItem> _inputChannel;
@@ -97,7 +98,7 @@ public sealed class MuxClient : IAsyncDisposable
         public int TotalBytes => _position;
         public int LastCols { get; set; }
         public int LastRows { get; set; }
-        public long LastFlushTicks { get; set; } = Environment.TickCount64;
+        public long LastFlushTicks { get; set; } = Stopwatch.GetTimestamp();
         public long QueuedAtTicks { get; set; }
         public int DroppedBytes { get; set; }
 
@@ -193,9 +194,9 @@ public sealed class MuxClient : IAsyncDisposable
         if (queueCount >= MaxQueuedItems - 1)
         {
             var newCount = Interlocked.Increment(ref _droppedFrameCount);
-            if (newCount == 1)
+            if (newCount == 1 || newCount % 100 == 0)
             {
-                Log.Warn(() => $"[MuxClient] {Id}: Input queue full, dropping items");
+                Log.Warn(() => $"[MuxClient] {Id}: Input queue full, {newCount} total drops");
             }
         }
 
@@ -277,7 +278,7 @@ public sealed class MuxClient : IAsyncDisposable
                 }
 
                 // 3. Flush what's due (active immediately, background if threshold/time)
-                var now = Environment.TickCount64;
+                var now = Stopwatch.GetTimestamp();
                 await FlushDueBuffersAsync(now).ConfigureAwait(false);
 
                 // 4. Wait for more data OR timeout (to check time-based flushes)
@@ -321,7 +322,7 @@ public sealed class MuxClient : IAsyncDisposable
 
             if (buffer.TotalBytes == 0)
             {
-                buffer.QueuedAtTicks = Environment.TickCount64;
+                buffer.QueuedAtTicks = Stopwatch.GetTimestamp();
             }
             buffer.Write(item.Buffer.Span);
             buffer.LastCols = item.Cols;
@@ -344,7 +345,12 @@ public sealed class MuxClient : IAsyncDisposable
             && _sessionBuffers.TryGetValue(activeId, out var activeBuffer)
             && activeBuffer.TotalBytes > 0)
         {
-            _lastFlushDelayMs[activeId] = (int)(nowTicks - activeBuffer.QueuedAtTicks);
+            var delayMs = (int)Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
+            _lastFlushDelayMs[activeId] = delayMs;
+            if (delayMs > 50)
+            {
+                Log.Warn(() => $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms");
+            }
             await FlushBufferAsync(activeId, activeBuffer, compress: false).ConfigureAwait(false);
             activeBuffer.LastFlushTicks = nowTicks;
         }
@@ -354,11 +360,11 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (buffer.TotalBytes == 0 || sessionId == activeId) continue;
 
-            var elapsedMs = nowTicks - buffer.LastFlushTicks;
+            var elapsed = Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
             if (buffer.TotalBytes >= FlushThresholdBytes
-                || elapsedMs >= (long)FlushInterval.TotalMilliseconds)
+                || elapsed >= FlushInterval)
             {
-                _lastFlushDelayMs[sessionId] = (int)(nowTicks - buffer.QueuedAtTicks);
+                _lastFlushDelayMs[sessionId] = (int)Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
                 await FlushBufferAsync(sessionId, buffer, compress: true).ConfigureAwait(false);
                 buffer.LastFlushTicks = nowTicks;
             }

@@ -61,8 +61,26 @@ import {
 
 const log = createLogger('mux');
 
-// Cached TextDecoder to avoid allocation per frame
-const textDecoder = new TextDecoder();
+// \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
+// Followed by 0x68 ('h') = enable, 0x6c ('l') = disable
+function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
+  for (let i = 0, end = data.length - 7; i <= end; i++) {
+    if (
+      data[i] === 0x1b &&
+      data[i + 1] === 0x5b &&
+      data[i + 2] === 0x3f &&
+      data[i + 3] === 0x32 &&
+      data[i + 4] === 0x30 &&
+      data[i + 5] === 0x30 &&
+      data[i + 6] === 0x34
+    ) {
+      const mode = data[i + 7];
+      if (mode === 0x68) bracketedPasteState.set(sessionId, true);
+      else if (mode === 0x6c) bracketedPasteState.set(sessionId, false);
+      i += 7;
+    }
+  }
+}
 
 // =============================================================================
 // Input Buffering (Issue #2: Lost keystrokes during reconnection)
@@ -416,15 +434,9 @@ function writeToTerminal(
   rows: number,
   data: Uint8Array,
 ): void {
-  // Track bracketed paste mode by detecting escape sequences
-  if (data.length > 0) {
-    const text = textDecoder.decode(data);
-    if (text.includes('\x1b[?2004h')) {
-      bracketedPasteState.set(sessionId, true);
-    }
-    if (text.includes('\x1b[?2004l')) {
-      bracketedPasteState.set(sessionId, false);
-    }
+  // Track bracketed paste mode by scanning raw bytes (no string allocation)
+  if (data.length >= 8) {
+    scanBracketedPaste(data, sessionId);
   }
 
   // Resize if dimensions are valid and different
@@ -448,8 +460,10 @@ function writeToTerminal(
   // Always write data if present
   if (data.length > 0) {
     state.terminal.write(data);
-    // Scan for file paths (File Radar feature)
-    scanOutputForPaths(sessionId, data);
+    // Scan for file paths only on active session (avoids decode+concat for background frames)
+    if (sessionId === $activeSessionId.get()) {
+      scanOutputForPaths(sessionId, data);
+    }
   }
 
   // DISABLED: Was causing cursor to disappear in some cases
@@ -563,7 +577,7 @@ export function connectMuxWebSocket(): void {
     }
 
     const sessionId = decodeSessionId(data, 1);
-    const payload = data.slice(MUX_HEADER_SIZE);
+    const payload = data.subarray(MUX_HEADER_SIZE); // zero-copy view
 
     if (type === MUX_TYPE_RESYNC) {
       // Server is resyncing due to dropped frames - clear all terminals
@@ -583,6 +597,7 @@ export function connectMuxWebSocket(): void {
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
       measureOutputRtt(sessionId);
       // Queue ALL output frames to guarantee strict ordering
+      // .slice() here is needed — WS may recycle the ArrayBuffer
       if (payload.length >= 4) {
         queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
       }
@@ -597,7 +612,7 @@ export function connectMuxWebSocket(): void {
     } else if (type === MUX_TYPE_PONG) {
       if (payload.length >= 9 && pongCallback) {
         const pongMode = payload[0]!;
-        const timestampBytes = payload.slice(1, 9);
+        const timestampBytes = new Uint8Array(payload.buffer, payload.byteOffset + 1, 8);
         const timestamp = new Float64Array(timestampBytes.buffer, timestampBytes.byteOffset, 1)[0]!;
         const rtt = performance.now() - timestamp;
         // Server pong (mode 0) includes diagnostics: [flushDelay:2][serverRtt:2]
