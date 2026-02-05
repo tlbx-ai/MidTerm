@@ -396,11 +396,14 @@ dev (default branch - all work here)
 main (stable releases only - never commit directly)
 ```
 
+**At the start of every session:** Check the current branch. If on `main`, switch to `dev` before making ANY changes. Never start work on `main`.
+
 **If the user tries to:**
 - Commit directly to `main` → **DECLINE.** Explain they must work on `dev` and promote via PR.
 - Run `release.ps1` on `dev` → **DECLINE.** Explain they should use `release-dev.ps1` for dev releases.
 - Run `release-dev.ps1` on `main` → **DECLINE.** Explain `main` only gets stable releases via promotion.
 - Push changes to `main` without a PR → **DECLINE.** All changes to `main` come through PR merges from `dev`.
+- Start making edits while on `main` → **STOP.** Switch to `dev` first, then proceed.
 
 ### Daily Development (on `dev` branch)
 
