@@ -29,26 +29,19 @@ public abstract class ShellConfigurationBase : IShellConfiguration
     /// <summary>
     /// Configure environment variables for the shell process.
     ///
-    /// IMPORTANT FOR TUI IMAGE SUPPORT (e.g., Claude Code):
-    /// Complex TUI apps like Claude Code detect their terminal environment to enable features.
-    /// Claude Code specifically checks for Windows Terminal by looking at env vars.
+    /// TERMINAL CAPABILITY ADVERTISEMENT:
+    /// All platforms set TERM=xterm-256color and COLORTERM=truecolor. This matches what
+    /// iTerm2, WezTerm, and Alacritty do. xterm.js supports full 24-bit color, and ConPTY
+    /// on Windows supports all VT sequences including 24-bit SGR (since Windows 10 1903+).
     ///
-    /// WINDOWS REQUIREMENTS (discovered through testing):
-    /// - WT_PROFILE_ID: Must have curly braces around GUID, e.g., {550e8400-...}
-    /// - WT_SESSION: Plain GUID without braces
-    /// - TERM: Must NOT be set (Windows Terminal doesn't set it)
-    /// - COLORTERM: Must NOT be set (Windows Terminal doesn't set it)
-    /// - TEMP/TMP: Must use long path names, not 8.3 short names (e.g., JOHANN~1.SCH)
-    ///   Short names break Claude Code's image path detection/matching.
+    /// TERM=xterm-256color is chosen over xterm-direct because:
+    /// - xterm-256color is universally available in terminfo on all systems
+    /// - SSH forwards TERM to remote hosts, giving them at least 256 colors
+    /// - Apps that want truecolor check COLORTERM anyway (vim, bat, delta, fish, etc.)
     ///
-    /// If these don't match exactly, Claude Code won't recognize image paths dropped/pasted
-    /// into the terminal and will just show the raw path instead of [Image #1].
-    ///
-    /// MAC/LINUX REQUIREMENTS (not yet tested):
-    /// When testing on Mac/Linux, run Claude Code in the native terminal and compare:
-    ///   env | grep -E 'TERM|COLORTERM|ITERM|APPLE|LC_'
-    /// Then adjust this method to match what the native terminal sets.
-    /// The pattern-matching for image paths may also differ (Unix paths vs Windows paths).
+    /// WINDOWS-SPECIFIC:
+    /// - WT_SESSION/WT_PROFILE_ID: Set for Claude Code TUI image support detection
+    /// - TEMP/TMP: Normalized to long paths (8.3 short names break Claude Code path matching)
     /// </summary>
     public virtual Dictionary<string, string> GetEnvironmentVariables()
     {
@@ -61,25 +54,18 @@ public abstract class ShellConfigurationBase : IShellConfiguration
             }
         }
 
-        // Platform-specific terminal environment setup
+        env["TERM"] = "xterm-256color";
+        env["COLORTERM"] = "truecolor";
+        env["TERM_PROGRAM"] = "midterm";
+
         if (OperatingSystem.IsWindows())
         {
-            // Windows: Mimic Windows Terminal exactly
-            // DO NOT set TERM or COLORTERM - Windows Terminal doesn't set these
             env["WT_SESSION"] = Guid.NewGuid().ToString();
             env["WT_PROFILE_ID"] = "{" + Guid.NewGuid().ToString() + "}";
-
-            // Fix TEMP/TMP 8.3 short path names (e.g., C:\Users\JOHANN~1.SCH\...)
-            // Short paths break Claude Code's image path detection when usernames exceed 8 chars.
             NormalizeTempPaths(env);
         }
         else
         {
-            // Unix: Set standard terminal variables
-            // TODO: Test with Claude Code on Mac/Linux and adjust if needed
-            env["TERM"] = "xterm-256color";
-            env["COLORTERM"] = "truecolor";
-            // Set SHELL to this shell's executable so child processes know the login shell
             var resolved = ResolveExecutablePath();
             if (resolved is not null)
             {
