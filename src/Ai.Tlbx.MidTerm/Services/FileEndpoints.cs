@@ -28,14 +28,13 @@ public static class FileEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
+        app.MapPost("/api/files/check", (FileCheckRequest request, string? sessionId) =>
         {
             var results = new Dictionary<string, FilePathInfo>();
             var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
 
             foreach (var path in request.Paths)
             {
-                // For check, we verify the path is accessible before returning info
                 if (!string.IsNullOrEmpty(sessionId) &&
                     !IsPathAccessible(sessionId, path, workingDir, allowlistService))
                 {
@@ -43,7 +42,7 @@ public static class FileEndpoints
                     continue;
                 }
 
-                results[path] = await GetFileInfoAsync(path);
+                results[path] = GetFileInfo(path);
             }
 
             return Results.Json(
@@ -197,6 +196,12 @@ public static class FileEndpoints
         }
     }
 
+    private static readonly HashSet<string> _skipDirectories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "node_modules", ".git", "bin", "obj", "__pycache__", ".next",
+        ".nuget", "packages", ".vs", ".idea", ".cache", ".npm", ".yarn", "vendor"
+    };
+
     private static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
     {
         var hasDirectory = searchPattern.Contains('/') || searchPattern.Contains('\\');
@@ -204,31 +209,60 @@ public static class FileEndpoints
 
         try
         {
-            var options = new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                MaxRecursionDepth = maxDepth,
-                IgnoreInaccessible = true
-            };
+            var queue = new Queue<(string Dir, int Depth)>();
+            queue.Enqueue((rootDir, 0));
 
-            foreach (var file in Directory.EnumerateFiles(rootDir, "*", options))
+            while (queue.Count > 0)
             {
-                var relativePath = Path.GetRelativePath(rootDir, file).Replace('\\', '/');
+                var (currentDir, depth) = queue.Dequeue();
 
-                if (hasDirectory)
+                foreach (var file in Directory.EnumerateFiles(currentDir))
                 {
-                    if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
-                        relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
+                    var relativePath = Path.GetRelativePath(rootDir, file).Replace('\\', '/');
+
+                    if (hasDirectory)
                     {
-                        return file;
+                        if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
+                            relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return file;
+                        }
+                    }
+                    else
+                    {
+                        if (Path.GetFileName(file).Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return file;
+                        }
                     }
                 }
-                else
+
+                if (depth >= maxDepth) continue;
+
+                foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                 {
-                    if (Path.GetFileName(file).Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
+                    var dirName = Path.GetFileName(subDir);
+                    if (_skipDirectories.Contains(dirName)) continue;
+
+                    var relativePath = Path.GetRelativePath(rootDir, subDir).Replace('\\', '/');
+
+                    if (hasDirectory)
                     {
-                        return file;
+                        if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
+                            relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return subDir;
+                        }
                     }
+                    else
+                    {
+                        if (dirName.Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return subDir;
+                        }
+                    }
+
+                    queue.Enqueue((subDir, depth + 1));
                 }
             }
         }
@@ -367,7 +401,7 @@ public static class FileEndpoints
         return true;
     }
 
-    private static async Task<FilePathInfo> GetFileInfoAsync(string path)
+    private static FilePathInfo GetFileInfo(string path)
     {
         var info = new FilePathInfo { Exists = false };
 
@@ -402,7 +436,7 @@ public static class FileEndpoints
         {
         }
 
-        return await Task.FromResult(info);
+        return info;
     }
 
     private static bool? CheckIsText(string filePath, long fileSize)
