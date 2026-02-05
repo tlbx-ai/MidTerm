@@ -424,6 +424,33 @@ export function isBracketedPasteEnabled(sessionId: string): boolean {
   return bracketedPasteState.get(sessionId) ?? false;
 }
 
+// Track cursor visibility (DECTCEM) per session
+const cursorVisibleState = new Map<string, boolean>();
+
+/** Get cursor visibility state for a session (true = visible, default true) */
+export function isCursorVisible(sessionId: string): boolean {
+  return cursorVisibleState.get(sessionId) ?? true;
+}
+
+// \x1b[?25 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x35]
+// Followed by 0x68 ('h') = show, 0x6c ('l') = hide
+function scanCursorVisibility(data: Uint8Array, sessionId: string): void {
+  for (let i = 0, end = data.length - 5; i <= end; i++) {
+    if (
+      data[i] === 0x1b &&
+      data[i + 1] === 0x5b &&
+      data[i + 2] === 0x3f &&
+      data[i + 3] === 0x32 &&
+      data[i + 4] === 0x35
+    ) {
+      const mode = data[i + 5];
+      if (mode === 0x68) cursorVisibleState.set(sessionId, true);
+      else if (mode === 0x6c) cursorVisibleState.set(sessionId, false);
+      i += 5;
+    }
+  }
+}
+
 /**
  * Write data to terminal, resizing if dimensions changed.
  */
@@ -437,6 +464,10 @@ function writeToTerminal(
   // Track bracketed paste mode by scanning raw bytes (no string allocation)
   if (data.length >= 8) {
     scanBracketedPaste(data, sessionId);
+  }
+  // Track DECTCEM cursor visibility (\x1b[?25h / \x1b[?25l)
+  if (data.length >= 6) {
+    scanCursorVisibility(data, sessionId);
   }
 
   // Resize if dimensions are valid and different
