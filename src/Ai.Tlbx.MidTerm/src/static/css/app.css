@@ -1388,29 +1388,36 @@ html, body {
         display: none !important;
     }
 
-    /* Mobile resize grip - visible with touch-friendly target */
+    /* Mobile resize grip - visible pill handle for touch */
     .sidebar-resize-grip {
         display: flex !important;
-        width: 20px;
-        right: -10px;
+        width: 28px;
+        right: -14px;
         align-items: center;
         justify-content: center;
         background-color: transparent;
+        touch-action: none;
     }
 
     .sidebar-resize-grip::before {
-        content: '⋮';
-        font-size: 16px;
-        color: var(--text-muted);
-        letter-spacing: -2px;
+        content: '';
+        width: 6px;
+        height: 48px;
+        border-radius: 3px;
+        background-color: var(--text-muted);
+        opacity: 0.4;
+        transition: opacity 0.15s, background-color 0.15s;
     }
 
-    .sidebar-resize-grip:active {
-        background-color: var(--bg-hover);
+    .sidebar-resize-grip:active,
+    .sidebar-resize-grip.active {
+        background-color: transparent;
     }
 
-    .sidebar-resize-grip:active::before {
-        color: var(--text-primary);
+    .sidebar-resize-grip:active::before,
+    .sidebar-resize-grip.active::before {
+        opacity: 0.8;
+        background-color: var(--accent-blue);
     }
 
     /* On mobile, ignore sidebar-collapsed class */
