@@ -7,7 +7,7 @@
 
 import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition, Session } from '../../types';
 import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
-import { sessionTerminals } from '../../state';
+import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
 
 // Forward declarations - will be set by main.ts
 let createTerminalForSessionFn:
@@ -474,7 +474,8 @@ export function restoreLayoutFromStorage(): void {
       return;
     }
 
-    // Restore layout
+    // Restore layout — suppress auto-fit so terminals keep their server dimensions
+    setSuppressLayoutAutoFit(true);
     $layout.set({ root: filteredRoot });
 
     // Restore focused session if valid

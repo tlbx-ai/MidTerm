@@ -296,12 +296,18 @@ The `/ws/mux` endpoint uses a binary protocol for efficient terminal I/O multipl
 - **Rate limiting**: 5 failures = 30s lockout, 10 failures = 5min lockout
 - Password set during install (mandatory), changeable in Settings > Security
 
-## Terminal Resize
+## Terminal Resize — CORE DESIGN PRINCIPLE
 
-- **No auto-resize** — terminals maintain their dimensions
-- **New sessions** created at optimal size for current screen
+**The user decides when a terminal is resized. Never auto-resize existing sessions.**
+
+- **No auto-resize** — terminals maintain their server-side dimensions across all clients
+- **New sessions** created at optimal size for the creating client's viewport
 - **Manual resize** via sidebar button (⤢) fits terminal to current screen
 - Each terminal has independent dimensions
+- **Multi-client scenario** (e.g., PC + iPad): connecting from a second device must NOT resize sessions. The second device shows terminals scaled (CSS transform) to fit its viewport. The user can explicitly press resize on the second device to claim optimal dimensions.
+- **Page reload / reconnect**: must never send resize commands to the server. Terminals sync server dimensions and apply CSS scaling locally.
+- **Layout restore from storage**: when a saved layout is restored on page load, terminals are moved to panes and CSS-scaled — NOT resized to fit pane dimensions. User must explicitly resize.
+- **Scaled terminals** should be visually centered in their container, not top-left aligned.
 
 ## Code Style (C#)
 
