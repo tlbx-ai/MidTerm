@@ -450,6 +450,10 @@ Users can choose which releases to receive via `settings.json`:
 | Stable (default) | `"updateChannel": "stable"` | Only full releases (v6.10.32) |
 | Dev | `"updateChannel": "dev"` | Prereleases + full releases (v6.10.32-dev) |
 
+### Version Management in Dev
+
+`release-dev.ps1` automatically reads `main:version.json` to ensure dev versions are always >= main. If main is at `6.16.0` and dev is behind, the script uses main's version as the base before bumping. **Never manually set version.json on main** — versions flow from dev→main via PR merges.
+
 ### Release Script Parameters
 
 Both scripts share the same parameters:
