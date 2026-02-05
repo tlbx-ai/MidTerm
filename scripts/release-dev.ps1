@@ -115,9 +115,20 @@ $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $currentVersion = $versionJson.web
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 
-# Parse current version - strip any existing prerelease suffix
-$baseVersion = $currentVersion -replace '-dev(\.\d+)?$', ''
-$parts = $baseVersion.Split('.')
+# Dev versions must be >= main's version. Use the higher of dev/main as the base.
+$devBase = $currentVersion -replace '-dev(\.\d+)?$', ''
+try {
+    $mainJson = git show main:version.json 2>$null | ConvertFrom-Json
+    $mainBase = $mainJson.web -replace '-dev(\.\d+)?$', ''
+    if ([version]$mainBase -gt [version]$devBase) {
+        Write-Host "  Using main's version ($mainBase) as base (ahead of dev's $devBase)" -ForegroundColor Yellow
+        $devBase = $mainBase
+    }
+} catch {
+    Write-Host "  Warning: Could not read main's version, using dev base" -ForegroundColor Yellow
+}
+
+$parts = $devBase.Split('.')
 $major = [int]$parts[0]
 $minor = [int]$parts[1]
 $patch = [int]$parts[2]
@@ -148,7 +159,17 @@ if ($isPtyBreaking) {
         $versionJson.PSObject.Properties.Remove("webOnly")
     }
 } else {
-    # Keep pty version as-is for web-only releases
+    # Keep pty version as-is, but ensure it's not behind main's pty version
+    try {
+        $mainPtyBase = $mainJson.pty -replace '-dev(\.\d+)?$', ''
+        $devPtyBase = $versionJson.pty -replace '-dev(\.\d+)?$', ''
+        if ([version]$mainPtyBase -gt [version]$devPtyBase) {
+            $versionJson.pty = "$mainPtyBase-dev"
+            Write-Host "  Synced pty version to main's $mainPtyBase" -ForegroundColor Yellow
+        }
+    } catch {
+        # mainJson may not exist if main fetch failed
+    }
     $versionJson | Add-Member -NotePropertyName "webOnly" -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
