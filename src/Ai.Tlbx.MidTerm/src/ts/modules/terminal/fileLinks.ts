@@ -523,6 +523,7 @@ async function handlePathClick(path: string): Promise<void> {
     const relativePath = path.startsWith('/') ? path.slice(1) : path;
     const resolved = await resolveRelativePath(sessionId, relativePath, true);
     if (resolved?.exists && resolved.resolvedPath) {
+      registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
       const resolvedInfo: FilePathInfo = {
         exists: true,
         isDirectory: resolved.isDirectory ?? false,
@@ -579,6 +580,7 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
   // Try to resolve the folder path
   const resolved = await resolveRelativePath(sessionId, pathWithoutSlash, true);
   if (resolved?.exists && resolved.resolvedPath && resolved.isDirectory) {
+    registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
     const info: FilePathInfo = {
       exists: true,
       isDirectory: true,

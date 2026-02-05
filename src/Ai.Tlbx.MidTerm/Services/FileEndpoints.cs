@@ -28,10 +28,10 @@ public static class FileEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/files/check", (FileCheckRequest request, string? sessionId) =>
+        app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
         {
             var results = new Dictionary<string, FilePathInfo>();
-            var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+            var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
 
             foreach (var path in request.Paths)
             {
@@ -50,14 +50,14 @@ public static class FileEndpoints
                 AppJsonContext.Default.FileCheckResponse);
         });
 
-        app.MapGet("/api/files/list", (string path, string? sessionId) =>
+        app.MapGet("/api/files/list", async (string path, string? sessionId) =>
         {
             if (!ValidatePath(path, out var errorResult))
             {
                 return errorResult!;
             }
 
-            var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+            var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
             if (!string.IsNullOrEmpty(sessionId) &&
                 !IsPathAccessible(sessionId, path, workingDir, allowlistService))
             {
@@ -118,14 +118,14 @@ public static class FileEndpoints
             }
         });
 
-        app.MapGet("/api/files/view", (string path, string? sessionId) =>
+        app.MapGet("/api/files/view", async (string path, string? sessionId) =>
         {
-            return ServeFile(path, inline: true, sessionId, sessionManager, allowlistService);
+            return await ServeFileAsync(path, inline: true, sessionId, sessionManager, allowlistService);
         });
 
-        app.MapGet("/api/files/download", (string path, string? sessionId) =>
+        app.MapGet("/api/files/download", async (string path, string? sessionId) =>
         {
-            return ServeFile(path, inline: false, sessionId, sessionManager, allowlistService);
+            return await ServeFileAsync(path, inline: false, sessionId, sessionManager, allowlistService);
         });
 
         // Resolve relative path against session's working directory
@@ -306,11 +306,13 @@ public static class FileEndpoints
         return response;
     }
 
-    private static string? GetSessionWorkingDirectory(TtyHostSessionManager sessionManager, string? sessionId)
+    private static async Task<string?> GetSessionWorkingDirectoryAsync(TtyHostSessionManager sessionManager, string? sessionId)
     {
         if (string.IsNullOrEmpty(sessionId)) return null;
         var session = sessionManager.GetSession(sessionId);
-        return session?.CurrentDirectory;
+        if (session?.CurrentDirectory is not null) return session.CurrentDirectory;
+        var fresh = await sessionManager.GetSessionFreshAsync(sessionId);
+        return fresh?.CurrentDirectory;
     }
 
     private static bool IsPathAccessible(
@@ -322,7 +324,7 @@ public static class FileEndpoints
         return allowlistService.IsPathAllowed(sessionId, path, workingDirectory);
     }
 
-    private static IResult ServeFile(
+    private static async Task<IResult> ServeFileAsync(
         string path,
         bool inline,
         string? sessionId,
@@ -334,7 +336,7 @@ public static class FileEndpoints
             return errorResult!;
         }
 
-        var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+        var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
         if (!string.IsNullOrEmpty(sessionId) &&
             !IsPathAccessible(sessionId, path, workingDir, allowlistService))
         {
