@@ -39,6 +39,7 @@ import {
 } from './search';
 
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
+import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 
 // Forward declarations for functions from other modules
 let sendInput: (sessionId: string, data: string) => void = () => {};
@@ -497,7 +498,9 @@ export function setupTerminalEvents(
   container.addEventListener('paste', pasteHandler, true);
 
   // Right-click paste (images uploaded, text pasted)
+  // During touch selection, let native context menu show (Copy) instead of pasting
   const contextMenuHandler = (e: MouseEvent) => {
+    if (isTouchSelecting(sessionId)) return;
     const settings = $currentSettings.get();
     if (!settings || settings.rightClickPaste !== false) {
       e.preventDefault();
@@ -553,6 +556,9 @@ export function setupTerminalEvents(
     state.mouseMoveHandler = mouseMoveHandler;
     state.mouseLeaveHandler = mouseLeaveHandler;
   }
+
+  // Touch scrolling overlay (mobile only — scroll-first, long-press to select)
+  initTouchScrolling(sessionId, terminal, container);
 }
 
 /**
@@ -595,6 +601,9 @@ export function destroyTerminalForSession(sessionId: string): void {
     clearTimeout(titleTimer);
     pendingTitleUpdates.delete(sessionId);
   }
+
+  // Clean up touch scrolling overlay
+  teardownTouchScrolling(sessionId);
 
   // Clean up WebGL context tracking
   if (state.hasWebgl) {
