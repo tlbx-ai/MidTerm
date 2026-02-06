@@ -42,6 +42,7 @@ import {
   scrollToBottom,
   focusActiveTerminal,
   calculateOptimalDimensions,
+  rescaleAllTerminalsImmediate,
 } from './modules/terminal';
 import {
   updateEmptyState,
@@ -271,9 +272,7 @@ function registerCallbacks(): void {
   });
 
   registerSettingsAppliedCallback(() => {
-    sessionTerminals.forEach((_state, sessionId) => {
-      fitSessionToScreen(sessionId);
-    });
+    rescaleAllTerminalsImmediate();
   });
 
   setSessionListCallbacks({
@@ -802,6 +801,27 @@ function bindEvents(): void {
     const activeId = $activeSessionId.get();
     if (activeId) deleteSession(activeId);
   });
+
+  // Fullscreen toggle (mobile) - hide button if API not supported
+  const fullscreenBtn = document.getElementById('btn-fullscreen-mobile');
+  if (document.fullscreenEnabled) {
+    bindClick('btn-fullscreen-mobile', () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      const iconEl = fullscreenBtn?.querySelector('.icon');
+      if (iconEl) {
+        iconEl.textContent = document.fullscreenElement ? '\ue920' : '\ue90c';
+      }
+    });
+  } else if (fullscreenBtn) {
+    fullscreenBtn.style.display = 'none';
+  }
 
   if (dom.settingsBtn) {
     dom.settingsBtn.addEventListener('click', toggleSettings);

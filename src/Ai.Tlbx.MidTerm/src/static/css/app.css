@@ -1556,6 +1556,17 @@ html, body {
         color: var(--bg-primary);
     }
 
+    /* Fullscreen button - prominent green accent */
+    .topbar-fullscreen {
+        color: var(--accent-green);
+        font-size: 18px;
+    }
+
+    .topbar-fullscreen:active {
+        background-color: var(--accent-green);
+        color: var(--bg-primary);
+    }
+
     /* Close button - red accent */
     .topbar-close:active {
         background-color: var(--accent-red);
