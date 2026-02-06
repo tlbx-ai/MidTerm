@@ -995,8 +995,8 @@ html, body {
     padding: 4px;
     touch-action: manipulation;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: flex-start;
+    justify-content: flex-start;
 }
 
 .terminal-container.visible {
@@ -2082,9 +2082,11 @@ html, body {
     margin-top: 48px;
 }
 
-/* Scaled terminal indicator */
+/* Scaled terminal — centering is acceptable since scaling already loses pixel-perfection */
 .terminal-container.scaled {
     overflow: hidden;
+    align-items: center;
+    justify-content: center;
 }
 
 .scaled-overlay {
