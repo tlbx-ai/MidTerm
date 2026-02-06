@@ -271,21 +271,10 @@ const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const COMPACT_THRESHOLD = 1000;
 const YIELD_BUDGET_MS = 8;
-const STALE_QUEUE_DEPTH = 50;
 
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
 let queueIndex = 0;
-
-const staleSessions = new Set<string>();
-
-export function isSessionStale(sessionId: string): boolean {
-  return staleSessions.has(sessionId);
-}
-
-export function clearStaleSession(sessionId: string): void {
-  staleSessions.delete(sessionId);
-}
 
 function compactQueue(): void {
   if (queueIndex > 0) {
@@ -361,14 +350,6 @@ async function processOutputQueue(): Promise<void> {
  */
 async function processOneFrame(item: OutputFrameItem): Promise<void> {
   try {
-    // When queue is backed up, skip background sessions entirely.
-    // They'll get a fresh buffer replay when activated.
-    const pendingCount = outputQueue.length - queueIndex;
-    if (item.sessionId !== $activeSessionId.get() && pendingCount > STALE_QUEUE_DEPTH) {
-      staleSessions.add(item.sessionId);
-      return;
-    }
-
     let cols: number;
     let rows: number;
     let data: Uint8Array;

@@ -20,8 +20,6 @@ import {
   sendResize,
   requestBufferRefresh,
   sendActiveSessionHint,
-  isSessionStale,
-  clearStaleSession,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -459,16 +457,6 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const sessionInfo = getSession(sessionId);
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
-
-  // If output was skipped while this session was in background, resync from server
-  if (isSessionStale(sessionId)) {
-    clearStaleSession(sessionId);
-    if (state.opened) {
-      state.terminal.clear();
-      state.terminal.write('\x1b[0m');
-    }
-    requestBufferRefresh(sessionId);
-  }
 
   // Only show if not in layout (layout handles visibility)
   if (!isLayoutActive()) {
