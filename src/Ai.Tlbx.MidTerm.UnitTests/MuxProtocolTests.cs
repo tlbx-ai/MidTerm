@@ -193,29 +193,4 @@ public class MuxProtocolTests
         Assert.Equal("abcdefgh", parsedId);
     }
 
-    [Fact]
-    public void CreateProcessEventFrame_HasCorrectFormat()
-    {
-        var sessionId = "proc1234";
-        var jsonPayload = Encoding.UTF8.GetBytes("{\"type\":\"fork\"}");
-
-        var frame = MuxProtocol.CreateProcessEventFrame(sessionId, jsonPayload);
-
-        Assert.Equal(MuxProtocol.TypeProcessEvent, frame[0]);
-        Assert.Equal(sessionId, Encoding.ASCII.GetString(frame, 1, 8));
-        Assert.Equal(jsonPayload, frame.Skip(MuxProtocol.HeaderSize).ToArray());
-    }
-
-    [Fact]
-    public void CreateForegroundChangeFrame_HasCorrectFormat()
-    {
-        var sessionId = "fgnd1234";
-        var jsonPayload = Encoding.UTF8.GetBytes("{\"name\":\"vim\"}");
-
-        var frame = MuxProtocol.CreateForegroundChangeFrame(sessionId, jsonPayload);
-
-        Assert.Equal(MuxProtocol.TypeForegroundChange, frame[0]);
-        Assert.Equal(sessionId, Encoding.ASCII.GetString(frame, 1, 8));
-        Assert.Equal(jsonPayload, frame.Skip(MuxProtocol.HeaderSize).ToArray());
-    }
 }

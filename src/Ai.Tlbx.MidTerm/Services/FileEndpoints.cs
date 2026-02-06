@@ -183,7 +183,7 @@ public static class FileEndpoints
         });
     }
 
-    private static IEnumerable<string> GetSlashVariants(string path)
+    internal static IEnumerable<string> GetSlashVariants(string path)
     {
         yield return path;
 
@@ -212,7 +212,7 @@ public static class FileEndpoints
         ".nuget", "packages", ".vs", ".idea", ".cache", ".npm", ".yarn", "vendor"
     };
 
-    private static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
+    internal static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
     {
         var hasDirectory = searchPattern.Contains('/') || searchPattern.Contains('\\');
         var normalizedPattern = searchPattern.Replace('\\', '/');
@@ -283,7 +283,7 @@ public static class FileEndpoints
         return null;
     }
 
-    private static bool IsWithinDirectory(string path, string directory)
+    internal static bool IsWithinDirectory(string path, string directory)
     {
         var normalizedPath = Path.GetFullPath(path);
         var normalizedDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -388,7 +388,7 @@ public static class FileEndpoints
         }
     }
 
-    private static bool ValidatePath(string path, out IResult? errorResult)
+    internal static bool ValidatePath(string path, out IResult? errorResult)
     {
         errorResult = null;
 

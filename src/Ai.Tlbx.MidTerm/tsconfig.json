@@ -25,5 +25,5 @@
     "baseUrl": "./src/ts"
   },
   "include": ["src/ts/**/*.ts"],
-  "exclude": ["node_modules", "dist", "wwwroot"]
+  "exclude": ["node_modules", "dist", "wwwroot", "**/*.test.ts"]
 }

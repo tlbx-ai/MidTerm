@@ -37,6 +37,19 @@ import type { FilePathInfo, FileCheckResponse, FileResolveResponse } from '../..
 import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
 import { $activeSessionId, $currentSettings } from '../../stores';
+import {
+  UNIX_PATH_PATTERN,
+  WIN_PATH_PATTERN,
+  UNIX_PATH_PATTERN_GLOBAL,
+  WIN_PATH_PATTERN_GLOBAL,
+  RELATIVE_PATH_PATTERN,
+  FOLDER_PATH_PATTERN,
+  KNOWN_FILE_PATTERN,
+  isValidPath,
+  shouldRejectFolderMatch,
+  shouldRejectKnownFileMatch,
+  shouldRejectRelativeMatch,
+} from './fileRadar.patterns';
 
 const log = createLogger('fileLinks');
 
@@ -87,100 +100,8 @@ const pendingScanText = new Map<string, string>();
 /** Debounce timers per session */
 const scanTimers = new Map<string, number>();
 
-// ===========================================================================
-// Regex Patterns - Compiled once at module load
-// ===========================================================================
-
-/**
- * Unix absolute paths: /path/to/file or /path/to/file.ext
- * Pattern for xterm-link-provider (uses capture group 1 for the link text)
- * Negative lookbehind prevents matching /foo/bar inside src/foo/bar (relative paths)
- */
-const UNIX_PATH_PATTERN = /(?<![a-zA-Z0-9_.@-])(\/(?:[\w.@-]+\/)*[\w.@-]+(?:\.\w+)?)/;
-
-/**
- * Windows absolute paths: C:\path\file or C:/path/file
- * Pattern for xterm-link-provider (uses capture group 1 for the link text)
- */
-const WIN_PATH_PATTERN = /([A-Za-z]:[\\/](?:[\w.@-]+[\\/])*[\w.@-]+(?:\.\w+)?)/;
-
-/**
- * Global versions for scanning terminal output
- */
-const UNIX_PATH_PATTERN_GLOBAL = /(?:^|[\s"'`(])(\/([\w.@-]+\/)*[\w.@-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
-const WIN_PATH_PATTERN_GLOBAL =
-  /(?:^|[\s"'`(])([A-Za-z]:[\\/](?:[\w.@-]+[\\/])*[\w.@-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
-
-/**
- * Relative path pattern - matches any filename.extension pattern.
- * Resolves against session's working directory on hover (lazy filesystem access).
- *
- * Matches: output.pdf, ./data.json, src/main.ts, src\Ai\Services\Foo.cs
- * Does NOT match: package (no extension), http://... (URLs)
- * False positives (1.2.3, e.g., google.com) filtered by isLikelyFalsePositive()
- *
- * Extension: 1-10 chars, must start with letter (avoids matching "file.1" or pure numbers)
- * Supports both / and \ path separators for cross-platform compatibility.
- */
-const RELATIVE_PATH_PATTERN =
-  /((?:\.\.?[/\\])?(?:[\w.@-]+[/\\])*[\w.@-]+\.[a-zA-Z][a-zA-Z0-9]{0,9})/;
-
-/**
- * Folder path pattern - matches paths ending with / or \ like docs/, src\components\
- * Must have at least one word character before the trailing separator.
- */
-const FOLDER_PATH_PATTERN = /((?:\.\.?[/\\])?(?:[\w.@-]+[/\\])+)/;
-
-/**
- * Well-known files without extensions that should be detected as clickable links.
- * The regex is built from this list so only exact filenames match (no broad patterns).
- */
-const KNOWN_EXTENSIONLESS_LIST = [
-  'Dockerfile',
-  'Makefile',
-  'Vagrantfile',
-  'Gemfile',
-  'Rakefile',
-  'Procfile',
-  'Justfile',
-  'Taskfile',
-  'Brewfile',
-  'Podfile',
-  'Fastfile',
-  'Appfile',
-  'LICENSE',
-  'LICENCE',
-  'CHANGELOG',
-  'README',
-  'CONTRIBUTING',
-  'AUTHORS',
-  '.gitignore',
-  '.gitattributes',
-  '.gitmodules',
-  '.editorconfig',
-  '.dockerignore',
-  '.eslintignore',
-  '.prettierignore',
-  '.npmignore',
-  '.env',
-  '.env.local',
-  '.env.production',
-  '.env.development',
-  '.prettierrc',
-  '.eslintrc',
-  '.babelrc',
-  '.browserslistrc',
-];
-
-const KNOWN_FILE_NAMES_ALTERNATION = KNOWN_EXTENSIONLESS_LIST.map((f) =>
-  f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-).join('|');
-
-/**
- * Pattern for extensionless known files - only matches exact known filenames,
- * optionally preceded by a directory path (e.g., src/Dockerfile).
- */
-const KNOWN_FILE_PATTERN = new RegExp(`((?:[\\w.@-]+[/\\\\])*(?:${KNOWN_FILE_NAMES_ALTERNATION}))`);
+// Regex patterns, validation functions, and matchCallback predicates
+// are imported from ./fileRadar.patterns.ts for testability.
 
 /** Cache for resolved relative paths: key = "sessionId:relativePath" */
 const resolveCache = new Map<string, { response: FileResolveResponse; expires: number }>();
@@ -354,14 +275,6 @@ function addToAllowlist(allowlist: Set<string>, path: string): void {
     if (firstKey) allowlist.delete(firstKey);
   }
   allowlist.add(path);
-}
-
-function isValidPath(path: string): boolean {
-  if (!path || path.length < 2) return false;
-  if (path.includes('..')) return false;
-  // Reject simple Unix commands that look like paths (e.g., /bin, /usr)
-  if (/^\/[a-z]+$/.test(path)) return false;
-  return true;
 }
 
 async function checkPathExists(path: string): Promise<FilePathInfo | null> {
@@ -623,18 +536,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
           const path = match[1];
-          if (!path) {
-            callback(undefined);
-            return;
-          }
-
-          if (/^[A-Za-z]:/.test(path)) {
-            callback(undefined);
-            return;
-          }
-
-          // Skip URL schemes like http://, https://, file://
-          if (/^[a-z]+:\/\//i.test(path)) {
+          if (!path || shouldRejectFolderMatch(path)) {
             callback(undefined);
             return;
           }
@@ -656,7 +558,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
           const path = match[1];
-          if (!path || path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
+          if (!path || shouldRejectKnownFileMatch(path)) {
             callback(undefined);
             return;
           }
@@ -678,17 +580,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
           const path = match[1];
-          if (!path) {
-            callback(undefined);
-            return;
-          }
-
-          if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
-            callback(undefined);
-            return;
-          }
-
-          if (isLikelyFalsePositive(path)) {
+          if (!path || shouldRejectRelativeMatch(path)) {
             callback(undefined);
             return;
           }
@@ -714,28 +606,6 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   );
 
   log.verbose(() => `Registered file link provider`);
-}
-
-/**
- * Filter out common false positives that look like files but aren't.
- */
-function isLikelyFalsePositive(path: string): boolean {
-  // Version numbers like 1.2.3
-  if (/^\d+\.\d+(\.\d+)?$/.test(path)) return true;
-
-  // Common abbreviations
-  const lower = path.toLowerCase();
-  if (['e.g.', 'i.e.', 'etc.', 'vs.', 'inc.', 'ltd.', 'co.'].includes(lower)) return true;
-
-  // Domain-like patterns - but only if the "TLD" is actually a common TLD, not a file extension
-  // This prevents filtering out output.pdf, data.csv, etc.
-  if (/^[a-z]+\.[a-z]{2,}$/i.test(path)) {
-    const ext = path.split('.').pop()?.toLowerCase();
-    const commonTlds = ['com', 'org', 'net', 'io', 'co', 'dev', 'app', 'ai', 'edu', 'gov', 'me'];
-    if (ext && commonTlds.includes(ext)) return true;
-  }
-
-  return false;
 }
 
 // Legacy export for compatibility (unused but keeps API stable)
