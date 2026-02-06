@@ -2090,7 +2090,7 @@ html, body {
 .scaled-overlay {
     position: absolute;
     bottom: 8px;
-    left: 8px;
+    right: 8px;
     padding: 4px 8px;
     background-color: var(--btn-secondary);
     opacity: 0.9;

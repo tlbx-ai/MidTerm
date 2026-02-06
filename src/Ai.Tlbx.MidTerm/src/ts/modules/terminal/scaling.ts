@@ -463,8 +463,38 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   // Find or create overlay element
   let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
 
+  // Helper: ensure overlay exists with click handler
+  const ensureOverlay = (): HTMLElement => {
+    if (overlay) return overlay;
+    overlay = document.createElement('button');
+    overlay.className = 'scaled-overlay';
+    overlay.addEventListener('click', () => {
+      const sessionId = container.id.replace('terminal-', '');
+      if (!sessionId) return;
+      const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+      if (layoutPane) {
+        fitTerminalToContainer(sessionId, layoutPane);
+      } else {
+        fitSessionToScreen(sessionId);
+      }
+    });
+    container.appendChild(overlay);
+    return overlay;
+  };
+
+  // Helper: position overlay above connection-status badge when it's visible
+  const positionOverlay = (el: HTMLElement): void => {
+    const connBadge = document.getElementById('connection-status');
+    const connVisible =
+      connBadge &&
+      (connBadge.classList.contains('disconnected') ||
+        connBadge.classList.contains('reconnecting') ||
+        connBadge.classList.contains('connecting'));
+    el.style.bottom = connVisible ? '36px' : '8px';
+  };
+
   if (scale < 1) {
-    // Center the scaled terminal within the available space
+    // Too big — scale down + center
     const visualWidth = termWidth * scale;
     const visualHeight = termHeight * scale;
     const offsetX = Math.max(0, (availWidth - visualWidth) / 2);
@@ -473,22 +503,10 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     xterm.style.transformOrigin = '0 0';
     container.classList.add('scaled');
 
-    if (!overlay) {
-      overlay = document.createElement('button');
-      overlay.className = 'scaled-overlay';
-      overlay.addEventListener('click', () => {
-        const sessionId = container.id.replace('terminal-', '');
-        if (!sessionId) return;
-        const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
-        if (layoutPane) {
-          fitTerminalToContainer(sessionId, layoutPane);
-        } else {
-          fitSessionToScreen(sessionId);
-        }
-      });
-      container.appendChild(overlay);
-    }
+    const el = ensureOverlay();
+    positionOverlay(el);
 
+    const pct = Math.round(scale * 100);
     const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
     let diagHtml = '';
     if (isDevMode() && screen) {
@@ -501,13 +519,30 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       const scaleTxt = scale.toPrecision(5);
       diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
     }
-    overlay.innerHTML = `${icon('resize')} Scaled view - click to resize${diagHtml}`;
+    el.innerHTML = `${icon('resize')} Scaled to ${pct}% — click to resize${diagHtml}`;
+  } else if (termWidth < availWidth - 2 || termHeight < availHeight - 2) {
+    // Fits but undersized — center without scaling
+    const offsetX = Math.max(0, (availWidth - termWidth) / 2);
+    const offsetY = Math.max(0, (availHeight - termHeight) / 2);
+    xterm.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+    xterm.style.transformOrigin = '0 0';
+    container.classList.remove('scaled');
+
+    const usage = Math.max(termWidth / availWidth, termHeight / availHeight);
+    if (usage < 0.7) {
+      const el = ensureOverlay();
+      positionOverlay(el);
+      el.innerHTML = `${icon('resize')} Sized for smaller screen — click to fit`;
+    } else if (overlay) {
+      overlay.remove();
+      overlay = null;
+    }
   } else {
+    // Perfect fit — clear everything
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
     container.classList.remove('scaled');
 
-    // Remove overlay if present
     if (overlay) {
       overlay.remove();
     }
