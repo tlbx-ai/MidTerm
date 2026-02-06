@@ -12,6 +12,7 @@ import {
   measureLatency,
   getLastFlushDelay,
   getLastServerIoRtt,
+  isCursorVisible,
 } from '../comms/muxChannel';
 import { $activeSessionId } from '../../stores';
 import { sessionTerminals } from '../../state';
@@ -29,6 +30,9 @@ interface MetricElements {
   serverIo: HTMLSpanElement;
   flushDelay: HTMLSpanElement;
   scrollback: HTMLSpanElement;
+  cursorVisible: HTMLSpanElement;
+  termFocus: HTMLSpanElement;
+  cursorPos: HTMLSpanElement;
 }
 
 let metricEls: MetricElements | null = null;
@@ -79,6 +83,9 @@ function ensureOverlay(): void {
     { label: 'I/O', id: 'serverIo' },
     { label: 'Flush', id: 'flushDelay' },
     { label: 'Buf', id: 'scrollback' },
+    { label: 'Cur', id: 'cursorVisible' },
+    { label: 'Foc', id: 'termFocus' },
+    { label: 'CPos', id: 'cursorPos' },
   ] as const;
 
   const els: Partial<MetricElements> = {};
@@ -142,6 +149,7 @@ async function runPingAndScrollback(): Promise<void> {
   if (!sessionId) return;
 
   updateScrollback(sessionId);
+  updateCursorState(sessionId);
 
   const result = await measureLatency(sessionId);
   if (!metricEls) return;
@@ -176,6 +184,28 @@ function updateScrollback(sessionId: string): void {
   const pct = Math.round((used / max) * 100);
   metricEls.scrollback.textContent = `${used}/${max} (${pct}%)`;
   applyColor(metricEls.scrollback, pct < 50 ? 'good' : pct < 80 ? 'warn' : 'bad');
+}
+
+function updateCursorState(sessionId: string): void {
+  if (!metricEls) return;
+  const state = sessionTerminals.get(sessionId);
+  if (!state?.terminal) return;
+
+  // DECTCEM cursor visibility (tracked by scanning escape sequences)
+  const visible = isCursorVisible(sessionId);
+  metricEls.cursorVisible.textContent = visible ? 'visible' : 'HIDDEN';
+  applyColor(metricEls.cursorVisible, visible ? 'good' : 'bad');
+
+  // Terminal DOM focus
+  const xtermEl = state.container.querySelector('.xterm textarea');
+  const hasFocus = xtermEl !== null && document.activeElement === xtermEl;
+  metricEls.termFocus.textContent = hasFocus ? 'yes' : 'no';
+  applyColor(metricEls.termFocus, hasFocus ? 'good' : 'warn');
+
+  // Cursor position from active buffer
+  const buf = state.terminal.buffer.active;
+  metricEls.cursorPos.textContent = `${buf.cursorX},${buf.cursorY}`;
+  applyColor(metricEls.cursorPos, 'good');
 }
 
 function handleOutputRtt(sessionId: string, rtt: number): void {

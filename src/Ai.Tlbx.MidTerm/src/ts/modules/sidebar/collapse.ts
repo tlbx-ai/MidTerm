@@ -98,48 +98,74 @@ export function restoreSidebarState(): void {
 // =============================================================================
 
 /**
- * Set up sidebar resize grip functionality
+ * Set up sidebar resize grip functionality (mouse + touch)
  */
 export function setupSidebarResize(): void {
-  const grip = document.getElementById('sidebar-resize-grip');
-  const sidebar = document.getElementById('sidebar');
-  if (!grip || !sidebar) return;
+  const g = document.getElementById('sidebar-resize-grip');
+  const s = document.getElementById('sidebar');
+  if (!g || !s) return;
+  const gripEl: HTMLElement = g;
+  const sidebarEl: HTMLElement = s;
 
   let isResizing = false;
   let startX = 0;
   let startWidth = 0;
 
-  grip.addEventListener('mousedown', (e: MouseEvent) => {
+  function beginResize(clientX: number): void {
     isResizing = true;
-    startX = e.clientX;
-    startWidth = sidebar.offsetWidth;
-    grip.classList.add('active');
+    startX = clientX;
+    startWidth = sidebarEl.offsetWidth;
+    gripEl.classList.add('active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
-    e.preventDefault();
-  });
+  }
 
-  document.addEventListener('mousemove', (e: MouseEvent) => {
+  function updateResize(clientX: number): void {
     if (!isResizing) return;
-
-    const delta = e.clientX - startX;
+    const delta = clientX - startX;
     const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + delta));
-    sidebar.style.width = newWidth + 'px';
-  });
+    sidebarEl.style.width = newWidth + 'px';
+  }
 
-  document.addEventListener('mouseup', () => {
+  function endResize(): void {
     if (!isResizing) return;
-
     isResizing = false;
-    grip.classList.remove('active');
+    gripEl.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-
-    // Save width to cookie
-    const currentWidth = sidebar.offsetWidth;
-    setCookie(SIDEBAR_WIDTH_COOKIE, String(currentWidth));
-
-    // Rescale terminals after resize completes
+    setCookie(SIDEBAR_WIDTH_COOKIE, String(sidebarEl.offsetWidth));
     requestAnimationFrame(rescaleAllTerminalsImmediate);
+  }
+
+  // Mouse events
+  gripEl.addEventListener('mousedown', (e: MouseEvent) => {
+    beginResize(e.clientX);
+    e.preventDefault();
   });
+  document.addEventListener('mousemove', (e: MouseEvent) => updateResize(e.clientX));
+  document.addEventListener('mouseup', endResize);
+
+  // Touch events
+  gripEl.addEventListener(
+    'touchstart',
+    (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      beginResize(e.touches[0]!.clientX);
+      e.preventDefault();
+    },
+    { passive: false },
+  );
+
+  document.addEventListener(
+    'touchmove',
+    (e: TouchEvent) => {
+      if (!isResizing || e.touches.length !== 1) return;
+      updateResize(e.touches[0]!.clientX);
+      e.preventDefault();
+    },
+    { passive: false },
+  );
+
+  document.addEventListener('touchend', endResize);
+  document.addEventListener('touchcancel', endResize);
 }
