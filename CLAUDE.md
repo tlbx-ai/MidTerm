@@ -411,6 +411,24 @@ main (stable releases only - never commit directly)
 - Push changes to `main` without a PR → **DECLINE.** All changes to `main` come through PR merges from `dev`.
 - Start making edits while on `main` → **STOP.** Switch to `dev` first, then proceed.
 
+### Pull Strategy: Rebase (No Merge Bubbles)
+
+All working copies use `pull.rebase = true` to keep a linear history. This avoids "Merge branch 'dev' of remote" noise commits when multiple machines push to `dev`.
+
+```powershell
+# Set per-repo (already configured in this repo)
+git config pull.rebase true
+
+# Or set globally for all repos on a machine
+git config --global pull.rebase true
+```
+
+If a rebase gets messy, abort and fall back to a one-time merge pull:
+```powershell
+git rebase --abort
+git pull --no-rebase
+```
+
 ### Daily Development (on `dev` branch)
 
 ```powershell
