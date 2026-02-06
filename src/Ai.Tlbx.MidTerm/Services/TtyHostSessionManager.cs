@@ -13,6 +13,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 public sealed class TtyHostSessionManager : IAsyncDisposable
 {
     public const int MaxSessions = 256;
+    private const int SessionIdLength = 8;
+    private const string FallbackMinCompatibleVersion = "2.0.0";
 
     private readonly ConcurrentDictionary<string, TtyHostClient> _clients = new();
     private readonly ConcurrentDictionary<string, SessionInfo> _sessionCache = new();
@@ -59,7 +61,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         catch
         {
             // Fallback to permissive minimum to avoid killing sessions when manifest can't be read
-            return "2.0.0";
+            return FallbackMinCompatibleVersion;
         }
     }
 
@@ -319,7 +321,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
-        var sessionId = Guid.NewGuid().ToString("N")[..8];
+        var sessionId = Guid.NewGuid().ToString("N")[..SessionIdLength];
 
         if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid))
         {
@@ -604,8 +606,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         NotifyStateChange();
 
-        // Fire-and-forget IPC to persist order on mthosts
-        _ = SendOrderUpdatesAsync(sessionIds);
+        _ = SendOrderUpdatesAsync(sessionIds).ContinueWith(
+            t => Log.Exception(t.Exception!.InnerException!, "TtyHostSessionManager.SendOrderUpdates"),
+            TaskContinuationOptions.OnlyOnFaulted);
 
         return true;
     }
@@ -654,7 +657,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         client.OnOutput += HandleClientOutput;
         client.OnForegroundChanged += HandleClientForegroundChanged;
-        client.OnStateChanged += HandleClientStateChanged;
+        client.OnStateChanged += id => _ = HandleClientStateChangedAsync(id);
     }
 
     private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
@@ -674,33 +677,40 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         OnForegroundChanged?.Invoke(sessionId, payload);
     }
 
-    private async void HandleClientStateChanged(string sessionId)
+    private async Task HandleClientStateChangedAsync(string sessionId)
     {
-        if (_clients.TryGetValue(sessionId, out var c))
+        try
         {
-            var info = await c.GetInfoAsync().ConfigureAwait(false);
-            if (info is not null)
+            if (_clients.TryGetValue(sessionId, out var c))
             {
-                if (_sessionCache.TryGetValue(sessionId, out var existing))
+                var info = await c.GetInfoAsync().ConfigureAwait(false);
+                if (info is not null)
                 {
-                    info.TerminalTitle = existing.TerminalTitle;
-                    info.ManuallyNamed = existing.ManuallyNamed;
+                    if (_sessionCache.TryGetValue(sessionId, out var existing))
+                    {
+                        info.TerminalTitle = existing.TerminalTitle;
+                        info.ManuallyNamed = existing.ManuallyNamed;
+                    }
+                    _sessionCache[sessionId] = info;
                 }
-                _sessionCache[sessionId] = info;
+
+                if (info is null || !info.IsRunning)
+                {
+                    if (_clients.TryRemove(sessionId, out var removed))
+                    {
+                        await removed.DisposeAsync().ConfigureAwait(false);
+                    }
+                    _sessionCache.TryRemove(sessionId, out _);
+                }
             }
 
-            if (info is null || !info.IsRunning)
-            {
-                if (_clients.TryRemove(sessionId, out var removed))
-                {
-                    await removed.DisposeAsync().ConfigureAwait(false);
-                }
-                _sessionCache.TryRemove(sessionId, out _);
-            }
+            OnStateChanged?.Invoke(sessionId);
+            NotifyStateChange();
         }
-
-        OnStateChanged?.Invoke(sessionId);
-        NotifyStateChange();
+        catch (Exception ex)
+        {
+            Log.Exception(ex, $"TtyHostSessionManager.HandleClientStateChanged({sessionId})");
+        }
     }
 
     public async ValueTask DisposeAsync()

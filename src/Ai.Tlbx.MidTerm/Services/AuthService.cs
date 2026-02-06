@@ -11,6 +11,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// </summary>
 public sealed class AuthService
 {
+    public const string SessionCookieName = "mm-session";
+
     private const int Iterations = 100_000;
     private const int SaltSize = 32;
     private const int HashSize = 32;

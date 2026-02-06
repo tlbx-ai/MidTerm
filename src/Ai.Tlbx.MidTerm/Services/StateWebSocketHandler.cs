@@ -38,7 +38,7 @@ public sealed class StateWebSocketHandler
         var settings = _settingsService.Load();
         if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
         {
-            var token = context.Request.Cookies["mm-session"];
+            var token = context.Request.Cookies[AuthService.SessionCookieName];
             if (token is null || !_authService.ValidateSessionToken(token))
             {
                 context.Response.StatusCode = 401;
@@ -60,8 +60,11 @@ public sealed class StateWebSocketHandler
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
                 await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
             }
-            catch
+            catch (WebSocketException) { }
+            catch (ObjectDisposedException) { }
+            catch (Exception ex)
             {
+                Log.Verbose(() => $"[StateWS] SendJsonAsync failed: {ex.GetType().Name}: {ex.Message}");
             }
             finally
             {
@@ -93,7 +96,7 @@ public sealed class StateWebSocketHandler
             await SendJsonAsync(response, AppJsonContext.Default.WsCommandResponse);
         }
 
-        async void OnStateChange()
+        async Task SendStateWithRetryAsync()
         {
             for (var attempt = 0; attempt < 3; attempt++)
             {
@@ -106,32 +109,23 @@ public sealed class StateWebSocketHandler
                 {
                     await Task.Delay(100);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Log.Verbose(() => $"[StateWS] SendStateWithRetry failed: {ex.GetType().Name}: {ex.Message}");
                     return;
                 }
             }
         }
 
-        async void OnUpdateAvailable(UpdateInfo update)
+        void OnStateChange()
+        {
+            _ = SendStateWithRetryAsync();
+        }
+
+        void OnUpdateAvailable(UpdateInfo update)
         {
             lastUpdate = update;
-            for (var attempt = 0; attempt < 3; attempt++)
-            {
-                try
-                {
-                    await SendStateAsync();
-                    return;
-                }
-                catch (WebSocketException) when (attempt < 2)
-                {
-                    await Task.Delay(100);
-                }
-                catch
-                {
-                    return;
-                }
-            }
+            _ = SendStateWithRetryAsync();
         }
 
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
@@ -242,7 +236,7 @@ public sealed class StateWebSocketHandler
                     break;
 
                 case "session.reorder":
-                    HandleSessionReorder(cmd, sendResponse);
+                    await HandleSessionReorderAsync(cmd, sendResponse);
                     break;
 
                 case "settings.save":
@@ -314,7 +308,7 @@ public sealed class StateWebSocketHandler
         await sendResponse(cmd.Id, renamed, null, renamed ? null : "Session not found");
     }
 
-    private async void HandleSessionReorder(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleSessionReorderAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
     {
         var sessionIds = cmd.Payload?.SessionIds;
         if (sessionIds is null || sessionIds.Count == 0)

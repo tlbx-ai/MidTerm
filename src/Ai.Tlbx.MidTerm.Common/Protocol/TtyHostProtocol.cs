@@ -27,12 +27,6 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.Info, json);
     }
 
-    [Obsolete("Use WriteInputMessage with callback for zero-allocation")]
-    public static byte[] CreateInputMessage(ReadOnlySpan<byte> data)
-    {
-        return CreateFrame(TtyHostMessageType.Input, data.ToArray());
-    }
-
     /// <summary>
     /// Writes an input message into a pre-allocated buffer. Zero allocations.
     /// Destination must be at least HeaderSize + data.Length bytes.
@@ -63,16 +57,6 @@ public static class TtyHostProtocol
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
-    }
-
-    [Obsolete("Use WriteOutputMessage with callback for zero-allocation")]
-    public static byte[] CreateOutputMessage(int cols, int rows, ReadOnlySpan<byte> data)
-    {
-        var payload = new byte[4 + data.Length];
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0, 2), (ushort)cols);
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2, 2), (ushort)rows);
-        data.CopyTo(payload.AsSpan(4));
-        return CreateFrame(TtyHostMessageType.Output, payload);
     }
 
     /// <summary>
@@ -137,12 +121,6 @@ public static class TtyHostProtocol
     public static byte[] CreateGetBuffer()
     {
         return CreateFrame(TtyHostMessageType.GetBuffer, []);
-    }
-
-    [Obsolete("Use WriteBufferResponse with callback for zero-allocation")]
-    public static byte[] CreateBufferResponse(ReadOnlySpan<byte> buffer)
-    {
-        return CreateFrame(TtyHostMessageType.Buffer, buffer.ToArray());
     }
 
     /// <summary>

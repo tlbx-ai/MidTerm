@@ -228,21 +228,17 @@ public class Program
             }
         });
 
-        _ = Task.Run(async () =>
+        shutdownService.Token.Register(() =>
         {
-            try
+            var timer = new Timer(_ =>
             {
-                await Task.Delay(Timeout.Infinite, shutdownService.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                await Task.Delay(10000);
                 if (shutdownService.IsShuttingDown)
                 {
                     Log.Error(() => "Shutdown timeout exceeded (10s), forcing exit");
                     Environment.Exit(1);
                 }
-            }
+            }, null, 10000, Timeout.Infinite);
+            GC.KeepAlive(timer);
         });
 
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);

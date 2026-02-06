@@ -14,6 +14,7 @@ public sealed class UpdateService : IDisposable
     private const string RepoOwner = "tlbx-ai";
     private const string RepoName = "MidTerm";
     private const string DevEnvironmentName = "THELAIR";
+    private const string FallbackMinCompatiblePty = "2.0.0";
 
     // Dev-only local update path - uses secure ProgramData folder instead of world-writable temp
     private static string LocalReleasePath => OperatingSystem.IsWindows()
@@ -94,7 +95,7 @@ public sealed class UpdateService : IDisposable
             Web = version,
             Pty = version,
             Protocol = 1,
-            MinCompatiblePty = "2.0.0"
+            MinCompatiblePty = FallbackMinCompatiblePty
         };
     }
 

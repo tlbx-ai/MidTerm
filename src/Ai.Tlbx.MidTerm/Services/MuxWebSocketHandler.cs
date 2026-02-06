@@ -34,7 +34,7 @@ public sealed class MuxWebSocketHandler
         var settings = _settingsService.Load();
         if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
         {
-            var token = context.Request.Cookies["mm-session"];
+            var token = context.Request.Cookies[AuthService.SessionCookieName];
             if (token is null || !_authService.ValidateSessionToken(token))
             {
                 context.Response.StatusCode = 401;
