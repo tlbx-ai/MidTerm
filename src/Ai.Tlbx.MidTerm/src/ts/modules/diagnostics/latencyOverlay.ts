@@ -12,7 +12,6 @@ import {
   measureLatency,
   getLastFlushDelay,
   getLastServerIoRtt,
-  isCursorVisible,
 } from '../comms/muxChannel';
 import { $activeSessionId } from '../../stores';
 import { sessionTerminals } from '../../state';
@@ -191,10 +190,12 @@ function updateCursorState(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state?.terminal) return;
 
-  // DECTCEM cursor visibility (tracked by scanning escape sequences)
-  const visible = isCursorVisible(sessionId);
-  metricEls.cursorVisible.textContent = visible ? 'visible' : 'HIDDEN';
-  applyColor(metricEls.cursorVisible, visible ? 'good' : 'bad');
+  // DECTCEM cursor visibility — read directly from xterm.js internal state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const core = (state.terminal as any)._core;
+  const cursorHidden = core?.coreService?.decPrivateModes?.cursorHidden ?? false;
+  metricEls.cursorVisible.textContent = cursorHidden ? 'HIDDEN' : 'visible';
+  applyColor(metricEls.cursorVisible, cursorHidden ? 'bad' : 'good');
 
   // Terminal DOM focus
   const xtermEl = state.container.querySelector('.xterm textarea');

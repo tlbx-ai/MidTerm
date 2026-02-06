@@ -367,7 +367,9 @@ async function renderDirectory(path: string, container: Element): Promise<void> 
     }
     const resp = await fetch(url);
     if (!resp.ok) {
-      container.innerHTML = '<div class="file-viewer-error">Failed to list directory</div>';
+      const body = await resp.text().catch(() => '');
+      log.error(() => `List directory failed: ${resp.status} ${resp.statusText} ${body}`);
+      container.innerHTML = `<div class="file-viewer-error">Failed to list directory (${resp.status})</div>`;
       return;
     }
 

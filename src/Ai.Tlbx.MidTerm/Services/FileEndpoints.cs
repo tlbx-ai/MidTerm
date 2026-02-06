@@ -61,7 +61,7 @@ public static class FileEndpoints
             if (!string.IsNullOrEmpty(sessionId) &&
                 !IsPathAccessible(sessionId, path, workingDir, allowlistService))
             {
-                return Results.Forbid();
+                return Results.StatusCode(403);
             }
 
             var fullPath = Path.GetFullPath(path);
@@ -77,26 +77,34 @@ public static class FileEndpoints
 
                 foreach (var dir in Directory.EnumerateDirectories(fullPath))
                 {
-                    var dirInfo = new DirectoryInfo(dir);
-                    entries.Add(new DirectoryEntry
+                    try
                     {
-                        Name = dirInfo.Name,
-                        IsDirectory = true,
-                        Modified = dirInfo.LastWriteTimeUtc
-                    });
+                        var dirInfo = new DirectoryInfo(dir);
+                        entries.Add(new DirectoryEntry
+                        {
+                            Name = dirInfo.Name,
+                            IsDirectory = true,
+                            Modified = dirInfo.LastWriteTimeUtc
+                        });
+                    }
+                    catch { }
                 }
 
                 foreach (var file in Directory.EnumerateFiles(fullPath))
                 {
-                    var fileInfo = new FileInfo(file);
-                    entries.Add(new DirectoryEntry
+                    try
                     {
-                        Name = fileInfo.Name,
-                        IsDirectory = false,
-                        Size = fileInfo.Length,
-                        Modified = fileInfo.LastWriteTimeUtc,
-                        MimeType = GetMimeType(fileInfo.Name)
-                    });
+                        var fileInfo = new FileInfo(file);
+                        entries.Add(new DirectoryEntry
+                        {
+                            Name = fileInfo.Name,
+                            IsDirectory = false,
+                            Size = fileInfo.Length,
+                            Modified = fileInfo.LastWriteTimeUtc,
+                            MimeType = GetMimeType(fileInfo.Name)
+                        });
+                    }
+                    catch { }
                 }
 
                 entries = entries
@@ -110,7 +118,7 @@ public static class FileEndpoints
             }
             catch (UnauthorizedAccessException)
             {
-                return Results.Forbid();
+                return Results.StatusCode(403);
             }
             catch (IOException ex)
             {
@@ -152,6 +160,7 @@ public static class FileEndpoints
                 var exactPath = Path.GetFullPath(Path.Combine(cwd, tryPath));
                 if (IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
                 {
+                    allowlistService.RegisterPath(sessionId, exactPath);
                     return Results.Json(BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
                 }
             }
@@ -164,6 +173,7 @@ public static class FileEndpoints
                     var found = SearchTree(cwd, tryPath, maxDepth: 5);
                     if (found is not null && IsWithinDirectory(found, cwd))
                     {
+                        allowlistService.RegisterPath(sessionId, found);
                         return Results.Json(BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
                     }
                 }
@@ -340,7 +350,7 @@ public static class FileEndpoints
         if (!string.IsNullOrEmpty(sessionId) &&
             !IsPathAccessible(sessionId, path, workingDir, allowlistService))
         {
-            return Results.Forbid();
+            return Results.StatusCode(403);
         }
 
         var fullPath = Path.GetFullPath(path);
@@ -370,7 +380,7 @@ public static class FileEndpoints
         }
         catch (UnauthorizedAccessException)
         {
-            return Results.Forbid();
+            return Results.StatusCode(403);
         }
         catch (IOException ex)
         {
