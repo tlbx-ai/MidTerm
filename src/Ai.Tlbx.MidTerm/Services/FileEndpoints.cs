@@ -152,6 +152,7 @@ public static class FileEndpoints
                 var exactPath = Path.GetFullPath(Path.Combine(cwd, tryPath));
                 if (IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
                 {
+                    allowlistService.RegisterPath(sessionId, exactPath);
                     return Results.Json(BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
                 }
             }
@@ -164,6 +165,7 @@ public static class FileEndpoints
                     var found = SearchTree(cwd, tryPath, maxDepth: 5);
                     if (found is not null && IsWithinDirectory(found, cwd))
                     {
+                        allowlistService.RegisterPath(sessionId, found);
                         return Results.Json(BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
                     }
                 }

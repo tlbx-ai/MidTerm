@@ -470,26 +470,23 @@ function throttledResolveRelativePath(
     pendingResolve = null;
   }
 
-  // Check cache - if we already checked this path, show link immediately
+  // Check cache - show link only if path was confirmed to exist
   const cacheKey = `${sessionId}:${path}:false`;
   const cached = resolveCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
-    callback(matchText); // Always show link - deep search on click may find it
+    callback(cached.response.exists ? matchText : undefined);
     return;
   }
 
-  // Schedule delayed resolve to warm cache, but always show link
-  // Deep search on click will find files in subdirectories
+  // Schedule delayed resolve - only show link if path exists
   const abort = new AbortController();
   const timeout = window.setTimeout(async () => {
     if (abort.signal.aborted) return;
 
-    // Warm cache with shallow search (result ignored for link display)
-    await resolveRelativePath(sessionId, path, false, abort.signal);
+    const result = await resolveRelativePath(sessionId, path, false, abort.signal);
     if (abort.signal.aborted) return;
 
-    // Always show link - regex already validated file extension
-    callback(matchText);
+    callback(result?.exists ? matchText : undefined);
 
     if (pendingResolve?.abort === abort) {
       pendingResolve = null;
