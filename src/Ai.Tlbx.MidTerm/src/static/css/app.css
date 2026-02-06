@@ -4868,6 +4868,8 @@ html, body {
     background: var(--bg-sidebar);
     border-top: 1px solid var(--border-color);
     padding: 8px;
+    padding-left: calc(8px + env(safe-area-inset-left, 0px));
+    padding-right: calc(8px + env(safe-area-inset-right, 0px));
     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     flex-direction: column;
     gap: 8px;
@@ -4961,6 +4963,18 @@ html, body {
 
 .touch-cat.active {
     background: var(--accent-blue);
+    color: var(--bg-primary);
+}
+
+/* Fullscreen toggle button */
+.touch-fullscreen {
+    font-family: 'midterm-icons', sans-serif;
+    font-size: 18px;
+    padding: 8px;
+}
+
+.touch-fullscreen.active {
+    background: var(--accent-gold);
     color: var(--bg-primary);
 }
 

@@ -132,8 +132,11 @@ function processButtonAction(button: HTMLButtonElement): void {
   const modifier = button.dataset.modifier as ModifierKey | undefined;
   const key = button.dataset.key;
   const popup = button.dataset.popup;
+  const action = button.dataset.action;
 
-  if (modifier) {
+  if (action === 'fullscreen') {
+    toggleFullscreen(button);
+  } else if (modifier) {
     handleModifierPress(modifier);
   } else if (popup) {
     togglePopup(popup);
@@ -239,4 +242,28 @@ function removeAlternatesPopup(): void {
     alternatesPopup.remove();
     alternatesPopup = null;
   }
+}
+
+function toggleFullscreen(button: HTMLButtonElement): void {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    document.documentElement.requestFullscreen().catch(() => {
+      // Fullscreen not supported or denied
+    });
+  }
+  syncFullscreenButton(button);
+}
+
+function syncFullscreenButton(button?: HTMLButtonElement): void {
+  const btn =
+    button ?? controllerElement?.querySelector<HTMLButtonElement>('[data-action="fullscreen"]');
+  if (!btn) return;
+  const isFs = !!document.fullscreenElement;
+  btn.classList.toggle('active', isFs);
+  btn.setAttribute('aria-pressed', String(isFs));
+}
+
+export function initFullscreenSync(): void {
+  document.addEventListener('fullscreenchange', () => syncFullscreenButton());
 }
