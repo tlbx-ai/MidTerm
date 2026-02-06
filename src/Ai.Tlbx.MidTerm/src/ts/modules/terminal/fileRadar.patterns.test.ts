@@ -9,6 +9,7 @@ import {
   KNOWN_FILE_PATTERN,
   isValidPath,
   isLikelyFalsePositive,
+  isFragmentOfAbsolutePath,
   shouldRejectFolderMatch,
   shouldRejectKnownFileMatch,
   shouldRejectRelativeMatch,
@@ -282,6 +283,73 @@ describe('shouldRejectRelativeMatch', () => {
     ['src/main.ts', false, 'valid relative path'],
   ])('%s → rejected=%s (%s)', (input, expected) => {
     expect(shouldRejectRelativeMatch(input)).toBe(expected);
+  });
+});
+
+// ===========================================================================
+// Category I: Fragment of Absolute Path Detection (isFragmentOfAbsolutePath)
+// ===========================================================================
+
+describe('isFragmentOfAbsolutePath', () => {
+  it('detects relative match that is actually a fragment of Q:\\ path', () => {
+    const input = 'Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.UnitTests\\Ai.Tlbx.MidTerm.UnitTests.csproj';
+    const m = input.match(RELATIVE_PATH_PATTERN);
+    expect(m).not.toBeNull();
+    // The relative pattern matches from "repos\\" onward (after "Q:")
+    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
+  });
+
+  it('detects fragment of C:\\ path', () => {
+    const input = 'C:\\Users\\dev\\src\\Program.cs';
+    const m = input.match(RELATIVE_PATH_PATTERN);
+    expect(m).not.toBeNull();
+    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
+  });
+
+  it('detects fragment of D:\\ path', () => {
+    const input = 'D:\\repos\\MyProject\\Foo.cs';
+    const m = input.match(RELATIVE_PATH_PATTERN);
+    expect(m).not.toBeNull();
+    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
+  });
+
+  it('does NOT flag a genuine relative path', () => {
+    const input = 'Modified src/main.ts';
+    const m = input.match(RELATIVE_PATH_PATTERN);
+    expect(m).not.toBeNull();
+    expect(isFragmentOfAbsolutePath(m!)).toBe(false);
+  });
+
+  it('does NOT flag a bare filename', () => {
+    const input = 'Opened settings.json';
+    const m = input.match(RELATIVE_PATH_PATTERN);
+    expect(m).not.toBeNull();
+    expect(isFragmentOfAbsolutePath(m!)).toBe(false);
+  });
+
+  it('does NOT flag a dot-relative path', () => {
+    const input = 'Created ./output/report.pdf';
+    const m = input.match(RELATIVE_PATH_PATTERN);
+    expect(m).not.toBeNull();
+    expect(isFragmentOfAbsolutePath(m!)).toBe(false);
+  });
+
+  it('returns false when match has no input/index', () => {
+    expect(isFragmentOfAbsolutePath({})).toBe(false);
+    expect(isFragmentOfAbsolutePath({ input: 'test', index: undefined })).toBe(false);
+  });
+
+  it('returns false when match index is < 3', () => {
+    expect(isFragmentOfAbsolutePath({ input: 'src/main.ts', index: 0 })).toBe(false);
+    expect(isFragmentOfAbsolutePath({ input: 'xsrc/main.ts', index: 1 })).toBe(false);
+    expect(isFragmentOfAbsolutePath({ input: '..src/main.ts', index: 2 })).toBe(false);
+  });
+
+  it('detects folder path fragment of absolute path', () => {
+    const input = 'C:\\Users\\dev\\src\\';
+    const m = input.match(FOLDER_PATH_PATTERN);
+    expect(m).not.toBeNull();
+    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
   });
 });
 

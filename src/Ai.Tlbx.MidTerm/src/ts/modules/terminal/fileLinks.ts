@@ -46,6 +46,7 @@ import {
   FOLDER_PATH_PATTERN,
   KNOWN_FILE_PATTERN,
   isValidPath,
+  isFragmentOfAbsolutePath,
   shouldRejectFolderMatch,
   shouldRejectKnownFileMatch,
   shouldRejectRelativeMatch,
@@ -536,7 +537,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
           const path = match[1];
-          if (!path || shouldRejectFolderMatch(path)) {
+          if (!path || shouldRejectFolderMatch(path) || isFragmentOfAbsolutePath(match)) {
             callback(undefined);
             return;
           }
@@ -580,7 +581,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
           const path = match[1];
-          if (!path || shouldRejectRelativeMatch(path)) {
+          if (!path || shouldRejectRelativeMatch(path) || isFragmentOfAbsolutePath(match)) {
             callback(undefined);
             return;
           }

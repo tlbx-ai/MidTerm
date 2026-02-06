@@ -140,6 +140,12 @@ export function isLikelyFalsePositive(path: string): boolean {
 // matchCallback Filter Predicates
 // ===========================================================================
 
+export function isFragmentOfAbsolutePath(match: { input?: string; index?: number }): boolean {
+  if (!match.input || match.index === undefined || match.index < 3) return false;
+  const before = match.input.substring(match.index - 3, match.index);
+  return /^[A-Za-z]:[/\\]$/.test(before);
+}
+
 export function shouldRejectFolderMatch(path: string): boolean {
   if (/^[A-Za-z]:/.test(path)) return true;
   if (/^[a-z]+:\/\//i.test(path)) return true;
