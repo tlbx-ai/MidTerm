@@ -117,6 +117,7 @@ const RESOLVE_HOVER_DELAY_MS = 150;
 let pendingResolve: {
   abort: AbortController;
   timeout: number;
+  callback: (match: string | undefined) => void;
 } | null = null;
 
 // ===========================================================================
@@ -377,10 +378,12 @@ function throttledResolveRelativePath(
   matchText: string,
   callback: (match: string | undefined) => void,
 ): void {
-  // Cancel any pending resolve
+  // Cancel any pending resolve — explicitly reject so xterm-link-provider
+  // doesn't default to showing the link when callback is never called
   if (pendingResolve) {
     pendingResolve.abort.abort();
     window.clearTimeout(pendingResolve.timeout);
+    pendingResolve.callback(undefined);
     pendingResolve = null;
   }
 
@@ -407,7 +410,7 @@ function throttledResolveRelativePath(
     }
   }, RESOLVE_HOVER_DELAY_MS);
 
-  pendingResolve = { abort, timeout };
+  pendingResolve = { abort, timeout, callback };
 }
 
 // ===========================================================================
