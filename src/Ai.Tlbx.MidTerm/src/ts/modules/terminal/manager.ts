@@ -58,6 +58,18 @@ let calibrationPromise: Promise<void> | null = null;
 let focusDebounceTimer: number | null = null;
 
 /**
+ * Reset the cursor blink timer on a terminal.
+ * Toggling cursorBlink forces xterm.js to reinitialize its blink handler,
+ * which fixes the cursor getting stuck in the invisible blink phase.
+ */
+export function refreshCursorBlink(terminal: Terminal): void {
+  if (terminal.options.cursorBlink) {
+    terminal.options.cursorBlink = false;
+    terminal.options.cursorBlink = true;
+  }
+}
+
+/**
  * Focus the active terminal, debounced to prevent rapid focus/blur cycles.
  * Respects search panel - won't focus if search is visible.
  */
@@ -76,6 +88,7 @@ export function focusActiveTerminal(): void {
     const state = sessionTerminals.get(activeId);
     if (state?.opened) {
       state.terminal.focus();
+      refreshCursorBlink(state.terminal);
     }
   }, 16); // Single frame (60fps) prevents focus/blur thrashing
 }

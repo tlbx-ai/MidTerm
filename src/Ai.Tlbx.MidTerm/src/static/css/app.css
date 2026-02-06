@@ -995,8 +995,8 @@ html, body {
     padding: 4px;
     touch-action: manipulation;
     display: flex;
-    align-items: flex-start;
-    justify-content: flex-start;
+    align-items: center;
+    justify-content: center;
 }
 
 .terminal-container.visible {

@@ -480,13 +480,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   };
 
   if (scale < 1) {
-    // Too big — scale down + center
-    const visualWidth = termWidth * scale;
-    const visualHeight = termHeight * scale;
-    const offsetX = Math.max(0, (availWidth - visualWidth) / 2);
-    const offsetY = Math.max(0, (availHeight - visualHeight) / 2);
-    xterm.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
-    xterm.style.transformOrigin = '0 0';
+    // Too big — scale down (flexbox centers automatically)
+    xterm.style.transform = `scale(${scale})`;
+    xterm.style.transformOrigin = 'center center';
     container.classList.add('scaled');
 
     const el = ensureOverlay();
@@ -507,11 +503,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     }
     el.innerHTML = `${icon('resize')} Scaled to ${pct}% — click to resize${diagHtml}`;
   } else if (termWidth < availWidth - 2 || termHeight < availHeight - 2) {
-    // Fits but undersized — center without scaling
-    const offsetX = Math.max(0, (availWidth - termWidth) / 2);
-    const offsetY = Math.max(0, (availHeight - termHeight) / 2);
-    xterm.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
-    xterm.style.transformOrigin = '0 0';
+    // Fits but undersized — no transform, flexbox centers it
+    xterm.style.transform = '';
+    xterm.style.transformOrigin = '';
     container.classList.remove('scaled');
 
     const usage = Math.max(termWidth / availWidth, termHeight / availHeight);
@@ -524,7 +518,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       overlay = null;
     }
   } else {
-    // Perfect fit — clear everything
+    // Perfect fit — no transform needed
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
     container.classList.remove('scaled');
