@@ -6,7 +6,7 @@
  */
 
 import { $activeSessionId } from '../../stores';
-import { sendInput } from '../comms/muxChannel';
+import { sendInput } from '../comms';
 import { KEY_SEQUENCES, KEY_LABELS } from './constants';
 
 interface PopupGroup {

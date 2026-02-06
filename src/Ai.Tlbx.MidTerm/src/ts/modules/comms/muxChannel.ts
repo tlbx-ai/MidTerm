@@ -38,6 +38,9 @@ import {
   createWsUrl,
   closeWebSocket,
 } from '../../utils';
+import { handleStateUpdate } from './stateChannel';
+import { getSessions } from '../../api/client';
+import { applyTerminalScaling } from '../terminal/scaling';
 import {
   muxWs,
   muxReconnectTimer,
@@ -100,14 +103,10 @@ const MAX_PENDING_INPUT = 100;
  */
 async function refreshSessionList(): Promise<void> {
   try {
-    const { getSessions } = await import('../../api/client');
     const { data, response } = await getSessions();
     if (!response.ok || !data) return;
 
     const sessions = data.sessions ?? [];
-
-    // Import dynamically to avoid circular dependency
-    const { handleStateUpdate } = await import('./stateChannel');
     handleStateUpdate(sessions);
     log.info(() => `Refreshed session list: ${sessions.length} sessions`);
   } catch (e) {
@@ -238,18 +237,6 @@ function measureOutputRtt(sessionId: string): void {
 
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
-
-// Forward declarations for functions from other modules
-let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
-
-/**
- * Register callbacks from other modules
- */
-export function registerMuxCallbacks(callbacks: {
-  applyTerminalScaling?: (sessionId: string, state: TerminalState) => void;
-}): void {
-  if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
-}
 
 // =============================================================================
 // Priority Output Queue

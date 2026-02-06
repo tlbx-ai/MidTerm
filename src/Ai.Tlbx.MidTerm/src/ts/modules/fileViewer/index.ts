@@ -10,6 +10,7 @@ import type { FilePathInfo, DirectoryEntry, DirectoryListResponse } from '../../
 import { createLogger } from '../logging';
 import { $activeSessionId, $fileViewerDocked, $dockedFilePath } from '../../stores';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { escapeHtml } from '../../utils';
 
 const log = createLogger('fileViewer');
 
@@ -290,7 +291,7 @@ async function renderInDock(path: string): Promise<void> {
   }
 }
 
-export function closeViewer(): void {
+function closeViewer(): void {
   if (modal) {
     modal.classList.add('hidden');
   }
@@ -605,12 +606,6 @@ function formatDate(isoDate: string): string {
   } catch {
     return isoDate;
   }
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function renderMarkdown(text: string): string {

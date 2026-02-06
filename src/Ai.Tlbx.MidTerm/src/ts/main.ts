@@ -13,12 +13,8 @@ import {
   connectStateWebSocket,
   connectMuxWebSocket,
   connectSettingsWebSocket,
-  registerStateCallbacks,
-  registerMuxCallbacks,
-  registerSettingsCallbacks,
+  setSelectSessionCallback,
   sendInput,
-  sendResize,
-  requestBufferRefresh,
   sendActiveSessionHint,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
@@ -27,24 +23,17 @@ import {
   destroyTerminalForSession,
   preloadTerminalFont,
   initCalibrationTerminal,
-  registerTerminalCallbacks,
-  applyTerminalScaling,
+  setShowBellCallback,
   fitSessionToScreen,
   fitTerminalToContainer,
   setupResizeObserver,
   setupVisualViewport,
-  registerScalingCallbacks,
   bindSearchEvents,
-  registerFileDropCallbacks,
-  pasteToTerminal,
   scrollToBottom,
   focusActiveTerminal,
   calculateOptimalDimensions,
-  rescaleAllTerminalsImmediate,
 } from './modules/terminal';
 import {
-  updateEmptyState,
-  updateMobileTitle,
   getSessionDisplayName,
   setSessionListCallbacks,
   toggleSidebar,
@@ -64,26 +53,18 @@ import {
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
-import {
-  toggleSettings,
-  closeSettings,
-  applyReceivedSettings,
-  registerSettingsAppliedCallback,
-} from './modules/settings';
+import { toggleSettings, closeSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap } from './modules/bootstrap';
 import {
-  renderUpdatePanel,
   applyUpdate,
   checkForUpdates,
   showChangelog,
   closeChangelog,
-  handleUpdateInfo,
   showUpdateLog,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
-  initializeCommandHistory,
   initHistoryDropdown,
   toggleHistoryDropdown,
   createHistoryEntry,
@@ -100,7 +81,6 @@ import {
   isSessionInLayout,
   isLayoutActive,
   focusLayoutSession,
-  registerLayoutCallbacks,
   initLayoutPersistence,
 } from './modules/layout';
 import {
@@ -185,7 +165,6 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
-  initializeCommandHistory();
   initHistoryDropdown(spawnFromHistory);
 
   const fontPromise = preloadTerminalFont();
@@ -227,51 +206,8 @@ async function init(): Promise<void> {
 // =============================================================================
 
 function registerCallbacks(): void {
-  registerStateCallbacks({
-    destroyTerminalForSession,
-    applyTerminalScaling,
-    createTerminalForSession,
-    updateEmptyState,
-    selectSession,
-    updateMobileTitle,
-    renderUpdatePanel,
-  });
-
-  registerMuxCallbacks({
-    applyTerminalScaling,
-  });
-
-  registerSettingsCallbacks({
-    applyReceivedSettings,
-    applyReceivedUpdate: handleUpdateInfo,
-  });
-
-  registerTerminalCallbacks({
-    sendInput,
-    showBellNotification,
-    requestBufferRefresh,
-  });
-
-  registerFileDropCallbacks({
-    sendInput,
-    pasteToTerminal,
-  });
-
-  registerScalingCallbacks({
-    sendResize: (sessionId: string, terminal: { cols: number; rows: number }) => {
-      sendResize(sessionId, terminal.cols, terminal.rows);
-    },
-    focusActiveTerminal,
-  });
-
-  registerLayoutCallbacks({
-    createTerminalForSession,
-    sendActiveSessionHint,
-  });
-
-  registerSettingsAppliedCallback(() => {
-    rescaleAllTerminalsImmediate();
-  });
+  setSelectSessionCallback(selectSession);
+  setShowBellCallback(showBellNotification);
 
   setSessionListCallbacks({
     onSelect: selectSession,

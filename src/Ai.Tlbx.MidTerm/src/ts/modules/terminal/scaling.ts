@@ -19,25 +19,11 @@ import {
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
 import { $currentSettings, getSession } from '../../stores';
 import { throttle } from '../../utils';
-import { getCalibrationMeasurement, getCalibrationPromise } from './manager';
+import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
+import { sendResize } from '../comms';
 import { isDevMode } from '../sidebar/voiceSection';
 
 const SCALE_TOLERANCE = 0.97;
-
-// Forward declarations for functions from other modules
-let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
-let focusActiveTerminal: () => void = () => {};
-
-/**
- * Register callbacks from other modules
- */
-export function registerScalingCallbacks(callbacks: {
-  sendResize?: (sessionId: string, dimensions: { cols: number; rows: number }) => void;
-  focusActiveTerminal?: () => void;
-}): void {
-  if (callbacks.sendResize) sendResize = callbacks.sendResize;
-  if (callbacks.focusActiveTerminal) focusActiveTerminal = callbacks.focusActiveTerminal;
-}
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe';
 
@@ -302,7 +288,7 @@ export function fitSessionToScreen(sessionId: string): void {
         const dims = state.fitAddon.proposeDimensions();
         if (dims?.cols && dims?.rows) {
           state.fitAddon.fit();
-          sendResize(sessionId, state.terminal);
+          sendResize(sessionId, state.terminal.cols, state.terminal.rows);
         }
       } catch {
         // FitAddon may fail if terminal isn't fully initialized
@@ -334,7 +320,7 @@ export function fitSessionToScreen(sessionId: string): void {
     try {
       if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
         state.terminal.resize(cols, rows);
-        sendResize(sessionId, state.terminal);
+        sendResize(sessionId, state.terminal.cols, state.terminal.rows);
       }
     } catch {
       // Resize may fail if terminal is disposed
@@ -391,7 +377,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
     // Fallback to fitAddon if measurements aren't valid
     try {
       state.fitAddon.fit();
-      sendResize(sessionId, state.terminal);
+      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
     } catch {
       // FitAddon may fail if terminal isn't fully initialized
     }
@@ -417,7 +403,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
       state.terminal.resize(cols, rows);
       state.serverCols = cols;
       state.serverRows = rows;
-      sendResize(sessionId, state.terminal);
+      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
     }
   } catch {
     // Resize may fail if terminal is disposed

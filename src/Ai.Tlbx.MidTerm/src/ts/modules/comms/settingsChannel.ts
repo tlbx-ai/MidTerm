@@ -9,6 +9,8 @@ import type { Settings, UpdateInfo } from '../../types';
 import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { $currentSettings, $updateInfo, $settingsWsConnected } from '../../stores';
+import { applyReceivedSettings } from '../settings/persistence';
+import { handleUpdateInfo } from '../updating/checker';
 
 const log = createLogger('settings-ws');
 
@@ -21,20 +23,6 @@ interface SettingsWsMessage {
 
 let settingsWs: WebSocket | null = null;
 let settingsReconnectTimer: number | undefined;
-
-let applyReceivedSettings: (settings: Settings) => void = () => {};
-let applyReceivedUpdate: (update: UpdateInfo) => void = () => {};
-
-/**
- * Register callbacks from other modules
- */
-export function registerSettingsCallbacks(callbacks: {
-  applyReceivedSettings?: (settings: Settings) => void;
-  applyReceivedUpdate?: (update: UpdateInfo) => void;
-}): void {
-  if (callbacks.applyReceivedSettings) applyReceivedSettings = callbacks.applyReceivedSettings;
-  if (callbacks.applyReceivedUpdate) applyReceivedUpdate = callbacks.applyReceivedUpdate;
-}
 
 /**
  * Connect to the settings WebSocket for real-time settings sync.
@@ -80,7 +68,7 @@ function handleMessage(message: SettingsWsMessage): void {
     applyReceivedSettings(message.settings);
   } else if (message.type === 'update' && message.update) {
     $updateInfo.set(message.update);
-    applyReceivedUpdate(message.update);
+    handleUpdateInfo(message.update);
   }
 }
 

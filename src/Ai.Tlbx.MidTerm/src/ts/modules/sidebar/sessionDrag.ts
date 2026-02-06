@@ -7,7 +7,7 @@
 
 import { dom } from '../../state';
 import { reorderSessions, $sessionList } from '../../stores';
-import { persistSessionOrder } from '../comms/stateChannel';
+import { persistSessionOrder } from '../comms';
 import {
   showDockOverlay,
   hideDockOverlay,

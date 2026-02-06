@@ -23,15 +23,10 @@ import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { getSettings, getUsers, getVersion, getHealth, updateSettings } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
+import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
-
-let _onSettingsApplied: (() => void) | null = null;
-
-export function registerSettingsAppliedCallback(callback: () => void): void {
-  _onSettingsApplied = callback;
-}
 
 /**
  * Set the value of a form element by ID
@@ -202,7 +197,7 @@ export function applySettingsToTerminals(): void {
     state.terminal.options.scrollback = settings.scrollbackLines ?? 10000;
   });
 
-  _onSettingsApplied?.();
+  rescaleAllTerminalsImmediate();
 }
 
 /**

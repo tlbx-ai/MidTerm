@@ -5,7 +5,7 @@
  */
 
 import { getPaths, reloadSettings } from '../../api/client';
-import { measureLatency, onOutputRtt } from '../comms/muxChannel';
+import { measureLatency, onOutputRtt } from '../comms';
 import { $activeSessionId, getSession } from '../../stores';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';

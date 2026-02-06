@@ -8,6 +8,7 @@
 import type { UpdateInfo, UpdateResult } from '../../api/types';
 import { $updateInfo } from '../../stores';
 import { createLogger } from '../logging';
+import { escapeHtml } from '../../utils';
 import {
   applyUpdate as apiApplyUpdate,
   checkUpdate,
@@ -359,12 +360,6 @@ export function renderUpdateResult(): void {
   `;
 
   container.querySelector('.btn-view-log')?.addEventListener('click', showUpdateLog);
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 /**

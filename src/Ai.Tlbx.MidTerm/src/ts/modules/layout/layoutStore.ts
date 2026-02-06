@@ -5,38 +5,19 @@
  * docking/undocking sessions in the multi-panel layout.
  */
 
-import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition, Session } from '../../types';
+import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition } from '../../types';
 import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
 import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
-
-// Forward declarations - will be set by main.ts
-let createTerminalForSessionFn:
-  | ((sessionId: string, sessionInfo: Session | undefined) => void)
-  | null = null;
-let sendActiveSessionHintFn: ((sessionId: string | null) => void) | null = null;
-
-/**
- * Register callbacks from main module.
- */
-export function registerLayoutCallbacks(callbacks: {
-  createTerminalForSession?: (sessionId: string, sessionInfo: Session | undefined) => void;
-  sendActiveSessionHint?: (sessionId: string | null) => void;
-}): void {
-  if (callbacks.createTerminalForSession) {
-    createTerminalForSessionFn = callbacks.createTerminalForSession;
-  }
-  if (callbacks.sendActiveSessionHint) {
-    sendActiveSessionHintFn = callbacks.sendActiveSessionHint;
-  }
-}
+import { createTerminalForSession } from '../terminal/manager';
+import { sendActiveSessionHint } from '../comms';
 
 /**
  * Ensure a terminal exists for a session.
  */
 function ensureTerminalExists(sessionId: string): void {
-  if (!sessionTerminals.has(sessionId) && createTerminalForSessionFn) {
+  if (!sessionTerminals.has(sessionId)) {
     const sessionInfo = getSession(sessionId);
-    createTerminalForSessionFn(sessionId, sessionInfo);
+    createTerminalForSession(sessionId, sessionInfo);
   }
 }
 
@@ -367,9 +348,7 @@ export function focusLayoutSession(sessionId: string): void {
     // Also update activeSessionId for sidebar highlighting
     $activeSessionId.set(sessionId);
     // Notify server so this session gets priority output delivery
-    if (sendActiveSessionHintFn) {
-      sendActiveSessionHintFn(sessionId);
-    }
+    sendActiveSessionHint(sessionId);
   }
 }
 

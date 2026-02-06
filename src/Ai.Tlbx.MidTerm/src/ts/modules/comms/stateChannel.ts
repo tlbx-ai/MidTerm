@@ -9,7 +9,6 @@
 import type {
   Session,
   UpdateInfo,
-  TerminalState,
   WsCommand,
   WsCommandPayload,
   WsCommandResponse,
@@ -17,6 +16,10 @@ import type {
 import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
+import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
+import { applyTerminalScaling } from '../terminal/scaling';
+import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
+import { renderUpdatePanel } from '../updating/checker';
 
 const log = createLogger('state');
 import {
@@ -50,43 +53,15 @@ import { restoreLayoutFromStorage } from '../layout/layoutStore';
 // Track if we've restored layout from storage (only do once on first session list)
 let layoutRestoredFromStorage = false;
 
-// Forward declarations for functions from other modules
-// These will be imported when those modules are created
-let destroyTerminalForSession: (sessionId: string) => void = () => {};
-let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
-let createTerminalForSession: (
-  sessionId: string,
-  sessionInfo: Session | undefined,
-) => void = () => {};
-let updateEmptyState: () => void = () => {};
 let selectSession: (
   sessionId: string,
   options?: { closeSettingsPanel?: boolean },
 ) => void = () => {};
-let updateMobileTitle: () => void = () => {};
-let renderUpdatePanel: () => void = () => {};
 
-/**
- * Register callbacks from other modules
- */
-export function registerStateCallbacks(callbacks: {
-  destroyTerminalForSession?: (sessionId: string) => void;
-  applyTerminalScaling?: (sessionId: string, state: TerminalState) => void;
-  createTerminalForSession?: (sessionId: string, sessionInfo: Session | undefined) => void;
-  updateEmptyState?: () => void;
-  selectSession?: (sessionId: string, options?: { closeSettingsPanel?: boolean }) => void;
-  updateMobileTitle?: () => void;
-  renderUpdatePanel?: () => void;
-}): void {
-  if (callbacks.destroyTerminalForSession)
-    destroyTerminalForSession = callbacks.destroyTerminalForSession;
-  if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
-  if (callbacks.createTerminalForSession)
-    createTerminalForSession = callbacks.createTerminalForSession;
-  if (callbacks.updateEmptyState) updateEmptyState = callbacks.updateEmptyState;
-  if (callbacks.selectSession) selectSession = callbacks.selectSession;
-  if (callbacks.updateMobileTitle) updateMobileTitle = callbacks.updateMobileTitle;
-  if (callbacks.renderUpdatePanel) renderUpdatePanel = callbacks.renderUpdatePanel;
+export function setSelectSessionCallback(
+  cb: (sessionId: string, options?: { closeSettingsPanel?: boolean }) => void,
+): void {
+  selectSession = cb;
 }
 
 /**

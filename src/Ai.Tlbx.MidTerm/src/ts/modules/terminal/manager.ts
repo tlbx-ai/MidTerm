@@ -21,7 +21,7 @@ import { $activeSessionId, $currentSettings, $windowsBuildNumber } from '../../s
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync } from './scaling';
 import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
-import { isBracketedPasteEnabled, sendCommand } from '../comms';
+import { isBracketedPasteEnabled, sendCommand, sendInput, requestBufferRefresh } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
 import { Terminal, type ITerminalOptions } from '@xterm/xterm';
@@ -41,10 +41,11 @@ import {
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 
-// Forward declarations for functions from other modules
-let sendInput: (sessionId: string, data: string) => void = () => {};
 let showBellNotification: (sessionId: string) => void = () => {};
-let requestBufferRefresh: (sessionId: string) => void = () => {};
+
+export function setShowBellCallback(cb: (sessionId: string) => void): void {
+  showBellNotification = cb;
+}
 
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
@@ -96,19 +97,6 @@ function updateSessionNameAuto(sessionId: string, name: string): void {
   }, 500);
 
   pendingTitleUpdates.set(sessionId, timer);
-}
-
-/**
- * Register callbacks from other modules
- */
-export function registerTerminalCallbacks(callbacks: {
-  sendInput?: (sessionId: string, data: string) => void;
-  showBellNotification?: (sessionId: string) => void;
-  requestBufferRefresh?: (sessionId: string) => void;
-}): void {
-  if (callbacks.sendInput) sendInput = callbacks.sendInput;
-  if (callbacks.showBellNotification) showBellNotification = callbacks.showBellNotification;
-  if (callbacks.requestBufferRefresh) requestBufferRefresh = callbacks.requestBufferRefresh;
 }
 
 /**

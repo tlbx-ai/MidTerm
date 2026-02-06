@@ -7,6 +7,7 @@
 
 import { $activeSessionId } from '../../stores';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
+import { pasteToTerminal } from './manager';
 
 // =============================================================================
 // Constants
@@ -80,12 +81,6 @@ const REJECTED_EXTENSIONS = new Set([
   '.ogg',
   '.webm',
 ]);
-
-// =============================================================================
-// Forward declarations for callbacks
-// =============================================================================
-
-let pasteToTerminal: (sessionId: string, data: string, isFilePath?: boolean) => void = () => {};
 
 // =============================================================================
 // Helper Functions
@@ -204,16 +199,6 @@ export function sanitizePasteContent(text: string): string {
       // eslint-disable-next-line no-control-regex
       .replace(/\x1b[\x20-\x2F]*[\x30-\x7E]/g, '')
   ); // Remove other escape sequences
-}
-
-/**
- * Register callbacks from mux channel and terminal manager
- */
-export function registerFileDropCallbacks(callbacks: {
-  sendInput?: (sessionId: string, data: string) => void;
-  pasteToTerminal?: (sessionId: string, data: string, isFilePath?: boolean) => void;
-}): void {
-  if (callbacks.pasteToTerminal) pasteToTerminal = callbacks.pasteToTerminal;
 }
 
 /**
