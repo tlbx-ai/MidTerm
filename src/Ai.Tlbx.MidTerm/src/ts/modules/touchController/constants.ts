@@ -158,17 +158,13 @@ export const KEY_LABELS: Record<string, string> = {
 export const CSS_CLASSES = {
   controller: 'touch-controller',
   visible: 'visible',
-  expanded: 'expanded',
   active: 'active',
   touchMode: 'touch-mode',
-  panelExpanded: 'touch-panel-expanded',
 } as const;
 
 /** DOM Selectors */
 export const SELECTORS = {
   controller: '#touch-controller',
-  panel: '#touch-panel',
-  expandButton: '.touch-expand',
   modifierKey: '.touch-modifier',
-  actionKey: '.touch-key:not(.touch-modifier):not(.touch-expand)',
+  actionKey: '.touch-key:not(.touch-modifier)',
 } as const;

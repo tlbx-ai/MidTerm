@@ -8,13 +8,13 @@ import { CSS_CLASSES, SELECTORS } from './constants';
 import { initModifiers, clearModifiers } from './modifiers';
 import { initEvents, teardownEvents } from './events';
 import { initPopups, closePopup } from './popups';
-import { initFavorites, teardownFavorites } from './favorites';
 import { initGestures, teardownGestures } from './gestures';
 import {
   shouldShowTouchController,
   setupPointerDetection,
   teardownPointerDetection,
 } from './detection';
+import { rescaleAllTerminals } from '../terminal/scaling';
 
 let controllerElement: HTMLElement | null = null;
 let isInitialized = false;
@@ -27,46 +27,6 @@ function setupVirtualKeyboard(): void {
     (
       navigator as Navigator & { virtualKeyboard: { overlaysContent: boolean } }
     ).virtualKeyboard.overlaysContent = true;
-  }
-}
-
-/**
- * Use Visual Viewport API to position bar above keyboard (fallback)
- */
-function setupKeyboardPositioning(): void {
-  if (!window.visualViewport || !controllerElement) return;
-
-  const updatePosition = (): void => {
-    if (!controllerElement) return;
-
-    const viewport = window.visualViewport!;
-    const keyboardHeight = window.innerHeight - viewport.height - viewport.offsetTop;
-
-    if (keyboardHeight > 100) {
-      controllerElement.style.bottom = keyboardHeight + 'px';
-    } else {
-      controllerElement.style.bottom = '';
-    }
-  };
-
-  window.visualViewport.addEventListener('resize', updatePosition);
-  window.visualViewport.addEventListener('scroll', updatePosition);
-}
-
-/**
- * Update terminal area padding to account for touch bar height
- */
-export function updateTerminalPadding(): void {
-  if (!controllerElement) return;
-
-  const terminalsArea = document.querySelector<HTMLElement>('.terminals-area');
-  if (!terminalsArea) return;
-
-  if (controllerElement.classList.contains(CSS_CLASSES.visible)) {
-    const barHeight = controllerElement.offsetHeight;
-    terminalsArea.style.paddingBottom = barHeight + 'px';
-  } else {
-    terminalsArea.style.paddingBottom = '';
   }
 }
 
@@ -85,11 +45,9 @@ export function initTouchController(): void {
   initModifiers(controllerElement);
   initEvents(controllerElement);
   initPopups();
-  initFavorites();
   initGestures();
 
   setupPointerDetection(handlePointerChange);
-  setupKeyboardPositioning();
 
   updateVisibility();
 
@@ -105,7 +63,6 @@ export function destroyTouchController(): void {
   if (!isInitialized) return;
 
   teardownEvents();
-  teardownFavorites();
   teardownGestures();
   closePopup();
   teardownPointerDetection();
@@ -127,7 +84,7 @@ export function showTouchController(): void {
   if (!controllerElement) return;
   controllerElement.classList.add(CSS_CLASSES.visible);
   document.body.classList.add(CSS_CLASSES.touchMode);
-  requestAnimationFrame(updateTerminalPadding);
+  requestAnimationFrame(rescaleAllTerminals);
 }
 
 /**
@@ -138,7 +95,7 @@ export function hideTouchController(): void {
   controllerElement.classList.remove(CSS_CLASSES.visible);
   document.body.classList.remove(CSS_CLASSES.touchMode);
   clearModifiers();
-  updateTerminalPadding();
+  requestAnimationFrame(rescaleAllTerminals);
 }
 
 /**

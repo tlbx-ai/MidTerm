@@ -23,6 +23,12 @@ interface PopupDefinition {
 }
 
 const POPUPS: Record<string, PopupDefinition> = {
+  nav: {
+    id: 'nav',
+    layout: 'grid',
+    cols: 4,
+    keys: ['tab', 'esc', 'enter', 'backspace', 'home', 'end', 'pgup', 'pgdn', 'insert', 'delete'],
+  },
   fn: {
     id: 'fn',
     layout: 'grid',

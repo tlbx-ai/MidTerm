@@ -4861,11 +4861,8 @@ html, body {
 
 .touch-controller {
     display: none;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 900;
+    flex-shrink: 0;
+    max-height: 72px;
     background: var(--bg-sidebar);
     border-top: 1px solid var(--border-color);
     padding: 8px;
@@ -4902,32 +4899,10 @@ html, body {
     gap: 4px;
 }
 
-/* Arrow keys in cross pattern */
+/* Arrow keys in horizontal row */
 .touch-arrows {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(2, 1fr);
-    gap: 2px;
-}
-
-.touch-arrows [data-key="up"] {
-    grid-column: 2;
-    grid-row: 1;
-}
-
-.touch-arrows [data-key="left"] {
-    grid-column: 1;
-    grid-row: 2;
-}
-
-.touch-arrows [data-key="down"] {
-    grid-column: 2;
-    grid-row: 2;
-}
-
-.touch-arrows [data-key="right"] {
-    grid-column: 3;
-    grid-row: 2;
+    display: flex;
+    gap: 4px;
 }
 
 /* Individual keys - matches topbar button style */
@@ -4954,44 +4929,6 @@ html, body {
 .touch-modifier.active {
     background: var(--accent-blue);
     color: var(--bg-primary);
-}
-
-/* Expand button */
-.touch-expand {
-    min-width: 44px;
-}
-
-.touch-expand .expand-icon {
-    display: inline-block;
-    transition: transform 0.2s;
-}
-
-.touch-expand[aria-expanded="true"] .expand-icon {
-    transform: rotate(90deg);
-}
-
-/* Fold-out panel */
-.touch-panel {
-    display: none;
-    flex-direction: column;
-    gap: 4px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border-color);
-}
-
-.touch-panel.expanded {
-    display: flex;
-}
-
-.touch-panel-row {
-    display: flex;
-    gap: 4px;
-    justify-content: space-around;
-}
-
-.touch-panel-row .touch-key {
-    flex: 1;
-    max-width: 80px;
 }
 
 /* Small screen adjustments */
@@ -5042,7 +4979,7 @@ html, body {
 
 .touch-popup {
     position: fixed;
-    bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
     background: var(--bg-sidebar);
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -5108,68 +5045,6 @@ html, body {
     min-height: 36px;
     padding: 6px 8px;
     font-size: 13px;
-}
-
-/* ==========================================================================
-   Touch Favorites Row
-   ========================================================================== */
-
-.touch-favorites {
-    display: flex;
-    gap: 4px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-color);
-    flex-wrap: wrap;
-}
-
-.touch-favorites:empty {
-    display: none;
-}
-
-.touch-fav-wrapper {
-    position: relative;
-}
-
-.touch-fav {
-    min-width: 40px;
-    min-height: 36px;
-    padding: 6px 10px;
-    font-size: 13px;
-}
-
-.touch-fav-remove {
-    position: absolute;
-    top: -6px;
-    right: -6px;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: var(--accent-red);
-    color: white;
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-    display: none;
-}
-
-.touch-favorites.editing .touch-fav-remove {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.touch-favorites.editing .touch-fav {
-    opacity: 0.7;
-}
-
-.touch-fav-edit {
-    min-width: 36px;
-    min-height: 36px;
-    padding: 6px;
-    font-size: 14px;
-    margin-left: auto;
 }
 
 /* ==========================================================================
