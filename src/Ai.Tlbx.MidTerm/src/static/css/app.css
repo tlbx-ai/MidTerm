@@ -4966,18 +4966,6 @@ html, body {
     color: var(--bg-primary);
 }
 
-/* Fullscreen toggle button */
-.touch-fullscreen {
-    font-family: 'midterm-icons', sans-serif;
-    font-size: 18px;
-    padding: 8px;
-}
-
-.touch-fullscreen.active {
-    background: var(--accent-gold);
-    color: var(--bg-primary);
-}
-
 /* Press feedback */
 .touch-key.pressing {
     transform: scale(0.9);

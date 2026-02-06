@@ -6,7 +6,7 @@
 
 import { CSS_CLASSES, SELECTORS } from './constants';
 import { initModifiers, clearModifiers } from './modifiers';
-import { initEvents, teardownEvents, initFullscreenSync } from './events';
+import { initEvents, teardownEvents } from './events';
 import { initPopups, closePopup } from './popups';
 import { initGestures, teardownGestures } from './gestures';
 import {
@@ -44,7 +44,6 @@ export function initTouchController(): void {
   setupVirtualKeyboard();
   initModifiers(controllerElement);
   initEvents(controllerElement);
-  initFullscreenSync();
   initPopups();
   initGestures();
 
