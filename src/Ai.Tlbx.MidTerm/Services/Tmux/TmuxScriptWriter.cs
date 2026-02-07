@@ -3,10 +3,11 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
 /// <summary>
-/// Writes tmux shim scripts to a temp directory at startup.
-/// On Unix: creates /tmp/midterm-bin-{pid}/tmux (shell script).
-/// On Windows: creates tmux.ps1 + tmux.cmd in %TEMP%\midterm-bin-{pid}.
+/// Writes tmux shim scripts to a fixed directory at startup.
+/// On Unix: creates /tmp/midterm-bin/tmux (shell script).
+/// On Windows: creates tmux.ps1 + tmux.cmd + tmux in %TEMP%\midterm-bin.
 /// The shim scripts null-delimit args and POST them to /api/tmux.
+/// Uses a fixed path so existing terminal sessions survive mt restarts.
 /// </summary>
 public static class TmuxScriptWriter
 {
@@ -24,8 +25,6 @@ public static class TmuxScriptWriter
     {
         if (OperatingSystem.IsWindows())
         {
-            // Windows uses a PowerShell function injected in shell startup
-            // But we still create a .cmd wrapper for WSL/Git Bash scenarios
             WriteWindowsScript(port);
             return;
         }
@@ -35,8 +34,7 @@ public static class TmuxScriptWriter
 
     private static void WriteUnixScript(int port)
     {
-        var pid = Environment.ProcessId;
-        var dir = $"/tmp/midterm-bin-{pid}";
+        var dir = "/tmp/midterm-bin";
 
         try
         {
@@ -71,8 +69,7 @@ public static class TmuxScriptWriter
 
     private static void WriteWindowsScript(int port)
     {
-        var pid = Environment.ProcessId;
-        var dir = Path.Combine(Path.GetTempPath(), $"midterm-bin-{pid}");
+        var dir = Path.Combine(Path.GetTempPath(), "midterm-bin");
 
         try
         {
