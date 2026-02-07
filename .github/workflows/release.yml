@@ -65,6 +65,12 @@ jobs:
           cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
           cp version.json staging/
 
+          # Ad-hoc codesign for macOS (must happen before checksums)
+          if [[ "${{ matrix.rid }}" == osx-* ]]; then
+            codesign -s - staging/mt
+            codesign -s - staging/mthost
+          fi
+
           cd staging
           if command -v sha256sum &> /dev/null; then
             sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt

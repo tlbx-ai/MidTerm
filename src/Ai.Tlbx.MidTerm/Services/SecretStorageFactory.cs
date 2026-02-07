@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -19,6 +20,11 @@ public static class SecretStorageFactory
         }
 
         // Linux and macOS service mode use file-based storage
+        if (OperatingSystem.IsMacOS() && isServiceMode)
+        {
+            Log.Info(() => "macOS service mode: using file-based secret storage (Keychain unavailable from launchd)");
+        }
+
         return new UnixFileSecretStorage(settingsDirectory);
 #endif
     }
