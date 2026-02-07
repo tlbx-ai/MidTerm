@@ -238,7 +238,7 @@ public static class TtyHostSpawner
                 psi = new ProcessStartInfo
                 {
                     FileName = "sudo",
-                    Arguments = $"-u {runAsUser} {TtyHostPath} {args}",
+                    Arguments = $"-H -u {runAsUser} {TtyHostPath} {args}",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardInput = false,
@@ -269,7 +269,14 @@ public static class TtyHostSpawner
             }
 
             processId = process.Id;
-            Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
+            if (isRoot && !string.IsNullOrEmpty(runAsUser))
+            {
+                Log.Info(() => $"TtyHostSpawner: Spawned via sudo (PID: {process.Id} is sudo, not mthost). Socket discovery will use glob pattern.");
+            }
+            else
+            {
+                Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
+            }
             return true;
         }
         catch (Exception ex)

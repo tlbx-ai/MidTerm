@@ -673,7 +673,11 @@ write_service_settings() {
 
     mkdir -p "$config_dir"
     # Service runs as INSTALLING_USER, so they need write access to config dir
-    chown -R "$INSTALLING_USER" "$config_dir"
+    if ! chown -R "$INSTALLING_USER" "$config_dir"; then
+        log "Failed to set ownership on $config_dir for user $INSTALLING_USER" "ERROR"
+        echo -e "  ${RED}Failed to set directory ownership for $INSTALLING_USER${NC}"
+        exit 1
+    fi
 
     # Read updateChannel from existing settings before backup (preserve dev channel users)
     local existing_update_channel=""
@@ -711,7 +715,11 @@ write_service_settings() {
     echo "$json_content" > "$settings_path"
     chmod 644 "$settings_path"
     # Ensure settings file is owned by the service user (created by root)
-    chown "$INSTALLING_USER" "$settings_path"
+    if ! chown "$INSTALLING_USER" "$settings_path"; then
+        log "Failed to set ownership on $settings_path for user $INSTALLING_USER" "ERROR"
+        echo -e "  ${RED}Failed to set settings file ownership${NC}"
+        exit 1
+    fi
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
     echo -e "  ${GRAY}Port: $PORT${NC}"
     if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
@@ -1225,7 +1233,9 @@ install_launchd() {
     # Create log directory and ensure log file is owned by the service user
     mkdir -p "$log_dir"
     touch "$log_dir/MidTerm.log"
-    chown "$INSTALLING_USER" "$log_dir/MidTerm.log"
+    if ! chown "$INSTALLING_USER" "$log_dir/MidTerm.log"; then
+        log "Failed to set ownership on log file for user $INSTALLING_USER" "WARN"
+    fi
 
     # Unload existing services if present (try modern bootout first, fallback to legacy unload)
     launchctl bootout system/"$LAUNCHD_LABEL" 2>/dev/null || launchctl unload "$plist_path" 2>/dev/null || true

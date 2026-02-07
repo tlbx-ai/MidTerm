@@ -957,7 +957,12 @@ log '=== PHASE 1: Stopping processes ==='
 # Stop service
 log ""Stopping service...""
 {stopServiceCmd}
-sleep 2
+
+# Wait for process to actually exit (up to 5s) before force-killing
+for _i in $(seq 1 10); do
+    pgrep -f ""/${{CURRENT_MT##*/}}$"" >/dev/null 2>&1 || break
+    sleep 0.5
+done
 
 # Kill mt processes
 log ""Killing mt processes...""
