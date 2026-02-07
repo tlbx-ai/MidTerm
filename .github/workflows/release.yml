@@ -51,9 +51,9 @@ jobs:
         run: |
           $version = (Get-Content version.json | ConvertFrom-Json).web
           $isDev = "${{ github.ref_name }}".Contains("-dev")
-          $args = @("-Publish", "-Version", $version)
-          if ($isDev) { $args += "-DevRelease" }
-          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @args
+          $buildArgs = @{ Publish = $true; Version = $version }
+          if ($isDev) { $buildArgs.DevRelease = $true }
+          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
 
       # Build binaries with SkipFrontendBuild to avoid double frontend build
       - name: Build mt + mthost
