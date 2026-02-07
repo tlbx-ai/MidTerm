@@ -473,6 +473,15 @@
                                         <input type="checkbox" id="setting-file-radar" />
                                     </div>
                                 </div>
+                                <!-- Integrations -->
+                                <div class="settings-section">
+                                    <h3>Integrations</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-tmux-compatibility" title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH).">Tmux Compatibility</label>
+                                        <input type="checkbox" id="setting-tmux-compatibility" />
+                                    </div>
+                                    <p class="setting-hint">Enables AI coding tools to manage panes via tmux commands. Disable if you SSH into remote hosts that run real tmux. Requires restart.</p>
+                                </div>
                             </section>
 
                             <!-- Security Panel -->

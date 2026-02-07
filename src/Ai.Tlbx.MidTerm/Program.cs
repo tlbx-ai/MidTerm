@@ -154,24 +154,30 @@ public class Program
         var historyService = new HistoryService(settingsService);
         var fileRadarAllowlistService = new FileRadarAllowlistService();
 
-        // Tmux compatibility layer
-        TmuxScriptWriter.WriteScript(port);
-        sessionManager.ConfigureTmux(port, authService.CreateSessionToken, TmuxScriptWriter.ScriptDirectory);
-        var tmuxPaneMapper = new TmuxPaneMapper(sessionManager);
-        sessionManager.OnSessionCreated += (sid, idx) => tmuxPaneMapper.RegisterSession(sid, idx);
-        sessionManager.OnSessionClosed += sid => tmuxPaneMapper.UnregisterSession(sid);
-        var tmuxTargetResolver = new TmuxTargetResolver(tmuxPaneMapper);
-        var tmuxFormatter = new TmuxFormatter(tmuxPaneMapper, sessionManager);
-        var tmuxLayoutBridge = new TmuxLayoutBridge();
-        var tmuxSessionCommands = new SessionCommands(sessionManager, tmuxPaneMapper, tmuxFormatter);
-        var tmuxIoCommands = new IoCommands(sessionManager, tmuxTargetResolver, tmuxFormatter);
-        var tmuxPaneCommands = new PaneCommands(sessionManager, tmuxPaneMapper, tmuxTargetResolver, tmuxLayoutBridge);
-        var tmuxWindowCommands = new WindowCommands(sessionManager, tmuxTargetResolver, tmuxLayoutBridge);
-        var tmuxConfigCommands = new ConfigCommands();
-        var tmuxMiscCommands = new MiscCommands(tmuxPaneCommands);
-        var tmuxDispatcher = new TmuxCommandDispatcher(
-            tmuxSessionCommands, tmuxIoCommands, tmuxPaneCommands,
-            tmuxWindowCommands, tmuxConfigCommands, tmuxMiscCommands);
+        // Tmux compatibility layer (conditional on setting)
+        TmuxCommandDispatcher? tmuxDispatcher = null;
+        TmuxLayoutBridge? tmuxLayoutBridge = null;
+
+        if (settings.TmuxCompatibility)
+        {
+            TmuxScriptWriter.WriteScript(port);
+            sessionManager.ConfigureTmux(port, authService.CreateSessionToken, TmuxScriptWriter.ScriptDirectory);
+            var tmuxPaneMapper = new TmuxPaneMapper(sessionManager);
+            sessionManager.OnSessionCreated += (sid, idx) => tmuxPaneMapper.RegisterSession(sid, idx);
+            sessionManager.OnSessionClosed += sid => tmuxPaneMapper.UnregisterSession(sid);
+            var tmuxTargetResolver = new TmuxTargetResolver(tmuxPaneMapper);
+            var tmuxFormatter = new TmuxFormatter(tmuxPaneMapper, sessionManager);
+            tmuxLayoutBridge = new TmuxLayoutBridge();
+            var tmuxSessionCommands = new SessionCommands(sessionManager, tmuxPaneMapper, tmuxFormatter);
+            var tmuxIoCommands = new IoCommands(sessionManager, tmuxTargetResolver, tmuxFormatter);
+            var tmuxPaneCommands = new PaneCommands(sessionManager, tmuxPaneMapper, tmuxTargetResolver, tmuxLayoutBridge);
+            var tmuxWindowCommands = new WindowCommands(sessionManager, tmuxTargetResolver, tmuxLayoutBridge);
+            var tmuxConfigCommands = new ConfigCommands();
+            var tmuxMiscCommands = new MiscCommands(tmuxPaneCommands);
+            tmuxDispatcher = new TmuxCommandDispatcher(
+                tmuxSessionCommands, tmuxIoCommands, tmuxPaneCommands,
+                tmuxWindowCommands, tmuxConfigCommands, tmuxMiscCommands);
+        }
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
@@ -207,7 +213,10 @@ public class Program
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
-        TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
+        if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
+        {
+            TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
+        }
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
         FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);

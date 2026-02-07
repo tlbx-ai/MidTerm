@@ -1843,6 +1843,7 @@ export interface components {
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       scrollbackProtection: boolean;
       fileRadar: boolean;
+      tmuxCompatibility: boolean;
       runAsUser: null | string;
       runAsUserSid: null | string;
       authenticationEnabled: boolean;

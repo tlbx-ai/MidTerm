@@ -134,6 +134,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-webgl', settings.useWebGL !== false);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
   setElementChecked('setting-file-radar', settings.fileRadar !== false);
+  setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility !== false);
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
 
@@ -261,6 +262,7 @@ export function saveAllSettings(): void {
     ) as ClipboardShortcutsSetting,
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
     fileRadar: getElementChecked('setting-file-radar'),
+    tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
     runAsUser: runAsUserValue || null,
   };
 
