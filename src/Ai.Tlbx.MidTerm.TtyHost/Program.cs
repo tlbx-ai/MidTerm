@@ -121,13 +121,15 @@ public static class Program
         try
         {
             Console.WriteLine($"[mthost] Creating PTY: {shellConfig.ExecutablePath}");
+            var environment = shellConfig.GetEnvironmentVariables();
+            InjectTmuxEnvironment(environment, config);
             pty = PtyConnectionFactory.Create(
                 shellConfig.ExecutablePath,
                 shellConfig.Arguments,
                 config.WorkingDirectory,
                 config.Cols,
                 config.Rows,
-                shellConfig.GetEnvironmentVariables());
+                environment);
             Console.WriteLine($"[mthost] PTY created, PID={pty.Pid}");
 
             processMonitor = CreateProcessMonitor();
@@ -168,6 +170,32 @@ public static class Program
             processMonitor?.StopMonitoring();
             processMonitor?.Dispose();
             pty?.Dispose();
+        }
+    }
+
+    private static void InjectTmuxEnvironment(Dictionary<string, string> env, SessionConfig config)
+    {
+        if (config.MtPort is null || config.MtToken is null)
+        {
+            return;
+        }
+
+        var pid = Environment.ProcessId;
+        var tmuxPath = OperatingSystem.IsWindows()
+            ? $@"\\.\pipe\midterm-tmux-{pid},{pid},0"
+            : $"/tmp/midterm-tmux-{pid},{pid},0";
+
+        env["TMUX"] = tmuxPath;
+        env["TMUX_PANE"] = $"%{config.PaneIndex ?? 0}";
+        env["MT_PORT"] = config.MtPort.Value.ToString();
+        env["MT_TOKEN"] = config.MtToken;
+
+        // Prepend tmux script directory to PATH so the tmux shim is found
+        if (!string.IsNullOrEmpty(config.TmuxBinDir))
+        {
+            var separator = Path.PathSeparator;
+            var currentPath = env.TryGetValue("PATH", out var p) ? p : "";
+            env["PATH"] = $"{config.TmuxBinDir}{separator}{currentPath}";
         }
     }
 
@@ -802,6 +830,10 @@ public static class Program
         int rows = 24;
         var logLevel = LogSeverity.Warn;
         var scrollbackBytes = TerminalSession.DefaultBufferCapacity;
+        int? mtPort = null;
+        string? mtToken = null;
+        int? paneIndex = null;
+        string? tmuxBinDir = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -839,6 +871,20 @@ public static class Program
                 case "--debug":
                     logLevel = LogSeverity.Verbose;
                     break;
+                case "--mt-port" when i + 1 < args.Length && int.TryParse(args[i + 1], out var mp):
+                    mtPort = mp;
+                    i++;
+                    break;
+                case "--mt-token" when i + 1 < args.Length:
+                    mtToken = args[++i];
+                    break;
+                case "--pane-index" when i + 1 < args.Length && int.TryParse(args[i + 1], out var pi):
+                    paneIndex = pi;
+                    i++;
+                    break;
+                case "--tmux-bin-dir" when i + 1 < args.Length:
+                    tmuxBinDir = args[++i];
+                    break;
             }
         }
 
@@ -846,7 +892,8 @@ public static class Program
         workingDir ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         scrollbackBytes = Math.Clamp(scrollbackBytes, MinScrollbackBytes, MaxScrollbackBytes);
 
-        return new SessionConfig(sessionId, shellType, workingDir, cols, rows, logLevel, scrollbackBytes);
+        return new SessionConfig(sessionId, shellType, workingDir, cols, rows, logLevel, scrollbackBytes,
+            mtPort, mtToken, paneIndex, tmuxBinDir);
     }
 
     private static void PrintHelp()
@@ -891,7 +938,10 @@ public static class Program
     }
 #endif
 
-    private sealed record SessionConfig(string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows, LogSeverity LogSeverity, int ScrollbackBytes);
+    private sealed record SessionConfig(
+        string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows,
+        LogSeverity LogSeverity, int ScrollbackBytes,
+        int? MtPort = null, string? MtToken = null, int? PaneIndex = null, string? TmuxBinDir = null);
 }
 
 internal sealed class TerminalSession : IDisposable

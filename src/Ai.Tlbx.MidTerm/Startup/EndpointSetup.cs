@@ -5,6 +5,7 @@ using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -558,10 +559,11 @@ public static class EndpointSetup
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService,
+        TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService);
+        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, tmuxLayoutBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
 
         app.Use(async (context, next) =>

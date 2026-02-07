@@ -6,6 +6,7 @@ using System.Text.Json.Serialization.Metadata;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
+using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -17,19 +18,22 @@ public sealed class StateWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
+    private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService,
+        TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         _sessionManager = sessionManager;
         _updateService = updateService;
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
+        _tmuxLayoutBridge = tmuxLayoutBridge;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -132,6 +136,29 @@ public sealed class StateWebSocketHandler
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         var shutdownToken = _shutdownService.Token;
 
+        void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
+        {
+            var instruction = new TmuxDockInstruction
+            {
+                NewSessionId = newSessionId,
+                RelativeToSessionId = relativeToSessionId,
+                Position = position
+            };
+            _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxDockInstruction);
+        }
+
+        void OnFocusRequested(string sessionId)
+        {
+            var instruction = new TmuxFocusInstruction { SessionId = sessionId };
+            _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxFocusInstruction);
+        }
+
+        if (_tmuxLayoutBridge is not null)
+        {
+            _tmuxLayoutBridge.OnDockRequested += OnDockRequested;
+            _tmuxLayoutBridge.OnFocusRequested += OnFocusRequested;
+        }
+
         try
         {
             lastUpdate = _updateService.LatestUpdate;
@@ -180,6 +207,13 @@ public sealed class StateWebSocketHandler
         {
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
+
+            if (_tmuxLayoutBridge is not null)
+            {
+                _tmuxLayoutBridge.OnDockRequested -= OnDockRequested;
+                _tmuxLayoutBridge.OnFocusRequested -= OnFocusRequested;
+            }
+
             sendLock.Dispose();
 
             if (ws.State == WebSocketState.Open)

@@ -481,8 +481,35 @@ function clearLayoutStorage(): void {
 }
 
 /**
+ * Sync layout tree to the server for tmux directional pane selection.
+ */
+function syncLayoutToServer(): void {
+  const layout = $layout.get();
+  const root = layout.root;
+
+  fetch('/api/tmux/layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(root ?? { type: 'leaf', sessionId: null }),
+  }).catch(() => {
+    // Best-effort sync
+  });
+}
+
+/**
  * Initialize layout persistence - subscribe to changes.
  */
+let syncTimer: number | undefined;
+
 export function initLayoutPersistence(): void {
-  $layout.subscribe(() => saveLayoutToStorage());
+  $layout.subscribe(() => {
+    saveLayoutToStorage();
+    if (syncTimer !== undefined) {
+      clearTimeout(syncTimer);
+    }
+    syncTimer = window.setTimeout(() => {
+      syncTimer = undefined;
+      syncLayoutToServer();
+    }, 300);
+  });
 }

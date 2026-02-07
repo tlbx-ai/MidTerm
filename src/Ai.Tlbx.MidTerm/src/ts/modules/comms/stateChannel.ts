@@ -48,7 +48,7 @@ import {
   $updateInfo,
   setSessions,
 } from '../../stores';
-import { restoreLayoutFromStorage } from '../layout/layoutStore';
+import { restoreLayoutFromStorage, dockSession, focusLayoutSession } from '../layout/layoutStore';
 
 // Track if we've restored layout from storage (only do once on first session list)
 let layoutRestoredFromStorage = false;
@@ -85,6 +85,23 @@ export function connectStateWebSocket(): void {
       // Handle command responses
       if (data.type === 'response') {
         handleCommandResponse(data as WsCommandResponse);
+        return;
+      }
+
+      // Handle tmux dock instructions
+      if (data.type === 'tmux-dock') {
+        log.verbose(
+          () =>
+            `Tmux dock: ${data.newSessionId} relative to ${data.relativeToSessionId} at ${data.position}`,
+        );
+        dockSession(data.relativeToSessionId, data.newSessionId, data.position);
+        return;
+      }
+
+      // Handle tmux focus instructions
+      if (data.type === 'tmux-focus') {
+        log.verbose(() => `Tmux focus: ${data.sessionId}`);
+        focusLayoutSession(data.sessionId);
         return;
       }
 
