@@ -617,7 +617,7 @@ public static class TtyHostSpawner
     [DllImport("wtsapi32.dll")]
     private static extern void WTSFreeMemory(IntPtr pMemory);
 
-    [DllImport("wtsapi32.dll", SetLastError = true)]
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool WTSQuerySessionInformation(
         IntPtr hServer,
         uint sessionId,
