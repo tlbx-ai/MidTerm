@@ -129,7 +129,7 @@ public class Program
 
         var settings = settingsService.Load();
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
-        Log.Initialize("mt", logDirectory, LogSeverity.Exception);
+        Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
         Log.Info(() => "MidTerm server starting");
 
