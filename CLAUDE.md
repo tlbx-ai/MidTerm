@@ -536,6 +536,7 @@ This architecture exists because hardcoded versions caused update failures where
 - Use interfaces + DI, not static classes
 - Platform checks: `OperatingSystem.IsWindows()`, `.IsLinux()`, `.IsMacOS()`
 - All JSON serialization must use source-generated `AppJsonContext` for AOT safety
+- **After plan executions or large implementation tasks finish**, always offer to build and publish a dev patch release
 
 ## Marketing Video Workflow
 
