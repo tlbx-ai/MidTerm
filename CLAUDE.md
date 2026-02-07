@@ -429,22 +429,54 @@ git rebase --abort
 git pull --no-rebase
 ```
 
-### Daily Development (on `dev` branch)
+### Dev Release Procedure (Claude Code agent instructions)
 
+When the user asks to "do a dev release" (minor/major/patch), follow this exact sequence:
+
+**Step 1 — Verify branch & clean state**
 ```powershell
-# 1. Make changes on dev branch
-git checkout dev
-# ... code changes ...
-git commit -m "Add feature X"
-git push
-
-# 2. Create dev/prerelease for testing
-.\scripts\release-dev.ps1 -Bump patch `
-    -ReleaseTitle "Test feature X" `
-    -ReleaseNotes @("Added feature X for testing") `
-    -mthostUpdate no
-# Creates: v6.10.32-dev (prerelease on GitHub)
+git branch --show-current   # Must be "dev". If not, switch: git checkout dev
+git status --short          # Check for uncommitted changes
 ```
+If there are uncommitted changes: commit them first (stage specific files, draft message from diff, get user approval).
+
+**Step 2 — Integrate remote changes**
+```powershell
+git pull --rebase           # pull.rebase=true is configured, but be explicit
+```
+If rebase fails: `git rebase --abort` then `git pull --no-rebase` as fallback.
+
+**Step 3 — Push local commits**
+```powershell
+git push
+```
+The release script will fail if local is ahead of remote without pushing first (it fetches and compares).
+
+**Step 4 — Build release notes from commit history**
+```powershell
+# Find what's new since last tag
+git log --oneline $(git describe --tags --abbrev=0)..HEAD
+```
+Use these commits to draft `-ReleaseTitle` (concise headline) and `-ReleaseNotes` (array of meaningful changelog entries). Ask the user to confirm if the notes look right.
+
+**Step 5 — Determine `-mthostUpdate`**
+- Check if any commits touched `Ai.Tlbx.MidTerm.TtyHost/`, `Ai.Tlbx.MidTerm.Common/`, or protocol code → `yes`
+- Web-only / frontend-only changes → `no`
+- If unclear, ask the user
+
+**Step 6 — Run the release script**
+```powershell
+pwsh -NoProfile -File scripts/release-dev.ps1 `
+    -Bump <major|minor|patch> `
+    -ReleaseTitle "Concise headline" `
+    -ReleaseNotes @("Detailed entry 1", "Detailed entry 2") `
+    -mthostUpdate <yes|no>
+```
+
+**Common mistakes to avoid:**
+- Running the release with uncommitted changes (script commits version.json — dirty tree causes conflicts)
+- Forgetting to push before releasing (script detects diverged branches and aborts)
+- Vague release notes like "Fix bug" or "Update UI" (script rejects notes < 20 chars)
 
 ### Promoting to Stable Release
 
