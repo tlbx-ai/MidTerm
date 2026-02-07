@@ -45,11 +45,15 @@ jobs:
         run: npm ci
 
       # Build frontend ONCE here - dotnet publish will skip via SkipFrontendBuild
+      # Dev releases (-dev tag) include source maps for debugging; stable releases exclude them
       - name: Build frontend
         shell: pwsh
         run: |
           $version = (Get-Content version.json | ConvertFrom-Json).web
-          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 -Publish -Version $version
+          $isDev = "${{ github.ref_name }}".Contains("-dev")
+          $args = @("-Publish", "-Version", $version)
+          if ($isDev) { $args += "-DevRelease" }
+          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @args
 
       # Build binaries with SkipFrontendBuild to avoid double frontend build
       - name: Build mt + mthost

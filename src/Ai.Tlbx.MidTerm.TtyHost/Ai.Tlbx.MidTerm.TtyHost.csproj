@@ -49,7 +49,7 @@
     <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
     <IlcDisableReflection>true</IlcDisableReflection>
     <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
-    <StackTraceSupport>true</StackTraceSupport>
+    <StackTraceSupport>false</StackTraceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <UseSizeOptimizedLinq>true</UseSizeOptimizedLinq>
