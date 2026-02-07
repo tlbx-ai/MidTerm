@@ -111,6 +111,7 @@ public sealed class SettingsService
             {
                 _cached = new MidTermSettings();
                 LoadSecretsIntoSettings(_cached);
+                MergeInstallSettings(_cached);
                 LoadStatus = SettingsLoadStatus.Default;
                 return _cached;
             }
@@ -133,7 +134,7 @@ public sealed class SettingsService
 
                 LoadStatus = SettingsLoadStatus.LoadedFromFile;
 
-                // Check for .old file and migrate user preferences
+                // Check for .old file and migrate user preferences (legacy path)
                 var oldPath = _settingsPath + ".old";
                 if (File.Exists(oldPath))
                 {
@@ -150,6 +151,9 @@ public sealed class SettingsService
                         Log.Warn(() => $"Failed to migrate settings from .old file: {ex.Message}");
                     }
                 }
+
+                // Check for merge-settings.json from installer
+                MergeInstallSettings(_cached);
             }
             catch (Exception ex)
             {
@@ -215,6 +219,61 @@ public sealed class SettingsService
             }
 
             Log.Info(() => $"Migrated isServiceInstall={settings.IsServiceInstall} based on settings path: {_settingsPath}");
+        }
+    }
+
+    private void MergeInstallSettings(MidTermSettings current)
+    {
+        var mergePath = Path.Combine(SettingsDirectory, "merge-settings.json");
+        if (!File.Exists(mergePath))
+        {
+            return;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(mergePath);
+            var merge = JsonSerializer.Deserialize(json, SettingsJsonContext.Default.MidTermSettings);
+            if (merge is null)
+            {
+                File.Delete(mergePath);
+                return;
+            }
+
+            // Always-merge keys: installer controls these
+            if (!string.IsNullOrEmpty(merge.RunAsUser))
+            {
+                current.RunAsUser = merge.RunAsUser;
+            }
+
+            if (!string.IsNullOrEmpty(merge.RunAsUserSid))
+            {
+                current.RunAsUserSid = merge.RunAsUserSid;
+            }
+
+            current.AuthenticationEnabled = merge.AuthenticationEnabled;
+            current.IsServiceInstall = merge.IsServiceInstall;
+
+            // Protected keys: only set if currently empty/default
+            if (string.IsNullOrEmpty(current.CertificatePath) && !string.IsNullOrEmpty(merge.CertificatePath))
+            {
+                current.CertificatePath = merge.CertificatePath;
+                current.KeyProtection = merge.KeyProtection;
+            }
+
+            if (current.UpdateChannel == "stable" && merge.UpdateChannel != "stable")
+            {
+                current.UpdateChannel = merge.UpdateChannel;
+            }
+
+            Save(current);
+            File.Delete(mergePath);
+            Log.Info(() => "Merged install settings from merge-settings.json");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"Failed to merge install settings: {ex.Message}");
+            try { File.Delete(mergePath); } catch { }
         }
     }
 

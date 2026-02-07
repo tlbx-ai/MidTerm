@@ -648,38 +648,14 @@ function Write-ServiceSettings
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     $configDir = $WIN_SERVICE_SETTINGS_DIR
     $settingsPath = Join-Path $configDir "settings.json"
-    $oldSettingsPath = Join-Path $configDir "settings.json.old"
+    $mergePath = Join-Path $configDir "merge-settings.json"
 
     if (-not (Test-Path $configDir))
     {
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
-    # Read updateChannel from existing settings before backup (preserve dev channel users)
-    $existingUpdateChannel = $null
-    if (Test-Path $settingsPath)
-    {
-        try
-        {
-            $existingSettings = Get-Content -Path $settingsPath -Raw | ConvertFrom-Json
-            if ($existingSettings.updateChannel)
-            {
-                $existingUpdateChannel = $existingSettings.updateChannel
-            }
-        }
-        catch { }
-    }
-
-    # Backup existing settings for migration by the app
-    if (Test-Path $settingsPath)
-    {
-        Write-Host "  Backing up existing settings..." -ForegroundColor Gray
-        Move-Item -Path $settingsPath -Destination $oldSettingsPath -Force
-    }
-
-    # Write minimal bootstrap settings - app will migrate user preferences from .old
-    # Note: port/bind are passed via service command line args, not settings.json
-    # Note: passwordHash is NOT written here - it must go to secure storage via --write-secret
+    # Build install-time settings for merge
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
@@ -687,22 +663,26 @@ function Write-ServiceSettings
         isServiceInstall = $true
     }
 
-    # HTTPS settings - always HTTPS, use OS-level key protection
     if ($CertPath)
     {
         $settings.certificatePath = $CertPath
         $settings.keyProtection = "osProtected"
     }
 
-    # Preserve updateChannel if it existed (keep dev channel users on dev)
-    if ($existingUpdateChannel)
-    {
-        $settings.updateChannel = $existingUpdateChannel
-    }
-
     $json = $settings | ConvertTo-Json -Depth 10
-    Set-Content -Path $settingsPath -Value $json -Encoding UTF8
-    Write-Host "  Settings: $settingsPath" -ForegroundColor Gray
+
+    if (Test-Path $settingsPath)
+    {
+        # Reinstall: write merge file, let mt handle merging
+        Set-Content -Path $mergePath -Value $json -Encoding UTF8
+        Write-Host "  Settings: merge file written for mt" -ForegroundColor Gray
+    }
+    else
+    {
+        # Fresh install: write settings.json directly
+        Set-Content -Path $settingsPath -Value $json -Encoding UTF8
+        Write-Host "  Settings: $settingsPath" -ForegroundColor Gray
+    }
 
     # Store password hash in secure storage (DPAPI-protected secrets.bin)
     # Use --service-mode to ensure it writes to ProgramData, not user profile
@@ -1045,9 +1025,10 @@ public class TrustAllCerts {
         # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
         $userSettingsDir = $WIN_USER_SETTINGS_DIR
         $userSettingsPath = Join-Path $userSettingsDir "settings.json"
+        $userMergePath = Join-Path $userSettingsDir "merge-settings.json"
         if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
 
-        # Note: passwordHash goes to secure storage, not settings.json
+        # Build install-time settings
         $userSettings = @{
             authenticationEnabled = $true
             isServiceInstall = $false
@@ -1056,8 +1037,19 @@ public class TrustAllCerts {
             $userSettings.certificatePath = $CertPath
             $userSettings.keyProtection = "osProtected"
         }
-        $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
-        Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
+
+        if (Test-Path $userSettingsPath)
+        {
+            # Reinstall: write merge file, let mt handle merging
+            $userSettings | ConvertTo-Json | Set-Content -Path $userMergePath -Encoding UTF8
+            Write-Host "  Settings: merge file written for mt" -ForegroundColor Gray
+        }
+        else
+        {
+            # Fresh install: write settings.json directly
+            $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
+            Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
+        }
 
         # Store password hash in secure storage (DPAPI-protected secrets.bin)
         # User mode - no --service-mode flag, stores in user profile

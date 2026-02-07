@@ -62,7 +62,7 @@ init_log() {
     if [ "$mode" = "service" ]; then
         log_dir="/usr/local/var/log"
     else
-        log_dir="$HOME/.MidTerm"
+        log_dir="$HOME/.midterm"
     fi
 
     mkdir -p "$log_dir" 2>/dev/null || true
@@ -669,28 +669,17 @@ write_service_settings() {
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     local config_dir="$UNIX_SERVICE_SETTINGS_DIR"
     local settings_path="$config_dir/settings.json"
-    local old_settings_path="$config_dir/settings.json.old"
+    local merge_path="$config_dir/merge-settings.json"
 
     mkdir -p "$config_dir"
     # Service runs as INSTALLING_USER, so they need write access to config dir
     chown -R "$INSTALLING_USER" "$config_dir"
 
-    # Read updateChannel from existing settings before backup (preserve dev channel users)
-    local existing_update_channel=""
-    if [ -f "$settings_path" ]; then
-        existing_update_channel=$(grep -o '"updateChannel"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' || true)
-    fi
-
-    # Backup existing settings for migration by the app
-    if [ -f "$settings_path" ]; then
-        echo -e "  ${GRAY}Backing up existing settings...${NC}"
-        mv "$settings_path" "$old_settings_path"
-    fi
-
-    # Build JSON - passwordHash NOT included (stored in secure secrets storage)
+    # Build install-time settings for merge
     local json_content="{
   \"runAsUser\": \"$INSTALLING_USER\",
-  \"authenticationEnabled\": true"
+  \"authenticationEnabled\": true,
+  \"isServiceInstall\": true"
 
     if [ -n "$CERT_PATH" ]; then
         json_content="$json_content,
@@ -699,19 +688,23 @@ write_service_settings() {
         echo -e "  ${GREEN}HTTPS: enabled (OS-protected key)${NC}"
     fi
 
-    # Preserve updateChannel if it existed (keep dev channel users on dev)
-    if [ -n "$existing_update_channel" ]; then
-        json_content="$json_content,
-  \"updateChannel\": \"$existing_update_channel\""
-    fi
-
     json_content="$json_content
 }"
 
-    echo "$json_content" > "$settings_path"
-    chmod 644 "$settings_path"
-    # Ensure settings file is owned by the service user (created by root)
-    chown "$INSTALLING_USER" "$settings_path"
+    if [ -f "$settings_path" ]; then
+        # Reinstall: write merge file, let mt handle merging
+        echo "$json_content" > "$merge_path"
+        chmod 644 "$merge_path"
+        chown "$INSTALLING_USER" "$merge_path"
+        log "Wrote merge-settings.json for mt to merge on startup"
+    else
+        # Fresh install: write settings.json directly
+        echo "$json_content" > "$settings_path"
+        chmod 644 "$settings_path"
+        chown "$INSTALLING_USER" "$settings_path"
+        log "Wrote initial settings.json"
+    fi
+
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
     echo -e "  ${GRAY}Port: $PORT${NC}"
     if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
@@ -725,23 +718,11 @@ write_user_settings() {
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     local config_dir="$UNIX_USER_SETTINGS_DIR"
     local settings_path="$config_dir/settings.json"
-    local old_settings_path="$config_dir/settings.json.old"
+    local merge_path="$config_dir/merge-settings.json"
 
     mkdir -p "$config_dir"
 
-    # Read updateChannel from existing settings before backup (preserve dev channel users)
-    local existing_update_channel=""
-    if [ -f "$settings_path" ]; then
-        existing_update_channel=$(grep -o '"updateChannel"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' || true)
-    fi
-
-    # Backup existing settings for migration by the app
-    if [ -f "$settings_path" ]; then
-        echo -e "  ${GRAY}Backing up existing settings...${NC}"
-        mv "$settings_path" "$old_settings_path"
-    fi
-
-    # Build JSON - passwordHash NOT included (stored in secure secrets storage)
+    # Build install-time settings for merge
     local json_content="{
   \"authenticationEnabled\": true"
 
@@ -752,17 +733,21 @@ write_user_settings() {
         echo -e "  ${GREEN}HTTPS: enabled (OS-protected key)${NC}"
     fi
 
-    # Preserve updateChannel if it existed (keep dev channel users on dev)
-    if [ -n "$existing_update_channel" ]; then
-        json_content="$json_content,
-  \"updateChannel\": \"$existing_update_channel\""
-    fi
-
     json_content="$json_content
 }"
 
-    echo "$json_content" > "$settings_path"
-    chmod 600 "$settings_path"
+    if [ -f "$settings_path" ]; then
+        # Reinstall: write merge file, let mt handle merging
+        echo "$json_content" > "$merge_path"
+        chmod 600 "$merge_path"
+        log "Wrote merge-settings.json for mt to merge on startup"
+    else
+        # Fresh install: write settings.json directly
+        echo "$json_content" > "$settings_path"
+        chmod 600 "$settings_path"
+        log "Wrote initial settings.json"
+    fi
+
     echo -e "  ${GRAY}Settings: $settings_path${NC}"
 }
 
@@ -1092,13 +1077,26 @@ install_as_service() {
     mkdir -p "$lib_dir"
 
     log "=== PHASE 2: Password configuration ==="
-    # Handle password - either preserve existing or hash the pending one
-    existing_hash=$(get_existing_password_hash || true)
-    if [ -n "$existing_hash" ]; then
-        log "Existing password hash found and preserved"
-        echo -e "  ${GREEN}Existing password preserved${NC}"
-        PASSWORD_HASH="$existing_hash"
-    elif [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
+    # PASSWORD_HASH is either:
+    # - A PBKDF2 hash read before sudo elevation (existing password)
+    # - A __PENDING64__:base64 marker from prompt_password before sudo (new password)
+    # - Empty (should not happen - pre-sudo section always sets it)
+    #
+    # Re-check secrets.json in case a different user installed previously
+    # (our pre-sudo read may have failed due to permissions, but now we're root)
+    if [[ -z "$PASSWORD_HASH" ]] || [[ "$PASSWORD_HASH" != '$PBKDF2$'* && "$PASSWORD_HASH" != "__PENDING64__:"* ]]; then
+        existing_hash=$(get_existing_password_hash || true)
+        if [ -n "$existing_hash" ]; then
+            PASSWORD_HASH="$existing_hash"
+            log "Existing password hash found after elevation"
+            echo -e "  ${GREEN}Existing password preserved${NC}"
+        else
+            log "No password available - user must set password via web UI" "WARN"
+            echo -e "  ${YELLOW}No password set - set one at first login${NC}"
+        fi
+    fi
+
+    if [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
         # Hash the password now that binary is installed (decode from base64)
         log "Hashing new password..."
         local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
@@ -1114,30 +1112,6 @@ install_as_service() {
             log "Failed to hash password" "ERROR"
             echo -e "  ${RED}Failed to hash password${NC}"
             exit 1
-        fi
-    else
-        # Could not read existing password and no password was passed through sudo
-        # This can happen if secrets file exists but is unreadable/incompatible
-        # Per robustness rules: losing password is better than failing the update
-        log "Could not read existing password - prompting for new one" "WARN"
-        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
-        prompt_password
-
-        # Hash the new password
-        if [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
-            local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
-            local plain_password
-            plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
-            local hash
-            hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
-            if [[ "$hash" == '$PBKDF2$'* ]]; then
-                PASSWORD_HASH="$hash"
-                log "Password hashed successfully"
-            else
-                log "Failed to hash password" "ERROR"
-                echo -e "  ${RED}Failed to hash password${NC}"
-                exit 1
-            fi
         fi
     fi
 
@@ -1710,13 +1684,15 @@ if [ "$SERVICE_MODE" != true ]; then
 fi
 
 if [ "$SERVICE_MODE" = true ]; then
-    # Check for existing password BEFORE elevation (like PS does)
-    if check_existing_password_file "service"; then
+    # Try to actually READ the existing password hash before elevation
+    # The installing user owns secrets.json (chmod 0600), so this should work
+    # If it fails (permissions, corruption, missing), prompt here (interactive OK before sudo)
+    existing_hash=$(get_existing_password_hash 2>/dev/null || true)
+    if [ -n "$existing_hash" ]; then
         echo ""
-        echo -e "  ${GREEN}Existing password found - will preserve...${NC}"
-        # Password will be read/preserved after binary install
+        echo -e "  ${GREEN}Existing password found${NC}"
+        PASSWORD_HASH="$existing_hash"
     else
-        # New install - prompt for password before elevation
         prompt_password
     fi
 
@@ -1728,10 +1704,12 @@ if [ "$SERVICE_MODE" = true ]; then
 
     install_as_service
 else
-    # User mode: also do all prompts before install
-    if check_existing_password_file "user"; then
+    # User mode: try to read existing hash, prompt if not found
+    existing_hash=$(get_existing_user_password_hash 2>/dev/null || true)
+    if [ -n "$existing_hash" ]; then
         echo ""
-        echo -e "  ${GREEN}Existing password found - will preserve...${NC}"
+        echo -e "  ${GREEN}Existing password found${NC}"
+        PASSWORD_HASH="$existing_hash"
     else
         prompt_password
     fi

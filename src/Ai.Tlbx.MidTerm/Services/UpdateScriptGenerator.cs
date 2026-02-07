@@ -18,7 +18,7 @@ public static class UpdateScriptGenerator
 {
     private const string ServiceName = "MidTerm";
     private const string LaunchdLabel = "ai.tlbx.midterm";
-    private const string SystemdService = "midterm";
+    private const string SystemdService = "MidTerm";
     private const int MaxRetries = 30;
     private const int RetryDelaySeconds = 1;
 
