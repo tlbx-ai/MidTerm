@@ -502,13 +502,16 @@ public static class TtyHostSpawner
                 }
             }
 
-            // Target user not found in any session — fall back to any available user
-            if (hasTargetUser && fallbackToken != IntPtr.Zero)
+            // Clean up fallback token if we didn't use it
+            if (fallbackToken != IntPtr.Zero)
             {
-                userToken = fallbackToken;
-                sessionId = fallbackSessionId;
-                Log.Warn(() => $"TtyHostSpawner: User '{runAsUser}' has no active session, falling back to session {fallbackSessionId}");
-                return true;
+                CloseHandle(fallbackToken);
+            }
+
+            if (hasTargetUser)
+            {
+                Log.Error(() => $"TtyHostSpawner: User '{runAsUser}' has no active session — refusing to spawn as different user");
+                return false;
             }
         }
         finally

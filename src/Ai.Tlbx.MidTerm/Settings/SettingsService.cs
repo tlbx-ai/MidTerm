@@ -168,6 +168,7 @@ public sealed class SettingsService
         settings.SessionSecret = _secretStorage.GetSecret(SecretKeys.SessionSecret);
         settings.PasswordHash = _secretStorage.GetSecret(SecretKeys.PasswordHash);
         settings.CertificatePassword = _secretStorage.GetSecret(SecretKeys.CertificatePassword);
+        settings.VoiceServerPassword = _secretStorage.GetSecret(SecretKeys.VoiceServerPassword);
     }
 
     private static void ApplyMissingDefaults(MidTermSettings settings, string json)
@@ -177,6 +178,21 @@ public sealed class SettingsService
         if (!json.Contains("\"useWebGL\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.UseWebGL = true;
+        }
+
+        if (!json.Contains("\"cursorBlink\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.CursorBlink = true;
+        }
+
+        if (!json.Contains("\"rightClickPaste\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.RightClickPaste = true;
+        }
+
+        if (!json.Contains("\"fileRadar\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.FileRadar = true;
         }
     }
 
@@ -275,6 +291,15 @@ public sealed class SettingsService
         if (!string.IsNullOrEmpty(settings.CertificatePassword))
         {
             _secretStorage.SetSecret(SecretKeys.CertificatePassword, settings.CertificatePassword);
+        }
+        else
+        {
+            _secretStorage.DeleteSecret(SecretKeys.CertificatePassword);
+        }
+
+        if (!string.IsNullOrEmpty(settings.VoiceServerPassword))
+        {
+            _secretStorage.SetSecret(SecretKeys.VoiceServerPassword, settings.VoiceServerPassword);
         }
     }
 
