@@ -18,6 +18,7 @@ import type {
   TabTitleModeSetting,
 } from '../../api/types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
+import { applyCssTheme } from '../theming/cssThemes';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
@@ -210,8 +211,7 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
   }
 
   const themeName = settings.theme ?? 'dark';
-  const theme = THEMES[themeName] || THEMES.dark;
-  document.documentElement.style.setProperty('--terminal-bg', theme.background);
+  applyCssTheme(themeName);
   setCookie('mm-theme', themeName);
 
   applySettingsToTerminals();
@@ -273,8 +273,7 @@ export function saveAllSettings(): void {
         if (prevSettings) {
           $currentSettings.set({ ...prevSettings, ...settings });
         }
-        const theme = THEMES[themeName] || THEMES.dark;
-        document.documentElement.style.setProperty('--terminal-bg', theme.background);
+        applyCssTheme(themeName);
         applySettingsToTerminals();
         updateTabTitle();
       } else {
