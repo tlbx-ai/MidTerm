@@ -112,20 +112,20 @@ const dark: CssThemePalette = {
 };
 
 const light: CssThemePalette = {
-  '--bg-terminal': '#D5D6DB',
-  '--terminal-bg': '#D5D6DB',
-  '--bg-primary': '#F0F1F4',
+  '--bg-terminal': '#F8F9FA',
+  '--terminal-bg': '#F8F9FA',
+  '--bg-primary': '#EDEEF2',
   '--bg-elevated': '#FFFFFF',
-  '--bg-sidebar': '#E8E9ED',
+  '--bg-sidebar': '#DFE1E8',
   '--bg-surface': '#FFFFFF',
   '--bg-input': '#FFFFFF',
   '--bg-dropdown': '#FFFFFF',
-  '--bg-hover': '#E2E3E8',
-  '--bg-active': '#D5D7DE',
-  '--bg-session-hover': '#E2E3E8',
-  '--bg-session-active': '#D5D7DE',
+  '--bg-hover': '#D5D7DF',
+  '--bg-active': '#CDD0D9',
+  '--bg-session-hover': '#D5D7DF',
+  '--bg-session-active': '#CDD0D9',
   '--bg-settings': '#FFFFFF',
-  '--bg-tertiary': '#E8E9ED',
+  '--bg-tertiary': '#DFE1E8',
 
   '--border-color': '#D0D2DA',
   '--border-default': '#D0D2DA',
@@ -133,7 +133,7 @@ const light: CssThemePalette = {
   '--border-emphasis': '#B8BBCA',
 
   '--text-primary': '#24292F',
-  '--text-terminal': '#343B58',
+  '--text-terminal': '#1A1B26',
   '--text-secondary': '#57606A',
   '--text-muted': '#8B949E',
 
@@ -215,7 +215,7 @@ const light: CssThemePalette = {
 const solarizedDark: CssThemePalette = {
   '--bg-terminal': '#002B36',
   '--terminal-bg': '#002B36',
-  '--bg-primary': '#002B36',
+  '--bg-primary': '#04313D',
   '--bg-elevated': '#073642',
   '--bg-sidebar': '#073642',
   '--bg-surface': '#0A3F4C',
@@ -316,7 +316,7 @@ const solarizedDark: CssThemePalette = {
 const solarizedLight: CssThemePalette = {
   '--bg-terminal': '#FDF6E3',
   '--terminal-bg': '#FDF6E3',
-  '--bg-primary': '#FDF6E3',
+  '--bg-primary': '#F7F0DC',
   '--bg-elevated': '#EEE8D5',
   '--bg-sidebar': '#EEE8D5',
   '--bg-surface': '#E6DFC8',
