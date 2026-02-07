@@ -46,7 +46,9 @@ public sealed class TmuxCommandDispatcher
 
         foreach (var cmd in commands)
         {
+            TmuxLog.Command(cmd.Name, callerPaneId, cmd.Flags, cmd.Positional);
             var result = await DispatchSingleAsync(cmd, callerPaneId, ct).ConfigureAwait(false);
+            TmuxLog.Result(cmd.Name, result.Success, result.Output);
             if (!string.IsNullOrEmpty(result.Output))
             {
                 output.Append(result.Output);
@@ -145,6 +147,7 @@ public sealed class TmuxCommandDispatcher
         catch (Exception ex)
         {
             Log.Exception(ex, $"TmuxCommandDispatcher.Dispatch({cmd.Name})");
+            TmuxLog.Error($"{cmd.Name}: {ex.GetType().Name}: {ex.Message}");
             return TmuxResult.Fail($"error: {ex.Message}\n");
         }
     }

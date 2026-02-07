@@ -24,6 +24,7 @@ public static class TmuxEndpoints
             var args = TmuxCommandParser.ParseNullDelimitedArgs(body);
             if (args.Count == 0)
             {
+                TmuxLog.Error($"Empty request ({body.Length} bytes, no null-delimited args)");
                 return Results.Text("no command specified\n", statusCode: 400);
             }
 

@@ -160,6 +160,7 @@ public class Program
 
         if (settings.TmuxCompatibility)
         {
+            TmuxLog.Initialize(logDirectory);
             TmuxScriptWriter.WriteScript(port);
             sessionManager.ConfigureTmux(port, authService.CreateSessionToken, TmuxScriptWriter.ScriptDirectory);
             var tmuxPaneMapper = new TmuxPaneMapper(sessionManager);
@@ -253,6 +254,7 @@ public class Program
             }
             finally
             {
+                TmuxLog.Shutdown();
                 TmuxScriptWriter.Cleanup();
                 tempCleanupService.CleanupAllMidTermFiles();
                 Log.Shutdown();
