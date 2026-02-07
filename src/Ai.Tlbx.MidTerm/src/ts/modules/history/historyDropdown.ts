@@ -8,6 +8,7 @@
 import { fetchHistory, toggleStar, removeHistoryEntry, type LaunchEntry } from './historyApi';
 import { icon } from '../../constants';
 import { createLogger } from '../logging';
+import { formatRuntimeDisplay } from '../sidebar/processDisplay';
 
 const log = createLogger('history-dropdown');
 
@@ -221,7 +222,7 @@ function createForegroundIndicator(
   const container = document.createElement('span');
   container.className = 'session-foreground';
 
-  const cmdDisplay = stripExePath(commandLine ?? processName);
+  const cmdDisplay = formatRuntimeDisplay(processName, commandLine);
   container.title = `${commandLine ?? processName}\n${cwd}`;
 
   const cwdSpan = document.createElement('span');
@@ -240,37 +241,6 @@ function createForegroundIndicator(
   container.appendChild(processSpan);
 
   return container;
-}
-
-/**
- * Strip executable path from command line, keeping just the exe name and arguments.
- */
-function stripExePath(commandLine: string): string {
-  const trimmed = commandLine.trim();
-  if (!trimmed) return trimmed;
-
-  if (trimmed.startsWith('"')) {
-    const endQuote = trimmed.indexOf('"', 1);
-    if (endQuote > 1) {
-      const quotedPath = trimmed.slice(1, endQuote);
-      const rest = trimmed.slice(endQuote + 1);
-      const exeName = (quotedPath.replace(/\\/g, '/').split('/').pop() || quotedPath).replace(
-        /\.exe$/i,
-        '',
-      );
-      return (exeName + rest).trim();
-    }
-  }
-
-  const spaceIdx = trimmed.indexOf(' ');
-  if (spaceIdx === -1) {
-    return (trimmed.replace(/\\/g, '/').split('/').pop() || trimmed).replace(/\.exe$/i, '');
-  }
-
-  const exePart = trimmed.slice(0, spaceIdx);
-  const argsPart = trimmed.slice(spaceIdx);
-  const exeName = (exePart.replace(/\\/g, '/').split('/').pop() || exePart).replace(/\.exe$/i, '');
-  return (exeName + argsPart).trim();
 }
 
 function handleOutsideClick(e: MouseEvent): void {
