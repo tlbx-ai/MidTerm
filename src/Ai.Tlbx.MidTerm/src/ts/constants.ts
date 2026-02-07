@@ -81,7 +81,7 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     magenta: '#AF00DB',
     cyan: '#0598BC',
     white: '#383A42',
-    brightBlack: '#A0A1A7',
+    brightBlack: '#696C77',
     brightRed: '#E45649',
     brightGreen: '#50A14F',
     brightYellow: '#C18401',
