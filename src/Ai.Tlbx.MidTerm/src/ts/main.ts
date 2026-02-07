@@ -72,6 +72,7 @@ import {
   type LaunchEntry,
 } from './modules/history';
 import { getForegroundInfo } from './modules/process';
+import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import { initTouchController } from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
 import {
@@ -611,8 +612,9 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       selectSession(data.id);
 
       if (entry.commandLine) {
+        const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);
         setTimeout(() => {
-          sendInput(data.id!, entry.commandLine!);
+          sendInput(data.id!, replayCmd);
         }, 100);
       }
     })

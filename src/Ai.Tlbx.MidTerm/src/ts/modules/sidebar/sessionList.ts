@@ -11,6 +11,7 @@ import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
 import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import { isSessionInLayout, undockSession } from '../layout/layoutStore';
+import { formatRuntimeDisplay } from './processDisplay';
 
 // =============================================================================
 // Callback Types
@@ -68,7 +69,7 @@ function createForegroundIndicator(
   const container = document.createElement('span');
   container.className = 'session-foreground';
 
-  const cmdDisplay = stripExePath(commandLine ?? processName);
+  const cmdDisplay = formatRuntimeDisplay(processName, commandLine ?? null);
   container.title = `${commandLine ?? processName}\n${cwd ?? ''}`;
 
   if (cwd) {
@@ -110,47 +111,6 @@ function updateSessionProcessInfo(sessionId: string): void {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
   }
-}
-
-// =============================================================================
-// Path Utilities
-// =============================================================================
-
-/**
- * Strip executable path from command line, keeping just the exe name and arguments.
- * Also strips .exe extension on Windows for cleaner display.
- * Handles quoted paths (e.g., "C:\Program Files\git\bin\git.exe" status)
- * and unquoted paths (e.g., C:\Windows\System32\cmd.exe /c dir)
- */
-function stripExePath(commandLine: string): string {
-  const trimmed = commandLine.trim();
-  if (!trimmed) return trimmed;
-
-  // Handle quoted executable path
-  if (trimmed.startsWith('"')) {
-    const endQuote = trimmed.indexOf('"', 1);
-    if (endQuote > 1) {
-      const quotedPath = trimmed.slice(1, endQuote);
-      const rest = trimmed.slice(endQuote + 1);
-      const exeName = (quotedPath.replace(/\\/g, '/').split('/').pop() || quotedPath).replace(
-        /\.exe$/i,
-        '',
-      );
-      return (exeName + rest).trim();
-    }
-  }
-
-  // Handle unquoted path - split on first space
-  const spaceIdx = trimmed.indexOf(' ');
-  if (spaceIdx === -1) {
-    // No arguments, just strip the path from the executable
-    return (trimmed.replace(/\\/g, '/').split('/').pop() || trimmed).replace(/\.exe$/i, '');
-  }
-
-  const exePart = trimmed.slice(0, spaceIdx);
-  const argsPart = trimmed.slice(spaceIdx);
-  const exeName = (exePart.replace(/\\/g, '/').split('/').pop() || exePart).replace(/\.exe$/i, '');
-  return (exeName + argsPart).trim();
 }
 
 // =============================================================================
