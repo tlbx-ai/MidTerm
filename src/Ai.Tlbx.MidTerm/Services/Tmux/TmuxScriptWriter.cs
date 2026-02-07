@@ -103,6 +103,16 @@ public static class TmuxScriptWriter
                 """;
             File.WriteAllText(cmdPath, cmdScript);
 
+            // Bash-compatible script (no extension) for Git Bash / MSYS2 / WSL
+            var bashPath = Path.Combine(dir, "tmux");
+            var bashScript = $"""
+                #!/bin/sh
+                printf '%s\0' "$@" | curl -s -b "mm-session=$MT_TOKEN" \
+                  -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
+                  "http://localhost:{port}/api/tmux" 2>/dev/null
+                """;
+            File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n"));
+
             _scriptDirectory = dir;
             Log.Info(() => $"TmuxScriptWriter: Created tmux scripts at {dir}");
         }
