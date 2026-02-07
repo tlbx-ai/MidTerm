@@ -43,9 +43,9 @@ public static class TmuxScriptWriter
 
             var script = $"""
                 #!/bin/sh
-                printf '%s\0' "$@" | curl -s -b "mm-session=$MT_TOKEN" \
+                printf '%s\0' "$@" | curl -sk -b "mm-session=$MT_TOKEN" \
                   -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
-                  "http://localhost:{port}/api/tmux" 2>/dev/null
+                  "https://localhost:{port}/api/tmux" 2>/dev/null
                 """;
 
             File.WriteAllText(scriptPath, script);
@@ -86,7 +86,7 @@ public static class TmuxScriptWriter
                 $tmp = Join-Path $env:TEMP "mt-tmux-$PID.bin"
                 [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
                 try {
-                    & curl.exe -s -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "http://localhost:{{port}}/api/tmux" 2>$null
+                    & curl.exe -sk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "https://localhost:{{port}}/api/tmux" 2>$null
                 } finally {
                     Remove-Item $tmp -ErrorAction SilentlyContinue
                 }
@@ -104,9 +104,9 @@ public static class TmuxScriptWriter
             var bashPath = Path.Combine(dir, "tmux");
             var bashScript = $"""
                 #!/bin/sh
-                printf '%s\0' "$@" | curl -s -b "mm-session=$MT_TOKEN" \
+                printf '%s\0' "$@" | curl -sk -b "mm-session=$MT_TOKEN" \
                   -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
-                  "http://localhost:{port}/api/tmux" 2>/dev/null
+                  "https://localhost:{port}/api/tmux" 2>/dev/null
                 """;
             File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n"));
 
