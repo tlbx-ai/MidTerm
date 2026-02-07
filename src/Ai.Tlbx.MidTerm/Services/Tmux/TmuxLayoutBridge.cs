@@ -24,6 +24,11 @@ public sealed class TmuxLayoutBridge
     public event Action<string>? OnFocusRequested;
 
     /// <summary>
+    /// Fired when the tmux layer wants the frontend to swap two panes in the layout.
+    /// </summary>
+    public event Action<string, string>? OnSwapRequested;
+
+    /// <summary>
     /// Ask the frontend to dock a new pane adjacent to an existing one.
     /// </summary>
     public void RequestDock(string newSessionId, string relativeToSessionId, string position)
@@ -37,6 +42,14 @@ public sealed class TmuxLayoutBridge
     public void RequestFocus(string sessionId)
     {
         OnFocusRequested?.Invoke(sessionId);
+    }
+
+    /// <summary>
+    /// Ask the frontend to swap two panes' positions in the layout tree.
+    /// </summary>
+    public void RequestSwap(string sessionIdA, string sessionIdB)
+    {
+        OnSwapRequested?.Invoke(sessionIdA, sessionIdB);
     }
 
     /// <summary>

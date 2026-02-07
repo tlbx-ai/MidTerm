@@ -9,6 +9,7 @@ namespace Ai.Tlbx.MidTerm.Services.Tmux;
 [JsonSerializable(typeof(List<LayoutNode>))]
 [JsonSerializable(typeof(TmuxDockInstruction))]
 [JsonSerializable(typeof(TmuxFocusInstruction))]
+[JsonSerializable(typeof(TmuxSwapInstruction))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 public partial class TmuxJsonContext : JsonSerializerContext
 {
@@ -32,4 +33,14 @@ public sealed class TmuxFocusInstruction
 {
     public string Type { get; set; } = "tmux-focus";
     public string SessionId { get; set; } = "";
+}
+
+/// <summary>
+/// Instruction sent via state WebSocket telling the frontend to swap two panes in the layout.
+/// </summary>
+public sealed class TmuxSwapInstruction
+{
+    public string Type { get; set; } = "tmux-swap";
+    public string SessionIdA { get; set; } = "";
+    public string SessionIdB { get; set; } = "";
 }

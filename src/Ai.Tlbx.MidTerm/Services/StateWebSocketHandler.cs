@@ -153,10 +153,17 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxFocusInstruction);
         }
 
+        void OnSwapRequested(string sessionIdA, string sessionIdB)
+        {
+            var instruction = new TmuxSwapInstruction { SessionIdA = sessionIdA, SessionIdB = sessionIdB };
+            _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxSwapInstruction);
+        }
+
         if (_tmuxLayoutBridge is not null)
         {
             _tmuxLayoutBridge.OnDockRequested += OnDockRequested;
             _tmuxLayoutBridge.OnFocusRequested += OnFocusRequested;
+            _tmuxLayoutBridge.OnSwapRequested += OnSwapRequested;
         }
 
         try
@@ -212,6 +219,7 @@ public sealed class StateWebSocketHandler
             {
                 _tmuxLayoutBridge.OnDockRequested -= OnDockRequested;
                 _tmuxLayoutBridge.OnFocusRequested -= OnFocusRequested;
+                _tmuxLayoutBridge.OnSwapRequested -= OnSwapRequested;
             }
 
             sendLock.Dispose();

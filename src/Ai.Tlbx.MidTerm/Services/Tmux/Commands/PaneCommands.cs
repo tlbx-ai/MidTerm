@@ -187,6 +187,7 @@ public sealed class PaneCommands
         {
             (ids[srcIdx], ids[dstIdx]) = (ids[dstIdx], ids[srcIdx]);
             _sessionManager.ReorderSessions(ids);
+            _layoutBridge.RequestSwap(srcSessionId, dstSessionId);
         }
 
         return TmuxResult.Ok();

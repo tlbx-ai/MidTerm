@@ -340,6 +340,26 @@ export function handleSessionClosed(sessionId: string): void {
 }
 
 /**
+ * Swap two sessions' positions in the layout tree.
+ */
+export function swapLayoutSessions(sessionIdA: string, sessionIdB: string): void {
+  const layout = $layout.get();
+  if (!layout.root) return;
+
+  const newRoot = swapInTree(layout.root, sessionIdA, sessionIdB);
+  $layout.set({ root: newRoot });
+}
+
+function swapInTree(node: LayoutNode, idA: string, idB: string): LayoutNode {
+  if (node.type === 'leaf') {
+    if (node.sessionId === idA) return { ...node, sessionId: idB };
+    if (node.sessionId === idB) return { ...node, sessionId: idA };
+    return node;
+  }
+  return { ...node, children: node.children.map((c) => swapInTree(c, idA, idB)) };
+}
+
+/**
  * Focus a session within the layout.
  */
 export function focusLayoutSession(sessionId: string): void {
