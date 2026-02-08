@@ -176,8 +176,9 @@ export function createTerminalForSession(
   }
 
   // Create container
+  const scrollbarStyle = $currentSettings.get()?.scrollbarStyle ?? 'off';
   const container = document.createElement('div');
-  container.className = 'terminal-container hidden';
+  container.className = `terminal-container hidden scrollbar-${scrollbarStyle}`;
   container.id = 'terminal-' + sessionId;
   dom.terminalsArea?.appendChild(container);
 

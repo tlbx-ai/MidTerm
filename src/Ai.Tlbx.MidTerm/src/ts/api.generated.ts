@@ -1834,6 +1834,7 @@ export interface components {
       /** Format: double */
       minimumContrastRatio: number;
       smoothScrolling: boolean;
+      scrollbarStyle: components['schemas']['ScrollbarStyleSetting'];
       useWebGL: boolean;
       /** Format: int32 */
       scrollbackLines: number;
@@ -1880,6 +1881,8 @@ export interface components {
       /** Format: int32 */
       rows: number;
     };
+    /** @enum {unknown} */
+    ScrollbarStyleSetting: 'off' | 'hover' | 'always';
     SecurityStatus: {
       passwordProtected: boolean;
       certificateTrusted: boolean;

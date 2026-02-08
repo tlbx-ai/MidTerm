@@ -16,6 +16,7 @@ import type {
   BellStyleSetting,
   ClipboardShortcutsSetting,
   TabTitleModeSetting,
+  ScrollbarStyleSetting,
 } from '../../api/types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
@@ -131,6 +132,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-right-click-paste', settings.rightClickPaste !== false);
   setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts ?? 'auto');
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling === true);
+  setElementValue('setting-scrollbar-style', settings.scrollbarStyle ?? 'off');
   setElementChecked('setting-webgl', settings.useWebGL !== false);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
   setElementChecked('setting-file-radar', settings.fileRadar !== false);
@@ -187,6 +189,8 @@ export function applySettingsToTerminals(): void {
   const fontSize = settings.fontSize ?? 14;
   const contrastRatio = settings.minimumContrastRatio ?? 1;
 
+  const scrollbarStyle = settings.scrollbarStyle ?? 'off';
+
   sessionTerminals.forEach((state: TerminalState) => {
     state.terminal.options.cursorBlink = settings.cursorBlink ?? true;
     state.terminal.options.cursorStyle = settings.cursorStyle ?? 'bar';
@@ -197,6 +201,12 @@ export function applySettingsToTerminals(): void {
     state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
     state.terminal.options.scrollback = settings.scrollbackLines ?? 10000;
+
+    const container = state.terminal.element?.closest('.terminal-container');
+    if (container) {
+      container.classList.remove('scrollbar-off', 'scrollbar-hover', 'scrollbar-always');
+      container.classList.add(`scrollbar-${scrollbarStyle}`);
+    }
   });
 
   rescaleAllTerminalsImmediate();
@@ -251,6 +261,7 @@ export function saveAllSettings(): void {
     tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleModeSetting,
     minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
     smoothScrolling: getElementChecked('setting-smooth-scrolling'),
+    scrollbarStyle: getElementValue('setting-scrollbar-style', 'off') as ScrollbarStyleSetting,
     useWebGL: getElementChecked('setting-webgl'),
     scrollbackLines: parseInt(getElementValue('setting-scrollback', '10000'), 10) || 10000,
     bellStyle: getElementValue('setting-bell-style', 'notification') as BellStyleSetting,

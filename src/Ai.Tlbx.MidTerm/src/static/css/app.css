@@ -1071,13 +1071,58 @@ html, body {
     flex-shrink: 0;
 }
 
-/* Hide native scrollbar - use xterm's custom scrollbar instead */
-.terminal-container .xterm-viewport {
+/* Terminal scrollbar visibility — controlled by scrollbarStyle setting */
+.terminal-container.scrollbar-off .xterm-viewport {
     scrollbar-width: none;
 }
 
-.terminal-container .xterm-viewport::-webkit-scrollbar {
+.terminal-container.scrollbar-off .xterm-viewport::-webkit-scrollbar {
     display: none;
+}
+
+.terminal-container.scrollbar-hover .xterm-viewport {
+    scrollbar-width: none;
+}
+
+.terminal-container.scrollbar-hover .xterm-viewport::-webkit-scrollbar {
+    display: none;
+}
+
+.terminal-container.scrollbar-hover:hover .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+}
+
+.terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+}
+
+.terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.terminal-container.scrollbar-always .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.terminal-container.scrollbar-always .xterm-viewport::-webkit-scrollbar {
+    width: 8px;
+}
+
+.terminal-container.scrollbar-always .xterm-viewport::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+}
+
+.terminal-container.scrollbar-always .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 /* Auto-hide mouse cursor over terminal after inactivity */

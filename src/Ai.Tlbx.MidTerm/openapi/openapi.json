@@ -1931,6 +1931,7 @@
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
+          "scrollbarStyle",
           "useWebGL",
           "scrollbackLines",
           "bellStyle",
@@ -1996,6 +1997,9 @@
           },
           "smoothScrolling": {
             "type": "boolean"
+          },
+          "scrollbarStyle": {
+            "$ref": "#/components/schemas/ScrollbarStyleSetting"
           },
           "useWebGL": {
             "type": "boolean"
@@ -2155,6 +2159,13 @@
             "format": "int32"
           }
         }
+      },
+      "ScrollbarStyleSetting": {
+        "enum": [
+          "off",
+          "hover",
+          "always"
+        ]
       },
       "SecurityStatus": {
         "required": [

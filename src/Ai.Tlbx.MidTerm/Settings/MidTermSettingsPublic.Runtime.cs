@@ -21,6 +21,7 @@ public sealed partial class MidTermSettingsPublic
             TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
+            ScrollbarStyle = settings.ScrollbarStyle,
             UseWebGL = settings.UseWebGL,
             ScrollbackLines = settings.ScrollbackLines,
             BellStyle = settings.BellStyle,
@@ -52,6 +53,7 @@ public sealed partial class MidTermSettingsPublic
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
         settings.SmoothScrolling = SmoothScrolling;
+        settings.ScrollbarStyle = ScrollbarStyle;
         settings.UseWebGL = UseWebGL;
         settings.ScrollbackLines = ScrollbackLines;
         settings.BellStyle = BellStyle;

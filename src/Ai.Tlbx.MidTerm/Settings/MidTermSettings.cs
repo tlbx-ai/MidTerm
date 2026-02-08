@@ -34,6 +34,7 @@ public sealed class MidTermSettings
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
+    public ScrollbarStyleSetting ScrollbarStyle { get; set; } = ScrollbarStyleSetting.Off;
     public bool UseWebGL { get; set; } = true;
 
     // Terminal Behavior
