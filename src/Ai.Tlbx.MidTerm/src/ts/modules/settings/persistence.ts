@@ -26,7 +26,10 @@ import { setCookie } from '../../utils';
 import { getSettings, getUsers, getVersion, getHealth, updateSettings } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
-import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from '../terminal/scrollbarStyle';
+import {
+  applyTerminalScrollbarStyleClass,
+  normalizeScrollbarStyle,
+} from '../terminal/scrollbarStyle';
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
