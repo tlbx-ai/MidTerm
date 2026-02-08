@@ -151,8 +151,6 @@ public sealed class StateWebSocketHandler
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         var shutdownToken = _shutdownService.Token;
-        _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
-        _mainBrowserService.Register(connectionToken);
 
         void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
         {
@@ -188,6 +186,8 @@ public sealed class StateWebSocketHandler
         {
             lastUpdate = _updateService.LatestUpdate;
             await SendStateAsync();
+            _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
+            _mainBrowserService.Register(connectionToken);
             await SendMainBrowserStatusAsync();
 
             var buffer = new byte[8192];
