@@ -38,6 +38,7 @@ import {
   cleanupSearchForTerminal,
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
+import { isCopyShortcut, isPasteShortcut } from './clipboardShortcuts';
 
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -377,6 +378,11 @@ export function setupTerminalEvents(
   terminal: Terminal,
   container: HTMLDivElement,
 ): void {
+  const canUseAsyncClipboard = (): boolean =>
+    window.isSecureContext &&
+    typeof navigator.clipboard !== 'undefined' &&
+    typeof navigator.clipboard.readText === 'function';
+
   // Collect disposables for cleanup
   const disposables: Array<{ dispose: () => void }> = [];
 
@@ -429,43 +435,26 @@ export function setupTerminalEvents(
 
     const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
 
-    if (style === 'windows') {
-      // Ctrl+C: copy if selected, else let terminal handle (SIGINT)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'c') {
-        if (terminal.hasSelection()) {
-          navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
-          terminal.clearSelection();
-          return false;
-        }
-        return true;
-      }
-      // Ctrl+V: paste (images uploaded, text pasted)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'v') {
-        if (window.isSecureContext) {
-          handleClipboardPaste(sessionId);
-          return false;
-        }
-        // Non-secure context: let browser fire paste event, handled by pasteHandler below
-        return true;
-      }
-    } else {
-      // Unix: Ctrl+Shift+C to copy
-      if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
-        if (terminal.hasSelection()) {
-          navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
-          terminal.clearSelection();
-        }
+    // Copy shortcut remains style-specific to preserve existing terminal behavior.
+    if (isCopyShortcut(e, style)) {
+      if (terminal.hasSelection()) {
+        navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
+        terminal.clearSelection();
         return false;
       }
-      // Unix: Ctrl+Shift+V to paste (images uploaded, text pasted)
-      if (e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
-        if (window.isSecureContext) {
-          handleClipboardPaste(sessionId);
-          return false;
-        }
-        // Non-secure context: let browser fire paste event, handled by pasteHandler below
-        return true;
+      // No selection: let terminal handle Ctrl+C (SIGINT).
+      return true;
+    }
+
+    // Unified paste aliases: Ctrl+V, Cmd+V, Ctrl+Shift+V, Alt+V.
+    if (isPasteShortcut(e)) {
+      if (canUseAsyncClipboard()) {
+        void handleClipboardPaste(sessionId);
+        return false;
       }
+      // Clipboard API unavailable (HTTP/untrusted/unsupported):
+      // pass through so native browser paste and terminal key handling still work.
+      return true;
     }
 
     // Ctrl+F / Cmd+F: Open search
@@ -510,7 +499,7 @@ export function setupTerminalEvents(
     const settings = $currentSettings.get();
     if (!settings || settings.rightClickPaste !== false) {
       e.preventDefault();
-      handleClipboardPaste(sessionId);
+      void handleClipboardPaste(sessionId);
     }
   };
 

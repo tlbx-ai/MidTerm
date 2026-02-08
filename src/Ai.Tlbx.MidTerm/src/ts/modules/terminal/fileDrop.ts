@@ -82,6 +82,8 @@ const REJECTED_EXTENSIONS = new Set([
   '.webm',
 ]);
 
+export type ClipboardPasteResult = 'image' | 'text' | 'none' | 'unavailable';
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
@@ -332,12 +334,19 @@ export function setupFileDrop(container: HTMLElement): void {
  * On non-secure contexts (HTTP remote), this function won't work due to
  * browser Clipboard API restrictions - paste is handled via native events instead.
  */
-export async function handleClipboardPaste(sessionId: string): Promise<void> {
+export async function handleClipboardPaste(sessionId: string): Promise<ClipboardPasteResult> {
   // Clipboard API requires secure context (HTTPS or localhost)
   // On HTTP remote connections, show warning and bail out
   if (!window.isSecureContext) {
     showHttpsRequiredToast();
-    return;
+    return 'unavailable';
+  }
+
+  if (
+    typeof navigator.clipboard === 'undefined' ||
+    typeof navigator.clipboard.readText !== 'function'
+  ) {
+    return 'unavailable';
   }
 
   // Try to read clipboard items (images)
@@ -352,7 +361,7 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
         const path = await uploadFile(sessionId, file);
         if (path) {
           pasteToTerminal(sessionId, sanitizePasteContent(path), true);
-          return; // Image handled, don't paste text
+          return 'image';
         }
       }
     }
@@ -366,8 +375,11 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
     if (text) {
       const sanitized = sanitizePasteContent(text);
       pasteToTerminal(sessionId, sanitized);
+      return 'text';
     }
   } catch {
     // Text paste failed
   }
+
+  return 'none';
 }
