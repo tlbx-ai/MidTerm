@@ -152,6 +152,7 @@ public sealed class StateWebSocketHandler
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         var shutdownToken = _shutdownService.Token;
         _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
+        _mainBrowserService.Register(connectionToken);
 
         void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
         {
@@ -233,7 +234,7 @@ public sealed class StateWebSocketHandler
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
             _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
-            _mainBrowserService.Release(connectionToken);
+            _mainBrowserService.Unregister(connectionToken);
 
             if (_tmuxLayoutBridge is not null)
             {
