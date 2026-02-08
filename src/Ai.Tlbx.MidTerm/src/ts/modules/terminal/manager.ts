@@ -294,6 +294,7 @@ export function createTerminalForSession(
       requestAnimationFrame(() => {
         applyTerminalScalingSync(state);
         setupTerminalEvents(sessionId, terminal, container);
+        focusActiveTerminal();
       });
     });
   });
@@ -347,6 +348,7 @@ export function writeOutputFrame(
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             applyTerminalScalingSync(state);
+            focusActiveTerminal();
           });
         });
       } catch {

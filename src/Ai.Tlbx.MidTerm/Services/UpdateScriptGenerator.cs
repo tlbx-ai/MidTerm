@@ -142,13 +142,16 @@ function WaitForFileWritable {{
     return $false
 }}
 
-function KillProcessByName {{
-    param([string]$Name)
+function KillProcessByPath {{
+    param([string]$FullPath)
 
-    $procs = Get-Process -Name $Name -ErrorAction SilentlyContinue
+    $Name = [System.IO.Path]::GetFileNameWithoutExtension($FullPath)
+    $procs = Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object {{
+        try {{ $_.Path -eq $FullPath }} catch {{ $false }}
+    }}
     if ($procs) {{
         foreach ($proc in $procs) {{
-            Log ""Killing $Name (PID: $($proc.Id))...""
+            Log ""Killing $Name (PID: $($proc.Id), Path: $FullPath)...""
             try {{
                 $proc.Kill()
                 $proc.WaitForExit(5000)
@@ -159,11 +162,15 @@ function KillProcessByName {{
         Start-Sleep -Milliseconds 500
     }}
 
-    # Double-check with taskkill
-    $remaining = Get-Process -Name $Name -ErrorAction SilentlyContinue
+    # Double-check
+    $remaining = Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object {{
+        try {{ $_.Path -eq $FullPath }} catch {{ $false }}
+    }}
     if ($remaining) {{
-        Log ""Using taskkill for remaining $Name processes...""
-        taskkill /F /IM ""$Name.exe"" 2>$null
+        foreach ($proc in $remaining) {{
+            Log ""Force killing $Name (PID: $($proc.Id))..."" 'WARN'
+            try {{ $proc.Kill() }} catch {{}}
+        }}
         Start-Sleep -Seconds 1
     }}
 }}
@@ -249,14 +256,14 @@ try {{
         }}
     }}
 
-    # Kill mt.exe processes
+    # Kill mt.exe processes (by full path to avoid killing unrelated processes)
     Log 'Killing mt.exe processes...'
-    KillProcessByName 'mt'
+    KillProcessByPath $CurrentMt
 
     # Kill mthost.exe processes (only for full updates)
     if (-not $IsWebOnly) {{
         Log 'Killing mthost.exe processes...'
-        KillProcessByName 'mthost'
+        KillProcessByPath $CurrentMthost
     }}
 
     Log 'All processes stopped'
@@ -543,7 +550,7 @@ try {{
         Log '=== ROLLBACK ===' 'WARN'
 
         # Stop any partially started process
-        KillProcessByName 'mt'
+        KillProcessByPath $CurrentMt
 
         # Restore backups
         if (Test-Path ""$CurrentMt.bak"") {{
@@ -796,24 +803,26 @@ wait_for_file_writable() {{
     return 1
 }}
 
-kill_process() {{
-    local name=""$1""
+kill_process_by_path() {{
+    local full_path=""$1""
+    local name
+    name=$(basename ""$full_path"")
     local pids
 
-    pids=$(pgrep -f ""/$name\$"" 2>/dev/null || true)
+    pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
     if [[ -n ""$pids"" ]]; then
         for pid in $pids; do
-            log ""Killing $name (PID: $pid)...""
+            log ""Killing $name (PID: $pid, Path: $full_path)...""
             kill -9 ""$pid"" 2>/dev/null || true
         done
         sleep 1
     fi
 
     # Double-check
-    pids=$(pgrep -f ""/$name\$"" 2>/dev/null || true)
+    pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
     if [[ -n ""$pids"" ]]; then
         log ""Force killing remaining $name processes..."" ""WARN""
-        pkill -9 -f ""/$name\$"" 2>/dev/null || true
+        pkill -9 -f ""$full_path"" 2>/dev/null || true
         sleep 1
     fi
 }}
@@ -891,7 +900,7 @@ cleanup() {{
         log ""=== ROLLBACK ==="" ""WARN""
 
         # Stop any partially started process
-        kill_process ""mt""
+        kill_process_by_path ""$CURRENT_MT""
 
         # Restore backups
         if [[ -f ""$CURRENT_MT.bak"" ]]; then
@@ -1007,14 +1016,14 @@ for _i in $(seq 1 10); do
     sleep 0.5
 done
 
-# Kill mt processes
+# Kill mt processes (by full path to avoid killing unrelated processes)
 log ""Killing mt processes...""
-kill_process ""mt""
+kill_process_by_path ""$CURRENT_MT""
 
 # Kill mthost processes (only for full updates)
 if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
     log ""Killing mthost processes...""
-    kill_process ""mthost""
+    kill_process_by_path ""$CURRENT_MTHOST""
 fi
 
 log ""All processes stopped""

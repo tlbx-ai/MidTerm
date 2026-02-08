@@ -242,15 +242,14 @@ public static class Program
                 connectionCount++;
                 Log.Info(() => $"Client connected (#{connectionCount})");
 
-                // Cancel any existing client - only one active client per session
-                // Don't dispose immediately - let GC handle it to avoid race conditions
-                // with linked token registrations
                 CancellationTokenSource clientCts;
                 lock (_clientLock)
                 {
-                    _currentClientCts?.Cancel();
+                    var oldCts = _currentClientCts;
                     _currentClientCts = new CancellationTokenSource();
                     clientCts = _currentClientCts;
+                    oldCts?.Cancel();
+                    oldCts?.Dispose();
                 }
 
                 // Create a linked CTS that combines shutdown token with this client's token
@@ -658,11 +657,9 @@ public static class Program
                 break;
             }
 
-            if (bytesRead < TtyHostProtocol.HeaderSize)
+            while (bytesRead < TtyHostProtocol.HeaderSize)
             {
-                // Read remaining header bytes
-                var remaining = TtyHostProtocol.HeaderSize - bytesRead;
-                var more = await stream.ReadAsync(headerBuffer.AsMemory(bytesRead, remaining), ct).ConfigureAwait(false);
+                var more = await stream.ReadAsync(headerBuffer.AsMemory(bytesRead, TtyHostProtocol.HeaderSize - bytesRead), ct).ConfigureAwait(false);
                 if (more == 0) break;
                 bytesRead += more;
             }

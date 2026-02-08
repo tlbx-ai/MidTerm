@@ -1,3 +1,4 @@
+using System.Net;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -28,6 +29,12 @@ public static class AuthEndpoints
             }
 
             if (IsPublicPath(path))
+            {
+                await next();
+                return;
+            }
+
+            if (path == "/api/shutdown" && IsLoopback(context))
             {
                 await next();
                 return;
@@ -168,7 +175,6 @@ public static class AuthEndpoints
                path == "/api/version" ||
                path == "/api/paths" ||
                path == "/api/security/status" ||
-               path == "/api/shutdown" ||
                path.StartsWith("/api/certificate/") ||
                path.StartsWith("/api/auth/") ||
                path.StartsWith("/css/") ||
@@ -179,5 +185,11 @@ public static class AuthEndpoints
                path.EndsWith(".webmanifest") ||
                path.EndsWith(".woff") ||
                path.EndsWith(".woff2");
+    }
+
+    private static bool IsLoopback(HttpContext context)
+    {
+        var remoteIp = context.Connection.RemoteIpAddress;
+        return remoteIp is not null && IPAddress.IsLoopback(remoteIp);
     }
 }

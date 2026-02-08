@@ -27,11 +27,24 @@ public sealed class AuthService
         _settingsService = settingsService;
         _timeProvider = timeProvider ?? TimeProvider.System;
 
-        // Ensure session secret exists on startup so cookies survive restarts
         var settings = _settingsService.Load();
+        var dirty = false;
+
         if (string.IsNullOrEmpty(settings.SessionSecret))
         {
             settings.SessionSecret = GenerateSessionSecret();
+            dirty = true;
+        }
+
+        if (settings.PasswordHash is not null && settings.PasswordHash.StartsWith("__PENDING__:"))
+        {
+            var pendingPassword = settings.PasswordHash["__PENDING__:".Length..];
+            settings.PasswordHash = HashPassword(pendingPassword);
+            dirty = true;
+        }
+
+        if (dirty)
+        {
             _settingsService.Save(settings);
         }
     }
@@ -57,28 +70,10 @@ public sealed class AuthService
         return $"$PBKDF2${Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
     }
 
-    /// <summary>
-    /// Verifies a password against a stored hash. Handles pending passwords from installer.
-    /// </summary>
     public bool VerifyPassword(string password, string? storedHash)
     {
         if (string.IsNullOrEmpty(storedHash) || string.IsNullOrEmpty(password))
         {
-            return false;
-        }
-
-        // Handle pending password from installer (plaintext with prefix)
-        if (storedHash.StartsWith("__PENDING__:"))
-        {
-            var pendingPassword = storedHash["__PENDING__:".Length..];
-            if (password == pendingPassword)
-            {
-                // Convert to proper hash on successful match
-                var settings = _settingsService.Load();
-                settings.PasswordHash = HashPassword(password);
-                _settingsService.Save(settings);
-                return true;
-            }
             return false;
         }
 
@@ -188,13 +183,13 @@ public sealed class AuthService
     public void RecordFailedAttempt(string ip)
     {
         var entry = _rateLimits.GetOrAdd(ip, _ => new RateLimitEntry());
-        entry.FailedAttempts++;
+        var attempts = Interlocked.Increment(ref entry.FailedAttempts);
 
-        if (entry.FailedAttempts >= 10)
+        if (attempts >= 10)
         {
             entry.BlockedUntil = _timeProvider.GetUtcNow().DateTime.AddMinutes(5);
         }
-        else if (entry.FailedAttempts >= 5)
+        else if (attempts >= 5)
         {
             entry.BlockedUntil = _timeProvider.GetUtcNow().DateTime.AddSeconds(30);
         }
@@ -255,7 +250,13 @@ public sealed class AuthService
 
     private sealed class RateLimitEntry
     {
-        public int FailedAttempts { get; set; }
-        public DateTime BlockedUntil { get; set; }
+        public int FailedAttempts;
+        private long _blockedUntilTicks;
+
+        public DateTime BlockedUntil
+        {
+            get => new(Interlocked.Read(ref _blockedUntilTicks));
+            set => Interlocked.Exchange(ref _blockedUntilTicks, value.Ticks);
+        }
     }
 }

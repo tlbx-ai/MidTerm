@@ -81,7 +81,7 @@ public sealed class MuxClient : IAsyncDisposable
 
     private volatile string? _activeSessionId;
     private volatile bool _flushSuspended;
-    private readonly Dictionary<string, int> _lastFlushDelayMs = new();
+    private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new();
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
@@ -249,7 +249,7 @@ public sealed class MuxClient : IAsyncDisposable
     /// </summary>
     public void RemoveSession(string sessionId)
     {
-        _lastFlushDelayMs.Remove(sessionId);
+        _lastFlushDelayMs.TryRemove(sessionId, out _);
         _sessionsToRemove.Enqueue(sessionId);
     }
 

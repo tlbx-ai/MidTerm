@@ -1009,7 +1009,7 @@ html, body {
     right: 6px;
     z-index: 10;
     padding: 4px 8px;
-    font-family: var(--font-mono, monospace);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 11px;
     line-height: 1.5;
     border-radius: 4px;
@@ -1211,7 +1211,7 @@ html, body {
 
 /* Focus indicator for active pane - subtle grey */
 .layout-leaf.focused {
-    outline: 2px solid var(--border-color-light);
+    outline: 2px solid var(--border-subtle);
     outline-offset: -2px;
 }
 
@@ -1298,7 +1298,7 @@ html, body {
 .session-item.in-layout {
     background-color: var(--bg-tertiary);
     margin-left: 6px;
-    border-left: 2px solid var(--border-color-light);
+    border-left: 2px solid var(--border-subtle);
 }
 
 /* Hide layout badge - visual grouping is enough */
@@ -2527,6 +2527,52 @@ html, body {
     cursor: pointer;
 }
 
+/* Toggle switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    background-color: var(--bg-tertiary);
+    border-radius: 10px;
+    transition: background-color 0.2s;
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform 0.2s, background-color 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: var(--accent-blue);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+    background-color: var(--text-primary);
+}
+
 /* Settings hint and info text */
 .setting-hint {
     font-size: 13px;
@@ -3049,7 +3095,7 @@ html, body {
 }
 
 .changelog-load-more:hover:not(:disabled) {
-    background-color: var(--bg-secondary);
+    background-color: var(--bg-surface);
 }
 
 .changelog-load-more:disabled {
@@ -3539,7 +3585,7 @@ html, body {
     justify-content: space-between;
     align-items: center;
     padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .modal-overlay > .modal .modal-body {
@@ -3550,7 +3596,7 @@ html, body {
 
 .modal-overlay > .modal .modal-footer {
     padding: 16px 20px;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--border-color);
     display: flex;
     justify-content: flex-end;
     gap: 12px;
@@ -3566,7 +3612,7 @@ html, body {
 .update-log-content {
     max-height: 55vh;
     overflow: auto;
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 12px;
     white-space: pre-wrap;
     word-break: break-all;
@@ -3581,7 +3627,7 @@ html, body {
     margin-top: 12px;
     padding: 12px;
     border-radius: 4px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-color);
 }
 
 .update-result-success {
@@ -3758,7 +3804,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 4px;
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
     padding: 6px 10px;
     border-radius: 6px;
     box-shadow: 0 2px 8px var(--shadow-color);
@@ -4304,7 +4350,7 @@ html, body {
 .trust-help-text {
     display: block;
     font-size: 9px;
-    color: var(--text-tertiary);
+    color: var(--text-muted);
     margin-top: 2px;
     margin-left: 17px;
 }
@@ -4659,7 +4705,7 @@ html, body {
     border: 1px solid var(--border-subtle);
     padding: 6px 10px;
     max-width: 95%;
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 10px;
 }
 
@@ -4678,7 +4724,7 @@ html, body {
 }
 
 .chat-msg-tool-call .chat-msg-tool-name {
-    color: var(--accent-yellow);
+    color: var(--accent-gold);
     font-weight: 600;
     font-size: 11px;
 }
@@ -4704,7 +4750,7 @@ html, body {
     border-radius: 4px;
     padding: 6px 8px;
     margin: 4px 0;
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 10px;
     color: var(--text-secondary);
     white-space: pre-wrap;
@@ -4720,7 +4766,7 @@ html, body {
     border-radius: 4px;
     padding: 6px 8px;
     margin: 4px 0;
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 10px;
     color: var(--text-secondary);
     white-space: pre-wrap;
@@ -4731,7 +4777,7 @@ html, body {
 
 /* Legacy tool name style */
 .chat-msg-tool > .chat-msg-tool-name {
-    color: var(--accent-yellow);
+    color: var(--accent-gold);
     font-weight: 500;
     margin-bottom: 4px;
 }
@@ -4755,7 +4801,7 @@ html, body {
 .chat-msg-tool-confirm {
     align-self: center;
     background-color: var(--bg-primary);
-    border: 2px solid var(--accent-yellow);
+    border: 2px solid var(--accent-gold);
     padding: 12px;
     max-width: 95%;
     border-radius: 8px;
@@ -4781,7 +4827,7 @@ html, body {
 }
 
 .chat-msg-tool-title {
-    color: var(--accent-yellow);
+    color: var(--accent-gold);
     font-weight: 600;
     font-size: 11px;
     text-transform: uppercase;
@@ -4790,19 +4836,19 @@ html, body {
 
 .chat-msg-tool-confirm .chat-msg-tool-name {
     color: var(--text-primary);
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 11px;
     font-weight: 500;
     margin-bottom: 6px;
 }
 
 .chat-msg-tool-command {
-    background-color: var(--bg-secondary);
+    background-color: var(--bg-surface);
     border: 1px solid var(--border-subtle);
     border-radius: 4px;
     padding: 8px 10px;
     margin: 8px 0;
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 11px;
     color: var(--accent-cyan);
     white-space: pre-wrap;
@@ -5210,7 +5256,7 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
 }
 
 .file-viewer-header-actions {
@@ -5236,7 +5282,7 @@ html, body {
 }
 
 .file-viewer-error {
-    color: var(--error);
+    color: var(--accent-red);
 }
 
 /* File viewer: Image */
@@ -5272,7 +5318,7 @@ html, body {
 .file-viewer-text {
     margin: 0;
     padding: 16px;
-    font-family: var(--font-mono);
+    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
     font-size: 15px;
     line-height: 1.5;
     color: var(--text-primary);
@@ -5309,7 +5355,7 @@ html, body {
 .file-viewer-binary-size {
     font-size: 18px;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--accent-blue);
 }
 
 .file-viewer-binary-modified {
@@ -5356,7 +5402,7 @@ html, body {
 }
 
 .file-list-dir .file-name {
-    color: var(--accent);
+    color: var(--accent-blue);
 }
 
 .file-size {
@@ -5591,8 +5637,9 @@ html, body {
     margin-right: 400px;
 }
 
-/* Icon button for file viewer download */
-.btn-icon {
+/* Icon button for file viewer dock and modal */
+.file-viewer-dock-actions .btn-icon,
+.file-viewer-header-actions .btn-icon {
     background: none;
     border: none;
     color: var(--text-secondary);
@@ -5604,7 +5651,8 @@ html, body {
     border-radius: 4px;
 }
 
-.btn-icon:hover {
+.file-viewer-dock-actions .btn-icon:hover,
+.file-viewer-header-actions .btn-icon:hover {
     background-color: var(--bg-hover);
     color: var(--text-primary);
 }

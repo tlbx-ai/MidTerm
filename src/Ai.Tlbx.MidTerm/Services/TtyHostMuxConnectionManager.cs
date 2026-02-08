@@ -52,6 +52,7 @@ public sealed class TtyHostMuxConnectionManager
     {
         _inputTimestamps.TryRemove(sessionId, out _);
         _lastServerRttMs.TryRemove(sessionId, out _);
+        MuxProtocol.ClearSessionCache(sessionId);
 
         foreach (var client in _clients.Values)
         {

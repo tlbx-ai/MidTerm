@@ -792,6 +792,11 @@ public sealed class TtyHostClient : IAsyncDisposable
             return null;
         }
 
+        if (payloadLength < 0 || payloadLength > TtyHostProtocol.MaxPayloadSize)
+        {
+            return null;
+        }
+
         var payload = new byte[payloadLength];
         if (payloadLength > 0)
         {

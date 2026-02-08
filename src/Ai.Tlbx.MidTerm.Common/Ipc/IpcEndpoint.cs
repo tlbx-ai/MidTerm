@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace Ai.Tlbx.MidTerm.Common.Ipc;
 
 /// <summary>
@@ -21,7 +23,39 @@ public static class IpcEndpoint
         }
         else
         {
-            return $"/tmp/{Prefix}{sessionId}-{pid}.sock";
+            var socketDir = GetUnixSocketDirectory();
+            return Path.Combine(socketDir, $"{Prefix}{sessionId}-{pid}.sock");
+        }
+    }
+
+    private static string GetUnixSocketDirectory()
+    {
+        var uid = GetUnixUid();
+        var dir = $"/tmp/midterm-{uid}";
+        if (!Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(dir,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
+        return dir;
+    }
+
+    [DllImport("libc", EntryPoint = "getuid")]
+    private static extern uint LibcGetUid();
+
+    private static uint GetUnixUid()
+    {
+        try
+        {
+            return LibcGetUid();
+        }
+        catch
+        {
+            return (uint)Environment.ProcessId;
         }
     }
 
