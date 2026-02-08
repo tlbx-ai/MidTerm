@@ -94,6 +94,7 @@ public sealed class TmuxCommandDispatcher
                 "new-window" or "neww" => await _windowCommands.NewWindowAsync(cmd, ct),
                 "select-window" or "selectw" => _windowCommands.SelectWindow(cmd, callerPaneId),
                 "kill-window" or "killw" => await _windowCommands.KillWindowAsync(cmd, callerPaneId, ct),
+                "select-layout" or "selectl" => TmuxResult.Ok(),
 
                 // Config commands (stubs)
                 "show-options" or "show-option" or "show" => _configCommands.ShowOptions(cmd),

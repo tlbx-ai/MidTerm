@@ -84,6 +84,11 @@ public static partial class TmuxLog
         Write($"   !! {message}");
     }
 
+    public static void Info(string message)
+    {
+        Write($"   ~~ {message}");
+    }
+
     public static void Shutdown()
     {
         lock (_lock)

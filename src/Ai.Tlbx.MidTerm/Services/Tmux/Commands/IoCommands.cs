@@ -1,11 +1,12 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 
 /// <summary>
 /// Handles: send-keys, display-message, capture-pane
 /// </summary>
-public sealed class IoCommands
+public sealed partial class IoCommands
 {
     private readonly TtyHostSessionManager _sessionManager;
     private readonly TmuxTargetResolver _targetResolver;
@@ -43,9 +44,119 @@ public sealed class IoCommands
             return TmuxResult.Ok();
         }
 
-        var data = TmuxKeyTranslator.TranslateKeys(cmd.Positional, literal);
+        var keys = cmd.Positional;
+
+        if (!literal && keys.Count >= 2)
+        {
+            var text = keys[0];
+            if (BashEnvVarPattern().IsMatch(text))
+            {
+                var shellType = _sessionManager.GetSession(sessionId)?.ShellType;
+                var translated = TranslateBashEnvVars(text, shellType);
+                if (translated is not null)
+                {
+                    TmuxLog.Info($"bash→{shellType}: {translated}");
+                    keys = new List<string>(keys) { [0] = translated };
+                }
+            }
+        }
+
+        var data = TmuxKeyTranslator.TranslateKeys(keys, literal);
         await _sessionManager.SendInputAsync(sessionId, data, ct).ConfigureAwait(false);
         return TmuxResult.Ok();
+    }
+
+    [GeneratedRegex(@"(?:^|&&\s*)[A-Z_][A-Z0-9_]*=\S+")]
+    private static partial Regex BashEnvVarPattern();
+
+    [GeneratedRegex(@"^([A-Z_][A-Z0-9_]*)=(\S+)\s*")]
+    private static partial Regex LeadingEnvVarPattern();
+
+    internal static string? TranslateBashEnvVars(string commandLine, string? shellType)
+    {
+        return shellType switch
+        {
+            "Pwsh" or "PowerShell" => TranslateForPowerShell(commandLine),
+            "Cmd" => TranslateForCmd(commandLine),
+            _ => null // Bash/Zsh: no translation needed
+        };
+    }
+
+    internal static string TranslateForPowerShell(string commandLine)
+    {
+        var segments = commandLine.Split(" && ");
+        var result = new List<string>(segments.Length);
+
+        foreach (var segment in segments)
+        {
+            result.Add(TranslateSegmentForPowerShell(segment));
+        }
+
+        return string.Join("; ", result);
+    }
+
+    private static string TranslateSegmentForPowerShell(string segment)
+    {
+        var remaining = segment.TrimStart();
+
+        if (!LeadingEnvVarPattern().IsMatch(remaining))
+        {
+            return segment;
+        }
+
+        var sb = new StringBuilder();
+        var match = LeadingEnvVarPattern().Match(remaining);
+
+        while (match.Success)
+        {
+            sb.Append($"$env:{match.Groups[1].Value}='{match.Groups[2].Value}'; ");
+            remaining = remaining[match.Length..].TrimStart();
+            match = LeadingEnvVarPattern().Match(remaining);
+        }
+
+        if (remaining.Length > 0 && (remaining[0] is '\'' or '"'))
+        {
+            sb.Append("& ");
+        }
+
+        sb.Append(remaining);
+        return sb.ToString();
+    }
+
+    internal static string TranslateForCmd(string commandLine)
+    {
+        var segments = commandLine.Split(" && ");
+        var result = new List<string>(segments.Length);
+
+        foreach (var segment in segments)
+        {
+            result.Add(TranslateSegmentForCmd(segment));
+        }
+
+        return string.Join("&&", result);
+    }
+
+    private static string TranslateSegmentForCmd(string segment)
+    {
+        var remaining = segment.TrimStart();
+
+        if (!LeadingEnvVarPattern().IsMatch(remaining))
+        {
+            return segment;
+        }
+
+        var sb = new StringBuilder();
+        var match = LeadingEnvVarPattern().Match(remaining);
+
+        while (match.Success)
+        {
+            sb.Append($"set \"{match.Groups[1].Value}={match.Groups[2].Value}\"&& ");
+            remaining = remaining[match.Length..].TrimStart();
+            match = LeadingEnvVarPattern().Match(remaining);
+        }
+
+        sb.Append(remaining);
+        return sb.ToString();
     }
 
     /// <summary>
