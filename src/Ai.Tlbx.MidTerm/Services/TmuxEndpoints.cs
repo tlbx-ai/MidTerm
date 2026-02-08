@@ -37,7 +37,7 @@ public static class TmuxEndpoints
             return Results.Text(
                 result.Output,
                 contentType: "text/plain",
-                statusCode: 200);
+                statusCode: result.Success ? 200 : 400);
         });
 
         app.MapPost("/api/tmux/layout", async (HttpContext ctx) =>

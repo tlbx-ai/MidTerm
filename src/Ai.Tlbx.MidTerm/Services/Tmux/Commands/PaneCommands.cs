@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 
 /// <summary>
@@ -24,6 +26,7 @@ public sealed class PaneCommands
 
     /// <summary>
     /// Create a new session and dock it adjacent to the target pane.
+    /// If positional args specify a command, send it to the new session via the PTY.
     /// </summary>
     public async Task<TmuxResult> SplitWindowAsync(
         TmuxCommandParser.ParsedCommand cmd,
@@ -52,6 +55,8 @@ public sealed class PaneCommands
         {
             return TmuxResult.Fail("failed to create pane\n");
         }
+
+        await SendCommandIfPresentAsync(cmd.Positional, newSession.Id, ct).ConfigureAwait(false);
 
         // Broadcast dock instruction to frontend
         var position = horizontal ? "right" : "bottom";
@@ -191,5 +196,51 @@ public sealed class PaneCommands
         }
 
         return TmuxResult.Ok();
+    }
+
+    /// <summary>
+    /// If positional args contain a command, send it to the session followed by Enter.
+    /// The PTY kernel buffer holds the input until the shell reads from stdin.
+    /// </summary>
+    internal async Task SendCommandIfPresentAsync(List<string> positional, string sessionId, CancellationToken ct)
+    {
+        if (positional.Count == 0)
+        {
+            return;
+        }
+
+        var command = ShellQuote(positional);
+        TmuxLog.Command("(exec)", null, new Dictionary<string, string?>(), [command]);
+        var data = Encoding.UTF8.GetBytes(command + "\r");
+        await _sessionManager.SendInputAsync(sessionId, data, ct).ConfigureAwait(false);
+    }
+
+    private static string ShellQuote(List<string> args)
+    {
+        if (args.Count == 1)
+        {
+            return args[0];
+        }
+
+        var sb = new StringBuilder();
+        foreach (var arg in args)
+        {
+            if (sb.Length > 0)
+            {
+                sb.Append(' ');
+            }
+
+            if (arg.Length > 0 && !arg.AsSpan().ContainsAny(" \t|&;<>()$\\\"'`!#~"))
+            {
+                sb.Append(arg);
+            }
+            else
+            {
+                sb.Append('\'');
+                sb.Append(arg.Replace("'", "'\\''"));
+                sb.Append('\'');
+            }
+        }
+        return sb.ToString();
     }
 }

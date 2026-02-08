@@ -172,7 +172,7 @@ public class Program
             var tmuxSessionCommands = new SessionCommands(sessionManager, tmuxPaneMapper, tmuxFormatter);
             var tmuxIoCommands = new IoCommands(sessionManager, tmuxTargetResolver, tmuxFormatter);
             var tmuxPaneCommands = new PaneCommands(sessionManager, tmuxPaneMapper, tmuxTargetResolver, tmuxLayoutBridge);
-            var tmuxWindowCommands = new WindowCommands(sessionManager, tmuxTargetResolver, tmuxLayoutBridge);
+            var tmuxWindowCommands = new WindowCommands(sessionManager, tmuxTargetResolver, tmuxLayoutBridge, tmuxPaneCommands);
             var tmuxConfigCommands = new ConfigCommands();
             var tmuxMiscCommands = new MiscCommands(tmuxPaneCommands);
             tmuxDispatcher = new TmuxCommandDispatcher(
