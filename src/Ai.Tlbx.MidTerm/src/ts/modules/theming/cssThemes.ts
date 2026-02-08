@@ -46,6 +46,9 @@ const dark: CssThemePalette = {
 
   '--accent-gold': '#E8B44C',
   '--accent-gold-muted': '#C9A04A',
+  '--cta-primary': '#E8B44C',
+  '--cta-primary-muted': '#C9A04A',
+  '--cta-primary-text': '#0D0E14',
 
   '--btn-primary': '#7BA2F7',
   '--btn-primary-hover': '#8FB5FF',
@@ -75,6 +78,8 @@ const dark: CssThemePalette = {
   '--accent-gold-15': 'rgba(232, 180, 76, 0.15)',
   '--accent-gold-25': 'rgba(232, 180, 76, 0.25)',
   '--accent-gold-40': 'rgba(232, 180, 76, 0.4)',
+  '--cta-primary-25': 'rgba(232, 180, 76, 0.25)',
+  '--cta-primary-40': 'rgba(232, 180, 76, 0.4)',
 
   '--accent-orange-08': 'rgba(245, 169, 98, 0.08)',
   '--accent-orange-10': 'rgba(245, 169, 98, 0.1)',
@@ -147,6 +152,9 @@ const light: CssThemePalette = {
 
   '--accent-gold': '#B45309',
   '--accent-gold-muted': '#92400E',
+  '--cta-primary': '#2563EB',
+  '--cta-primary-muted': '#1D4ED8',
+  '--cta-primary-text': '#FFFFFF',
 
   '--btn-primary': '#2563EB',
   '--btn-primary-hover': '#1D4ED8',
@@ -176,6 +184,8 @@ const light: CssThemePalette = {
   '--accent-gold-15': 'rgba(180, 83, 9, 0.15)',
   '--accent-gold-25': 'rgba(180, 83, 9, 0.25)',
   '--accent-gold-40': 'rgba(180, 83, 9, 0.4)',
+  '--cta-primary-25': 'rgba(37, 99, 235, 0.25)',
+  '--cta-primary-40': 'rgba(37, 99, 235, 0.4)',
 
   '--accent-orange-08': 'rgba(217, 119, 6, 0.08)',
   '--accent-orange-10': 'rgba(217, 119, 6, 0.1)',
@@ -248,6 +258,9 @@ const solarizedDark: CssThemePalette = {
 
   '--accent-gold': '#B58900',
   '--accent-gold-muted': '#9A7500',
+  '--cta-primary': '#B58900',
+  '--cta-primary-muted': '#9A7500',
+  '--cta-primary-text': '#0D0E14',
 
   '--btn-primary': '#268BD2',
   '--btn-primary-hover': '#3A9BE0',
@@ -277,6 +290,8 @@ const solarizedDark: CssThemePalette = {
   '--accent-gold-15': 'rgba(181, 137, 0, 0.15)',
   '--accent-gold-25': 'rgba(181, 137, 0, 0.25)',
   '--accent-gold-40': 'rgba(181, 137, 0, 0.4)',
+  '--cta-primary-25': 'rgba(181, 137, 0, 0.25)',
+  '--cta-primary-40': 'rgba(181, 137, 0, 0.4)',
 
   '--accent-orange-08': 'rgba(203, 75, 22, 0.08)',
   '--accent-orange-10': 'rgba(203, 75, 22, 0.1)',
@@ -349,6 +364,9 @@ const solarizedLight: CssThemePalette = {
 
   '--accent-gold': '#B58900',
   '--accent-gold-muted': '#9A7500',
+  '--cta-primary': '#B58900',
+  '--cta-primary-muted': '#9A7500',
+  '--cta-primary-text': '#0D0E14',
 
   '--btn-primary': '#268BD2',
   '--btn-primary-hover': '#1A7ABD',
@@ -378,6 +396,8 @@ const solarizedLight: CssThemePalette = {
   '--accent-gold-15': 'rgba(181, 137, 0, 0.15)',
   '--accent-gold-25': 'rgba(181, 137, 0, 0.25)',
   '--accent-gold-40': 'rgba(181, 137, 0, 0.4)',
+  '--cta-primary-25': 'rgba(181, 137, 0, 0.25)',
+  '--cta-primary-40': 'rgba(181, 137, 0, 0.4)',
 
   '--accent-orange-08': 'rgba(203, 75, 22, 0.08)',
   '--accent-orange-10': 'rgba(203, 75, 22, 0.1)',

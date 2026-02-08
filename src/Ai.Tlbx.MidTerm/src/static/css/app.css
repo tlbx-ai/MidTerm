@@ -92,6 +92,9 @@
     /* === SIGNATURE GOLD (used sparingly) === */
     --accent-gold: #E8B44C;         /* Warm dock light */
     --accent-gold-muted: #C9A04A;
+    --cta-primary: #E8B44C;
+    --cta-primary-muted: #C9A04A;
+    --cta-primary-text: #0D0E14;
 
     /* === BUTTONS === */
     --btn-primary: #7BA2F7;
@@ -126,6 +129,8 @@
     --accent-gold-15: rgba(232, 180, 76, 0.15);
     --accent-gold-25: rgba(232, 180, 76, 0.25);
     --accent-gold-40: rgba(232, 180, 76, 0.4);
+    --cta-primary-25: rgba(232, 180, 76, 0.25);
+    --cta-primary-40: rgba(232, 180, 76, 0.4);
 
     /* === ACCENT ORANGE OPACITY VARIANTS === */
     --accent-orange-08: rgba(245, 169, 98, 0.08);
@@ -1974,20 +1979,20 @@ html, body {
 
 .empty-state button {
     padding: 10px 28px;
-    background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-muted));
-    color: #0D0E14;
+    background: linear-gradient(135deg, var(--cta-primary), var(--cta-primary-muted));
+    color: var(--cta-primary-text);
     border: none;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
-    box-shadow: 0 4px 16px var(--accent-gold-25);
+    box-shadow: 0 4px 16px var(--cta-primary-25);
     transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .empty-state button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 24px var(--accent-gold-40);
+    box-shadow: 0 6px 24px var(--cta-primary-40);
 }
 
 .empty-state button:active:not(:disabled) {
@@ -2191,14 +2196,14 @@ html, body {
 }
 
 .sidebar-btn.primary {
-    background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-muted));
-    color: #0D0E14;
+    background: linear-gradient(135deg, var(--cta-primary), var(--cta-primary-muted));
+    color: var(--cta-primary-text);
     font-size: 18px;
     transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .sidebar-btn.primary:hover {
-    box-shadow: 0 4px 16px var(--accent-gold-25);
+    box-shadow: 0 4px 16px var(--cta-primary-25);
     transform: translateY(-1px);
 }
 
@@ -3401,21 +3406,21 @@ html, body {
     width: 100%;
     padding: 14px;
     margin-top: 6px;
-    background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-muted));
-    color: #0D0E14;
+    background: linear-gradient(135deg, var(--cta-primary), var(--cta-primary-muted));
+    color: var(--cta-primary-text);
     border: none;
     border-radius: 8px;
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.3px;
-    box-shadow: 0 4px 16px var(--accent-gold-25);
+    box-shadow: 0 4px 16px var(--cta-primary-25);
     transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .login-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 24px var(--accent-gold-40);
+    box-shadow: 0 6px 24px var(--cta-primary-40);
 }
 
 .login-btn:active:not(:disabled) {
