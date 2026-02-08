@@ -22,6 +22,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly ConcurrentDictionary<string, int> _sessionOrder = new();
     private readonly ConcurrentDictionary<string, byte> _tmuxCreatedSessions = new();
+    private readonly ConcurrentDictionary<string, byte> _tmuxCommandStarted = new();
     private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
@@ -517,6 +518,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _sessionCache.TryRemove(sessionId, out _);
         _sessionOrder.TryRemove(sessionId, out _);
         _tmuxCreatedSessions.TryRemove(sessionId, out _);
+        _tmuxCommandStarted.TryRemove(sessionId, out _);
         CleanupTempDirectory(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
@@ -697,6 +699,24 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             info.ForegroundCommandLine = payload.CommandLine;
             info.CurrentDirectory = payload.Cwd;
         }
+
+        if (_tmuxCreatedSessions.ContainsKey(sessionId))
+        {
+            var shellName = info?.ShellType.ToString();
+            var isShellForeground = shellName is not null &&
+                string.Equals(payload.Name, shellName, StringComparison.OrdinalIgnoreCase);
+
+            if (!isShellForeground)
+            {
+                _tmuxCommandStarted.TryAdd(sessionId, 0);
+            }
+            else if (_tmuxCommandStarted.TryRemove(sessionId, out _))
+            {
+                _ = CloseSessionAsync(sessionId, CancellationToken.None);
+                return;
+            }
+        }
+
         OnForegroundChanged?.Invoke(sessionId, payload);
     }
 

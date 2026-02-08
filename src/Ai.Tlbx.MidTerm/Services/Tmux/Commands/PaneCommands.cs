@@ -213,12 +213,7 @@ public sealed class PaneCommands
         var command = ShellQuote(positional);
         TmuxLog.Command("(exec)", null, new Dictionary<string, string?>(), [command]);
 
-        // In real tmux, split-window/new-window with a command runs it as the pane
-        // process — the pane closes when the command exits. We emulate this by
-        // appending an exit command so the shell terminates after the command finishes.
-        var shellType = _sessionManager.GetSession(sessionId)?.ShellType;
-        var exitSuffix = shellType == "Cmd" ? "& exit" : "; exit";
-        var data = Encoding.UTF8.GetBytes(command + " " + exitSuffix + "\r");
+        var data = Encoding.UTF8.GetBytes(command + "\r");
         await _sessionManager.SendInputAsync(sessionId, data, ct).ConfigureAwait(false);
     }
 
