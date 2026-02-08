@@ -602,7 +602,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);
         setTimeout(() => {
-          sendInput(data.id!, replayCmd);
+          sendInput(data.id!, replayCmd + '\r');
         }, 100);
       }
     })
