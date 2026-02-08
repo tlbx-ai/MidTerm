@@ -21,6 +21,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly ConcurrentDictionary<string, int> _sessionOrder = new();
+    private readonly ConcurrentDictionary<string, byte> _tmuxCreatedSessions = new();
     private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
@@ -419,6 +420,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _sessionCache.TryGetValue(sessionId, out var info) ? info : null;
     }
 
+    public void MarkTmuxCreated(string sessionId)
+    {
+        _tmuxCreatedSessions.TryAdd(sessionId, 0);
+    }
+
     public async Task<SessionInfo?> GetSessionFreshAsync(string sessionId, CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
@@ -510,6 +516,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         _sessionCache.TryRemove(sessionId, out _);
         _sessionOrder.TryRemove(sessionId, out _);
+        _tmuxCreatedSessions.TryRemove(sessionId, out _);
         CleanupTempDirectory(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
@@ -712,6 +719,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
                 if (info is null || !info.IsRunning)
                 {
+                    if (_tmuxCreatedSessions.TryRemove(sessionId, out _))
+                    {
+                        await CloseSessionAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+                        return;
+                    }
+
                     if (_clients.TryRemove(sessionId, out var removed))
                     {
                         await removed.DisposeAsync().ConfigureAwait(false);

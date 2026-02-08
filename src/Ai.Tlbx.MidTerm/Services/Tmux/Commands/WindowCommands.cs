@@ -41,6 +41,8 @@ public sealed class WindowCommands
             return TmuxResult.Fail("failed to create window\n");
         }
 
+        _sessionManager.MarkTmuxCreated(session.Id);
+
         if (!string.IsNullOrEmpty(name))
         {
             await _sessionManager.SetSessionNameAsync(session.Id, name, isManual: true, ct)
