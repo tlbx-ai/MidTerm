@@ -6,7 +6,7 @@
  */
 
 import type { LayoutNode, LayoutSplit, LayoutLeaf } from '../../types';
-import { $layout, $focusedSessionId, $activeSessionId } from '../../stores';
+import { $layout, $focusedSessionId, $activeSessionId, $isMainBrowser } from '../../stores';
 import {
   dom,
   sessionTerminals,
@@ -106,8 +106,10 @@ export function renderLayout(root: LayoutNode | null): void {
     if (suppressLayoutAutoFit) {
       setSuppressLayoutAutoFit(false);
       scaleTerminalsInLayout();
-    } else {
+    } else if ($isMainBrowser.get()) {
       fitTerminalsInLayout();
+    } else {
+      scaleTerminalsInLayout();
     }
   });
 }

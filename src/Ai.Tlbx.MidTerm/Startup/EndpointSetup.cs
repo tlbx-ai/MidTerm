@@ -560,10 +560,11 @@ public static class EndpointSetup
         SettingsService settingsService,
         AuthService authService,
         ShutdownService shutdownService,
+        MainBrowserService mainBrowserService,
         TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, tmuxLayoutBridge);
+        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
 
         app.Use(async (context, next) =>

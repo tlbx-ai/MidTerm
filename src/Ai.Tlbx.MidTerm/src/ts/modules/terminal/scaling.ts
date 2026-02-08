@@ -17,7 +17,7 @@ import {
   icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
-import { $currentSettings, getSession } from '../../stores';
+import { $currentSettings, $isMainBrowser, getSession } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
 import { sendResize } from '../comms';
@@ -455,6 +455,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     overlay = document.createElement('button');
     overlay.className = 'scaled-overlay';
     overlay.addEventListener('click', () => {
+      if (!$isMainBrowser.get()) return;
       const sessionId = container.id.replace('terminal-', '');
       if (!sessionId) return;
       const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
@@ -501,7 +502,8 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       const scaleTxt = scale.toPrecision(5);
       diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
     }
-    el.innerHTML = `${icon('resize')} Scaled to ${pct}% — click to resize${diagHtml}`;
+    const resizeHint = $isMainBrowser.get() ? ' — click to resize' : '';
+    el.innerHTML = `${icon('resize')} Scaled to ${pct}%${resizeHint}${diagHtml}`;
   } else if (termWidth < availWidth - 2 || termHeight < availHeight - 2) {
     // Fits but undersized — no transform, flexbox centers it
     xterm.style.transform = '';
@@ -512,7 +514,8 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     if (usage < 0.7) {
       const el = ensureOverlay();
       positionOverlay(el);
-      el.innerHTML = `${icon('resize')} Sized for smaller screen — click to fit`;
+      const fitHint = $isMainBrowser.get() ? ' — click to fit' : '';
+      el.innerHTML = `${icon('resize')} Sized for smaller screen${fitHint}`;
     } else if (overlay) {
       overlay.remove();
       overlay = null;
@@ -561,10 +564,58 @@ export function rescaleAllTerminalsImmediate(): void {
 }
 
 /**
- * Set up resize observer to recalculate scaling when window resizes
+ * Auto-resize all visible terminals to fit their containers.
+ * For layout panes, resizes to pane size. For standalone, resizes to screen.
+ */
+function autoResizeAllTerminalsInternal(): void {
+  sessionTerminals.forEach((state, sessionId) => {
+    if (!state.opened) return;
+
+    const layoutPane = state.container.closest('.layout-leaf') as HTMLElement | null;
+    if (layoutPane) {
+      fitTerminalToContainer(sessionId, layoutPane);
+    } else if (!state.container.classList.contains('hidden')) {
+      fitSessionToScreen(sessionId);
+    }
+  });
+}
+
+let autoResizeTimer: number | undefined;
+
+/**
+ * Auto-resize all terminals (debounced 300ms, for window resize events).
+ * Only active when $isMainBrowser is true.
+ */
+export function autoResizeAllTerminals(): void {
+  if (autoResizeTimer !== undefined) {
+    clearTimeout(autoResizeTimer);
+  }
+  autoResizeTimer = window.setTimeout(() => {
+    autoResizeTimer = undefined;
+    autoResizeAllTerminalsInternal();
+  }, 300);
+}
+
+/**
+ * Auto-resize all terminals immediately (for sidebar/layout changes).
+ * Only active when $isMainBrowser is true.
+ */
+export function autoResizeAllTerminalsImmediate(): void {
+  autoResizeAllTerminalsInternal();
+}
+
+/**
+ * Set up resize observer to recalculate scaling when window resizes.
+ * Main browser: auto-resize terminals. Follower: CSS scale only.
  */
 export function setupResizeObserver(): void {
-  window.addEventListener('resize', rescaleAllTerminals);
+  window.addEventListener('resize', () => {
+    if ($isMainBrowser.get()) {
+      autoResizeAllTerminals();
+    } else {
+      rescaleAllTerminals();
+    }
+  });
 }
 
 /**

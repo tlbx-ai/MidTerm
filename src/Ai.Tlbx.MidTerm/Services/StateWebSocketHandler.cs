@@ -18,6 +18,7 @@ public sealed class StateWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
+    private readonly MainBrowserService _mainBrowserService;
     private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
 
     public StateWebSocketHandler(
@@ -26,6 +27,7 @@ public sealed class StateWebSocketHandler
         SettingsService settingsService,
         AuthService authService,
         ShutdownService shutdownService,
+        MainBrowserService mainBrowserService,
         TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         _sessionManager = sessionManager;
@@ -33,6 +35,7 @@ public sealed class StateWebSocketHandler
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
+        _mainBrowserService = mainBrowserService;
         _tmuxLayoutBridge = tmuxLayoutBridge;
     }
 
@@ -132,9 +135,23 @@ public sealed class StateWebSocketHandler
             _ = SendStateWithRetryAsync();
         }
 
+        var connectionToken = new object();
+
+        async Task SendMainBrowserStatusAsync()
+        {
+            var status = new MainBrowserStatusMessage { IsMain = _mainBrowserService.IsMain(connectionToken) };
+            await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
+        }
+
+        void OnMainBrowserChanged()
+        {
+            _ = SendMainBrowserStatusAsync();
+        }
+
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         var shutdownToken = _shutdownService.Token;
+        _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
 
         void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
         {
@@ -170,6 +187,7 @@ public sealed class StateWebSocketHandler
         {
             lastUpdate = _updateService.LatestUpdate;
             await SendStateAsync();
+            await SendMainBrowserStatusAsync();
 
             var buffer = new byte[8192];
             var messageBuffer = new List<byte>();
@@ -196,7 +214,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, connectionToken);
                         }
                     }
                 }
@@ -214,6 +232,8 @@ public sealed class StateWebSocketHandler
         {
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
+            _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
+            _mainBrowserService.Release(connectionToken);
 
             if (_tmuxLayoutBridge is not null)
             {
@@ -244,7 +264,7 @@ public sealed class StateWebSocketHandler
         }
     }
 
-    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse, object connectionToken)
     {
         WsCommand? cmd;
         try
@@ -283,6 +303,16 @@ public sealed class StateWebSocketHandler
 
                 case "settings.save":
                     await HandleSettingsSaveAsync(cmd, sendResponse);
+                    break;
+
+                case "browser.claimMain":
+                    _mainBrowserService.Claim(connectionToken);
+                    await sendResponse(cmd.Id, true, null, null);
+                    break;
+
+                case "browser.releaseMain":
+                    _mainBrowserService.Release(connectionToken);
+                    await sendResponse(cmd.Id, true, null, null);
                     break;
 
                 default:

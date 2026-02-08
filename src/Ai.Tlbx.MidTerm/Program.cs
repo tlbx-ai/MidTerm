@@ -221,7 +221,8 @@ public class Program
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
         FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, tmuxLayoutBridge);
+        var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
 
         lifetime.ApplicationStarted.Register(() =>
         {

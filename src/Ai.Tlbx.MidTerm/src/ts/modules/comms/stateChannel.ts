@@ -48,6 +48,7 @@ import {
   $activeSessionId,
   $sessionList,
   $updateInfo,
+  $isMainBrowser,
   setSessions,
 } from '../../stores';
 import {
@@ -133,6 +134,12 @@ export function connectStateWebSocket(): void {
       if (data.type === 'tmux-swap') {
         log.verbose(() => `Tmux swap: ${data.sessionIdA} <-> ${data.sessionIdB}`);
         swapLayoutSessions(data.sessionIdA, data.sessionIdB);
+        return;
+      }
+
+      // Handle main browser status (server-driven)
+      if (data.type === 'main-browser-status') {
+        $isMainBrowser.set(data.isMain === true);
         return;
       }
 
@@ -354,5 +361,27 @@ export function persistSessionOrder(sessionIds: string[]): void {
 
   sendCommand('session.reorder', { sessionIds }).catch((e) => {
     log.warn(() => `Failed to persist session order: ${e}`);
+  });
+}
+
+/**
+ * Claim main browser status from server.
+ * Fire-and-forget - server will push status to all connections.
+ */
+export function claimMainBrowser(): void {
+  if (!isStateConnected()) return;
+  sendCommand('browser.claimMain').catch((e) => {
+    log.warn(() => `Failed to claim main browser: ${e}`);
+  });
+}
+
+/**
+ * Release main browser status to server.
+ * Fire-and-forget - server will push status to all connections.
+ */
+export function releaseMainBrowser(): void {
+  if (!isStateConnected()) return;
+  sendCommand('browser.releaseMain').catch((e) => {
+    log.warn(() => `Failed to release main browser: ${e}`);
   });
 }

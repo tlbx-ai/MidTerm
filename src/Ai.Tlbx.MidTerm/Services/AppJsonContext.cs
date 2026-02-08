@@ -65,6 +65,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(DirectoryEntry))]
 [JsonSerializable(typeof(Dictionary<string, FilePathInfo>))]
 [JsonSerializable(typeof(PathsResponse))]
+[JsonSerializable(typeof(MainBrowserStatusMessage))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {
