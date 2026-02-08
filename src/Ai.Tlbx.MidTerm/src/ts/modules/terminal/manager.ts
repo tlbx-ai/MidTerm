@@ -37,6 +37,7 @@ import {
   hideSearch,
   cleanupSearchForTerminal,
 } from './search';
+import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -176,9 +177,10 @@ export function createTerminalForSession(
   }
 
   // Create container
-  const scrollbarStyle = $currentSettings.get()?.scrollbarStyle ?? 'off';
+  const scrollbarStyle = normalizeScrollbarStyle($currentSettings.get()?.scrollbarStyle);
   const container = document.createElement('div');
-  container.className = `terminal-container hidden scrollbar-${scrollbarStyle}`;
+  container.className = 'terminal-container hidden';
+  applyTerminalScrollbarStyleClass(container, scrollbarStyle);
   container.id = 'terminal-' + sessionId;
   dom.terminalsArea?.appendChild(container);
 

@@ -26,6 +26,7 @@ import { setCookie } from '../../utils';
 import { getSettings, getUsers, getVersion, getHealth, updateSettings } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from '../terminal/scrollbarStyle';
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
@@ -189,7 +190,7 @@ export function applySettingsToTerminals(): void {
   const fontSize = settings.fontSize ?? 14;
   const contrastRatio = settings.minimumContrastRatio ?? 1;
 
-  const scrollbarStyle = settings.scrollbarStyle ?? 'off';
+  const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);
 
   sessionTerminals.forEach((state: TerminalState) => {
     state.terminal.options.cursorBlink = settings.cursorBlink ?? true;
@@ -202,11 +203,7 @@ export function applySettingsToTerminals(): void {
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
     state.terminal.options.scrollback = settings.scrollbackLines ?? 10000;
 
-    const container = state.terminal.element?.closest('.terminal-container');
-    if (container) {
-      container.classList.remove('scrollbar-off', 'scrollbar-hover', 'scrollbar-always');
-      container.classList.add(`scrollbar-${scrollbarStyle}`);
-    }
+    applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
   });
 
   rescaleAllTerminalsImmediate();

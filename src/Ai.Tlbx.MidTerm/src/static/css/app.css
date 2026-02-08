@@ -1079,10 +1079,16 @@ html, body {
 /* Terminal scrollbar visibility — controlled by scrollbarStyle setting */
 .terminal-container.scrollbar-off .xterm-viewport {
     scrollbar-width: none;
+    overflow-y: hidden;
 }
 
 .terminal-container.scrollbar-off .xterm-viewport::-webkit-scrollbar {
     display: none;
+}
+
+.terminal-container.scrollbar-off .xterm .xterm-scrollable-element > .scrollbar {
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 .terminal-container.scrollbar-hover .xterm-viewport {
@@ -1093,23 +1099,62 @@ html, body {
     display: none;
 }
 
-.terminal-container.scrollbar-hover:hover .xterm-viewport {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+.terminal-container.scrollbar-hover .xterm .xterm-scrollable-element > .scrollbar {
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
-.terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar {
-    display: block;
-    width: 8px;
+@media (hover: hover) and (pointer: fine) {
+    .terminal-container.scrollbar-hover:hover .xterm-viewport {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    }
+
+    .terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar {
+        display: block;
+        width: 8px;
+    }
+
+    .terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+    }
+
+    .terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .terminal-container.scrollbar-hover:hover .xterm .xterm-scrollable-element > .scrollbar {
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
 }
 
-.terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.25);
-    border-radius: 4px;
-}
+/* Touch/no-hover fallback: treat "hover" as "always" */
+@media (hover: none), (pointer: coarse) {
+    .terminal-container.scrollbar-hover .xterm-viewport {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    }
 
-.terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar-track {
-    background: transparent;
+    .terminal-container.scrollbar-hover .xterm-viewport::-webkit-scrollbar {
+        display: block;
+        width: 8px;
+    }
+
+    .terminal-container.scrollbar-hover .xterm-viewport::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+    }
+
+    .terminal-container.scrollbar-hover .xterm-viewport::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .terminal-container.scrollbar-hover .xterm .xterm-scrollable-element > .scrollbar {
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
 }
 
 .terminal-container.scrollbar-always .xterm-viewport {
@@ -1128,6 +1173,11 @@ html, body {
 
 .terminal-container.scrollbar-always .xterm-viewport::-webkit-scrollbar-track {
     background: transparent;
+}
+
+.terminal-container.scrollbar-always .xterm .xterm-scrollable-element > .scrollbar {
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
 /* Auto-hide mouse cursor over terminal after inactivity */
