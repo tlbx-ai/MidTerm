@@ -30,6 +30,7 @@ public sealed partial class MidTermSettingsPublic
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public bool ScrollbackProtection { get; set; } = false;
     public bool FileRadar { get; set; } = true;
+    public bool TmuxCompatibility { get; set; } = true;
 
     // Security
     public string? RunAsUser { get; set; }

@@ -39,6 +39,7 @@
                     <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" title="Hide sidebar"><span class="icon">&#xe913;</span></button>
                     <button class="sidebar-btn btn-history" id="btn-history" title="Quick Launch"><span class="icon">&#xe997;</span></button>
                     <button class="sidebar-btn" id="btn-settings" title="Settings"><span class="icon">&#xe991;</span></button>
+                    <button class="sidebar-btn" id="btn-main-browser" title="Following browser (scale only)"><span class="icon">&#xe989;</span></button>
                     <button class="sidebar-btn primary" id="btn-new-session" title="New Terminal"><span class="icon">&#xea81;</span></button>
                 </div>
             </div>
@@ -138,7 +139,6 @@
             <div class="title-bar-buttons">
                 <button class="title-bar-btn" id="btn-expand-sidebar" title="Show sidebar"><span class="icon">&#xe910;</span></button>
                 <button class="title-bar-btn" id="btn-rename-titlebar" title="Rename"><span class="icon">&#xe91f;</span></button>
-                <button class="title-bar-btn" id="btn-resize-titlebar" title="Fit to screen"><span class="icon">&#xe989;</span></button>
             </div>
             <div class="title-bar-titles">
                 <span class="title-bar-custom" id="title-bar-custom"></span>
@@ -154,7 +154,6 @@
                 <div class="topbar-actions no-terminal" id="topbar-actions">
                     <button class="topbar-btn topbar-action topbar-fullscreen" id="btn-fullscreen-mobile" title="Fullscreen"><span class="icon">&#xe90c;</span></button>
                     <button class="topbar-btn topbar-action topbar-ctrlc" id="btn-ctrlc-mobile" title="Send Ctrl+C"><span class="icon">&#xe9b5;</span></button>
-                    <button class="topbar-btn topbar-action" id="btn-resize-mobile" title="Fit to screen"><span class="icon">&#xe989;</span></button>
                     <button class="topbar-btn topbar-action" id="btn-rename-mobile" title="Rename"><span class="icon">&#xe91f;</span></button>
                     <button class="topbar-btn topbar-action topbar-close" id="btn-close-mobile" title="Close terminal"><span class="icon">&#xe909;</span></button>
                     <button class="topbar-btn topbar-add" id="btn-new-session-mobile" title="New Terminal"><span class="icon">&#xea81;</span></button>
@@ -472,6 +471,15 @@
                                         <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely.">File Radar</label>
                                         <input type="checkbox" id="setting-file-radar" />
                                     </div>
+                                </div>
+                                <!-- Integrations -->
+                                <div class="settings-section">
+                                    <h3>Integrations</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-tmux-compatibility" title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH).">Tmux Compatibility</label>
+                                        <input type="checkbox" id="setting-tmux-compatibility" />
+                                    </div>
+                                    <p class="setting-hint">Enables AI coding tools to manage panes via tmux commands. Disable if you SSH into remote hosts that run real tmux. Requires restart.</p>
                                 </div>
                             </section>
 

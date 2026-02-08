@@ -16,6 +16,8 @@ import {
   setSelectSessionCallback,
   sendInput,
   sendActiveSessionHint,
+  claimMainBrowser,
+  releaseMainBrowser,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -24,10 +26,9 @@ import {
   preloadTerminalFont,
   initCalibrationTerminal,
   setShowBellCallback,
-  fitSessionToScreen,
-  fitTerminalToContainer,
   setupResizeObserver,
   setupVisualViewport,
+  autoResizeAllTerminalsImmediate,
   bindSearchEvents,
   scrollToBottom,
   focusActiveTerminal,
@@ -101,6 +102,7 @@ import {
   $sessionList,
   $renamingSessionId,
   $currentSettings,
+  $isMainBrowser,
   setSession,
   removeSession,
   getSession,
@@ -154,6 +156,7 @@ async function init(): Promise<void> {
   log.info(() => 'MidTerm frontend initializing');
 
   cacheDOMElements();
+  initMainBrowserButton();
   initTrafficIndicator();
   initBadges();
   initFileViewer();
@@ -214,7 +217,6 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
-    onResize: resizeSessionToFit,
     onPinToHistory: pinSessionToHistory,
     onCloseSidebar: closeSidebar,
   });
@@ -439,20 +441,6 @@ function deleteSession(sessionId: string): void {
   apiDeleteSession(sessionId).catch((e) => {
     log.error(() => `Failed to delete session ${sessionId}: ${e}`);
   });
-}
-
-/**
- * Resize a session to fit its container (pane if in layout, full screen otherwise).
- */
-function resizeSessionToFit(sessionId: string): void {
-  if (isSessionInLayout(sessionId)) {
-    const pane = document.querySelector(`.layout-leaf[data-session-id="${sessionId}"]`);
-    if (pane) {
-      fitTerminalToContainer(sessionId, pane as HTMLElement);
-      return;
-    }
-  }
-  fitSessionToScreen(sessionId);
 }
 
 function renameSession(sessionId: string, newName: string | null): void {
@@ -687,6 +675,38 @@ function showBellNotification(sessionId: string): void {
 }
 
 // =============================================================================
+// Main Browser Toggle
+// =============================================================================
+
+function initMainBrowserButton(): void {
+  const btn = document.getElementById('btn-main-browser');
+  if (!btn) return;
+
+  function updateButton(isMain: boolean): void {
+    if (!btn) return;
+    btn.classList.toggle('active', isMain);
+    btn.title = isMain ? 'Main browser (auto-resize)' : 'Following browser (scale only)';
+  }
+
+  updateButton($isMainBrowser.get());
+
+  btn.addEventListener('click', () => {
+    if ($isMainBrowser.get()) {
+      releaseMainBrowser();
+    } else {
+      claimMainBrowser();
+    }
+  });
+
+  $isMainBrowser.subscribe((isMain) => {
+    updateButton(isMain);
+    if (isMain) {
+      requestAnimationFrame(autoResizeAllTerminalsImmediate);
+    }
+  });
+}
+
+// =============================================================================
 // Event Binding
 // =============================================================================
 
@@ -706,14 +726,6 @@ function bindEvents(): void {
   bindClick('btn-ctrlc-mobile', () => {
     const activeId = $activeSessionId.get();
     if (activeId) sendInput(activeId, '\x03');
-  });
-  bindClick('btn-resize-mobile', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) fitSessionToScreen(activeId);
-  });
-  bindClick('btn-resize-titlebar', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) fitSessionToScreen(activeId);
   });
   bindClick('btn-rename-mobile', () => {
     const activeId = $activeSessionId.get();

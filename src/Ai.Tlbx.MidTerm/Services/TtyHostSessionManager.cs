@@ -27,10 +27,14 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly string _dropsBasePath;
     private string? _runAsUser;
     private bool _disposed;
+    private int? _mtPort;
+    private Func<string>? _generateToken;
+    private string? _tmuxBinDir;
 
     public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnSessionClosed;
+    public event Action<string, int>? OnSessionCreated;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
 
     public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
@@ -69,6 +73,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         _runAsUser = runAsUser;
         Log.Info(() => $"TtyHostSessionManager: RunAsUser updated to: {runAsUser ?? "(none)"}");
+    }
+
+    public void ConfigureTmux(int port, Func<string> generateToken, string? tmuxBinDir)
+    {
+        _mtPort = port;
+        _generateToken = generateToken;
+        _tmuxBinDir = tmuxBinDir;
     }
 
     /// <summary>
@@ -158,6 +169,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             // Use order from mthost if available, otherwise use discovery sequence
             var order = info.Order;
             _sessionOrder.TryAdd(sessionId, order);
+            OnSessionCreated?.Invoke(sessionId, order);
             Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid}, order={order})");
 
             return new DiscoveryResult.Connected(order);
@@ -323,7 +335,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         var sessionId = Guid.NewGuid().ToString("N")[..SessionIdLength];
 
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid))
+        var paneIndex = Interlocked.Increment(ref _nextOrder);
+        var mtToken = _generateToken?.Invoke();
+
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid,
+                _mtPort, mtToken, paneIndex, _tmuxBinDir))
         {
             return null;
         }
@@ -386,12 +402,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _clients[sessionId] = client;
         _sessionCache[sessionId] = info;
 
-        var order = Interlocked.Increment(ref _nextOrder);
-        _sessionOrder[sessionId] = order;
+        _sessionOrder[sessionId] = paneIndex;
 
-        await client.SetOrderAsync((byte)(order % 256), ct).ConfigureAwait(false);
+        await client.SetOrderAsync((byte)(paneIndex % 256), ct).ConfigureAwait(false);
 
         Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid})");
+        OnSessionCreated?.Invoke(sessionId, paneIndex);
         OnStateChanged?.Invoke(sessionId);
         NotifyStateChange();
 

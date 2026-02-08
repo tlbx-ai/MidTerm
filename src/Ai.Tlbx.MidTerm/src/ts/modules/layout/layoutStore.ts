@@ -340,6 +340,26 @@ export function handleSessionClosed(sessionId: string): void {
 }
 
 /**
+ * Swap two sessions' positions in the layout tree.
+ */
+export function swapLayoutSessions(sessionIdA: string, sessionIdB: string): void {
+  const layout = $layout.get();
+  if (!layout.root) return;
+
+  const newRoot = swapInTree(layout.root, sessionIdA, sessionIdB);
+  $layout.set({ root: newRoot });
+}
+
+function swapInTree(node: LayoutNode, idA: string, idB: string): LayoutNode {
+  if (node.type === 'leaf') {
+    if (node.sessionId === idA) return { ...node, sessionId: idB };
+    if (node.sessionId === idB) return { ...node, sessionId: idA };
+    return node;
+  }
+  return { ...node, children: node.children.map((c) => swapInTree(c, idA, idB)) };
+}
+
+/**
  * Focus a session within the layout.
  */
 export function focusLayoutSession(sessionId: string): void {
@@ -481,8 +501,35 @@ function clearLayoutStorage(): void {
 }
 
 /**
+ * Sync layout tree to the server for tmux directional pane selection.
+ */
+function syncLayoutToServer(): void {
+  const layout = $layout.get();
+  const root = layout.root;
+
+  fetch('/api/tmux/layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(root ?? { type: 'leaf', sessionId: null }),
+  }).catch(() => {
+    // Best-effort sync
+  });
+}
+
+/**
  * Initialize layout persistence - subscribe to changes.
  */
+let syncTimer: number | undefined;
+
 export function initLayoutPersistence(): void {
-  $layout.subscribe(() => saveLayoutToStorage());
+  $layout.subscribe(() => {
+    saveLayoutToStorage();
+    if (syncTimer !== undefined) {
+      clearTimeout(syncTimer);
+    }
+    syncTimer = window.setTimeout(() => {
+      syncTimer = undefined;
+      syncLayoutToServer();
+    }, 300);
+  });
 }

@@ -47,6 +47,9 @@ public sealed class MidTermSettings
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
 
+    // Tmux Compatibility - Injects tmux shim into spawned terminals for AI tool integration
+    public bool TmuxCompatibility { get; set; } = true;
+
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }
     public string? RunAsUserSid { get; set; }  // Windows: User SID for token lookup

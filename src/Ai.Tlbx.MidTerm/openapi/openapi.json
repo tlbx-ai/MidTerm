@@ -1939,6 +1939,7 @@
           "clipboardShortcuts",
           "scrollbackProtection",
           "fileRadar",
+          "tmuxCompatibility",
           "runAsUser",
           "runAsUserSid",
           "authenticationEnabled",
@@ -2019,6 +2020,9 @@
             "type": "boolean"
           },
           "fileRadar": {
+            "type": "boolean"
+          },
+          "tmuxCompatibility": {
             "type": "boolean"
           },
           "runAsUser": {

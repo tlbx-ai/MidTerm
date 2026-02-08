@@ -6,7 +6,7 @@
  */
 
 import type { LayoutNode, LayoutSplit, LayoutLeaf } from '../../types';
-import { $layout, $focusedSessionId, $activeSessionId } from '../../stores';
+import { $layout, $focusedSessionId, $activeSessionId, $isMainBrowser } from '../../stores';
 import {
   dom,
   sessionTerminals,
@@ -14,7 +14,11 @@ import {
   setSuppressLayoutAutoFit,
 } from '../../state';
 import { isLayoutActive, focusLayoutSession } from './layoutStore';
-import { applyTerminalScalingSync, fitTerminalToContainer } from '../terminal/scaling';
+import {
+  applyTerminalScalingSync,
+  fitTerminalToContainer,
+  fitSessionToScreen,
+} from '../terminal/scaling';
 
 let layoutRoot: HTMLElement | null = null;
 let unsubscribeLayout: (() => void) | null = null;
@@ -79,7 +83,11 @@ export function renderLayout(root: LayoutNode | null): void {
       if (state) {
         state.container.classList.remove('hidden');
         requestAnimationFrame(() => {
-          applyTerminalScalingSync(state);
+          if ($isMainBrowser.get()) {
+            fitSessionToScreen(activeId);
+          } else {
+            applyTerminalScalingSync(state);
+          }
           if (state.terminal && state.opened) {
             state.terminal.focus();
           }
@@ -106,8 +114,10 @@ export function renderLayout(root: LayoutNode | null): void {
     if (suppressLayoutAutoFit) {
       setSuppressLayoutAutoFit(false);
       scaleTerminalsInLayout();
-    } else {
+    } else if ($isMainBrowser.get()) {
       fitTerminalsInLayout();
+    } else {
+      scaleTerminalsInLayout();
     }
   });
 }

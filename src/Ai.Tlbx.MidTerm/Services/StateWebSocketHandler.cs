@@ -6,6 +6,7 @@ using System.Text.Json.Serialization.Metadata;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
+using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -17,19 +18,25 @@ public sealed class StateWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
+    private readonly MainBrowserService _mainBrowserService;
+    private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService,
+        MainBrowserService mainBrowserService,
+        TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         _sessionManager = sessionManager;
         _updateService = updateService;
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
+        _mainBrowserService = mainBrowserService;
+        _tmuxLayoutBridge = tmuxLayoutBridge;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -128,14 +135,60 @@ public sealed class StateWebSocketHandler
             _ = SendStateWithRetryAsync();
         }
 
+        var connectionToken = new object();
+
+        async Task SendMainBrowserStatusAsync()
+        {
+            var status = new MainBrowserStatusMessage { IsMain = _mainBrowserService.IsMain(connectionToken) };
+            await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
+        }
+
+        void OnMainBrowserChanged()
+        {
+            _ = SendMainBrowserStatusAsync();
+        }
+
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         var shutdownToken = _shutdownService.Token;
+
+        void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
+        {
+            var instruction = new TmuxDockInstruction
+            {
+                NewSessionId = newSessionId,
+                RelativeToSessionId = relativeToSessionId,
+                Position = position
+            };
+            _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxDockInstruction);
+        }
+
+        void OnFocusRequested(string sessionId)
+        {
+            var instruction = new TmuxFocusInstruction { SessionId = sessionId };
+            _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxFocusInstruction);
+        }
+
+        void OnSwapRequested(string sessionIdA, string sessionIdB)
+        {
+            var instruction = new TmuxSwapInstruction { SessionIdA = sessionIdA, SessionIdB = sessionIdB };
+            _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxSwapInstruction);
+        }
+
+        if (_tmuxLayoutBridge is not null)
+        {
+            _tmuxLayoutBridge.OnDockRequested += OnDockRequested;
+            _tmuxLayoutBridge.OnFocusRequested += OnFocusRequested;
+            _tmuxLayoutBridge.OnSwapRequested += OnSwapRequested;
+        }
 
         try
         {
             lastUpdate = _updateService.LatestUpdate;
             await SendStateAsync();
+            _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
+            _mainBrowserService.Register(connectionToken);
+            await SendMainBrowserStatusAsync();
 
             var buffer = new byte[8192];
             var messageBuffer = new List<byte>();
@@ -162,7 +215,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, connectionToken);
                         }
                     }
                 }
@@ -180,6 +233,16 @@ public sealed class StateWebSocketHandler
         {
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
+            _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
+            _mainBrowserService.Unregister(connectionToken);
+
+            if (_tmuxLayoutBridge is not null)
+            {
+                _tmuxLayoutBridge.OnDockRequested -= OnDockRequested;
+                _tmuxLayoutBridge.OnFocusRequested -= OnFocusRequested;
+                _tmuxLayoutBridge.OnSwapRequested -= OnSwapRequested;
+            }
+
             sendLock.Dispose();
 
             if (ws.State == WebSocketState.Open)
@@ -202,7 +265,7 @@ public sealed class StateWebSocketHandler
         }
     }
 
-    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse, object connectionToken)
     {
         WsCommand? cmd;
         try
@@ -241,6 +304,16 @@ public sealed class StateWebSocketHandler
 
                 case "settings.save":
                     await HandleSettingsSaveAsync(cmd, sendResponse);
+                    break;
+
+                case "browser.claimMain":
+                    _mainBrowserService.Claim(connectionToken);
+                    await sendResponse(cmd.Id, true, null, null);
+                    break;
+
+                case "browser.releaseMain":
+                    _mainBrowserService.Release(connectionToken);
+                    await sendResponse(cmd.Id, true, null, null);
                     break;
 
                 default:

@@ -1131,7 +1131,8 @@ html, body {
 /* Split container - flexbox in horizontal or vertical direction */
 .layout-split {
     display: flex;
-    gap: 2px;
+    gap: 1px;
+    background-color: #1C1E2A;
     width: 100%;
     height: 100%;
 }

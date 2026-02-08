@@ -22,7 +22,6 @@ export interface SessionListCallbacks {
   onSelect: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
-  onResize: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
   onCloseSidebar: () => void;
 }
@@ -281,18 +280,6 @@ function createSessionItem(
       }
     });
 
-    const resizeBtn = document.createElement('button');
-    resizeBtn.className = 'session-resize';
-    resizeBtn.innerHTML = icon('resize');
-    resizeBtn.title = 'Fit to screen';
-    resizeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      if (callbacks) {
-        callbacks.onResize(sessionId);
-      }
-    });
-
     const renameBtn = document.createElement('button');
     renameBtn.className = 'session-rename';
     renameBtn.innerHTML = icon('rename');
@@ -329,7 +316,6 @@ function createSessionItem(
     });
 
     actions.appendChild(pinBtn);
-    actions.appendChild(resizeBtn);
     actions.appendChild(renameBtn);
     actions.appendChild(undockBtn);
     actions.appendChild(closeBtn);
