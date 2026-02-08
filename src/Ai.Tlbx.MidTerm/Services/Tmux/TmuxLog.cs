@@ -1,13 +1,21 @@
+using System.Text;
+using System.Text.RegularExpressions;
+
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
 /// <summary>
 /// Dedicated tmux log that always writes to tmux.log regardless of global log severity.
 /// Logs every command received and the result, for debugging the compatibility layer.
+/// All output is sanitized to strip ANSI escape sequences and control characters.
 /// </summary>
-public static class TmuxLog
+public static partial class TmuxLog
 {
     private static StreamWriter? _writer;
     private static readonly object _lock = new();
+    private const int MaxResultLength = 500;
+
+    [GeneratedRegex(@"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|\([AB012])")]
+    private static partial Regex AnsiEscapePattern();
 
     public static void Initialize(string logDirectory)
     {
@@ -27,18 +35,25 @@ public static class TmuxLog
         }
     }
 
+    public static void RawArgs(List<string> args, string? callerPaneId)
+    {
+        var pane = callerPaneId ?? "?";
+        var sanitized = args.Select(Sanitize);
+        Write($"[pane={pane}] args: [{string.Join(", ", sanitized.Select(a => $"\"{a}\""))}]");
+    }
+
     public static void Command(string name, string? callerPaneId, Dictionary<string, string?> flags, List<string> positional)
     {
         var parts = new List<string> { name };
 
         foreach (var (key, value) in flags)
         {
-            parts.Add(value is null ? key : $"{key} {value}");
+            parts.Add(value is null ? key : $"{key} {Sanitize(value)}");
         }
 
         foreach (var p in positional)
         {
-            parts.Add(p);
+            parts.Add(Sanitize(p));
         }
 
         var pane = callerPaneId ?? "?";
@@ -48,15 +63,20 @@ public static class TmuxLog
     public static void Result(string name, bool success, string output)
     {
         var status = success ? "OK" : "FAIL";
-        var trimmed = output.TrimEnd('\n', '\r');
-        if (string.IsNullOrEmpty(trimmed))
+        var sanitized = Sanitize(output).TrimEnd('\n', '\r');
+
+        if (string.IsNullOrEmpty(sanitized))
         {
             Write($"   << {status}");
+            return;
         }
-        else
+
+        if (sanitized.Length > MaxResultLength)
         {
-            Write($"   << {status}: {trimmed}");
+            sanitized = sanitized[..MaxResultLength] + $"... ({sanitized.Length} chars total)";
         }
+
+        Write($"   << {status}: {sanitized}");
     }
 
     public static void Error(string message)
@@ -71,6 +91,28 @@ public static class TmuxLog
             _writer?.Dispose();
             _writer = null;
         }
+    }
+
+    private static string Sanitize(string input)
+    {
+        var withoutEscapes = AnsiEscapePattern().Replace(input, "");
+        var sb = new StringBuilder(withoutEscapes.Length);
+        foreach (var c in withoutEscapes)
+        {
+            if (c == '\n' || c == '\r' || c == '\t')
+            {
+                sb.Append(c switch { '\n' => "\\n", '\r' => "\\r", _ => "\\t" });
+            }
+            else if (char.IsControl(c))
+            {
+                sb.Append($"\\x{(int)c:X2}");
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 
     private static void Write(string message)

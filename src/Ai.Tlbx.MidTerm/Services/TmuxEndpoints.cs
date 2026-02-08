@@ -29,6 +29,7 @@ public static class TmuxEndpoints
             }
 
             var callerPaneId = ctx.Request.Headers["X-Tmux-Pane"].FirstOrDefault();
+            TmuxLog.RawArgs(args, callerPaneId);
             var commands = TmuxCommandParser.Parse(args);
 
             var result = await dispatcher.DispatchAsync(commands, callerPaneId, ctx.RequestAborted);
