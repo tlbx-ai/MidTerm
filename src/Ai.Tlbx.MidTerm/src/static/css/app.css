@@ -5737,7 +5737,7 @@ html, body {
     border-radius: 4px;
     background: none;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1;
     cursor: pointer;
     white-space: nowrap;
