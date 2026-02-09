@@ -34,7 +34,7 @@ const dark: CssThemePalette = {
   '--text-primary': '#D4D7E8',
   '--text-terminal': '#E0E2F0',
   '--text-secondary': '#8B8FA6',
-  '--text-muted': '#6B7089',
+  '--text-muted': '#767B94',
 
   '--accent-blue': '#7BA2F7',
   '--accent-blue-hover': '#8FB5FF',
@@ -61,11 +61,11 @@ const dark: CssThemePalette = {
   '--border-error': '#5A3538',
   '--bg-warning': '#2A2215',
   '--border-warning': '#5A4A2A',
-  '--accent-warning': '#E8B44C',
+  '--accent-warning': '#F5A962',
 
   '--diag-exception': '#F07A8D',
   '--progress-bar': '#7BA2F7',
-  '--progress-warning': '#E8B44C',
+  '--progress-warning': '#F5A962',
   '--warning-badge': '#F5A962',
 
   '--accent-blue-08': 'rgba(123, 162, 247, 0.08)',

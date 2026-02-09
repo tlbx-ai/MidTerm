@@ -78,7 +78,7 @@
     --text-primary: #D4D7E8;        /* Warm lavender-white */
     --text-terminal: #E0E2F0;       /* Slightly cooler for terminal */
     --text-secondary: #8B8FA6;      /* Better contrast: 5.2:1 */
-    --text-muted: #6B7089;          /* Improved: 3.5:1 */
+    --text-muted: #767B94;          /* 4.0:1 — readable at small sizes */
 
     /* === PRIMARY ACCENTS === */
     --accent-blue: #7BA2F7;         /* Signature blue */
@@ -109,12 +109,12 @@
     --border-error: #5A3538;
     --bg-warning: #2A2215;          /* Dark amber */
     --border-warning: #5A4A2A;
-    --accent-warning: #E8B44C;      /* Uses gold for warnings */
+    --accent-warning: #F5A962;       /* Orange — distinct from gold CTA */
 
     /* === DIAGNOSTIC COLORS === */
     --diag-exception: #F07A8D;
     --progress-bar: #7BA2F7;
-    --progress-warning: #E8B44C;
+    --progress-warning: #F5A962;
     --warning-badge: #F5A962;
 
     /* === ACCENT BLUE OPACITY VARIANTS === */
@@ -184,6 +184,19 @@
     --radius-md: 4px;
     --radius-lg: 6px;
     --radius-xl: 8px;
+    --radius-2xl: 12px;
+    --radius-3xl: 16px;
+
+    /* Type scale (~1.2 ratio) */
+    --text-xs: 10px;
+    --text-sm: 12px;
+    --text-base: 14px;
+    --text-lg: 16px;
+    --text-xl: 20px;
+    --text-2xl: 24px;
+
+    /* Monospace font stack */
+    --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
 
     /* Transition durations */
     --transition-fast: 0.1s;
@@ -299,7 +312,7 @@ html, body {
 }
 
 .sidebar-title {
-    font-size: 14px;
+    font-size: var(--text-base);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -610,7 +623,7 @@ html, body {
     right: 8px;
     background: var(--bg-input);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 12px var(--shadow-color);
     z-index: 100;
     opacity: 0;
@@ -629,11 +642,10 @@ html, body {
 
 .history-dropdown-header {
     padding: 8px 12px;
-    font-size: 11px;
+    font-size: var(--text-sm);
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -646,7 +658,7 @@ html, body {
     padding: 16px 12px;
     text-align: center;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
 }
 
 .history-item {
@@ -671,12 +683,12 @@ html, body {
 
 .history-item-text {
     flex: 1;
-    font-size: 12px;
+    font-size: var(--text-sm);
     color: var(--text-primary);
 }
 
 .history-item-meta {
-    font-size: 10px;
+    font-size: var(--text-xs);
     color: var(--text-muted);
     flex-shrink: 0;
 }
@@ -688,11 +700,11 @@ html, body {
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: var(--text-sm);
     opacity: 0;
     transition: opacity 0.1s, color 0.1s;
 }
@@ -738,11 +750,10 @@ html, body {
 
 .history-section-header {
     padding: 6px 12px;
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
     border-top: 1px solid var(--border-color);
 }
 
@@ -836,7 +847,7 @@ html, body {
     right: 8px;
     color: var(--text-muted);
     font-size: 14px;
-    opacity: 0.4;
+    opacity: 0.55;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -875,7 +886,7 @@ html, body {
 .sidebar-footer {
     padding: 6px 12px;
     border-top: 1px solid var(--border-color);
-    font-size: 11px;
+    font-size: var(--text-xs);
     color: var(--text-muted);
     background-color: var(--terminal-bg);
 }
@@ -934,7 +945,7 @@ html, body {
 
 .network-url {
     color: var(--accent-blue);
-    font-family: monospace;
+    font-family: var(--font-mono);
     text-decoration: none;
     white-space: nowrap;
 }
@@ -1014,10 +1025,10 @@ html, body {
     right: 6px;
     z-index: 10;
     padding: 4px 8px;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     line-height: 1.5;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     background: rgba(0, 0, 0, 0.7);
     pointer-events: none;
     user-select: none;
@@ -1031,12 +1042,12 @@ html, body {
 }
 
 .latency-overlay-label {
-    color: #888;
+    color: var(--text-muted);
     min-width: 38px;
 }
 
 .latency-overlay-value {
-    color: #999;
+    color: var(--text-secondary);
 }
 
 .latency-good { color: #7ba2f7 !important; }
@@ -1232,7 +1243,7 @@ html, body {
 .layout-split {
     display: flex;
     gap: 1px;
-    background-color: #1C1E2A;
+    background-color: var(--bg-sidebar);
     width: 100%;
     height: 100%;
 }
@@ -2011,7 +2022,7 @@ html, body {
 
 .empty-state-hint {
     margin-top: 24px !important;
-    font-size: 12px;
+    font-size: var(--text-sm);
     color: var(--text-muted);
 }
 
@@ -2021,7 +2032,7 @@ html, body {
     border: 1px solid var(--border-subtle);
     border-radius: 4px;
     padding: 2px 6px;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--text-secondary);
     box-shadow: 0 1px 2px var(--shadow-color);
@@ -2032,9 +2043,9 @@ html, body {
     background: linear-gradient(135deg, var(--cta-primary), var(--cta-primary-muted));
     color: var(--cta-primary-text);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--text-base);
     font-weight: 600;
     box-shadow: 0 4px 16px var(--cta-primary-25);
     transition: transform 0.15s, box-shadow 0.15s;
@@ -2054,8 +2065,8 @@ html, body {
     position: fixed;
     bottom: 8px;
     padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
     opacity: 0;
     transition: opacity 0.15s;
     z-index: 1000;
@@ -2131,7 +2142,7 @@ html, body {
     justify-content: center;
     align-items: center;
     gap: 20px;
-    font-size: 14px;
+    font-size: var(--text-base);
     box-shadow: 0 2px 8px var(--shadow-color);
 }
 
@@ -2161,7 +2172,7 @@ html, body {
     left: 0;
     right: 0;
     padding: 12px 20px;
-    font-size: 14px;
+    font-size: var(--text-base);
     z-index: 2000;
     text-align: center;
     display: none;
@@ -2346,7 +2357,7 @@ html, body {
 }
 
 .settings-tab .tab-label {
-    font-size: 14px;
+    font-size: var(--text-base);
     font-weight: 500;
 }
 
@@ -2373,7 +2384,7 @@ html, body {
 
 .settings-panel h2 {
     margin: 0 0 24px 0;
-    font-size: 24px;
+    font-size: var(--text-2xl);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -2382,16 +2393,15 @@ html, body {
     margin-bottom: 20px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
-    border-radius: 8px;
+    border-radius: var(--radius-xl);
     padding: 20px;
 }
 
 .settings-section h3 {
     margin: 0 0 16px 0;
-    font-size: 11px;
+    font-size: var(--text-sm);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
     color: var(--accent-blue);
 }
 
@@ -2416,7 +2426,7 @@ html, body {
 }
 
 .setting-row label {
-    font-size: 14px;
+    font-size: var(--text-base);
     color: var(--text-primary);
     flex-shrink: 0;
 }
@@ -2426,8 +2436,8 @@ html, body {
     background-color: var(--bg-input);
     color: var(--text-primary);
     border: 1px solid var(--btn-secondary);
-    border-radius: 4px;
-    font-size: 14px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-base);
     width: 200px;
     cursor: pointer;
 }
@@ -2439,13 +2449,13 @@ html, body {
 .setting-row select:focus {
     outline: none;
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px var(--accent-gold-10);
+    box-shadow: 0 0 0 3px var(--accent-blue-15);
 }
 
 /* Path value display */
 .path-value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
     color: var(--text-secondary);
     background-color: var(--bg-input);
     padding: 6px 10px;
@@ -2528,9 +2538,9 @@ html, body {
     background-color: var(--btn-primary);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--text-base);
     font-weight: 500;
 }
 
@@ -2543,9 +2553,9 @@ html, body {
     background-color: transparent;
     color: var(--text-primary);
     border: 1px solid var(--btn-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--text-base);
 }
 
 .btn-secondary:hover {
@@ -2559,8 +2569,8 @@ html, body {
     background-color: var(--bg-input);
     color: var(--text-primary);
     border: 1px solid var(--btn-secondary);
-    border-radius: 4px;
-    font-size: 14px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-base);
 }
 
 .setting-row input[type="text"]:hover,
@@ -2572,7 +2582,7 @@ html, body {
 .setting-row input[type="number"]:focus {
     outline: none;
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px var(--accent-gold-10);
+    box-shadow: 0 0 0 3px var(--accent-blue-15);
 }
 
 .setting-row input[type="checkbox"] {
@@ -2648,7 +2658,7 @@ html, body {
     background-color: var(--bg-input);
     padding: 2px 6px;
     border-radius: 3px;
-    font-family: 'Cascadia Mono NF', Consolas, monospace;
+    font-family: var(--font-mono);
     color: var(--accent-cyan);
 }
 
@@ -2816,8 +2826,8 @@ html, body {
 
 /* About & Updates section in settings */
 .version-value {
-    font-size: 14px;
-    font-family: 'Cascadia Mono NF', Consolas, monospace;
+    font-size: var(--text-base);
+    font-family: var(--font-mono);
     color: var(--accent-cyan);
 }
 
@@ -3232,7 +3242,7 @@ html, body {
     background-color: var(--bg-input);
     padding: 2px 6px;
     border-radius: 3px;
-    font-family: 'Cascadia Mono NF', Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
 }
 
@@ -3333,7 +3343,7 @@ html, body {
 .login-card {
     background-color: var(--bg-sidebar);
     border: 1px solid var(--border-color);
-    border-radius: 16px;
+    border-radius: var(--radius-3xl);
     padding: 48px 40px 36px;
     box-shadow: 0 8px 32px var(--shadow-color-md);
     animation: card-rise 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
@@ -3352,7 +3362,7 @@ html, body {
     justify-content: center;
     margin: 0 auto 24px;
     background-color: var(--bg-primary);
-    border-radius: 24px;
+    border-radius: var(--radius-3xl);
     border: 1px solid var(--border-subtle);
 }
 
@@ -3384,7 +3394,7 @@ html, body {
 
 .login-header h1 {
     margin: 0 0 6px 0;
-    font-size: 26px;
+    font-size: var(--text-2xl);
     font-weight: 600;
     color: var(--text-primary);
     letter-spacing: -0.5px;
@@ -3392,7 +3402,7 @@ html, body {
 
 .login-tagline {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--text-sm);
     color: var(--text-muted);
     letter-spacing: 0.5px;
     text-transform: uppercase;
@@ -3413,7 +3423,7 @@ html, body {
     left: 50%;
     transform: translateX(-50%);
     font-size: 10px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     color: var(--bg-primary);
     text-align: center;
     line-height: 1.6;
@@ -3428,7 +3438,7 @@ html, body {
 
 .login-form label {
     display: block;
-    font-size: 12px;
+    font-size: var(--text-sm);
     color: var(--text-muted);
     margin-bottom: 8px;
     text-transform: uppercase;
@@ -3441,15 +3451,15 @@ html, body {
     background-color: var(--bg-input);
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
-    border-radius: 8px;
+    border-radius: var(--radius-xl);
     font-size: 15px;
     outline: none;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .login-form input[type="password"]:focus {
-    border-color: var(--accent-gold);
-    box-shadow: 0 0 0 3px var(--accent-gold-15);
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px var(--accent-blue-15);
 }
 
 .login-btn {
@@ -3459,7 +3469,7 @@ html, body {
     background: linear-gradient(135deg, var(--cta-primary), var(--cta-primary-muted));
     color: var(--cta-primary-text);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
@@ -3486,9 +3496,9 @@ html, body {
     padding: 12px;
     background-color: var(--bg-error);
     border: 1px solid var(--border-error);
-    border-radius: 6px;
+    border-radius: var(--radius-lg);
     color: var(--accent-red);
-    font-size: 13px;
+    font-size: var(--text-sm);
     margin-bottom: 16px;
     text-align: center;
 }
@@ -3503,8 +3513,8 @@ html, body {
     padding: 16px;
     background-color: var(--bg-sidebar);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-size: 12px;
+    border-radius: var(--radius-xl);
+    font-size: var(--text-sm);
     opacity: 0.8;
 }
 
@@ -3521,9 +3531,8 @@ html, body {
 
 .cert-info-title {
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--text-sm);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
 }
 
 .cert-hide-btn {
@@ -3543,7 +3552,7 @@ html, body {
 }
 
 .cert-fingerprint {
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     color: var(--text-primary);
     word-break: break-all;
@@ -3667,7 +3676,7 @@ html, body {
 .update-log-content {
     max-height: 55vh;
     overflow: auto;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     white-space: pre-wrap;
     word-break: break-all;
@@ -3947,7 +3956,7 @@ html, body {
 }
 
 .diag-help-commands code {
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--accent-cyan);
     white-space: nowrap;
@@ -4039,7 +4048,7 @@ html, body {
 
 .fingerprint-display {
     flex: 1;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--accent-green);
     background-color: var(--bg-primary);
@@ -4228,7 +4237,7 @@ html, body {
     background-color: var(--bg-sidebar);
     padding: 12px 16px;
     border-radius: 4px;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--text-primary);
     margin-bottom: 16px;
@@ -4274,7 +4283,7 @@ html, body {
     color: var(--accent-blue);
     font-size: 12px;
     text-decoration: none;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
 }
 
 .endpoint-url:hover {
@@ -4284,7 +4293,7 @@ html, body {
 .endpoint-addr {
     color: var(--text-primary);
     font-size: 13px;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
 }
 
 .cert-validity {
@@ -4760,7 +4769,7 @@ html, body {
     border: 1px solid var(--border-subtle);
     padding: 6px 10px;
     max-width: 95%;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
 }
 
@@ -4805,7 +4814,7 @@ html, body {
     border-radius: 4px;
     padding: 6px 8px;
     margin: 4px 0;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     color: var(--text-secondary);
     white-space: pre-wrap;
@@ -4821,7 +4830,7 @@ html, body {
     border-radius: 4px;
     padding: 6px 8px;
     margin: 4px 0;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     color: var(--text-secondary);
     white-space: pre-wrap;
@@ -4891,7 +4900,7 @@ html, body {
 
 .chat-msg-tool-confirm .chat-msg-tool-name {
     color: var(--text-primary);
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 500;
     margin-bottom: 6px;
@@ -4903,7 +4912,7 @@ html, body {
     border-radius: 4px;
     padding: 8px 10px;
     margin: 8px 0;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--accent-cyan);
     white-space: pre-wrap;
@@ -4993,7 +5002,7 @@ html, body {
 
 /* Certificate fingerprint inline display in settings */
 .cert-fingerprint-inline {
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     color: var(--accent-green);
     background-color: var(--bg-primary);
@@ -5311,7 +5320,7 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
 }
 
 .file-viewer-header-actions {
@@ -5373,7 +5382,7 @@ html, body {
 .file-viewer-text {
     margin: 0;
     padding: 16px;
-    font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 15px;
     line-height: 1.5;
     color: var(--text-primary);
@@ -5581,7 +5590,7 @@ html, body {
     background: var(--bg-primary);
     padding: 2px 6px;
     border-radius: 3px;
-    font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
 }
 
@@ -5673,7 +5682,7 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
 }
 
 .file-viewer-dock-actions {
@@ -5813,13 +5822,13 @@ html, body {
     position: relative;
     margin-left: auto;
     flex-shrink: 0;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     border: 1px solid var(--text-muted);
     background: none;
     color: var(--text-muted);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 500;
     display: flex;
     align-items: center;
