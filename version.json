@@ -2,6 +2,5 @@
   "web": "6.19.0-dev",
   "pty": "6.18.18-dev",
   "protocol": 1,
-  "minCompatiblePty": "2.0.0",
-  "webOnly": true
+  "minCompatiblePty": "2.0.0"
 }
