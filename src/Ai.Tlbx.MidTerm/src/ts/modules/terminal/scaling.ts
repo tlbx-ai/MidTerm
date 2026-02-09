@@ -576,10 +576,11 @@ function autoResizeAllTerminalsInternal(): void {
     const layoutPane = state.container.closest('.layout-leaf') as HTMLElement | null;
     if (layoutPane) {
       fitTerminalToContainer(sessionId, layoutPane);
+      resizedSessions.add(sessionId);
     } else if (!state.container.classList.contains('hidden')) {
       fitSessionToScreen(sessionId);
+      resizedSessions.add(sessionId);
     }
-    resizedSessions.add(sessionId);
   });
 
   resizeBackgroundSessions(resizedSessions);
