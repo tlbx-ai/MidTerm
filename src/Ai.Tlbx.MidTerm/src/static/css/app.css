@@ -5724,7 +5724,6 @@ html, body {
     background: var(--terminal-bg);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
-    overflow-x: auto;
 }
 
 .manager-bar.hidden { display: none; }
@@ -5733,6 +5732,9 @@ html, body {
     display: flex;
     align-items: center;
     gap: 6px;
+    overflow-x: auto;
+    flex: 1;
+    min-width: 0;
 }
 
 .manager-btn {
@@ -5770,9 +5772,7 @@ html, body {
 
 .manager-btn-actions {
     display: none;
-    position: absolute;
-    top: -8px;
-    right: -8px;
+    margin-left: 4px;
     gap: 2px;
 }
 
@@ -5781,12 +5781,10 @@ html, body {
 .manager-btn-edit,
 .manager-btn-delete {
     font-size: 11px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
+    padding: 0;
     border: none;
-    background: var(--terminal-bg);
-    color: var(--text-secondary);
+    background: none;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
