@@ -482,6 +482,10 @@
                                         <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely.">File Radar</label>
                                         <input type="checkbox" id="setting-file-radar" />
                                     </div>
+                                    <div class="setting-row">
+                                        <label for="setting-manager-bar">Middle Manager Bar</label>
+                                        <input type="checkbox" id="setting-manager-bar" />
+                                    </div>
                                     <div class="setting-row hidden" id="pwa-install-row">
                                         <label>Install as App</label>
                                         <button id="btn-install-pwa" class="btn-secondary" title="Install MidTerm as App">Install</button>
@@ -634,6 +638,13 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Middle Manager Bar -->
+            <div id="manager-bar" class="manager-bar">
+                <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
+                <button class="manager-bar-add" id="manager-bar-add" title="Add button">+</button>
+                <span class="manager-bar-help" title="Want more space? Settings → Behavior → Middle Manager Bar">?</span>
             </div>
 
             <!-- File Viewer Dock Panel -->

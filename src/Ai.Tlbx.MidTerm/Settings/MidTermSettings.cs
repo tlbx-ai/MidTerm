@@ -48,6 +48,10 @@ public sealed class MidTermSettings
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
 
+    // Middle Manager Bar - Quick-action buttons below terminal area
+    public bool ManagerBarEnabled { get; set; } = true;
+    public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];
+
     // Tmux Compatibility - Injects tmux shim into spawned terminals for AI tool integration
     public bool TmuxCompatibility { get; set; } = true;
 

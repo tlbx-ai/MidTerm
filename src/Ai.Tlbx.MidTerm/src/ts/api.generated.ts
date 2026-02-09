@@ -1816,6 +1816,11 @@ export interface components {
     LoginRequest: {
       password: string;
     };
+    ManagerBarButton: {
+      id: string;
+      label: string;
+      text: string;
+    };
     MidTermSettingsPublic: {
       defaultShell: null | components['schemas']['ShellType'];
       /** Format: int32 */
@@ -1845,6 +1850,8 @@ export interface components {
       scrollbackProtection: boolean;
       fileRadar: boolean;
       tmuxCompatibility: boolean;
+      managerBarEnabled: boolean;
+      managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;
       runAsUserSid: null | string;
       authenticationEnabled: boolean;

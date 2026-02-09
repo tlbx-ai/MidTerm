@@ -76,6 +76,7 @@ import { getForegroundInfo } from './modules/process';
 import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import { initTouchController } from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
+import { initManagerBar } from './modules/managerBar';
 import {
   initLayoutRenderer,
   initDockOverlay,
@@ -194,6 +195,7 @@ async function init(): Promise<void> {
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
+  initManagerBar();
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth

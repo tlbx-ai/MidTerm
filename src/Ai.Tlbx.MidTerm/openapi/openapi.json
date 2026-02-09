@@ -1916,6 +1916,25 @@
           }
         }
       },
+      "ManagerBarButton": {
+        "required": [
+          "id",
+          "label",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
       "MidTermSettingsPublic": {
         "required": [
           "defaultShell",
@@ -1941,6 +1960,8 @@
           "scrollbackProtection",
           "fileRadar",
           "tmuxCompatibility",
+          "managerBarEnabled",
+          "managerBarButtons",
           "runAsUser",
           "runAsUserSid",
           "authenticationEnabled",
@@ -2028,6 +2049,15 @@
           },
           "tmuxCompatibility": {
             "type": "boolean"
+          },
+          "managerBarEnabled": {
+            "type": "boolean"
+          },
+          "managerBarButtons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagerBarButton"
+            }
           },
           "runAsUser": {
             "type": [
