@@ -51,6 +51,11 @@ Your PC                          Anywhere
 - **Manual resize** — Fit terminal to any screen size with one click
 - **Any shell** — Zsh, Bash, PowerShell, CMD
 - **Auto-update** — One-click update from the UI, page reloads automatically
+- **Multi-pane layout** — Split terminals side-by-side, tmux-style
+- **Tmux compatibility** — AI coding tools that detect tmux work out of the box
+- **Manager bar** — Customizable quick-action buttons for common commands
+- **Clipboard image paste** — Alt+V to inject clipboard images into terminal
+- **Installable (PWA)** — Add to home screen on mobile, standalone window on desktop
 - **Responsive UI** — Works on any screen size
 
 ## Installation

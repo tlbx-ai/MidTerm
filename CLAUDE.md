@@ -148,7 +148,7 @@ The `Services/` folder contains ~45 files organized by responsibility. When addi
 | Category | Services | Purpose |
 |----------|----------|---------|
 | **Authentication** | `AuthService`, `AuthEndpoints` | Password hashing (PBKDF2), session tokens, login/logout |
-| **Sessions** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
+| **Sessions** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `TtyHostMuxConnectionManager`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
 | **WebSockets** | `MuxWebSocketHandler`, `StateWebSocketHandler`, `SettingsWebSocketHandler`, `MuxClient`, `MuxProtocol` | Binary mux protocol, JSON state sync, settings broadcast |
 | **Settings** | `SettingsService` (in Settings/) | Load/save settings.json, settings validation |
 | **Security** | `SecurityStatusService`, `UserValidationService`, `UserEnumerationService` | Security posture checks, RunAsUser validation |
@@ -161,7 +161,11 @@ The `Services/` folder contains ~45 files organized by responsibility. When addi
 | **History** | `HistoryService`, `HistoryEndpoints` | Command launch history |
 | **Files** | `FileEndpoints`, `FileRadarAllowlistService` | File uploads, path validation for FileRadar |
 | **Logging** | `LogEndpoints` | Log streaming WebSocket, log file access |
-| **JSON Contexts** | `AppJsonContext`, `GitHubReleaseContext`, `SecretsJsonContext`, `VersionManifestContext` | AOT-safe JSON serialization (see below) |
+| **Clipboard** | `ClipboardService` | Cross-platform clipboard image injection (Alt+V) |
+| **Main Browser** | `MainBrowserService` | Multi-client coordination: which browser controls resize |
+| **Tmux Compat** | `TmuxCommandDispatcher`, `TmuxCommandParser`, `TmuxFormatter`, `TmuxPaneMapper`, `TmuxTargetResolver`, `TmuxLayoutBridge`, `TmuxScriptWriter`, `TmuxKeyTranslator`, `TmuxLog` | Tmux shim compatibility layer for AI tools |
+| **Certificate Protection** | `ICertificateProtector`, `WindowsDpapiProtector`, `EncryptedFileProtector`, `CertificateProtectorFactory` | Platform-specific certificate key protection |
+| **JSON Contexts** | `AppJsonContext`, `GitHubReleaseContext`, `SecretsJsonContext`, `VersionManifestContext`, `TmuxJsonContext` | AOT-safe JSON serialization (see below) |
 
 ## Settings Model Pattern
 
@@ -226,6 +230,8 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 | `theming/` | Theme application and persistence |
 | `touchController/` | Mobile touch bar, gestures, favorites |
 | `updating/` | Update checking, changelog display, apply |
+| `layout/` | Multi-pane terminal layout: dock, undock, swap, persist to localStorage |
+| `managerBar/` | Customizable quick-action buttons below terminal area |
 | `voice.ts`, `voiceTools.ts` | Voice input/output |
 | `login.ts`, `trust.ts`, `tabTitle.ts` | Standalone page handlers |
 
@@ -240,32 +246,79 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 
 ```
 # Authentication
-POST /api/auth/login              Login {password} → sets session cookie
+POST /api/auth/login              Login {password} -> sets session cookie
 POST /api/auth/logout             Clear session cookie
 POST /api/auth/change-password    Change password {currentPassword, newPassword}
 GET  /api/auth/status             Auth status {authenticationEnabled, passwordSet}
+GET  /api/security/status         Security posture warnings
+
+# Bootstrap
+GET  /api/bootstrap               Combined startup data (settings, auth, shells, etc.)
+GET  /api/bootstrap/login         Login page bootstrap (cert info only)
 
 # Sessions
 GET  /api/sessions                List all sessions
 POST /api/sessions                Create session {cols, rows, shellType?, workingDirectory?}
 DELETE /api/sessions/{id}         Close session
-POST /api/sessions/{id}/resize    Resize {cols, rows}
-PUT  /api/sessions/{id}/name      Rename {name}
+POST /api/sessions/{id}/resize   Resize {cols, rows}
+PUT  /api/sessions/{id}/name     Rename {name}, optional ?auto=true
+POST /api/sessions/{id}/input    Send raw input bytes
+GET  /api/sessions/{id}/buffer   Get terminal buffer
+POST /api/sessions/{id}/upload   File upload
+POST /api/sessions/{id}/paste-clipboard-image  Paste clipboard image
 
 # System
-GET  /api/shells                  Available shells for platform
-GET  /api/settings                Current settings
-PUT  /api/settings                Update settings
-GET  /api/version                 Server version string
-GET  /api/health                  Health check
+GET  /api/system                  Consolidated health (version, uptime, platform, PID)
+GET  /api/version                 Version string (legacy)
+GET  /api/health                  Detailed health (legacy)
+GET  /api/version/details         Version manifest (legacy)
+GET  /api/shells                  Available shells
+GET  /api/networks                Network interfaces with IPv4
+GET  /api/paths                   Settings/secrets/cert/log directories
+GET  /api/users                   System user enumeration
+
+# Settings
+GET  /api/settings                Current public settings
+PUT  /api/settings                Update public settings
+POST /api/settings/reload         Reload settings from disk
+
+# Files
+POST /api/files/register          Register file path for access
+POST /api/files/check             Check file accessibility
+GET  /api/files/list              List directory
+GET  /api/files/view              View file content
+GET  /api/files/download          Download file
+GET  /api/files/resolve           Resolve symlinks
+
+# History
+GET  /api/history                 Get command history
+POST /api/history                 Create history entry
+PATCH /api/history/{id}           Edit entry
+PUT  /api/history/{id}/star       Star entry
+DELETE /api/history/{id}          Delete entry
+
+# Certificates
+GET  /api/certificate/info        Certificate details
+GET  /api/certificate/download/pem  Download PEM
+GET  /api/certificate/download/mobileconfig  iOS/macOS profile
+GET  /api/certificate/share-packet  Share packet with network endpoints
+
+# Updates
 GET  /api/update/check            Check for updates
-POST /api/update/apply            Download update and restart
+POST /api/update/apply            Download and apply update
+GET  /api/update/result           Get update result (?clear=true)
+GET  /api/update/log              Tail update log
+
+# Tmux Compatibility
+POST /api/tmux                    Tmux command dispatcher (null-delimited args)
+POST /api/tmux/layout             Update layout state
 ```
 
 ## WebSocket Endpoints
 
 - `/ws/mux` — Multiplexed terminal I/O (binary protocol)
 - `/ws/state` — Session state changes (JSON, for sidebar sync)
+- `/ws/settings` — Real-time settings sync across connected clients (JSON)
 
 ## Mux Protocol & Priority Buffering
 
@@ -308,6 +361,16 @@ The `/ws/mux` endpoint uses a binary protocol for efficient terminal I/O multipl
 - **Page reload / reconnect**: must never send resize commands to the server. Terminals sync server dimensions and apply CSS scaling locally.
 - **Layout restore from storage**: when a saved layout is restored on page load, terminals are moved to panes and CSS-scaled — NOT resized to fit pane dimensions. User must explicitly resize.
 - **Scaled terminals** should be visually centered in their container, not top-left aligned.
+
+## Tmux Compatibility Layer
+
+MidTerm includes a tmux shim that allows AI coding tools (Claude Code, etc.) to use split panes and other tmux features natively.
+
+- Controlled by `TmuxCompatibility` setting (default: true)
+- Injects a tmux shim script into terminal sessions
+- AI tools that detect tmux can use split panes, send-keys, etc.
+- 12 service files under `Services/Tmux/`, dispatched via `POST /api/tmux`
+- Command categories: Session, IO, Pane, Window, Config, Misc
 
 ## Code Style (C#)
 
@@ -366,6 +429,15 @@ The frontend uses [nanostores](https://github.com/nanostores/nanostores) (~1KB) 
 - `$activeSessionId` (atom) - Currently selected session
 - `$sessionList` (computed) - Sessions sorted by `_order`
 - `$connectionStatus` (computed) - 'connected' | 'disconnected' | 'reconnecting'
+- `$currentSettings` (atom) - Current settings from server
+- `$layout` (atom) - Current layout tree (multi-pane)
+- `$focusedSessionId` (atom) - Keyboard focus in layout
+- `$isMainBrowser` (atom) - Whether this browser controls auto-resize
+- `$renamingSessionId` (atom) - Session being renamed
+- `$fileViewerDocked` (atom) - File viewer dock state
+- `$dockedFilePath` (atom) - Current docked file path
+- `$dataLossDetected` (atom) - Buffer overflow tracking
+- `$processStates` (map) - Per-session foreground process info
 - UI flags: `$settingsOpen`, `$sidebarOpen`, `$sidebarCollapsed`
 
 **Ephemeral state (`state.ts`)** - Non-reactive infrastructure:
