@@ -722,24 +722,25 @@ interface BeforeInstallPromptEvent extends Event {
 
 function initPwaInstall(): void {
   let deferredPrompt: BeforeInstallPromptEvent | null = null;
+  const row = document.getElementById('pwa-install-row');
   const btn = document.getElementById('btn-install-pwa');
-  if (!btn) return;
+  if (!row || !btn) return;
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e as BeforeInstallPromptEvent;
-    btn.classList.remove('hidden');
+    row.classList.remove('hidden');
   });
 
   btn.addEventListener('click', async () => {
     if (!deferredPrompt) return;
     await deferredPrompt.prompt();
     deferredPrompt = null;
-    btn.classList.add('hidden');
+    row.classList.add('hidden');
   });
 
   window.addEventListener('appinstalled', () => {
-    btn.classList.add('hidden');
+    row.classList.add('hidden');
     deferredPrompt = null;
   });
 }

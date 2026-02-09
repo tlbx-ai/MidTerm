@@ -48,10 +48,6 @@
             </div>
             <div class="session-list" id="session-list"></div>
             <div class="sidebar-footer">
-                <button id="btn-install-pwa" class="install-pwa-btn hidden" title="Install MidTerm as App">
-                    <span class="icon">&#xe924;</span>
-                    <span>Install App</span>
-                </button>
                 <div id="update-panel" class="update-panel hidden">
                     <div class="update-header">Update Available</div>
                     <div class="update-versions">
@@ -485,6 +481,10 @@
                                     <div class="setting-row">
                                         <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely.">File Radar</label>
                                         <input type="checkbox" id="setting-file-radar" />
+                                    </div>
+                                    <div class="setting-row hidden" id="pwa-install-row">
+                                        <label>Install as App</label>
+                                        <button id="btn-install-pwa" class="btn-secondary" title="Install MidTerm as App">Install</button>
                                     </div>
                                 </div>
                                 <!-- Integrations -->
