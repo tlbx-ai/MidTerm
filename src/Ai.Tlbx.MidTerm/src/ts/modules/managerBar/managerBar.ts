@@ -68,8 +68,8 @@ function renderButtons(buttons: ManagerButton[]): void {
     span.innerHTML =
       `<span class="manager-btn-label">${escapeHtml(btn.label)}</span>` +
       `<span class="manager-btn-actions">` +
-      `<button class="manager-btn-edit" title="Edit">&#xe91f;</button>` +
-      `<button class="manager-btn-delete" title="Remove">&#xe909;</button>` +
+      `<button class="manager-btn-edit" title="Edit"><span class="icon">\ue91f</span></button>` +
+      `<button class="manager-btn-delete" title="Remove"><span class="icon">\ue909</span></button>` +
       `</span>`;
     buttonsEl.appendChild(span);
   }

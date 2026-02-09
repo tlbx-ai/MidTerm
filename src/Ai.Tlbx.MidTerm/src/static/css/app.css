@@ -5721,7 +5721,7 @@ html, body {
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    background: var(--bg-sidebar);
+    background: var(--terminal-bg);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
     overflow-x: auto;
@@ -5733,20 +5733,21 @@ html, body {
     position: relative;
     display: inline-flex;
     align-items: center;
-    padding: 2px 10px;
-    border-radius: 3px;
-    background: none;
+    padding: 3px 10px;
+    border-radius: 4px;
+    background: var(--btn-secondary);
     color: var(--text-secondary);
     font-size: 11px;
+    line-height: 1;
     cursor: pointer;
     white-space: nowrap;
-    border: 1px solid var(--border-color);
-    transition: color 0.15s, border-color 0.15s;
+    border: none;
+    transition: background-color 0.15s, color 0.15s;
 }
 
 .manager-btn:hover {
+    background-color: var(--btn-secondary-hover);
     color: var(--text-primary);
-    border-color: var(--text-secondary);
 }
 
 .manager-btn-actions {
@@ -5761,13 +5762,12 @@ html, body {
 
 .manager-btn-edit,
 .manager-btn-delete {
-    font-family: 'midterm-icons';
     font-size: 9px;
     width: 16px;
     height: 16px;
     border-radius: 50%;
     border: none;
-    background: var(--bg-sidebar);
+    background: var(--terminal-bg);
     color: var(--text-secondary);
     cursor: pointer;
     display: flex;
@@ -5779,14 +5779,15 @@ html, body {
 .manager-btn-delete:hover { color: var(--accent-red, #e06060); }
 
 .manager-bar-add {
-    padding: 2px 10px;
-    border-radius: 3px;
+    padding: 3px 10px;
+    border-radius: 4px;
     background: none;
     border: 1px dashed var(--border-color);
     color: var(--text-muted);
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
+    line-height: 1;
     transition: color 0.15s, border-color 0.15s;
 }
 
@@ -5798,7 +5799,21 @@ html, body {
 .manager-bar-help {
     margin-left: auto;
     flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--text-muted);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 10.5px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: help;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.manager-bar-help:hover {
+    color: var(--text-secondary);
+    border-color: var(--text-secondary);
 }
