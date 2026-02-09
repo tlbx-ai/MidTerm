@@ -552,22 +552,24 @@ pwsh -NoProfile -File scripts/release-dev.ps1 `
 
 ### Promoting to Stable Release
 
-When dev is tested and ready for stable release:
+When dev is tested and ready for stable release, use `promote.ps1` from the dev branch:
 
 ```powershell
-# 1. Create PR on GitHub: dev → main
-# 2. Review and merge the PR
-# 3. Locally:
-git checkout main
-git pull
+# Auto-gathers all changelog entries from dev tags since last stable release (recommended)
+.\scripts\promote.ps1
 
-# 4. Create stable release
-.\scripts\release.ps1 -Bump patch `
-    -ReleaseTitle "Feature X" `
-    -ReleaseNotes @("Added feature X") `
-    -mthostUpdate no
-# Creates: v6.10.30 (full release on GitHub)
+# Override title, still auto-gather notes
+.\scripts\promote.ps1 -ReleaseTitle "Major UI overhaul"
+
+# Fully manual (legacy behavior)
+.\scripts\promote.ps1 -ReleaseTitle "Feature X" -ReleaseNotes @("Added feature X")
 ```
+
+The script automatically:
+1. Finds all dev tags since the last stable release (by version comparison)
+2. Extracts changelog entries from each tag's annotation
+3. Creates a PR with grouped changelog, merges it
+4. Tags the stable release on main with the combined changelog
 
 ### Update Channels
 
