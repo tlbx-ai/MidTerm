@@ -17,7 +17,7 @@ import {
   icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
-import { $currentSettings, $isMainBrowser, getSession } from '../../stores';
+import { $currentSettings, $isMainBrowser, $sessions, getSession } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
 import { sendResize } from '../comms';
@@ -568,6 +568,8 @@ export function rescaleAllTerminalsImmediate(): void {
  * For layout panes, resizes to pane size. For standalone, resizes to screen.
  */
 function autoResizeAllTerminalsInternal(): void {
+  const resizedSessions = new Set<string>();
+
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
@@ -577,7 +579,50 @@ function autoResizeAllTerminalsInternal(): void {
     } else if (!state.container.classList.contains('hidden')) {
       fitSessionToScreen(sessionId);
     }
+    resizedSessions.add(sessionId);
   });
+
+  resizeBackgroundSessions(resizedSessions);
+}
+
+/**
+ * Resize sessions that have no open terminal on this browser.
+ * Calculates optimal screen dimensions from cell measurements and sends
+ * resize commands directly to the server for any session not already handled.
+ */
+function resizeBackgroundSessions(alreadyResized: Set<string>): void {
+  if (!dom.terminalsArea) return;
+
+  const sessions = $sessions.get();
+  const allIds = Object.keys(sessions);
+  const unhandled = allIds.filter((id) => !alreadyResized.has(id));
+  if (unhandled.length === 0) return;
+
+  const fontSize = $currentSettings.get()?.fontSize ?? 14;
+  const measurement =
+    measureFromExistingTerminal(fontSize) ??
+    getCalibrationMeasurement() ??
+    measureFromFont(fontSize);
+
+  const rect = dom.terminalsArea.getBoundingClientRect();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+  const availHeight = rect.height - TERMINAL_PADDING;
+
+  const cols = Math.max(
+    MIN_TERMINAL_COLS,
+    Math.min(Math.floor(availWidth / measurement.cellWidth), MAX_TERMINAL_COLS),
+  );
+  const rows = Math.max(
+    MIN_TERMINAL_ROWS,
+    Math.min(Math.floor(availHeight / measurement.cellHeight), MAX_TERMINAL_ROWS),
+  );
+
+  for (const id of unhandled) {
+    const session = sessions[id];
+    if (session && (session.cols !== cols || session.rows !== rows)) {
+      sendResize(id, cols, rows);
+    }
+  }
 }
 
 let autoResizeTimer: number | undefined;
