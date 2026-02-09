@@ -137,7 +137,7 @@ foreach ($tag in $devTagsInRange) {
     }
 }
 
-Write-Host "  Found $($changelog.Count) dev releases since $lastStableTag:" -ForegroundColor Gray
+Write-Host "  Found $($changelog.Count) dev releases since ${lastStableTag}:" -ForegroundColor Gray
 foreach ($entry in $changelog) {
     $noteCount = $entry.Notes.Count
     Write-Host "    $($entry.Tag): $($entry.Title) ($noteCount notes)" -ForegroundColor DarkGray
