@@ -383,3 +383,42 @@ export async function handleClipboardPaste(sessionId: string): Promise<Clipboard
 
   return 'none';
 }
+
+/**
+ * Handle Alt+V clipboard image injection for terminal apps like Codex CLI.
+ * Uploads the clipboard image to the server, which sets the OS clipboard
+ * and injects Alt+V (\x1bv) into the terminal PTY.
+ * Returns 'image' if successful, 'none' if no image found.
+ */
+export async function handleNativeImagePaste(sessionId: string): Promise<ClipboardPasteResult> {
+  if (!window.isSecureContext) {
+    showHttpsRequiredToast();
+    return 'unavailable';
+  }
+
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find((t) => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        const ext = imageType === 'image/png' ? '.png' : '.jpg';
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const file = new File([blob], `clipboard_${ts}${ext}`, { type: imageType });
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch(`/api/sessions/${sessionId}/paste-clipboard-image`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (resp.ok) return 'image';
+        showDropToast(`Clipboard injection failed: ${resp.status}`);
+        return 'none';
+      }
+    }
+  } catch {
+    // clipboard.read() not supported or failed
+  }
+
+  return 'none';
+}

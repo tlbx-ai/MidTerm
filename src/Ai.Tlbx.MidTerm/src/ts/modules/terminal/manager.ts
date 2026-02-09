@@ -20,7 +20,12 @@ import {
 import { $activeSessionId, $currentSettings, $windowsBuildNumber } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync } from './scaling';
-import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
+import {
+  setupFileDrop,
+  handleClipboardPaste,
+  handleNativeImagePaste,
+  sanitizePasteContent,
+} from './fileDrop';
 import { isBracketedPasteEnabled, sendCommand, sendInput, requestBufferRefresh } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
@@ -38,7 +43,7 @@ import {
   cleanupSearchForTerminal,
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
-import { isCopyShortcut, isPasteShortcut } from './clipboardShortcuts';
+import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
 
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -446,7 +451,21 @@ export function setupTerminalEvents(
       return true;
     }
 
-    // Unified paste aliases: Ctrl+V, Cmd+V, Ctrl+Shift+V, Alt+V.
+    // Alt+V: native clipboard image paste for terminal apps (Codex CLI, etc.)
+    // Uploads image to server, sets OS clipboard, injects \x1bv into PTY.
+    if (isNativeImagePasteShortcut(e)) {
+      if (canUseAsyncClipboard()) {
+        void handleNativeImagePaste(sessionId).then((result) => {
+          if (result !== 'image') {
+            sendInput(sessionId, '\x1bv');
+          }
+        });
+        return false;
+      }
+      return true;
+    }
+
+    // Unified paste aliases: Ctrl+V, Cmd+V, Ctrl+Shift+V.
     if (isPasteShortcut(e)) {
       if (canUseAsyncClipboard()) {
         void handleClipboardPaste(sessionId);

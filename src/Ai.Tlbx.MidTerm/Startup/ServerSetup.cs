@@ -102,6 +102,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<CertificateInfoService>();
         builder.Services.AddSingleton<SecurityStatusService>();
         builder.Services.AddSingleton<MainBrowserService>();
+        builder.Services.AddSingleton<ClipboardService>();
 
         return builder;
     }

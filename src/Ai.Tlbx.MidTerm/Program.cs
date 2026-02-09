@@ -213,7 +213,8 @@ public class Program
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
+        var clipboardService = app.Services.GetRequiredService<ClipboardService>();
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);

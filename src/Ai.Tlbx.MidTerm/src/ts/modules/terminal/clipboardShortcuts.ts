@@ -36,16 +36,13 @@ export function isCopyShortcut(input: ShortcutInput, style: 'windows' | 'unix'):
  * - Ctrl+V
  * - Cmd+V
  * - Ctrl+Shift+V
- * - Alt+V
+ *
+ * Note: Alt+V is handled separately by isNativeImagePasteShortcut()
+ * for clipboard image injection into terminal apps like Codex CLI.
  */
 export function isPasteShortcut(input: ShortcutInput): boolean {
   const key = input.key.toLowerCase();
   if (key !== 'v') return false;
-
-  // Alt+V
-  if (input.altKey && !input.ctrlKey && !input.shiftKey && !input.metaKey) {
-    return true;
-  }
 
   // Cmd+V
   if (input.metaKey && !input.ctrlKey && !input.shiftKey && !input.altKey) {
@@ -58,4 +55,19 @@ export function isPasteShortcut(input: ShortcutInput): boolean {
   }
 
   return false;
+}
+
+/**
+ * Resolve whether the event is Alt+V (native clipboard image paste).
+ * Used to inject clipboard images into terminal apps (e.g. Codex CLI)
+ * that read the OS clipboard directly via Alt+V.
+ */
+export function isNativeImagePasteShortcut(input: ShortcutInput): boolean {
+  return (
+    input.key.toLowerCase() === 'v' &&
+    input.altKey &&
+    !input.ctrlKey &&
+    !input.shiftKey &&
+    !input.metaKey
+  );
 }
