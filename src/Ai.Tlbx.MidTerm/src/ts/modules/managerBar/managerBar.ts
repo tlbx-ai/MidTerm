@@ -83,7 +83,7 @@ function clickButton(id: string): void {
 
   const activeId = $activeSessionId.get();
   if (activeId) {
-    sendInput(activeId, btn.text + '\r\n');
+    sendInput(activeId, btn.text + '\r');
   }
 }
 
