@@ -16,22 +16,23 @@ import type {
   BellStyleSetting,
   ClipboardShortcutsSetting,
   TabTitleModeSetting,
+  ScrollbarStyleSetting,
 } from '../../api/types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
+import { applyCssTheme } from '../theming/cssThemes';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { getSettings, getUsers, getVersion, getHealth, updateSettings } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
+import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import {
+  applyTerminalScrollbarStyleClass,
+  normalizeScrollbarStyle,
+} from '../terminal/scrollbarStyle';
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
-
-let _onSettingsApplied: (() => void) | null = null;
-
-export function registerSettingsAppliedCallback(callback: () => void): void {
-  _onSettingsApplied = callback;
-}
 
 /**
  * Set the value of a form element by ID
@@ -135,9 +136,12 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-right-click-paste', settings.rightClickPaste !== false);
   setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts ?? 'auto');
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling === true);
+  setElementValue('setting-scrollbar-style', settings.scrollbarStyle ?? 'off');
   setElementChecked('setting-webgl', settings.useWebGL !== false);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
   setElementChecked('setting-file-radar', settings.fileRadar !== false);
+  setElementChecked('setting-manager-bar', settings.managerBarEnabled !== false);
+  setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility !== false);
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
 
@@ -190,6 +194,8 @@ export function applySettingsToTerminals(): void {
   const fontSize = settings.fontSize ?? 14;
   const contrastRatio = settings.minimumContrastRatio ?? 1;
 
+  const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);
+
   sessionTerminals.forEach((state: TerminalState) => {
     state.terminal.options.cursorBlink = settings.cursorBlink ?? true;
     state.terminal.options.cursorStyle = settings.cursorStyle ?? 'bar';
@@ -200,9 +206,11 @@ export function applySettingsToTerminals(): void {
     state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
     state.terminal.options.scrollback = settings.scrollbackLines ?? 10000;
+
+    applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
   });
 
-  _onSettingsApplied?.();
+  rescaleAllTerminalsImmediate();
 }
 
 /**
@@ -215,8 +223,7 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
   }
 
   const themeName = settings.theme ?? 'dark';
-  const theme = THEMES[themeName] || THEMES.dark;
-  document.documentElement.style.setProperty('--terminal-bg', theme.background);
+  applyCssTheme(themeName);
   setCookie('mm-theme', themeName);
 
   applySettingsToTerminals();
@@ -255,6 +262,7 @@ export function saveAllSettings(): void {
     tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleModeSetting,
     minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
     smoothScrolling: getElementChecked('setting-smooth-scrolling'),
+    scrollbarStyle: getElementValue('setting-scrollbar-style', 'off') as ScrollbarStyleSetting,
     useWebGL: getElementChecked('setting-webgl'),
     scrollbackLines: parseInt(getElementValue('setting-scrollback', '10000'), 10) || 10000,
     bellStyle: getElementValue('setting-bell-style', 'notification') as BellStyleSetting,
@@ -266,6 +274,9 @@ export function saveAllSettings(): void {
     ) as ClipboardShortcutsSetting,
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
     fileRadar: getElementChecked('setting-file-radar'),
+    managerBarEnabled: getElementChecked('setting-manager-bar'),
+    managerBarButtons: prevSettings?.managerBarButtons ?? [],
+    tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
     runAsUser: runAsUserValue || null,
   };
 
@@ -278,8 +289,7 @@ export function saveAllSettings(): void {
         if (prevSettings) {
           $currentSettings.set({ ...prevSettings, ...settings });
         }
-        const theme = THEMES[themeName] || THEMES.dark;
-        document.documentElement.style.setProperty('--terminal-bg', theme.background);
+        applyCssTheme(themeName);
         applySettingsToTerminals();
         updateTabTitle();
       } else {

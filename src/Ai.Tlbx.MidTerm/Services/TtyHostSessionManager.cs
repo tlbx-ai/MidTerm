@@ -13,22 +13,30 @@ namespace Ai.Tlbx.MidTerm.Services;
 public sealed class TtyHostSessionManager : IAsyncDisposable
 {
     public const int MaxSessions = 256;
+    private const int SessionIdLength = 8;
+    private const string FallbackMinCompatibleVersion = "2.0.0";
 
     private readonly ConcurrentDictionary<string, TtyHostClient> _clients = new();
     private readonly ConcurrentDictionary<string, SessionInfo> _sessionCache = new();
     private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly ConcurrentDictionary<string, int> _sessionOrder = new();
+    private readonly ConcurrentDictionary<string, byte> _tmuxCreatedSessions = new();
+    private readonly ConcurrentDictionary<string, byte> _tmuxCommandStarted = new();
     private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
     private readonly string _dropsBasePath;
     private string? _runAsUser;
     private bool _disposed;
+    private int? _mtPort;
+    private Func<string>? _generateToken;
+    private string? _tmuxBinDir;
 
     public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnSessionClosed;
+    public event Action<string, int>? OnSessionCreated;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
 
     public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
@@ -59,7 +67,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         catch
         {
             // Fallback to permissive minimum to avoid killing sessions when manifest can't be read
-            return "2.0.0";
+            return FallbackMinCompatibleVersion;
         }
     }
 
@@ -67,6 +75,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         _runAsUser = runAsUser;
         Log.Info(() => $"TtyHostSessionManager: RunAsUser updated to: {runAsUser ?? "(none)"}");
+    }
+
+    public void ConfigureTmux(int port, Func<string> generateToken, string? tmuxBinDir)
+    {
+        _mtPort = port;
+        _generateToken = generateToken;
+        _tmuxBinDir = tmuxBinDir;
     }
 
     /// <summary>
@@ -156,6 +171,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             // Use order from mthost if available, otherwise use discovery sequence
             var order = info.Order;
             _sessionOrder.TryAdd(sessionId, order);
+            OnSessionCreated?.Invoke(sessionId, order);
             Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid}, order={order})");
 
             return new DiscoveryResult.Connected(order);
@@ -319,9 +335,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
-        var sessionId = Guid.NewGuid().ToString("N")[..8];
+        var sessionId = Guid.NewGuid().ToString("N")[..SessionIdLength];
 
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid))
+        var paneIndex = Interlocked.Increment(ref _nextOrder);
+        var mtToken = _generateToken?.Invoke();
+
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid,
+                _mtPort, mtToken, paneIndex, _tmuxBinDir))
         {
             return null;
         }
@@ -384,12 +404,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _clients[sessionId] = client;
         _sessionCache[sessionId] = info;
 
-        var order = Interlocked.Increment(ref _nextOrder);
-        _sessionOrder[sessionId] = order;
+        _sessionOrder[sessionId] = paneIndex;
 
-        await client.SetOrderAsync((byte)(order % 256), ct).ConfigureAwait(false);
+        await client.SetOrderAsync((byte)(paneIndex % 256), ct).ConfigureAwait(false);
 
         Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid})");
+        OnSessionCreated?.Invoke(sessionId, paneIndex);
         OnStateChanged?.Invoke(sessionId);
         NotifyStateChange();
 
@@ -399,6 +419,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public SessionInfo? GetSession(string sessionId)
     {
         return _sessionCache.TryGetValue(sessionId, out var info) ? info : null;
+    }
+
+    public void MarkTmuxCreated(string sessionId)
+    {
+        _tmuxCreatedSessions.TryAdd(sessionId, 0);
     }
 
     public async Task<SessionInfo?> GetSessionFreshAsync(string sessionId, CancellationToken ct = default)
@@ -492,6 +517,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         _sessionCache.TryRemove(sessionId, out _);
         _sessionOrder.TryRemove(sessionId, out _);
+        _tmuxCreatedSessions.TryRemove(sessionId, out _);
+        _tmuxCommandStarted.TryRemove(sessionId, out _);
         CleanupTempDirectory(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
@@ -604,8 +631,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         NotifyStateChange();
 
-        // Fire-and-forget IPC to persist order on mthosts
-        _ = SendOrderUpdatesAsync(sessionIds);
+        _ = SendOrderUpdatesAsync(sessionIds).ContinueWith(
+            t => Log.Exception(t.Exception!.InnerException!, "TtyHostSessionManager.SendOrderUpdates"),
+            TaskContinuationOptions.OnlyOnFaulted);
 
         return true;
     }
@@ -654,7 +682,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         client.OnOutput += HandleClientOutput;
         client.OnForegroundChanged += HandleClientForegroundChanged;
-        client.OnStateChanged += HandleClientStateChanged;
+        client.OnStateChanged += id => _ = HandleClientStateChangedAsync(id);
     }
 
     private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
@@ -671,36 +699,67 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             info.ForegroundCommandLine = payload.CommandLine;
             info.CurrentDirectory = payload.Cwd;
         }
-        OnForegroundChanged?.Invoke(sessionId, payload);
-    }
 
-    private async void HandleClientStateChanged(string sessionId)
-    {
-        if (_clients.TryGetValue(sessionId, out var c))
+        if (_tmuxCreatedSessions.ContainsKey(sessionId))
         {
-            var info = await c.GetInfoAsync().ConfigureAwait(false);
-            if (info is not null)
-            {
-                if (_sessionCache.TryGetValue(sessionId, out var existing))
-                {
-                    info.TerminalTitle = existing.TerminalTitle;
-                    info.ManuallyNamed = existing.ManuallyNamed;
-                }
-                _sessionCache[sessionId] = info;
-            }
+            var shellName = info?.ShellType.ToString();
+            var isShellForeground = shellName is not null &&
+                string.Equals(payload.Name, shellName, StringComparison.OrdinalIgnoreCase);
 
-            if (info is null || !info.IsRunning)
+            if (!isShellForeground)
             {
-                if (_clients.TryRemove(sessionId, out var removed))
-                {
-                    await removed.DisposeAsync().ConfigureAwait(false);
-                }
-                _sessionCache.TryRemove(sessionId, out _);
+                _tmuxCommandStarted.TryAdd(sessionId, 0);
+            }
+            else if (_tmuxCommandStarted.TryRemove(sessionId, out _))
+            {
+                _ = CloseSessionAsync(sessionId, CancellationToken.None);
+                return;
             }
         }
 
-        OnStateChanged?.Invoke(sessionId);
-        NotifyStateChange();
+        OnForegroundChanged?.Invoke(sessionId, payload);
+    }
+
+    private async Task HandleClientStateChangedAsync(string sessionId)
+    {
+        try
+        {
+            if (_clients.TryGetValue(sessionId, out var c))
+            {
+                var info = await c.GetInfoAsync().ConfigureAwait(false);
+                if (info is not null)
+                {
+                    if (_sessionCache.TryGetValue(sessionId, out var existing))
+                    {
+                        info.TerminalTitle = existing.TerminalTitle;
+                        info.ManuallyNamed = existing.ManuallyNamed;
+                    }
+                    _sessionCache[sessionId] = info;
+                }
+
+                if (info is null || !info.IsRunning)
+                {
+                    if (_tmuxCreatedSessions.TryRemove(sessionId, out _))
+                    {
+                        await CloseSessionAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (_clients.TryRemove(sessionId, out var removed))
+                    {
+                        await removed.DisposeAsync().ConfigureAwait(false);
+                    }
+                    _sessionCache.TryRemove(sessionId, out _);
+                }
+            }
+
+            OnStateChanged?.Invoke(sessionId);
+            NotifyStateChange();
+        }
+        catch (Exception ex)
+        {
+            Log.Exception(ex, $"TtyHostSessionManager.HandleClientStateChanged({sessionId})");
+        }
     }
 
     public async ValueTask DisposeAsync()

@@ -17,27 +17,13 @@ import {
   icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
-import { $currentSettings, getSession } from '../../stores';
+import { $currentSettings, $isMainBrowser, $sessions, getSession } from '../../stores';
 import { throttle } from '../../utils';
-import { getCalibrationMeasurement, getCalibrationPromise } from './manager';
+import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
+import { sendResize } from '../comms';
 import { isDevMode } from '../sidebar/voiceSection';
 
 const SCALE_TOLERANCE = 0.97;
-
-// Forward declarations for functions from other modules
-let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
-let focusActiveTerminal: () => void = () => {};
-
-/**
- * Register callbacks from other modules
- */
-export function registerScalingCallbacks(callbacks: {
-  sendResize?: (sessionId: string, dimensions: { cols: number; rows: number }) => void;
-  focusActiveTerminal?: () => void;
-}): void {
-  if (callbacks.sendResize) sendResize = callbacks.sendResize;
-  if (callbacks.focusActiveTerminal) focusActiveTerminal = callbacks.focusActiveTerminal;
-}
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe';
 
@@ -302,7 +288,7 @@ export function fitSessionToScreen(sessionId: string): void {
         const dims = state.fitAddon.proposeDimensions();
         if (dims?.cols && dims?.rows) {
           state.fitAddon.fit();
-          sendResize(sessionId, state.terminal);
+          sendResize(sessionId, state.terminal.cols, state.terminal.rows);
         }
       } catch {
         // FitAddon may fail if terminal isn't fully initialized
@@ -334,7 +320,7 @@ export function fitSessionToScreen(sessionId: string): void {
     try {
       if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
         state.terminal.resize(cols, rows);
-        sendResize(sessionId, state.terminal);
+        sendResize(sessionId, state.terminal.cols, state.terminal.rows);
       }
     } catch {
       // Resize may fail if terminal is disposed
@@ -391,7 +377,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
     // Fallback to fitAddon if measurements aren't valid
     try {
       state.fitAddon.fit();
-      sendResize(sessionId, state.terminal);
+      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
     } catch {
       // FitAddon may fail if terminal isn't fully initialized
     }
@@ -417,7 +403,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
       state.terminal.resize(cols, rows);
       state.serverCols = cols;
       state.serverRows = rows;
-      sendResize(sessionId, state.terminal);
+      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
     }
   } catch {
     // Resize may fail if terminal is disposed
@@ -463,28 +449,47 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   // Find or create overlay element
   let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
 
+  // Helper: ensure overlay exists with click handler
+  const ensureOverlay = (): HTMLElement => {
+    if (overlay) return overlay;
+    overlay = document.createElement('button');
+    overlay.className = 'scaled-overlay';
+    overlay.addEventListener('click', () => {
+      if (!$isMainBrowser.get()) return;
+      const sessionId = container.id.replace('terminal-', '');
+      if (!sessionId) return;
+      const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+      if (layoutPane) {
+        fitTerminalToContainer(sessionId, layoutPane);
+      } else {
+        fitSessionToScreen(sessionId);
+      }
+    });
+    container.appendChild(overlay);
+    return overlay;
+  };
+
+  // Helper: position overlay above connection-status badge when it's visible
+  const positionOverlay = (el: HTMLElement): void => {
+    const connBadge = document.getElementById('connection-status');
+    const connVisible =
+      connBadge &&
+      (connBadge.classList.contains('disconnected') ||
+        connBadge.classList.contains('reconnecting') ||
+        connBadge.classList.contains('connecting'));
+    el.style.bottom = connVisible ? '36px' : '8px';
+  };
+
   if (scale < 1) {
-    // Use transform: scale() with explicit transform-origin for predictable behavior
+    // Too big — scale down (flexbox centers automatically)
     xterm.style.transform = `scale(${scale})`;
-    xterm.style.transformOrigin = 'top left';
+    xterm.style.transformOrigin = 'center center';
     container.classList.add('scaled');
 
-    if (!overlay) {
-      overlay = document.createElement('button');
-      overlay.className = 'scaled-overlay';
-      overlay.addEventListener('click', () => {
-        const sessionId = container.id.replace('terminal-', '');
-        if (!sessionId) return;
-        const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
-        if (layoutPane) {
-          fitTerminalToContainer(sessionId, layoutPane);
-        } else {
-          fitSessionToScreen(sessionId);
-        }
-      });
-      container.appendChild(overlay);
-    }
+    const el = ensureOverlay();
+    positionOverlay(el);
 
+    const pct = Math.round(scale * 100);
     const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
     let diagHtml = '';
     if (isDevMode() && screen) {
@@ -497,13 +502,30 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       const scaleTxt = scale.toPrecision(5);
       diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
     }
-    overlay.innerHTML = `${icon('resize')} Scaled view - click to resize${diagHtml}`;
-  } else {
+    const resizeHint = $isMainBrowser.get() ? ' — click to resize' : '';
+    el.innerHTML = `${icon('resize')} Scaled to ${pct}%${resizeHint}${diagHtml}`;
+  } else if (termWidth < availWidth - 2 || termHeight < availHeight - 2) {
+    // Fits but undersized — no transform, flexbox centers it
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
     container.classList.remove('scaled');
 
-    // Remove overlay if present
+    const usage = Math.max(termWidth / availWidth, termHeight / availHeight);
+    if (usage < 0.7) {
+      const el = ensureOverlay();
+      positionOverlay(el);
+      const fitHint = $isMainBrowser.get() ? ' — click to fit' : '';
+      el.innerHTML = `${icon('resize')} Sized for smaller screen${fitHint}`;
+    } else if (overlay) {
+      overlay.remove();
+      overlay = null;
+    }
+  } else {
+    // Perfect fit — no transform needed
+    xterm.style.transform = '';
+    xterm.style.transformOrigin = '';
+    container.classList.remove('scaled');
+
     if (overlay) {
       overlay.remove();
     }
@@ -542,10 +564,104 @@ export function rescaleAllTerminalsImmediate(): void {
 }
 
 /**
- * Set up resize observer to recalculate scaling when window resizes
+ * Auto-resize all visible terminals to fit their containers.
+ * For layout panes, resizes to pane size. For standalone, resizes to screen.
+ */
+function autoResizeAllTerminalsInternal(): void {
+  const resizedSessions = new Set<string>();
+
+  sessionTerminals.forEach((state, sessionId) => {
+    if (!state.opened) return;
+
+    const layoutPane = state.container.closest('.layout-leaf') as HTMLElement | null;
+    if (layoutPane) {
+      fitTerminalToContainer(sessionId, layoutPane);
+      resizedSessions.add(sessionId);
+    } else if (!state.container.classList.contains('hidden')) {
+      fitSessionToScreen(sessionId);
+      resizedSessions.add(sessionId);
+    }
+  });
+
+  resizeBackgroundSessions(resizedSessions);
+}
+
+/**
+ * Resize sessions that have no open terminal on this browser.
+ * Calculates optimal screen dimensions from cell measurements and sends
+ * resize commands directly to the server for any session not already handled.
+ */
+function resizeBackgroundSessions(alreadyResized: Set<string>): void {
+  if (!dom.terminalsArea) return;
+
+  const sessions = $sessions.get();
+  const allIds = Object.keys(sessions);
+  const unhandled = allIds.filter((id) => !alreadyResized.has(id));
+  if (unhandled.length === 0) return;
+
+  const fontSize = $currentSettings.get()?.fontSize ?? 14;
+  const measurement =
+    measureFromExistingTerminal(fontSize) ??
+    getCalibrationMeasurement() ??
+    measureFromFont(fontSize);
+
+  const rect = dom.terminalsArea.getBoundingClientRect();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+  const availHeight = rect.height - TERMINAL_PADDING;
+
+  const cols = Math.max(
+    MIN_TERMINAL_COLS,
+    Math.min(Math.floor(availWidth / measurement.cellWidth), MAX_TERMINAL_COLS),
+  );
+  const rows = Math.max(
+    MIN_TERMINAL_ROWS,
+    Math.min(Math.floor(availHeight / measurement.cellHeight), MAX_TERMINAL_ROWS),
+  );
+
+  for (const id of unhandled) {
+    const session = sessions[id];
+    if (session && (session.cols !== cols || session.rows !== rows)) {
+      sendResize(id, cols, rows);
+    }
+  }
+}
+
+let autoResizeTimer: number | undefined;
+
+/**
+ * Auto-resize all terminals (debounced 300ms, for window resize events).
+ * Only active when $isMainBrowser is true.
+ */
+export function autoResizeAllTerminals(): void {
+  if (autoResizeTimer !== undefined) {
+    clearTimeout(autoResizeTimer);
+  }
+  autoResizeTimer = window.setTimeout(() => {
+    autoResizeTimer = undefined;
+    autoResizeAllTerminalsInternal();
+  }, 300);
+}
+
+/**
+ * Auto-resize all terminals immediately (for sidebar/layout changes).
+ * Only active when $isMainBrowser is true.
+ */
+export function autoResizeAllTerminalsImmediate(): void {
+  autoResizeAllTerminalsInternal();
+}
+
+/**
+ * Set up resize observer to recalculate scaling when window resizes.
+ * Main browser: auto-resize terminals. Follower: CSS scale only.
  */
 export function setupResizeObserver(): void {
-  window.addEventListener('resize', rescaleAllTerminals);
+  window.addEventListener('resize', () => {
+    if ($isMainBrowser.get()) {
+      autoResizeAllTerminals();
+    } else {
+      rescaleAllTerminals();
+    }
+  });
 }
 
 /**

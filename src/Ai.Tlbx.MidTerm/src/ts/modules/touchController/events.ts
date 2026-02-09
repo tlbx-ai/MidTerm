@@ -7,13 +7,11 @@
 
 import { $activeSessionId } from '../../stores';
 import { sendInput } from '../comms/muxChannel';
-import { KEY_SEQUENCES, KEY_LABELS, SELECTORS, CSS_CLASSES } from './constants';
+import { KEY_SEQUENCES, KEY_LABELS } from './constants';
 import { toggleModifier, consumeModifiers, getModifierCode, type ModifierKey } from './modifiers';
 import { togglePopup } from './popups';
 
 let controllerElement: HTMLElement | null = null;
-let panelElement: HTMLElement | null = null;
-let expandButton: HTMLButtonElement | null = null;
 
 let longPressTimer: number | null = null;
 let alternatesPopup: HTMLElement | null = null;
@@ -45,8 +43,6 @@ const KEY_ALTERNATES: Record<string, string[]> = {
  */
 export function initEvents(container: HTMLElement): void {
   controllerElement = container;
-  panelElement = container.querySelector<HTMLElement>(SELECTORS.panel);
-  expandButton = container.querySelector<HTMLButtonElement>(SELECTORS.expandButton);
 
   container.addEventListener('touchstart', handleTouchStart, { passive: false });
   container.addEventListener('touchend', handleTouchEnd, { passive: false });
@@ -65,8 +61,6 @@ export function teardownEvents(): void {
     controllerElement.removeEventListener('click', handleClick);
   }
   controllerElement = null;
-  panelElement = null;
-  expandButton = null;
   cancelLongPress();
 }
 
@@ -137,15 +131,11 @@ function handleClick(event: MouseEvent): void {
 function processButtonAction(button: HTMLButtonElement): void {
   const modifier = button.dataset.modifier as ModifierKey | undefined;
   const key = button.dataset.key;
-  const action = button.dataset.action;
   const popup = button.dataset.popup;
-
   if (modifier) {
     handleModifierPress(modifier);
   } else if (popup) {
     togglePopup(popup);
-  } else if (action === 'expand') {
-    handleExpandToggle();
   } else if (key) {
     handleKeyPress(key);
   }
@@ -153,22 +143,6 @@ function processButtonAction(button: HTMLButtonElement): void {
 
 function handleModifierPress(modifier: ModifierKey): void {
   toggleModifier(modifier);
-}
-
-function handleExpandToggle(): void {
-  if (!panelElement || !expandButton || !controllerElement) return;
-
-  const isExpanded = panelElement.classList.toggle(CSS_CLASSES.expanded);
-  panelElement.setAttribute('aria-hidden', String(!isExpanded));
-  expandButton.setAttribute('aria-expanded', String(isExpanded));
-  document.body.classList.toggle(CSS_CLASSES.panelExpanded, isExpanded);
-
-  requestAnimationFrame(() => {
-    const terminalsArea = document.querySelector<HTMLElement>('.terminals-area');
-    if (terminalsArea && controllerElement) {
-      terminalsArea.style.paddingBottom = controllerElement.offsetHeight + 'px';
-    }
-  });
 }
 
 function handleKeyPress(key: string): void {

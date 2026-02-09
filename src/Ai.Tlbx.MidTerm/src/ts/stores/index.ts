@@ -281,3 +281,10 @@ export const $layout = atom<DisplayLayout>({ root: null });
 
 /** Focused session within the layout (for keyboard input routing) */
 export const $focusedSessionId = atom<string | null>(null);
+
+// =============================================================================
+// Main Browser Store
+// =============================================================================
+
+/** Whether this browser is the "main" browser that auto-resizes terminals (server-driven) */
+export const $isMainBrowser = atom<boolean>(false);

@@ -63,6 +63,10 @@ Binary size: 15-25MB depending on platform. Startup: instant. Memory: stable aft
 | UserEnumerationService | Windows RunAsUser feature |
 | ISecretStorage | Cross-platform secret storage (platform-specific implementations) |
 | SharedOutputBuffer | Zero-copy buffer sharing via reference counting |
+| ClipboardService | Cross-platform clipboard image injection (Alt+V) |
+| MainBrowserService | Multi-client resize coordination |
+| TmuxCommandDispatcher + subsystem | Tmux compatibility layer for AI tools |
+| TtyHostMuxConnectionManager | WebSocket mux connection management |
 
 ### Frontend: Vanilla TypeScript
 
@@ -197,6 +201,33 @@ Authentication, session management, and settings via REST endpoints.
 - `GET /api/files/*` — File content and metadata
 - `POST /api/files/*` — File operations (for File Radar integration)
 
+**Settings:**
+- `GET /api/settings` — Current public settings
+- `PUT /api/settings` — Update settings
+- `POST /api/settings/reload` — Reload from disk
+
+**Certificates:**
+- `GET /api/certificate/info` — Certificate details
+- `GET /api/certificate/download/pem` — Download PEM
+- `GET /api/certificate/download/mobileconfig` — iOS/macOS profile
+- `GET /api/certificate/share-packet` — Share packet with network endpoints
+
+**System:**
+- `GET /api/system` — Consolidated health (version, uptime, platform, PID)
+- `GET /api/networks` — Network interfaces with IPv4
+- `GET /api/paths` — Settings/secrets/cert/log directories
+- `GET /api/users` — System user enumeration
+
+**Tmux compatibility:**
+- `POST /api/tmux` — Tmux command dispatcher (null-delimited args)
+- `POST /api/tmux/layout` — Update layout state
+
+**Updates:**
+- `GET /api/update/check` — Check for updates
+- `POST /api/update/apply` — Download and apply update
+- `GET /api/update/result` — Get update result
+- `GET /api/update/log` — Tail update log
+
 **Diagnostics:**
 - `GET /api/logs/*` — Diagnostic log access
 
@@ -265,6 +296,11 @@ State is split between nanostores (reactive) and module-level variables (ephemer
 - `computed` for derived state (`$sessionList` auto-sorts when `$sessions` changes)
 
 **New stores for advanced features:**
+- `$currentSettings` — Current settings from server
+- `$layout` — Multi-pane layout tree
+- `$focusedSessionId` — Keyboard focus in layout
+- `$isMainBrowser` — Main browser flag
+- `$renamingSessionId` — Active rename tracking
 - `$processStates` — Per-session foreground process info
 - `$dataLossDetected` — Tracks sessions with buffer overflow
 
@@ -355,6 +391,39 @@ Tracks and displays currently running process in each terminal.
 - **Store**: `$processStates` for UI updates
 - **Tab titles**: `tabTitleMode: foregroundProcess` option
 
+### Manager Bar
+
+Customizable quick-action buttons below the terminal area. Clicking a button sends its text + Enter to the active terminal.
+
+- **Settings**: `managerBarEnabled`, `managerBarButtons`
+- **Module**: `managerBar/`
+
+### Multi-Pane Layout
+
+Tmux-like split-pane terminal arrangement. Dock, undock, swap sessions. Layout persisted to localStorage.
+
+- **Module**: `layout/` (`layoutRenderer.ts`, `dockOverlay.ts`, `layoutStore.ts`)
+
+### Tmux Compatibility
+
+Shim script injected into terminal sessions so AI coding tools that detect tmux can use MidTerm's split-pane API.
+
+- **Services**: 12 files under `Services/Tmux/`
+- **API**: `POST /api/tmux`
+- **Setting**: `tmuxCompatibility` (default: true)
+
+### PWA Support
+
+Installable web app via `site.webmanifest`. Standalone display mode, themed splash screen. Install button in Settings.
+
+### Clipboard Image Injection
+
+Alt+V pastes clipboard image into terminal via `ClipboardService`. Platform-specific: PowerShell (Windows), osascript (macOS), xclip (Linux).
+
+### Main Browser Coordination
+
+`MainBrowserService` tracks which client can auto-resize. First connection becomes main. Other connections scale terminals via CSS transform. Prevents unintended resize from secondary clients.
+
 ### Settings Synchronization
 
 Real-time settings sync across all connected clients via `/ws/settings` WebSocket.
@@ -371,6 +440,11 @@ Real-time settings sync across all connected clients via `/ws/settings` WebSocke
 | `runAsUser` / `runAsUserSid` | Windows service user impersonation |
 | `keyProtection` | OsProtected or LegacyPfx |
 | `updateChannel` | stable or dev |
+| `tmuxCompatibility` | Tmux shim injection for AI tools |
+| `managerBarEnabled` | Quick-action button bar |
+| `managerBarButtons` | Custom button definitions |
+| `scrollbarStyle` | Off / Hover / Always |
+| `smoothScrolling` | Smooth scroll animation |
 
 ## Design Philosophy
 
@@ -660,6 +734,12 @@ const { data, response } = await createSession({ cols: 120, rows: 30, shell: 'pw
 | Touch | `src/Ai.Tlbx.MidTerm/src/ts/modules/touchController/` |
 | File links | `src/Ai.Tlbx.MidTerm/src/ts/modules/fileLinks.ts` |
 | History (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/history/` |
+| Tmux services | `src/Ai.Tlbx.MidTerm/Services/Tmux/` |
+| Layout module | `src/Ai.Tlbx.MidTerm/src/ts/modules/layout/` |
+| Manager Bar module | `src/Ai.Tlbx.MidTerm/src/ts/modules/managerBar/` |
+| Clipboard | `src/Ai.Tlbx.MidTerm/Services/ClipboardService.cs` |
+| Main Browser | `src/Ai.Tlbx.MidTerm/Services/MainBrowserService.cs` |
+| PWA manifest | `src/Ai.Tlbx.MidTerm/src/static/site.webmanifest` |
 | API contract | `src/Ai.Tlbx.MidTerm.Api/` (Models, Endpoints, Handlers) |
 | OpenAPI generator | `src/Ai.Tlbx.MidTerm.OpenApi/Program.cs` |
 | OpenAPI spec | `src/Ai.Tlbx.MidTerm/openapi/openapi.json` |

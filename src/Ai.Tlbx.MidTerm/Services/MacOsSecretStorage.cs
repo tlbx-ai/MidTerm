@@ -73,6 +73,12 @@ public sealed class MacOsSecretStorage : ISecretStorage
 
         if (status == ErrSecDuplicateItem)
         {
+            // Release itemRef from failed add attempt (may be non-null on some macOS versions)
+            if (itemRef != IntPtr.Zero)
+            {
+                CFRelease(itemRef);
+            }
+
             // Item exists, find and update it
             status = SecKeychainFindGenericPassword(
                 IntPtr.Zero,

@@ -19,6 +19,7 @@
 
 param(
     [switch]$Publish,        # Enable Brotli compression for publish builds
+    [switch]$DevRelease,     # Include source maps in publish (for dev/prerelease builds)
     [string]$Version = "dev" # Version to inject into BUILD_VERSION
 )
 
@@ -117,13 +118,11 @@ Write-Host "Bundling with esbuild (version: $Version)..." -ForegroundColor Cyan
 
 $mainTs = Join-Path $TsSource "main.ts"
 $jsonVersion = "'""$Version""'"
-& npx esbuild $mainTs `
-    --bundle `
-    --minify `
-    --sourcemap=linked `
-    --outfile=$OutFile `
-    --target=es2020 `
-    "--define:BUILD_VERSION=$jsonVersion"
+$includeSourceMap = -not $Publish -or $DevRelease
+$sourcemapArg = if ($includeSourceMap) { "--sourcemap=linked" } else { $null }
+$esbuildArgs = @($mainTs, "--bundle", "--minify", "--outfile=$OutFile", "--target=es2020", "--define:BUILD_VERSION=$jsonVersion")
+if ($sourcemapArg) { $esbuildArgs += $sourcemapArg }
+& npx esbuild @esbuildArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "esbuild failed"

@@ -6,13 +6,7 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import {
-  THEMES,
-  MOBILE_BREAKPOINT,
-  TERMINAL_FONT_STACK,
-  ACTIVE_SCROLLBACK,
-  BACKGROUND_SCROLLBACK,
-} from '../../constants';
+import { THEMES, MOBILE_BREAKPOINT, TERMINAL_FONT_STACK } from '../../constants';
 import {
   sessionTerminals,
   pendingOutputFrames,
@@ -26,8 +20,13 @@ import {
 import { $activeSessionId, $currentSettings, $windowsBuildNumber } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync } from './scaling';
-import { setupFileDrop, handleClipboardPaste, sanitizePasteContent } from './fileDrop';
-import { isBracketedPasteEnabled, sendCommand } from '../comms';
+import {
+  setupFileDrop,
+  handleClipboardPaste,
+  handleNativeImagePaste,
+  sanitizePasteContent,
+} from './fileDrop';
+import { isBracketedPasteEnabled, sendCommand, sendInput, requestBufferRefresh } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
 import { Terminal, type ITerminalOptions } from '@xterm/xterm';
@@ -43,13 +42,17 @@ import {
   hideSearch,
   cleanupSearchForTerminal,
 } from './search';
+import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
+import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
 
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
+import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 
-// Forward declarations for functions from other modules
-let sendInput: (sessionId: string, data: string) => void = () => {};
 let showBellNotification: (sessionId: string) => void = () => {};
-let requestBufferRefresh: (sessionId: string) => void = () => {};
+
+export function setShowBellCallback(cb: (sessionId: string) => void): void {
+  showBellNotification = cb;
+}
 
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
@@ -60,6 +63,18 @@ let calibrationPromise: Promise<void> | null = null;
 
 // Debounce timer for focus operations
 let focusDebounceTimer: number | null = null;
+
+/**
+ * Reset the cursor blink timer on a terminal.
+ * Toggling cursorBlink forces xterm.js to reinitialize its blink handler,
+ * which fixes the cursor getting stuck in the invisible blink phase.
+ */
+export function refreshCursorBlink(terminal: Terminal): void {
+  if (terminal.options.cursorBlink) {
+    terminal.options.cursorBlink = false;
+    terminal.options.cursorBlink = true;
+  }
+}
 
 /**
  * Focus the active terminal, debounced to prevent rapid focus/blur cycles.
@@ -80,6 +95,7 @@ export function focusActiveTerminal(): void {
     const state = sessionTerminals.get(activeId);
     if (state?.opened) {
       state.terminal.focus();
+      refreshCursorBlink(state.terminal);
     }
   }, 16); // Single frame (60fps) prevents focus/blur thrashing
 }
@@ -101,19 +117,6 @@ function updateSessionNameAuto(sessionId: string, name: string): void {
   }, 500);
 
   pendingTitleUpdates.set(sessionId, timer);
-}
-
-/**
- * Register callbacks from other modules
- */
-export function registerTerminalCallbacks(callbacks: {
-  sendInput?: (sessionId: string, data: string) => void;
-  showBellNotification?: (sessionId: string) => void;
-  requestBufferRefresh?: (sessionId: string) => void;
-}): void {
-  if (callbacks.sendInput) sendInput = callbacks.sendInput;
-  if (callbacks.showBellNotification) showBellNotification = callbacks.showBellNotification;
-  if (callbacks.requestBufferRefresh) requestBufferRefresh = callbacks.requestBufferRefresh;
 }
 
 /**
@@ -180,8 +183,10 @@ export function createTerminalForSession(
   }
 
   // Create container
+  const scrollbarStyle = normalizeScrollbarStyle($currentSettings.get()?.scrollbarStyle);
   const container = document.createElement('div');
   container.className = 'terminal-container hidden';
+  applyTerminalScrollbarStyleClass(container, scrollbarStyle);
   container.id = 'terminal-' + sessionId;
   dom.terminalsArea?.appendChild(container);
 
@@ -297,6 +302,7 @@ export function createTerminalForSession(
       requestAnimationFrame(() => {
         applyTerminalScalingSync(state);
         setupTerminalEvents(sessionId, terminal, container);
+        focusActiveTerminal();
       });
     });
   });
@@ -350,6 +356,7 @@ export function writeOutputFrame(
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             applyTerminalScalingSync(state);
+            focusActiveTerminal();
           });
         });
       } catch {
@@ -376,6 +383,11 @@ export function setupTerminalEvents(
   terminal: Terminal,
   container: HTMLDivElement,
 ): void {
+  const canUseAsyncClipboard = (): boolean =>
+    window.isSecureContext &&
+    typeof navigator.clipboard !== 'undefined' &&
+    typeof navigator.clipboard.readText === 'function';
+
   // Collect disposables for cleanup
   const disposables: Array<{ dispose: () => void }> = [];
 
@@ -428,43 +440,40 @@ export function setupTerminalEvents(
 
     const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
 
-    if (style === 'windows') {
-      // Ctrl+C: copy if selected, else let terminal handle (SIGINT)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'c') {
-        if (terminal.hasSelection()) {
-          navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
-          terminal.clearSelection();
-          return false;
-        }
-        return true;
-      }
-      // Ctrl+V: paste (images uploaded, text pasted)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'v') {
-        if (window.isSecureContext) {
-          handleClipboardPaste(sessionId);
-          return false;
-        }
-        // Non-secure context: let browser fire paste event, handled by pasteHandler below
-        return true;
-      }
-    } else {
-      // Unix: Ctrl+Shift+C to copy
-      if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
-        if (terminal.hasSelection()) {
-          navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
-          terminal.clearSelection();
-        }
+    // Copy shortcut remains style-specific to preserve existing terminal behavior.
+    if (isCopyShortcut(e, style)) {
+      if (terminal.hasSelection()) {
+        navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
+        terminal.clearSelection();
         return false;
       }
-      // Unix: Ctrl+Shift+V to paste (images uploaded, text pasted)
-      if (e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
-        if (window.isSecureContext) {
-          handleClipboardPaste(sessionId);
-          return false;
-        }
-        // Non-secure context: let browser fire paste event, handled by pasteHandler below
-        return true;
+      // No selection: let terminal handle Ctrl+C (SIGINT).
+      return true;
+    }
+
+    // Alt+V: native clipboard image paste for terminal apps (Codex CLI, etc.)
+    // Uploads image to server, sets OS clipboard, injects \x1bv into PTY.
+    if (isNativeImagePasteShortcut(e)) {
+      if (canUseAsyncClipboard()) {
+        void handleNativeImagePaste(sessionId).then((result) => {
+          if (result !== 'image') {
+            sendInput(sessionId, '\x1bv');
+          }
+        });
+        return false;
       }
+      return true;
+    }
+
+    // Unified paste aliases: Ctrl+V, Cmd+V, Ctrl+Shift+V.
+    if (isPasteShortcut(e)) {
+      if (canUseAsyncClipboard()) {
+        void handleClipboardPaste(sessionId);
+        return false;
+      }
+      // Clipboard API unavailable (HTTP/untrusted/unsupported):
+      // pass through so native browser paste and terminal key handling still work.
+      return true;
     }
 
     // Ctrl+F / Cmd+F: Open search
@@ -503,11 +512,13 @@ export function setupTerminalEvents(
   container.addEventListener('paste', pasteHandler, true);
 
   // Right-click paste (images uploaded, text pasted)
+  // During touch selection, let native context menu show (Copy) instead of pasting
   const contextMenuHandler = (e: MouseEvent) => {
+    if (isTouchSelecting(sessionId)) return;
     const settings = $currentSettings.get();
     if (!settings || settings.rightClickPaste !== false) {
       e.preventDefault();
-      handleClipboardPaste(sessionId);
+      void handleClipboardPaste(sessionId);
     }
   };
 
@@ -559,6 +570,9 @@ export function setupTerminalEvents(
     state.mouseMoveHandler = mouseMoveHandler;
     state.mouseLeaveHandler = mouseLeaveHandler;
   }
+
+  // Touch scrolling overlay (mobile only — scroll-first, long-press to select)
+  initTouchScrolling(sessionId, terminal, container);
 }
 
 /**
@@ -602,6 +616,9 @@ export function destroyTerminalForSession(sessionId: string): void {
     pendingTitleUpdates.delete(sessionId);
   }
 
+  // Clean up touch scrolling overlay
+  teardownTouchScrolling(sessionId);
+
   // Clean up WebGL context tracking
   if (state.hasWebgl) {
     terminalsWithWebgl.delete(sessionId);
@@ -615,22 +632,6 @@ export function destroyTerminalForSession(sessionId: string): void {
   sessionTerminals.delete(sessionId);
   pendingOutputFrames.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
-}
-
-/**
- * Adjust terminal scrollback based on active/background state.
- * Active terminals get full scrollback, background terminals get reduced
- * scrollback to save memory when many terminals are open.
- */
-export function setTerminalScrollback(sessionId: string, isActive: boolean): void {
-  const state = sessionTerminals.get(sessionId);
-  if (!state?.terminal) return;
-
-  const scrollback = isActive
-    ? ($currentSettings.get()?.scrollbackLines ?? ACTIVE_SCROLLBACK)
-    : BACKGROUND_SCROLLBACK;
-
-  state.terminal.options.scrollback = scrollback;
 }
 
 // WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin

@@ -34,6 +34,7 @@ public sealed class MidTermSettings
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
+    public ScrollbarStyleSetting ScrollbarStyle { get; set; } = ScrollbarStyleSetting.Off;
     public bool UseWebGL { get; set; } = true;
 
     // Terminal Behavior
@@ -46,6 +47,13 @@ public sealed class MidTermSettings
 
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
+
+    // Middle Manager Bar - Quick-action buttons below terminal area
+    public bool ManagerBarEnabled { get; set; } = true;
+    public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];
+
+    // Tmux Compatibility - Injects tmux shim into spawned terminals for AI tool integration
+    public bool TmuxCompatibility { get; set; } = true;
 
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }

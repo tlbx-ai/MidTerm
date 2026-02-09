@@ -7,6 +7,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost.Pty;
 
 public sealed class UnixPty : IPtyConnection
 {
+    private static readonly object s_ptsnameLock = new();
     private readonly object _lock = new();
     private int _masterFd = -1;
     private System.Diagnostics.Process? _process;
@@ -120,12 +121,16 @@ public sealed class UnixPty : IPtyConnection
             throw new InvalidOperationException($"unlockpt failed: {Marshal.GetLastWin32Error()}");
         }
 
-        var slaveNamePtr = ptsname(_masterFd);
-        if (slaveNamePtr == IntPtr.Zero)
+        string slaveName;
+        lock (s_ptsnameLock)
         {
-            throw new InvalidOperationException("ptsname failed");
+            var slaveNamePtr = ptsname(_masterFd);
+            if (slaveNamePtr == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("ptsname failed");
+            }
+            slaveName = Marshal.PtrToStringAnsi(slaveNamePtr)!;
         }
-        var slaveName = Marshal.PtrToStringAnsi(slaveNamePtr)!;
 
         cols = Math.Clamp(cols, 1, 500);
         rows = Math.Clamp(rows, 1, 500);
@@ -329,7 +334,7 @@ public sealed class UnixPty : IPtyConnection
         : 0x5414;
 
     private const int O_RDWR = 2;
-    private const int O_NOCTTY = 256;
+    private static readonly int O_NOCTTY = OperatingSystem.IsMacOS() ? 0x20000 : 256;
 
     [DllImport("libc", SetLastError = true)]
     private static extern int posix_openpt(int flags);

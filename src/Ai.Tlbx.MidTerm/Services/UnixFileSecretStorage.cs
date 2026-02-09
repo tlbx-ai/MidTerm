@@ -79,6 +79,7 @@ public sealed class UnixFileSecretStorage : ISecretStorage
             if (data is not null)
             {
                 _cache = data;
+                Log.Info(() => $"Secrets loaded from file-based storage: {_secretsPath}");
             }
         }
         catch (Exception ex)
@@ -102,18 +103,23 @@ public sealed class UnixFileSecretStorage : ISecretStorage
 
             var json = JsonSerializer.Serialize(_cache, SecretsJsonContext.Default.DictionaryStringString);
 
-            // Use FileStream with sharing to allow concurrent access
-            using var stream = new FileStream(_secretsPath, FileMode.Create, FileAccess.Write, FileShare.Read);
-            using var writer = new StreamWriter(stream);
-            writer.Write(json);
+            // Atomic write: write to temp file, set permissions, then rename
+            // This prevents data loss if the process crashes mid-write
+            var tmpPath = _secretsPath + ".tmp";
+            using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(stream))
+            {
+                writer.Write(json);
+            }
 
-            // Set file permissions to owner read/write only (0600)
-            var result = chmod(_secretsPath, OwnerReadWrite);
+            var result = chmod(tmpPath, OwnerReadWrite);
             if (result != 0)
             {
                 var errno = Marshal.GetLastWin32Error();
-                throw new InvalidOperationException($"Failed to set permissions on secrets file '{_secretsPath}': errno {errno}");
+                throw new InvalidOperationException($"Failed to set permissions on secrets file '{tmpPath}': errno {errno}");
             }
+
+            File.Move(tmpPath, _secretsPath, overwrite: true);
         }
         catch (Exception ex)
         {

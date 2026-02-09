@@ -56,3 +56,10 @@ public enum TabTitleModeSetting
     [JsonStringEnumMemberName("terminalTitle")] TerminalTitle,
     [JsonStringEnumMemberName("foregroundProcess")] ForegroundProcess
 }
+
+public enum ScrollbarStyleSetting
+{
+    [JsonStringEnumMemberName("off")] Off,
+    [JsonStringEnumMemberName("hover")] Hover,
+    [JsonStringEnumMemberName("always")] Always
+}

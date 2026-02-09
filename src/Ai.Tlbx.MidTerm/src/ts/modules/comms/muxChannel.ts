@@ -38,6 +38,9 @@ import {
   createWsUrl,
   closeWebSocket,
 } from '../../utils';
+import { handleStateUpdate } from './stateChannel';
+import { getSessions } from '../../api/client';
+import { applyTerminalScaling } from '../terminal/scaling';
 import {
   muxWs,
   muxReconnectTimer,
@@ -61,8 +64,26 @@ import {
 
 const log = createLogger('mux');
 
-// Cached TextDecoder to avoid allocation per frame
-const textDecoder = new TextDecoder();
+// \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
+// Followed by 0x68 ('h') = enable, 0x6c ('l') = disable
+function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
+  for (let i = 0, end = data.length - 7; i <= end; i++) {
+    if (
+      data[i] === 0x1b &&
+      data[i + 1] === 0x5b &&
+      data[i + 2] === 0x3f &&
+      data[i + 3] === 0x32 &&
+      data[i + 4] === 0x30 &&
+      data[i + 5] === 0x30 &&
+      data[i + 6] === 0x34
+    ) {
+      const mode = data[i + 7];
+      if (mode === 0x68) bracketedPasteState.set(sessionId, true);
+      else if (mode === 0x6c) bracketedPasteState.set(sessionId, false);
+      i += 7;
+    }
+  }
+}
 
 // =============================================================================
 // Input Buffering (Issue #2: Lost keystrokes during reconnection)
@@ -82,14 +103,10 @@ const MAX_PENDING_INPUT = 100;
  */
 async function refreshSessionList(): Promise<void> {
   try {
-    const { getSessions } = await import('../../api/client');
     const { data, response } = await getSessions();
     if (!response.ok || !data) return;
 
     const sessions = data.sessions ?? [];
-
-    // Import dynamically to avoid circular dependency
-    const { handleStateUpdate } = await import('./stateChannel');
     handleStateUpdate(sessions);
     log.info(() => `Refreshed session list: ${sessions.length} sessions`);
   } catch (e) {
@@ -221,21 +238,15 @@ function measureOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 
-// Forward declarations for functions from other modules
-let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
-
-/**
- * Register callbacks from other modules
- */
-export function registerMuxCallbacks(callbacks: {
-  applyTerminalScaling?: (sessionId: string, state: TerminalState) => void;
-}): void {
-  if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
-}
-
 // =============================================================================
-// Strictly Ordered Output Queue
+// Priority Output Queue
 // =============================================================================
+//
+// Active session frames are processed first (tight loop, minimum latency).
+// Background session frames are processed with periodic yielding to keep
+// the browser responsive (keyboard input, paint, rAF).
+// Per-session ordering is preserved; cross-session reordering is safe since
+// each session has its own xterm instance.
 
 interface OutputFrameItem {
   sessionId: string;
@@ -245,17 +256,13 @@ interface OutputFrameItem {
 
 const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
-// Compact array when this many items have been processed (amortizes O(n) splice cost)
 const COMPACT_THRESHOLD = 1000;
+const YIELD_BUDGET_MS = 8;
 
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
 let queueIndex = 0;
 
-/**
- * Compact the queue by removing processed items.
- * Called periodically to bound memory usage during high throughput.
- */
 function compactQueue(): void {
   if (queueIndex > 0) {
     outputQueue.splice(0, queueIndex);
@@ -263,11 +270,10 @@ function compactQueue(): void {
   }
 }
 
-/**
- * Queue an output frame and trigger processing.
- * ALL frames go through this queue to guarantee strict ordering.
- * Drops oldest unprocessed frames when queue is full to prevent OOM.
- */
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const pendingCount = outputQueue.length - queueIndex;
   if (pendingCount >= MAX_QUEUE_SIZE) {
@@ -275,12 +281,10 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
     log.warn(
       () => `Output queue full, dropping oldest frame for session ${droppedItem?.sessionId}`,
     );
-    // Notify UI of data loss
     if (droppedItem) {
       $dataLossDetected.set({ sessionId: droppedItem.sessionId, timestamp: Date.now() });
     }
-    queueIndex++; // Skip oldest unprocessed frame
-    // Compact to actually free memory
+    queueIndex++;
     if (queueIndex >= COMPACT_THRESHOLD) {
       compactQueue();
     }
@@ -289,26 +293,38 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   processOutputQueue();
 }
 
-/**
- * Process output frames strictly in order.
- * Frames are processed one at a time - compressed frames block until decompressed.
- * Uses cursor-based indexing with periodic compaction for O(1) amortized dequeue.
- */
 async function processOutputQueue(): Promise<void> {
   if (processingQueue) return;
   processingQueue = true;
 
   try {
     while (queueIndex < outputQueue.length) {
-      const item = outputQueue[queueIndex++]!;
-      await processOneFrame(item);
+      const activeId = $activeSessionId.get();
 
-      // Compact periodically to bound memory during sustained high throughput
-      if (queueIndex >= COMPACT_THRESHOLD) {
-        compactQueue();
+      // Phase 1: process active session frames immediately (low latency)
+      while (queueIndex < outputQueue.length) {
+        const item = outputQueue[queueIndex];
+        if (!item || item.sessionId !== activeId) break;
+        queueIndex++;
+        await processOneFrame(item);
+        if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
+      }
+
+      // Phase 2: process background frames with yielding
+      let batchStart = performance.now();
+      while (queueIndex < outputQueue.length) {
+        const item = outputQueue[queueIndex];
+        if (item && item.sessionId === $activeSessionId.get()) break;
+        queueIndex++;
+        if (item) await processOneFrame(item);
+        if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
+
+        if (performance.now() - batchStart > YIELD_BUDGET_MS) {
+          await yieldToMain();
+          batchStart = performance.now();
+        }
       }
     }
-    // Clear any remaining processed items
     outputQueue.length = 0;
     queueIndex = 0;
   } finally {
@@ -386,17 +402,10 @@ function writeToTerminal(
   rows: number,
   data: Uint8Array,
 ): void {
-  // Track bracketed paste mode by detecting escape sequences
-  if (data.length > 0) {
-    const text = textDecoder.decode(data);
-    if (text.includes('\x1b[?2004h')) {
-      bracketedPasteState.set(sessionId, true);
-    }
-    if (text.includes('\x1b[?2004l')) {
-      bracketedPasteState.set(sessionId, false);
-    }
+  // Track bracketed paste mode by scanning raw bytes (no string allocation)
+  if (data.length >= 8) {
+    scanBracketedPaste(data, sessionId);
   }
-
   // Resize if dimensions are valid and different
   if (cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened) {
     const currentCols = state.terminal.cols;
@@ -418,8 +427,10 @@ function writeToTerminal(
   // Always write data if present
   if (data.length > 0) {
     state.terminal.write(data);
-    // Scan for file paths (File Radar feature)
-    scanOutputForPaths(sessionId, data);
+    // Scan for file paths only on active session (avoids decode+concat for background frames)
+    if (sessionId === $activeSessionId.get()) {
+      scanOutputForPaths(sessionId, data);
+    }
   }
 
   // DISABLED: Was causing cursor to disappear in some cases
@@ -533,7 +544,7 @@ export function connectMuxWebSocket(): void {
     }
 
     const sessionId = decodeSessionId(data, 1);
-    const payload = data.slice(MUX_HEADER_SIZE);
+    const payload = data.subarray(MUX_HEADER_SIZE); // zero-copy view
 
     if (type === MUX_TYPE_RESYNC) {
       // Server is resyncing due to dropped frames - clear all terminals
@@ -553,6 +564,7 @@ export function connectMuxWebSocket(): void {
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
       measureOutputRtt(sessionId);
       // Queue ALL output frames to guarantee strict ordering
+      // .slice() here is needed — WS may recycle the ArrayBuffer
       if (payload.length >= 4) {
         queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
       }
@@ -567,8 +579,8 @@ export function connectMuxWebSocket(): void {
     } else if (type === MUX_TYPE_PONG) {
       if (payload.length >= 9 && pongCallback) {
         const pongMode = payload[0]!;
-        const timestampBytes = payload.slice(1, 9);
-        const timestamp = new Float64Array(timestampBytes.buffer, timestampBytes.byteOffset, 1)[0]!;
+        const timestampBytes = payload.slice(1, 9); // must copy — Float64Array needs 8-byte alignment
+        const timestamp = new Float64Array(timestampBytes.buffer)[0]!;
         const rtt = performance.now() - timestamp;
         // Server pong (mode 0) includes diagnostics: [flushDelay:2][serverRtt:2]
         if (pongMode === 0 && payload.length >= 13) {

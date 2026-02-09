@@ -25,6 +25,7 @@
     <Compile Remove="..\Ai.Tlbx.MidTerm\Models\WebSocketCommand.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm\Settings\SettingsEnums.cs" LinkBase="Settings" />
     <Compile Include="..\Ai.Tlbx.MidTerm\Settings\MidTermSettingsPublic.cs" LinkBase="Settings" />
+    <Compile Include="..\Ai.Tlbx.MidTerm\Settings\ManagerBarButton.cs" LinkBase="Settings" />
   </ItemGroup>
 
 </Project>

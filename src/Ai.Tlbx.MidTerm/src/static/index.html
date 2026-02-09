@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=overlays-content" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content" />
     <title>MidTerm</title>
 
     <!-- Favicons -->
@@ -10,6 +10,9 @@
     <link rel="apple-touch-icon" sizes="192x192" href="/android-chrome-192x192.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#0D0E14" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MidTerm" />
 
     <!-- Preload terminal fonts for instant availability -->
     <link rel="preload" href="fonts/CascadiaCode-Regular.woff2" as="font" type="font/woff2" crossorigin />
@@ -39,6 +42,7 @@
                     <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" title="Hide sidebar"><span class="icon">&#xe913;</span></button>
                     <button class="sidebar-btn btn-history" id="btn-history" title="Quick Launch"><span class="icon">&#xe997;</span></button>
                     <button class="sidebar-btn" id="btn-settings" title="Settings"><span class="icon">&#xe991;</span></button>
+                    <button class="sidebar-btn" id="btn-main-browser" title="Following browser (scale only)"><span class="icon">&#xe989;</span></button>
                     <button class="sidebar-btn primary" id="btn-new-session" title="New Terminal"><span class="icon">&#xea81;</span></button>
                 </div>
             </div>
@@ -138,7 +142,6 @@
             <div class="title-bar-buttons">
                 <button class="title-bar-btn" id="btn-expand-sidebar" title="Show sidebar"><span class="icon">&#xe910;</span></button>
                 <button class="title-bar-btn" id="btn-rename-titlebar" title="Rename"><span class="icon">&#xe91f;</span></button>
-                <button class="title-bar-btn" id="btn-resize-titlebar" title="Fit to screen"><span class="icon">&#xe989;</span></button>
             </div>
             <div class="title-bar-titles">
                 <span class="title-bar-custom" id="title-bar-custom"></span>
@@ -152,8 +155,8 @@
                 <button class="topbar-btn topbar-hamburger" id="btn-hamburger" title="Sessions"><span class="icon">&#xe919;</span></button>
                 <div class="topbar-title" id="mobile-title">MidTerm</div>
                 <div class="topbar-actions no-terminal" id="topbar-actions">
+                    <button class="topbar-btn topbar-action topbar-fullscreen" id="btn-fullscreen-mobile" title="Fullscreen"><span class="icon">&#xe90c;</span></button>
                     <button class="topbar-btn topbar-action topbar-ctrlc" id="btn-ctrlc-mobile" title="Send Ctrl+C"><span class="icon">&#xe9b5;</span></button>
-                    <button class="topbar-btn topbar-action" id="btn-resize-mobile" title="Fit to screen"><span class="icon">&#xe989;</span></button>
                     <button class="topbar-btn topbar-action" id="btn-rename-mobile" title="Rename"><span class="icon">&#xe91f;</span></button>
                     <button class="topbar-btn topbar-action topbar-close" id="btn-close-mobile" title="Close terminal"><span class="icon">&#xe909;</span></button>
                     <button class="topbar-btn topbar-add" id="btn-new-session-mobile" title="New Terminal"><span class="icon">&#xea81;</span></button>
@@ -393,6 +396,14 @@
                                             <option value="21">Maximum (21:1)</option>
                                         </select>
                                     </div>
+                                    <div class="setting-row">
+                                        <label for="setting-scrollbar-style">Terminal Scrollbar</label>
+                                        <select id="setting-scrollbar-style">
+                                            <option value="off">Off</option>
+                                            <option value="hover">Hover</option>
+                                            <option value="always">Always</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </section>
 
@@ -471,6 +482,23 @@
                                         <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely.">File Radar</label>
                                         <input type="checkbox" id="setting-file-radar" />
                                     </div>
+                                    <div class="setting-row">
+                                        <label for="setting-manager-bar">Middle Manager Bar</label>
+                                        <input type="checkbox" id="setting-manager-bar" />
+                                    </div>
+                                    <div class="setting-row hidden" id="pwa-install-row">
+                                        <label>Install as App</label>
+                                        <button id="btn-install-pwa" class="btn-secondary" title="Install MidTerm as App">Install</button>
+                                    </div>
+                                </div>
+                                <!-- Integrations -->
+                                <div class="settings-section">
+                                    <h3>Integrations</h3>
+                                    <div class="setting-row">
+                                        <label for="setting-tmux-compatibility" title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH).">Tmux Compatibility</label>
+                                        <input type="checkbox" id="setting-tmux-compatibility" />
+                                    </div>
+                                    <p class="setting-hint">Enables AI coding tools to manage panes via tmux commands. Disable if you SSH into remote hosts that run real tmux. Requires restart.</p>
                                 </div>
                             </section>
 
@@ -612,6 +640,13 @@
                 </div>
             </div>
 
+            <!-- Middle Manager Bar -->
+            <div id="manager-bar" class="manager-bar">
+                <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
+                <button class="manager-bar-add" id="manager-bar-add" title="Add button">+</button>
+                <button class="manager-bar-help">?</button>
+            </div>
+
             <!-- File Viewer Dock Panel -->
             <aside id="file-viewer-dock" class="file-viewer-dock hidden">
                 <div class="file-viewer-dock-header">
@@ -639,6 +674,35 @@
                 </div>
                 <div class="file-viewer-dock-body"></div>
             </aside>
+
+            <!-- Touch Controller Bar (mobile only) -->
+            <div id="touch-controller" class="touch-controller" aria-label="Terminal touch controls">
+                <div class="touch-bar-main">
+                    <div class="touch-group touch-modifiers">
+                        <button class="touch-key touch-modifier" data-modifier="ctrl" aria-pressed="false">Ctrl</button>
+                        <button class="touch-key touch-modifier" data-modifier="alt" aria-pressed="false">Alt</button>
+                        <button class="touch-key touch-modifier" data-modifier="shift" aria-pressed="false">Shft</button>
+                    </div>
+                    <div class="touch-group touch-arrows">
+                        <button class="touch-key" data-key="left" aria-label="Arrow left">&#9664;</button>
+                        <button class="touch-key" data-key="up" aria-label="Arrow up">&#9650;</button>
+                        <button class="touch-key" data-key="down" aria-label="Arrow down">&#9660;</button>
+                        <button class="touch-key" data-key="right" aria-label="Arrow right">&#9654;</button>
+                    </div>
+                    <div class="touch-group touch-categories">
+                        <button class="touch-key touch-cat" data-popup="nav" aria-haspopup="true" aria-expanded="false">Nav</button>
+                        <button class="touch-key touch-cat" data-popup="sym" aria-haspopup="true" aria-expanded="false">Sym</button>
+                        <button class="touch-key touch-cat" data-popup="fn" aria-haspopup="true" aria-expanded="false">Fn</button>
+                        <button class="touch-key touch-cat" data-popup="ctrl" aria-haspopup="true" aria-expanded="false">^+</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Touch Popups (fixed positioning, rendered by JS) -->
+            <div id="touch-popup-nav" class="touch-popup" hidden></div>
+            <div id="touch-popup-fn" class="touch-popup" hidden></div>
+            <div id="touch-popup-sym" class="touch-popup" hidden></div>
+            <div id="touch-popup-ctrl" class="touch-popup" hidden></div>
         </div>
     </div>
 
@@ -728,55 +792,6 @@
         </div>
     </div>
 
-    <!-- Touch Controller Bar (mobile only) -->
-    <div id="touch-controller" class="touch-controller" aria-label="Terminal touch controls">
-        <!-- Favorites row (dynamically rendered) -->
-        <div id="touch-favorites" class="touch-favorites"></div>
-
-        <!-- Main bar -->
-        <div class="touch-bar-main">
-            <div class="touch-group touch-modifiers">
-                <button class="touch-key touch-modifier" data-modifier="ctrl" aria-pressed="false">Ctrl</button>
-                <button class="touch-key touch-modifier" data-modifier="alt" aria-pressed="false">Alt</button>
-                <button class="touch-key touch-modifier" data-modifier="shift" aria-pressed="false">Shft</button>
-            </div>
-            <div class="touch-group touch-arrows">
-                <button class="touch-key" data-key="up" aria-label="Arrow up">&#9650;</button>
-                <button class="touch-key" data-key="left" aria-label="Arrow left">&#9664;</button>
-                <button class="touch-key" data-key="down" aria-label="Arrow down">&#9660;</button>
-                <button class="touch-key" data-key="right" aria-label="Arrow right">&#9654;</button>
-            </div>
-            <div class="touch-group touch-categories">
-                <button class="touch-key touch-cat" data-popup="fn" aria-haspopup="true" aria-expanded="false">Fn</button>
-                <button class="touch-key touch-cat" data-popup="sym" aria-haspopup="true" aria-expanded="false">Sym</button>
-                <button class="touch-key touch-cat" data-popup="ctrl" aria-haspopup="true" aria-expanded="false">^+</button>
-                <button class="touch-key touch-expand" data-action="expand" aria-expanded="false" aria-controls="touch-panel">
-                    <span class="expand-icon">&#8943;</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- Compact panel (Nav/Edit keys only) -->
-        <div id="touch-panel" class="touch-panel" aria-hidden="true">
-            <div class="touch-panel-row">
-                <button class="touch-key" data-key="tab">Tab</button>
-                <button class="touch-key" data-key="esc">Esc</button>
-                <button class="touch-key" data-key="enter">&#8629;</button>
-                <button class="touch-key" data-key="backspace">&#9003;</button>
-            </div>
-            <div class="touch-panel-row">
-                <button class="touch-key" data-key="home">Home</button>
-                <button class="touch-key" data-key="end">End</button>
-                <button class="touch-key" data-key="pgup">PgUp</button>
-                <button class="touch-key" data-key="pgdn">PgDn</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Touch Popups (positioned absolutely, rendered by JS) -->
-    <div id="touch-popup-fn" class="touch-popup" hidden></div>
-    <div id="touch-popup-sym" class="touch-popup" hidden></div>
-    <div id="touch-popup-ctrl" class="touch-popup" hidden></div>
 
     <script src="js/webAudioAccess.js"></script>
     <script src="js/terminal.min.js"></script>

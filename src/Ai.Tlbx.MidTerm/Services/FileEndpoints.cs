@@ -31,11 +31,10 @@ public static class FileEndpoints
         app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
         {
             var results = new Dictionary<string, FilePathInfo>();
-            var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+            var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
 
             foreach (var path in request.Paths)
             {
-                // For check, we verify the path is accessible before returning info
                 if (!string.IsNullOrEmpty(sessionId) &&
                     !IsPathAccessible(sessionId, path, workingDir, allowlistService))
                 {
@@ -43,7 +42,7 @@ public static class FileEndpoints
                     continue;
                 }
 
-                results[path] = await GetFileInfoAsync(path);
+                results[path] = GetFileInfo(path);
             }
 
             return Results.Json(
@@ -51,18 +50,18 @@ public static class FileEndpoints
                 AppJsonContext.Default.FileCheckResponse);
         });
 
-        app.MapGet("/api/files/list", (string path, string? sessionId) =>
+        app.MapGet("/api/files/list", async (string path, string? sessionId) =>
         {
             if (!ValidatePath(path, out var errorResult))
             {
                 return errorResult!;
             }
 
-            var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+            var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
             if (!string.IsNullOrEmpty(sessionId) &&
                 !IsPathAccessible(sessionId, path, workingDir, allowlistService))
             {
-                return Results.Forbid();
+                return Results.StatusCode(403);
             }
 
             var fullPath = Path.GetFullPath(path);
@@ -78,26 +77,34 @@ public static class FileEndpoints
 
                 foreach (var dir in Directory.EnumerateDirectories(fullPath))
                 {
-                    var dirInfo = new DirectoryInfo(dir);
-                    entries.Add(new DirectoryEntry
+                    try
                     {
-                        Name = dirInfo.Name,
-                        IsDirectory = true,
-                        Modified = dirInfo.LastWriteTimeUtc
-                    });
+                        var dirInfo = new DirectoryInfo(dir);
+                        entries.Add(new DirectoryEntry
+                        {
+                            Name = dirInfo.Name,
+                            IsDirectory = true,
+                            Modified = dirInfo.LastWriteTimeUtc
+                        });
+                    }
+                    catch { }
                 }
 
                 foreach (var file in Directory.EnumerateFiles(fullPath))
                 {
-                    var fileInfo = new FileInfo(file);
-                    entries.Add(new DirectoryEntry
+                    try
                     {
-                        Name = fileInfo.Name,
-                        IsDirectory = false,
-                        Size = fileInfo.Length,
-                        Modified = fileInfo.LastWriteTimeUtc,
-                        MimeType = GetMimeType(fileInfo.Name)
-                    });
+                        var fileInfo = new FileInfo(file);
+                        entries.Add(new DirectoryEntry
+                        {
+                            Name = fileInfo.Name,
+                            IsDirectory = false,
+                            Size = fileInfo.Length,
+                            Modified = fileInfo.LastWriteTimeUtc,
+                            MimeType = GetMimeType(fileInfo.Name)
+                        });
+                    }
+                    catch { }
                 }
 
                 entries = entries
@@ -111,7 +118,7 @@ public static class FileEndpoints
             }
             catch (UnauthorizedAccessException)
             {
-                return Results.Forbid();
+                return Results.StatusCode(403);
             }
             catch (IOException ex)
             {
@@ -119,14 +126,14 @@ public static class FileEndpoints
             }
         });
 
-        app.MapGet("/api/files/view", (string path, string? sessionId) =>
+        app.MapGet("/api/files/view", async (string path, string? sessionId) =>
         {
-            return ServeFile(path, inline: true, sessionId, sessionManager, allowlistService);
+            return await ServeFileAsync(path, inline: true, sessionId, sessionManager, allowlistService);
         });
 
-        app.MapGet("/api/files/download", (string path, string? sessionId) =>
+        app.MapGet("/api/files/download", async (string path, string? sessionId) =>
         {
-            return ServeFile(path, inline: false, sessionId, sessionManager, allowlistService);
+            return await ServeFileAsync(path, inline: false, sessionId, sessionManager, allowlistService);
         });
 
         // Resolve relative path against session's working directory
@@ -153,6 +160,7 @@ public static class FileEndpoints
                 var exactPath = Path.GetFullPath(Path.Combine(cwd, tryPath));
                 if (IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
                 {
+                    allowlistService.RegisterPath(sessionId, exactPath);
                     return Results.Json(BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
                 }
             }
@@ -165,6 +173,7 @@ public static class FileEndpoints
                     var found = SearchTree(cwd, tryPath, maxDepth: 5);
                     if (found is not null && IsWithinDirectory(found, cwd))
                     {
+                        allowlistService.RegisterPath(sessionId, found);
                         return Results.Json(BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
                     }
                 }
@@ -174,7 +183,7 @@ public static class FileEndpoints
         });
     }
 
-    private static IEnumerable<string> GetSlashVariants(string path)
+    internal static IEnumerable<string> GetSlashVariants(string path)
     {
         yield return path;
 
@@ -197,38 +206,73 @@ public static class FileEndpoints
         }
     }
 
-    private static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
+    private static readonly HashSet<string> _skipDirectories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "node_modules", ".git", "bin", "obj", "__pycache__", ".next",
+        ".nuget", "packages", ".vs", ".idea", ".cache", ".npm", ".yarn", "vendor"
+    };
+
+    internal static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
     {
         var hasDirectory = searchPattern.Contains('/') || searchPattern.Contains('\\');
         var normalizedPattern = searchPattern.Replace('\\', '/');
 
         try
         {
-            var options = new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                MaxRecursionDepth = maxDepth,
-                IgnoreInaccessible = true
-            };
+            var queue = new Queue<(string Dir, int Depth)>();
+            queue.Enqueue((rootDir, 0));
 
-            foreach (var file in Directory.EnumerateFiles(rootDir, "*", options))
+            while (queue.Count > 0)
             {
-                var relativePath = Path.GetRelativePath(rootDir, file).Replace('\\', '/');
+                var (currentDir, depth) = queue.Dequeue();
 
-                if (hasDirectory)
+                foreach (var file in Directory.EnumerateFiles(currentDir))
                 {
-                    if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
-                        relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
+                    var relativePath = Path.GetRelativePath(rootDir, file).Replace('\\', '/');
+
+                    if (hasDirectory)
                     {
-                        return file;
+                        if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
+                            relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return file;
+                        }
+                    }
+                    else
+                    {
+                        if (Path.GetFileName(file).Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return file;
+                        }
                     }
                 }
-                else
+
+                if (depth >= maxDepth) continue;
+
+                foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                 {
-                    if (Path.GetFileName(file).Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
+                    var dirName = Path.GetFileName(subDir);
+                    if (_skipDirectories.Contains(dirName)) continue;
+
+                    var relativePath = Path.GetRelativePath(rootDir, subDir).Replace('\\', '/');
+
+                    if (hasDirectory)
                     {
-                        return file;
+                        if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
+                            relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return subDir;
+                        }
                     }
+                    else
+                    {
+                        if (dirName.Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return subDir;
+                        }
+                    }
+
+                    queue.Enqueue((subDir, depth + 1));
                 }
             }
         }
@@ -239,7 +283,7 @@ public static class FileEndpoints
         return null;
     }
 
-    private static bool IsWithinDirectory(string path, string directory)
+    internal static bool IsWithinDirectory(string path, string directory)
     {
         var normalizedPath = Path.GetFullPath(path);
         var normalizedDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -272,11 +316,13 @@ public static class FileEndpoints
         return response;
     }
 
-    private static string? GetSessionWorkingDirectory(TtyHostSessionManager sessionManager, string? sessionId)
+    private static async Task<string?> GetSessionWorkingDirectoryAsync(TtyHostSessionManager sessionManager, string? sessionId)
     {
         if (string.IsNullOrEmpty(sessionId)) return null;
         var session = sessionManager.GetSession(sessionId);
-        return session?.CurrentDirectory;
+        if (session?.CurrentDirectory is not null) return session.CurrentDirectory;
+        var fresh = await sessionManager.GetSessionFreshAsync(sessionId);
+        return fresh?.CurrentDirectory;
     }
 
     private static bool IsPathAccessible(
@@ -288,7 +334,7 @@ public static class FileEndpoints
         return allowlistService.IsPathAllowed(sessionId, path, workingDirectory);
     }
 
-    private static IResult ServeFile(
+    private static async Task<IResult> ServeFileAsync(
         string path,
         bool inline,
         string? sessionId,
@@ -300,11 +346,11 @@ public static class FileEndpoints
             return errorResult!;
         }
 
-        var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+        var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
         if (!string.IsNullOrEmpty(sessionId) &&
             !IsPathAccessible(sessionId, path, workingDir, allowlistService))
         {
-            return Results.Forbid();
+            return Results.StatusCode(403);
         }
 
         var fullPath = Path.GetFullPath(path);
@@ -334,7 +380,7 @@ public static class FileEndpoints
         }
         catch (UnauthorizedAccessException)
         {
-            return Results.Forbid();
+            return Results.StatusCode(403);
         }
         catch (IOException ex)
         {
@@ -342,7 +388,7 @@ public static class FileEndpoints
         }
     }
 
-    private static bool ValidatePath(string path, out IResult? errorResult)
+    internal static bool ValidatePath(string path, out IResult? errorResult)
     {
         errorResult = null;
 
@@ -367,7 +413,7 @@ public static class FileEndpoints
         return true;
     }
 
-    private static async Task<FilePathInfo> GetFileInfoAsync(string path)
+    private static FilePathInfo GetFileInfo(string path)
     {
         var info = new FilePathInfo { Exists = false };
 
@@ -402,7 +448,7 @@ public static class FileEndpoints
         {
         }
 
-        return await Task.FromResult(info);
+        return info;
     }
 
     private static bool? CheckIsText(string filePath, long fileSize)

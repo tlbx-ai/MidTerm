@@ -52,8 +52,8 @@ public static class MuxProtocol
         var frame = new byte[OutputHeaderSize + data.Length];
         frame[0] = TypeTerminalOutput;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
-        BitConverter.TryWriteBytes(frame.AsSpan(9, 2), (ushort)cols);
-        BitConverter.TryWriteBytes(frame.AsSpan(11, 2), (ushort)rows);
+        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(9, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(11, 2), (ushort)rows);
         data.CopyTo(frame.AsSpan(OutputHeaderSize));
         return frame;
     }
@@ -76,13 +76,13 @@ public static class MuxProtocol
 
         // Cols and rows (4 bytes)
         Span<byte> dimBytes = stackalloc byte[4];
-        BitConverter.TryWriteBytes(dimBytes.Slice(0, 2), (ushort)cols);
-        BitConverter.TryWriteBytes(dimBytes.Slice(2, 2), (ushort)rows);
+        BinaryPrimitives.WriteUInt16LittleEndian(dimBytes.Slice(0, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(dimBytes.Slice(2, 2), (ushort)rows);
         ms.Write(dimBytes);
 
         // Uncompressed length (4 bytes)
         Span<byte> lenBytes = stackalloc byte[4];
-        BitConverter.TryWriteBytes(lenBytes, data.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(lenBytes, data.Length);
         ms.Write(lenBytes);
 
         // GZip compressed data
@@ -108,9 +108,9 @@ public static class MuxProtocol
         {
             buffer[0] = TypeCompressedOutput;
             WriteSessionId(buffer.AsSpan(1, 8), sessionId);
-            BitConverter.TryWriteBytes(buffer.AsSpan(9, 2), (ushort)cols);
-            BitConverter.TryWriteBytes(buffer.AsSpan(11, 2), (ushort)rows);
-            BitConverter.TryWriteBytes(buffer.AsSpan(13, 4), data.Length);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(9, 2), (ushort)cols);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(11, 2), (ushort)rows);
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(13, 4), data.Length);
 
             using var ms = new MemoryStream(buffer, CompressedOutputHeaderSize,
                 buffer.Length - CompressedOutputHeaderSize);
@@ -141,8 +141,8 @@ public static class MuxProtocol
         {
             buffer[0] = TypeTerminalOutput;
             WriteSessionId(buffer.AsSpan(1, 8), sessionId);
-            BitConverter.TryWriteBytes(buffer.AsSpan(9, 2), (ushort)cols);
-            BitConverter.TryWriteBytes(buffer.AsSpan(11, 2), (ushort)rows);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(9, 2), (ushort)cols);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(11, 2), (ushort)rows);
             data.CopyTo(buffer.AsSpan(OutputHeaderSize));
 
             callback(new ReadOnlyMemory<byte>(buffer, 0, frameSize));
@@ -164,9 +164,9 @@ public static class MuxProtocol
     {
         destination[0] = TypeCompressedOutput;
         WriteSessionId(destination.AsSpan(1, 8), sessionId);
-        BitConverter.TryWriteBytes(destination.AsSpan(9, 2), (ushort)cols);
-        BitConverter.TryWriteBytes(destination.AsSpan(11, 2), (ushort)rows);
-        BitConverter.TryWriteBytes(destination.AsSpan(13, 4), data.Length);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(9, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(11, 2), (ushort)rows);
+        BinaryPrimitives.WriteInt32LittleEndian(destination.AsSpan(13, 4), data.Length);
 
         using var ms = new MemoryStream(destination, CompressedOutputHeaderSize,
             destination.Length - CompressedOutputHeaderSize);
@@ -189,8 +189,8 @@ public static class MuxProtocol
     {
         destination[0] = TypeTerminalOutput;
         WriteSessionId(destination.AsSpan(1, 8), sessionId);
-        BitConverter.TryWriteBytes(destination.AsSpan(9, 2), (ushort)cols);
-        BitConverter.TryWriteBytes(destination.AsSpan(11, 2), (ushort)rows);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(9, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(11, 2), (ushort)rows);
         data.CopyTo(destination.AsSpan(OutputHeaderSize));
         return OutputHeaderSize + data.Length;
     }
@@ -256,8 +256,8 @@ public static class MuxProtocol
         {
             return (0, 0);
         }
-        var cols = BitConverter.ToUInt16(payload.Slice(0, 2));
-        var rows = BitConverter.ToUInt16(payload.Slice(2, 2));
+        var cols = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(0, 2));
+        var rows = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(2, 2));
         return (cols, rows);
     }
 
@@ -275,16 +275,16 @@ public static class MuxProtocol
         {
             return (80, 24);
         }
-        var cols = BitConverter.ToUInt16(payload.Slice(0, 2));
-        var rows = BitConverter.ToUInt16(payload.Slice(2, 2));
+        var cols = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(0, 2));
+        var rows = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(2, 2));
         return (cols, rows);
     }
 
     public static byte[] CreateResizePayload(int cols, int rows)
     {
         var payload = new byte[4];
-        BitConverter.TryWriteBytes(payload.AsSpan(0, 2), (ushort)cols);
-        BitConverter.TryWriteBytes(payload.AsSpan(2, 2), (ushort)rows);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2, 2), (ushort)rows);
         return payload;
     }
 
@@ -311,8 +311,16 @@ public static class MuxProtocol
         var frame = new byte[HeaderSize + 4];
         frame[0] = TypeDataLoss;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
-        BitConverter.TryWriteBytes(frame.AsSpan(HeaderSize, 4), droppedBytes);
+        BinaryPrimitives.WriteInt32LittleEndian(frame.AsSpan(HeaderSize, 4), droppedBytes);
         return frame;
+    }
+
+    public static void ClearSessionCache(string sessionId)
+    {
+        Span<byte> bytes = stackalloc byte[8];
+        WriteSessionId(bytes, sessionId);
+        var key = BinaryPrimitives.ReadUInt64LittleEndian(bytes);
+        _sessionIdCache.TryRemove(key, out _);
     }
 
     internal static void WriteSessionId(Span<byte> dest, string sessionId)

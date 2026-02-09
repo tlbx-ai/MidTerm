@@ -9,6 +9,7 @@ import { THEMES } from '../../constants';
 import { sessionTerminals } from '../../state';
 import { $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
+import { applyCssTheme } from './cssThemes';
 
 /**
  * Get the current theme based on settings
@@ -36,9 +37,7 @@ export function applyThemeToTerminals(themeName: ThemeName): void {
 export function setTheme(themeName: ThemeName): void {
   setCookie('mm-theme', themeName);
   applyThemeToTerminals(themeName);
-
-  // Update CSS variable for flash prevention
-  document.documentElement.style.setProperty('--terminal-bg', THEMES[themeName].background);
+  applyCssTheme(themeName);
 }
 
 /**
@@ -47,6 +46,6 @@ export function setTheme(themeName: ThemeName): void {
 export function initThemeFromCookie(): void {
   const savedTheme = document.cookie.match(/mm-theme=([^;]+)/)?.[1] as ThemeName | undefined;
   if (savedTheme && THEMES[savedTheme]) {
-    document.documentElement.style.setProperty('--terminal-bg', THEMES[savedTheme].background);
+    applyCssTheme(savedTheme);
   }
 }

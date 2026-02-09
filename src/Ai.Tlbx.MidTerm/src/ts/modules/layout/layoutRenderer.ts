@@ -6,10 +6,19 @@
  */
 
 import type { LayoutNode, LayoutSplit, LayoutLeaf } from '../../types';
-import { $layout, $focusedSessionId, $activeSessionId } from '../../stores';
-import { dom, sessionTerminals } from '../../state';
+import { $layout, $focusedSessionId, $activeSessionId, $isMainBrowser } from '../../stores';
+import {
+  dom,
+  sessionTerminals,
+  suppressLayoutAutoFit,
+  setSuppressLayoutAutoFit,
+} from '../../state';
 import { isLayoutActive, focusLayoutSession } from './layoutStore';
-import { applyTerminalScalingSync, fitTerminalToContainer } from '../terminal/scaling';
+import {
+  applyTerminalScalingSync,
+  fitTerminalToContainer,
+  fitSessionToScreen,
+} from '../terminal/scaling';
 
 let layoutRoot: HTMLElement | null = null;
 let unsubscribeLayout: (() => void) | null = null;
@@ -74,7 +83,11 @@ export function renderLayout(root: LayoutNode | null): void {
       if (state) {
         state.container.classList.remove('hidden');
         requestAnimationFrame(() => {
-          applyTerminalScalingSync(state);
+          if ($isMainBrowser.get()) {
+            fitSessionToScreen(activeId);
+          } else {
+            applyTerminalScalingSync(state);
+          }
           if (state.terminal && state.opened) {
             state.terminal.focus();
           }
@@ -96,9 +109,16 @@ export function renderLayout(root: LayoutNode | null): void {
   // Move terminal containers into their layout panes
   moveTerminalsToLayout();
 
-  // Trigger resize for all terminals in layout
+  // Fit or scale terminals depending on context
   requestAnimationFrame(() => {
-    fitTerminalsInLayout();
+    if (suppressLayoutAutoFit) {
+      setSuppressLayoutAutoFit(false);
+      scaleTerminalsInLayout();
+    } else if ($isMainBrowser.get()) {
+      fitTerminalsInLayout();
+    } else {
+      scaleTerminalsInLayout();
+    }
   });
 }
 
@@ -205,6 +225,26 @@ function fitTerminalsInLayout(): void {
     if (state?.opened) {
       // Resize terminal to fit pane dimensions
       fitTerminalToContainer(sessionId, paneEl);
+    }
+  });
+}
+
+/**
+ * Apply CSS scaling only (no resize) for all terminals in layout.
+ * Used when restoring layout from storage — terminals keep their server dimensions.
+ */
+function scaleTerminalsInLayout(): void {
+  if (!layoutRoot) return;
+
+  const panes = layoutRoot.querySelectorAll('.layout-leaf');
+  panes.forEach((pane) => {
+    const sessionId = (pane as HTMLElement).dataset.sessionId;
+    if (!sessionId) return;
+
+    const state = sessionTerminals.get(sessionId);
+    if (state?.opened) {
+      state.container.classList.remove('hidden');
+      applyTerminalScalingSync(state);
     }
   });
 }

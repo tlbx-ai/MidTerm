@@ -6,7 +6,7 @@
  */
 
 import { $activeSessionId } from '../../stores';
-import { sendInput } from '../comms/muxChannel';
+import { sendInput } from '../comms';
 import { KEY_SEQUENCES, KEY_LABELS } from './constants';
 
 interface PopupGroup {
@@ -23,6 +23,12 @@ interface PopupDefinition {
 }
 
 const POPUPS: Record<string, PopupDefinition> = {
+  nav: {
+    id: 'nav',
+    layout: 'grid',
+    cols: 4,
+    keys: ['tab', 'esc', 'enter', 'backspace', 'home', 'end', 'pgup', 'pgdn', 'insert', 'delete'],
+  },
   fn: {
     id: 'fn',
     layout: 'grid',

@@ -170,7 +170,11 @@ public static class TtyHostSpawner
         int cols,
         int rows,
         string? runAsUser,
-        out int processId)
+        out int processId,
+        int? mtPort = null,
+        string? mtToken = null,
+        int? paneIndex = null,
+        string? tmuxBinDir = null)
     {
         processId = 0;
 
@@ -186,7 +190,8 @@ public static class TtyHostSpawner
             return false;
         }
 
-        var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows);
+        var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows,
+            mtPort, mtToken, paneIndex, tmuxBinDir);
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
@@ -197,7 +202,9 @@ public static class TtyHostSpawner
 #pragma warning restore CA1416
     }
 
-    private static string BuildArgs(string sessionId, string? shellType, string? workingDirectory, int cols, int rows)
+    private static string BuildArgs(
+        string sessionId, string? shellType, string? workingDirectory, int cols, int rows,
+        int? mtPort, string? mtToken, int? paneIndex, string? tmuxBinDir)
     {
         var args = $"--session {sessionId} --cols {cols} --rows {rows}";
         if (!string.IsNullOrEmpty(shellType))
@@ -207,6 +214,22 @@ public static class TtyHostSpawner
         if (!string.IsNullOrEmpty(workingDirectory))
         {
             args += $" --cwd \"{workingDirectory}\"";
+        }
+        if (mtPort.HasValue)
+        {
+            args += $" --mt-port {mtPort.Value}";
+        }
+        if (!string.IsNullOrEmpty(mtToken))
+        {
+            args += $" --mt-token {mtToken}";
+        }
+        if (paneIndex.HasValue)
+        {
+            args += $" --pane-index {paneIndex.Value}";
+        }
+        if (!string.IsNullOrEmpty(tmuxBinDir))
+        {
+            args += $" --tmux-bin-dir \"{tmuxBinDir}\"";
         }
         return args;
     }
@@ -238,7 +261,7 @@ public static class TtyHostSpawner
                 psi = new ProcessStartInfo
                 {
                     FileName = "sudo",
-                    Arguments = $"-u {runAsUser} {TtyHostPath} {args}",
+                    Arguments = $"-H -u {runAsUser} {TtyHostPath} {args}",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardInput = false,
@@ -269,7 +292,14 @@ public static class TtyHostSpawner
             }
 
             processId = process.Id;
-            Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
+            if (isRoot && !string.IsNullOrEmpty(runAsUser))
+            {
+                Log.Info(() => $"TtyHostSpawner: Spawned via sudo (PID: {process.Id} is sudo, not mthost). Socket discovery will use glob pattern.");
+            }
+            else
+            {
+                Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
+            }
             return true;
         }
         catch (Exception ex)
@@ -502,13 +532,16 @@ public static class TtyHostSpawner
                 }
             }
 
-            // Target user not found in any session — fall back to any available user
-            if (hasTargetUser && fallbackToken != IntPtr.Zero)
+            // Clean up fallback token if we didn't use it
+            if (fallbackToken != IntPtr.Zero)
             {
-                userToken = fallbackToken;
-                sessionId = fallbackSessionId;
-                Log.Warn(() => $"TtyHostSpawner: User '{runAsUser}' has no active session, falling back to session {fallbackSessionId}");
-                return true;
+                CloseHandle(fallbackToken);
+            }
+
+            if (hasTargetUser)
+            {
+                Log.Error(() => $"TtyHostSpawner: User '{runAsUser}' has no active session — refusing to spawn as different user");
+                return false;
             }
         }
         finally
@@ -607,7 +640,7 @@ public static class TtyHostSpawner
     [DllImport("wtsapi32.dll")]
     private static extern void WTSFreeMemory(IntPtr pMemory);
 
-    [DllImport("wtsapi32.dll", SetLastError = true)]
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool WTSQuerySessionInformation(
         IntPtr hServer,
         uint sessionId,

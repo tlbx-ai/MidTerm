@@ -15,6 +15,7 @@ import {
 } from '../comms/muxChannel';
 import { $activeSessionId } from '../../stores';
 import { sessionTerminals } from '../../state';
+import { TERMINAL_PADDING } from '../../constants';
 
 let overlayEl: HTMLDivElement | null = null;
 let enabled = false;
@@ -29,6 +30,14 @@ interface MetricElements {
   serverIo: HTMLSpanElement;
   flushDelay: HTMLSpanElement;
   scrollback: HTMLSpanElement;
+  cursorVisible: HTMLSpanElement;
+  termFocus: HTMLSpanElement;
+  cursorPos: HTMLSpanElement;
+  scale: HTMLSpanElement;
+  containerPx: HTMLSpanElement;
+  termColsRows: HTMLSpanElement;
+  cellPx: HTMLSpanElement;
+  xtermPx: HTMLSpanElement;
 }
 
 let metricEls: MetricElements | null = null;
@@ -79,6 +88,14 @@ function ensureOverlay(): void {
     { label: 'I/O', id: 'serverIo' },
     { label: 'Flush', id: 'flushDelay' },
     { label: 'Buf', id: 'scrollback' },
+    { label: 'Cur', id: 'cursorVisible' },
+    { label: 'Foc', id: 'termFocus' },
+    { label: 'CPos', id: 'cursorPos' },
+    { label: 'Scale', id: 'scale' },
+    { label: 'Cntr', id: 'containerPx' },
+    { label: 'Dim', id: 'termColsRows' },
+    { label: 'Cell', id: 'cellPx' },
+    { label: 'XTrm', id: 'xtermPx' },
   ] as const;
 
   const els: Partial<MetricElements> = {};
@@ -142,6 +159,8 @@ async function runPingAndScrollback(): Promise<void> {
   if (!sessionId) return;
 
   updateScrollback(sessionId);
+  updateCursorState(sessionId);
+  updateScalingMetrics(sessionId);
 
   const result = await measureLatency(sessionId);
   if (!metricEls) return;
@@ -176,6 +195,82 @@ function updateScrollback(sessionId: string): void {
   const pct = Math.round((used / max) * 100);
   metricEls.scrollback.textContent = `${used}/${max} (${pct}%)`;
   applyColor(metricEls.scrollback, pct < 50 ? 'good' : pct < 80 ? 'warn' : 'bad');
+}
+
+function updateScalingMetrics(sessionId: string): void {
+  if (!metricEls) return;
+  const state = sessionTerminals.get(sessionId);
+  if (!state?.terminal || !state.opened) return;
+
+  const container = state.container;
+  const xterm = container.querySelector('.xterm') as HTMLElement | null;
+  const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+
+  const cols = state.terminal.cols;
+  const rows = state.terminal.rows;
+
+  // Container available size (minus padding)
+  const containerW = container.clientWidth;
+  const containerH = container.clientHeight;
+  metricEls.containerPx.textContent = `${containerW}×${containerH}`;
+
+  // Terminal cols×rows and server dims
+  const srvCols = state.serverCols;
+  const srvRows = state.serverRows;
+  metricEls.termColsRows.textContent = `${cols}×${rows} (srv ${srvCols}×${srvRows})`;
+  applyColor(metricEls.termColsRows, cols === srvCols && rows === srvRows ? 'good' : 'warn');
+
+  // Cell dimensions
+  if (screen && cols > 0 && rows > 0) {
+    const cellW = screen.offsetWidth / cols;
+    const cellH = screen.offsetHeight / rows;
+    metricEls.cellPx.textContent = `${cellW.toFixed(2)}×${cellH.toFixed(2)}`;
+  }
+
+  // Xterm actual rendered size
+  if (xterm) {
+    metricEls.xtermPx.textContent = `${xterm.offsetWidth}×${xterm.offsetHeight}`;
+  }
+
+  // Scale factor
+  if (xterm) {
+    const availW = containerW - TERMINAL_PADDING;
+    const availH = containerH - TERMINAL_PADDING;
+    const scaleX = availW / xterm.offsetWidth;
+    const scaleY = availH / xterm.offsetHeight;
+    const scale = Math.min(scaleX, scaleY, 1);
+    const isScaled = container.classList.contains('scaled');
+    const transform = xterm.style.transform;
+    metricEls.scale.textContent = `${scale.toFixed(4)} ${isScaled ? '(SCALED)' : '(1:1)'}`;
+    if (transform) {
+      metricEls.scale.title = transform;
+    }
+    applyColor(metricEls.scale, scale >= 1 ? 'good' : scale > 0.95 ? 'warn' : 'bad');
+  }
+}
+
+function updateCursorState(sessionId: string): void {
+  if (!metricEls) return;
+  const state = sessionTerminals.get(sessionId);
+  if (!state?.terminal) return;
+
+  // DECTCEM cursor visibility — read directly from xterm.js internal state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const core = (state.terminal as any)._core;
+  const cursorHidden = core?.coreService?.decPrivateModes?.cursorHidden ?? false;
+  metricEls.cursorVisible.textContent = cursorHidden ? 'HIDDEN' : 'visible';
+  applyColor(metricEls.cursorVisible, cursorHidden ? 'bad' : 'good');
+
+  // Terminal DOM focus
+  const xtermEl = state.container.querySelector('.xterm textarea');
+  const hasFocus = xtermEl !== null && document.activeElement === xtermEl;
+  metricEls.termFocus.textContent = hasFocus ? 'yes' : 'no';
+  applyColor(metricEls.termFocus, hasFocus ? 'good' : 'warn');
+
+  // Cursor position from active buffer
+  const buf = state.terminal.buffer.active;
+  metricEls.cursorPos.textContent = `${buf.cursorX},${buf.cursorY}`;
+  applyColor(metricEls.cursorPos, 'good');
 }
 
 function handleOutputRtt(sessionId: string, rtt: number): void {

@@ -6,7 +6,7 @@
  */
 
 import { createLogger } from './logging';
-import { sendInput } from './comms/muxChannel';
+import { sendInput } from './comms';
 import { sessionTerminals } from '../state';
 import { $sessionList, $activeSessionId, $updateInfo, getSession } from '../stores';
 import {

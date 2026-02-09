@@ -7,6 +7,7 @@
 
 import { $activeSessionId } from '../../stores';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
+import { pasteToTerminal } from './manager';
 
 // =============================================================================
 // Constants
@@ -81,11 +82,7 @@ const REJECTED_EXTENSIONS = new Set([
   '.webm',
 ]);
 
-// =============================================================================
-// Forward declarations for callbacks
-// =============================================================================
-
-let pasteToTerminal: (sessionId: string, data: string, isFilePath?: boolean) => void = () => {};
+export type ClipboardPasteResult = 'image' | 'text' | 'none' | 'unavailable';
 
 // =============================================================================
 // Helper Functions
@@ -204,16 +201,6 @@ export function sanitizePasteContent(text: string): string {
       // eslint-disable-next-line no-control-regex
       .replace(/\x1b[\x20-\x2F]*[\x30-\x7E]/g, '')
   ); // Remove other escape sequences
-}
-
-/**
- * Register callbacks from mux channel and terminal manager
- */
-export function registerFileDropCallbacks(callbacks: {
-  sendInput?: (sessionId: string, data: string) => void;
-  pasteToTerminal?: (sessionId: string, data: string, isFilePath?: boolean) => void;
-}): void {
-  if (callbacks.pasteToTerminal) pasteToTerminal = callbacks.pasteToTerminal;
 }
 
 /**
@@ -347,12 +334,19 @@ export function setupFileDrop(container: HTMLElement): void {
  * On non-secure contexts (HTTP remote), this function won't work due to
  * browser Clipboard API restrictions - paste is handled via native events instead.
  */
-export async function handleClipboardPaste(sessionId: string): Promise<void> {
+export async function handleClipboardPaste(sessionId: string): Promise<ClipboardPasteResult> {
   // Clipboard API requires secure context (HTTPS or localhost)
   // On HTTP remote connections, show warning and bail out
   if (!window.isSecureContext) {
     showHttpsRequiredToast();
-    return;
+    return 'unavailable';
+  }
+
+  if (
+    typeof navigator.clipboard === 'undefined' ||
+    typeof navigator.clipboard.readText !== 'function'
+  ) {
+    return 'unavailable';
   }
 
   // Try to read clipboard items (images)
@@ -367,7 +361,7 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
         const path = await uploadFile(sessionId, file);
         if (path) {
           pasteToTerminal(sessionId, sanitizePasteContent(path), true);
-          return; // Image handled, don't paste text
+          return 'image';
         }
       }
     }
@@ -381,8 +375,50 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
     if (text) {
       const sanitized = sanitizePasteContent(text);
       pasteToTerminal(sessionId, sanitized);
+      return 'text';
     }
   } catch {
     // Text paste failed
   }
+
+  return 'none';
+}
+
+/**
+ * Handle Alt+V clipboard image injection for terminal apps like Codex CLI.
+ * Uploads the clipboard image to the server, which sets the OS clipboard
+ * and injects Alt+V (\x1bv) into the terminal PTY.
+ * Returns 'image' if successful, 'none' if no image found.
+ */
+export async function handleNativeImagePaste(sessionId: string): Promise<ClipboardPasteResult> {
+  if (!window.isSecureContext) {
+    showHttpsRequiredToast();
+    return 'unavailable';
+  }
+
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find((t) => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        const ext = imageType === 'image/png' ? '.png' : '.jpg';
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const file = new File([blob], `clipboard_${ts}${ext}`, { type: imageType });
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch(`/api/sessions/${sessionId}/paste-clipboard-image`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (resp.ok) return 'image';
+        showDropToast(`Clipboard injection failed: ${resp.status}`);
+        return 'none';
+      }
+    }
+  } catch {
+    // clipboard.read() not supported or failed
+  }
+
+  return 'none';
 }

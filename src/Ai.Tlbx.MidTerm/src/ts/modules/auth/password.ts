@@ -54,7 +54,7 @@ export function showPasswordModal(_isInitialSetup: boolean): void {
 /**
  * Hide the password modal
  */
-export function hidePasswordModal(): void {
+function hidePasswordModal(): void {
   const modal = document.getElementById('password-modal');
   if (modal) {
     modal.classList.add('hidden');
@@ -123,7 +123,7 @@ export async function handlePasswordSubmit(e: Event): Promise<void> {
 /**
  * Show an error message in the password modal
  */
-export function showPasswordError(msg: string): void {
+function showPasswordError(msg: string): void {
   const errorEl = document.getElementById('password-error');
   if (errorEl) {
     errorEl.textContent = msg;

@@ -1,10 +1,11 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Ai.Tlbx.MidTerm.Services.Security;
 
-public sealed class EncryptedFileProtector : ICertificateProtector
+public sealed partial class EncryptedFileProtector : ICertificateProtector
 {
     private const int Pbkdf2Iterations = 100000;
     private readonly string _keyStorePath;
@@ -177,11 +178,7 @@ public sealed class EncryptedFileProtector : ICertificateProtector
                 {
                     var output = process.StandardOutput.ReadToEnd();
                     process.WaitForExit(5000);
-                    // Look for "Hardware UUID: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                    var match = System.Text.RegularExpressions.Regex.Match(
-                        output,
-                        @"Hardware UUID:\s*([A-F0-9-]+)",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    var match = HardwareUuidRegex().Match(output);
                     if (match.Success)
                     {
                         return match.Groups[1].Value;
@@ -199,6 +196,9 @@ public sealed class EncryptedFileProtector : ICertificateProtector
         // but loaded by service running as different user. Key must be user-independent.
         return Environment.MachineName;
     }
+
+    [GeneratedRegex(@"Hardware UUID:\s*([A-F0-9-]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex HardwareUuidRegex();
 
     private static void SetUnixFilePermissions(string path)
     {

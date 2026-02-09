@@ -140,8 +140,9 @@ public sealed class TtyHostClient : IAsyncDisposable
             catch (SocketException)
             {
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Verbose(() => $"[IPC] {_sessionId}: Connect attempt {attempt} failed: {ex.GetType().Name}: {ex.Message}");
             }
 
             if (attempt < 2)
@@ -242,7 +243,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await WriteAsync(data, ct).ConfigureAwait(false);
+            await WriteAsync(data.AsMemory(), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -255,7 +256,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await WriteAsync(data, length, ct).ConfigureAwait(false);
+            await WriteAsync(data.AsMemory(0, length), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -409,7 +410,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
-    private async Task WriteAsync(byte[] data, CancellationToken ct)
+    private async Task WriteAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
     {
         var stream = _stream;
         if (stream is null || !IsConnected)
@@ -418,17 +419,6 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
 
         await stream.WriteAsync(data, ct).ConfigureAwait(false);
-    }
-
-    private async Task WriteAsync(byte[] data, int length, CancellationToken ct)
-    {
-        var stream = _stream;
-        if (stream is null || !IsConnected)
-        {
-            throw new IOException("Not connected");
-        }
-
-        await stream.WriteAsync(data.AsMemory(0, length), ct).ConfigureAwait(false);
     }
 
     private async Task ReadLoopWithReconnectAsync(CancellationToken ct)
@@ -551,8 +541,9 @@ public sealed class TtyHostClient : IAsyncDisposable
                 {
                     HandleDisconnect();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Log.Verbose(() => $"[IPC] {_sessionId}: ReadLoop error: {ex.GetType().Name}: {ex.Message}");
                     HandleDisconnect();
                 }
             }
@@ -681,8 +672,9 @@ public sealed class TtyHostClient : IAsyncDisposable
             {
                 break;
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Verbose(() => $"[IPC] {_sessionId}: Heartbeat error: {ex.GetType().Name}: {ex.Message}");
             }
         }
     }
@@ -796,6 +788,11 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
 
         if (!TtyHostProtocol.TryReadHeader(headerBuffer, out var msgType, out var payloadLength))
+        {
+            return null;
+        }
+
+        if (payloadLength < 0 || payloadLength > TtyHostProtocol.MaxPayloadSize)
         {
             return null;
         }

@@ -37,6 +37,20 @@ import type { FilePathInfo, FileCheckResponse, FileResolveResponse } from '../..
 import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
 import { $activeSessionId, $currentSettings } from '../../stores';
+import {
+  UNIX_PATH_PATTERN,
+  WIN_PATH_PATTERN,
+  UNIX_PATH_PATTERN_GLOBAL,
+  WIN_PATH_PATTERN_GLOBAL,
+  RELATIVE_PATH_PATTERN,
+  FOLDER_PATH_PATTERN,
+  KNOWN_FILE_PATTERN,
+  isValidPath,
+  isFragmentOfAbsolutePath,
+  shouldRejectFolderMatch,
+  shouldRejectKnownFileMatch,
+  shouldRejectRelativeMatch,
+} from './fileRadar.patterns';
 
 const log = createLogger('fileLinks');
 
@@ -87,48 +101,8 @@ const pendingScanText = new Map<string, string>();
 /** Debounce timers per session */
 const scanTimers = new Map<string, number>();
 
-// ===========================================================================
-// Regex Patterns - Compiled once at module load
-// ===========================================================================
-
-/**
- * Unix absolute paths: /path/to/file or /path/to/file.ext
- * Pattern for xterm-link-provider (uses capture group 1 for the link text)
- * Negative lookbehind prevents matching /foo/bar inside src/foo/bar (relative paths)
- */
-const UNIX_PATH_PATTERN = /(?<![a-zA-Z0-9_.-])(\/(?:[\w.-]+\/)*[\w.-]+(?:\.\w+)?)/;
-
-/**
- * Windows absolute paths: C:\path\file or C:/path/file
- * Pattern for xterm-link-provider (uses capture group 1 for the link text)
- */
-const WIN_PATH_PATTERN = /([A-Za-z]:[\\/](?:[\w.-]+[\\/])*[\w.-]+(?:\.\w+)?)/;
-
-/**
- * Global versions for scanning terminal output
- */
-const UNIX_PATH_PATTERN_GLOBAL = /(?:^|[\s"'`(])(\/([\w.-]+\/)*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
-const WIN_PATH_PATTERN_GLOBAL =
-  /(?:^|[\s"'`(])([A-Za-z]:[\\/](?:[\w.-]+[\\/])*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
-
-/**
- * Relative path pattern - matches any filename.extension pattern.
- * Resolves against session's working directory on hover (lazy filesystem access).
- *
- * Matches: output.pdf, ./data.json, src/main.ts, src\Ai\Services\Foo.cs
- * Does NOT match: package (no extension), http://... (URLs)
- * False positives (1.2.3, e.g., google.com) filtered by isLikelyFalsePositive()
- *
- * Extension: 1-10 chars, must start with letter (avoids matching "file.1" or pure numbers)
- * Supports both / and \ path separators for cross-platform compatibility.
- */
-const RELATIVE_PATH_PATTERN = /((?:\.\.?[/\\])?(?:[\w.-]+[/\\])*[\w.-]+\.[a-zA-Z][a-zA-Z0-9]{0,9})/;
-
-/**
- * Folder path pattern - matches paths ending with / like docs/, src/components/
- * Must have at least one word character before the trailing slash.
- */
-const FOLDER_PATH_PATTERN = /((?:\.\.?\/)?(?:[\w.-]+\/)+)/;
+// Regex patterns, validation functions, and matchCallback predicates
+// are imported from ./fileRadar.patterns.ts for testability.
 
 /** Cache for resolved relative paths: key = "sessionId:relativePath" */
 const resolveCache = new Map<string, { response: FileResolveResponse; expires: number }>();
@@ -143,6 +117,7 @@ const RESOLVE_HOVER_DELAY_MS = 150;
 let pendingResolve: {
   abort: AbortController;
   timeout: number;
+  callback: (match: string | undefined) => void;
 } | null = null;
 
 // ===========================================================================
@@ -304,14 +279,6 @@ function addToAllowlist(allowlist: Set<string>, path: string): void {
   allowlist.add(path);
 }
 
-function isValidPath(path: string): boolean {
-  if (!path || path.length < 2) return false;
-  if (path.includes('..')) return false;
-  // Reject simple Unix commands that look like paths (e.g., /bin, /usr)
-  if (/^\/[a-z]+$/.test(path)) return false;
-  return true;
-}
-
 async function checkPathExists(path: string): Promise<FilePathInfo | null> {
   const cached = existenceCache.get(path);
   if (cached && cached.expires > Date.now()) {
@@ -411,40 +378,39 @@ function throttledResolveRelativePath(
   matchText: string,
   callback: (match: string | undefined) => void,
 ): void {
-  // Cancel any pending resolve
+  // Cancel any pending resolve — explicitly reject so xterm-link-provider
+  // doesn't default to showing the link when callback is never called
   if (pendingResolve) {
     pendingResolve.abort.abort();
     window.clearTimeout(pendingResolve.timeout);
+    pendingResolve.callback(undefined);
     pendingResolve = null;
   }
 
-  // Check cache - if we already checked this path, show link immediately
+  // Check cache - show link only if path was confirmed to exist
   const cacheKey = `${sessionId}:${path}:false`;
   const cached = resolveCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
-    callback(matchText); // Always show link - deep search on click may find it
+    callback(cached.response.exists ? matchText : undefined);
     return;
   }
 
-  // Schedule delayed resolve to warm cache, but always show link
-  // Deep search on click will find files in subdirectories
+  // Schedule delayed resolve - only show link if path exists
   const abort = new AbortController();
   const timeout = window.setTimeout(async () => {
     if (abort.signal.aborted) return;
 
-    // Warm cache with shallow search (result ignored for link display)
-    await resolveRelativePath(sessionId, path, false, abort.signal);
+    const result = await resolveRelativePath(sessionId, path, false, abort.signal);
     if (abort.signal.aborted) return;
 
-    // Always show link - regex already validated file extension
-    callback(matchText);
+    callback(result?.exists ? matchText : undefined);
 
     if (pendingResolve?.abort === abort) {
       pendingResolve = null;
     }
   }, RESOLVE_HOVER_DELAY_MS);
 
-  pendingResolve = { abort, timeout };
+  pendingResolve = { abort, timeout, callback };
 }
 
 // ===========================================================================
@@ -471,6 +437,7 @@ async function handlePathClick(path: string): Promise<void> {
     const relativePath = path.startsWith('/') ? path.slice(1) : path;
     const resolved = await resolveRelativePath(sessionId, relativePath, true);
     if (resolved?.exists && resolved.resolvedPath) {
+      registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
       const resolvedInfo: FilePathInfo = {
         exists: true,
         isDirectory: resolved.isDirectory ?? false,
@@ -521,12 +488,13 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
     return;
   }
 
-  // Remove trailing slash for resolution
-  const pathWithoutSlash = folderPath.replace(/\/+$/, '');
+  // Remove trailing slash/backslash for resolution
+  const pathWithoutSlash = folderPath.replace(/[/\\]+$/, '');
 
   // Try to resolve the folder path
   const resolved = await resolveRelativePath(sessionId, pathWithoutSlash, true);
   if (resolved?.exists && resolved.resolvedPath && resolved.isDirectory) {
+    registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
     const info: FilePathInfo = {
       exists: true,
       isDirectory: true,
@@ -548,6 +516,10 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 /**
  * Register the file link provider with xterm.js using xterm-link-provider.
  * This is called once per terminal session.
+ *
+ * Registration order matters: later providers take priority in xterm.
+ * We register least-specific first, most-specific last so absolute paths
+ * win over relative matches at overlapping positions.
  */
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
@@ -557,59 +529,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const term = terminal as any;
 
-  // Unix paths
-  terminal.registerLinkProvider(
-    new LinkProvider(term, UNIX_PATH_PATTERN, async (_event, path) => {
-      await handlePathClick(path);
-    }),
-  );
-
-  // Windows paths
-  terminal.registerLinkProvider(
-    new LinkProvider(term, WIN_PATH_PATTERN, async (_event, path) => {
-      await handlePathClick(path);
-    }),
-  );
-
-  // Relative paths (lazy resolution on hover)
-  // The matchCallback option validates paths on hover before showing as clickable
-  terminal.registerLinkProvider(
-    new LinkProvider(
-      term,
-      RELATIVE_PATH_PATTERN,
-      async (_event, relativePath) => {
-        await handleRelativePathClick(relativePath);
-      },
-      {
-        // Validate on hover - only create link if file exists
-        // Uses throttled resolution to prevent API spam during rapid mouse movement
-        matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
-          const path = match[1];
-          if (!path) {
-            callback(undefined);
-            return;
-          }
-
-          // Skip if it looks like an absolute path (already handled above)
-          if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
-            callback(undefined);
-            return;
-          }
-
-          // Skip common false positives
-          if (isLikelyFalsePositive(path)) {
-            callback(undefined);
-            return;
-          }
-
-          // Throttled resolution: waits 150ms for hover to settle before API call
-          throttledResolveRelativePath(sessionId, path, match[0], callback);
-        },
-      } as unknown as Record<string, unknown>,
-    ),
-  );
-
-  // Folder paths (e.g., docs/, src/components/)
+  // 1. Folder paths — least specific (e.g., docs/, src\components\)
   terminal.registerLinkProvider(
     new LinkProvider(
       term,
@@ -620,53 +540,76 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
           const path = match[1];
-          if (!path) {
+          if (!path || shouldRejectFolderMatch(path) || isFragmentOfAbsolutePath(match)) {
             callback(undefined);
             return;
           }
 
-          // Skip absolute paths (already handled above)
-          if (/^[A-Za-z]:/.test(path)) {
-            callback(undefined);
-            return;
-          }
-
-          // Skip common false positives like http://, https://, file://
-          if (/^[a-z]+:\/\//i.test(path)) {
-            callback(undefined);
-            return;
-          }
-
-          // Throttled resolution for folders
-          throttledResolveRelativePath(sessionId, path.replace(/\/+$/, ''), match[0], callback);
+          throttledResolveRelativePath(sessionId, path.replace(/[/\\]+$/, ''), match[0], callback);
         },
       } as unknown as Record<string, unknown>,
     ),
   );
 
+  // 2. Known extensionless files (e.g., Dockerfile, .gitignore, LICENSE)
+  terminal.registerLinkProvider(
+    new LinkProvider(
+      term,
+      KNOWN_FILE_PATTERN,
+      async (_event, relativePath) => {
+        await handleRelativePathClick(relativePath);
+      },
+      {
+        matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
+          const path = match[1];
+          if (!path || shouldRejectKnownFileMatch(path)) {
+            callback(undefined);
+            return;
+          }
+
+          throttledResolveRelativePath(sessionId, path, match[0], callback);
+        },
+      } as unknown as Record<string, unknown>,
+    ),
+  );
+
+  // 3. Relative paths with extensions (e.g., src/main.ts, foo.jpg)
+  terminal.registerLinkProvider(
+    new LinkProvider(
+      term,
+      RELATIVE_PATH_PATTERN,
+      async (_event, relativePath) => {
+        await handleRelativePathClick(relativePath);
+      },
+      {
+        matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
+          const path = match[1];
+          if (!path || shouldRejectRelativeMatch(path) || isFragmentOfAbsolutePath(match)) {
+            callback(undefined);
+            return;
+          }
+
+          throttledResolveRelativePath(sessionId, path, match[0], callback);
+        },
+      } as unknown as Record<string, unknown>,
+    ),
+  );
+
+  // 4. Windows absolute paths (e.g., C:\Users\file.txt)
+  terminal.registerLinkProvider(
+    new LinkProvider(term, WIN_PATH_PATTERN, async (_event, path) => {
+      await handlePathClick(path);
+    }),
+  );
+
+  // 5. Unix absolute paths — most specific, highest priority
+  terminal.registerLinkProvider(
+    new LinkProvider(term, UNIX_PATH_PATTERN, async (_event, path) => {
+      await handlePathClick(path);
+    }),
+  );
+
   log.verbose(() => `Registered file link provider`);
-}
-
-/**
- * Filter out common false positives that look like files but aren't.
- */
-function isLikelyFalsePositive(path: string): boolean {
-  // Version numbers like 1.2.3
-  if (/^\d+\.\d+(\.\d+)?$/.test(path)) return true;
-
-  // Common abbreviations
-  const lower = path.toLowerCase();
-  if (['e.g.', 'i.e.', 'etc.', 'vs.', 'inc.', 'ltd.', 'co.'].includes(lower)) return true;
-
-  // Domain-like patterns - but only if the "TLD" is actually a common TLD, not a file extension
-  // This prevents filtering out output.pdf, data.csv, etc.
-  if (/^[a-z]+\.[a-z]{2,}$/i.test(path)) {
-    const ext = path.split('.').pop()?.toLowerCase();
-    const commonTlds = ['com', 'org', 'net', 'io', 'co', 'dev', 'app', 'ai', 'edu', 'gov', 'me'];
-    if (ext && commonTlds.includes(ext)) return true;
-  }
-
-  return false;
 }
 
 // Legacy export for compatibility (unused but keeps API stable)

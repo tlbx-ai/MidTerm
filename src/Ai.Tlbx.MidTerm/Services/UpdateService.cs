@@ -9,11 +9,12 @@ using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
-public sealed class UpdateService : IDisposable
+public sealed partial class UpdateService : IDisposable
 {
     private const string RepoOwner = "tlbx-ai";
     private const string RepoName = "MidTerm";
     private const string DevEnvironmentName = "THELAIR";
+    private const string FallbackMinCompatiblePty = "2.0.0";
 
     // Dev-only local update path - uses secure ProgramData folder instead of world-writable temp
     private static string LocalReleasePath => OperatingSystem.IsWindows()
@@ -94,7 +95,7 @@ public sealed class UpdateService : IDisposable
             Web = version,
             Pty = version,
             Protocol = 1,
-            MinCompatiblePty = "2.0.0"
+            MinCompatiblePty = FallbackMinCompatiblePty
         };
     }
 
@@ -493,13 +494,19 @@ public sealed class UpdateService : IDisposable
             }
             else if (size > 0)
             {
+                const long maxExtractFileSize = 500 * 1024 * 1024;
+                if (size < 0 || size > maxExtractFileSize)
+                {
+                    throw new InvalidOperationException($"Tar entry too large: {size}");
+                }
+
                 var dir = Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(dir))
                 {
                     Directory.CreateDirectory(dir);
                 }
 
-                var content = new byte[size];
+                var content = new byte[(int)checked(size)];
                 ms.Read(content, 0, (int)size);
                 File.WriteAllBytes(filePath, content);
             }
@@ -577,11 +584,14 @@ public sealed class UpdateService : IDisposable
         return 0;
     }
 
+    [GeneratedRegex(@"\.(\d+)$")]
+    private static partial Regex PrereleaseNumberRegex();
+
     private static int ComparePrereleases(string pre1, string pre2)
     {
         // Format: "dev.N" - extract the numeric part
-        var match1 = Regex.Match(pre1, @"\.(\d+)$");
-        var match2 = Regex.Match(pre2, @"\.(\d+)$");
+        var match1 = PrereleaseNumberRegex().Match(pre1);
+        var match2 = PrereleaseNumberRegex().Match(pre2);
 
         if (match1.Success && match2.Success)
         {

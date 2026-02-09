@@ -21,6 +21,7 @@ public sealed partial class MidTermSettingsPublic
             TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
+            ScrollbarStyle = settings.ScrollbarStyle,
             UseWebGL = settings.UseWebGL,
             ScrollbackLines = settings.ScrollbackLines,
             BellStyle = settings.BellStyle,
@@ -29,6 +30,9 @@ public sealed partial class MidTermSettingsPublic
             ClipboardShortcuts = settings.ClipboardShortcuts,
             ScrollbackProtection = settings.ScrollbackProtection,
             FileRadar = settings.FileRadar,
+            TmuxCompatibility = settings.TmuxCompatibility,
+            ManagerBarEnabled = settings.ManagerBarEnabled,
+            ManagerBarButtons = settings.ManagerBarButtons,
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
             AuthenticationEnabled = settings.AuthenticationEnabled,
@@ -51,6 +55,7 @@ public sealed partial class MidTermSettingsPublic
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
         settings.SmoothScrolling = SmoothScrolling;
+        settings.ScrollbarStyle = ScrollbarStyle;
         settings.UseWebGL = UseWebGL;
         settings.ScrollbackLines = ScrollbackLines;
         settings.BellStyle = BellStyle;
@@ -59,6 +64,9 @@ public sealed partial class MidTermSettingsPublic
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.ScrollbackProtection = ScrollbackProtection;
         settings.FileRadar = FileRadar;
+        settings.TmuxCompatibility = TmuxCompatibility;
+        settings.ManagerBarEnabled = ManagerBarEnabled;
+        settings.ManagerBarButtons = ManagerBarButtons;
 
         // SECURITY: Validate RunAsUser before applying
         if (!OperatingSystem.IsWindows())

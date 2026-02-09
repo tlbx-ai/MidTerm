@@ -11,26 +11,28 @@ public sealed class FileRadarAllowlistService
 {
     private const int MaxPathsPerSession = 1000;
 
-    private readonly ConcurrentDictionary<string, HashSet<string>> _allowlists = new();
+    private readonly ConcurrentDictionary<string, OrderedAllowlist> _allowlists = new();
 
     public void RegisterPath(string sessionId, string path)
     {
         var normalizedPath = NormalizePath(path);
         if (string.IsNullOrEmpty(normalizedPath)) return;
 
-        var allowlist = _allowlists.GetOrAdd(sessionId, _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var allowlist = _allowlists.GetOrAdd(sessionId, _ => new OrderedAllowlist());
 
         lock (allowlist)
         {
-            if (allowlist.Count >= MaxPathsPerSession)
+            if (allowlist.Set.Contains(normalizedPath)) return;
+
+            if (allowlist.Order.Count >= MaxPathsPerSession)
             {
-                var firstKey = allowlist.FirstOrDefault();
-                if (firstKey is not null)
-                {
-                    allowlist.Remove(firstKey);
-                }
+                var oldest = allowlist.Order[0];
+                allowlist.Order.RemoveAt(0);
+                allowlist.Set.Remove(oldest);
             }
-            allowlist.Add(normalizedPath);
+
+            allowlist.Order.Add(normalizedPath);
+            allowlist.Set.Add(normalizedPath);
         }
     }
 
@@ -47,7 +49,6 @@ public sealed class FileRadarAllowlistService
         var normalizedPath = NormalizePath(path);
         if (string.IsNullOrEmpty(normalizedPath)) return false;
 
-        // Check if path is within the working directory tree
         if (!string.IsNullOrEmpty(workingDirectory))
         {
             var normalizedWorkDir = NormalizePath(workingDirectory);
@@ -57,21 +58,19 @@ public sealed class FileRadarAllowlistService
             }
         }
 
-        // Check if path is in the session's allowlist
         if (_allowlists.TryGetValue(sessionId, out var allowlist))
         {
             lock (allowlist)
             {
-                if (allowlist.Contains(normalizedPath))
+                if (allowlist.Set.Contains(normalizedPath))
                 {
                     return true;
                 }
 
-                // Also check parent directories of the path (for directory listings)
                 var parent = Path.GetDirectoryName(normalizedPath);
                 while (!string.IsNullOrEmpty(parent))
                 {
-                    if (allowlist.Contains(parent))
+                    if (allowlist.Set.Contains(parent))
                     {
                         return true;
                     }
@@ -107,5 +106,11 @@ public sealed class FileRadarAllowlistService
         var normalizedDir = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return path.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             || path.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class OrderedAllowlist
+    {
+        public List<string> Order { get; } = new();
+        public HashSet<string> Set { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }

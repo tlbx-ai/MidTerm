@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Channels;
@@ -60,25 +61,27 @@ public sealed class MuxClient : IAsyncDisposable
     private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
-    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(30);
-    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(5);
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
+    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(2);
+    private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<OutputItem> _inputChannel;
     private readonly Dictionary<string, SessionBuffer> _sessionBuffers = new();
     private readonly ConcurrentQueue<string> _sessionsToRemove = new();
+    private readonly ConcurrentQueue<string> _droppedSessions = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _processor;
 
     private CancellationTokenSource? _loopTimeoutCts;
+    private CancellationTokenSource? _sendTimeoutCts;
     private CancellationTokenRegistration _loopCtReg;
     private static readonly Action<object?> s_cancelCallback = static state =>
         ((CancellationTokenSource?)state)?.Cancel();
 
     private volatile string? _activeSessionId;
     private volatile bool _flushSuspended;
-    private int _droppedFrameCount;
-    private readonly Dictionary<string, int> _lastFlushDelayMs = new();
+    private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new();
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
@@ -97,7 +100,7 @@ public sealed class MuxClient : IAsyncDisposable
         public int TotalBytes => _position;
         public int LastCols { get; set; }
         public int LastRows { get; set; }
-        public long LastFlushTicks { get; set; } = Environment.TickCount64;
+        public long LastFlushTicks { get; set; } = Stopwatch.GetTimestamp();
         public long QueuedAtTicks { get; set; }
         public int DroppedBytes { get; set; }
 
@@ -189,18 +192,10 @@ public sealed class MuxClient : IAsyncDisposable
             return;
         }
 
-        var queueCount = _inputChannel.Reader.Count;
-        if (queueCount >= MaxQueuedItems - 1)
-        {
-            var newCount = Interlocked.Increment(ref _droppedFrameCount);
-            if (newCount == 1)
-            {
-                Log.Warn(() => $"[MuxClient] {Id}: Input queue full, dropping items");
-            }
-        }
-
         if (!_inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, buffer)))
         {
+            _droppedSessions.Enqueue(sessionId);
+            Log.Verbose(() => $"[MuxClient] {Id}: Input queue full, dropped frame for {sessionId}");
             buffer.Release();
         }
     }
@@ -236,12 +231,17 @@ public sealed class MuxClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Check if frames were dropped and a resync is needed.
+    /// Drain session IDs that had frames dropped. Returns null if none.
     /// </summary>
-    public bool CheckAndResetDroppedFrames()
+    public HashSet<string>? DrainDroppedSessions()
     {
-        var count = Interlocked.Exchange(ref _droppedFrameCount, 0);
-        return count > 0;
+        if (_droppedSessions.IsEmpty) return null;
+        var result = new HashSet<string>();
+        while (_droppedSessions.TryDequeue(out var sessionId))
+        {
+            result.Add(sessionId);
+        }
+        return result.Count > 0 ? result : null;
     }
 
     /// <summary>
@@ -249,7 +249,7 @@ public sealed class MuxClient : IAsyncDisposable
     /// </summary>
     public void RemoveSession(string sessionId)
     {
-        _lastFlushDelayMs.Remove(sessionId);
+        _lastFlushDelayMs.TryRemove(sessionId, out _);
         _sessionsToRemove.Enqueue(sessionId);
     }
 
@@ -277,7 +277,7 @@ public sealed class MuxClient : IAsyncDisposable
                 }
 
                 // 3. Flush what's due (active immediately, background if threshold/time)
-                var now = Environment.TickCount64;
+                var now = Stopwatch.GetTimestamp();
                 await FlushDueBuffersAsync(now).ConfigureAwait(false);
 
                 // 4. Wait for more data OR timeout (to check time-based flushes)
@@ -321,7 +321,7 @@ public sealed class MuxClient : IAsyncDisposable
 
             if (buffer.TotalBytes == 0)
             {
-                buffer.QueuedAtTicks = Environment.TickCount64;
+                buffer.QueuedAtTicks = Stopwatch.GetTimestamp();
             }
             buffer.Write(item.Buffer.Span);
             buffer.LastCols = item.Cols;
@@ -344,7 +344,12 @@ public sealed class MuxClient : IAsyncDisposable
             && _sessionBuffers.TryGetValue(activeId, out var activeBuffer)
             && activeBuffer.TotalBytes > 0)
         {
-            _lastFlushDelayMs[activeId] = (int)(nowTicks - activeBuffer.QueuedAtTicks);
+            var delayMs = (int)Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
+            _lastFlushDelayMs[activeId] = delayMs;
+            if (delayMs > 50)
+            {
+                Log.Warn(() => $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms");
+            }
             await FlushBufferAsync(activeId, activeBuffer, compress: false).ConfigureAwait(false);
             activeBuffer.LastFlushTicks = nowTicks;
         }
@@ -354,11 +359,11 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (buffer.TotalBytes == 0 || sessionId == activeId) continue;
 
-            var elapsedMs = nowTicks - buffer.LastFlushTicks;
+            var elapsed = Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
             if (buffer.TotalBytes >= FlushThresholdBytes
-                || elapsedMs >= (long)FlushInterval.TotalMilliseconds)
+                || elapsed >= FlushInterval)
             {
-                _lastFlushDelayMs[sessionId] = (int)(nowTicks - buffer.QueuedAtTicks);
+                _lastFlushDelayMs[sessionId] = (int)Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
                 await FlushBufferAsync(sessionId, buffer, compress: true).ConfigureAwait(false);
                 buffer.LastFlushTicks = nowTicks;
             }
@@ -412,8 +417,14 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (WebSocket.State == WebSocketState.Open)
             {
-                await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
+                var token = GetSendTimeoutToken();
+                await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Warn(() => $"[MuxClient] {Id}: SendAsync timed out, aborting WebSocket");
+            WebSocket.Abort();
         }
         finally
         {
@@ -428,13 +439,30 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (WebSocket.State == WebSocketState.Open)
             {
-                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
+                var token = GetSendTimeoutToken();
+                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Warn(() => $"[MuxClient] {Id}: SendAsync timed out, aborting WebSocket");
+            WebSocket.Abort();
         }
         finally
         {
             _sendLock.Release();
         }
+    }
+
+    private CancellationToken GetSendTimeoutToken()
+    {
+        if (_sendTimeoutCts is null || !_sendTimeoutCts.TryReset())
+        {
+            _sendTimeoutCts?.Dispose();
+            _sendTimeoutCts = new CancellationTokenSource();
+        }
+        _sendTimeoutCts.CancelAfter(SendTimeout);
+        return _sendTimeoutCts.Token;
     }
 
     /// <summary>
@@ -461,9 +489,16 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (WebSocket.State == WebSocketState.Open)
             {
-                await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
+                using var cts = new CancellationTokenSource(SendTimeout);
+                await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, cts.Token).ConfigureAwait(false);
                 return true;
             }
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Warn(() => $"[MuxClient] {Id}: TrySendAsync timed out, aborting WebSocket");
+            WebSocket.Abort();
             return false;
         }
         catch (Exception ex)
@@ -489,9 +524,16 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (WebSocket.State == WebSocketState.Open)
             {
-                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false);
+                using var cts = new CancellationTokenSource(SendTimeout);
+                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, cts.Token).ConfigureAwait(false);
                 return true;
             }
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Warn(() => $"[MuxClient] {Id}: TrySendAsync timed out, aborting WebSocket");
+            WebSocket.Abort();
             return false;
         }
         catch (Exception ex)
@@ -528,6 +570,7 @@ public sealed class MuxClient : IAsyncDisposable
 
         _loopCtReg.Dispose();
         _loopTimeoutCts?.Dispose();
+        _sendTimeoutCts?.Dispose();
         _cts.Dispose();
         _sendLock.Dispose();
     }

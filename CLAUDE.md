@@ -148,7 +148,7 @@ The `Services/` folder contains ~45 files organized by responsibility. When addi
 | Category | Services | Purpose |
 |----------|----------|---------|
 | **Authentication** | `AuthService`, `AuthEndpoints` | Password hashing (PBKDF2), session tokens, login/logout |
-| **Sessions** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
+| **Sessions** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `TtyHostMuxConnectionManager`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
 | **WebSockets** | `MuxWebSocketHandler`, `StateWebSocketHandler`, `SettingsWebSocketHandler`, `MuxClient`, `MuxProtocol` | Binary mux protocol, JSON state sync, settings broadcast |
 | **Settings** | `SettingsService` (in Settings/) | Load/save settings.json, settings validation |
 | **Security** | `SecurityStatusService`, `UserValidationService`, `UserEnumerationService` | Security posture checks, RunAsUser validation |
@@ -161,7 +161,11 @@ The `Services/` folder contains ~45 files organized by responsibility. When addi
 | **History** | `HistoryService`, `HistoryEndpoints` | Command launch history |
 | **Files** | `FileEndpoints`, `FileRadarAllowlistService` | File uploads, path validation for FileRadar |
 | **Logging** | `LogEndpoints` | Log streaming WebSocket, log file access |
-| **JSON Contexts** | `AppJsonContext`, `GitHubReleaseContext`, `SecretsJsonContext`, `VersionManifestContext` | AOT-safe JSON serialization (see below) |
+| **Clipboard** | `ClipboardService` | Cross-platform clipboard image injection (Alt+V) |
+| **Main Browser** | `MainBrowserService` | Multi-client coordination: which browser controls resize |
+| **Tmux Compat** | `TmuxCommandDispatcher`, `TmuxCommandParser`, `TmuxFormatter`, `TmuxPaneMapper`, `TmuxTargetResolver`, `TmuxLayoutBridge`, `TmuxScriptWriter`, `TmuxKeyTranslator`, `TmuxLog` | Tmux shim compatibility layer for AI tools |
+| **Certificate Protection** | `ICertificateProtector`, `WindowsDpapiProtector`, `EncryptedFileProtector`, `CertificateProtectorFactory` | Platform-specific certificate key protection |
+| **JSON Contexts** | `AppJsonContext`, `GitHubReleaseContext`, `SecretsJsonContext`, `VersionManifestContext`, `TmuxJsonContext` | AOT-safe JSON serialization (see below) |
 
 ## Settings Model Pattern
 
@@ -226,6 +230,8 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 | `theming/` | Theme application and persistence |
 | `touchController/` | Mobile touch bar, gestures, favorites |
 | `updating/` | Update checking, changelog display, apply |
+| `layout/` | Multi-pane terminal layout: dock, undock, swap, persist to localStorage |
+| `managerBar/` | Customizable quick-action buttons below terminal area |
 | `voice.ts`, `voiceTools.ts` | Voice input/output |
 | `login.ts`, `trust.ts`, `tabTitle.ts` | Standalone page handlers |
 
@@ -240,32 +246,79 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 
 ```
 # Authentication
-POST /api/auth/login              Login {password} → sets session cookie
+POST /api/auth/login              Login {password} -> sets session cookie
 POST /api/auth/logout             Clear session cookie
 POST /api/auth/change-password    Change password {currentPassword, newPassword}
 GET  /api/auth/status             Auth status {authenticationEnabled, passwordSet}
+GET  /api/security/status         Security posture warnings
+
+# Bootstrap
+GET  /api/bootstrap               Combined startup data (settings, auth, shells, etc.)
+GET  /api/bootstrap/login         Login page bootstrap (cert info only)
 
 # Sessions
 GET  /api/sessions                List all sessions
 POST /api/sessions                Create session {cols, rows, shellType?, workingDirectory?}
 DELETE /api/sessions/{id}         Close session
-POST /api/sessions/{id}/resize    Resize {cols, rows}
-PUT  /api/sessions/{id}/name      Rename {name}
+POST /api/sessions/{id}/resize   Resize {cols, rows}
+PUT  /api/sessions/{id}/name     Rename {name}, optional ?auto=true
+POST /api/sessions/{id}/input    Send raw input bytes
+GET  /api/sessions/{id}/buffer   Get terminal buffer
+POST /api/sessions/{id}/upload   File upload
+POST /api/sessions/{id}/paste-clipboard-image  Paste clipboard image
 
 # System
-GET  /api/shells                  Available shells for platform
-GET  /api/settings                Current settings
-PUT  /api/settings                Update settings
-GET  /api/version                 Server version string
-GET  /api/health                  Health check
+GET  /api/system                  Consolidated health (version, uptime, platform, PID)
+GET  /api/version                 Version string (legacy)
+GET  /api/health                  Detailed health (legacy)
+GET  /api/version/details         Version manifest (legacy)
+GET  /api/shells                  Available shells
+GET  /api/networks                Network interfaces with IPv4
+GET  /api/paths                   Settings/secrets/cert/log directories
+GET  /api/users                   System user enumeration
+
+# Settings
+GET  /api/settings                Current public settings
+PUT  /api/settings                Update public settings
+POST /api/settings/reload         Reload settings from disk
+
+# Files
+POST /api/files/register          Register file path for access
+POST /api/files/check             Check file accessibility
+GET  /api/files/list              List directory
+GET  /api/files/view              View file content
+GET  /api/files/download          Download file
+GET  /api/files/resolve           Resolve symlinks
+
+# History
+GET  /api/history                 Get command history
+POST /api/history                 Create history entry
+PATCH /api/history/{id}           Edit entry
+PUT  /api/history/{id}/star       Star entry
+DELETE /api/history/{id}          Delete entry
+
+# Certificates
+GET  /api/certificate/info        Certificate details
+GET  /api/certificate/download/pem  Download PEM
+GET  /api/certificate/download/mobileconfig  iOS/macOS profile
+GET  /api/certificate/share-packet  Share packet with network endpoints
+
+# Updates
 GET  /api/update/check            Check for updates
-POST /api/update/apply            Download update and restart
+POST /api/update/apply            Download and apply update
+GET  /api/update/result           Get update result (?clear=true)
+GET  /api/update/log              Tail update log
+
+# Tmux Compatibility
+POST /api/tmux                    Tmux command dispatcher (null-delimited args)
+POST /api/tmux/layout             Update layout state
 ```
 
 ## WebSocket Endpoints
 
 - `/ws/mux` — Multiplexed terminal I/O (binary protocol)
 - `/ws/state` — Session state changes (JSON, for sidebar sync)
+- `/ws/settings` — Real-time settings sync across connected clients (JSON)
 
 ## Mux Protocol & Priority Buffering
 
@@ -296,12 +349,28 @@ The `/ws/mux` endpoint uses a binary protocol for efficient terminal I/O multipl
 - **Rate limiting**: 5 failures = 30s lockout, 10 failures = 5min lockout
 - Password set during install (mandatory), changeable in Settings > Security
 
-## Terminal Resize
+## Terminal Resize — CORE DESIGN PRINCIPLE
 
-- **No auto-resize** — terminals maintain their dimensions
-- **New sessions** created at optimal size for current screen
+**The user decides when a terminal is resized. Never auto-resize existing sessions.**
+
+- **No auto-resize** — terminals maintain their server-side dimensions across all clients
+- **New sessions** created at optimal size for the creating client's viewport
 - **Manual resize** via sidebar button (⤢) fits terminal to current screen
 - Each terminal has independent dimensions
+- **Multi-client scenario** (e.g., PC + iPad): connecting from a second device must NOT resize sessions. The second device shows terminals scaled (CSS transform) to fit its viewport. The user can explicitly press resize on the second device to claim optimal dimensions.
+- **Page reload / reconnect**: must never send resize commands to the server. Terminals sync server dimensions and apply CSS scaling locally.
+- **Layout restore from storage**: when a saved layout is restored on page load, terminals are moved to panes and CSS-scaled — NOT resized to fit pane dimensions. User must explicitly resize.
+- **Scaled terminals** should be visually centered in their container, not top-left aligned.
+
+## Tmux Compatibility Layer
+
+MidTerm includes a tmux shim that allows AI coding tools (Claude Code, etc.) to use split panes and other tmux features natively.
+
+- Controlled by `TmuxCompatibility` setting (default: true)
+- Injects a tmux shim script into terminal sessions
+- AI tools that detect tmux can use split panes, send-keys, etc.
+- 12 service files under `Services/Tmux/`, dispatched via `POST /api/tmux`
+- Command categories: Session, IO, Pane, Window, Config, Misc
 
 ## Code Style (C#)
 
@@ -360,6 +429,15 @@ The frontend uses [nanostores](https://github.com/nanostores/nanostores) (~1KB) 
 - `$activeSessionId` (atom) - Currently selected session
 - `$sessionList` (computed) - Sessions sorted by `_order`
 - `$connectionStatus` (computed) - 'connected' | 'disconnected' | 'reconnecting'
+- `$currentSettings` (atom) - Current settings from server
+- `$layout` (atom) - Current layout tree (multi-pane)
+- `$focusedSessionId` (atom) - Keyboard focus in layout
+- `$isMainBrowser` (atom) - Whether this browser controls auto-resize
+- `$renamingSessionId` (atom) - Session being renamed
+- `$fileViewerDocked` (atom) - File viewer dock state
+- `$dockedFilePath` (atom) - Current docked file path
+- `$dataLossDetected` (atom) - Buffer overflow tracking
+- `$processStates` (map) - Per-session foreground process info
 - UI flags: `$settingsOpen`, `$sidebarOpen`, `$sidebarCollapsed`
 
 **Ephemeral state (`state.ts`)** - Non-reactive infrastructure:
@@ -396,47 +474,102 @@ dev (default branch - all work here)
 main (stable releases only - never commit directly)
 ```
 
+**At the start of every session:** Check the current branch. If on `main`, switch to `dev` before making ANY changes. Never start work on `main`.
+
 **If the user tries to:**
 - Commit directly to `main` → **DECLINE.** Explain they must work on `dev` and promote via PR.
 - Run `release.ps1` on `dev` → **DECLINE.** Explain they should use `release-dev.ps1` for dev releases.
 - Run `release-dev.ps1` on `main` → **DECLINE.** Explain `main` only gets stable releases via promotion.
 - Push changes to `main` without a PR → **DECLINE.** All changes to `main` come through PR merges from `dev`.
+- Start making edits while on `main` → **STOP.** Switch to `dev` first, then proceed.
 
-### Daily Development (on `dev` branch)
+### Pull Strategy: Rebase (No Merge Bubbles)
+
+All working copies use `pull.rebase = true` to keep a linear history. This avoids "Merge branch 'dev' of remote" noise commits when multiple machines push to `dev`.
 
 ```powershell
-# 1. Make changes on dev branch
-git checkout dev
-# ... code changes ...
-git commit -m "Add feature X"
-git push
+# Set per-repo (already configured in this repo)
+git config pull.rebase true
 
-# 2. Create dev/prerelease for testing
-.\scripts\release-dev.ps1 -Bump patch `
-    -ReleaseTitle "Test feature X" `
-    -ReleaseNotes @("Added feature X for testing") `
-    -mthostUpdate no
-# Creates: v6.10.32-dev (prerelease on GitHub)
+# Or set globally for all repos on a machine
+git config --global pull.rebase true
 ```
+
+If a rebase gets messy, abort and fall back to a one-time merge pull:
+```powershell
+git rebase --abort
+git pull --no-rebase
+```
+
+### Dev Release Procedure (Claude Code agent instructions)
+
+When the user asks to "do a dev release" (minor/major/patch), follow this exact sequence:
+
+**Step 1 — Verify branch & clean state**
+```powershell
+git branch --show-current   # Must be "dev". If not, switch: git checkout dev
+git status --short          # Check for uncommitted changes
+```
+If there are uncommitted changes: commit them first (stage specific files, draft message from diff, get user approval).
+
+**Step 2 — Integrate remote changes**
+```powershell
+git pull --rebase           # pull.rebase=true is configured, but be explicit
+```
+If rebase fails: `git rebase --abort` then `git pull --no-rebase` as fallback.
+
+**Step 3 — Push local commits**
+```powershell
+git push
+```
+The release script will fail if local is ahead of remote without pushing first (it fetches and compares).
+
+**Step 4 — Build release notes from commit history**
+```powershell
+# Find what's new since last tag
+git log --oneline $(git describe --tags --abbrev=0)..HEAD
+```
+Use these commits to draft `-ReleaseTitle` (concise headline) and `-ReleaseNotes` (array of meaningful changelog entries). Ask the user to confirm if the notes look right.
+
+**Step 5 — Determine `-mthostUpdate`**
+- Check if any commits touched `Ai.Tlbx.MidTerm.TtyHost/`, `Ai.Tlbx.MidTerm.Common/`, or protocol code → `yes`
+- Web-only / frontend-only changes → `no`
+- If unclear, ask the user
+
+**Step 6 — Run the release script**
+```powershell
+pwsh -NoProfile -File scripts/release-dev.ps1 `
+    -Bump <major|minor|patch> `
+    -ReleaseTitle "Concise headline" `
+    -ReleaseNotes @("Detailed entry 1", "Detailed entry 2") `
+    -mthostUpdate <yes|no>
+```
+
+**Common mistakes to avoid:**
+- Running the release with uncommitted changes (script commits version.json — dirty tree causes conflicts)
+- Forgetting to push before releasing (script detects diverged branches and aborts)
+- Vague release notes like "Fix bug" or "Update UI" (script rejects notes < 20 chars)
 
 ### Promoting to Stable Release
 
-When dev is tested and ready for stable release:
+When dev is tested and ready for stable release, use `promote.ps1` from the dev branch:
 
 ```powershell
-# 1. Create PR on GitHub: dev → main
-# 2. Review and merge the PR
-# 3. Locally:
-git checkout main
-git pull
+# Auto-gathers all changelog entries from dev tags since last stable release (recommended)
+.\scripts\promote.ps1
 
-# 4. Create stable release
-.\scripts\release.ps1 -Bump patch `
-    -ReleaseTitle "Feature X" `
-    -ReleaseNotes @("Added feature X") `
-    -mthostUpdate no
-# Creates: v6.10.30 (full release on GitHub)
+# Override title, still auto-gather notes
+.\scripts\promote.ps1 -ReleaseTitle "Major UI overhaul"
+
+# Fully manual (legacy behavior)
+.\scripts\promote.ps1 -ReleaseTitle "Feature X" -ReleaseNotes @("Added feature X")
 ```
+
+The script automatically:
+1. Finds all dev tags since the last stable release (by version comparison)
+2. Extracts changelog entries from each tag's annotation
+3. Creates a PR with grouped changelog, merges it
+4. Tags the stable release on main with the combined changelog
 
 ### Update Channels
 
@@ -446,6 +579,10 @@ Users can choose which releases to receive via `settings.json`:
 |---------|---------|----------|
 | Stable (default) | `"updateChannel": "stable"` | Only full releases (v6.10.32) |
 | Dev | `"updateChannel": "dev"` | Prereleases + full releases (v6.10.32-dev) |
+
+### Version Management in Dev
+
+`release-dev.ps1` automatically reads `main:version.json` to ensure dev versions are always >= main. If main is at `6.16.0` and dev is behind, the script uses main's version as the base before bumping. **Never manually set version.json on main** — versions flow from dev→main via PR merges.
 
 ### Release Script Parameters
 
@@ -505,6 +642,7 @@ This architecture exists because hardcoded versions caused update failures where
 - Use interfaces + DI, not static classes
 - Platform checks: `OperatingSystem.IsWindows()`, `.IsLinux()`, `.IsMacOS()`
 - All JSON serialization must use source-generated `AppJsonContext` for AOT safety
+- **After plan executions or large implementation tasks finish**, always offer to build and publish a dev patch release
 
 ## Marketing Video Workflow
 

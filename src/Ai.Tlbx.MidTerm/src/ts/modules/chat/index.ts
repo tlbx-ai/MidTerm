@@ -7,11 +7,12 @@
 
 import { createLogger } from '../logging';
 import type { ChatMessage, VoiceToolName, InteractiveOp } from '../../types';
+import { escapeHtml } from '../../utils';
 
 const log = createLogger('chat');
 const STORAGE_KEY = 'midterm.chatPanelOpen';
 
-let chatMessages: ChatMessage[] = [];
+const chatMessages: ChatMessage[] = [];
 let autoAcceptEnabled = false;
 
 /**
@@ -41,7 +42,7 @@ export function showChatPanel(): void {
 /**
  * Hide the chat panel
  */
-export function hideChatPanel(): void {
+function hideChatPanel(): void {
   const panel = document.getElementById('chat-panel');
   if (panel) {
     panel.classList.add('hidden');
@@ -63,24 +64,6 @@ export function toggleChatPanel(): void {
 }
 
 /**
- * Check if the chat panel is currently visible
- */
-export function isChatPanelVisible(): boolean {
-  const panel = document.getElementById('chat-panel');
-  return panel !== null && !panel.classList.contains('hidden');
-}
-
-/**
- * Restore chat panel state from localStorage
- */
-export function restoreChatPanelState(): void {
-  const wasOpen = localStorage.getItem(STORAGE_KEY) === 'true';
-  if (wasOpen) {
-    showChatPanel();
-  }
-}
-
-/**
  * Add a chat message and render it
  */
 export function addChatMessage(message: ChatMessage): void {
@@ -88,25 +71,6 @@ export function addChatMessage(message: ChatMessage): void {
   renderMessage(message);
   scrollToBottom();
   log.info(() => `Chat message added: ${message.role}`);
-}
-
-/**
- * Clear all chat messages
- */
-export function clearChatMessages(): void {
-  chatMessages = [];
-  const container = document.getElementById('chat-messages');
-  if (container) {
-    container.innerHTML = '';
-  }
-  log.info(() => 'Chat messages cleared');
-}
-
-/**
- * Get all chat messages
- */
-export function getChatMessages(): ChatMessage[] {
-  return [...chatMessages];
 }
 
 /**
@@ -218,22 +182,6 @@ function formatTime(timestamp: string): string {
   } catch {
     return '';
   }
-}
-
-/**
- * Escape HTML to prevent XSS
- */
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-/**
- * Check if auto-accept is enabled for this session
- */
-export function isAutoAcceptEnabled(): boolean {
-  return autoAcceptEnabled;
 }
 
 /**

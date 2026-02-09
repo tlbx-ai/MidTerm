@@ -14,14 +14,14 @@
     <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
 
-  <!-- Publish-only: AOT optimizations (Speed over Size) -->
+  <!-- Publish-only: AOT optimizations (Size over Speed) -->
   <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(IsPublishing)' == 'true'">
-    <OptimizationPreference>Speed</OptimizationPreference>
+    <OptimizationPreference>Size</OptimizationPreference>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
     <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
     <IlcTrimMetadata>true</IlcTrimMetadata>
     <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>

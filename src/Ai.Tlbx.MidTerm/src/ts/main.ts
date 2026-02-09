@@ -13,13 +13,11 @@ import {
   connectStateWebSocket,
   connectMuxWebSocket,
   connectSettingsWebSocket,
-  registerStateCallbacks,
-  registerMuxCallbacks,
-  registerSettingsCallbacks,
+  setSelectSessionCallback,
   sendInput,
-  sendResize,
-  requestBufferRefresh,
   sendActiveSessionHint,
+  claimMainBrowser,
+  releaseMainBrowser,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -27,24 +25,16 @@ import {
   destroyTerminalForSession,
   preloadTerminalFont,
   initCalibrationTerminal,
-  registerTerminalCallbacks,
-  applyTerminalScaling,
-  fitSessionToScreen,
-  fitTerminalToContainer,
+  setShowBellCallback,
   setupResizeObserver,
   setupVisualViewport,
-  registerScalingCallbacks,
+  autoResizeAllTerminalsImmediate,
   bindSearchEvents,
-  registerFileDropCallbacks,
-  pasteToTerminal,
   scrollToBottom,
   focusActiveTerminal,
   calculateOptimalDimensions,
-  setTerminalScrollback,
 } from './modules/terminal';
 import {
-  updateEmptyState,
-  updateMobileTitle,
   getSessionDisplayName,
   setSessionListCallbacks,
   toggleSidebar,
@@ -64,26 +54,18 @@ import {
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
-import {
-  toggleSettings,
-  closeSettings,
-  applyReceivedSettings,
-  registerSettingsAppliedCallback,
-} from './modules/settings';
+import { toggleSettings, closeSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap } from './modules/bootstrap';
 import {
-  renderUpdatePanel,
   applyUpdate,
   checkForUpdates,
   showChangelog,
   closeChangelog,
-  handleUpdateInfo,
   showUpdateLog,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
-  initializeCommandHistory,
   initHistoryDropdown,
   toggleHistoryDropdown,
   createHistoryEntry,
@@ -91,8 +73,10 @@ import {
   type LaunchEntry,
 } from './modules/history';
 import { getForegroundInfo } from './modules/process';
+import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import { initTouchController } from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
+import { initManagerBar } from './modules/managerBar';
 import {
   initLayoutRenderer,
   initDockOverlay,
@@ -100,7 +84,6 @@ import {
   isSessionInLayout,
   isLayoutActive,
   focusLayoutSession,
-  registerLayoutCallbacks,
   initLayoutPersistence,
 } from './modules/layout';
 import {
@@ -120,6 +103,7 @@ import {
   $sessionList,
   $renamingSessionId,
   $currentSettings,
+  $isMainBrowser,
   setSession,
   removeSession,
   getSession,
@@ -173,6 +157,7 @@ async function init(): Promise<void> {
   log.info(() => 'MidTerm frontend initializing');
 
   cacheDOMElements();
+  initMainBrowserButton();
   initTrafficIndicator();
   initBadges();
   initFileViewer();
@@ -185,7 +170,6 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
-  initializeCommandHistory();
   initHistoryDropdown(spawnFromHistory);
 
   const fontPromise = preloadTerminalFont();
@@ -211,6 +195,7 @@ async function init(): Promise<void> {
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
+  initManagerBar();
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
@@ -219,6 +204,12 @@ async function init(): Promise<void> {
   initDiagnosticsPanel();
 
   setupVisibilityChangeHandler();
+  initPwaInstall();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/js/sw.js').catch(() => {});
+  }
+
   log.info(() => 'MidTerm frontend initialized');
 }
 
@@ -227,59 +218,13 @@ async function init(): Promise<void> {
 // =============================================================================
 
 function registerCallbacks(): void {
-  registerStateCallbacks({
-    destroyTerminalForSession,
-    applyTerminalScaling,
-    createTerminalForSession,
-    updateEmptyState,
-    selectSession,
-    updateMobileTitle,
-    renderUpdatePanel,
-  });
-
-  registerMuxCallbacks({
-    applyTerminalScaling,
-  });
-
-  registerSettingsCallbacks({
-    applyReceivedSettings,
-    applyReceivedUpdate: handleUpdateInfo,
-  });
-
-  registerTerminalCallbacks({
-    sendInput,
-    showBellNotification,
-    requestBufferRefresh,
-  });
-
-  registerFileDropCallbacks({
-    sendInput,
-    pasteToTerminal,
-  });
-
-  registerScalingCallbacks({
-    sendResize: (sessionId: string, terminal: { cols: number; rows: number }) => {
-      sendResize(sessionId, terminal.cols, terminal.rows);
-    },
-    focusActiveTerminal,
-  });
-
-  registerLayoutCallbacks({
-    createTerminalForSession,
-    sendActiveSessionHint,
-  });
-
-  registerSettingsAppliedCallback(() => {
-    sessionTerminals.forEach((_state, sessionId) => {
-      fitSessionToScreen(sessionId);
-    });
-  });
+  setSelectSessionCallback(selectSession);
+  setShowBellCallback(showBellNotification);
 
   setSessionListCallbacks({
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
-    onResize: resizeSessionToFit,
     onPinToHistory: pinSessionToHistory,
     onCloseSidebar: closeSidebar,
   });
@@ -451,7 +396,6 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     if (!isSessionInLayout(id)) {
       state.container.classList.add('hidden');
     }
-    setTerminalScrollback(id, id === sessionId);
   });
 
   $activeSessionId.set(sessionId);
@@ -465,7 +409,6 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   if (!isLayoutActive()) {
     state.container.classList.remove('hidden');
   }
-  setTerminalScrollback(sessionId, true);
 
   requestAnimationFrame(() => {
     state.terminal.focus();
@@ -506,20 +449,6 @@ function deleteSession(sessionId: string): void {
   apiDeleteSession(sessionId).catch((e) => {
     log.error(() => `Failed to delete session ${sessionId}: ${e}`);
   });
-}
-
-/**
- * Resize a session to fit its container (pane if in layout, full screen otherwise).
- */
-function resizeSessionToFit(sessionId: string): void {
-  if (isSessionInLayout(sessionId)) {
-    const pane = document.querySelector(`.layout-leaf[data-session-id="${sessionId}"]`);
-    if (pane) {
-      fitTerminalToContainer(sessionId, pane as HTMLElement);
-      return;
-    }
-  }
-  fitSessionToScreen(sessionId);
 }
 
 function renameSession(sessionId: string, newName: string | null): void {
@@ -679,8 +608,9 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       selectSession(data.id);
 
       if (entry.commandLine) {
+        const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);
         setTimeout(() => {
-          sendInput(data.id!, entry.commandLine!);
+          sendInput(data.id!, replayCmd + '\r');
         }, 100);
       }
     })
@@ -753,6 +683,71 @@ function showBellNotification(sessionId: string): void {
 }
 
 // =============================================================================
+// Main Browser Toggle
+// =============================================================================
+
+function initMainBrowserButton(): void {
+  const btn = document.getElementById('btn-main-browser');
+  if (!btn) return;
+
+  function updateButton(isMain: boolean): void {
+    if (!btn) return;
+    btn.classList.toggle('active', isMain);
+    btn.title = isMain ? 'Main browser (auto-resize)' : 'Following browser (scale only)';
+  }
+
+  updateButton($isMainBrowser.get());
+
+  btn.addEventListener('click', () => {
+    if ($isMainBrowser.get()) {
+      releaseMainBrowser();
+    } else {
+      claimMainBrowser();
+    }
+  });
+
+  $isMainBrowser.subscribe((isMain) => {
+    updateButton(isMain);
+    if (isMain) {
+      requestAnimationFrame(autoResizeAllTerminalsImmediate);
+    }
+  });
+}
+
+// =============================================================================
+// PWA Install
+// =============================================================================
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+}
+
+function initPwaInstall(): void {
+  let deferredPrompt: BeforeInstallPromptEvent | null = null;
+  const row = document.getElementById('pwa-install-row');
+  const btn = document.getElementById('btn-install-pwa');
+  if (!row || !btn) return;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e as BeforeInstallPromptEvent;
+    row.classList.remove('hidden');
+  });
+
+  btn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    deferredPrompt = null;
+    row.classList.add('hidden');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    row.classList.add('hidden');
+    deferredPrompt = null;
+  });
+}
+
+// =============================================================================
 // Event Binding
 // =============================================================================
 
@@ -773,14 +768,6 @@ function bindEvents(): void {
     const activeId = $activeSessionId.get();
     if (activeId) sendInput(activeId, '\x03');
   });
-  bindClick('btn-resize-mobile', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) fitSessionToScreen(activeId);
-  });
-  bindClick('btn-resize-titlebar', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) fitSessionToScreen(activeId);
-  });
   bindClick('btn-rename-mobile', () => {
     const activeId = $activeSessionId.get();
     if (activeId) promptRenameSession(activeId);
@@ -793,6 +780,27 @@ function bindEvents(): void {
     const activeId = $activeSessionId.get();
     if (activeId) deleteSession(activeId);
   });
+
+  // Fullscreen toggle (mobile) - hide button if API not supported
+  const fullscreenBtn = document.getElementById('btn-fullscreen-mobile');
+  if (document.fullscreenEnabled) {
+    bindClick('btn-fullscreen-mobile', () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      const iconEl = fullscreenBtn?.querySelector('.icon');
+      if (iconEl) {
+        iconEl.textContent = document.fullscreenElement ? '\ue920' : '\ue90c';
+      }
+    });
+  } else if (fullscreenBtn) {
+    fullscreenBtn.style.display = 'none';
+  }
 
   if (dom.settingsBtn) {
     dom.settingsBtn.addEventListener('click', toggleSettings);

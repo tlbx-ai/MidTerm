@@ -22,6 +22,7 @@ internal sealed class LogWriter : IDisposable
     private StreamWriter? _currentWriter;
     private string? _currentFilePath;
     private long _currentFileSize;
+    private DateOnly _currentDate;
 
     public LogWriter(string filePrefix, string logDirectory, LogRotationPolicy policy)
     {
@@ -197,13 +198,21 @@ internal sealed class LogWriter : IDisposable
 
     private void EnsureFileOpen()
     {
-        if (_currentFile is not null)
+        var today = DateOnly.FromDateTime(DateTime.Now);
+
+        if (_currentFile is not null && _currentDate == today)
         {
             return;
         }
 
+        if (_currentFile is not null)
+        {
+            CloseCurrentFile();
+        }
+
+        _currentDate = today;
         Directory.CreateDirectory(_logDirectory);
-        _currentFilePath = Path.Combine(_logDirectory, $"{_filePrefix}.log");
+        _currentFilePath = Path.Combine(_logDirectory, $"{_filePrefix}-{today:yyyy-MM-dd}.log");
 
         _currentFile = new FileStream(
             _currentFilePath,
@@ -225,26 +234,6 @@ internal sealed class LogWriter : IDisposable
         }
 
         CloseCurrentFile();
-
-        var basePath = Path.Combine(_logDirectory, _filePrefix);
-
-        for (var i = _policy.MaxFileCount - 1; i >= 1; i--)
-        {
-            var src = i == 1 ? $"{basePath}.log" : $"{basePath}.{i - 1}.log";
-            var dst = $"{basePath}.{i}.log";
-
-            if (File.Exists(src))
-            {
-                try
-                {
-                    File.Move(src, dst, overwrite: true);
-                }
-                catch
-                {
-                }
-            }
-        }
-
         EnsureFileOpen();
         EnforceDirectorySizeLimit();
     }
@@ -253,27 +242,32 @@ internal sealed class LogWriter : IDisposable
     {
         try
         {
-            var files = Directory.GetFiles(_logDirectory, "*.log")
+            var files = Directory.GetFiles(_logDirectory, $"{_filePrefix}-*.log")
                 .Select(f => new FileInfo(f))
-                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .OrderByDescending(f => f.Name)
                 .ToList();
 
             var totalSize = files.Sum(f => f.Length);
 
-            while (totalSize > _policy.MaxDirectorySizeBytes && files.Count > 1)
+            for (var i = files.Count - 1; i >= 1; i--)
             {
-                var oldest = files[^1];
-                totalSize -= oldest.Length;
+                if (files.Count <= _policy.MaxFileCount && totalSize <= _policy.MaxDirectorySizeBytes)
+                {
+                    break;
+                }
+
+                var file = files[i];
+                totalSize -= file.Length;
 
                 try
                 {
-                    oldest.Delete();
+                    file.Delete();
                 }
                 catch
                 {
                 }
 
-                files.RemoveAt(files.Count - 1);
+                files.RemoveAt(i);
             }
         }
         catch

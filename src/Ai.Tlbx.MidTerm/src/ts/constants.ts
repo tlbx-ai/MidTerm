@@ -63,36 +63,100 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     scrollbarSliderBackground: 'rgba(58, 62, 82, 0.5)',
     scrollbarSliderHoverBackground: 'rgba(123, 162, 247, 0.5)',
     scrollbarSliderActiveBackground: 'rgba(123, 162, 247, 0.7)',
+    black: '#1C1E2A',
+    red: '#F07A8D',
+    green: '#8FD694',
+    yellow: '#E8B44C',
+    blue: '#7BA2F7',
+    magenta: '#9D8CFF',
+    cyan: '#7DCFFF',
+    white: '#D4D7E8',
+    brightBlack: '#767B94',
+    brightRed: '#F5A962',
+    brightGreen: '#A8E5AD',
+    brightYellow: '#F5C97A',
+    brightBlue: '#8FB5FF',
+    brightMagenta: '#B5A8FF',
+    brightCyan: '#9DDDFF',
+    brightWhite: '#E0E2F0',
   },
   light: {
-    background: '#D5D6DB',
-    foreground: '#343B58',
-    cursor: '#343B58',
-    cursorAccent: '#D5D6DB',
-    selectionBackground: '#9FA0A5',
-    scrollbarSliderBackground: 'rgba(52, 59, 88, 0.3)',
-    scrollbarSliderHoverBackground: 'rgba(52, 59, 88, 0.5)',
-    scrollbarSliderActiveBackground: 'rgba(52, 59, 88, 0.7)',
+    background: '#F8F9FA',
+    foreground: '#1A1B26',
+    cursor: '#1A1B26',
+    cursorAccent: '#F8F9FA',
+    selectionBackground: '#B4D7FF',
+    scrollbarSliderBackground: 'rgba(26, 27, 38, 0.15)',
+    scrollbarSliderHoverBackground: 'rgba(26, 27, 38, 0.3)',
+    scrollbarSliderActiveBackground: 'rgba(26, 27, 38, 0.45)',
+    black: '#000000',
+    red: '#CD3131',
+    green: '#008000',
+    yellow: '#795E26',
+    blue: '#0451A5',
+    magenta: '#AF00DB',
+    cyan: '#0598BC',
+    white: '#383A42',
+    brightBlack: '#696C77',
+    brightRed: '#E45649',
+    brightGreen: '#50A14F',
+    brightYellow: '#C18401',
+    brightBlue: '#4078F2',
+    brightMagenta: '#A626A4',
+    brightCyan: '#0184BC',
+    brightWhite: '#555D6F',
   },
   solarizedDark: {
     background: '#002B36',
     foreground: '#839496',
     cursor: '#839496',
     cursorAccent: '#002B36',
-    selectionBackground: '#073642',
+    selectionBackground: '#0D4A58',
     scrollbarSliderBackground: 'rgba(131, 148, 150, 0.3)',
     scrollbarSliderHoverBackground: 'rgba(131, 148, 150, 0.5)',
     scrollbarSliderActiveBackground: 'rgba(131, 148, 150, 0.7)',
+    black: '#073642',
+    red: '#DC322F',
+    green: '#859900',
+    yellow: '#B58900',
+    blue: '#268BD2',
+    magenta: '#D33682',
+    cyan: '#2AA198',
+    white: '#EEE8D5',
+    brightBlack: '#586E75',
+    brightRed: '#CB4B16',
+    brightGreen: '#A4BD00',
+    brightYellow: '#D4A017',
+    brightBlue: '#54A3D8',
+    brightMagenta: '#6C71C4',
+    brightCyan: '#54BDB2',
+    brightWhite: '#FDF6E3',
   },
   solarizedLight: {
     background: '#FDF6E3',
     foreground: '#657B83',
     cursor: '#657B83',
     cursorAccent: '#FDF6E3',
-    selectionBackground: '#EEE8D5',
+    selectionBackground: '#D3E5ED',
     scrollbarSliderBackground: 'rgba(101, 123, 131, 0.3)',
     scrollbarSliderHoverBackground: 'rgba(101, 123, 131, 0.5)',
     scrollbarSliderActiveBackground: 'rgba(101, 123, 131, 0.7)',
+    black: '#073642',
+    red: '#DC322F',
+    green: '#859900',
+    yellow: '#B58900',
+    blue: '#268BD2',
+    magenta: '#D33682',
+    cyan: '#2AA198',
+    white: '#EEE8D5',
+    brightBlack: '#586E75',
+    brightRed: '#CB4B16',
+    brightGreen: '#6C8A00',
+    brightYellow: '#946D00',
+    brightBlue: '#1B7FC4',
+    brightMagenta: '#6C71C4',
+    brightCyan: '#1F8E85',
+    brightWhite: '#FDF6E3',
   },
 };
 
@@ -133,12 +197,6 @@ export const TERMINAL_PADDING = 8;
 
 /** Reserved space for xterm's overlay scrollbar (0 = scrollbar overlays text) */
 export const SCROLLBAR_WIDTH = 0;
-
-/** Default scrollback for active terminal (uses user setting or this default) */
-export const ACTIVE_SCROLLBACK = 10000;
-
-/** Reduced scrollback for background terminals to save memory */
-export const BACKGROUND_SCROLLBACK = 1000;
 
 /** Minimum terminal columns */
 export const MIN_TERMINAL_COLS = 10;
@@ -186,6 +244,7 @@ export const ICONS = {
   more: '\ue918', // more_vert (vertical dots)
   history: '\ue967', // history (clock with arrow)
   undock: '\ue920', // close_fullscreen
+  fullscreen: '\ue90c', // expand (open fullscreen)
 } as const;
 
 /** Creates an icon span element */

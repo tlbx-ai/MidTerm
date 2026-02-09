@@ -34,7 +34,7 @@ public sealed class MuxWebSocketHandler
         var settings = _settingsService.Load();
         if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
         {
-            var token = context.Request.Cookies["mm-session"];
+            var token = context.Request.Cookies[AuthService.SessionCookieName];
             if (token is null || !_authService.ValidateSessionToken(token))
             {
                 context.Response.StatusCode = 401;
@@ -163,36 +163,15 @@ public sealed class MuxWebSocketHandler
                 await ProcessFrameAsync(new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count), client);
             }
 
-            if (client.CheckAndResetDroppedFrames())
+            var droppedSessions = client.DrainDroppedSessions();
+            if (droppedSessions is not null)
             {
-                await PerformResyncAsync(client);
+                foreach (var sessionId in droppedSessions)
+                {
+                    var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, 0);
+                    await client.TrySendAsync(lossFrame);
+                }
             }
-        }
-    }
-
-    private async Task PerformResyncAsync(MuxClient client)
-    {
-        try
-        {
-            Log.Info(() => $"[MuxHandler] {client.Id}: Performing resync");
-
-            client.SuspendFlush();
-
-            // Send clear screen command
-            var clearFrame = MuxProtocol.CreateClearScreenFrame();
-            await client.TrySendAsync(clearFrame);
-
-            // Send fresh buffers
-            await SendInitialBuffersAsync(client);
-
-            client.ResumeFlush();
-
-            Log.Verbose(() => $"[MuxHandler] {client.Id}: Resync complete");
-        }
-        catch (Exception ex)
-        {
-            client.ResumeFlush();
-            Log.Error(() => $"[MuxHandler] {client.Id}: Resync failed: {ex.Message}");
         }
     }
 

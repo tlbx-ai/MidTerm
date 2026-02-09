@@ -1916,6 +1916,25 @@
           }
         }
       },
+      "ManagerBarButton": {
+        "required": [
+          "id",
+          "label",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
       "MidTermSettingsPublic": {
         "required": [
           "defaultShell",
@@ -1931,6 +1950,7 @@
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
+          "scrollbarStyle",
           "useWebGL",
           "scrollbackLines",
           "bellStyle",
@@ -1939,6 +1959,9 @@
           "clipboardShortcuts",
           "scrollbackProtection",
           "fileRadar",
+          "tmuxCompatibility",
+          "managerBarEnabled",
+          "managerBarButtons",
           "runAsUser",
           "runAsUserSid",
           "authenticationEnabled",
@@ -1996,6 +2019,9 @@
           "smoothScrolling": {
             "type": "boolean"
           },
+          "scrollbarStyle": {
+            "$ref": "#/components/schemas/ScrollbarStyleSetting"
+          },
           "useWebGL": {
             "type": "boolean"
           },
@@ -2020,6 +2046,18 @@
           },
           "fileRadar": {
             "type": "boolean"
+          },
+          "tmuxCompatibility": {
+            "type": "boolean"
+          },
+          "managerBarEnabled": {
+            "type": "boolean"
+          },
+          "managerBarButtons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagerBarButton"
+            }
           },
           "runAsUser": {
             "type": [
@@ -2151,6 +2189,13 @@
             "format": "int32"
           }
         }
+      },
+      "ScrollbarStyleSetting": {
+        "enum": [
+          "off",
+          "hover",
+          "always"
+        ]
       },
       "SecurityStatus": {
         "required": [

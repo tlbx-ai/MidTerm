@@ -1,3 +1,4 @@
+using System.Net;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -33,7 +34,13 @@ public static class AuthEndpoints
                 return;
             }
 
-            var token = context.Request.Cookies["mm-session"];
+            if (path == "/api/shutdown" && IsLoopback(context))
+            {
+                await next();
+                return;
+            }
+
+            var token = context.Request.Cookies[AuthService.SessionCookieName];
             if (token is not null && authService.ValidateSessionToken(token))
             {
                 // Issue fresh token on each request for sliding window expiry
@@ -42,7 +49,7 @@ public static class AuthEndpoints
                 if (!context.WebSockets.IsWebSocketRequest)
                 {
                     var freshToken = authService.CreateSessionToken();
-                    context.Response.Cookies.Append("mm-session", freshToken, GetSessionCookieOptions());
+                    context.Response.Cookies.Append(AuthService.SessionCookieName, freshToken, GetSessionCookieOptions());
                 }
                 await next();
                 return;
@@ -93,14 +100,14 @@ public static class AuthEndpoints
 
             authService.ResetAttempts(ip);
             var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append("mm-session", token, GetSessionCookieOptions());
+            ctx.Response.Cookies.Append(AuthService.SessionCookieName, token, GetSessionCookieOptions());
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
 
         app.MapPost("/api/auth/logout", (HttpContext ctx) =>
         {
-            ctx.Response.Cookies.Delete("mm-session");
+            ctx.Response.Cookies.Delete(AuthService.SessionCookieName);
             return Results.Ok();
         });
 
@@ -134,7 +141,7 @@ public static class AuthEndpoints
             settingsService.Save(pwSettings);
 
             var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append("mm-session", token, GetSessionCookieOptions());
+            ctx.Response.Cookies.Append(AuthService.SessionCookieName, token, GetSessionCookieOptions());
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
@@ -168,7 +175,6 @@ public static class AuthEndpoints
                path == "/api/version" ||
                path == "/api/paths" ||
                path == "/api/security/status" ||
-               path == "/api/shutdown" ||
                path.StartsWith("/api/certificate/") ||
                path.StartsWith("/api/auth/") ||
                path.StartsWith("/css/") ||
@@ -179,5 +185,11 @@ public static class AuthEndpoints
                path.EndsWith(".webmanifest") ||
                path.EndsWith(".woff") ||
                path.EndsWith(".woff2");
+    }
+
+    private static bool IsLoopback(HttpContext context)
+    {
+        var remoteIp = context.Connection.RemoteIpAddress;
+        return remoteIp is not null && IPAddress.IsLoopback(remoteIp);
     }
 }

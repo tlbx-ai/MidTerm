@@ -12,10 +12,4 @@ export {
   logout,
 } from './status';
 
-export {
-  showPasswordModal,
-  hidePasswordModal,
-  handlePasswordSubmit,
-  showPasswordError,
-  bindAuthEvents,
-} from './password';
+export { showPasswordModal, handlePasswordSubmit, bindAuthEvents } from './password';

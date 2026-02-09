@@ -27,12 +27,6 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.Info, json);
     }
 
-    [Obsolete("Use WriteInputMessage with callback for zero-allocation")]
-    public static byte[] CreateInputMessage(ReadOnlySpan<byte> data)
-    {
-        return CreateFrame(TtyHostMessageType.Input, data.ToArray());
-    }
-
     /// <summary>
     /// Writes an input message into a pre-allocated buffer. Zero allocations.
     /// Destination must be at least HeaderSize + data.Length bytes.
@@ -63,16 +57,6 @@ public static class TtyHostProtocol
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
-    }
-
-    [Obsolete("Use WriteOutputMessage with callback for zero-allocation")]
-    public static byte[] CreateOutputMessage(int cols, int rows, ReadOnlySpan<byte> data)
-    {
-        var payload = new byte[4 + data.Length];
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0, 2), (ushort)cols);
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2, 2), (ushort)rows);
-        data.CopyTo(payload.AsSpan(4));
-        return CreateFrame(TtyHostMessageType.Output, payload);
     }
 
     /// <summary>
@@ -137,12 +121,6 @@ public static class TtyHostProtocol
     public static byte[] CreateGetBuffer()
     {
         return CreateFrame(TtyHostMessageType.GetBuffer, []);
-    }
-
-    [Obsolete("Use WriteBufferResponse with callback for zero-allocation")]
-    public static byte[] CreateBufferResponse(ReadOnlySpan<byte> buffer)
-    {
-        return CreateFrame(TtyHostMessageType.Buffer, buffer.ToArray());
     }
 
     /// <summary>
@@ -311,28 +289,51 @@ public enum TtyHostMessageType : byte
 /// </summary>
 public sealed class SessionInfo
 {
+    [JsonIgnore]
+    private readonly object _lock = new();
+
+    private int _cols;
+    private int _rows;
+    private bool _isRunning;
+    private int? _exitCode;
+    private string? _name;
+    private string? _terminalTitle;
+    private bool _manuallyNamed;
+    private string? _currentDirectory;
+    private int? _foregroundPid;
+    private string? _foregroundName;
+    private string? _foregroundCommandLine;
+    private byte _order;
+
     public string Id { get; set; } = string.Empty;
     public int Pid { get; set; }
-    public int HostPid { get; set; }  // mthost process ID (for orphan detection)
+    public int HostPid { get; set; }
     public string ShellType { get; set; } = string.Empty;
-    public int Cols { get; set; }
-    public int Rows { get; set; }
-    public bool IsRunning { get; set; }
-    public int? ExitCode { get; set; }
-    public string? Name { get; set; }
-    public string? TerminalTitle { get; set; }
-    public bool ManuallyNamed { get; set; }
     public DateTime CreatedAt { get; set; }
     public string? TtyHostVersion { get; set; }
 
-    // Process monitoring fields
-    public string? CurrentDirectory { get; set; }
-    public int? ForegroundPid { get; set; }
-    public string? ForegroundName { get; set; }
-    public string? ForegroundCommandLine { get; set; }
+    public int Cols { get => Lock(() => _cols); set => Lock(() => _cols = value); }
+    public int Rows { get => Lock(() => _rows); set => Lock(() => _rows = value); }
+    public bool IsRunning { get => Lock(() => _isRunning); set => Lock(() => _isRunning = value); }
+    public int? ExitCode { get => Lock(() => _exitCode); set => Lock(() => _exitCode = value); }
+    public string? Name { get => Lock(() => _name); set => Lock(() => _name = value); }
+    public string? TerminalTitle { get => Lock(() => _terminalTitle); set => Lock(() => _terminalTitle = value); }
+    public bool ManuallyNamed { get => Lock(() => _manuallyNamed); set => Lock(() => _manuallyNamed = value); }
+    public string? CurrentDirectory { get => Lock(() => _currentDirectory); set => Lock(() => _currentDirectory = value); }
+    public int? ForegroundPid { get => Lock(() => _foregroundPid); set => Lock(() => _foregroundPid = value); }
+    public string? ForegroundName { get => Lock(() => _foregroundName); set => Lock(() => _foregroundName = value); }
+    public string? ForegroundCommandLine { get => Lock(() => _foregroundCommandLine); set => Lock(() => _foregroundCommandLine = value); }
+    public byte Order { get => Lock(() => _order); set => Lock(() => _order = value); }
 
-    // Display order (0-255)
-    public byte Order { get; set; }
+    private T Lock<T>(Func<T> func)
+    {
+        lock (_lock) return func();
+    }
+
+    private void Lock(Action action)
+    {
+        lock (_lock) action();
+    }
 }
 
 /// <summary>

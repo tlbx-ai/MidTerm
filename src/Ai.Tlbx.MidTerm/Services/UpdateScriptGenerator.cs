@@ -18,7 +18,7 @@ public static class UpdateScriptGenerator
 {
     private const string ServiceName = "MidTerm";
     private const string LaunchdLabel = "ai.tlbx.midterm";
-    private const string SystemdService = "midterm";
+    private const string SystemdService = "MidTerm";
     private const int MaxRetries = 30;
     private const int RetryDelaySeconds = 1;
 
@@ -142,13 +142,16 @@ function WaitForFileWritable {{
     return $false
 }}
 
-function KillProcessByName {{
-    param([string]$Name)
+function KillProcessByPath {{
+    param([string]$FullPath)
 
-    $procs = Get-Process -Name $Name -ErrorAction SilentlyContinue
+    $Name = [System.IO.Path]::GetFileNameWithoutExtension($FullPath)
+    $procs = Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object {{
+        try {{ $_.Path -eq $FullPath }} catch {{ $false }}
+    }}
     if ($procs) {{
         foreach ($proc in $procs) {{
-            Log ""Killing $Name (PID: $($proc.Id))...""
+            Log ""Killing $Name (PID: $($proc.Id), Path: $FullPath)...""
             try {{
                 $proc.Kill()
                 $proc.WaitForExit(5000)
@@ -159,11 +162,15 @@ function KillProcessByName {{
         Start-Sleep -Milliseconds 500
     }}
 
-    # Double-check with taskkill
-    $remaining = Get-Process -Name $Name -ErrorAction SilentlyContinue
+    # Double-check
+    $remaining = Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object {{
+        try {{ $_.Path -eq $FullPath }} catch {{ $false }}
+    }}
     if ($remaining) {{
-        Log ""Using taskkill for remaining $Name processes...""
-        taskkill /F /IM ""$Name.exe"" 2>$null
+        foreach ($proc in $remaining) {{
+            Log ""Force killing $Name (PID: $($proc.Id))..."" 'WARN'
+            try {{ $proc.Kill() }} catch {{}}
+        }}
         Start-Sleep -Seconds 1
     }}
 }}
@@ -213,6 +220,18 @@ Log 'MidTerm Update Script Starting'
 Log ""Update type: $(if ($IsWebOnly) {{ 'Web-only' }} else {{ 'Full' }})""
 Log '=========================================='
 
+# Log version before update
+if (Test-Path $CurrentVersionJson) {{
+    try {{
+        $vj = Get-Content $CurrentVersionJson -Raw | ConvertFrom-Json
+        Log ""Version before update: web=$($vj.web), pty=$($vj.pty)""
+    }} catch {{
+        Log 'Could not read current version.json' 'WARN'
+    }}
+}} else {{
+    Log 'No version.json found (fresh install?)' 'WARN'
+}}
+
 $rollbackNeeded = $false
 $startedOk = $false
 
@@ -237,14 +256,14 @@ try {{
         }}
     }}
 
-    # Kill mt.exe processes
+    # Kill mt.exe processes (by full path to avoid killing unrelated processes)
     Log 'Killing mt.exe processes...'
-    KillProcessByName 'mt'
+    KillProcessByPath $CurrentMt
 
     # Kill mthost.exe processes (only for full updates)
     if (-not $IsWebOnly) {{
         Log 'Killing mthost.exe processes...'
-        KillProcessByName 'mthost'
+        KillProcessByPath $CurrentMthost
     }}
 
     Log 'All processes stopped'
@@ -406,6 +425,24 @@ try {{
 
     Log 'All files installed'
 
+    # Settings file fate
+    $settingsCheck = Join-Path $SettingsDir 'settings.json'
+    if (Test-Path $settingsCheck) {{
+        Log 'settings.json: preserved (not modified by update)'
+    }} else {{
+        Log 'settings.json: not present' 'WARN'
+    }}
+
+    # Log version after update
+    if (Test-Path $CurrentVersionJson) {{
+        try {{
+            $vj = Get-Content $CurrentVersionJson -Raw | ConvertFrom-Json
+            Log ""Version after update: web=$($vj.web), pty=$($vj.pty)""
+        }} catch {{
+            Log 'Could not read new version.json' 'WARN'
+        }}
+    }}
+
     # ============================================
     # PHASE 5: Start the new version
     # ============================================
@@ -513,7 +550,7 @@ try {{
         Log '=== ROLLBACK ===' 'WARN'
 
         # Stop any partially started process
-        KillProcessByName 'mt'
+        KillProcessByPath $CurrentMt
 
         # Restore backups
         if (Test-Path ""$CurrentMt.bak"") {{
@@ -766,24 +803,26 @@ wait_for_file_writable() {{
     return 1
 }}
 
-kill_process() {{
-    local name=""$1""
+kill_process_by_path() {{
+    local full_path=""$1""
+    local name
+    name=$(basename ""$full_path"")
     local pids
 
-    pids=$(pgrep -f ""/$name\$"" 2>/dev/null || true)
+    pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
     if [[ -n ""$pids"" ]]; then
         for pid in $pids; do
-            log ""Killing $name (PID: $pid)...""
+            log ""Killing $name (PID: $pid, Path: $full_path)...""
             kill -9 ""$pid"" 2>/dev/null || true
         done
         sleep 1
     fi
 
     # Double-check
-    pids=$(pgrep -f ""/$name\$"" 2>/dev/null || true)
+    pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
     if [[ -n ""$pids"" ]]; then
         log ""Force killing remaining $name processes..."" ""WARN""
-        pkill -9 -f ""/$name\$"" 2>/dev/null || true
+        pkill -9 -f ""$full_path"" 2>/dev/null || true
         sleep 1
     fi
 }}
@@ -861,7 +900,7 @@ cleanup() {{
         log ""=== ROLLBACK ==="" ""WARN""
 
         # Stop any partially started process
-        kill_process ""mt""
+        kill_process_by_path ""$CURRENT_MT""
 
         # Restore backups
         if [[ -f ""$CURRENT_MT.bak"" ]]; then
@@ -948,6 +987,19 @@ log ""Update type: $(if $IS_WEB_ONLY; then echo 'Web-only'; else echo 'Full'; fi
 log ""Platform: $(if $IS_MACOS; then echo 'macOS'; else echo 'Linux'; fi)""
 log '=========================================='
 
+# Log version before update
+if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
+    if command -v jq &> /dev/null; then
+        _web_ver=$(jq -r '.web // ""unknown""' ""$CURRENT_VERSION_JSON"" 2>/dev/null)
+        _pty_ver=$(jq -r '.pty // ""unknown""' ""$CURRENT_VERSION_JSON"" 2>/dev/null)
+        log ""Version before update: web=$_web_ver, pty=$_pty_ver""
+    else
+        log ""version.json exists but jq not available for parsing""
+    fi
+else
+    log ""No version.json found (fresh install?)"" ""WARN""
+fi
+
 # ============================================
 # PHASE 1: Stop all processes
 # ============================================
@@ -957,16 +1009,21 @@ log '=== PHASE 1: Stopping processes ==='
 # Stop service
 log ""Stopping service...""
 {stopServiceCmd}
-sleep 2
 
-# Kill mt processes
+# Wait for process to actually exit (up to 5s) before force-killing
+for _i in $(seq 1 10); do
+    pgrep -f ""/${{CURRENT_MT##*/}}$"" >/dev/null 2>&1 || break
+    sleep 0.5
+done
+
+# Kill mt processes (by full path to avoid killing unrelated processes)
 log ""Killing mt processes...""
-kill_process ""mt""
+kill_process_by_path ""$CURRENT_MT""
 
 # Kill mthost processes (only for full updates)
 if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
     log ""Killing mthost processes...""
-    kill_process ""mthost""
+    kill_process_by_path ""$CURRENT_MTHOST""
 fi
 
 log ""All processes stopped""
@@ -1125,6 +1182,24 @@ if [[ -f ""$NEW_VERSION_JSON"" ]]; then
 fi
 
 log ""All files installed""
+
+# Settings file fate
+if [[ -f ""$SETTINGS_PATH"" ]]; then
+    log ""settings.json: preserved (not modified by update)""
+else
+    log ""settings.json: not present"" ""WARN""
+fi
+
+# Log version after update
+if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
+    if command -v jq &> /dev/null; then
+        _web_ver=$(jq -r '.web // ""unknown""' ""$CURRENT_VERSION_JSON"" 2>/dev/null)
+        _pty_ver=$(jq -r '.pty // ""unknown""' ""$CURRENT_VERSION_JSON"" 2>/dev/null)
+        log ""Version after update: web=$_web_ver, pty=$_pty_ver""
+    else
+        log ""version.json exists but jq not available for parsing""
+    fi
+fi
 
 # ============================================
 # PHASE 5: Start the new version

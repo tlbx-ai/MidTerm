@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Tmux;
+using Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Startup;
 
@@ -129,7 +131,7 @@ public class Program
 
         var settings = settingsService.Load();
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
-        Log.Initialize("mt", logDirectory, LogSeverity.Exception);
+        Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
         Log.Info(() => "MidTerm server starting");
 
@@ -151,6 +153,32 @@ public class Program
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
         var historyService = new HistoryService(settingsService);
         var fileRadarAllowlistService = new FileRadarAllowlistService();
+
+        // Tmux compatibility layer (conditional on setting)
+        TmuxCommandDispatcher? tmuxDispatcher = null;
+        TmuxLayoutBridge? tmuxLayoutBridge = null;
+
+        if (settings.TmuxCompatibility)
+        {
+            TmuxLog.Initialize(logDirectory);
+            TmuxScriptWriter.WriteScript(port);
+            sessionManager.ConfigureTmux(port, authService.CreateSessionToken, TmuxScriptWriter.ScriptDirectory);
+            var tmuxPaneMapper = new TmuxPaneMapper(sessionManager);
+            sessionManager.OnSessionCreated += (sid, idx) => tmuxPaneMapper.RegisterSession(sid, idx);
+            sessionManager.OnSessionClosed += sid => tmuxPaneMapper.UnregisterSession(sid);
+            var tmuxTargetResolver = new TmuxTargetResolver(tmuxPaneMapper);
+            var tmuxFormatter = new TmuxFormatter(tmuxPaneMapper, sessionManager);
+            tmuxLayoutBridge = new TmuxLayoutBridge();
+            var tmuxSessionCommands = new SessionCommands(sessionManager, tmuxPaneMapper, tmuxFormatter);
+            var tmuxIoCommands = new IoCommands(sessionManager, tmuxTargetResolver, tmuxFormatter);
+            var tmuxPaneCommands = new PaneCommands(sessionManager, tmuxPaneMapper, tmuxTargetResolver, tmuxLayoutBridge);
+            var tmuxWindowCommands = new WindowCommands(sessionManager, tmuxTargetResolver, tmuxLayoutBridge, tmuxPaneCommands);
+            var tmuxConfigCommands = new ConfigCommands();
+            var tmuxMiscCommands = new MiscCommands(tmuxPaneCommands);
+            tmuxDispatcher = new TmuxCommandDispatcher(
+                tmuxSessionCommands, tmuxIoCommands, tmuxPaneCommands,
+                tmuxWindowCommands, tmuxConfigCommands, tmuxMiscCommands);
+        }
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
@@ -185,10 +213,17 @@ public class Program
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
+        var clipboardService = app.Services.GetRequiredService<ClipboardService>();
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService);
+        if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
+        {
+            TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
+        }
+        TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
         FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService);
+        var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
 
         lifetime.ApplicationStarted.Register(() =>
         {
@@ -221,6 +256,8 @@ public class Program
             }
             finally
             {
+                TmuxLog.Shutdown();
+                TmuxScriptWriter.Cleanup();
                 tempCleanupService.CleanupAllMidTermFiles();
                 Log.Shutdown();
                 instanceGuard.Dispose();
@@ -228,21 +265,17 @@ public class Program
             }
         });
 
-        _ = Task.Run(async () =>
+        shutdownService.Token.Register(() =>
         {
-            try
+            var timer = new Timer(_ =>
             {
-                await Task.Delay(Timeout.Infinite, shutdownService.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                await Task.Delay(10000);
                 if (shutdownService.IsShuttingDown)
                 {
                     Log.Error(() => "Shutdown timeout exceeded (10s), forcing exit");
                     Environment.Exit(1);
                 }
-            }
+            }, null, 10000, Timeout.Infinite);
+            GC.KeepAlive(timer);
         });
 
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);

@@ -7,9 +7,9 @@
  */
 
 import type {
+  DockPosition,
   Session,
   UpdateInfo,
-  TerminalState,
   WsCommand,
   WsCommandPayload,
   WsCommandResponse,
@@ -17,6 +17,11 @@ import type {
 import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
+import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
+import { applyTerminalScaling } from '../terminal/scaling';
+import { handleSessionClosed } from '../layout';
+import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
+import { renderUpdatePanel } from '../updating/checker';
 
 const log = createLogger('state');
 import {
@@ -43,50 +48,36 @@ import {
   $activeSessionId,
   $sessionList,
   $updateInfo,
+  $isMainBrowser,
   setSessions,
 } from '../../stores';
-import { restoreLayoutFromStorage } from '../layout/layoutStore';
+import {
+  restoreLayoutFromStorage,
+  dockSession,
+  focusLayoutSession,
+  swapLayoutSessions,
+} from '../layout/layoutStore';
 
 // Track if we've restored layout from storage (only do once on first session list)
 let layoutRestoredFromStorage = false;
 
-// Forward declarations for functions from other modules
-// These will be imported when those modules are created
-let destroyTerminalForSession: (sessionId: string) => void = () => {};
-let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
-let createTerminalForSession: (
-  sessionId: string,
-  sessionInfo: Session | undefined,
-) => void = () => {};
-let updateEmptyState: () => void = () => {};
+// Pending dock instructions for sessions that haven't appeared in state yet
+interface PendingDock {
+  targetSessionId: string;
+  newSessionId: string;
+  position: string;
+}
+const pendingDocks: PendingDock[] = [];
+
 let selectSession: (
   sessionId: string,
   options?: { closeSettingsPanel?: boolean },
 ) => void = () => {};
-let updateMobileTitle: () => void = () => {};
-let renderUpdatePanel: () => void = () => {};
 
-/**
- * Register callbacks from other modules
- */
-export function registerStateCallbacks(callbacks: {
-  destroyTerminalForSession?: (sessionId: string) => void;
-  applyTerminalScaling?: (sessionId: string, state: TerminalState) => void;
-  createTerminalForSession?: (sessionId: string, sessionInfo: Session | undefined) => void;
-  updateEmptyState?: () => void;
-  selectSession?: (sessionId: string, options?: { closeSettingsPanel?: boolean }) => void;
-  updateMobileTitle?: () => void;
-  renderUpdatePanel?: () => void;
-}): void {
-  if (callbacks.destroyTerminalForSession)
-    destroyTerminalForSession = callbacks.destroyTerminalForSession;
-  if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
-  if (callbacks.createTerminalForSession)
-    createTerminalForSession = callbacks.createTerminalForSession;
-  if (callbacks.updateEmptyState) updateEmptyState = callbacks.updateEmptyState;
-  if (callbacks.selectSession) selectSession = callbacks.selectSession;
-  if (callbacks.updateMobileTitle) updateMobileTitle = callbacks.updateMobileTitle;
-  if (callbacks.renderUpdatePanel) renderUpdatePanel = callbacks.renderUpdatePanel;
+export function setSelectSessionCallback(
+  cb: (sessionId: string, options?: { closeSettingsPanel?: boolean }) => void,
+): void {
+  selectSession = cb;
 }
 
 /**
@@ -110,6 +101,45 @@ export function connectStateWebSocket(): void {
       // Handle command responses
       if (data.type === 'response') {
         handleCommandResponse(data as WsCommandResponse);
+        return;
+      }
+
+      // Handle tmux dock instructions
+      if (data.type === 'tmux-dock') {
+        log.verbose(
+          () =>
+            `Tmux dock: ${data.newSessionId} relative to ${data.relativeToSessionId} at ${data.position}`,
+        );
+        // Queue if the new session hasn't appeared in state yet
+        if (!sessionTerminals.has(data.newSessionId)) {
+          pendingDocks.push({
+            targetSessionId: data.relativeToSessionId,
+            newSessionId: data.newSessionId,
+            position: data.position,
+          });
+          return;
+        }
+        dockSession(data.relativeToSessionId, data.newSessionId, data.position);
+        return;
+      }
+
+      // Handle tmux focus instructions
+      if (data.type === 'tmux-focus') {
+        log.verbose(() => `Tmux focus: ${data.sessionId}`);
+        focusLayoutSession(data.sessionId);
+        return;
+      }
+
+      // Handle tmux swap instructions
+      if (data.type === 'tmux-swap') {
+        log.verbose(() => `Tmux swap: ${data.sessionIdA} <-> ${data.sessionIdB}`);
+        swapLayoutSessions(data.sessionIdA, data.sessionIdB);
+        return;
+      }
+
+      // Handle main browser status (server-driven)
+      if (data.type === 'main-browser-status') {
+        $isMainBrowser.set(data.isMain === true);
         return;
       }
 
@@ -154,6 +184,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
   const newIds = new Set(validSessions.map((s) => s.id));
   sessionTerminals.forEach((_, id) => {
     if (!newIds.has(id)) {
+      handleSessionClosed(id);
       destroyTerminalForSession(id);
       newlyCreatedSessions.delete(id);
     }
@@ -194,6 +225,15 @@ export function handleStateUpdate(newSessions: Session[]): void {
   // Update store - sidebarUpdater subscription handles rendering
   setSessions(validSessions);
   updateEmptyState();
+
+  // Apply any queued dock instructions now that sessions exist
+  for (let i = pendingDocks.length - 1; i >= 0; i--) {
+    const dock = pendingDocks[i]!;
+    if (sessionTerminals.has(dock.newSessionId)) {
+      pendingDocks.splice(i, 1);
+      dockSession(dock.targetSessionId, dock.newSessionId, dock.position as DockPosition);
+    }
+  }
 
   // Restore layout from localStorage on first session list (after page load)
   if (!layoutRestoredFromStorage && newSessions.length >= 2) {
@@ -321,5 +361,27 @@ export function persistSessionOrder(sessionIds: string[]): void {
 
   sendCommand('session.reorder', { sessionIds }).catch((e) => {
     log.warn(() => `Failed to persist session order: ${e}`);
+  });
+}
+
+/**
+ * Claim main browser status from server.
+ * Fire-and-forget - server will push status to all connections.
+ */
+export function claimMainBrowser(): void {
+  if (!isStateConnected()) return;
+  sendCommand('browser.claimMain').catch((e) => {
+    log.warn(() => `Failed to claim main browser: ${e}`);
+  });
+}
+
+/**
+ * Release main browser status to server.
+ * Fire-and-forget - server will push status to all connections.
+ */
+export function releaseMainBrowser(): void {
+  if (!isStateConnected()) return;
+  sendCommand('browser.releaseMain').catch((e) => {
+    log.warn(() => `Failed to release main browser: ${e}`);
   });
 }

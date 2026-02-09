@@ -52,6 +52,7 @@ public sealed class TtyHostMuxConnectionManager
     {
         _inputTimestamps.TryRemove(sessionId, out _);
         _lastServerRttMs.TryRemove(sessionId, out _);
+        MuxProtocol.ClearSessionCache(sessionId);
 
         foreach (var client in _clients.Values)
         {
@@ -71,6 +72,7 @@ public sealed class TtyHostMuxConnectionManager
 
         if (!_outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, cols, rows, shared)))
         {
+            Log.Warn(() => $"[MuxManager] Output queue full, dropping frame for {sessionId} ({data.Length} bytes)");
             shared.Release();
         }
     }

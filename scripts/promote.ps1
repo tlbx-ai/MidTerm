@@ -6,17 +6,29 @@
 .DESCRIPTION
     This script automates the promotion of a dev release to stable:
     1. Verifies we're on dev branch with a -dev version
-    2. Creates and merges a PR from dev to main
-    3. Updates version.json to remove -dev suffix
-    4. Creates a git tag and pushes to trigger GitHub Actions build
+    2. Auto-gathers changelog from all dev tag annotations since the last stable release
+    3. Creates and merges a PR from dev to main
+    4. Updates version.json to remove -dev suffix
+    5. Creates a git tag and pushes to trigger GitHub Actions build
 
 .PARAMETER ReleaseTitle
-    A concise title for this release (one line, no version number).
+    Optional. A concise title for this release (one line, no version number).
+    If omitted, uses the most recent dev release title.
 
 .PARAMETER ReleaseNotes
-    MANDATORY: Array of detailed changelog entries for this release.
+    Optional. Array of detailed changelog entries. If omitted, automatically
+    gathered from all dev tag annotations since the last stable release.
 
 .EXAMPLE
+    # Auto-gather all changelog items (recommended)
+    .\promote.ps1
+
+.EXAMPLE
+    # Override title, still auto-gather notes
+    .\promote.ps1 -ReleaseTitle "Major UI overhaul"
+
+.EXAMPLE
+    # Fully manual (legacy behavior)
     .\promote.ps1 -ReleaseTitle "Version management improvements" -ReleaseNotes @(
         "Centralized version management: version.json is now single source of truth",
         "Fixed update failures where wrong version was baked into binaries"
@@ -24,12 +36,7 @@
 #>
 
 param(
-    [Parameter(Mandatory=$true)]
-    [ValidateNotNullOrEmpty()]
     [string]$ReleaseTitle,
-
-    [Parameter(Mandatory=$true)]
-    [ValidateNotNullOrEmpty()]
     [string[]]$ReleaseNotes
 )
 
@@ -62,12 +69,17 @@ if ($devVersion -notmatch '-dev$') {
 # Calculate stable version
 $stableVersion = $devVersion -replace '-dev$', ''
 
+# Find last stable tag (non-dev, sorted by version descending)
+$lastStableTag = git tag --sort=-v:refname | Where-Object { $_ -notmatch '-dev' } | Select-Object -First 1
+$lastStableVersion = [version]($lastStableTag -replace '^v', '')
+
 Write-Host ""
 Write-Host "  MidTerm Promotion" -ForegroundColor Cyan
 Write-Host "  =================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Dev version:    $devVersion" -ForegroundColor Gray
 Write-Host "  Stable version: $stableVersion" -ForegroundColor Green
+Write-Host "  Last stable:    $lastStableTag" -ForegroundColor Gray
 Write-Host ""
 
 # Ensure dev is up to date
@@ -85,15 +97,112 @@ if ($status) {
     exit 1
 }
 
-# Create PR from dev to main
-Write-Host "Creating PR from dev to main..." -ForegroundColor Gray
+# --- Auto-gather changelog from dev tags since last stable release ---
+
+Write-Host "Gathering changelog from dev releases since $lastStableTag..." -ForegroundColor Gray
+
+# Get all dev tags sorted by version, filter to those newer than last stable
+$allDevTags = git tag --sort=version:refname | Where-Object { $_ -match '-dev$' }
+$devTagsInRange = @()
+foreach ($tag in $allDevTags) {
+    $baseVer = $tag -replace '^v', '' -replace '-dev(\.\d+)?$', ''
+    try {
+        if ([version]$baseVer -gt $lastStableVersion) {
+            $devTagsInRange += $tag
+        }
+    } catch {
+        # Skip tags with unparseable versions
+    }
+}
+
+if ($devTagsInRange.Count -eq 0) {
+    Write-Host ""
+    Write-Host "ERROR: No dev tags found since $lastStableTag. Nothing to promote." -ForegroundColor Red
+    Write-Host ""
+    exit 1
+}
+
+# Parse each tag's annotation
+$changelog = @()
+foreach ($tag in $devTagsInRange) {
+    $annotation = git tag -l --format='%(contents)' $tag
+    if (-not $annotation) { continue }
+    $lines = $annotation -split "`n"
+    $title = $lines[0].Trim()
+    $bullets = @($lines | Where-Object { $_ -match '^\s*-\s+' } | ForEach-Object { $_.Trim() })
+    $changelog += [PSCustomObject]@{
+        Tag    = $tag
+        Title  = $title
+        Notes  = $bullets
+    }
+}
+
+Write-Host "  Found $($changelog.Count) dev releases since ${lastStableTag}:" -ForegroundColor Gray
+foreach ($entry in $changelog) {
+    $noteCount = $entry.Notes.Count
+    Write-Host "    $($entry.Tag): $($entry.Title) ($noteCount notes)" -ForegroundColor DarkGray
+}
+Write-Host ""
+
+# Use auto-gathered data if parameters not provided
+if (-not $ReleaseTitle) {
+    $ReleaseTitle = $changelog[-1].Title
+    if (-not $ReleaseTitle) { $ReleaseTitle = "Stable release $stableVersion" }
+    Write-Host "  Title (from latest dev): $ReleaseTitle" -ForegroundColor Gray
+}
+
+$autoGathered = $false
+if (-not $ReleaseNotes) {
+    $autoGathered = $true
+    $ReleaseNotes = @()
+    foreach ($entry in $changelog) {
+        foreach ($note in $entry.Notes) {
+            $ReleaseNotes += $note -replace '^\s*-\s+', ''
+        }
+    }
+    Write-Host "  Auto-gathered $($ReleaseNotes.Count) changelog entries" -ForegroundColor Gray
+}
+
+if ($ReleaseNotes.Count -eq 0) {
+    Write-Host ""
+    Write-Host "ERROR: No changelog entries found. Dev tags may have empty annotations." -ForegroundColor Red
+    Write-Host "Provide -ReleaseNotes manually." -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+
+# --- Build PR body (markdown, grouped by dev release) ---
 
 $prBody = "## Summary`n"
-foreach ($note in $ReleaseNotes) {
-    $prBody += "- $note`n"
+$prBody += "Promoting ``$devVersion`` to stable ``$stableVersion`` - includes $($changelog.Count) dev releases since $lastStableTag.`n`n"
+$prBody += "## Changelog`n"
+foreach ($entry in $changelog) {
+    $prBody += "`n### $($entry.Tag) - $($entry.Title)`n"
+    foreach ($note in $entry.Notes) {
+        $prBody += "$note`n"
+    }
 }
-$prBody += "`n## Release`n"
-$prBody += "Promoting $devVersion to stable $stableVersion"
+
+# --- Build commit/tag message (plain text, grouped by dev release) ---
+
+$commitMsg = "$ReleaseTitle`n`n"
+if ($autoGathered) {
+    $commitMsg += "All changes since $($lastStableTag):`n`n"
+    foreach ($entry in $changelog) {
+        $commitMsg += "$($entry.Tag): $($entry.Title)`n"
+        foreach ($note in $entry.Notes) {
+            $commitMsg += "$note`n"
+        }
+        $commitMsg += "`n"
+    }
+} else {
+    foreach ($note in $ReleaseNotes) {
+        $commitMsg += "- $note`n"
+    }
+}
+
+# Create PR from dev to main
+Write-Host "Creating PR from dev to main..." -ForegroundColor Gray
 
 $prUrl = gh pr create --base main --head dev --title $ReleaseTitle --body $prBody 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -127,12 +236,6 @@ $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $versionJson.web = $stableVersion
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 
-# Build commit message
-$commitMsg = "$ReleaseTitle`n`n"
-foreach ($note in $ReleaseNotes) {
-    $commitMsg += "- $note`n"
-}
-
 # Commit, tag, and push
 Write-Host "Committing and tagging v$stableVersion..." -ForegroundColor Gray
 git add -A
@@ -155,6 +258,6 @@ git merge main -m "Merge main v$stableVersion into dev" 2>&1 | Out-Null
 git push origin dev 2>&1 | Out-Null
 
 Write-Host ""
-Write-Host "Promoted v$stableVersion" -ForegroundColor Green
+Write-Host "Promoted v$stableVersion ($($changelog.Count) dev releases, $($ReleaseNotes.Count) changelog entries)" -ForegroundColor Green
 Write-Host "Monitor build: https://github.com/tlbx-ai/MidTerm/actions" -ForegroundColor Cyan
 Write-Host ""

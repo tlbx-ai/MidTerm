@@ -5,38 +5,19 @@
  * docking/undocking sessions in the multi-panel layout.
  */
 
-import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition, Session } from '../../types';
+import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition } from '../../types';
 import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
-import { sessionTerminals } from '../../state';
-
-// Forward declarations - will be set by main.ts
-let createTerminalForSessionFn:
-  | ((sessionId: string, sessionInfo: Session | undefined) => void)
-  | null = null;
-let sendActiveSessionHintFn: ((sessionId: string | null) => void) | null = null;
-
-/**
- * Register callbacks from main module.
- */
-export function registerLayoutCallbacks(callbacks: {
-  createTerminalForSession?: (sessionId: string, sessionInfo: Session | undefined) => void;
-  sendActiveSessionHint?: (sessionId: string | null) => void;
-}): void {
-  if (callbacks.createTerminalForSession) {
-    createTerminalForSessionFn = callbacks.createTerminalForSession;
-  }
-  if (callbacks.sendActiveSessionHint) {
-    sendActiveSessionHintFn = callbacks.sendActiveSessionHint;
-  }
-}
+import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
+import { createTerminalForSession } from '../terminal/manager';
+import { sendActiveSessionHint } from '../comms';
 
 /**
  * Ensure a terminal exists for a session.
  */
 function ensureTerminalExists(sessionId: string): void {
-  if (!sessionTerminals.has(sessionId) && createTerminalForSessionFn) {
+  if (!sessionTerminals.has(sessionId)) {
     const sessionInfo = getSession(sessionId);
-    createTerminalForSessionFn(sessionId, sessionInfo);
+    createTerminalForSession(sessionId, sessionInfo);
   }
 }
 
@@ -359,6 +340,26 @@ export function handleSessionClosed(sessionId: string): void {
 }
 
 /**
+ * Swap two sessions' positions in the layout tree.
+ */
+export function swapLayoutSessions(sessionIdA: string, sessionIdB: string): void {
+  const layout = $layout.get();
+  if (!layout.root) return;
+
+  const newRoot = swapInTree(layout.root, sessionIdA, sessionIdB);
+  $layout.set({ root: newRoot });
+}
+
+function swapInTree(node: LayoutNode, idA: string, idB: string): LayoutNode {
+  if (node.type === 'leaf') {
+    if (node.sessionId === idA) return { ...node, sessionId: idB };
+    if (node.sessionId === idB) return { ...node, sessionId: idA };
+    return node;
+  }
+  return { ...node, children: node.children.map((c) => swapInTree(c, idA, idB)) };
+}
+
+/**
  * Focus a session within the layout.
  */
 export function focusLayoutSession(sessionId: string): void {
@@ -367,9 +368,7 @@ export function focusLayoutSession(sessionId: string): void {
     // Also update activeSessionId for sidebar highlighting
     $activeSessionId.set(sessionId);
     // Notify server so this session gets priority output delivery
-    if (sendActiveSessionHintFn) {
-      sendActiveSessionHintFn(sessionId);
-    }
+    sendActiveSessionHint(sessionId);
   }
 }
 
@@ -474,7 +473,8 @@ export function restoreLayoutFromStorage(): void {
       return;
     }
 
-    // Restore layout
+    // Restore layout — suppress auto-fit so terminals keep their server dimensions
+    setSuppressLayoutAutoFit(true);
     $layout.set({ root: filteredRoot });
 
     // Restore focused session if valid
@@ -501,8 +501,35 @@ function clearLayoutStorage(): void {
 }
 
 /**
+ * Sync layout tree to the server for tmux directional pane selection.
+ */
+function syncLayoutToServer(): void {
+  const layout = $layout.get();
+  const root = layout.root;
+
+  fetch('/api/tmux/layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(root ?? { type: 'leaf', sessionId: null }),
+  }).catch(() => {
+    // Best-effort sync
+  });
+}
+
+/**
  * Initialize layout persistence - subscribe to changes.
  */
+let syncTimer: number | undefined;
+
 export function initLayoutPersistence(): void {
-  $layout.subscribe(() => saveLayoutToStorage());
+  $layout.subscribe(() => {
+    saveLayoutToStorage();
+    if (syncTimer !== undefined) {
+      clearTimeout(syncTimer);
+    }
+    syncTimer = window.setTimeout(() => {
+      syncTimer = undefined;
+      syncLayoutToServer();
+    }, 300);
+  });
 }

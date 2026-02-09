@@ -21,8 +21,6 @@
     </Exec>
     <PropertyGroup>
       <Version>$(PtyVersion)</Version>
-      <FileVersion Condition="$(PtyVersion.Split('.').Length) == 3">$(PtyVersion).0</FileVersion>
-      <FileVersion Condition="$(PtyVersion.Split('.').Length) == 4">$(PtyVersion)</FileVersion>
     </PropertyGroup>
     <!-- Generate Version.g.cs with the version string -->
     <PropertyGroup>
@@ -49,7 +47,7 @@
     <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
     <IlcDisableReflection>true</IlcDisableReflection>
     <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
-    <StackTraceSupport>true</StackTraceSupport>
+    <StackTraceSupport>false</StackTraceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <UseSizeOptimizedLinq>true</UseSizeOptimizedLinq>

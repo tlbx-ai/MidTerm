@@ -24,7 +24,8 @@ public static partial class SessionApiEndpoints
 
     public static void MapSessionEndpoints(
         WebApplication app,
-        TtyHostSessionManager sessionManager)
+        TtyHostSessionManager sessionManager,
+        ClipboardService clipboardService)
     {
         app.MapGet("/api/sessions", () =>
         {
@@ -95,32 +96,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest("No file provided");
             }
 
-            // Sanitize filename to prevent path traversal
-            var fileName = Path.GetFileName(file.FileName);
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                fileName = $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
-            }
-
-            // Get or create temp directory for this session
-            var tempDir = sessionManager.GetTempDirectory(id);
-
-            // Make filename unique if it already exists
-            var targetPath = Path.Combine(tempDir, fileName);
-            var counter = 1;
-            var baseName = Path.GetFileNameWithoutExtension(fileName);
-            var extension = Path.GetExtension(fileName);
-            while (File.Exists(targetPath))
-            {
-                fileName = $"{baseName}_{counter}{extension}";
-                targetPath = Path.Combine(tempDir, fileName);
-                counter++;
-            }
-
-            await using (var stream = File.Create(targetPath))
-            {
-                await file.CopyToAsync(stream);
-            }
+            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
 
             // To make Johannes happy
             if (!File.Exists(targetPath))
@@ -133,6 +109,61 @@ public static partial class SessionApiEndpoints
 
             return Results.Json(new FileUploadResponse { Path = responsePath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
+
+        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (file is null || file.Length == 0)
+            {
+                return Results.BadRequest("No file provided");
+            }
+
+            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
+
+            var success = await clipboardService.SetFileDropAsync(targetPath);
+            if (!success)
+            {
+                return Results.Problem("Failed to set clipboard");
+            }
+
+            await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 });
+
+            return Results.Ok();
+        }).DisableAntiforgery();
+    }
+
+    private static async Task<string> SaveUploadedFileAsync(
+        TtyHostSessionManager sessionManager, string sessionId, IFormFile file)
+    {
+        var fileName = Path.GetFileName(file.FileName);
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            fileName = $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+        }
+
+        var tempDir = sessionManager.GetTempDirectory(sessionId);
+
+        var targetPath = Path.Combine(tempDir, fileName);
+        var counter = 1;
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        while (File.Exists(targetPath))
+        {
+            fileName = $"{baseName}_{counter}{extension}";
+            targetPath = Path.Combine(tempDir, fileName);
+            counter++;
+        }
+
+        await using (var stream = File.Create(targetPath))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        return targetPath;
     }
 
     private static SessionInfoDto MapToDto(SessionInfo sessionInfo)

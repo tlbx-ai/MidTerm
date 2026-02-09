@@ -5,3 +5,4 @@
  */
 
 export * from './themes';
+export { applyCssTheme } from './cssThemes';

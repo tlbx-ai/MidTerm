@@ -76,6 +76,9 @@ export const activeNotifications = new Map<string, Notification>();
 /** Font loading promise */
 export let fontsReadyPromise: Promise<void> | null = null;
 
+/** Suppress next layout auto-fit (restore from storage — scale only, don't resize) */
+export let suppressLayoutAutoFit = false;
+
 // =============================================================================
 // DOM Element Cache
 // =============================================================================
@@ -127,6 +130,10 @@ export function setFontsReadyPromise(promise: Promise<void>): void {
 
 export function setBellNotificationsSuppressed(suppressed: boolean): void {
   bellNotificationsSuppressed = suppressed;
+}
+
+export function setSuppressLayoutAutoFit(suppress: boolean): void {
+  suppressLayoutAutoFit = suppress;
 }
 
 // =============================================================================

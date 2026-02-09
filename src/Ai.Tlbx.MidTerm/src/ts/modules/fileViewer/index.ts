@@ -10,6 +10,7 @@ import type { FilePathInfo, DirectoryEntry, DirectoryListResponse } from '../../
 import { createLogger } from '../logging';
 import { $activeSessionId, $fileViewerDocked, $dockedFilePath } from '../../stores';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { escapeHtml } from '../../utils';
 
 const log = createLogger('fileViewer');
 
@@ -290,7 +291,7 @@ async function renderInDock(path: string): Promise<void> {
   }
 }
 
-export function closeViewer(): void {
+function closeViewer(): void {
   if (modal) {
     modal.classList.add('hidden');
   }
@@ -367,7 +368,9 @@ async function renderDirectory(path: string, container: Element): Promise<void> 
     }
     const resp = await fetch(url);
     if (!resp.ok) {
-      container.innerHTML = '<div class="file-viewer-error">Failed to list directory</div>';
+      const body = await resp.text().catch(() => '');
+      log.error(() => `List directory failed: ${resp.status} ${resp.statusText} ${body}`);
+      container.innerHTML = `<div class="file-viewer-error">Failed to list directory (${resp.status})</div>`;
       return;
     }
 
@@ -603,12 +606,6 @@ function formatDate(isoDate: string): string {
   } catch {
     return isoDate;
   }
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function renderMarkdown(text: string): string {

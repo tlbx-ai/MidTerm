@@ -20,6 +20,7 @@ public sealed partial class MidTermSettingsPublic
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
+    public ScrollbarStyleSetting ScrollbarStyle { get; set; } = ScrollbarStyleSetting.Off;
     public bool UseWebGL { get; set; } = true;
 
     // Terminal Behavior
@@ -30,6 +31,9 @@ public sealed partial class MidTermSettingsPublic
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public bool ScrollbackProtection { get; set; } = false;
     public bool FileRadar { get; set; } = true;
+    public bool TmuxCompatibility { get; set; } = true;
+    public bool ManagerBarEnabled { get; set; } = true;
+    public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];
 
     // Security
     public string? RunAsUser { get; set; }
