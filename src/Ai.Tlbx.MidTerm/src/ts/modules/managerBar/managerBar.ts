@@ -37,7 +37,7 @@ export function initManagerBar(): void {
     const editBtn = target.closest('.manager-btn-edit') as HTMLElement | null;
     if (editBtn) {
       const btn = editBtn.closest('.manager-btn') as HTMLElement | null;
-      if (btn) editButton(btn.dataset.id!);
+      if (btn) startInlineEdit(btn.dataset.id!);
       return;
     }
 
@@ -55,7 +55,7 @@ export function initManagerBar(): void {
     }
   });
 
-  addBtn.addEventListener('click', addButton);
+  addBtn.addEventListener('click', startInlineAdd);
 }
 
 function renderButtons(buttons: ManagerButton[]): void {
@@ -87,20 +87,110 @@ function clickButton(id: string): void {
   }
 }
 
-function editButton(id: string): void {
+function startInlineEdit(id: string): void {
   const settings = $currentSettings.get();
-  const buttons: ManagerButton[] = [...(settings?.managerBarButtons ?? [])];
-  const existing = buttons.find((b) => b.id === id);
-  if (!existing) return;
+  const existing = (settings?.managerBarButtons ?? []).find((b) => b.id === id);
+  if (!existing || !buttonsEl) return;
 
-  const newLabel = prompt('Button label:', existing.label);
-  if (newLabel === null) return;
-  const newText = prompt('Text to send (Enter will be appended):', existing.text);
-  if (newText === null) return;
+  const btnEl = buttonsEl.querySelector(`[data-id="${id}"]`) as HTMLElement | null;
+  if (!btnEl) return;
 
-  const idx = buttons.indexOf(existing);
-  buttons[idx] = { id: existing.id, label: newLabel, text: newText };
-  saveButtons(buttons);
+  const labelEl = btnEl.querySelector('.manager-btn-label') as HTMLElement | null;
+  if (!labelEl) return;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'manager-btn-input';
+  input.value = existing.label;
+
+  let committed = false;
+  function commit(): void {
+    if (committed) return;
+    committed = true;
+    const val = input.value.trim();
+    if (val) {
+      const buttons = [...(settings?.managerBarButtons ?? [])];
+      const idx = buttons.findIndex((b) => b.id === id);
+      if (idx >= 0) {
+        buttons[idx] = { id, label: val, text: val };
+        saveButtons(buttons);
+        return;
+      }
+    }
+    renderButtons(settings?.managerBarButtons ?? []);
+  }
+
+  function cancel(): void {
+    if (committed) return;
+    committed = true;
+    renderButtons(settings?.managerBarButtons ?? []);
+  }
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  });
+
+  labelEl.replaceWith(input);
+  btnEl.querySelector('.manager-btn-actions')?.remove();
+  input.focus();
+  input.select();
+}
+
+function startInlineAdd(): void {
+  if (!buttonsEl) return;
+
+  const span = document.createElement('span');
+  span.className = 'manager-btn';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'manager-btn-input';
+  input.placeholder = 'label…';
+  span.appendChild(input);
+  buttonsEl.appendChild(span);
+
+  const settings = $currentSettings.get();
+  let committed = false;
+
+  function commit(): void {
+    if (committed) return;
+    committed = true;
+    const val = input.value.trim();
+    if (val) {
+      const buttons = [...(settings?.managerBarButtons ?? [])];
+      const id = String(Date.now());
+      buttons.push({ id, label: val, text: val });
+      saveButtons(buttons);
+    } else {
+      span.remove();
+    }
+  }
+
+  function cancel(): void {
+    if (committed) return;
+    committed = true;
+    span.remove();
+  }
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  });
+
+  input.focus();
 }
 
 function deleteButton(id: string): void {
@@ -108,19 +198,6 @@ function deleteButton(id: string): void {
   const buttons: ManagerButton[] = [...(settings?.managerBarButtons ?? [])];
   const filtered = buttons.filter((b) => b.id !== id);
   saveButtons(filtered);
-}
-
-function addButton(): void {
-  const label = prompt('Button label:');
-  if (!label) return;
-  const text = prompt('Text to send (Enter will be appended):', label);
-  if (text === null) return;
-
-  const settings = $currentSettings.get();
-  const buttons: ManagerButton[] = [...(settings?.managerBarButtons ?? [])];
-  const id = String(Date.now());
-  buttons.push({ id, label, text });
-  saveButtons(buttons);
 }
 
 function saveButtons(buttons: ManagerButton[]): void {

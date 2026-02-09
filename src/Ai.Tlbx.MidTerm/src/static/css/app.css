@@ -5735,19 +5735,31 @@ html, body {
     align-items: center;
     padding: 3px 10px;
     border-radius: 4px;
-    background: var(--btn-secondary);
+    background: none;
     color: var(--text-secondary);
     font-size: 11px;
     line-height: 1;
     cursor: pointer;
     white-space: nowrap;
-    border: none;
-    transition: background-color 0.15s, color 0.15s;
+    border: 1px solid var(--border-color);
+    transition: border-color 0.15s, color 0.15s;
 }
 
 .manager-btn:hover {
-    background-color: var(--btn-secondary-hover);
+    border-color: var(--text-secondary);
     color: var(--text-primary);
+}
+
+.manager-btn-input {
+    font-size: 11px;
+    padding: 2px 6px;
+    border: 1px solid var(--accent-blue);
+    border-radius: 3px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-family: inherit;
+    outline: none;
+    min-width: 80px;
 }
 
 .manager-btn-actions {
