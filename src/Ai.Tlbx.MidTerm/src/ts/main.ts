@@ -202,6 +202,12 @@ async function init(): Promise<void> {
   initDiagnosticsPanel();
 
   setupVisibilityChangeHandler();
+  initPwaInstall();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/js/sw.js').catch(() => {});
+  }
+
   log.info(() => 'MidTerm frontend initialized');
 }
 
@@ -703,6 +709,38 @@ function initMainBrowserButton(): void {
     if (isMain) {
       requestAnimationFrame(autoResizeAllTerminalsImmediate);
     }
+  });
+}
+
+// =============================================================================
+// PWA Install
+// =============================================================================
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+}
+
+function initPwaInstall(): void {
+  let deferredPrompt: BeforeInstallPromptEvent | null = null;
+  const btn = document.getElementById('btn-install-pwa');
+  if (!btn) return;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e as BeforeInstallPromptEvent;
+    btn.classList.remove('hidden');
+  });
+
+  btn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    deferredPrompt = null;
+    btn.classList.add('hidden');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    btn.classList.add('hidden');
+    deferredPrompt = null;
   });
 }
 

@@ -2712,6 +2712,33 @@ html, body {
     100% { opacity: 0; }
 }
 
+/* PWA install button */
+.install-pwa-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 12px;
+    margin-bottom: 8px;
+    background-color: var(--btn-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+}
+
+.install-pwa-btn:hover {
+    background-color: var(--btn-secondary-hover);
+}
+
+.install-pwa-btn .icon {
+    font-family: 'midterm-icons';
+    font-size: 14px;
+}
+
 /* Update panel */
 .update-panel {
     margin-bottom: 12px;
