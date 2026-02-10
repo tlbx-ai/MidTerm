@@ -692,8 +692,10 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 
         // IMPORTANT: launchd service runs as user (not root) via UserName key in plist
         // This means the service user needs write access to config/log files
+        // On macOS, bootout needs time to fully unregister. Without the sleep+verify,
+        // KeepAlive respawns mt after every kill, keeping the binary locked forever.
         var stopServiceCmd = isMacOs
-            ? $"launchctl bootout system/{LaunchdLabel} 2>/dev/null || launchctl unload /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
+            ? $"launchctl bootout system/{LaunchdLabel} 2>/dev/null || launchctl unload /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true; sleep 2; if launchctl print system/{LaunchdLabel} >/dev/null 2>&1; then launchctl bootout system/{LaunchdLabel} 2>/dev/null || true; sleep 2; fi"
             : $"systemctl stop {SystemdService} 2>/dev/null || true";
 
         // Retry bootstrap: after bootout launchd may still be cleaning up (error 5: I/O error)
