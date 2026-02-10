@@ -100,6 +100,7 @@ public static class Program
         }
         catch (Exception ex)
         {
+            Console.Error.WriteLine($"[mthost] Fatal error: {ex.Message}");
             Log.Exception(ex, "Fatal error");
             return 1;
         }
