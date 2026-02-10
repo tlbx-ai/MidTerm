@@ -227,14 +227,68 @@ public sealed class ZshShellConfiguration : ShellConfigurationBase
     public override bool SupportsOsc7 => true;
     public override string[] Arguments => ["-l"];
 
+    // Zsh init script placed at $ZDOTDIR/.zshenv.
+    // Restores ZDOTDIR so user's config loads from $HOME, then registers a one-shot
+    // precmd hook that adds xterm key bindings (Home, End, Delete) after all init
+    // files have been sourced. This fixes Home/End on macOS where zsh doesn't bind
+    // them by default (Mac keyboards lack these keys).
+    private const string ZshEnvScript =
+        """
+        ZDOTDIR="${_MT_ORIG_ZDOTDIR:-$HOME}"
+        unset _MT_ORIG_ZDOTDIR
+        [[ -f "$ZDOTDIR/.zshenv" ]] && . "$ZDOTDIR/.zshenv"
+        if [[ -o interactive ]]; then
+          __midterm_setup_keys() {
+            bindkey '^[[H' beginning-of-line 2>/dev/null
+            bindkey '^[OH' beginning-of-line 2>/dev/null
+            bindkey '^[[F' end-of-line 2>/dev/null
+            bindkey '^[OF' end-of-line 2>/dev/null
+            bindkey '^[[3~' delete-char 2>/dev/null
+            precmd_functions=(${precmd_functions:#__midterm_setup_keys})
+            unfunction __midterm_setup_keys 2>/dev/null
+          }
+          precmd_functions+=(__midterm_setup_keys)
+        fi
+        """;
+
     public override Dictionary<string, string> GetEnvironmentVariables()
     {
         var env = base.GetEnvironmentVariables();
-        // Zsh doesn't support precmd via env var like bash's PROMPT_COMMAND.
-        // Use zsh's prompt expansion: %{ ... %} wraps zero-width output.
-        // This outputs OSC-7 CWD on every prompt without affecting prompt display.
         env["PROMPT"] = "%{$(print -Pn \"\\e]7;file://%m%~\\a\")%}%(?..[%?] )%n@%m %~ %# ";
+
+        var initDir = EnsureZshInitDir(env);
+        if (initDir is not null)
+        {
+            env["_MT_ORIG_ZDOTDIR"] = env.TryGetValue("ZDOTDIR", out var orig) ? orig : "";
+            env["ZDOTDIR"] = initDir;
+        }
+
         return env;
+    }
+
+    private static string? EnsureZshInitDir(Dictionary<string, string> env)
+    {
+        try
+        {
+            var home = env.TryGetValue("HOME", out var h) && !string.IsNullOrEmpty(h)
+                ? h
+                : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            var initDir = Path.Combine(home, ".midterm", "zsh-init");
+            Directory.CreateDirectory(initDir);
+
+            var zshenvPath = Path.Combine(initDir, ".zshenv");
+            if (!File.Exists(zshenvPath) || File.ReadAllText(zshenvPath) != ZshEnvScript)
+            {
+                File.WriteAllText(zshenvPath, ZshEnvScript);
+            }
+
+            return initDir;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public override bool IsAvailable()
