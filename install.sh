@@ -1082,6 +1082,15 @@ install_as_service() {
 
     log "=== PHASE 1: Installing binaries ==="
     install_binary "$install_dir"
+
+    # Make binaries writable by the service user so self-update works without sudo.
+    # The update script runs as the service user (non-root) and needs to overwrite
+    # these files in-place. Without this, self-update silently fails.
+    if [ -n "$INSTALLING_USER" ]; then
+        chown "$INSTALLING_USER" "$install_dir/mt" "$install_dir/mthost" 2>/dev/null || true
+        [ -f "$install_dir/version.json" ] && chown "$INSTALLING_USER" "$install_dir/version.json" 2>/dev/null || true
+    fi
+
     log "Binaries installed to $install_dir"
 
     # Create lib directory for support files
@@ -1207,12 +1216,12 @@ install_launchd() {
     log "  Service user: $INSTALLING_USER"
     echo -e "${GRAY}Creating launchd service...${NC}"
 
-    # Create log directory and ensure log file is owned by the service user
+    # Create log directory and ensure log files are owned by the service user.
+    # The self-update script runs as the service user and needs write access to these files.
     mkdir -p "$log_dir"
-    touch "$log_dir/MidTerm.log"
-    if ! chown "$INSTALLING_USER" "$log_dir/MidTerm.log"; then
-        log "Failed to set ownership on log file for user $INSTALLING_USER" "WARN"
-    fi
+    touch "$log_dir/MidTerm.log" "$log_dir/update.log"
+    chown "$INSTALLING_USER" "$log_dir/MidTerm.log" "$log_dir/update.log" 2>/dev/null || \
+        log "Failed to set ownership on log files for user $INSTALLING_USER" "WARN"
 
     # Unload existing services if present (try modern bootout first, fallback to legacy unload)
     launchctl bootout system/"$LAUNCHD_LABEL" 2>/dev/null || launchctl unload "$plist_path" 2>/dev/null || true

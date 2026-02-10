@@ -1,3 +1,4 @@
+using System.Reflection;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
 
@@ -689,18 +690,20 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 
         var isMacOs = OperatingSystem.IsMacOS();
         var isWebOnly = updateType == UpdateType.WebOnly;
+        var generatingVersion = typeof(UpdateScriptGenerator).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+        var plusIdx = generatingVersion.IndexOf('+');
+        if (plusIdx > 0) generatingVersion = generatingVersion[..plusIdx];
 
-        // IMPORTANT: launchd service runs as user (not root) via UserName key in plist
-        // This means the service user needs write access to config/log files
-        // On macOS, bootout needs time to fully unregister. Without the sleep+verify,
-        // KeepAlive respawns mt after every kill, keeping the binary locked forever.
+        // macOS: launchd service runs as non-root user (UserName in plist). bootout/bootstrap
+        // require root, so they always fail. Instead, we kill processes directly and rely on
+        // KeepAlive to auto-restart after the new binary is in place.
         var stopServiceCmd = isMacOs
-            ? $"launchctl bootout system/{LaunchdLabel} 2>/dev/null || launchctl unload /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true; sleep 2; if launchctl print system/{LaunchdLabel} >/dev/null 2>&1; then launchctl bootout system/{LaunchdLabel} 2>/dev/null || true; sleep 2; fi"
+            ? "true"
             : $"systemctl stop {SystemdService} 2>/dev/null || true";
 
-        // Retry bootstrap: after bootout launchd may still be cleaning up (error 5: I/O error)
         var startServiceCmd = isMacOs
-            ? $"for _a in 1 2 3; do launchctl bootstrap system /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null && break; sleep 2; done; launchctl load -w /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
+            ? "true"
             : $"systemctl start {SystemdService} 2>/dev/null || true";
 
         // NOTE: launchctl print only checks if service is REGISTERED, not RUNNING
@@ -865,29 +868,42 @@ safe_copy() {{
         return 1
     fi
 
-    # Atomic update: copy to temp, sign if needed, then mv (atomic rename)
-    # This ensures the destination is never in a partial state.
-    local tmp_dst=""$dst.new""
-    cp ""$src"" ""$tmp_dst""
-    chmod +x ""$tmp_dst""
-
-    # macOS requires ad-hoc codesigning for binaries to run
-    # Without this, the binary gets killed immediately with SIGKILL
     if $IS_MACOS; then
-        log ""Signing $desc for macOS...""
-        if ! codesign -s - ""$tmp_dst"" 2>/dev/null; then
-            log ""WARNING: codesign failed for $tmp_dst"" ""WARN""
-        fi
-        if ! codesign --verify ""$tmp_dst"" 2>/dev/null; then
-            log ""ERROR: Signature verification failed for $tmp_dst"" ""ERROR""
-            rm -f ""$tmp_dst"" 2>/dev/null || true
+        # macOS: service user owns the files but NOT the directory (/usr/local/bin/).
+        # Cannot create temp files — must overwrite in-place.
+        # launchd KeepAlive respawns the process after kill, causing ETXTBSY on cp.
+        # Retry loop: kill → cp → codesign, repeat until we win the race.
+        local _copy_ok=false
+        for _copy_attempt in 1 2 3 4 5; do
+            kill_process_by_path ""$dst""
+            sleep 0.3
+
+            if cp ""$src"" ""$dst"" 2>/dev/null; then
+                chmod +x ""$dst""
+                log ""Signing $desc for macOS...""
+                if codesign -s - ""$dst"" 2>/dev/null && codesign --verify ""$dst"" 2>/dev/null; then
+                    log ""Signature verified for $desc""
+                    _copy_ok=true
+                    break
+                fi
+                log ""Codesign race (attempt $_copy_attempt) — retrying..."" ""WARN""
+            else
+                log ""Copy ETXTBSY (attempt $_copy_attempt) — retrying..."" ""WARN""
+            fi
+            sleep 1
+        done
+
+        if [[ ""$_copy_ok"" != ""true"" ]]; then
+            log ""Failed to install $desc after 5 attempts"" ""ERROR""
             return 1
         fi
-        log ""Signature verified for $desc""
+    else
+        # Linux: atomic temp+rename (systemd runs as root, has dir write)
+        local tmp_dst=""$dst.new""
+        cp ""$src"" ""$tmp_dst""
+        chmod +x ""$tmp_dst""
+        mv -f ""$tmp_dst"" ""$dst""
     fi
-
-    # Atomic rename - either succeeds completely or fails
-    mv -f ""$tmp_dst"" ""$dst""
 
     if ! verify_copy ""$src"" ""$dst""; then
         return 1
@@ -905,22 +921,49 @@ cleanup() {{
         # Stop any partially started process
         kill_process_by_path ""$CURRENT_MT""
 
-        # Restore backups
-        if [[ -f ""$CURRENT_MT.bak"" ]]; then
+        # Restore binary backups (macOS: from config dir, Linux: from .bak in install dir)
+        local _mt_bak _mthost_bak _vj_bak
+        if $IS_MACOS; then
+            _mt_bak=""$CONFIG_DIR/update-backup/mt.bak""
+            _mthost_bak=""$CONFIG_DIR/update-backup/mthost.bak""
+            _vj_bak=""$CONFIG_DIR/update-backup/version.json.bak""
+        else
+            _mt_bak=""$CURRENT_MT.bak""
+            _mthost_bak=""$CURRENT_MTHOST.bak""
+            _vj_bak=""$CURRENT_VERSION_JSON.bak""
+        fi
+
+        if [[ -f ""$_mt_bak"" ]]; then
             log ""Restoring mt from backup...""
-            cp -f ""$CURRENT_MT.bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
-            chmod +x ""$CURRENT_MT"" 2>/dev/null || true
+            if $IS_MACOS; then
+                kill_process_by_path ""$CURRENT_MT""
+                sleep 0.3
+                cp ""$_mt_bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
+                chmod +x ""$CURRENT_MT"" 2>/dev/null || true
+                codesign -s - ""$CURRENT_MT"" 2>/dev/null || true
+            else
+                cp -f ""$_mt_bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
+                chmod +x ""$CURRENT_MT"" 2>/dev/null || true
+            fi
         fi
 
-        if [[ -f ""$CURRENT_MTHOST.bak"" ]]; then
+        if [[ -f ""$_mthost_bak"" ]]; then
             log ""Restoring mthost from backup...""
-            cp -f ""$CURRENT_MTHOST.bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
-            chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
+            if $IS_MACOS; then
+                kill_process_by_path ""$CURRENT_MTHOST""
+                sleep 0.3
+                cp ""$_mthost_bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
+                chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
+                codesign -s - ""$CURRENT_MTHOST"" 2>/dev/null || true
+            else
+                cp -f ""$_mthost_bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
+                chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
+            fi
         fi
 
-        if [[ -f ""$CURRENT_VERSION_JSON.bak"" ]]; then
+        if [[ -f ""$_vj_bak"" ]]; then
             log ""Restoring version.json from backup...""
-            cp -f ""$CURRENT_VERSION_JSON.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
+            cp -f ""$_vj_bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
         fi
 
         # Restore credential files from CONFIG_DIR (not INSTALL_DIR!)
@@ -973,19 +1016,14 @@ trap cleanup EXIT
 # Ensure log directory exists and has correct ownership
 mkdir -p ""$LOG_DIR"" 2>/dev/null || true
 
-# Clear previous logs
-rm -f ""$LOG_FILE"" 2>/dev/null || true
+# Clear previous logs — truncate (not rm) because rm needs directory write
+# permission which the service user may not have on /usr/local/var/log/
+: > ""$LOG_FILE"" 2>/dev/null || true
 rm -f ""$RESULT_FILE"" 2>/dev/null || true
 
-# Create log file with correct ownership for service user
-touch ""$LOG_FILE"" 2>/dev/null || true
-if [[ -n ""$SERVICE_USER"" ]]; then
-    chown ""$SERVICE_USER"" ""$LOG_FILE"" 2>/dev/null || true
-fi
-
 log '=========================================='
-log 'MidTerm Update Script Starting'
-log ""Service user: ${{SERVICE_USER:-unknown}}""
+log 'MidTerm Update Script v{generatingVersion}'
+log ""Running as: $(whoami) (SERVICE_USER=${{SERVICE_USER:-unknown}})""
 log ""Update type: $(if $IS_WEB_ONLY; then echo 'Web-only'; else echo 'Full'; fi)""
 log ""Platform: $(if $IS_MACOS; then echo 'macOS'; else echo 'Linux'; fi)""
 log '=========================================='
@@ -1037,17 +1075,24 @@ log ""All processes stopped""
 log """"
 log '=== PHASE 2: Waiting for file handles ==='
 
-if ! wait_for_file_writable ""$CURRENT_MT""; then
-    log ""mt is still locked after $MAX_RETRIES retries"" ""ERROR""
-    write_result false ""mt is still locked. Another process may be using it.""
-    exit 1
-fi
-
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
-    if ! wait_for_file_writable ""$CURRENT_MTHOST""; then
-        log ""mthost is still locked after $MAX_RETRIES retries"" ""ERROR""
-        write_result false ""mthost is still locked. Another process may be using it.""
+if $IS_MACOS; then
+    # macOS: launchd KeepAlive respawns the process immediately after kill,
+    # so the binary is always locked. safe_copy handles the kill+cp race.
+    log ""macOS: skipping file lock wait (KeepAlive keeps respawning)""
+    log ""Will use kill+copy retry loop during installation""
+else
+    if ! wait_for_file_writable ""$CURRENT_MT""; then
+        log ""mt is still locked after $MAX_RETRIES retries"" ""ERROR""
+        write_result false ""mt is still locked. Another process may be using it.""
         exit 1
+    fi
+
+    if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+        if ! wait_for_file_writable ""$CURRENT_MTHOST""; then
+            log ""mthost is still locked after $MAX_RETRIES retries"" ""ERROR""
+            write_result false ""mthost is still locked. Another process may be using it.""
+            exit 1
+        fi
     fi
 fi
 
@@ -1059,21 +1104,42 @@ log ""All file handles released""
 log """"
 log '=== PHASE 3: Creating backups ==='
 
+# On macOS, .bak files can't be created in /usr/local/bin/ (root-owned directory).
+# Use config dir for binary backups instead (service user owns it).
+if $IS_MACOS; then
+    BIN_BACKUP_DIR=""$CONFIG_DIR/update-backup""
+    mkdir -p ""$BIN_BACKUP_DIR""
+else
+    BIN_BACKUP_DIR=""$INSTALL_DIR""
+fi
+
 if [[ -f ""$CURRENT_MT"" ]]; then
     log ""Backing up mt...""
-    cp -f ""$CURRENT_MT"" ""$CURRENT_MT.bak""
+    if $IS_MACOS; then
+        cp ""$CURRENT_MT"" ""$BIN_BACKUP_DIR/mt.bak""
+    else
+        cp -f ""$CURRENT_MT"" ""$CURRENT_MT.bak""
+    fi
     log ""mt backed up""
 fi
 
 if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     log ""Backing up mthost...""
-    cp -f ""$CURRENT_MTHOST"" ""$CURRENT_MTHOST.bak""
+    if $IS_MACOS; then
+        cp ""$CURRENT_MTHOST"" ""$BIN_BACKUP_DIR/mthost.bak""
+    else
+        cp -f ""$CURRENT_MTHOST"" ""$CURRENT_MTHOST.bak""
+    fi
     log ""mthost backed up""
 fi
 
 if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
     log ""Backing up version.json...""
-    cp -f ""$CURRENT_VERSION_JSON"" ""$CURRENT_VERSION_JSON.bak""
+    if $IS_MACOS; then
+        cp ""$CURRENT_VERSION_JSON"" ""$BIN_BACKUP_DIR/version.json.bak""
+    else
+        cp -f ""$CURRENT_VERSION_JSON"" ""$CURRENT_VERSION_JSON.bak""
+    fi
     log ""version.json backed up""
 fi
 
@@ -1295,9 +1361,14 @@ fi
 log """"
 log '=== PHASE 6: Cleanup ==='
 
-rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
-rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
-rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
+# Clean up binary backups
+if $IS_MACOS; then
+    rm -rf ""$CONFIG_DIR/update-backup"" 2>/dev/null || true
+else
+    rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
+    rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
+    rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
+fi
 
 # Clean up credential backups (in CONFIG_DIR, not INSTALL_DIR!)
 rm -f ""$CONFIG_DIR/settings.json.bak"" 2>/dev/null || true
