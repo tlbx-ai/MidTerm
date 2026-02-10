@@ -411,6 +411,28 @@ export function setupTerminalEvents(
     }),
   );
 
+  // OSC 52 clipboard: programs in the terminal can set the browser clipboard
+  // Format: ESC ] 52 ; <selection> ; <base64-data> BEL/ST
+  // This enables remote clipboard for tools like Claude Code, vim, tmux
+  disposables.push(
+    terminal.parser.registerOscHandler(52, (data: string) => {
+      const semicolonIdx = data.indexOf(';');
+      if (semicolonIdx < 0) return false;
+      const b64 = data.substring(semicolonIdx + 1);
+      if (!b64 || b64 === '?') return false;
+      try {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const text = new TextDecoder().decode(bytes);
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(text).catch(() => {});
+        }
+      } catch {
+        // invalid base64 or clipboard unavailable
+      }
+      return true;
+    }),
+  );
+
   disposables.push(
     terminal.onSelectionChange(() => {
       if ($currentSettings.get()?.copyOnSelect && terminal.hasSelection()) {
