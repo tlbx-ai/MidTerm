@@ -5,8 +5,8 @@
  * and docking sessions into multi-panel layouts.
  */
 
-import { dom } from '../../state';
-import { reorderSessions, $sessionList } from '../../stores';
+import { dom, sessionTerminals } from '../../state';
+import { reorderSessions, $sessionList, $activeSessionId } from '../../stores';
 import { persistSessionOrder } from '../comms';
 import {
   showDockOverlay,
@@ -14,13 +14,15 @@ import {
   getDockTarget,
   isDockOverlayVisible,
 } from '../layout/dockOverlay';
-import { dockSession } from '../layout/layoutStore';
+import { dockSession, isSessionInLayout } from '../layout/layoutStore';
+import { getLayoutRoot } from '../layout/layoutRenderer';
 
 let draggedSessionId: string | null = null;
 let draggedElement: HTMLElement | null = null;
 let dropIndicatorPosition: 'above' | 'below' | null = null;
 let dragImageElement: HTMLElement | null = null;
 let dragStartedFromHandle = false;
+let layoutShownForDrag = false;
 
 /**
  * Check if a session drag is currently in progress.
@@ -107,6 +109,17 @@ function handleDragEnd(_e: DragEvent): void {
   clearAllDropIndicators();
   hideDockOverlay();
 
+  // Restore standalone view if layout was only shown for drag preview
+  if (layoutShownForDrag) {
+    const activeId = $activeSessionId.get();
+    if (activeId && !isSessionInLayout(activeId)) {
+      getLayoutRoot()?.classList.add('hidden');
+      const activeState = sessionTerminals.get(activeId);
+      if (activeState) activeState.container.classList.remove('hidden');
+    }
+    layoutShownForDrag = false;
+  }
+
   draggedSessionId = null;
   draggedElement = null;
   dropIndicatorPosition = null;
@@ -144,6 +157,19 @@ function handleDragOver(e: DragEvent): void {
   } else {
     sessionItem.classList.add('drag-over-below');
     dropIndicatorPosition = 'below';
+  }
+
+  // If hovering over a session in a layout, show the layout for dock targeting
+  const hoveredSessionId = sessionItem.dataset.sessionId;
+  if (hoveredSessionId && isSessionInLayout(hoveredSessionId)) {
+    const layoutRoot = getLayoutRoot();
+    if (layoutRoot?.classList.contains('hidden')) {
+      layoutRoot.classList.remove('hidden');
+      sessionTerminals.forEach((s, id) => {
+        if (!isSessionInLayout(id)) s.container.classList.add('hidden');
+      });
+      layoutShownForDrag = true;
+    }
   }
 }
 
@@ -248,8 +274,8 @@ function handleGlobalDrop(e: DragEvent): void {
     e.preventDefault();
     e.stopPropagation();
 
-    // Perform dock operation
     dockSession(dockTarget.targetSessionId, draggedSessionId, dockTarget.position);
     hideDockOverlay();
+    layoutShownForDrag = false;
   }
 }
