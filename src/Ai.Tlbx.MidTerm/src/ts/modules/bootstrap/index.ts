@@ -109,6 +109,9 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     // Check system health (TtyHost compatibility)
     checkTtyHostHealth(data);
 
+    // Render reinstall hint with platform-specific install command
+    renderReinstallHint(data.platform);
+
     // Feature flags - enable/disable UI features
     setVoiceChatEnabled(data.features.voiceChat);
 
@@ -218,6 +221,38 @@ function checkTtyHostHealth(data: BootstrapResponse): void {
   } else {
     warning.classList.add('hidden');
   }
+}
+
+/**
+ * Render the reinstall hint with platform-specific install command.
+ */
+function renderReinstallHint(platform: string): void {
+  const container = document.getElementById('reinstall-hint');
+  if (!container) return;
+
+  const isWindows = /win/i.test(platform);
+  const cmd = isWindows
+    ? 'irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex'
+    : 'curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash';
+
+  container.classList.remove('hidden');
+  container.innerHTML =
+    '<div class="reinstall-hint-text">If an update fails, re-run the installer (preserves settings):</div>' +
+    '<div class="reinstall-hint-cmd">' +
+    '<code>' +
+    escapeHtml(cmd) +
+    '</code>' +
+    '<button class="btn-copy-cmd" title="Copy to clipboard">Copy</button>' +
+    '</div>';
+
+  container.querySelector('.btn-copy-cmd')?.addEventListener('click', (e) => {
+    const btn = e.target as HTMLButtonElement;
+    navigator.clipboard.writeText(cmd);
+    btn.textContent = 'Copied!';
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+    }, 1500);
+  });
 }
 
 /**

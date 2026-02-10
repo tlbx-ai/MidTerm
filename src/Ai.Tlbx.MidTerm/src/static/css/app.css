@@ -3737,6 +3737,55 @@ html, body {
     margin-top: 8px;
 }
 
+/* Reinstall Hint in Update Section */
+.reinstall-hint {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.reinstall-hint-text {
+    margin-bottom: 8px;
+}
+
+.reinstall-hint-cmd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.reinstall-hint-cmd code {
+    flex: 1;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow-x: auto;
+    user-select: all;
+}
+
+.reinstall-hint-cmd .btn-copy-cmd {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.reinstall-hint-cmd .btn-copy-cmd:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
 /* Password Status in Settings */
 .password-status {
     display: flex;
