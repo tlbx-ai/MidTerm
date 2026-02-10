@@ -50,11 +50,13 @@ public static class Program
     {
 #if !WINDOWS
         // PTY exec mode - check FIRST before any .NET initialization
-        // Usage: mthost --pty-exec <slave-path> <shell> [shell-args...]
+        // Usage: mthost --pty-exec <slave-path> <cols> <rows> <shell> [shell-args...]
         // This replaces the process with the shell via execvp() and never returns
-        if (args.Length >= 3 && args[0] == "--pty-exec")
+        if (args.Length >= 5 && args[0] == "--pty-exec")
         {
-            return PtyExec.Execute(args[1], args[2..]);
+            int.TryParse(args[2], out var execCols);
+            int.TryParse(args[3], out var execRows);
+            return PtyExec.Execute(args[1], execCols, execRows, args[4..]);
         }
 #endif
 
@@ -900,7 +902,7 @@ public static class Program
             mthost {VersionInfo.Version} - MidTerm Console Host
 
             Usage: mthost --session <id> [options]
-                   mthost --pty-exec <slave-path> <shell> [shell-args...]
+                   mthost --pty-exec <slave-path> <cols> <rows> <shell> [shell-args...]
 
             Required:
               --session <id>    Unique session identifier

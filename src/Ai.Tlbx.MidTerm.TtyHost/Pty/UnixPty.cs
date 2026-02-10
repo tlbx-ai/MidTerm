@@ -169,6 +169,8 @@ public sealed class UnixPty : IPtyConnection
 
         psi.ArgumentList.Add("--pty-exec");
         psi.ArgumentList.Add(slaveName);
+        psi.ArgumentList.Add(cols.ToString());
+        psi.ArgumentList.Add(rows.ToString());
         psi.ArgumentList.Add(app);
         foreach (var arg in args)
         {
