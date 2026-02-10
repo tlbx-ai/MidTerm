@@ -696,8 +696,9 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
             ? $"launchctl bootout system/{LaunchdLabel} 2>/dev/null || launchctl unload /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
             : $"systemctl stop {SystemdService} 2>/dev/null || true";
 
+        // Retry bootstrap: after bootout launchd may still be cleaning up (error 5: I/O error)
         var startServiceCmd = isMacOs
-            ? $"launchctl bootstrap system /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || launchctl load /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
+            ? $"for _a in 1 2 3; do launchctl bootstrap system /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null && break; sleep 2; done; launchctl load -w /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
             : $"systemctl start {SystemdService} 2>/dev/null || true";
 
         // NOTE: launchctl print only checks if service is REGISTERED, not RUNNING

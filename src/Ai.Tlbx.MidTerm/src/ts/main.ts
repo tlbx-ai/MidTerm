@@ -85,6 +85,7 @@ import {
   isLayoutActive,
   focusLayoutSession,
   initLayoutPersistence,
+  getLayoutRoot,
 } from './modules/layout';
 import {
   cacheDOMElements,
@@ -384,9 +385,13 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   if (isSessionInLayout(sessionId)) {
     focusLayoutSession(sessionId);
     sendActiveSessionHint(sessionId);
-    // Ensure terminal exists
     const sessionInfo = getSession(sessionId);
     createTerminalForSession(sessionId, sessionInfo);
+    // Re-show layout (may have been hidden for standalone viewing)
+    getLayoutRoot()?.classList.remove('hidden');
+    sessionTerminals.forEach((s, id) => {
+      if (!isSessionInLayout(id)) s.container.classList.add('hidden');
+    });
     return;
   }
 
@@ -405,9 +410,9 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
 
-  // Only show if not in layout (layout handles visibility)
-  if (!isLayoutActive()) {
-    state.container.classList.remove('hidden');
+  state.container.classList.remove('hidden');
+  if (isLayoutActive()) {
+    getLayoutRoot()?.classList.add('hidden');
   }
 
   requestAnimationFrame(() => {

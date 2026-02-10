@@ -1216,6 +1216,9 @@ install_launchd() {
 
     # Unload existing services if present (try modern bootout first, fallback to legacy unload)
     launchctl bootout system/"$LAUNCHD_LABEL" 2>/dev/null || launchctl unload "$plist_path" 2>/dev/null || true
+    # launchd needs time to fully tear down after bootout - without this delay,
+    # the subsequent bootstrap can fail with "error 5: Input/output error"
+    sleep 2
 
     # Migration: remove old org launchd service
     local old_org_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist"
@@ -1271,26 +1274,30 @@ EOF
     log "Starting launchd service..."
     echo -e "${GRAY}Starting service...${NC}"
 
-    # Bootstrap registers the service (modern macOS)
-    # Legacy load also works but bootstrap is preferred
+    # Bootstrap registers the service with launchd (modern macOS).
+    # After bootout, launchd may still be cleaning up — retry with backoff.
     local bootstrap_ok=false
     local bootstrap_output
-    bootstrap_output=$(launchctl bootstrap system "$plist_path" 2>&1) && bootstrap_ok=true
-    if [ "$bootstrap_ok" = false ]; then
-        log "launchctl bootstrap failed: $bootstrap_output"
-        log "Trying legacy launchctl load..."
-        bootstrap_output=$(launchctl load "$plist_path" 2>&1) && bootstrap_ok=true
-        if [ "$bootstrap_ok" = true ]; then
-            log "launchctl load succeeded"
-        else
-            log "launchctl load failed: $bootstrap_output" "ERROR"
-        fi
-    else
-        log "launchctl bootstrap succeeded"
-    fi
+    local attempt
+    for attempt in 1 2 3; do
+        bootstrap_output=$(launchctl bootstrap system "$plist_path" 2>&1) && bootstrap_ok=true && break
+        log "launchctl bootstrap attempt $attempt failed: $bootstrap_output"
+        sleep 2
+    done
 
     if [ "$bootstrap_ok" = false ]; then
-        log "Failed to register service with launchd" "ERROR"
+        log "All bootstrap attempts failed, trying legacy load -w..."
+        bootstrap_output=$(launchctl load -w "$plist_path" 2>&1) || true
+        log "launchctl load -w output: $bootstrap_output"
+    fi
+
+    # Verify the service is actually registered (don't trust exit codes)
+    if launchctl print system/"$LAUNCHD_LABEL" >/dev/null 2>&1; then
+        bootstrap_ok=true
+        log "Service verified as registered in launchd"
+    else
+        bootstrap_ok=false
+        log "Service NOT found in launchd after all registration attempts" "ERROR"
         echo -e "  ${RED}Failed to register service${NC}"
         echo -e "  ${GRAY}Check logs at: /usr/local/var/log/MidTerm.log${NC}"
         return 1
