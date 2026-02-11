@@ -12,6 +12,8 @@ public interface IPtyConnection : IDisposable
     Stream ReaderStream { get; }
     /// <summary>Process ID of the shell process.</summary>
     int Pid { get; }
+    /// <summary>PTY master file descriptor (Unix only, -1 on Windows).</summary>
+    int MasterFd { get; }
     /// <summary>Whether the shell process is still running.</summary>
     bool IsRunning { get; }
     /// <summary>Exit code of the shell process, or null if still running.</summary>

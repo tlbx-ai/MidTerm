@@ -35,6 +35,7 @@ public sealed class UnixPty : IPtyConnection
     }
 
     public int Pid => _process?.Id ?? -1;
+    public int MasterFd => _masterFd;
 
     public bool IsRunning
     {

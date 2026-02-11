@@ -14,7 +14,9 @@ public interface IProcessMonitor : IDisposable
     /// <summary>
     /// Start monitoring the shell process for direct child changes.
     /// </summary>
-    void StartMonitoring(int shellPid);
+    /// <param name="shellPid">PID of the shell process.</param>
+    /// <param name="ptyMasterFd">PTY master file descriptor for tcgetpgrp (Unix only, -1 on Windows).</param>
+    void StartMonitoring(int shellPid, int ptyMasterFd = -1);
 
     /// <summary>
     /// Stop monitoring.

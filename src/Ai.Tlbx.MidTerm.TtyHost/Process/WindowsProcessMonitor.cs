@@ -34,7 +34,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
-    public void StartMonitoring(int shellPid)
+    public void StartMonitoring(int shellPid, int ptyMasterFd = -1)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(WindowsProcessMonitor));
 

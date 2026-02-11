@@ -143,8 +143,8 @@ public static class Program
 
             if (processMonitor is not null)
             {
-                processMonitor.StartMonitoring(pty.Pid);
-                Log.Info(() => $"Process monitor started for PID={pty.Pid}");
+                processMonitor.StartMonitoring(pty.Pid, pty.MasterFd);
+                Log.Info(() => $"Process monitor started for PID={pty.Pid}, masterFd={pty.MasterFd}");
             }
 
             using var cts = new CancellationTokenSource();

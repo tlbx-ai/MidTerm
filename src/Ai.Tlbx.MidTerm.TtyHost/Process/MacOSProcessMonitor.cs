@@ -7,20 +7,20 @@ using Ai.Tlbx.MidTerm.Common.Process;
 namespace Ai.Tlbx.MidTerm.TtyHost.Process;
 
 /// <summary>
-/// macOS process monitor using kqueue for event-driven child process detection.
-/// Falls back to timer for CWD changes since kqueue can't watch filesystem operations.
-/// Optimized: reusable buffers for proc_pidpath and sysctl.
+/// macOS process monitor using kqueue for event-driven detection
+/// and tcgetpgrp for foreground process identification.
 /// </summary>
 public sealed class MacOSProcessMonitor : IProcessMonitor
 {
     private int _shellPid;
+    private int _ptyMasterFd = -1;
     private int _kq = -1;
-    private int? _currentChildPid;
+    private int? _currentForegroundPid;
     private string? _currentCwd;
-    private string? _currentChildCwd;
+    private string? _currentForegroundCwd;
     private readonly object _stateLock = new();
     private Thread? _eventThread;
-    private Timer? _cwdTimer;
+    private Timer? _pollTimer;
     private volatile bool _disposed;
 
     // Reusable buffers (thread-safe via ThreadStatic)
@@ -28,26 +28,24 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     private static byte[]? _pathBuffer;
     [ThreadStatic]
     private static byte[]? _argmaxBuffer;
-    [ThreadStatic]
-    private static int[]? _childPidBuffer;
 
     private static byte[] PathBuffer => _pathBuffer ??= new byte[PROC_PIDPATHINFO_MAXSIZE];
-    private static byte[] ArgmaxBuffer => _argmaxBuffer ??= new byte[256 * 1024]; // 256KB for KERN_ARGMAX
-    private static int[] ChildPidBuffer => _childPidBuffer ??= new int[64]; // max children to check
+    private static byte[] ArgmaxBuffer => _argmaxBuffer ??= new byte[256 * 1024];
 
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
-    public void StartMonitoring(int shellPid)
+    public void StartMonitoring(int shellPid, int ptyMasterFd = -1)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(MacOSProcessMonitor));
 
         _shellPid = shellPid;
+        _ptyMasterFd = ptyMasterFd;
         _kq = kqueue();
 
         if (_kq < 0)
         {
             Log.Warn(() => "kqueue() failed, falling back to polling");
-            _cwdTimer = new Timer(_ => Poll(), null, 0, 500);
+            _pollTimer = new Timer(_ => RefreshForeground(), null, 0, 500);
             return;
         }
 
@@ -56,8 +54,8 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         _eventThread = new Thread(EventLoop) { IsBackground = true, Name = "macOS-kqueue" };
         _eventThread.Start();
 
-        // Timer for CWD changes (kqueue can't watch this)
-        _cwdTimer = new Timer(_ => CheckCwdChange(), null, 500, 500);
+        // Poll timer for changes kqueue can't detect (CWD changes, child exit)
+        _pollTimer = new Timer(_ => RefreshForeground(), null, 500, 500);
 
         // Initial state
         RefreshForeground();
@@ -66,8 +64,8 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     public void StopMonitoring()
     {
         _disposed = true;
-        _cwdTimer?.Dispose();
-        _cwdTimer = null;
+        _pollTimer?.Dispose();
+        _pollTimer = null;
 
         if (_kq >= 0)
         {
@@ -81,8 +79,8 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
 
     public ForegroundProcessInfo GetCurrentForeground()
     {
-        var childPid = GetFirstDirectChild(_shellPid);
-        if (childPid is null)
+        var fgPid = GetForegroundPid();
+        if (fgPid is null)
         {
             return new ForegroundProcessInfo
             {
@@ -94,10 +92,10 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
 
         return new ForegroundProcessInfo
         {
-            Pid = childPid.Value,
-            Name = GetProcessName(childPid.Value) ?? "unknown",
-            CommandLine = GetProcessCommandLine(childPid.Value),
-            Cwd = GetProcessCwd(childPid.Value) ?? GetShellCwd()
+            Pid = fgPid.Value,
+            Name = GetProcessName(fgPid.Value) ?? "unknown",
+            CommandLine = GetProcessCommandLine(fgPid.Value),
+            Cwd = GetProcessCwd(fgPid.Value) ?? GetShellCwd()
         };
     }
 
@@ -141,25 +139,25 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         }
     }
 
-    private void Poll()
+    private void RefreshForeground()
     {
         if (_disposed) return;
 
         try
         {
-            var childPid = GetFirstDirectChild(_shellPid);
+            var fgPid = GetForegroundPid();
             var cwd = GetShellCwd();
-            var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
+            var fgCwd = fgPid.HasValue ? GetProcessCwd(fgPid.Value) : null;
 
             bool shouldNotify;
             lock (_stateLock)
             {
-                shouldNotify = childPid != _currentChildPid || cwd != _currentCwd || childCwd != _currentChildCwd;
+                shouldNotify = fgPid != _currentForegroundPid || cwd != _currentCwd || fgCwd != _currentForegroundCwd;
                 if (shouldNotify)
                 {
-                    _currentChildPid = childPid;
+                    _currentForegroundPid = fgPid;
                     _currentCwd = cwd;
-                    _currentChildCwd = childCwd;
+                    _currentForegroundCwd = fgCwd;
                 }
             }
 
@@ -170,78 +168,23 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         }
         catch (Exception ex)
         {
-            Log.Warn(() => $"Process poll error: {ex.Message}");
+            if (!_disposed)
+                Log.Warn(() => $"Process refresh error: {ex.Message}");
         }
     }
 
-    private void CheckCwdChange()
+    /// <summary>
+    /// Get the foreground process PID using tcgetpgrp on the PTY master fd.
+    /// Returns null when the shell itself is in the foreground (idle).
+    /// </summary>
+    private int? GetForegroundPid()
     {
-        if (_disposed) return;
+        if (_ptyMasterFd < 0) return null;
 
-        try
-        {
-            var cwd = GetShellCwd();
-            int? childPid;
-            lock (_stateLock) { childPid = _currentChildPid; }
-            var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
+        var pgid = tcgetpgrp(_ptyMasterFd);
+        if (pgid <= 0 || pgid == _shellPid) return null;
 
-            bool shouldNotify;
-            lock (_stateLock)
-            {
-                shouldNotify = cwd != _currentCwd || childCwd != _currentChildCwd;
-                if (shouldNotify)
-                {
-                    _currentCwd = cwd;
-                    _currentChildCwd = childCwd;
-                }
-            }
-
-            if (shouldNotify)
-            {
-                OnForegroundChanged?.Invoke(GetCurrentForeground());
-            }
-        }
-        catch { }
-    }
-
-    private void RefreshForeground()
-    {
-        if (_disposed) return;
-
-        var childPid = GetFirstDirectChild(_shellPid);
-        var cwd = GetShellCwd();
-        var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
-
-        bool shouldNotify;
-        lock (_stateLock)
-        {
-            shouldNotify = childPid != _currentChildPid || cwd != _currentCwd || childCwd != _currentChildCwd;
-            if (shouldNotify)
-            {
-                _currentChildPid = childPid;
-                _currentCwd = cwd;
-                _currentChildCwd = childCwd;
-            }
-        }
-
-        if (shouldNotify)
-        {
-            OnForegroundChanged?.Invoke(GetCurrentForeground());
-        }
-    }
-
-    private static int? GetFirstDirectChild(int parentPid)
-    {
-        var count = proc_listchildpids(parentPid, null, 0);
-        if (count <= 0) return null;
-
-        var pids = ChildPidBuffer;
-        var maxCount = Math.Min(count, pids.Length);
-        var actualCount = proc_listchildpids(parentPid, pids, maxCount * sizeof(int));
-        if (actualCount <= 0) return null;
-
-        var numPids = actualCount / sizeof(int);
-        return numPids > 0 && pids[0] > 0 ? pids[0] : null;
+        return pgid;
     }
 
     private static string? GetProcessName(int pid)
@@ -263,7 +206,6 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     {
         try
         {
-            // Use pre-allocated 256KB buffer instead of querying KERN_ARGMAX each time
             var buffer = ArgmaxBuffer;
             var size = (IntPtr)buffer.Length;
             var mib = new int[] { CTL_KERN, KERN_PROCARGS2, pid };
@@ -286,7 +228,7 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
             {
                 var start = pos;
                 while (pos < (int)size && buffer[pos] != 0) pos++;
-                if (pos > start && i > 0) // Skip first arg (command name)
+                if (pos > start && i > 0)
                     args.Add(Encoding.UTF8.GetString(buffer, start, pos - start));
                 pos++;
             }
@@ -318,7 +260,6 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     private const int PROC_PIDVNODEPATHINFO = 9;
     private const int PROC_PIDPATHINFO_MAXSIZE = 4096;
     private const int CTL_KERN = 1;
-    private const int KERN_ARGMAX = 8;
     private const int KERN_PROCARGS2 = 49;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -367,20 +308,17 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     [DllImport("libc")]
     private static extern int close(int fd);
 
+    [DllImport("libc")]
+    private static extern int tcgetpgrp(int fd);
+
     [DllImport("libproc.dylib")]
     private static extern int proc_pidinfo(int pid, int flavor, ulong arg, ref proc_vnodepathinfo buffer, int bufferSize);
 
     [DllImport("libproc.dylib")]
     private static extern int proc_pidpath(int pid, byte[] buffer, int bufferSize);
 
-    [DllImport("libproc.dylib")]
-    private static extern int proc_listchildpids(int ppid, int[]? buffer, int bufferSize);
-
     [DllImport("libc")]
     private static extern int sysctl(int[] name, int namelen, byte[] oldp, ref IntPtr oldlenp, IntPtr newp, IntPtr newlen);
-
-    [DllImport("libc")]
-    private static extern int sysctl(int[] name, int namelen, int[] oldp, ref IntPtr oldlenp, IntPtr newp, IntPtr newlen);
 
     #endregion
 }
