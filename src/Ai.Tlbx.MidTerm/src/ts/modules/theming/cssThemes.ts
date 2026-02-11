@@ -114,11 +114,14 @@ const dark: CssThemePalette = {
 
   '--white-03': 'rgba(255, 255, 255, 0.03)',
   '--white-60': 'rgba(255, 255, 255, 0.6)',
+
+  '--logo-filter': 'none',
+  '--text-on-accent': '#FFFFFF',
 };
 
 const light: CssThemePalette = {
-  '--bg-terminal': '#F2EBE1',
-  '--terminal-bg': '#F2EBE1',
+  '--bg-terminal': '#F5F0E8',
+  '--terminal-bg': '#F5F0E8',
   '--bg-primary': '#EAE2D8',
   '--bg-elevated': '#FEFCF9',
   '--bg-sidebar': '#E6DDD1',
@@ -138,7 +141,7 @@ const light: CssThemePalette = {
   '--border-emphasis': '#BAB0A0',
 
   '--text-primary': '#2E2720',
-  '--text-terminal': '#251E18',
+  '--text-terminal': '#2E2720',
   '--text-secondary': '#5C5044',
   '--text-muted': '#978B7E',
 
@@ -220,6 +223,9 @@ const light: CssThemePalette = {
 
   '--white-03': 'rgba(0, 0, 0, 0.03)',
   '--white-60': 'rgba(0, 0, 0, 0.45)',
+
+  '--logo-filter': 'invert(1)',
+  '--text-on-accent': '#FFFEFA',
 };
 
 const solarizedDark: CssThemePalette = {
@@ -326,6 +332,9 @@ const solarizedDark: CssThemePalette = {
 
   '--white-03': 'rgba(255, 255, 255, 0.03)',
   '--white-60': 'rgba(255, 255, 255, 0.6)',
+
+  '--logo-filter': 'none',
+  '--text-on-accent': '#FFFFFF',
 };
 
 const solarizedLight: CssThemePalette = {
@@ -432,6 +441,9 @@ const solarizedLight: CssThemePalette = {
 
   '--white-03': 'rgba(0, 0, 0, 0.03)',
   '--white-60': 'rgba(0, 0, 0, 0.45)',
+
+  '--logo-filter': 'invert(1)',
+  '--text-on-accent': '#FFFDF6',
 };
 
 export const CSS_THEMES: Record<ThemeName, CssThemePalette> = {

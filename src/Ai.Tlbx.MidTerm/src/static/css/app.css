@@ -305,10 +305,11 @@ html, body {
     width: auto;
     flex-shrink: 0;
     transition: filter 0.2s;
+    filter: var(--logo-filter, none);
 }
 
 .sidebar-brand:hover .sidebar-logo {
-    filter: drop-shadow(0 0 8px var(--accent-blue-40));
+    filter: var(--logo-filter, none) drop-shadow(0 0 8px var(--accent-blue-40));
 }
 
 .sidebar-title {
@@ -828,12 +829,12 @@ html, body {
 .session-resize:hover,
 .session-rename:hover {
     background-color: var(--accent-gold);
-    color: #0D0E14;
+    color: var(--bg-primary);
 }
 
 .session-close:hover {
     background-color: var(--accent-red);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 /* Mobile menu button - hidden on desktop */
@@ -979,7 +980,7 @@ html, body {
 
     .close-session-btn:hover {
         background-color: var(--accent-red);
-        color: white;
+        color: var(--text-on-accent);
     }
 }
 
@@ -1383,7 +1384,7 @@ html, body {
 
 .session-undock:hover {
     background-color: var(--accent-green);
-    color: #0D0E14;
+    color: var(--bg-primary);
 }
 
 /* ============================================================================
@@ -1682,7 +1683,7 @@ html, body {
     /* Close button - red accent */
     .topbar-close:active {
         background-color: var(--accent-red);
-        color: white;
+        color: var(--text-on-accent);
     }
 
     /* Add button - primary accent */
@@ -1769,12 +1770,12 @@ html, body {
 
     .session-actions .session-pin:active {
         background-color: var(--accent-orange);
-        color: white;
+        color: var(--text-on-accent);
     }
 
     .session-actions .session-resize:active {
         background-color: var(--accent-blue);
-        color: white;
+        color: var(--text-on-accent);
     }
 
     .session-actions .session-rename:active {
@@ -1783,12 +1784,12 @@ html, body {
 
     .session-actions .session-undock:active {
         background-color: var(--accent-green);
-        color: #0D0E14;
+        color: var(--bg-primary);
     }
 
     .session-actions .session-close:active {
         background-color: var(--accent-red);
-        color: white;
+        color: var(--text-on-accent);
     }
 
     /* Mobile menu button */
@@ -1815,7 +1816,7 @@ html, body {
 
     .session-item.menu-open .session-menu-btn {
         background-color: var(--accent-blue);
-        color: white;
+        color: var(--text-on-accent);
     }
 
     /* Hide action hint on mobile - use menu button instead */
@@ -2009,6 +2010,7 @@ html, body {
     opacity: 0.4;
     margin-bottom: 16px;
     animation: float 4s ease-in-out infinite;
+    filter: var(--logo-filter, none);
 }
 
 @keyframes float {
@@ -2091,7 +2093,7 @@ html, body {
 
 .connection-status.disconnected {
     background-color: var(--accent-red);
-    color: white;
+    color: var(--text-on-accent);
     opacity: 1;
 }
 
@@ -2119,7 +2121,7 @@ html, body {
     left: 50%;
     transform: translateX(-50%);
     background-color: var(--accent-red, #dc2626);
-    color: #fff;
+    color: var(--text-on-accent);
     pointer-events: none;
     bottom: 60px;
 }
@@ -2136,7 +2138,7 @@ html, body {
     right: 0;
     z-index: 10000;
     background: linear-gradient(135deg, var(--accent-blue) 0%, var(--bg-sidebar) 100%);
-    color: white;
+    color: var(--text-on-accent);
     padding: 10px 20px;
     display: flex;
     justify-content: center;
@@ -2147,7 +2149,7 @@ html, body {
 }
 
 .update-banner-btn {
-    background: white;
+    background: var(--text-on-accent);
     color: var(--bg-primary);
     border: none;
     padding: 6px 16px;
@@ -2158,7 +2160,7 @@ html, body {
 
 .update-banner-dismiss {
     background: transparent;
-    color: white;
+    color: var(--text-on-accent);
     border: 1px solid rgba(255, 255, 255, 0.5);
     padding: 6px 12px;
     border-radius: 4px;
@@ -2185,7 +2187,7 @@ html, body {
 .host-status.disconnected {
     display: block;
     background-color: var(--accent-red);
-    color: white;
+    color: var(--text-on-accent);
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
@@ -3375,6 +3377,7 @@ html, body {
     animation-duration: 4s !important;
     animation-timing-function: ease-in-out !important;
     animation-iteration-count: infinite !important;
+    filter: var(--logo-filter, none);
 }
 
 @keyframes logo-appear {
@@ -3832,7 +3835,7 @@ html, body {
     opacity: 1;
     transition: opacity 0.3s;
     background-color: var(--accent-red);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 .drop-toast.hiding {
@@ -3878,7 +3881,7 @@ html, body {
 
 .drop-toast .toast-link {
     display: inline-block;
-    color: white;
+    color: var(--text-on-accent);
     font-size: 12px;
     font-weight: 500;
     text-decoration: underline;
@@ -3892,7 +3895,7 @@ html, body {
 .drop-toast .toast-close {
     background: none;
     border: none;
-    color: white;
+    color: var(--text-on-accent);
     font-size: 18px;
     cursor: pointer;
     padding: 0;
@@ -4262,7 +4265,7 @@ html, body {
 
 .os-tab.active {
     background-color: var(--accent-blue);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 .os-instructions {
@@ -4780,7 +4783,7 @@ html, body {
 .chat-msg-user {
     align-self: flex-end;
     background-color: var(--accent-blue);
-    color: white;
+    color: var(--text-on-accent);
     border-bottom-right-radius: 4px;
 }
 
@@ -5001,12 +5004,12 @@ html, body {
 
 .btn-tool-accept {
     background-color: var(--accent-green);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 .btn-tool-decline {
     background-color: var(--accent-red);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 .btn-tool-accept:hover,
