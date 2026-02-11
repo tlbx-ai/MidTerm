@@ -52,7 +52,7 @@ Binary size: 15-25MB depending on platform. Startup: instant. Memory: stable aft
 | Service | Purpose |
 |---------|---------|
 | SessionManager | Terminal session lifecycle |
-| AuthService | Password hashing (PBKDF2), session tokens |
+| AuthService | Authentication (see Security Architecture) |
 | SettingsService | Settings persistence |
 | UpdateService | GitHub release check, version comparison |
 | FileRadarAllowlistService | File path detection security (max 1000 paths/session) |
@@ -62,6 +62,7 @@ Binary size: 15-25MB depending on platform. Startup: instant. Memory: stable aft
 | SystemTrayService | Windows system tray integration |
 | UserEnumerationService | Windows RunAsUser feature |
 | ISecretStorage | Cross-platform secret storage (platform-specific implementations) |
+| ICertificateProtector | Platform-specific private key protection (DPAPI, AES-256) |
 | SharedOutputBuffer | Zero-copy buffer sharing via reference counting |
 | ClipboardService | Cross-platform clipboard image injection (Alt+V) |
 | MainBrowserService | Multi-client resize coordination |
@@ -92,11 +93,23 @@ registerStateCallbacks({
 
 **Direct DOM manipulation**: xterm.js requires imperative control. Event handlers attach directly. Elements are created and appended as needed.
 
-This works for terminal UI because:
-- The interface has ~15 interactive elements, not hundreds of components
-- State changes are server-driven (WebSocket messages), not user interaction cascades
-- Terminal output streams at high frequency; virtual DOM diffing would add overhead
-- Bundle size matters: the entire TS bundle is smaller than React alone
+**Production dependencies** (3 total):
+
+| Dependency | Size | Replaces |
+|-----------|------|----------|
+| nanostores | ~1KB | Redux, MobX, Zustand — reactive atoms/maps/computed for ~20 stores |
+| openapi-fetch | ~3KB | Hand-written API client — typed from OpenAPI spec |
+| xterm-link-provider | ~2KB | Manual link detection in terminal output |
+
+Everything else (xterm.js, esbuild, TypeScript, ESLint) is devDependencies only.
+
+**Bundle**: ~200KB uncompressed → ~144KB Brotli. A React+Redux equivalent would start at 300KB+ before application code. Build time: <2 seconds via esbuild.
+
+**What was deliberately avoided:**
+- React/Vue — ~15 interactive elements don't need a component tree or virtual DOM; terminal output streams at high frequency where diffing adds overhead
+- Tailwind — one stylesheet (`app.css`) covers the entire UI
+- Webpack — esbuild does the same bundling without configuration files
+- Heavy state libraries — nanostores covers all ~20 stores in 1KB
 
 ## Protocols
 
@@ -178,12 +191,7 @@ Handler: `SettingsWebSocketHandler.cs`
 
 ### REST API
 
-Authentication, session management, and settings via REST endpoints.
-
-**Authentication flow:**
-1. `POST /api/auth/login` with `{ password }` → Sets session cookie
-2. Cookie contains `timestamp:hmac-signature` (HMAC-SHA256, 3-week validity)
-3. Password stored as PBKDF2 hash (100K iterations, SHA256)
+Authentication, session management, and settings via REST endpoints. Authentication details are in the Security Architecture section.
 
 **Session management:**
 - `POST /api/sessions` — Create session with optional shell type, working directory
@@ -231,7 +239,57 @@ Authentication, session management, and settings via REST endpoints.
 **Diagnostics:**
 - `GET /api/logs/*` — Diagnostic log access
 
-**Rate limiting:** 5 failures = 30s lockout, 10 failures = 5min lockout.
+## Security Architecture
+
+MidTerm exposes terminal access over a network. Every security decision follows from that threat model: an attacker who reaches the server can execute arbitrary commands. Defense is layered so no single failure grants access.
+
+### Authentication
+
+- PBKDF2-SHA256, 100K iterations, 32-byte random salt, 32-byte hash output
+- `CryptographicOperations.FixedTimeEquals()` for timing-safe comparison of both password hashes and session token signatures
+- HMAC-SHA256 session tokens (`timestamp:signature`), 72-hour sliding window — fresh token issued on every HTTP request so active sessions stay alive
+- Password change calls `InvalidateAllSessions()` which rotates the session secret, invalidating all existing tokens
+- Cookie: `HttpOnly`, `SameSite=Strict`, `Secure`, `Path=/`, 3-day `MaxAge`
+- Progressive rate limiting by IP: 5 failures → 30s lockout, 10 failures → 5min lockout
+- See: `AuthService.cs`, `AuthEndpoints.cs`
+
+### Secret Storage
+
+- Secrets (password hash, session secret, certificate password) stored separately from `settings.json` via `ISecretStorage` interface
+- Platform implementations:
+
+| Platform | Implementation | Mechanism |
+|----------|---------------|-----------|
+| Windows | `WindowsSecretStorage` | DPAPI (`secrets.bin`) |
+| macOS (user) | `MacOsSecretStorage` | Keychain |
+| macOS (service) / Linux | `UnixFileSecretStorage` | File with `chmod 600` + atomic writes |
+
+- Dual settings model: `MidTermSettings` has `[JsonIgnore]` on secrets (excluded from `settings.json` but available internally), `MidTermSettingsPublic` has no secret fields at all — the API cannot leak them even if serialization is misconfigured
+- See: `ISecretStorage.cs`, `MidTermSettings.cs`, `MidTermSettingsPublic.cs`
+
+### Certificate & TLS
+
+- ECDSA P-384 default (`ECCurve.NamedCurves.nistP384`), RSA 4096 fallback, 2-year validity
+- SAN: `localhost` + hostname + all network IPs
+- Private key stored separately via `ICertificateProtector`:
+
+| Platform | Implementation | Mechanism |
+|----------|---------------|-----------|
+| Windows | `WindowsDpapiProtector` | DPAPI (LocalMachine or CurrentUser scope) |
+| macOS / Linux | `EncryptedFileProtector` | AES-256-CBC with PBKDF2-derived key from `SHA256(machine-id + settings-dir)` — machine-bound |
+
+- `CryptographicOperations.ZeroMemory()` on private key bytes and PFX exports after use
+- TLS 1.2 + 1.3 only; AEAD cipher suites enforced on Unix (GCM + ChaCha20-Poly1305); server header removed (`AddServerHeader = false`)
+- Security headers: HSTS (`max-age=31536000; includeSubDomains`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
+- Content Security Policy: `default-src 'self'`, `script-src 'self'`, `frame-ancestors 'none'`
+- See: `CertificateGenerator.cs`, `Services/Security/`, `Startup/ServerSetup.cs`
+
+### Static File Isolation
+
+- Production: all assets Brotli-compressed and embedded as assembly resources at build time
+- `EmbeddedWebRootFileProvider` serves from memory — no filesystem path access at runtime
+- Eliminates path traversal; assets are immutable after deployment
+- See: `CompressedStaticFilesMiddleware.cs`, `EmbeddedWebRootFileProvider.cs`
 
 ## Architecture Patterns
 
@@ -483,8 +541,6 @@ The decision to use nanostores (~1KB) instead of React/Redux has specific implic
 **Debugging**: `grep '\$sessions'` locates store usage. `grep 'setSession'` finds mutations. Call stacks show the path from WebSocket message to store update to explicit render call.
 
 **Coupling**: The callback registration pattern in `main.ts` serves as the dependency graph. Modules don't import each other; they receive function references at startup. This achieves the decoupling that dependency injection provides, without the container.
-
-**Trade-off**: nanostores adds one concept (stores with `.get()`/`.set()`) but keeps the explicit render pattern. New contributors see reactive derived state without the complexity of full frameworks.
 
 ### Native AOT vs Runtime Alternatives
 
@@ -748,3 +804,8 @@ const { data, response } = await createSession({ cols: 120, rows: 30, shell: 'pw
 | API type exports | `src/Ai.Tlbx.MidTerm/src/ts/api/types.ts` |
 | Frontend build | `src/Ai.Tlbx.MidTerm/frontend-build.ps1` |
 | Version source | `version.json` |
+| Authentication | `src/Ai.Tlbx.MidTerm/Services/AuthService.cs`, `Services/AuthEndpoints.cs` |
+| Secret storage | `src/Ai.Tlbx.MidTerm/Services/ISecretStorage.cs` + platform implementations |
+| Certificate protection | `src/Ai.Tlbx.MidTerm/Services/Security/` |
+| TLS & server setup | `src/Ai.Tlbx.MidTerm/Startup/ServerSetup.cs` |
+| Certificate generation | `src/Ai.Tlbx.MidTerm/Startup/CertificateSetup.cs`, `Services/CertificateGenerator.cs` |
