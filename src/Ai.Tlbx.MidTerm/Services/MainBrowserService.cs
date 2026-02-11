@@ -4,20 +4,38 @@ public sealed class MainBrowserService
 {
     private readonly Lock _lock = new();
     private readonly HashSet<object> _connections = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<string> _uniqueClientIds = new(StringComparer.Ordinal);
     private object? _mainBrowserToken;
 
     public event Action? OnMainBrowserChanged;
 
-    public void Register(object token)
+    public bool HasMultipleClients
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _uniqueClientIds.Count >= 2;
+            }
+        }
+    }
+
+    public void Register(object token, string? clientId = null)
     {
         bool promoted;
+        bool newMultiClient = false;
         lock (_lock)
         {
             _connections.Add(token);
             promoted = _mainBrowserToken is null;
             if (promoted) _mainBrowserToken = token;
+
+            if (clientId is not null && _uniqueClientIds.Add(clientId) && _uniqueClientIds.Count == 2)
+            {
+                newMultiClient = true;
+            }
         }
-        if (promoted) OnMainBrowserChanged?.Invoke();
+        if (promoted || newMultiClient) OnMainBrowserChanged?.Invoke();
     }
 
     public void Unregister(object token)

@@ -288,3 +288,6 @@ export const $focusedSessionId = atom<string | null>(null);
 
 /** Whether this browser is the "main" browser that auto-resizes terminals (server-driven) */
 export const $isMainBrowser = atom<boolean>(false);
+
+/** Whether the main browser button should be visible (server has seen 2+ unique clients) */
+export const $showMainBrowserButton = atom<boolean>(false);

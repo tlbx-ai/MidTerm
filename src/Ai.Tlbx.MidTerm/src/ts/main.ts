@@ -105,6 +105,7 @@ import {
   $renamingSessionId,
   $currentSettings,
   $isMainBrowser,
+  $showMainBrowserButton,
   setSession,
   removeSession,
   getSession,
@@ -695,6 +696,8 @@ function initMainBrowserButton(): void {
   const btn = document.getElementById('btn-main-browser');
   if (!btn) return;
 
+  btn.style.display = 'none';
+
   function updateButton(isMain: boolean): void {
     if (!btn) return;
     btn.classList.toggle('active', isMain);
@@ -716,6 +719,10 @@ function initMainBrowserButton(): void {
     if (isMain) {
       requestAnimationFrame(autoResizeAllTerminalsImmediate);
     }
+  });
+
+  $showMainBrowserButton.subscribe((show) => {
+    btn.style.display = show ? '' : 'none';
   });
 }
 

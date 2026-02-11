@@ -22,6 +22,19 @@ export function setCookie(name: string, value: string, days: number = 365): void
 }
 
 /**
+ * Get or create a persistent client ID cookie for unique-client tracking.
+ */
+export function getOrCreateClientId(): string {
+  const name = 'mt-client-id';
+  let id = getCookie(name);
+  if (!id) {
+    id = crypto.randomUUID();
+    setCookie(name, id, 365);
+  }
+  return id;
+}
+
+/**
  * Delete a cookie by name
  */
 export function deleteCookie(name: string): void {

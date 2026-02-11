@@ -14,7 +14,7 @@ import type {
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
-import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
+import { scheduleReconnect, createWsUrl, closeWebSocket, getOrCreateClientId } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
@@ -49,6 +49,7 @@ import {
   $sessionList,
   $updateInfo,
   $isMainBrowser,
+  $showMainBrowserButton,
   setSessions,
 } from '../../stores';
 import {
@@ -87,7 +88,8 @@ export function setSelectSessionCallback(
 export function connectStateWebSocket(): void {
   closeWebSocket(stateWs, setStateWs);
 
-  const ws = new WebSocket(createWsUrl('/ws/state'));
+  const clientId = getOrCreateClientId();
+  const ws = new WebSocket(createWsUrl(`/ws/state?clientId=${encodeURIComponent(clientId)}`));
   setStateWs(ws);
 
   ws.onopen = () => {
@@ -140,6 +142,7 @@ export function connectStateWebSocket(): void {
       // Handle main browser status (server-driven)
       if (data.type === 'main-browser-status') {
         $isMainBrowser.set(data.isMain === true);
+        $showMainBrowserButton.set(data.showButton === true);
         return;
       }
 
