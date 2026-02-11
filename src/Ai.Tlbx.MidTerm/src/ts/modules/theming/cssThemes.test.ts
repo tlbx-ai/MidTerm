@@ -21,13 +21,13 @@ describe('CSS_THEMES CTA tokens', () => {
     }
   });
 
-  it('uses blue CTA tokens in light theme for better contrast', () => {
+  it('uses terracotta CTA tokens in light theme', () => {
     const light = CSS_THEMES.light;
-    expect(light['--cta-primary']).toBe('#2563EB');
-    expect(light['--cta-primary-muted']).toBe('#1D4ED8');
-    expect(light['--cta-primary-text']).toBe('#FFFFFF');
-    expect(light['--cta-primary-25']).toBe('rgba(37, 99, 235, 0.25)');
-    expect(light['--cta-primary-40']).toBe('rgba(37, 99, 235, 0.4)');
+    expect(light['--cta-primary']).toBe('#A7694D');
+    expect(light['--cta-primary-muted']).toBe('#935B40');
+    expect(light['--cta-primary-text']).toBe('#FFFEFA');
+    expect(light['--cta-primary-25']).toBe('rgba(167, 105, 77, 0.25)');
+    expect(light['--cta-primary-40']).toBe('rgba(167, 105, 77, 0.4)');
   });
 
   it('keeps non-light themes aligned with their existing gold CTA treatment', () => {
