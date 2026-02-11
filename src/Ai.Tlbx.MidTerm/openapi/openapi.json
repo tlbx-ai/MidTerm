@@ -1960,7 +1960,7 @@
           "scrollbackProtection",
           "fileRadar",
           "tmuxCompatibility",
-          "gitPanel",
+          "ideMode",
           "managerBarEnabled",
           "managerBarButtons",
           "runAsUser",
@@ -2051,7 +2051,7 @@
           "tmuxCompatibility": {
             "type": "boolean"
           },
-          "gitPanel": {
+          "ideMode": {
             "type": "boolean"
           },
           "managerBarEnabled": {

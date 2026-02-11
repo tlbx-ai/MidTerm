@@ -77,6 +77,19 @@ function sendUnsubscribe(sessionId: string): void {
   }
 }
 
+export function disconnectGitWebSocket(): void {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (ws) {
+    ws.onclose = null;
+    ws.close();
+    ws = null;
+  }
+  log.info(() => 'Git WebSocket disconnected (IDE mode off)');
+}
+
 export function subscribeToSession(sessionId: string): void {
   subscribedSessions.add(sessionId);
   sendSubscribe(sessionId);

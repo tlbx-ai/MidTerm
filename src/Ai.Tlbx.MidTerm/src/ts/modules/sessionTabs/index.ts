@@ -12,6 +12,8 @@ export {
   getSessionWrapper,
   getTabPanel,
   getActiveTab,
+  getTabBarHeight,
+  setIdeModeEnabled,
   switchTab,
   reparentTerminalContainer,
   updateSessionCwd,

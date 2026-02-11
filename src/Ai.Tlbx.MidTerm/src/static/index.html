@@ -197,6 +197,10 @@
                                 <span class="icon">&#xe908;</span>
                                 <span class="tab-label">Security</span>
                             </button>
+                            <button class="settings-tab" data-tab="ide" role="tab" aria-selected="false">
+                                <span class="icon">&#xea71;</span>
+                                <span class="tab-label">IDE Mode</span>
+                            </button>
                             <button class="settings-tab" data-tab="diagnostics" role="tab" aria-selected="false">
                                 <span class="icon">&#xe9ce;</span>
                                 <span class="tab-label">Diagnostics</span>
@@ -555,6 +559,23 @@
                                         click the padlock icon in your browser and compare the SHA-256 fingerprint with
                                         this one. Matching fingerprints confirm you're connecting to the real server.
                                     </p>
+                                </div>
+                            </section>
+
+                            <!-- IDE Mode Panel -->
+                            <section class="settings-panel hidden" data-panel="ide">
+                                <h2>IDE Mode</h2>
+
+                                <div class="settings-section">
+                                    <h3>Overview</h3>
+                                    <p class="setting-hint">
+                                        IDE Mode adds per-session tabs (Terminal, Files, Git, Commands) above the terminal area.
+                                        When disabled, sessions show only the terminal with no tab bar, file browser, git panel, or command runner.
+                                    </p>
+                                    <div class="setting-row">
+                                        <label for="setting-ide-mode">Enable IDE Mode</label>
+                                        <input type="checkbox" id="setting-ide-mode" checked />
+                                    </div>
                                 </div>
                             </section>
 

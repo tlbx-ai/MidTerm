@@ -55,7 +55,7 @@ public sealed class MidTermSettings
     // Tmux Compatibility - Injects tmux shim into spawned terminals for AI tool integration
     public bool TmuxCompatibility { get; set; } = true;
 
-    public bool GitPanel { get; set; } = true;
+    public bool IdeMode { get; set; } = true;
 
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }

@@ -32,7 +32,7 @@ public sealed partial class MidTermSettingsPublic
     public bool ScrollbackProtection { get; set; } = false;
     public bool FileRadar { get; set; } = true;
     public bool TmuxCompatibility { get; set; } = true;
-    public bool GitPanel { get; set; } = true;
+    public bool IdeMode { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
     public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];
 

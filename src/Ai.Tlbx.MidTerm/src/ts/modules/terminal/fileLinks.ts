@@ -524,10 +524,13 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
 
+  // xterm-link-provider expects old 'xterm' types, cast for @xterm/xterm compat
+  const term = terminal as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+
   // 1. Folder paths — least specific (e.g., docs/, src\components\)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       FOLDER_PATH_PATTERN,
       async (_event, folderPath) => {
         await handleFolderPathClick(folderPath);
@@ -549,7 +552,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 2. Known extensionless files (e.g., Dockerfile, .gitignore, LICENSE)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       KNOWN_FILE_PATTERN,
       async (_event, relativePath) => {
         await handleRelativePathClick(relativePath);
@@ -571,7 +574,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 3. Relative paths with extensions (e.g., src/main.ts, foo.jpg)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       RELATIVE_PATH_PATTERN,
       async (_event, relativePath) => {
         await handleRelativePathClick(relativePath);
@@ -592,14 +595,14 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
   // 4. Windows absolute paths (e.g., C:\Users\file.txt)
   terminal.registerLinkProvider(
-    new LinkProvider(terminal, WIN_PATH_PATTERN, async (_event, path) => {
+    new LinkProvider(term, WIN_PATH_PATTERN, async (_event, path) => {
       await handlePathClick(path);
     }),
   );
 
   // 5. Unix absolute paths — most specific, highest priority
   terminal.registerLinkProvider(
-    new LinkProvider(terminal, UNIX_PATH_PATTERN, async (_event, path) => {
+    new LinkProvider(term, UNIX_PATH_PATTERN, async (_event, path) => {
       await handlePathClick(path);
     }),
   );

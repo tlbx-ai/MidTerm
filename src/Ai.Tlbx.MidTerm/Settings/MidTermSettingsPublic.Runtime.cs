@@ -31,7 +31,7 @@ public sealed partial class MidTermSettingsPublic
             ScrollbackProtection = settings.ScrollbackProtection,
             FileRadar = settings.FileRadar,
             TmuxCompatibility = settings.TmuxCompatibility,
-            GitPanel = settings.GitPanel,
+            IdeMode = settings.IdeMode,
             ManagerBarEnabled = settings.ManagerBarEnabled,
             ManagerBarButtons = settings.ManagerBarButtons,
             RunAsUser = settings.RunAsUser,
@@ -66,7 +66,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ScrollbackProtection = ScrollbackProtection;
         settings.FileRadar = FileRadar;
         settings.TmuxCompatibility = TmuxCompatibility;
-        settings.GitPanel = GitPanel;
+        settings.IdeMode = IdeMode;
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.ManagerBarButtons = ManagerBarButtons;
 

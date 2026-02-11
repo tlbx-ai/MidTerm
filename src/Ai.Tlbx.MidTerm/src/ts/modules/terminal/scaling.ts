@@ -22,6 +22,7 @@ import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
 import { sendResize } from '../comms';
 import { isDevMode } from '../sidebar/voiceSection';
+import { getTabBarHeight } from '../sessionTabs';
 
 const SCALE_TOLERANCE = 0.97;
 
@@ -191,9 +192,10 @@ export async function calculateOptimalDimensions(
     }
   }
 
-  // Account for padding and scrollbar width
+  // Account for padding, scrollbar width, and session tab bar
+  const tabBarH = getTabBarHeight();
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
-  const availHeight = rect.height - TERMINAL_PADDING;
+  const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
 
   const cols = Math.floor(availWidth / cellWidth);
   const rows = Math.floor(availHeight / cellHeight);
@@ -302,10 +304,11 @@ export function fitSessionToScreen(sessionId: string): void {
     return;
   }
 
-  // Calculate available space (accounting for container padding and scrollbar)
+  // Calculate available space (accounting for container padding, scrollbar, and tab bar)
   const rect = dom.terminalsArea.getBoundingClientRect();
+  const tabBarH = getTabBarHeight();
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
-  const availHeight = rect.height - TERMINAL_PADDING;
+  const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
 
   // Calculate cols/rows that fit in available space
   let cols = Math.floor(availWidth / cellWidth);
@@ -606,8 +609,9 @@ function resizeBackgroundSessions(alreadyResized: Set<string>): void {
     measureFromFont(fontSize);
 
   const rect = dom.terminalsArea.getBoundingClientRect();
+  const tabBarH = getTabBarHeight();
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
-  const availHeight = rect.height - TERMINAL_PADDING;
+  const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
 
   const cols = Math.max(
     MIN_TERMINAL_COLS,

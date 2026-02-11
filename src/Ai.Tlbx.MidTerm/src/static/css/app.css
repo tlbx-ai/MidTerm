@@ -5997,6 +5997,11 @@ html, body {
     display: none;
 }
 
+/* Hide tabs when IDE mode is disabled */
+body.ide-mode-off .session-tab-bar {
+    display: none;
+}
+
 /* File Browser layout (within files tab panel) */
 .file-browser {
     display: flex;

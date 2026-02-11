@@ -142,7 +142,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-file-radar', settings.fileRadar !== false);
   setElementChecked('setting-manager-bar', settings.managerBarEnabled !== false);
   setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility !== false);
-  setElementChecked('setting-git-panel', settings.gitPanel !== false);
+  setElementChecked('setting-ide-mode', settings.ideMode !== false);
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
 
@@ -278,7 +278,7 @@ export function saveAllSettings(): void {
     managerBarEnabled: getElementChecked('setting-manager-bar'),
     managerBarButtons: prevSettings?.managerBarButtons ?? [],
     tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
-    gitPanel: getElementChecked('setting-git-panel'),
+    ideMode: getElementChecked('setting-ide-mode'),
     runAsUser: runAsUserValue || null,
   };
 

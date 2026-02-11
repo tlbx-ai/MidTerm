@@ -91,10 +91,16 @@ import {
   initSessionTabs,
   ensureSessionWrapper,
   destroySessionWrapper,
+  setIdeModeEnabled,
   reparentTerminalContainer,
 } from './modules/sessionTabs';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
-import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
+import {
+  initGitPanel,
+  connectGitWebSocket,
+  disconnectGitWebSocket,
+  destroyGitSession,
+} from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
 import {
   cacheDOMElements,
@@ -193,7 +199,6 @@ async function init(): Promise<void> {
   connectStateWebSocket();
   connectMuxWebSocket();
   connectSettingsWebSocket();
-  connectGitWebSocket();
 
   bindEvents();
   bindAuthEvents();
@@ -212,6 +217,21 @@ async function init(): Promise<void> {
   initFileBrowser();
   initGitPanel();
   initCommandsPanel();
+
+  // React to ideMode setting: toggle tab bar visibility and git WS connection
+  let gitWsConnected = false;
+  $currentSettings.subscribe((settings) => {
+    if (!settings) return;
+    const ideEnabled = settings.ideMode !== false;
+    setIdeModeEnabled(ideEnabled);
+    if (ideEnabled && !gitWsConnected) {
+      connectGitWebSocket();
+      gitWsConnected = true;
+    } else if (!ideEnabled && gitWsConnected) {
+      disconnectGitWebSocket();
+      gitWsConnected = false;
+    }
+  });
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth

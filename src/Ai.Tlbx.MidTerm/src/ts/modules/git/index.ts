@@ -34,7 +34,7 @@ export function initGitPanel(): void {
   log.info(() => 'Git panel initialized');
 }
 
-export { connectGitWebSocket } from './gitChannel';
+export { connectGitWebSocket, disconnectGitWebSocket } from './gitChannel';
 
 export function destroyGitSession(sessionId: string): void {
   unsubscribeFromSession(sessionId);

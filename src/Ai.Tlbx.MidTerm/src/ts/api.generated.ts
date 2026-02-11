@@ -1850,7 +1850,7 @@ export interface components {
       scrollbackProtection: boolean;
       fileRadar: boolean;
       tmuxCompatibility: boolean;
-      gitPanel: boolean;
+      ideMode: boolean;
       managerBarEnabled: boolean;
       managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;
