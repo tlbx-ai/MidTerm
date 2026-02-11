@@ -72,7 +72,7 @@ import {
   refreshHistory,
   type LaunchEntry,
 } from './modules/history';
-import { getForegroundInfo } from './modules/process';
+import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import { initTouchController } from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
@@ -124,6 +124,7 @@ import {
   setSession,
   removeSession,
   getSession,
+  setProcessState,
   setPendingRename,
   clearPendingRename,
 } from './stores';
@@ -256,6 +257,10 @@ async function init(): Promise<void> {
 function registerCallbacks(): void {
   setSelectSessionCallback(selectSession);
   setShowBellCallback(showBellNotification);
+
+  addProcessStateListener((sessionId, state) => {
+    setProcessState(sessionId, { ...state });
+  });
 
   setSessionListCallbacks({
     onSelect: selectSession,
