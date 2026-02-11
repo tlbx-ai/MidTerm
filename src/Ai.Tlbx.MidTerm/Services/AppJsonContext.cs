@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Models;
+using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Settings;
 using Microsoft.AspNetCore.Mvc;
@@ -69,6 +70,23 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ManagerBarButton))]
 [JsonSerializable(typeof(List<ManagerBarButton>))]
 [JsonSerializable(typeof(MainBrowserStatusMessage))]
+[JsonSerializable(typeof(FileTreeResponse))]
+[JsonSerializable(typeof(FileTreeEntry))]
+[JsonSerializable(typeof(FileTreeEntry[]))]
+[JsonSerializable(typeof(CommandDefinition))]
+[JsonSerializable(typeof(CommandListResponse))]
+[JsonSerializable(typeof(CreateCommandRequest))]
+[JsonSerializable(typeof(UpdateCommandRequest))]
+[JsonSerializable(typeof(RunCommandRequest))]
+[JsonSerializable(typeof(ReorderCommandsRequest))]
+[JsonSerializable(typeof(CommandRunStatus))]
+[JsonSerializable(typeof(GitStageRequest))]
+[JsonSerializable(typeof(GitUnstageRequest))]
+[JsonSerializable(typeof(GitCommitRequest))]
+[JsonSerializable(typeof(GitPushPullRequest))]
+[JsonSerializable(typeof(GitStashRequest))]
+[JsonSerializable(typeof(GitDiscardRequest))]
+[JsonSerializable(typeof(GitDiffRequest))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

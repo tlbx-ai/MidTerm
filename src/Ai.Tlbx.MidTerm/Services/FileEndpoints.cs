@@ -181,6 +181,152 @@ public static class FileEndpoints
 
             return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
         });
+
+        app.MapGet("/api/files/tree", async (string path, string? sessionId, int depth) =>
+        {
+            if (string.IsNullOrWhiteSpace(path) || path.Contains(".."))
+            {
+                return Results.BadRequest("Invalid path");
+            }
+
+            var fullPath = Path.GetFullPath(path);
+            if (!Directory.Exists(fullPath))
+            {
+                return Results.NotFound("Directory not found");
+            }
+
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
+                if (!string.IsNullOrEmpty(workingDir) && !IsWithinDirectory(fullPath, workingDir))
+                {
+                    return Results.StatusCode(403);
+                }
+            }
+
+            var isGitRepo = false;
+            HashSet<string>? gitFiles = null;
+
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "ls-files -co --exclude-standard",
+                    WorkingDirectory = fullPath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process is not null)
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    var output = await process.StandardOutput.ReadToEndAsync(cts.Token);
+                    await process.WaitForExitAsync(cts.Token);
+
+                    if (process.ExitCode == 0)
+                    {
+                        isGitRepo = true;
+                        gitFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            gitFiles.Add(line.Trim());
+                            var dir = Path.GetDirectoryName(line.Trim());
+                            while (!string.IsNullOrEmpty(dir))
+                            {
+                                gitFiles.Add(dir);
+                                dir = Path.GetDirectoryName(dir);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Not a git repo or git not available
+            }
+
+            var entries = new List<FileTreeEntry>();
+
+            try
+            {
+                foreach (var dir in Directory.EnumerateDirectories(fullPath))
+                {
+                    var dirName = Path.GetFileName(dir);
+
+                    if (isGitRepo && gitFiles is not null)
+                    {
+                        var relativePath = Path.GetRelativePath(fullPath, dir).Replace('\\', '/');
+                        if (!gitFiles.Contains(relativePath) && dirName != ".git")
+                        {
+                            var prefix = relativePath + "/";
+                            if (!gitFiles.Any(f => f.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                continue;
+                            }
+                        }
+                        if (dirName == ".git") continue;
+                    }
+                    else
+                    {
+                        if (_skipDirectories.Contains(dirName)) continue;
+                    }
+
+                    entries.Add(new FileTreeEntry
+                    {
+                        Name = dirName,
+                        FullPath = dir,
+                        IsDirectory = true
+                    });
+                }
+
+                foreach (var file in Directory.EnumerateFiles(fullPath))
+                {
+                    var fileName = Path.GetFileName(file);
+
+                    if (isGitRepo && gitFiles is not null)
+                    {
+                        var relativePath = Path.GetRelativePath(fullPath, file).Replace('\\', '/');
+                        if (!gitFiles.Contains(relativePath)) continue;
+                    }
+
+                    try
+                    {
+                        var fileInfo = new FileInfo(file);
+                        entries.Add(new FileTreeEntry
+                        {
+                            Name = fileName,
+                            FullPath = file,
+                            IsDirectory = false,
+                            Size = fileInfo.Length,
+                            MimeType = GetMimeType(fileName)
+                        });
+                    }
+                    catch { }
+                }
+
+                entries = entries
+                    .OrderByDescending(e => e.IsDirectory)
+                    .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.StatusCode(403);
+            }
+
+            var response = new FileTreeResponse
+            {
+                Path = fullPath,
+                Entries = entries.ToArray(),
+                IsGitRepo = isGitRepo
+            };
+
+            return Results.Json(response, AppJsonContext.Default.FileTreeResponse);
+        });
     }
 
     internal static IEnumerable<string> GetSlashVariants(string path)

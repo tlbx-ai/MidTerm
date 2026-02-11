@@ -88,6 +88,15 @@ import {
   getLayoutRoot,
 } from './modules/layout';
 import {
+  initSessionTabs,
+  ensureSessionWrapper,
+  destroySessionWrapper,
+  reparentTerminalContainer,
+} from './modules/sessionTabs';
+import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
+import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
+import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
+import {
   cacheDOMElements,
   sessionTerminals,
   dom,
@@ -184,6 +193,7 @@ async function init(): Promise<void> {
   connectStateWebSocket();
   connectMuxWebSocket();
   connectSettingsWebSocket();
+  connectGitWebSocket();
 
   bindEvents();
   bindAuthEvents();
@@ -198,6 +208,10 @@ async function init(): Promise<void> {
   setupVisualViewport();
   initTouchController();
   initManagerBar();
+  initSessionTabs();
+  initFileBrowser();
+  initGitPanel();
+  initCommandsPanel();
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
@@ -411,6 +425,17 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
 
+  // Ensure session wrapper with tabs (standalone mode only)
+  const tabState = ensureSessionWrapper(sessionId);
+  reparentTerminalContainer(sessionId, state.container);
+  if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
+    dom.terminalsArea.appendChild(tabState.wrapper);
+  }
+  // Hide all other wrappers
+  dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((w) => {
+    (w as HTMLElement).classList.toggle('hidden', w.getAttribute('data-session-id') !== sessionId);
+  });
+
   state.container.classList.remove('hidden');
   if (isLayoutActive()) {
     getLayoutRoot()?.classList.add('hidden');
@@ -432,6 +457,12 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 function deleteSession(sessionId: string): void {
   // Remove from layout if present
   handleSessionClosed(sessionId);
+
+  // Remove session tab wrapper and feature panels
+  destroyFileBrowser(sessionId);
+  destroyGitSession(sessionId);
+  destroyCommandsSession(sessionId);
+  destroySessionWrapper(sessionId);
 
   // Optimistic UI: remove session immediately for better UX
   destroyTerminalForSession(sessionId);

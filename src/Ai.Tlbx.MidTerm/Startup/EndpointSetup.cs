@@ -5,6 +5,7 @@ using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -561,11 +562,13 @@ public static class EndpointSetup
         AuthService authService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
+        GitWatcherService gitWatcher,
         TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
+        var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService);
 
         app.Use(async (context, next) =>
         {
@@ -592,6 +595,12 @@ public static class EndpointSetup
             if (path == "/ws/settings")
             {
                 await settingsHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/git")
+            {
+                await gitHandler.HandleAsync(context);
                 return;
             }
 

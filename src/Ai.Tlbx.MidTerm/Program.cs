@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 using Ai.Tlbx.MidTerm.Settings;
@@ -153,6 +154,8 @@ public class Program
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
         var historyService = new HistoryService(settingsService);
         var fileRadarAllowlistService = new FileRadarAllowlistService();
+        var gitWatcher = new GitWatcherService();
+        var commandService = new CommandService();
 
         // Tmux compatibility layer (conditional on setting)
         TmuxCommandDispatcher? tmuxDispatcher = null;
@@ -189,9 +192,18 @@ public class Program
             }
         };
 
+        sessionManager.OnForegroundChanged += (sessionId, payload) =>
+        {
+            if (!string.IsNullOrEmpty(payload.Cwd) && settings.GitPanel)
+            {
+                _ = gitWatcher.RegisterSessionAsync(sessionId, payload.Cwd);
+            }
+        };
+
         sessionManager.OnSessionClosed += sessionId =>
         {
             fileRadarAllowlistService.ClearSession(sessionId);
+            gitWatcher.UnregisterSession(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -222,8 +234,10 @@ public class Program
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
         FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
+        GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
+        CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, tmuxLayoutBridge);
 
         lifetime.ApplicationStarted.Register(() =>
         {
@@ -256,6 +270,7 @@ public class Program
             }
             finally
             {
+                gitWatcher.Dispose();
                 TmuxLog.Shutdown();
                 TmuxScriptWriter.Cleanup();
                 tempCleanupService.CleanupAllMidTermFiles();
