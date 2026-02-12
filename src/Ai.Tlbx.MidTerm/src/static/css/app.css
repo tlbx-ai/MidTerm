@@ -6287,25 +6287,9 @@ body.ide-mode-off .session-tab-bar {
     color: var(--accent-orange);
 }
 
-.git-header-actions {
-    display: flex;
-    gap: 4px;
-}
-
-.git-action-btn {
-    padding: 4px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--btn-secondary);
+.git-badge-stash {
+    background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 12px;
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
-}
-
-.git-action-btn:hover {
-    color: var(--text-primary);
-    border-color: var(--text-secondary);
 }
 
 .git-section {
@@ -6336,20 +6320,6 @@ body.ide-mode-off .session-tab-bar {
     color: var(--text-secondary);
 }
 
-.git-section-action {
-    margin-left: auto;
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 14px;
-    padding: 0 4px;
-}
-
-.git-section-action:hover {
-    color: var(--text-primary);
-}
-
 .git-file-entry {
     display: flex;
     align-items: center;
@@ -6357,8 +6327,16 @@ body.ide-mode-off .session-tab-bar {
     transition: background-color 0.1s;
 }
 
+.git-file-clickable {
+    cursor: pointer;
+}
+
 .git-file-entry:hover {
     background-color: var(--bg-hover);
+}
+
+.git-file-active {
+    background-color: var(--bg-active);
 }
 
 .git-file-status {
@@ -6384,85 +6362,6 @@ body.ide-mode-off .session-tab-bar {
 
 .git-file-dir {
     color: var(--text-secondary);
-}
-
-.git-file-actions {
-    display: none;
-    gap: 2px;
-    flex-shrink: 0;
-}
-
-.git-file-entry:hover .git-file-actions {
-    display: flex;
-}
-
-.git-file-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 2px 4px;
-    font-size: 12px;
-    border-radius: 3px;
-}
-
-.git-file-btn:hover {
-    background: var(--bg-active);
-    color: var(--text-primary);
-}
-
-.git-file-btn-danger:hover {
-    color: var(--accent-red);
-}
-
-.git-commit-area {
-    padding: 12px;
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
-}
-
-.git-commit-input {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font-size: 13px;
-    font-family: inherit;
-    resize: vertical;
-    min-height: 60px;
-}
-
-.git-commit-input:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-}
-
-.git-commit-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 8px;
-}
-
-.git-commit-btn {
-    padding: 6px 16px;
-    background: var(--accent-green);
-    color: white;
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: 13px;
-    cursor: pointer;
-}
-
-.git-commit-btn:disabled {
-    background: var(--btn-secondary);
-    color: var(--text-secondary);
-    cursor: not-allowed;
-}
-
-.git-commit-btn:hover:not(:disabled) {
-    opacity: 0.9;
 }
 
 .git-commits-section {

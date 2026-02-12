@@ -106,57 +106,6 @@ internal static class GitCommandRunner
         return string.IsNullOrEmpty(trimmed) ? 0 : trimmed.Split('\n').Length;
     }
 
-    internal static async Task<(bool Success, string Output)> StageAsync(string repoRoot, string[] paths)
-    {
-        var args = new[] { "add", "--" }.Concat(paths).ToArray();
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, args);
-        return (exitCode == 0, exitCode == 0 ? stdout : stderr);
-    }
-
-    internal static async Task<(bool Success, string Output)> UnstageAsync(string repoRoot, string[] paths)
-    {
-        var args = new[] { "restore", "--staged", "--" }.Concat(paths).ToArray();
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, args);
-        return (exitCode == 0, exitCode == 0 ? stdout : stderr);
-    }
-
-    internal static async Task<(bool Success, string Output)> CommitAsync(string repoRoot, string message)
-    {
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "commit", "-m", message);
-        return (exitCode == 0, exitCode == 0 ? stdout : stderr);
-    }
-
-    internal static async Task<(bool Success, string Output)> PushAsync(string repoRoot)
-    {
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "push");
-        return (exitCode == 0, exitCode == 0 ? stdout : stderr);
-    }
-
-    internal static async Task<(bool Success, string Output)> PullAsync(string repoRoot)
-    {
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "pull");
-        return (exitCode == 0, exitCode == 0 ? stdout : stderr);
-    }
-
-    internal static async Task<(bool Success, string Output)> StashAsync(string repoRoot, string action, string? message)
-    {
-        var args = new List<string> { "stash", action };
-        if (action == "push" && !string.IsNullOrEmpty(message))
-        {
-            args.Add("-m");
-            args.Add(message);
-        }
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, args.ToArray());
-        return (exitCode == 0, exitCode == 0 ? stdout : stderr);
-    }
-
-    internal static async Task<(bool Success, string Output)> DiscardAsync(string repoRoot, string[] paths)
-    {
-        var args = new[] { "checkout", "--" }.Concat(paths).ToArray();
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, args);
-        return (exitCode == 0, exitCode == 0 ? stdout : stderr);
-    }
-
     internal static async Task<string> GetDiffAsync(string repoRoot, string path, bool staged)
     {
         var args = staged

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
 
@@ -48,101 +47,6 @@ public static class GitEndpoints
             await gitWatcher.RefreshStatusAsync(repoRoot);
             var status = gitWatcher.GetCachedStatus(sessionId) ?? new GitStatusResponse { RepoRoot = repoRoot };
             return Results.Json(status, GitJsonContext.Default.GitStatusResponse);
-        });
-
-        app.MapPost("/api/git/stage", async (GitStageRequest request) =>
-        {
-            var (repoRoot, error) = ResolveRepo(request.SessionId, gitWatcher, sessionManager);
-            if (error is not null) return error;
-
-            var (success, output) = await GitCommandRunner.StageAsync(repoRoot!, request.Paths);
-            if (!success) return Results.BadRequest(output);
-
-            await gitWatcher.RefreshStatusAsync(repoRoot!);
-            return Results.Ok();
-        });
-
-        app.MapPost("/api/git/unstage", async (GitUnstageRequest request) =>
-        {
-            var (repoRoot, error) = ResolveRepo(request.SessionId, gitWatcher, sessionManager);
-            if (error is not null) return error;
-
-            var (success, output) = await GitCommandRunner.UnstageAsync(repoRoot!, request.Paths);
-            if (!success) return Results.BadRequest(output);
-
-            await gitWatcher.RefreshStatusAsync(repoRoot!);
-            return Results.Ok();
-        });
-
-        app.MapPost("/api/git/commit", async (GitCommitRequest request) =>
-        {
-            var (repoRoot, error) = ResolveRepo(request.SessionId, gitWatcher, sessionManager);
-            if (error is not null) return error;
-
-            if (string.IsNullOrWhiteSpace(request.Message))
-            {
-                return Results.BadRequest("Commit message required");
-            }
-
-            var (success, output) = await GitCommandRunner.CommitAsync(repoRoot!, request.Message);
-            if (!success) return Results.BadRequest(output);
-
-            await gitWatcher.RefreshStatusAsync(repoRoot!);
-            return Results.Text(output);
-        });
-
-        app.MapPost("/api/git/push", async (GitPushPullRequest request) =>
-        {
-            var (repoRoot, error) = ResolveRepo(request.SessionId, gitWatcher, sessionManager);
-            if (error is not null) return error;
-
-            var (success, output) = await GitCommandRunner.PushAsync(repoRoot!);
-            if (!success) return Results.BadRequest(output);
-
-            await gitWatcher.RefreshStatusAsync(repoRoot!);
-            return Results.Text(output);
-        });
-
-        app.MapPost("/api/git/pull", async (GitPushPullRequest request) =>
-        {
-            var (repoRoot, error) = ResolveRepo(request.SessionId, gitWatcher, sessionManager);
-            if (error is not null) return error;
-
-            var (success, output) = await GitCommandRunner.PullAsync(repoRoot!);
-            if (!success) return Results.BadRequest(output);
-
-            await gitWatcher.RefreshStatusAsync(repoRoot!);
-            return Results.Text(output);
-        });
-
-        app.MapPost("/api/git/stash", async (GitStashRequest request) =>
-        {
-            var (repoRoot, error) = ResolveRepo(request.SessionId, gitWatcher, sessionManager);
-            if (error is not null) return error;
-
-            var allowed = new[] { "push", "pop", "apply", "drop" };
-            if (!allowed.Contains(request.Action))
-            {
-                return Results.BadRequest($"Invalid stash action: {request.Action}");
-            }
-
-            var (success, output) = await GitCommandRunner.StashAsync(repoRoot!, request.Action, request.Message);
-            if (!success) return Results.BadRequest(output);
-
-            await gitWatcher.RefreshStatusAsync(repoRoot!);
-            return Results.Text(output);
-        });
-
-        app.MapPost("/api/git/discard", async (GitDiscardRequest request) =>
-        {
-            var (repoRoot, error) = ResolveRepo(request.SessionId, gitWatcher, sessionManager);
-            if (error is not null) return error;
-
-            var (success, output) = await GitCommandRunner.DiscardAsync(repoRoot!, request.Paths);
-            if (!success) return Results.BadRequest(output);
-
-            await gitWatcher.RefreshStatusAsync(repoRoot!);
-            return Results.Ok();
         });
 
         app.MapGet("/api/git/diff", async (string? sessionId, string? path, bool? staged) =>
