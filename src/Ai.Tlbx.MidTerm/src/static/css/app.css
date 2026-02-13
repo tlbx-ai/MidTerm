@@ -1961,6 +1961,15 @@ html, body {
     .terminal-page.file-viewer-docked .terminals-area {
         margin-right: 0;
     }
+
+    /* Commands dock - hide on mobile */
+    .commands-dock {
+        display: none !important;
+    }
+
+    .terminal-page.commands-docked .terminals-area {
+        margin-right: 0;
+    }
 }
 
 /* ============================================================================
@@ -5785,6 +5794,90 @@ html, body {
 }
 
 /* =============================================
+   Commands Dock Panel
+   ============================================= */
+
+.commands-dock {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 400px;
+    background: var(--bg-sidebar);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+}
+
+.commands-dock.hidden {
+    display: none;
+}
+
+.commands-dock-resize-grip {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 10;
+}
+
+.commands-dock-resize-grip:hover,
+.commands-dock-resize-grip.active {
+    background-color: var(--bg-hover);
+}
+
+.commands-dock-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-elevated);
+    gap: 8px;
+}
+
+.commands-dock-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.commands-dock-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.commands-dock-actions .btn-icon {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.commands-dock-actions .btn-icon:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.commands-dock-body {
+    flex: 1;
+    overflow: auto;
+}
+
+.terminal-page.commands-docked .terminals-area {
+    margin-right: 400px;
+}
+
+/* =============================================
    Middle Manager Bar
    ============================================= */
 
@@ -6593,6 +6686,37 @@ body.ide-mode-off .session-tab-bar {
 .command-add-btn:hover {
     color: var(--text-primary);
     border-color: var(--text-secondary);
+}
+
+.commands-panel-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px 8px;
+}
+
+.commands-panel-toolbar .command-add-btn {
+    flex: 1;
+    margin: 0;
+    width: auto;
+}
+
+.command-dock-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 7px 8px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.command-dock-btn:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
 }
 
 /* Command Form */

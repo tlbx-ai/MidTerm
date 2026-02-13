@@ -9,6 +9,7 @@ import type { ScriptDefinition } from './commandsApi';
 import { fetchScripts, createScript, updateScript, deleteScript, runScript } from './commandsApi';
 import { createCommandForm, type ScriptFormData } from './commandForm';
 import { showOutputOverlay } from './outputPanel';
+import { dockCommandsPanel } from './dock';
 
 interface CommandsPanelState {
   sessionId: string;
@@ -80,15 +81,47 @@ function renderPanel(state: CommandsPanelState): void {
   }
   html += '</div>';
 
+  html += '<div class="commands-panel-toolbar">';
   if (showForm) {
     html += '<div class="command-create-slot"></div>';
   } else {
     html += '<button class="command-add-btn">+ New Script</button>';
   }
+  html +=
+    '<button class="command-dock-btn" title="Dock to sidebar">' +
+    '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">' +
+    '<path d="M2 2h12v12H2V2zm1 1v10h4V3H3zm5 0v10h5V3H8z"/>' +
+    '</svg></button>';
+  html += '</div>';
 
   html += '</div>';
   container.innerHTML = html;
   bindEvents(state);
+}
+
+export async function renderCommandsPanelInto(
+  container: HTMLElement,
+  sessionId: string,
+): Promise<void> {
+  let state = panelStates.get(sessionId);
+  if (!state) {
+    state = {
+      sessionId,
+      container,
+      scripts: [],
+      showForm: false,
+      editingFilename: null,
+    };
+    panelStates.set(sessionId, state);
+  } else {
+    state.container = container;
+  }
+
+  const result = await fetchScripts(sessionId);
+  if (result) {
+    state.scripts = result.scripts;
+  }
+  renderPanel(state);
 }
 
 function bindEvents(state: CommandsPanelState): void {
@@ -144,6 +177,10 @@ function bindEvents(state: CommandsPanelState): void {
       await deleteScript(filename, sessionId);
       await refreshCommandsPanel(sessionId);
     });
+  });
+
+  container.querySelector('.command-dock-btn')?.addEventListener('click', () => {
+    dockCommandsPanel(sessionId);
   });
 
   container.querySelector('.command-add-btn')?.addEventListener('click', () => {

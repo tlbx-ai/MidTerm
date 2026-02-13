@@ -697,6 +697,23 @@
                 <div class="file-viewer-dock-body"></div>
             </aside>
 
+            <!-- Commands Dock Panel -->
+            <aside id="commands-dock" class="commands-dock hidden">
+                <div class="commands-dock-resize-grip"></div>
+                <div class="commands-dock-header">
+                    <span class="commands-dock-title">Commands</span>
+                    <div class="commands-dock-actions">
+                        <button class="btn-icon" id="cmd-dock-undock" title="Undock to tab">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M2 3h8v2H4v8h8V9h2v6H2V3zm8-1h5v5h-1V4l-5 5-1-1 5-5h-3V1z"/>
+                            </svg>
+                        </button>
+                        <button class="btn-icon" id="cmd-dock-close" title="Close">&times;</button>
+                    </div>
+                </div>
+                <div class="commands-dock-body"></div>
+            </aside>
+
             <!-- Touch Controller Bar (mobile only) -->
             <div id="touch-controller" class="touch-controller" aria-label="Terminal touch controls">
                 <div class="touch-bar-main">

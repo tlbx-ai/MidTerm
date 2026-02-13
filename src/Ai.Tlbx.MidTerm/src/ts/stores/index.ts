@@ -105,6 +105,9 @@ export const $fileViewerDocked = atom<boolean>(false);
 /** Docked file path */
 export const $dockedFilePath = atom<string | null>(null);
 
+/** Commands panel docked to right sidebar */
+export const $commandsPanelDocked = atom<boolean>(false);
+
 // =============================================================================
 // Connection State Stores
 // =============================================================================

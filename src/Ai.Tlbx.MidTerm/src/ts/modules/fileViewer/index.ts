@@ -8,7 +8,12 @@
 
 import type { FilePathInfo, DirectoryEntry, DirectoryListResponse } from '../../types';
 import { createLogger } from '../logging';
-import { $activeSessionId, $fileViewerDocked, $dockedFilePath } from '../../stores';
+import {
+  $activeSessionId,
+  $fileViewerDocked,
+  $dockedFilePath,
+  $commandsPanelDocked,
+} from '../../stores';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
 import { escapeHtml } from '../../utils';
 import {
@@ -88,6 +93,19 @@ function toggleFullscreen(): void {
 
 function dockViewer(): void {
   if (!currentPath) return;
+
+  // Mutual exclusion: close commands dock if open
+  if ($commandsPanelDocked.get()) {
+    $commandsPanelDocked.set(false);
+    const cmdDock = document.getElementById('commands-dock');
+    if (cmdDock) {
+      cmdDock.classList.add('hidden');
+      cmdDock.style.width = '';
+    }
+    document.getElementById('app')?.classList.remove('commands-docked');
+    const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
+    if (terminalsArea) terminalsArea.style.marginRight = '';
+  }
 
   const path = currentPath;
   const sessionId = currentSessionId;
