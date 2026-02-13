@@ -114,6 +114,8 @@ export type ScrollbarStyleSetting = Schemas['ScrollbarStyleSetting'];
 export interface Session extends SessionInfoDto {
   /** Client-side ordering index (used for local sorting before server sync) */
   _order?: number;
+  /** Client-side bookmark link (lost on reload, acceptable trade-off) */
+  _bookmarkId?: string;
 }
 
 // =============================================================================

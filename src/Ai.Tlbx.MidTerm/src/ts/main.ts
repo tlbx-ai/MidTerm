@@ -135,6 +135,7 @@ import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
+  patchHistoryEntry,
 } from './api/client';
 
 // Create logger for main module
@@ -531,16 +532,22 @@ function renameSession(sessionId: string, newName: string | null): void {
   setSession({ ...session, name: nameToSend, manuallyNamed: true });
   // Subscription handles renderSessionList and updateMobileTitle via store change
 
-  apiRenameSession(sessionId, nameToSend).catch((e) => {
-    // Clear pending and rollback on error
-    clearPendingRename(sessionId);
-    const currentSession = getSession(sessionId);
-    if (currentSession) {
-      setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
-    }
-    // Subscription handles renderSessionList and updateMobileTitle via store change
-    log.error(() => `Failed to rename session ${sessionId}: ${e}`);
-  });
+  apiRenameSession(sessionId, nameToSend)
+    .then(() => {
+      if (session._bookmarkId) {
+        patchHistoryEntry(session._bookmarkId, { label: nameToSend || '' }).catch(() => {});
+      }
+    })
+    .catch((e) => {
+      // Clear pending and rollback on error
+      clearPendingRename(sessionId);
+      const currentSession = getSession(sessionId);
+      if (currentSession) {
+        setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
+      }
+      // Subscription handles renderSessionList and updateMobileTitle via store change
+      log.error(() => `Failed to rename session ${sessionId}: ${e}`);
+    });
 }
 
 function startInlineRename(sessionId: string): void {
@@ -668,6 +675,20 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
+
+      // Link session to bookmark and apply label (deferred until session is in store)
+      const applyBookmark = (): void => {
+        const session = getSession(data.id!);
+        if (!session) {
+          setTimeout(applyBookmark, 100);
+          return;
+        }
+        setSession({ ...session, _bookmarkId: entry.id });
+        if (entry.label) {
+          renameSession(data.id!, entry.label);
+        }
+      };
+      applyBookmark();
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);

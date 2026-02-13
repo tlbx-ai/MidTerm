@@ -1765,6 +1765,7 @@ export interface components {
     };
     HistoryPatchRequest: {
       isStarred?: null | boolean;
+      label?: null | string;
     };
     /** Format: binary */
     IFormFile: string;
@@ -1775,6 +1776,7 @@ export interface components {
       commandLine: null | string;
       workingDirectory: string;
       isStarred: boolean;
+      label: null | string;
       /** Format: int32 */
       weight: number;
       /** Format: date-time */

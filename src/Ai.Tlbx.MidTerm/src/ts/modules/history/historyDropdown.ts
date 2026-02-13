@@ -164,6 +164,13 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   const infoDiv = document.createElement('div');
   infoDiv.className = 'history-item-info';
 
+  if (entry.label) {
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'history-item-label';
+    labelSpan.textContent = entry.label;
+    infoDiv.appendChild(labelSpan);
+  }
+
   const fgIndicator = createForegroundIndicator(
     entry.workingDirectory ?? '',
     entry.commandLine ?? null,

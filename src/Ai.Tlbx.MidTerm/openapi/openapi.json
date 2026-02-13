@@ -1721,6 +1721,12 @@
               "null",
               "boolean"
             ]
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1736,6 +1742,7 @@
           "commandLine",
           "workingDirectory",
           "isStarred",
+          "label",
           "weight",
           "lastUsed"
         ],
@@ -1761,6 +1768,12 @@
           },
           "isStarred": {
             "type": "boolean"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "weight": {
             "type": "integer",

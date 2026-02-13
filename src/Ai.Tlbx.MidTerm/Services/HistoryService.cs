@@ -170,6 +170,22 @@ public sealed class HistoryService
         }
     }
 
+    public bool SetLabel(string id, string? label)
+    {
+        lock (_lock)
+        {
+            var entry = _history.Entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null)
+            {
+                return false;
+            }
+
+            entry.Label = string.IsNullOrWhiteSpace(label) ? null : label;
+            Save();
+            return true;
+        }
+    }
+
     public bool RemoveEntry(string id)
     {
         lock (_lock)
