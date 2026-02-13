@@ -657,6 +657,8 @@ export function autoResizeAllTerminalsImmediate(): void {
 /**
  * Set up resize observer to recalculate scaling when window resizes.
  * Main browser: auto-resize terminals. Follower: CSS scale only.
+ * Also starts a 1-second periodic check for the main browser to catch
+ * resize scenarios that don't fire standard events.
  */
 export function setupResizeObserver(): void {
   window.addEventListener('resize', () => {
@@ -664,6 +666,17 @@ export function setupResizeObserver(): void {
       autoResizeAllTerminals();
     } else {
       rescaleAllTerminals();
+    }
+  });
+
+  let periodicResizeInterval: number | undefined;
+
+  $isMainBrowser.subscribe((isMain) => {
+    if (isMain && periodicResizeInterval === undefined) {
+      periodicResizeInterval = window.setInterval(autoResizeAllTerminalsInternal, 1000);
+    } else if (!isMain && periodicResizeInterval !== undefined) {
+      clearInterval(periodicResizeInterval);
+      periodicResizeInterval = undefined;
     }
   });
 }
