@@ -284,7 +284,9 @@ html, body {
 .sidebar-header {
     display: flex;
     align-items: center;
-    padding: 6px 12px;
+    padding: 0 12px;
+    height: 36px;
+    box-sizing: border-box;
     border-bottom: 2px solid transparent;
     border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
     background-color: var(--terminal-bg);
@@ -5832,7 +5834,9 @@ html, body {
 .commands-dock-header {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 0 12px;
+    height: 36px;
+    box-sizing: border-box;
     border-bottom: 1px solid var(--border-color);
     background: var(--bg-elevated);
     gap: 8px;
