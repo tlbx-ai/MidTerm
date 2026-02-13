@@ -654,6 +654,70 @@ export function autoResizeAllTerminalsImmediate(): void {
   autoResizeAllTerminalsInternal();
 }
 
+/** Last periodic resize check result for diagnostics overlay */
+let lastPeriodicCheckResult = 'idle';
+
+export function getLastPeriodicCheckResult(): string {
+  return lastPeriodicCheckResult;
+}
+
+/**
+ * Periodic check: compare current terminal dimensions against what they should be.
+ * Only resizes when a real mismatch is found. Does NOT touch focus, transforms,
+ * overlays, or any other DOM state — just terminal.resize() + sendResize().
+ */
+function periodicResizeCheck(): void {
+  const sessions = $sessions.get();
+  let resizedAny = false;
+  const details: string[] = [];
+
+  sessionTerminals.forEach((state, sessionId) => {
+    if (!state.opened) return;
+
+    const layoutPane = state.container.closest('.layout-leaf') as HTMLElement | null;
+    const container = layoutPane ?? dom.terminalsArea;
+    if (!container) return;
+
+    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const termCols = state.terminal.cols;
+    const termRows = state.terminal.rows;
+    if (!screen || termCols <= 0 || termRows <= 0) return;
+
+    const cellWidth = screen.offsetWidth / termCols;
+    const cellHeight = screen.offsetHeight / termRows;
+    if (cellWidth < 1 || cellHeight < 1) return;
+
+    const rect = container.getBoundingClientRect();
+    const tabBarH = layoutPane ? 0 : getTabBarHeight();
+    const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+    const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
+
+    let optimalCols = Math.floor(availWidth / cellWidth);
+    let optimalRows = Math.floor(availHeight / cellHeight);
+    optimalCols = Math.max(MIN_TERMINAL_COLS, Math.min(optimalCols, MAX_TERMINAL_COLS));
+    optimalRows = Math.max(MIN_TERMINAL_ROWS, Math.min(optimalRows, MAX_TERMINAL_ROWS));
+
+    if (termCols !== optimalCols || termRows !== optimalRows) {
+      const session = sessions[sessionId];
+      const name = session?.name ?? sessionId.substring(0, 8);
+      details.push(`${name}: ${termCols}×${termRows} → ${optimalCols}×${optimalRows}`);
+      try {
+        state.terminal.resize(optimalCols, optimalRows);
+        sendResize(sessionId, optimalCols, optimalRows);
+      } catch {
+        // terminal may be disposed
+      }
+      resizedAny = true;
+    }
+  });
+
+  if (resizedAny) {
+    lastPeriodicCheckResult = details.join('; ');
+  } else {
+    lastPeriodicCheckResult = 'no change';
+  }
+}
+
 /**
  * Set up resize observer to recalculate scaling when window resizes.
  * Main browser: auto-resize terminals. Follower: CSS scale only.
@@ -673,7 +737,7 @@ export function setupResizeObserver(): void {
 
   $isMainBrowser.subscribe((isMain) => {
     if (isMain && periodicResizeInterval === undefined) {
-      periodicResizeInterval = window.setInterval(autoResizeAllTerminalsInternal, 1000);
+      periodicResizeInterval = window.setInterval(periodicResizeCheck, 1000);
     } else if (!isMain && periodicResizeInterval !== undefined) {
       clearInterval(periodicResizeInterval);
       periodicResizeInterval = undefined;
