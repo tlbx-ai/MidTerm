@@ -456,6 +456,16 @@ Customizable quick-action buttons below the terminal area. Clicking a button sen
 - **Settings**: `managerBarEnabled`, `managerBarButtons`
 - **Module**: `managerBar/`
 
+### IDE Mode
+
+Per-session tabbed UI adding Files, Git, and Commands panels alongside the terminal.
+
+- **Tabs**: Terminal | Files | Git | Commands
+- **Module**: `sessionTabs/` (tabBar, tabManager, per-tab content panels)
+- **Sub-modules**: `git/` (WebSocket monitoring), `fileViewer/`, `commands/`
+- **Setting**: `ideMode` (default: true)
+- **When off**: CSS class `ide-mode-off` hides tab bar, git WebSocket disconnects, backend stops directory monitoring
+
 ### Multi-Pane Layout
 
 Tmux-like split-pane terminal arrangement. Dock, undock, swap sessions. Layout persisted to localStorage.
@@ -501,6 +511,7 @@ Real-time settings sync across all connected clients via `/ws/settings` WebSocke
 | `tmuxCompatibility` | Tmux shim injection for AI tools |
 | `managerBarEnabled` | Quick-action button bar |
 | `managerBarButtons` | Custom button definitions |
+| `ideMode` | Per-session IDE tabs (Files, Git, Commands) |
 | `scrollbarStyle` | Off / Hover / Always |
 | `smoothScrolling` | Smooth scroll animation |
 
