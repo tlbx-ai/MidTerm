@@ -1,12 +1,13 @@
 /**
  * Commands Module
  *
- * User-defined command buttons with streaming output.
+ * Script-based command buttons with floating xterm.js output overlay.
  */
 
 import { createLogger } from '../logging';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { createCommandsPanel, refreshCommandsPanel, destroyCommandsPanel } from './commandsPanel';
+export { hiddenSessionIds } from '../../state';
 
 const log = createLogger('commands');
 

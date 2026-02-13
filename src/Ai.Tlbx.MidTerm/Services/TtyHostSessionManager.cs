@@ -23,6 +23,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, int> _sessionOrder = new();
     private readonly ConcurrentDictionary<string, byte> _tmuxCreatedSessions = new();
     private readonly ConcurrentDictionary<string, byte> _tmuxCommandStarted = new();
+    private readonly ConcurrentDictionary<string, byte> _hiddenSessions = new();
     private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
@@ -477,6 +478,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
+    public void MarkHidden(string sessionId)
+    {
+        _hiddenSessions.TryAdd(sessionId, 0);
+    }
+
+    public bool IsHidden(string sessionId)
+    {
+        return _hiddenSessions.ContainsKey(sessionId);
+    }
+
     public IReadOnlyList<SessionInfo> GetAllSessions()
     {
         return _sessionCache.Values.ToList();
@@ -486,7 +497,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         return new SessionListDto
         {
-            Sessions = _sessionCache.Values.Select(s => new SessionInfoDto
+            Sessions = _sessionCache.Values
+                .Where(s => !_hiddenSessions.ContainsKey(s.Id))
+                .Select(s => new SessionInfoDto
             {
                 Id = s.Id,
                 Pid = s.Pid,
@@ -519,6 +532,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _sessionOrder.TryRemove(sessionId, out _);
         _tmuxCreatedSessions.TryRemove(sessionId, out _);
         _tmuxCommandStarted.TryRemove(sessionId, out _);
+        _hiddenSessions.TryRemove(sessionId, out _);
         CleanupTempDirectory(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);

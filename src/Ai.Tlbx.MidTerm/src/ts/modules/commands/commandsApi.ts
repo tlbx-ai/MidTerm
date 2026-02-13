@@ -1,80 +1,74 @@
 /**
  * Commands API
  *
- * REST wrappers for command CRUD and execution.
+ * REST wrappers for script CRUD and execution via hidden mthost sessions.
  */
 
-export interface CommandDefinition {
+export interface ScriptDefinition {
   filename: string;
   name: string;
-  description: string;
-  commands: string[];
-  order: number;
+  extension: string;
+  shellType: string;
+  content: string;
 }
 
-export interface CommandListResponse {
-  commandsDirectory: string;
-  commands: CommandDefinition[];
+export interface ScriptListResponse {
+  scriptsDirectory: string;
+  scripts: ScriptDefinition[];
 }
 
-export interface CommandRunStatus {
-  runId: string;
-  status: string;
-  exitCode?: number;
-  currentStep: number;
-  totalSteps: number;
+export interface RunScriptResponse {
+  hiddenSessionId: string;
 }
 
-export async function fetchCommands(sessionId: string): Promise<CommandListResponse | null> {
+export async function fetchScripts(sessionId: string): Promise<ScriptListResponse | null> {
   try {
     const res = await fetch(`/api/commands?sessionId=${encodeURIComponent(sessionId)}`);
     if (!res.ok) return null;
-    return (await res.json()) as CommandListResponse;
+    return (await res.json()) as ScriptListResponse;
   } catch {
     return null;
   }
 }
 
-export async function createCommand(
+export async function createScript(
   sessionId: string,
   name: string,
-  description: string,
-  commands: string[],
-): Promise<CommandDefinition | null> {
+  extension: string,
+  content: string,
+): Promise<ScriptDefinition | null> {
   try {
     const res = await fetch('/api/commands', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, name, description, commands }),
+      body: JSON.stringify({ sessionId, name, extension, content }),
     });
     if (!res.ok) return null;
-    return (await res.json()) as CommandDefinition;
+    return (await res.json()) as ScriptDefinition;
   } catch {
     return null;
   }
 }
 
-export async function updateCommand(
+export async function updateScript(
   filename: string,
   sessionId: string,
-  name: string,
-  description: string,
-  commands: string[],
-): Promise<CommandDefinition | null> {
+  content: string,
+): Promise<ScriptDefinition | null> {
   try {
     const res = await fetch(`/api/commands/${encodeURIComponent(filename)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, name, description, commands }),
+      body: JSON.stringify({ sessionId, content }),
     });
     if (!res.ok) return null;
-    return (await res.json()) as CommandDefinition;
+    return (await res.json()) as ScriptDefinition;
   } catch {
     return null;
   }
 }
 
-export async function deleteCommand(filename: string, sessionId: string): Promise<boolean> {
+export async function deleteScript(filename: string, sessionId: string): Promise<boolean> {
   try {
     const res = await fetch(
       `/api/commands/${encodeURIComponent(filename)}?sessionId=${encodeURIComponent(sessionId)}`,
@@ -86,7 +80,10 @@ export async function deleteCommand(filename: string, sessionId: string): Promis
   }
 }
 
-export async function runCommand(sessionId: string, filename: string): Promise<string | null> {
+export async function runScript(
+  sessionId: string,
+  filename: string,
+): Promise<RunScriptResponse | null> {
   try {
     const res = await fetch('/api/commands/run', {
       method: 'POST',
@@ -94,20 +91,8 @@ export async function runCommand(sessionId: string, filename: string): Promise<s
       body: JSON.stringify({ sessionId, filename }),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { runId: string };
-    return data.runId;
+    return (await res.json()) as RunScriptResponse;
   } catch {
     return null;
-  }
-}
-
-export async function cancelRun(runId: string): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/commands/run/${encodeURIComponent(runId)}/cancel`, {
-      method: 'POST',
-    });
-    return res.ok;
-  } catch {
-    return false;
   }
 }

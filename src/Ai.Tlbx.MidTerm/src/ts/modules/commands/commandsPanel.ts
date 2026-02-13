@@ -1,28 +1,21 @@
 /**
  * Commands Panel
  *
- * Main commands list UI with run buttons and inline forms.
+ * Script list UI with run/edit/delete buttons and inline forms.
  */
 
 import { escapeHtml } from '../../utils';
-import type { CommandDefinition } from './commandsApi';
-import {
-  fetchCommands,
-  createCommand,
-  updateCommand,
-  deleteCommand,
-  runCommand,
-} from './commandsApi';
-import { createCommandForm, type CommandFormData } from './commandForm';
-import { showOutput } from './outputPanel';
+import type { ScriptDefinition } from './commandsApi';
+import { fetchScripts, createScript, updateScript, deleteScript, runScript } from './commandsApi';
+import { createCommandForm, type ScriptFormData } from './commandForm';
+import { showOutputOverlay } from './outputPanel';
 
 interface CommandsPanelState {
   sessionId: string;
   container: HTMLElement;
-  commands: CommandDefinition[];
+  scripts: ScriptDefinition[];
   showForm: boolean;
   editingFilename: string | null;
-  activeRunId: string | null;
 }
 
 const panelStates = new Map<string, CommandsPanelState>();
@@ -31,10 +24,9 @@ export function createCommandsPanel(container: HTMLElement, sessionId: string): 
   const state: CommandsPanelState = {
     sessionId,
     container,
-    commands: [],
+    scripts: [],
     showForm: false,
     editingFilename: null,
-    activeRunId: null,
   };
   panelStates.set(sessionId, state);
   renderPanel(state);
@@ -44,9 +36,9 @@ export async function refreshCommandsPanel(sessionId: string): Promise<void> {
   const state = panelStates.get(sessionId);
   if (!state) return;
 
-  const result = await fetchCommands(sessionId);
+  const result = await fetchScripts(sessionId);
   if (result) {
-    state.commands = result.commands;
+    state.scripts = result.scripts;
     renderPanel(state);
   }
 }
@@ -56,33 +48,33 @@ export function destroyCommandsPanel(sessionId: string): void {
 }
 
 function renderPanel(state: CommandsPanelState): void {
-  const { container, commands, showForm, editingFilename, activeRunId } = state;
+  const { container, scripts, showForm, editingFilename } = state;
 
   let html = '<div class="commands-panel">';
 
   html += '<div class="commands-list">';
-  if (commands.length === 0 && !showForm) {
+  if (scripts.length === 0 && !showForm) {
     html += `<div class="commands-empty">
-      <p>No commands defined</p>
-      <p class="commands-hint">Create command files in .midterm/commands/</p>
+      <p>No scripts found</p>
+      <p class="commands-hint">Create script files in .midterm/</p>
     </div>`;
   }
 
-  for (const cmd of commands) {
-    if (editingFilename === cmd.filename) {
-      html += `<div class="command-edit-slot" data-filename="${escapeHtml(cmd.filename)}"></div>`;
+  for (const script of scripts) {
+    if (editingFilename === script.filename) {
+      html += `<div class="command-edit-slot" data-filename="${escapeHtml(script.filename)}"></div>`;
       continue;
     }
 
-    html += `<div class="command-item" data-filename="${escapeHtml(cmd.filename)}">
+    html += `<div class="command-item" data-filename="${escapeHtml(script.filename)}">
       <div class="command-item-info">
-        <span class="command-item-name">${escapeHtml(cmd.name)}</span>
-        <span class="command-item-desc">${escapeHtml(cmd.description)}</span>
+        <span class="command-item-name">${escapeHtml(script.name)}</span>
+        <span class="command-item-ext">${escapeHtml(script.extension)}</span>
       </div>
       <div class="command-item-actions">
-        <button class="command-run-btn" data-filename="${escapeHtml(cmd.filename)}" title="Run">\u25B6</button>
-        <button class="command-edit-btn" data-filename="${escapeHtml(cmd.filename)}" title="Edit">\u270E</button>
-        <button class="command-delete-btn" data-filename="${escapeHtml(cmd.filename)}" title="Delete">\u2715</button>
+        <button class="command-run-btn" data-filename="${escapeHtml(script.filename)}" title="Run">\u25B6</button>
+        <button class="command-edit-btn" data-filename="${escapeHtml(script.filename)}" title="Edit">\u270E</button>
+        <button class="command-delete-btn" data-filename="${escapeHtml(script.filename)}" title="Delete">\u2715</button>
       </div>
     </div>`;
   }
@@ -91,11 +83,7 @@ function renderPanel(state: CommandsPanelState): void {
   if (showForm) {
     html += '<div class="command-create-slot"></div>';
   } else {
-    html += '<button class="command-add-btn">+ New Command</button>';
-  }
-
-  if (activeRunId) {
-    html += '<div class="command-output-area"></div>';
+    html += '<button class="command-add-btn">+ New Script</button>';
   }
 
   html += '</div>';
@@ -104,24 +92,17 @@ function renderPanel(state: CommandsPanelState): void {
 }
 
 function bindEvents(state: CommandsPanelState): void {
-  const { container, sessionId, commands } = state;
+  const { container, sessionId, scripts } = state;
 
   container.querySelectorAll('.command-run-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const filename = (btn as HTMLElement).dataset.filename;
       if (!filename) return;
 
-      const runId = await runCommand(sessionId, filename);
-      if (runId) {
-        state.activeRunId = runId;
-        renderPanel(state);
-
-        const outputArea = container.querySelector('.command-output-area') as HTMLElement;
-        if (outputArea) {
-          showOutput(outputArea, runId, () => {
-            state.activeRunId = null;
-          });
-        }
+      const result = await runScript(sessionId, filename);
+      if (result) {
+        const script = scripts.find((s) => s.filename === filename);
+        showOutputOverlay(result.hiddenSessionId, script?.name ?? filename);
       }
     });
   });
@@ -136,13 +117,13 @@ function bindEvents(state: CommandsPanelState): void {
       const slot = container.querySelector(
         `.command-edit-slot[data-filename="${filename}"]`,
       ) as HTMLElement;
-      const cmd = commands.find((c) => c.filename === filename);
-      if (slot && cmd) {
+      const script = scripts.find((s) => s.filename === filename);
+      if (slot && script) {
         createCommandForm(
           slot,
-          cmd,
-          async (data: CommandFormData) => {
-            await updateCommand(filename, sessionId, data.name, data.description, data.commands);
+          script,
+          async (data: ScriptFormData) => {
+            await updateScript(filename, sessionId, data.content);
             state.editingFilename = null;
             await refreshCommandsPanel(sessionId);
           },
@@ -159,8 +140,8 @@ function bindEvents(state: CommandsPanelState): void {
     btn.addEventListener('click', async () => {
       const filename = (btn as HTMLElement).dataset.filename;
       if (!filename) return;
-      if (!confirm('Delete this command?')) return;
-      await deleteCommand(filename, sessionId);
+      if (!confirm('Delete this script?')) return;
+      await deleteScript(filename, sessionId);
       await refreshCommandsPanel(sessionId);
     });
   });
@@ -174,8 +155,8 @@ function bindEvents(state: CommandsPanelState): void {
       createCommandForm(
         slot,
         undefined,
-        async (data: CommandFormData) => {
-          await createCommand(sessionId, data.name, data.description, data.commands);
+        async (data: ScriptFormData) => {
+          await createScript(sessionId, data.name, data.extension, data.content);
           state.showForm = false;
           await refreshCommandsPanel(sessionId);
         },

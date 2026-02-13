@@ -1,53 +1,41 @@
 namespace Ai.Tlbx.MidTerm.Models;
 
-public sealed class CommandDefinition
+public sealed class ScriptDefinition
 {
     public string Filename { get; set; } = "";
     public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string[] Commands { get; set; } = [];
-    public int Order { get; set; }
+    public string Extension { get; set; } = "";
+    public string ShellType { get; set; } = "";
+    public string Content { get; set; } = "";
 }
 
-public sealed class CommandListResponse
+public sealed class ScriptListResponse
 {
-    public string CommandsDirectory { get; set; } = "";
-    public CommandDefinition[] Commands { get; set; } = [];
+    public string ScriptsDirectory { get; set; } = "";
+    public ScriptDefinition[] Scripts { get; set; } = [];
 }
 
-public sealed class CreateCommandRequest
-{
-    public string SessionId { get; set; } = "";
-    public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string[] Commands { get; set; } = [];
-}
-
-public sealed class UpdateCommandRequest
+public sealed class CreateScriptRequest
 {
     public string SessionId { get; set; } = "";
     public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string[] Commands { get; set; } = [];
+    public string Extension { get; set; } = "";
+    public string Content { get; set; } = "";
 }
 
-public sealed class RunCommandRequest
+public sealed class UpdateScriptRequest
+{
+    public string SessionId { get; set; } = "";
+    public string Content { get; set; } = "";
+}
+
+public sealed class RunScriptRequest
 {
     public string SessionId { get; set; } = "";
     public string Filename { get; set; } = "";
 }
 
-public sealed class ReorderCommandsRequest
+public sealed class RunScriptResponse
 {
-    public string SessionId { get; set; } = "";
-    public string[] Filenames { get; set; } = [];
-}
-
-public sealed class CommandRunStatus
-{
-    public string RunId { get; set; } = "";
-    public string Status { get; set; } = "";
-    public int? ExitCode { get; set; }
-    public int CurrentStep { get; set; }
-    public int TotalSteps { get; set; }
+    public string HiddenSessionId { get; set; } = "";
 }

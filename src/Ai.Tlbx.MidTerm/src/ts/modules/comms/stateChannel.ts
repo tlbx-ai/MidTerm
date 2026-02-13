@@ -29,6 +29,7 @@ import {
   stateReconnectTimer,
   sessionTerminals,
   newlyCreatedSessions,
+  hiddenSessionIds,
   setStateWs,
   setStateReconnectTimer,
 } from '../../state';
@@ -183,10 +184,10 @@ export function handleStateUpdate(newSessions: Session[]): void {
   // Filter out sessions without required id field
   const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
 
-  // Remove terminals for deleted sessions
+  // Remove terminals for deleted sessions (skip hidden command overlay sessions)
   const newIds = new Set(validSessions.map((s) => s.id));
   sessionTerminals.forEach((_, id) => {
-    if (!newIds.has(id)) {
+    if (!newIds.has(id) && !hiddenSessionIds.has(id)) {
       handleSessionClosed(id);
       destroyTerminalForSession(id);
       newlyCreatedSessions.delete(id);

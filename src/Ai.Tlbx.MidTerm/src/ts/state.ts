@@ -61,6 +61,9 @@ export const terminalsWithWebgl = new Set<string>();
 /** Sessions created in this browser session (use WebSocket buffering) */
 export const newlyCreatedSessions = new Set<string>();
 
+/** Hidden session IDs for command overlay terminals (excluded from state channel cleanup) */
+export const hiddenSessionIds = new Set<string>();
+
 /** Pending sessions being created (for optimistic UI) */
 export const pendingSessions = new Set<string>();
 

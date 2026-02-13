@@ -1,7 +1,4 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Text.RegularExpressions;
-using System.Threading.Channels;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
 
@@ -9,126 +6,123 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class CommandService
 {
-    private readonly ConcurrentDictionary<string, CommandRun> _activeRuns = new();
-
-    private sealed class CommandRun
+    private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        public Channel<string> OutputChannel { get; } = Channel.CreateUnbounded<string>();
-        public CancellationTokenSource Cts { get; } = new();
-        public CommandRunStatus Status { get; set; } = new();
-        public Process? CurrentProcess { get; set; }
+        ".ps1", ".sh", ".cmd", ".bat", ".zsh"
+    };
+
+    private static string GetScriptsDir(string basePath)
+    {
+        return Path.Combine(basePath, ".midterm");
     }
 
-    private static string GetCommandsDir(string basePath)
+    public static string MapExtensionToShellType(string extension)
     {
-        return Path.Combine(basePath, ".midterm", "commands");
+        return extension.ToLowerInvariant() switch
+        {
+            ".ps1" => "Pwsh",
+            ".cmd" or ".bat" => "Cmd",
+            ".sh" => "Bash",
+            ".zsh" => "Zsh",
+            _ => "Bash"
+        };
     }
 
-    public CommandListResponse ListCommands(string workingDirectory)
+    public ScriptListResponse ListScripts(string workingDirectory)
     {
-        var dir = GetCommandsDir(workingDirectory);
-        var response = new CommandListResponse { CommandsDirectory = dir };
+        var dir = GetScriptsDir(workingDirectory);
+        var response = new ScriptListResponse { ScriptsDirectory = dir };
 
         if (!Directory.Exists(dir))
         {
             return response;
         }
 
-        var commands = new List<CommandDefinition>();
-        foreach (var file in Directory.EnumerateFiles(dir, "*.txt").OrderBy(f => f))
+        var scripts = new List<ScriptDefinition>();
+        foreach (var file in Directory.EnumerateFiles(dir)
+            .Where(f => SupportedExtensions.Contains(Path.GetExtension(f)))
+            .OrderBy(f => Path.GetFileName(f)))
         {
-            var cmd = ParseCommandFile(file);
-            if (cmd is not null)
+            var script = ParseScriptFile(file);
+            if (script is not null)
             {
-                commands.Add(cmd);
+                scripts.Add(script);
             }
         }
 
-        response.Commands = commands.ToArray();
+        response.Scripts = scripts.ToArray();
         return response;
     }
 
-    private static CommandDefinition? ParseCommandFile(string filePath)
+    private static ScriptDefinition? ParseScriptFile(string filePath)
     {
         try
         {
-            var lines = File.ReadAllLines(filePath);
-            if (lines.Length < 3)
-            {
-                return null;
-            }
-
             var filename = Path.GetFileName(filePath);
-            var orderMatch = Regex.Match(filename, @"^(\d+)_");
-            var order = orderMatch.Success ? int.Parse(orderMatch.Groups[1].Value) : 0;
+            var extension = Path.GetExtension(filePath);
+            var name = Path.GetFileNameWithoutExtension(filePath);
+            var content = File.ReadAllText(filePath);
 
-            return new CommandDefinition
+            return new ScriptDefinition
             {
                 Filename = filename,
-                Name = lines[0].Trim(),
-                Description = lines[1].Trim(),
-                Commands = lines.Skip(2).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray(),
-                Order = order
+                Name = name,
+                Extension = extension,
+                ShellType = MapExtensionToShellType(extension),
+                Content = content
             };
         }
         catch (Exception ex)
         {
-            Log.Warn(() => $"Failed to parse command file {filePath}: {ex.Message}");
+            Log.Warn(() => $"Failed to parse script file {filePath}: {ex.Message}");
             return null;
         }
     }
 
-    public CommandDefinition CreateCommand(string workingDirectory, string name, string description, string[] commands)
+    public ScriptDefinition CreateScript(string workingDirectory, string name, string extension, string content)
     {
-        var dir = GetCommandsDir(workingDirectory);
+        var dir = GetScriptsDir(workingDirectory);
         Directory.CreateDirectory(dir);
 
-        var existing = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.txt").Length : 0;
-        var order = existing + 1;
-        var slug = Slugify(name);
-        var filename = $"{order}_{slug}.txt";
+        var filename = $"{name}{extension}";
         var filePath = Path.Combine(dir, filename);
 
-        var content = $"{name}\n{description}\n{string.Join('\n', commands)}";
         File.WriteAllText(filePath, content);
 
-        return new CommandDefinition
+        return new ScriptDefinition
         {
             Filename = filename,
             Name = name,
-            Description = description,
-            Commands = commands,
-            Order = order
+            Extension = extension,
+            ShellType = MapExtensionToShellType(extension),
+            Content = content
         };
     }
 
-    public CommandDefinition? UpdateCommand(string workingDirectory, string filename, string name, string description, string[] commands)
+    public ScriptDefinition? UpdateScript(string workingDirectory, string filename, string content)
     {
-        var filePath = Path.Combine(GetCommandsDir(workingDirectory), filename);
+        var filePath = Path.Combine(GetScriptsDir(workingDirectory), filename);
         if (!File.Exists(filePath))
         {
             return null;
         }
 
-        var content = $"{name}\n{description}\n{string.Join('\n', commands)}";
         File.WriteAllText(filePath, content);
 
-        var orderMatch = Regex.Match(filename, @"^(\d+)_");
-        var order = orderMatch.Success ? int.Parse(orderMatch.Groups[1].Value) : 0;
-
-        return new CommandDefinition
+        var extension = Path.GetExtension(filePath);
+        return new ScriptDefinition
         {
             Filename = filename,
-            Name = name,
-            Description = description,
-            Commands = commands,
-            Order = order
+            Name = Path.GetFileNameWithoutExtension(filePath),
+            Extension = extension,
+            ShellType = MapExtensionToShellType(extension),
+            Content = content
         };
     }
 
-    public bool DeleteCommand(string workingDirectory, string filename)
+    public bool DeleteScript(string workingDirectory, string filename)
     {
-        var filePath = Path.Combine(GetCommandsDir(workingDirectory), filename);
+        var filePath = Path.Combine(GetScriptsDir(workingDirectory), filename);
         if (!File.Exists(filePath))
         {
             return false;
@@ -138,205 +132,46 @@ public sealed class CommandService
         return true;
     }
 
-    public void ReorderCommands(string workingDirectory, string[] filenames)
+    public async Task<RunScriptResponse> RunScriptAsync(
+        string workingDirectory,
+        string filename,
+        TtyHostSessionManager sessionManager,
+        CancellationToken ct = default)
     {
-        var dir = GetCommandsDir(workingDirectory);
-        if (!Directory.Exists(dir))
+        var filePath = Path.Combine(GetScriptsDir(workingDirectory), filename);
+        if (!File.Exists(filePath))
         {
-            return;
+            throw new InvalidOperationException("Script file not found");
         }
 
-        var tempNames = new List<(string TempPath, string FinalPath)>();
-        for (var i = 0; i < filenames.Length; i++)
+        var extension = Path.GetExtension(filePath);
+        var shellType = MapExtensionToShellType(extension);
+
+        var session = await sessionManager.CreateSessionAsync(shellType, 120, 30, workingDirectory, ct);
+        if (session is null)
         {
-            var oldPath = Path.Combine(dir, filenames[i]);
-            if (!File.Exists(oldPath))
-            {
-                continue;
-            }
-
-            var nameWithoutOrder = Regex.Replace(filenames[i], @"^\d+_", "");
-            var newFilename = $"{i + 1}_{nameWithoutOrder}";
-            var tempPath = Path.Combine(dir, $"_reorder_temp_{i}_{nameWithoutOrder}");
-            var finalPath = Path.Combine(dir, newFilename);
-
-            File.Move(oldPath, tempPath);
-            tempNames.Add((tempPath, finalPath));
+            throw new InvalidOperationException("Failed to create hidden session");
         }
 
-        foreach (var (tempPath, finalPath) in tempNames)
-        {
-            File.Move(tempPath, finalPath);
-        }
+        sessionManager.MarkHidden(session.Id);
+
+        var command = BuildExecutionCommand(filename, extension);
+        var commandBytes = Encoding.UTF8.GetBytes(command + "\n");
+        await sessionManager.SendInputAsync(session.Id, commandBytes, ct);
+
+        return new RunScriptResponse { HiddenSessionId = session.Id };
     }
 
-    public string RunCommand(string workingDirectory, string filename, string shellType)
+    private static string BuildExecutionCommand(string filename, string extension)
     {
-        var filePath = Path.Combine(GetCommandsDir(workingDirectory), filename);
-        var cmd = ParseCommandFile(filePath);
-        if (cmd is null)
+        var scriptPath = $".midterm/{filename}";
+        return extension.ToLowerInvariant() switch
         {
-            throw new InvalidOperationException("Command file not found or invalid");
-        }
-
-        var runId = Guid.NewGuid().ToString("N")[..12];
-        var run = new CommandRun
-        {
-            Status = new CommandRunStatus
-            {
-                RunId = runId,
-                Status = "running",
-                TotalSteps = cmd.Commands.Length
-            }
+            ".ps1" => $"& './{scriptPath}'",
+            ".cmd" or ".bat" => scriptPath,
+            ".sh" => $"bash '{scriptPath}'",
+            ".zsh" => $"zsh '{scriptPath}'",
+            _ => $"bash '{scriptPath}'"
         };
-        _activeRuns[runId] = run;
-
-        _ = ExecuteCommandsAsync(run, cmd.Commands, workingDirectory, shellType);
-
-        return runId;
-    }
-
-    private async Task ExecuteCommandsAsync(CommandRun run, string[] commands, string workingDirectory, string shellType)
-    {
-        var writer = run.OutputChannel.Writer;
-
-        try
-        {
-            for (var i = 0; i < commands.Length; i++)
-            {
-                if (run.Cts.Token.IsCancellationRequested)
-                {
-                    run.Status.Status = "cancelled";
-                    await writer.WriteAsync("\n--- Cancelled ---\n");
-                    break;
-                }
-
-                run.Status.CurrentStep = i + 1;
-                await writer.WriteAsync($"$ {commands[i]}\n");
-
-                var (shell, args) = GetShellCommand(commands[i], shellType);
-
-                var psi = new ProcessStartInfo
-                {
-                    FileName = shell,
-                    Arguments = args,
-                    WorkingDirectory = workingDirectory,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                using var process = new Process { StartInfo = psi };
-                run.CurrentProcess = process;
-
-                process.OutputDataReceived += (_, e) =>
-                {
-                    if (e.Data is not null)
-                    {
-                        writer.TryWrite(e.Data + "\n");
-                    }
-                };
-
-                process.ErrorDataReceived += (_, e) =>
-                {
-                    if (e.Data is not null)
-                    {
-                        writer.TryWrite(e.Data + "\n");
-                    }
-                };
-
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-
-                await process.WaitForExitAsync(run.Cts.Token);
-                run.CurrentProcess = null;
-
-                if (process.ExitCode != 0)
-                {
-                    run.Status.ExitCode = process.ExitCode;
-                    run.Status.Status = "failed";
-                    await writer.WriteAsync($"\n--- Step {i + 1} failed with exit code {process.ExitCode} ---\n");
-                    break;
-                }
-
-                if (i == commands.Length - 1)
-                {
-                    run.Status.ExitCode = 0;
-                    run.Status.Status = "completed";
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            run.Status.Status = "cancelled";
-            await writer.WriteAsync("\n--- Cancelled ---\n");
-        }
-        catch (Exception ex)
-        {
-            run.Status.Status = "failed";
-            await writer.WriteAsync($"\n--- Error: {ex.Message} ---\n");
-            Log.Error(() => $"Command execution error: {ex.Message}");
-        }
-        finally
-        {
-            run.CurrentProcess = null;
-            writer.Complete();
-
-            _ = CleanupRunAsync(run.Status.RunId);
-        }
-    }
-
-    private static (string shell, string args) GetShellCommand(string command, string shellType)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return shellType.Equals("cmd", StringComparison.OrdinalIgnoreCase)
-                ? ("cmd.exe", $"/c {command}")
-                : ("pwsh", $"-NoProfile -Command {command}");
-        }
-        return ("bash", $"-c \"{command.Replace("\"", "\\\"")}\"");
-    }
-
-    private async Task CleanupRunAsync(string runId)
-    {
-        await Task.Delay(TimeSpan.FromMinutes(5));
-        _activeRuns.TryRemove(runId, out _);
-    }
-
-    public CommandRunStatus? GetRunStatus(string runId)
-    {
-        return _activeRuns.TryGetValue(runId, out var run) ? run.Status : null;
-    }
-
-    public ChannelReader<string>? GetRunOutput(string runId)
-    {
-        return _activeRuns.TryGetValue(runId, out var run) ? run.OutputChannel.Reader : null;
-    }
-
-    public bool CancelRun(string runId)
-    {
-        if (!_activeRuns.TryGetValue(runId, out var run))
-        {
-            return false;
-        }
-
-        run.Cts.Cancel();
-        try
-        {
-            run.CurrentProcess?.Kill(true);
-        }
-        catch
-        {
-            // Process may have already exited
-        }
-        return true;
-    }
-
-    private static string Slugify(string name)
-    {
-        var slug = Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
-        return string.IsNullOrEmpty(slug) ? "command" : slug;
     }
 }

@@ -1,34 +1,53 @@
 /**
  * Command Form
  *
- * Inline create/edit form for commands.
+ * Inline create/edit form for script files.
+ * Name + extension dropdown + content textarea.
  */
 
 import { escapeHtml } from '../../utils';
-import type { CommandDefinition } from './commandsApi';
+import type { ScriptDefinition } from './commandsApi';
 
-export interface CommandFormData {
+export interface ScriptFormData {
   name: string;
-  description: string;
-  commands: string[];
+  extension: string;
+  content: string;
+}
+
+const EXTENSIONS = ['.ps1', '.sh', '.cmd', '.bat', '.zsh'] as const;
+
+function getDefaultExtension(): string {
+  const isWindows = /Windows|Win32|Win64/i.test(navigator.userAgent);
+  const isMac = /Mac/i.test(navigator.userAgent);
+  if (isWindows) return '.ps1';
+  if (isMac) return '.zsh';
+  return '.sh';
 }
 
 export function createCommandForm(
   container: HTMLElement,
-  existing?: CommandDefinition,
-  onSave?: (data: CommandFormData) => void,
+  existing?: ScriptDefinition,
+  onSave?: (data: ScriptFormData) => void,
   onCancel?: () => void,
 ): void {
   const isEdit = !!existing;
+  const defaultExt = existing?.extension ?? getDefaultExtension();
+
+  const extensionOptions = EXTENSIONS.map(
+    (ext) => `<option value="${ext}" ${ext === defaultExt ? 'selected' : ''}>${ext}</option>`,
+  ).join('');
 
   container.innerHTML = `
     <div class="command-form">
-      <input class="command-form-name" type="text" placeholder="Command name"
-        value="${existing ? escapeHtml(existing.name) : ''}" />
-      <input class="command-form-desc" type="text" placeholder="Description"
-        value="${existing ? escapeHtml(existing.description) : ''}" />
-      <textarea class="command-form-commands" placeholder="Shell commands (one per line)..."
-        rows="4">${existing ? escapeHtml(existing.commands.join('\n')) : ''}</textarea>
+      <div class="command-form-name-row">
+        <input class="command-form-name" type="text" placeholder="Script name"
+          value="${existing ? escapeHtml(existing.name) : ''}" ${isEdit ? 'readonly' : ''} />
+        <select class="command-form-ext" ${isEdit ? 'disabled' : ''}>
+          ${extensionOptions}
+        </select>
+      </div>
+      <textarea class="command-form-commands" placeholder="Script content..."
+        rows="8">${existing ? escapeHtml(existing.content) : ''}</textarea>
       <div class="command-form-actions">
         <button class="command-form-save">${isEdit ? 'Update' : 'Create'}</button>
         <button class="command-form-cancel">Cancel</button>
@@ -36,20 +55,24 @@ export function createCommandForm(
     </div>`;
 
   const nameInput = container.querySelector('.command-form-name') as HTMLInputElement;
-  const descInput = container.querySelector('.command-form-desc') as HTMLInputElement;
-  const commandsArea = container.querySelector('.command-form-commands') as HTMLTextAreaElement;
+  const extSelect = container.querySelector('.command-form-ext') as HTMLSelectElement;
+  const contentArea = container.querySelector('.command-form-commands') as HTMLTextAreaElement;
 
   container.querySelector('.command-form-save')?.addEventListener('click', () => {
     const name = nameInput.value.trim();
-    const description = descInput.value.trim();
-    const commands = commandsArea.value.split('\n').filter((l) => l.trim());
-    if (!name || commands.length === 0) return;
-    onSave?.({ name, description, commands });
+    const extension = extSelect.value;
+    const content = contentArea.value;
+    if (!name || !content.trim()) return;
+    onSave?.({ name, extension, content });
   });
 
   container.querySelector('.command-form-cancel')?.addEventListener('click', () => {
     onCancel?.();
   });
 
-  nameInput.focus();
+  if (isEdit) {
+    contentArea.focus();
+  } else {
+    nameInput.focus();
+  }
 }

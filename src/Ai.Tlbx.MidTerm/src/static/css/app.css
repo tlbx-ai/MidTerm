@@ -6607,6 +6607,30 @@ body.ide-mode-off .session-tab-bar {
     margin: 8px 12px;
 }
 
+.command-form-name-row {
+    display: flex;
+    gap: 8px;
+}
+
+.command-form-name {
+    flex: 1;
+}
+
+.command-form-ext {
+    width: 80px;
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.command-form-ext:disabled {
+    opacity: 0.5;
+}
+
 .command-form-name,
 .command-form-desc {
     width: 100%;
@@ -6673,7 +6697,80 @@ body.ide-mode-off .session-tab-bar {
     background: var(--btn-secondary-hover);
 }
 
-/* Command Output */
+.command-item-ext {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    background: var(--bg-elevated);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    margin-left: 6px;
+}
+
+/* Command Output Overlay */
+.command-overlay {
+    position: fixed;
+    z-index: 200;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    resize: both;
+    overflow: hidden;
+    min-width: 300px;
+    min-height: 200px;
+}
+
+.command-overlay-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-color);
+    cursor: move;
+    user-select: none;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.command-overlay-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-overlay-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 16px;
+    border-radius: var(--radius-sm);
+    line-height: 1;
+}
+
+.command-overlay-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.command-overlay-body {
+    flex: 1;
+    overflow: hidden;
+}
+
+.command-overlay-body .xterm {
+    height: 100%;
+}
+
+/* Legacy output styles kept for backward compat */
 .commands-output {
     border-top: 1px solid var(--border-color);
     background: var(--bg-terminal);
