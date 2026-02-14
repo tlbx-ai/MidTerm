@@ -39,3 +39,8 @@ public sealed class RunScriptResponse
 {
     public string HiddenSessionId { get; set; } = "";
 }
+
+public sealed class StopScriptRequest
+{
+    public string HiddenSessionId { get; set; } = "";
+}

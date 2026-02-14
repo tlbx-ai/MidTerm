@@ -6,9 +6,20 @@
 
 import { escapeHtml } from '../../utils';
 import type { ScriptDefinition } from './commandsApi';
-import { fetchScripts, createScript, updateScript, deleteScript, runScript } from './commandsApi';
+import {
+  fetchScripts,
+  createScript,
+  updateScript,
+  deleteScript,
+  runScript,
+  stopScript,
+  getRunningSessionId,
+  setRunningScript,
+  clearRunningScript,
+  clearRunningScriptBySessionId,
+} from './commandsApi';
 import { createCommandForm, type ScriptFormData } from './commandForm';
-import { showOutputOverlay } from './outputPanel';
+import { showOutputOverlay, closeOverlay } from './outputPanel';
 
 interface CommandsPanelState {
   sessionId: string;
@@ -47,6 +58,18 @@ export function destroyCommandsPanel(sessionId: string): void {
   panelStates.delete(sessionId);
 }
 
+export function handleHiddenSessionClosed(hiddenSessionId: string): void {
+  const filename = clearRunningScriptBySessionId(hiddenSessionId);
+  if (filename) {
+    for (const state of panelStates.values()) {
+      if (state.scripts.some((s) => s.filename === filename)) {
+        renderPanel(state);
+        break;
+      }
+    }
+  }
+}
+
 function renderPanel(state: CommandsPanelState): void {
   const { container, scripts, showForm, editingFilename } = state;
 
@@ -66,13 +89,18 @@ function renderPanel(state: CommandsPanelState): void {
       continue;
     }
 
+    const running = getRunningSessionId(script.filename);
+    const runBtn = running
+      ? `<button class="command-stop-btn" data-filename="${escapeHtml(script.filename)}" title="Stop">\u25A0</button>`
+      : `<button class="command-run-btn" data-filename="${escapeHtml(script.filename)}" title="Run">\u25B6</button>`;
+
     html += `<div class="command-item" data-filename="${escapeHtml(script.filename)}">
       <div class="command-item-info">
         <span class="command-item-name">${escapeHtml(script.name)}</span>
         <span class="command-item-ext">${escapeHtml(script.extension)}</span>
       </div>
       <div class="command-item-actions">
-        <button class="command-run-btn" data-filename="${escapeHtml(script.filename)}" title="Run">\u25B6</button>
+        ${runBtn}
         <button class="command-edit-btn" data-filename="${escapeHtml(script.filename)}" title="Edit">\u270E</button>
         <button class="command-delete-btn" data-filename="${escapeHtml(script.filename)}" title="Delete">\u2715</button>
       </div>
@@ -128,9 +156,26 @@ function bindEvents(state: CommandsPanelState): void {
 
       const result = await runScript(sessionId, filename);
       if (result) {
+        setRunningScript(filename, result.hiddenSessionId);
         const script = scripts.find((s) => s.filename === filename);
         showOutputOverlay(result.hiddenSessionId, script?.name ?? filename);
+        renderPanel(state);
       }
+    });
+  });
+
+  container.querySelectorAll('.command-stop-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const filename = (btn as HTMLElement).dataset.filename;
+      if (!filename) return;
+
+      const hiddenId = getRunningSessionId(filename);
+      if (!hiddenId) return;
+
+      await stopScript(hiddenId);
+      closeOverlay(hiddenId);
+      clearRunningScript(filename);
+      renderPanel(state);
     });
   });
 

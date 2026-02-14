@@ -22,6 +22,8 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { handleSessionClosed } from '../layout';
 import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
 import { renderUpdatePanel } from '../updating/checker';
+import { handleHiddenSessionClosed } from '../commands/commandsPanel';
+import { closeOverlay } from '../commands/outputPanel';
 
 const log = createLogger('state');
 import {
@@ -193,6 +195,14 @@ export function handleStateUpdate(newSessions: Session[]): void {
       newlyCreatedSessions.delete(id);
     }
   });
+
+  // Clean up hidden sessions that no longer exist on the server (script finished)
+  for (const hiddenId of hiddenSessionIds) {
+    if (!newIds.has(hiddenId)) {
+      handleHiddenSessionClosed(hiddenId);
+      closeOverlay(hiddenId);
+    }
+  }
 
   // Update dimensions and resize terminals when server dimensions change
   // Also create terminals proactively for sessions that don't have one yet

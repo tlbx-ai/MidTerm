@@ -155,6 +155,34 @@ public sealed class CommandService
 
         sessionManager.MarkHidden(session.Id);
 
+        var readyTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnOutput(string sid, int _, int __, ReadOnlyMemory<byte> ___)
+        {
+            if (sid == session.Id)
+            {
+                readyTcs.TrySetResult();
+            }
+        }
+
+        sessionManager.OnOutput += OnOutput;
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            try
+            {
+                await readyTcs.Task.WaitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                Log.Warn(() => $"Shell readiness timeout for session {session.Id}, sending command anyway");
+            }
+        }
+        finally
+        {
+            sessionManager.OnOutput -= OnOutput;
+        }
+
         var command = BuildExecutionCommand(filename, extension);
         var commandBytes = Encoding.UTF8.GetBytes(command + "\n");
         await sessionManager.SendInputAsync(session.Id, commandBytes, ct);

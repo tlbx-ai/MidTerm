@@ -96,3 +96,40 @@ export async function runScript(
     return null;
   }
 }
+
+export async function stopScript(hiddenSessionId: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/commands/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hiddenSessionId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+const runningScripts = new Map<string, string>();
+
+export function getRunningSessionId(filename: string): string | undefined {
+  return runningScripts.get(filename);
+}
+
+export function setRunningScript(filename: string, hiddenSessionId: string): void {
+  runningScripts.set(filename, hiddenSessionId);
+}
+
+export function clearRunningScript(filename: string): void {
+  runningScripts.delete(filename);
+}
+
+export function clearRunningScriptBySessionId(hiddenSessionId: string): string | null {
+  for (const [filename, sid] of runningScripts) {
+    if (sid === hiddenSessionId) {
+      runningScripts.delete(filename);
+      return filename;
+    }
+  }
+  return null;
+}

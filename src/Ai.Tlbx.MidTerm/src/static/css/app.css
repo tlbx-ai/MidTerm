@@ -6742,7 +6742,8 @@ body.ide-mode-off .session-tab-bar {
     flex-shrink: 0;
 }
 
-.command-item:hover .command-item-actions {
+.command-item:hover .command-item-actions,
+.command-item-actions:has(.command-stop-btn) {
     display: flex;
 }
 
@@ -6761,6 +6762,21 @@ body.ide-mode-off .session-tab-bar {
 .command-run-btn:hover {
     background: var(--accent-green-15);
     color: var(--accent-green);
+}
+
+.command-stop-btn {
+    background: none;
+    border: none;
+    color: var(--accent-red);
+    cursor: pointer;
+    padding: 4px 6px;
+    font-size: 12px;
+    border-radius: 3px;
+}
+
+.command-stop-btn:hover {
+    background: var(--accent-red-15);
+    color: var(--accent-red);
 }
 
 .command-edit-btn:hover {

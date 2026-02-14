@@ -78,6 +78,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(UpdateScriptRequest))]
 [JsonSerializable(typeof(RunScriptRequest))]
 [JsonSerializable(typeof(RunScriptResponse))]
+[JsonSerializable(typeof(StopScriptRequest))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

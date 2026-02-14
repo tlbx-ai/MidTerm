@@ -101,5 +101,16 @@ public static class CommandEndpoints
                 return Results.BadRequest(ex.Message);
             }
         });
+
+        app.MapPost("/api/commands/stop", async (StopScriptRequest request) =>
+        {
+            if (string.IsNullOrEmpty(request.HiddenSessionId))
+            {
+                return Results.BadRequest("Missing hiddenSessionId");
+            }
+
+            await sessionManager.CloseSessionAsync(request.HiddenSessionId);
+            return Results.Ok();
+        });
     }
 }
