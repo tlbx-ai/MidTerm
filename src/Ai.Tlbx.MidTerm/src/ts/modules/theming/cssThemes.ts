@@ -147,11 +147,11 @@ const light: CssThemePalette = {
 
   '--accent-blue': '#A7694D',
   '--accent-blue-hover': '#935B40',
-  '--accent-cyan': '#0893B0',
-  '--accent-green': '#18A348',
+  '--accent-cyan': '#5B8F7D',
+  '--accent-green': '#6B8F4A',
   '--accent-orange': '#D97908',
   '--accent-red': '#DC2828',
-  '--accent-violet': '#7E3CEB',
+  '--accent-violet': '#8B5F9E',
 
   '--accent-gold': '#B6550B',
   '--accent-gold-muted': '#944210',
@@ -197,10 +197,10 @@ const light: CssThemePalette = {
   '--accent-red-10': 'rgba(220, 40, 40, 0.1)',
   '--accent-red-15': 'rgba(220, 40, 40, 0.15)',
 
-  '--accent-green-10': 'rgba(24, 163, 72, 0.1)',
-  '--accent-green-15': 'rgba(24, 163, 72, 0.15)',
+  '--accent-green-10': 'rgba(107, 143, 74, 0.1)',
+  '--accent-green-15': 'rgba(107, 143, 74, 0.15)',
 
-  '--accent-purple': '#7E3CEB',
+  '--accent-purple': '#8B5F9E',
 
   '--tool-yellow-bg': 'rgba(182, 85, 11, 0.1)',
   '--tool-yellow-border': 'rgba(182, 85, 11, 0.2)',
@@ -208,12 +208,12 @@ const light: CssThemePalette = {
   '--tool-yellow-border-emphasis': 'rgba(182, 85, 11, 0.4)',
   '--tool-yellow-gradient':
     'linear-gradient(135deg, rgba(182, 85, 11, 0.1), rgba(148, 66, 16, 0.1))',
-  '--tool-purple-bg': 'rgba(126, 60, 235, 0.08)',
-  '--tool-purple-bg-light': 'rgba(126, 60, 235, 0.12)',
-  '--tool-purple-border': 'rgba(126, 60, 235, 0.15)',
-  '--tool-purple-border-strong': 'rgba(126, 60, 235, 0.35)',
+  '--tool-purple-bg': 'rgba(139, 95, 158, 0.08)',
+  '--tool-purple-bg-light': 'rgba(139, 95, 158, 0.12)',
+  '--tool-purple-border': 'rgba(139, 95, 158, 0.15)',
+  '--tool-purple-border-strong': 'rgba(139, 95, 158, 0.35)',
   '--tool-purple-gradient':
-    'linear-gradient(135deg, rgba(126, 60, 235, 0.1), rgba(167, 105, 77, 0.1))',
+    'linear-gradient(135deg, rgba(139, 95, 158, 0.1), rgba(167, 105, 77, 0.1))',
 
   '--shadow-color': 'rgba(0, 0, 0, 0.08)',
   '--shadow-color-md': 'rgba(0, 0, 0, 0.12)',
