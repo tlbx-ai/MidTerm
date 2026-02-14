@@ -703,10 +703,13 @@ function periodicResizeCheck(): void {
       details.push(`${name}: ${termCols}×${termRows} → ${optimalCols}×${optimalRows}`);
       try {
         state.terminal.resize(optimalCols, optimalRows);
+        state.serverCols = optimalCols;
+        state.serverRows = optimalRows;
         sendResize(sessionId, optimalCols, optimalRows);
       } catch {
         // terminal may be disposed
       }
+      requestAnimationFrame(() => applyTerminalScalingSync(state));
       resizedAny = true;
     }
   });
