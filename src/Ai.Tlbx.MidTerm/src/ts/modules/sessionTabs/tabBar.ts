@@ -48,9 +48,6 @@ export function setActiveTab(bar: HTMLDivElement, tabId: SessionTabId): void {
 export function updateCwd(bar: HTMLDivElement, cwd: string): void {
   const cwdSpan = bar.querySelector('.session-cwd');
   if (cwdSpan) {
-    const parts = cwd.replace(/\\/g, '/').split('/').filter(Boolean);
-    const display = parts.length > 2 ? '\u2026/' + parts.slice(-2).join('/') : cwd;
-    cwdSpan.textContent = display;
-    (cwdSpan as HTMLElement).title = cwd;
+    cwdSpan.textContent = cwd;
   }
 }
