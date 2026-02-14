@@ -13,8 +13,11 @@ import {
   $fileViewerDocked,
   $dockedFilePath,
   $commandsPanelDocked,
+  $gitPanelDocked,
 } from '../../stores';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { closeCommandsDock } from '../commands/dock';
+import { closeGitDock } from '../git/gitDock';
 import { escapeHtml } from '../../utils';
 import {
   IMAGE_MIMES,
@@ -94,18 +97,9 @@ function toggleFullscreen(): void {
 function dockViewer(): void {
   if (!currentPath) return;
 
-  // Mutual exclusion: close commands dock if open
-  if ($commandsPanelDocked.get()) {
-    $commandsPanelDocked.set(false);
-    const cmdDock = document.getElementById('commands-dock');
-    if (cmdDock) {
-      cmdDock.classList.add('hidden');
-      cmdDock.style.width = '';
-    }
-    document.getElementById('app')?.classList.remove('commands-docked');
-    const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
-    if (terminalsArea) terminalsArea.style.marginRight = '';
-  }
+  // Mutual exclusion: close sidebar docks if open
+  if ($commandsPanelDocked.get()) closeCommandsDock();
+  if ($gitPanelDocked.get()) closeGitDock();
 
   const path = currentPath;
   const sessionId = currentSessionId;

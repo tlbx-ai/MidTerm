@@ -1,34 +1,30 @@
 /**
- * Commands Dock
+ * Git Dock
  *
- * Dock/undock logic for snapping the commands script list
- * to the right sidebar.
+ * Dock logic for snapping the git panel to the right sidebar.
  */
 
 import {
-  $commandsPanelDocked,
+  $gitPanelDocked,
   $activeSessionId,
   $fileViewerDocked,
   $dockedFilePath,
-  $gitPanelDocked,
+  $commandsPanelDocked,
 } from '../../stores';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
 import { setSidebarTabActive } from '../sessionTabs';
-import { renderCommandsPanelInto } from './commandsPanel';
+import { renderGitPanelInto } from './gitPanel';
+import { subscribeToSession } from './gitChannel';
+import { closeCommandsDock } from '../commands/dock';
 import { createLogger } from '../logging';
 
-const log = createLogger('commandsDock');
+const log = createLogger('gitDock');
 
 const DOCK_MIN_WIDTH = 250;
 const DOCK_MAX_WIDTH = 600;
-const DOCK_WIDTH_KEY = 'mt-commands-dock-width';
+const DOCK_WIDTH_KEY = 'mt-git-dock-width';
 
 let activeUnsub: (() => void) | null = null;
-let closeGitDockFn: (() => void) | null = null;
-
-export function registerGitDockCloser(fn: () => void): void {
-  closeGitDockFn = fn;
-}
 
 function closeFileViewerDockIfOpen(): void {
   if (!$fileViewerDocked.get()) return;
@@ -39,33 +35,33 @@ function closeFileViewerDockIfOpen(): void {
   document.getElementById('app')?.classList.remove('file-viewer-docked');
 }
 
-function closeGitDockIfOpen(): void {
-  if ($gitPanelDocked.get() && closeGitDockFn) {
-    closeGitDockFn();
-  }
-}
-
-export function toggleCommandsDock(sessionId: string): void {
+function closeCommandsDockIfOpen(): void {
   if ($commandsPanelDocked.get()) {
     closeCommandsDock();
-  } else {
-    openCommandsDock(sessionId);
   }
 }
 
-function openCommandsDock(sessionId: string): void {
+export function toggleGitDock(sessionId: string): void {
+  if ($gitPanelDocked.get()) {
+    closeGitDock();
+  } else {
+    openGitDock(sessionId);
+  }
+}
+
+function openGitDock(sessionId: string): void {
   closeFileViewerDockIfOpen();
-  closeGitDockIfOpen();
+  closeCommandsDockIfOpen();
 
-  $commandsPanelDocked.set(true);
-  setSidebarTabActive('commands', true);
+  $gitPanelDocked.set(true);
+  setSidebarTabActive('git', true);
 
-  const dockPanel = document.getElementById('commands-dock');
+  const dockPanel = document.getElementById('git-dock');
   const app = document.getElementById('app');
   if (!dockPanel) return;
 
   dockPanel.classList.remove('hidden');
-  app?.classList.add('commands-docked');
+  app?.classList.add('git-docked');
 
   const savedWidth = localStorage.getItem(DOCK_WIDTH_KEY);
   if (savedWidth) {
@@ -77,56 +73,58 @@ function openCommandsDock(sessionId: string): void {
     }
   }
 
-  const body = dockPanel.querySelector('.commands-dock-body') as HTMLElement;
+  const body = dockPanel.querySelector('.git-dock-body') as HTMLElement;
   if (body) {
     body.innerHTML = '';
-    renderCommandsPanelInto(body, sessionId);
+    subscribeToSession(sessionId);
+    renderGitPanelInto(body, sessionId);
   }
 
   requestAnimationFrame(rescaleAllTerminalsImmediate);
 
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
-    if (!$commandsPanelDocked.get() || !newId) return;
+    if (!$gitPanelDocked.get() || !newId) return;
     const dockBody = document
-      .getElementById('commands-dock')
-      ?.querySelector('.commands-dock-body') as HTMLElement;
+      .getElementById('git-dock')
+      ?.querySelector('.git-dock-body') as HTMLElement;
     if (dockBody) {
       dockBody.innerHTML = '';
-      renderCommandsPanelInto(dockBody, newId);
+      subscribeToSession(newId);
+      renderGitPanelInto(dockBody, newId);
     }
   });
 
-  log.info(() => 'Commands dock opened');
+  log.info(() => 'Git dock opened');
 }
 
-export function closeCommandsDock(): void {
+export function closeGitDock(): void {
   activeUnsub?.();
   activeUnsub = null;
 
-  $commandsPanelDocked.set(false);
-  setSidebarTabActive('commands', false);
+  $gitPanelDocked.set(false);
+  setSidebarTabActive('git', false);
 
-  const dockPanel = document.getElementById('commands-dock');
+  const dockPanel = document.getElementById('git-dock');
   const app = document.getElementById('app');
 
   if (dockPanel) {
     dockPanel.classList.add('hidden');
     dockPanel.style.width = '';
   }
-  app?.classList.remove('commands-docked');
+  app?.classList.remove('git-docked');
 
   const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
   if (terminalsArea) terminalsArea.style.marginRight = '';
 
   requestAnimationFrame(rescaleAllTerminalsImmediate);
 
-  log.info(() => 'Commands dock closed');
+  log.info(() => 'Git dock closed');
 }
 
-export function setupDockResize(): void {
-  const dockPanel = document.getElementById('commands-dock');
-  const grip = dockPanel?.querySelector('.commands-dock-resize-grip') as HTMLElement;
+export function setupGitDockResize(): void {
+  const dockPanel = document.getElementById('git-dock');
+  const grip = dockPanel?.querySelector('.git-dock-resize-grip') as HTMLElement;
   if (!dockPanel || !grip) return;
 
   let isResizing = false;

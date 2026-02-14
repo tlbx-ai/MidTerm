@@ -9,7 +9,6 @@ import type { ScriptDefinition } from './commandsApi';
 import { fetchScripts, createScript, updateScript, deleteScript, runScript } from './commandsApi';
 import { createCommandForm, type ScriptFormData } from './commandForm';
 import { showOutputOverlay } from './outputPanel';
-import { dockCommandsPanel } from './dock';
 
 interface CommandsPanelState {
   sessionId: string;
@@ -87,11 +86,6 @@ function renderPanel(state: CommandsPanelState): void {
   } else {
     html += '<button class="command-add-btn">+ New Script</button>';
   }
-  html +=
-    '<button class="command-dock-btn" title="Dock to sidebar">' +
-    '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">' +
-    '<path d="M2 2h12v12H2V2zm1 1v10h4V3H3zm5 0v10h5V3H8z"/>' +
-    '</svg></button>';
   html += '</div>';
 
   html += '</div>';
@@ -177,10 +171,6 @@ function bindEvents(state: CommandsPanelState): void {
       await deleteScript(filename, sessionId);
       await refreshCommandsPanel(sessionId);
     });
-  });
-
-  container.querySelector('.command-dock-btn')?.addEventListener('click', () => {
-    dockCommandsPanel(sessionId);
   });
 
   container.querySelector('.command-add-btn')?.addEventListener('click', () => {

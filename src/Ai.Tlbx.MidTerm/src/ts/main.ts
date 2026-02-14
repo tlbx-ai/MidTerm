@@ -101,7 +101,8 @@ import {
   disconnectGitWebSocket,
   destroyGitSession,
 } from './modules/git';
-import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
+import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
+import { closeGitDock } from './modules/git/gitDock';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -232,6 +233,8 @@ async function init(): Promise<void> {
     } else if (!ideEnabled && gitWsConnected) {
       disconnectGitWebSocket();
       gitWsConnected = false;
+      closeGitDock();
+      closeCommandsDock();
     }
   });
 

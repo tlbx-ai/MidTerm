@@ -26,6 +26,7 @@ const tabActivationCallbacks: Partial<
   Record<SessionTabId, (sessionId: string, panel: HTMLDivElement) => void>
 > = {};
 const tabDeactivationCallbacks: Partial<Record<SessionTabId, (sessionId: string) => void>> = {};
+const sidebarToggleCallbacks: Partial<Record<SessionTabId, (sessionId: string) => void>> = {};
 
 export function onTabActivated(
   tab: SessionTabId,
@@ -38,6 +39,10 @@ export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string
   tabDeactivationCallbacks[tab] = callback;
 }
 
+export function onSidebarToggle(tab: SessionTabId, callback: (sessionId: string) => void): void {
+  sidebarToggleCallbacks[tab] = callback;
+}
+
 export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
   if (existing) return existing;
@@ -46,7 +51,13 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   wrapper.className = 'session-wrapper';
   wrapper.dataset.sessionId = sessionId;
 
-  const tabBar = createTabBar(sessionId, (tab) => switchTab(sessionId, tab));
+  const tabBar = createTabBar(sessionId, (tab) => {
+    if (sidebarToggleCallbacks[tab]) {
+      sidebarToggleCallbacks[tab]!(sessionId);
+    } else {
+      switchTab(sessionId, tab);
+    }
+  });
 
   const panelsContainer = document.createElement('div');
   panelsContainer.className = 'session-tab-panels';
@@ -156,6 +167,13 @@ export function getTabBarHeight(): number {
     }
   }
   return 0;
+}
+
+export function setSidebarTabActive(tab: SessionTabId, active: boolean): void {
+  for (const state of sessionTabStates.values()) {
+    const btn = state.tabBar.querySelector(`[data-tab="${tab}"]`);
+    btn?.classList.toggle('sidebar-active', active);
+  }
 }
 
 export function setIdeModeEnabled(enabled: boolean): void {

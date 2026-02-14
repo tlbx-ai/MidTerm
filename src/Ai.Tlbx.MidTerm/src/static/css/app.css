@@ -1972,6 +1972,15 @@ html, body {
     .terminal-page.commands-docked .terminals-area {
         margin-right: 0;
     }
+
+    /* Git dock - hide on mobile */
+    .git-dock {
+        display: none !important;
+    }
+
+    .terminal-page.git-docked .terminals-area {
+        margin-right: 0;
+    }
 }
 
 /* ============================================================================
@@ -5882,6 +5891,92 @@ html, body {
 }
 
 /* =============================================
+   Git Dock Panel
+   ============================================= */
+
+.git-dock {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 400px;
+    background: var(--bg-sidebar);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+}
+
+.git-dock.hidden {
+    display: none;
+}
+
+.git-dock-resize-grip {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 10;
+}
+
+.git-dock-resize-grip:hover,
+.git-dock-resize-grip.active {
+    background-color: var(--bg-hover);
+}
+
+.git-dock-header {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    height: 36px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-elevated);
+    gap: 8px;
+}
+
+.git-dock-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.git-dock-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.git-dock-actions .btn-icon {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.git-dock-actions .btn-icon:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.git-dock-body {
+    flex: 1;
+    overflow: auto;
+}
+
+.terminal-page.git-docked .terminals-area {
+    margin-right: 400px;
+}
+
+/* =============================================
    Middle Manager Bar
    ============================================= */
 
@@ -6067,6 +6162,11 @@ html, body {
 }
 
 .session-tab.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent-blue);
+}
+
+.session-tab.sidebar-active {
     color: var(--text-primary);
     border-bottom-color: var(--accent-blue);
 }

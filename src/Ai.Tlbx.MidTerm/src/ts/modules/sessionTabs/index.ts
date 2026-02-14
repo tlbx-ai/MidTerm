@@ -14,10 +14,12 @@ export {
   getActiveTab,
   getTabBarHeight,
   setIdeModeEnabled,
+  setSidebarTabActive,
   switchTab,
   reparentTerminalContainer,
   updateSessionCwd,
   onTabActivated,
   onTabDeactivated,
+  onSidebarToggle,
 } from './tabManager';
 export type { SessionTabId } from './tabBar';

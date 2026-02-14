@@ -47,6 +47,29 @@ export async function refreshGitPanel(sessionId: string): Promise<void> {
   }
 }
 
+export async function renderGitPanelInto(container: HTMLElement, sessionId: string): Promise<void> {
+  let state = panelStates.get(sessionId);
+  if (!state) {
+    state = {
+      sessionId,
+      container,
+      status: null,
+      showCommits: false,
+      activeDiffPath: null,
+      activeDiffHtml: null,
+    };
+    panelStates.set(sessionId, state);
+  } else {
+    state.container = container;
+  }
+
+  const status = await fetchGitStatus(sessionId);
+  if (status) {
+    state.status = status;
+  }
+  renderPanel(state);
+}
+
 export function destroyGitPanel(sessionId: string): void {
   panelStates.delete(sessionId);
 }
