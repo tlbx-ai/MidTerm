@@ -89,7 +89,7 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     scrollbarSliderBackground: 'rgba(46, 39, 32, 0.15)',
     scrollbarSliderHoverBackground: 'rgba(46, 39, 32, 0.3)',
     scrollbarSliderActiveBackground: 'rgba(46, 39, 32, 0.45)',
-    black: '#4A4238',
+    black: '#6A6358',
     red: '#B85450',
     green: '#4D7A4D',
     yellow: '#8B7032',

@@ -554,7 +554,7 @@ html, body {
 
 .session-foreground {
     font-size: 10.5px;
-    color: var(--accent-cyan);
+    color: var(--text-muted);
     display: flex;
     align-items: center;
     gap: 0;
