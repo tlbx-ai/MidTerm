@@ -100,6 +100,26 @@ export function focusActiveTerminal(): void {
   }, 16); // Single frame (60fps) prevents focus/blur thrashing
 }
 
+const FOCUS_STEALING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+
+/**
+ * Reclaim terminal focus after clicks on non-interactive UI (sidebar, buttons, etc.).
+ * Skips refocus when the click lands on an element that needs its own keyboard input.
+ */
+export function setupGlobalFocusReclaim(): void {
+  document.addEventListener('mouseup', (e) => {
+    const target = e.target as HTMLElement;
+    if (
+      FOCUS_STEALING_TAGS.has(target.tagName) ||
+      target.isContentEditable ||
+      target.closest('[contenteditable="true"]')
+    ) {
+      return;
+    }
+    focusActiveTerminal();
+  });
+}
+
 /**
  * Auto-update session terminalTitle from shell title (with debounce).
  * Always sends to server to update terminalTitle field.

@@ -32,6 +32,7 @@ import {
   bindSearchEvents,
   scrollToBottom,
   focusActiveTerminal,
+  setupGlobalFocusReclaim,
   calculateOptimalDimensions,
 } from './modules/terminal';
 import {
@@ -206,6 +207,7 @@ async function init(): Promise<void> {
   bindEvents();
   bindAuthEvents();
   bindSearchEvents();
+  setupGlobalFocusReclaim();
   initShareAccessButton();
   initNetworkSection();
   initVoiceSection();
