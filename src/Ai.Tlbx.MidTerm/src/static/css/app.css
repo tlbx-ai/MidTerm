@@ -483,6 +483,26 @@ html, body {
     cursor: default;
 }
 
+.session-item.tmux-child {
+    padding-left: 24px;
+    position: relative;
+}
+
+.session-item.tmux-child::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: var(--text-muted);
+    opacity: 0.3;
+}
+
+.session-item.tmux-child.tmux-last-child::before {
+    bottom: 50%;
+}
+
 .session-spinner {
     width: 12px;
     height: 12px;

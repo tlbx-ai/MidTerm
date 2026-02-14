@@ -1922,6 +1922,7 @@ export interface components {
       foregroundCommandLine: null | string;
       /** Format: int32 */
       order: number;
+      parentSessionId: null | string;
     };
     SessionListDto: {
       sessions: components['schemas']['SessionInfoDto'][];

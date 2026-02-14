@@ -7,7 +7,13 @@
 
 import type { Session, ProcessState } from '../../types';
 import { pendingSessions, dom } from '../../state';
-import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
+import {
+  $settingsOpen,
+  $activeSessionId,
+  $sessionList,
+  isChildSession,
+  getParentSessionId,
+} from '../../stores';
 import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import { isSessionInLayout, undockSession } from '../layout/layoutStore';
@@ -184,14 +190,19 @@ function createSessionItem(
 ): HTMLDivElement {
   const sessionId = session.id;
   const inLayout = isSessionInLayout(sessionId);
+  const isChild = isChildSession(sessionId);
   const item = document.createElement('div');
   item.className =
     'session-item' +
     (isActive ? ' active' : '') +
     (isPending ? ' pending' : '') +
-    (inLayout ? ' in-layout' : '');
+    (inLayout ? ' in-layout' : '') +
+    (isChild ? ' tmux-child' : '');
   item.dataset.sessionId = sessionId;
-  item.draggable = !isPending;
+  if (isChild) {
+    item.dataset.parentId = session.parentSessionId ?? '';
+  }
+  item.draggable = !isPending && !isChild;
 
   if (!isPending) {
     item.addEventListener('click', (e) => {
@@ -199,7 +210,8 @@ function createSessionItem(
       if ((e.target as HTMLElement).closest('.drag-handle')) return;
       closeMobileActionMenu();
       if (callbacks && sessionId) {
-        callbacks.onSelect(sessionId);
+        const targetId = getParentSessionId(sessionId) ?? sessionId;
+        callbacks.onSelect(targetId);
         callbacks.onCloseSidebar();
       }
     });
@@ -409,6 +421,24 @@ export function renderSessionList(): void {
         sessionList.prepend(item);
       }
       previousElement = item;
+    }
+  });
+
+  // Mark last child in each tmux group
+  const allItems = sessionList.querySelectorAll('.session-item');
+  allItems.forEach((item) => {
+    (item as HTMLElement).classList.remove('tmux-last-child');
+  });
+  allItems.forEach((item, idx) => {
+    if ((item as HTMLElement).classList.contains('tmux-child')) {
+      const nextItem = allItems[idx + 1] as HTMLElement | undefined;
+      if (
+        !nextItem ||
+        !nextItem.classList.contains('tmux-child') ||
+        nextItem.dataset.parentId !== (item as HTMLElement).dataset.parentId
+      ) {
+        (item as HTMLElement).classList.add('tmux-last-child');
+      }
     }
   });
 

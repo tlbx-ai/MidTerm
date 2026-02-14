@@ -2253,7 +2253,8 @@
           "foregroundPid",
           "foregroundName",
           "foregroundCommandLine",
-          "order"
+          "order",
+          "parentSessionId"
         ],
         "type": "object",
         "properties": {
@@ -2332,6 +2333,12 @@
           "order": {
             "type": "integer",
             "format": "int32"
+          },
+          "parentSessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

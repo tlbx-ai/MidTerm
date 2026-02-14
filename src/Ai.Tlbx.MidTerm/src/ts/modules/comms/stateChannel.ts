@@ -54,6 +54,7 @@ import {
   $isMainBrowser,
   $showMainBrowserButton,
   setSessions,
+  getParentSessionId,
 } from '../../stores';
 import {
   restoreLayoutFromStorage,
@@ -124,14 +125,27 @@ export function connectStateWebSocket(): void {
           });
           return;
         }
-        dockSession(data.relativeToSessionId, data.newSessionId, data.position);
+        dockSession(data.relativeToSessionId, data.newSessionId, data.position, true);
         return;
       }
 
       // Handle tmux focus instructions
       if (data.type === 'tmux-focus') {
         log.verbose(() => `Tmux focus: ${data.sessionId}`);
-        focusLayoutSession(data.sessionId);
+        // Only focus if the session shares a parent with the current active session,
+        // or is the active session's child/parent — don't steal from unrelated sessions
+        const activeId = $activeSessionId.get();
+        const activeParent = activeId ? getParentSessionId(activeId) : null;
+        const focusParent = getParentSessionId(data.sessionId);
+        const isRelated =
+          !activeId ||
+          activeId === data.sessionId ||
+          activeId === focusParent ||
+          activeParent === data.sessionId ||
+          (activeParent !== null && activeParent === focusParent);
+        if (isRelated) {
+          focusLayoutSession(data.sessionId);
+        }
         return;
       }
 
@@ -245,7 +259,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
     const dock = pendingDocks[i]!;
     if (sessionTerminals.has(dock.newSessionId)) {
       pendingDocks.splice(i, 1);
-      dockSession(dock.targetSessionId, dock.newSessionId, dock.position as DockPosition);
+      dockSession(dock.targetSessionId, dock.newSessionId, dock.position as DockPosition, true);
     }
   }
 

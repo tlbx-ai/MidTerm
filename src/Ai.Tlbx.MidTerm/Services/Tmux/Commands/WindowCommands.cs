@@ -28,6 +28,7 @@ public sealed class WindowCommands
     /// </summary>
     public async Task<TmuxResult> NewWindowAsync(
         TmuxCommandParser.ParsedCommand cmd,
+        string? callerPaneId,
         CancellationToken ct)
     {
         var workingDirectory = cmd.GetFlag("-c");
@@ -42,6 +43,12 @@ public sealed class WindowCommands
         }
 
         _sessionManager.MarkTmuxCreated(session.Id);
+
+        var callerSessionId = _targetResolver.ResolveCallerSessionId(callerPaneId);
+        if (callerSessionId is not null)
+        {
+            _sessionManager.SetTmuxParent(session.Id, callerSessionId);
+        }
 
         if (!string.IsNullOrEmpty(name))
         {

@@ -57,6 +57,7 @@ public sealed class PaneCommands
         }
 
         _sessionManager.MarkTmuxCreated(newSession.Id);
+        _sessionManager.SetTmuxParent(newSession.Id, relativeToSessionId);
         await SendCommandIfPresentAsync(cmd.Positional, newSession.Id, ct).ConfigureAwait(false);
 
         // Broadcast dock instruction to frontend

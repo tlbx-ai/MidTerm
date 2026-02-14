@@ -62,11 +62,57 @@ export function clearPendingRename(sessionId: string): void {
 
 /**
  * Sessions as a sorted array for rendering.
- * Sorted by _order (which is set from server's order field on load).
+ * Top-level sessions sorted by _order, with tmux children inserted after their parent.
  */
 export const $sessionList = computed($sessions, (sessions) => {
-  return Object.values(sessions).sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+  const all = Object.values(sessions);
+  const topLevel = all
+    .filter((s) => !s.parentSessionId)
+    .sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+  const childrenByParent = new Map<string, Session[]>();
+  for (const s of all) {
+    if (s.parentSessionId) {
+      let children = childrenByParent.get(s.parentSessionId);
+      if (!children) {
+        children = [];
+        childrenByParent.set(s.parentSessionId, children);
+      }
+      children.push(s);
+    }
+  }
+  const result: Session[] = [];
+  for (const parent of topLevel) {
+    result.push(parent);
+    const children = childrenByParent.get(parent.id);
+    if (children) {
+      children.sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+      result.push(...children);
+    }
+  }
+  // Orphaned children (parent no longer exists) go at the end
+  for (const s of all) {
+    if (s.parentSessionId && !all.some((p) => p.id === s.parentSessionId)) {
+      result.push(s);
+    }
+  }
+  return result;
 });
+
+/**
+ * Check if a session is a tmux child session.
+ */
+export function isChildSession(sessionId: string): boolean {
+  const session = $sessions.get()[sessionId];
+  return !!session?.parentSessionId;
+}
+
+/**
+ * Get the parent session ID for a tmux child session.
+ */
+export function getParentSessionId(sessionId: string): string | null {
+  const session = $sessions.get()[sessionId];
+  return session?.parentSessionId ?? null;
+}
 
 /** Current active session object (derived) */
 export const $activeSession = computed([$sessions, $activeSessionId], (sessions, activeId) =>

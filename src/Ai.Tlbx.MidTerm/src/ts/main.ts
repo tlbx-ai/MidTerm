@@ -364,6 +364,7 @@ async function createSession(): Promise<void> {
     rows: rows,
     manuallyNamed: false,
     order: Date.now(),
+    parentSessionId: null,
   };
   setSession(tempSession);
   pendingSessions.add(tempId);

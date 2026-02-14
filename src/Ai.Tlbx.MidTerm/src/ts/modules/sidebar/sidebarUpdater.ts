@@ -63,6 +63,14 @@ function detectChangeType(sessions: Record<string, Session>): ChangeType {
     }
   }
 
+  // Check for parent change (triggers full re-render since ordering changes)
+  for (const [id, session] of Object.entries(sessions)) {
+    const prev = previousSessions[id];
+    if (prev && session.parentSessionId !== prev.parentSessionId) {
+      return 'membership';
+    }
+  }
+
   // Check for data change
   for (const [id, session] of Object.entries(sessions)) {
     const prev = previousSessions[id];
