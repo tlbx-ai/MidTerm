@@ -34,6 +34,7 @@ public sealed partial class MidTermSettingsPublic
             IdeMode = settings.IdeMode,
             ManagerBarEnabled = settings.ManagerBarEnabled,
             ManagerBarButtons = settings.ManagerBarButtons,
+            ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
             AuthenticationEnabled = settings.AuthenticationEnabled,
@@ -69,6 +70,7 @@ public sealed partial class MidTermSettingsPublic
         settings.IdeMode = IdeMode;
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.ManagerBarButtons = ManagerBarButtons;
+        settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
 
         // SECURITY: Validate RunAsUser before applying
         if (!OperatingSystem.IsWindows())

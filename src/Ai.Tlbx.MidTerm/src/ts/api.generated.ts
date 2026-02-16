@@ -1855,6 +1855,7 @@ export interface components {
       tmuxCompatibility: boolean;
       ideMode: boolean;
       managerBarEnabled: boolean;
+      showChangelogAfterUpdate: boolean;
       managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;
       runAsUserSid: null | string;

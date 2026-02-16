@@ -6,7 +6,7 @@
  */
 
 import type { UpdateInfo, UpdateResult } from '../../api/types';
-import { $updateInfo } from '../../stores';
+import { $updateInfo, $currentSettings } from '../../stores';
 import { createLogger } from '../logging';
 import { escapeHtml } from '../../utils';
 import {
@@ -77,6 +77,8 @@ export function applyUpdate(): void {
     btn.disabled = true;
     btn.textContent = 'Updating...';
   }
+
+  setPendingChangelogFlag();
 
   apiApplyUpdate()
     .then(({ response }) => {
@@ -266,6 +268,7 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
  * Apply local update from C:\temp\mtlocalrelease
  */
 export function applyLocalUpdate(): void {
+  setPendingChangelogFlag();
   apiApplyUpdate('local')
     .then(({ response }) => {
       const btn = document.querySelector(
@@ -301,6 +304,24 @@ export function handleUpdateInfo(update: UpdateInfo): void {
   $updateInfo.set(update);
   renderUpdatePanel();
   renderUpdateCards(update);
+}
+
+const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';
+
+function setPendingChangelogFlag(): void {
+  const settings = $currentSettings.get();
+  if (settings?.showChangelogAfterUpdate !== false) {
+    localStorage.setItem(PENDING_CHANGELOG_KEY, '1');
+  }
+}
+
+export function consumePendingChangelogFlag(): boolean {
+  const flag = localStorage.getItem(PENDING_CHANGELOG_KEY);
+  if (flag) {
+    localStorage.removeItem(PENDING_CHANGELOG_KEY);
+    return true;
+  }
+  return false;
 }
 
 let lastUpdateResult: UpdateResult | null = null;

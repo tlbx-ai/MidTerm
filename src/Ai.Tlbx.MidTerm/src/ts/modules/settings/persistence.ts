@@ -143,6 +143,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-manager-bar', settings.managerBarEnabled !== false);
   setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility !== false);
   setElementChecked('setting-ide-mode', settings.ideMode !== false);
+  setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate !== false);
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
 
@@ -279,6 +280,7 @@ export function saveAllSettings(): void {
     managerBarButtons: prevSettings?.managerBarButtons ?? [],
     tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
     ideMode: getElementChecked('setting-ide-mode'),
+    showChangelogAfterUpdate: getElementChecked('setting-changelog-after-update'),
     runAsUser: runAsUserValue || null,
   };
 

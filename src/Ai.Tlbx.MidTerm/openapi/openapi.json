@@ -1982,6 +1982,7 @@
           "tmuxCompatibility",
           "ideMode",
           "managerBarEnabled",
+          "showChangelogAfterUpdate",
           "managerBarButtons",
           "runAsUser",
           "runAsUserSid",
@@ -2075,6 +2076,9 @@
             "type": "boolean"
           },
           "managerBarEnabled": {
+            "type": "boolean"
+          },
+          "showChangelogAfterUpdate": {
             "type": "boolean"
           },
           "managerBarButtons": {

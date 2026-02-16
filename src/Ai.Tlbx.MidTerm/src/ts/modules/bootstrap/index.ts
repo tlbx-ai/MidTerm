@@ -27,6 +27,8 @@ import {
 import { updateSecurityWarning, updatePasswordStatus } from '../auth/status';
 import { setDevMode, setVoiceChatEnabled, setVoiceSectionVisible } from '../sidebar/voiceSection';
 import { checkVoiceServerHealth } from '../voice';
+import { consumePendingChangelogFlag } from '../updating/checker';
+import { showChangelog } from '../updating/changelog';
 import { escapeHtml } from '../../utils';
 
 const log = createLogger('bootstrap');
@@ -221,6 +223,10 @@ function populateShellDropdown(shells: ShellInfoDto[], defaultShell: string): vo
 function handleUpdateResult(result: UpdateResult): void {
   const status = result.success ? 'success' : 'failed';
   log.info(() => `Update result: ${status} - ${result.message || 'no error'}`);
+
+  if (result.success && consumePendingChangelogFlag()) {
+    showChangelog();
+  }
 }
 
 /**
