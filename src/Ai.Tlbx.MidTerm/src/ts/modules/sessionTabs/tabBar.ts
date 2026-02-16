@@ -99,12 +99,18 @@ export function updateCwd(bar: HTMLDivElement, cwd: string): void {
 }
 
 export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusResponse | null): void {
+  const branchSpan = bar.querySelector('.git-indicator-branch');
   const statsSpan = bar.querySelector('.git-indicator-stats');
   if (!statsSpan) return;
 
   if (!status) {
+    if (branchSpan) branchSpan.textContent = '\u2387';
     statsSpan.innerHTML = '';
     return;
+  }
+
+  if (branchSpan) {
+    branchSpan.textContent = status.branch || '\u2387';
   }
 
   const added = status.staged.length + status.untracked.length;
@@ -115,7 +121,7 @@ export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusRespons
     parts.push(`<span class="git-indicator-added">+${added}</span>`);
   }
   if (changed > 0) {
-    parts.push(`<span class="git-indicator-changed">-${changed}</span>`);
+    parts.push(`<span class="git-indicator-changed">\u00B1${changed}</span>`);
   }
 
   statsSpan.innerHTML = parts.join(' ');

@@ -10,7 +10,7 @@ import { createLogger } from '../logging';
 import { setGitClickHandler, updateAllGitIndicators } from '../sessionTabs';
 import { $activeSessionId } from '../../stores';
 import { updateGitStatus, destroyGitPanel } from './gitPanel';
-import { setGitStatusCallback, unsubscribeFromSession } from './gitChannel';
+import { setGitStatusCallback, subscribeToSession, unsubscribeFromSession } from './gitChannel';
 import { toggleGitDock, closeGitDock, setupGitDockResize } from './gitDock';
 import { registerGitDockCloser } from '../commands/dock';
 import type { GitStatusResponse } from './types';
@@ -35,6 +35,7 @@ export function initGitPanel(): void {
       updateAllGitIndicators(null);
       return;
     }
+    subscribeToSession(sessionId);
     const cached = cachedStatuses.get(sessionId);
     updateAllGitIndicators(cached ?? null);
   });
