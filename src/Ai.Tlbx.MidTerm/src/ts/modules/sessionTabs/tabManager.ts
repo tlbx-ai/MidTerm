@@ -6,10 +6,17 @@
  */
 
 import { createLogger } from '../logging';
-import type { SessionTabId } from './tabBar';
-import { createTabBar, setActiveTab, updateCwd } from './tabBar';
+import type { SessionTabId, IdeBarActionId } from './tabBar';
+import {
+  createTabBar,
+  setActiveTab,
+  setActionActive,
+  updateCwd,
+  updateGitIndicator,
+} from './tabBar';
 import { $processStates } from '../../stores';
 import { sessionTerminals } from '../../state';
+import type { GitStatusResponse } from '../git/types';
 
 const log = createLogger('tabManager');
 
@@ -26,7 +33,6 @@ const tabActivationCallbacks: Partial<
   Record<SessionTabId, (sessionId: string, panel: HTMLDivElement) => void>
 > = {};
 const tabDeactivationCallbacks: Partial<Record<SessionTabId, (sessionId: string) => void>> = {};
-const sidebarToggleCallbacks: Partial<Record<SessionTabId, (sessionId: string) => void>> = {};
 
 export function onTabActivated(
   tab: SessionTabId,
@@ -39,10 +45,6 @@ export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string
   tabDeactivationCallbacks[tab] = callback;
 }
 
-export function onSidebarToggle(tab: SessionTabId, callback: (sessionId: string) => void): void {
-  sidebarToggleCallbacks[tab] = callback;
-}
-
 export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
   if (existing) return existing;
@@ -52,17 +54,13 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   wrapper.dataset.sessionId = sessionId;
 
   const tabBar = createTabBar(sessionId, (tab) => {
-    if (sidebarToggleCallbacks[tab]) {
-      sidebarToggleCallbacks[tab]!(sessionId);
-    } else {
-      switchTab(sessionId, tab);
-    }
+    switchTab(sessionId, tab);
   });
 
   const panelsContainer = document.createElement('div');
   panelsContainer.className = 'session-tab-panels';
 
-  const tabs: SessionTabId[] = ['terminal', 'files', 'git', 'commands'];
+  const tabs: SessionTabId[] = ['terminal', 'files'];
   const panels = {} as Record<SessionTabId, HTMLDivElement>;
 
   for (const tabId of tabs) {
@@ -169,10 +167,15 @@ export function getTabBarHeight(): number {
   return 0;
 }
 
-export function setSidebarTabActive(tab: SessionTabId, active: boolean): void {
+export function setActionButtonActive(actionId: IdeBarActionId, active: boolean): void {
   for (const state of sessionTabStates.values()) {
-    const btn = state.tabBar.querySelector(`[data-tab="${tab}"]`);
-    btn?.classList.toggle('sidebar-active', active);
+    setActionActive(state.tabBar, actionId, active);
+  }
+}
+
+export function updateAllGitIndicators(status: GitStatusResponse | null): void {
+  for (const state of sessionTabStates.values()) {
+    updateGitIndicator(state.tabBar, status);
   }
 }
 

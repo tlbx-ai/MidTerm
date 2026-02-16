@@ -9,6 +9,37 @@ internal static class GitCommandRunner
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
 
+    internal static async Task<string?> GetGitVersionAsync()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            psi.ArgumentList.Add("--version");
+
+            using var cts = new CancellationTokenSource(CommandTimeout);
+            using var process = Process.Start(psi);
+            if (process is null) return null;
+
+            var stdout = await process.StandardOutput.ReadToEndAsync(cts.Token);
+            await process.WaitForExitAsync(cts.Token);
+
+            return process.ExitCode == 0 ? stdout.Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     internal static async Task<string?> GetRepoRootAsync(string workingDir)
     {
         var (exitCode, stdout, _) = await RunGitAsync(workingDir, "rev-parse", "--show-toplevel");

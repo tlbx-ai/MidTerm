@@ -1,7 +1,7 @@
 /**
  * Session Tabs Module
  *
- * Provides per-session IDE-like tabs (Terminal | Files | Git | Commands)
+ * Provides per-session IDE-like tabs (Terminal | Files)
  * above the terminal area. Only active in standalone mode.
  */
 
@@ -14,12 +14,14 @@ export {
   getActiveTab,
   getTabBarHeight,
   setIdeModeEnabled,
-  setSidebarTabActive,
+  setActionButtonActive,
+  updateAllGitIndicators,
   switchTab,
   reparentTerminalContainer,
   updateSessionCwd,
   onTabActivated,
   onTabDeactivated,
-  onSidebarToggle,
 } from './tabManager';
 export type { SessionTabId } from './tabBar';
+export type { IdeBarActionId } from './tabBar';
+export { setCommandsClickHandler, setGitClickHandler } from './tabBar';

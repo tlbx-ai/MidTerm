@@ -222,6 +222,8 @@ public class Program
         var shutdownService = new ShutdownService();
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 
+        _ = EndpointSetup.DetectGitAsync();
+
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);

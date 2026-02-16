@@ -5,7 +5,8 @@
  */
 
 import { createLogger } from '../logging';
-import { onSidebarToggle } from '../sessionTabs';
+import { setCommandsClickHandler } from '../sessionTabs';
+import { $activeSessionId } from '../../stores';
 import { destroyCommandsPanel } from './commandsPanel';
 import { toggleCommandsDock, closeCommandsDock, setupDockResize } from './dock';
 export { hiddenSessionIds } from '../../state';
@@ -14,8 +15,11 @@ export { closeCommandsDock } from './dock';
 const log = createLogger('commands');
 
 export function initCommandsPanel(): void {
-  onSidebarToggle('commands', (sessionId) => {
-    toggleCommandsDock(sessionId);
+  setCommandsClickHandler(() => {
+    const sessionId = $activeSessionId.get();
+    if (sessionId) {
+      toggleCommandsDock(sessionId);
+    }
   });
 
   document.getElementById('cmd-dock-close')?.addEventListener('click', closeCommandsDock);

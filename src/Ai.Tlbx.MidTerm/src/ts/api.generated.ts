@@ -1665,6 +1665,7 @@ export interface components {
       devMode: boolean;
       features: components['schemas']['FeatureFlags'];
       voicePassword: null | string;
+      gitVersion: null | string;
     };
     CertificateDownloadInfo: {
       fingerprint: string;

@@ -13,7 +13,7 @@ import {
   $gitPanelDocked,
 } from '../../stores';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
-import { setSidebarTabActive } from '../sessionTabs';
+import { setActionButtonActive } from '../sessionTabs';
 import { renderCommandsPanelInto } from './commandsPanel';
 import { createLogger } from '../logging';
 
@@ -58,7 +58,7 @@ function openCommandsDock(sessionId: string): void {
   closeGitDockIfOpen();
 
   $commandsPanelDocked.set(true);
-  setSidebarTabActive('commands', true);
+  setActionButtonActive('commands', true);
 
   const dockPanel = document.getElementById('commands-dock');
   const app = document.getElementById('app');
@@ -105,7 +105,7 @@ export function closeCommandsDock(): void {
   activeUnsub = null;
 
   $commandsPanelDocked.set(false);
-  setSidebarTabActive('commands', false);
+  setActionButtonActive('commands', false);
 
   const dockPanel = document.getElementById('commands-dock');
   const app = document.getElementById('app');

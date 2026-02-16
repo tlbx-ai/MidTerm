@@ -12,7 +12,7 @@ import {
   $commandsPanelDocked,
 } from '../../stores';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
-import { setSidebarTabActive } from '../sessionTabs';
+import { setActionButtonActive } from '../sessionTabs';
 import { renderGitPanelInto } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
 import { closeCommandsDock } from '../commands/dock';
@@ -54,7 +54,7 @@ function openGitDock(sessionId: string): void {
   closeCommandsDockIfOpen();
 
   $gitPanelDocked.set(true);
-  setSidebarTabActive('git', true);
+  setActionButtonActive('git', true);
 
   const dockPanel = document.getElementById('git-dock');
   const app = document.getElementById('app');
@@ -103,7 +103,7 @@ export function closeGitDock(): void {
   activeUnsub = null;
 
   $gitPanelDocked.set(false);
-  setSidebarTabActive('git', false);
+  setActionButtonActive('git', false);
 
   const dockPanel = document.getElementById('git-dock');
   const app = document.getElementById('app');

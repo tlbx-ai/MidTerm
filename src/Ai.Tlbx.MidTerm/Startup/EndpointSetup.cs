@@ -13,6 +13,15 @@ namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class EndpointSetup
 {
+    private static string? _cachedGitVersion;
+    private static bool _gitVersionChecked;
+
+    public static async Task DetectGitAsync()
+    {
+        _cachedGitVersion = await GitCommandRunner.GetGitVersionAsync();
+        _gitVersionChecked = true;
+    }
+
     public static void MapBootstrapEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
@@ -75,7 +84,8 @@ public static class EndpointSetup
                 UpdateResult = updateResult,
                 DevMode = UpdateService.IsDevEnvironment,
                 Features = features,
-                VoicePassword = UpdateService.IsDevEnvironment ? settings.VoiceServerPassword : null
+                VoicePassword = UpdateService.IsDevEnvironment ? settings.VoiceServerPassword : null,
+                GitVersion = _gitVersionChecked ? _cachedGitVersion : null
             };
 
             return Results.Json(response, AppJsonContext.Default.BootstrapResponse);

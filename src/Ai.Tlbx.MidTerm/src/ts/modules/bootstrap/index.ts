@@ -125,6 +125,9 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
       });
     }
 
+    // Git availability indicator in IDE settings
+    renderGitAvailability(data.gitVersion ?? null);
+
     // Apply settings to any terminals that were created before settings loaded
     applySettingsToTerminals();
 
@@ -133,6 +136,21 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
   } catch (e) {
     log.error(() => `Bootstrap failed: ${e}`);
     return null;
+  }
+}
+
+/**
+ * Render git availability in IDE settings panel
+ */
+function renderGitAvailability(gitVersion: string | null): void {
+  const el = document.getElementById('ide-git-status');
+  if (!el) return;
+  if (gitVersion) {
+    el.textContent = gitVersion;
+    el.classList.add('git-found');
+  } else {
+    el.textContent = 'not found';
+    el.classList.add('git-not-found');
   }
 }
 

@@ -1239,7 +1239,8 @@
           "updateResult",
           "devMode",
           "features",
-          "voicePassword"
+          "voicePassword",
+          "gitVersion"
         ],
         "type": "object",
         "properties": {
@@ -1306,6 +1307,12 @@
             "$ref": "#/components/schemas/FeatureFlags"
           },
           "voicePassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "gitVersion": {
             "type": [
               "null",
               "string"

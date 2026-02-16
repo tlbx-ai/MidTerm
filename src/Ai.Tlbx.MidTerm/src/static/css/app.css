@@ -2530,6 +2530,14 @@ html, body {
     max-width: 400px;
 }
 
+.git-found {
+    color: #4ec968;
+}
+
+.git-not-found {
+    color: #e06c60;
+}
+
 .path-value-row {
     display: flex;
     align-items: center;
@@ -6171,7 +6179,7 @@ html, body {
     align-items: center;
     gap: 0;
     background: var(--bg-terminal);
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid #0D0E14;
     flex-shrink: 0;
     padding: 0 8px;
     height: var(--bar-height);
@@ -6203,13 +6211,7 @@ html, body {
     border-image: linear-gradient(to right, transparent 0%, #5F4B24 20%, #5F4B24 80%, transparent 100%) 1;
 }
 
-.session-tab.sidebar-active {
-    color: var(--text-primary);
-    border-image: linear-gradient(to right, transparent 0%, #5F4B24 20%, #5F4B24 80%, transparent 100%) 1;
-}
-
 .session-cwd {
-    margin-left: auto;
     font-size: 11px;
     color: var(--text-muted);
     font-family: var(--font-mono);
@@ -6218,6 +6220,65 @@ html, body {
     white-space: nowrap;
     max-width: 300px;
     padding: 0 8px;
+}
+
+.ide-bar-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 100%;
+}
+
+.ide-bar-btn {
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 4px;
+    transition: color 0.15s, background-color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    height: calc(100% - 4px);
+}
+
+.ide-bar-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.ide-bar-btn.sidebar-active {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.ide-bar-btn-icon {
+    font-size: 14px;
+}
+
+.git-indicator-branch {
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+.git-indicator-stats {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    display: flex;
+    gap: 6px;
+}
+
+.git-indicator-added {
+    color: #4ec968;
+}
+
+.git-indicator-changed {
+    color: #e06c60;
 }
 
 .session-tab-panels {
