@@ -2322,7 +2322,7 @@ html, body {
 }
 
 .sidebar-nav-btn:hover {
-    background-color: var(--btn-secondary-hover);
+    background-color: #1C1E2A;
     color: var(--text-primary);
 }
 
