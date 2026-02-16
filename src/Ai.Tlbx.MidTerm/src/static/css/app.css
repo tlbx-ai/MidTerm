@@ -381,7 +381,7 @@ html, body {
     align-items: center;
     padding: 8px 8px 8px 10px;
     cursor: grab;
-    border-left: 3px solid transparent;
+    border-left: 2px solid transparent;
     gap: 0;
     position: relative;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
@@ -429,7 +429,7 @@ html, body {
 
 .session-item.active {
     background-color: var(--bg-session-active);
-    border-left-color: var(--accent-gold);
+    border-image: linear-gradient(to bottom, transparent 0%, #5F4B24 20%, #5F4B24 80%, transparent 100%) 1;
 }
 
 .session-item.pending {
@@ -2327,7 +2327,7 @@ html, body {
 }
 
 .sidebar-nav-btn:hover .icon {
-    color: var(--accent-gold);
+    color: #5F4B24;
 }
 
 .sidebar-nav-btn:active {
@@ -6186,7 +6186,7 @@ html, body {
     font-size: 13px;
     font-family: inherit;
     cursor: pointer;
-    border-bottom: 2px solid transparent;
+    border-bottom: 1px solid transparent;
     transition: color 0.15s, border-color 0.15s;
     white-space: nowrap;
     height: 100%;
@@ -6200,12 +6200,12 @@ html, body {
 
 .session-tab.active {
     color: var(--text-primary);
-    border-bottom-color: var(--accent-blue);
+    border-image: linear-gradient(to right, transparent 0%, #5F4B24 20%, #5F4B24 80%, transparent 100%) 1;
 }
 
 .session-tab.sidebar-active {
     color: var(--text-primary);
-    border-bottom-color: var(--accent-blue);
+    border-image: linear-gradient(to right, transparent 0%, #5F4B24 20%, #5F4B24 80%, transparent 100%) 1;
 }
 
 .session-cwd {
