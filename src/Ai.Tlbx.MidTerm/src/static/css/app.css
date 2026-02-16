@@ -266,11 +266,16 @@ html, body {
     min-width: 180px;
     max-width: 400px;
     background-color: var(--bg-primary);
-    border-right: 1px solid var(--bg-primary);
+    border-right: 1px solid transparent;
     display: flex;
     flex-direction: column;
     position: relative;
     overflow-x: hidden;
+    transition: border-color 0.15s;
+}
+
+.sidebar:hover {
+    border-right-color: var(--border-color);
 }
 
 .sidebar-resize-grip {
@@ -2327,7 +2332,7 @@ html, body {
 }
 
 .sidebar-nav-btn:hover .icon {
-    color: #5F4B24;
+    color: var(--text-primary);
 }
 
 .sidebar-nav-btn:active {
@@ -6179,7 +6184,7 @@ html, body {
     align-items: center;
     gap: 0;
     background: var(--bg-terminal);
-    border-bottom: 1px solid #0D0E14;
+    border-bottom: none;
     flex-shrink: 0;
     padding: 0 8px;
     height: var(--bar-height);
