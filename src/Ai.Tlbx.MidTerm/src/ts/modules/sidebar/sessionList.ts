@@ -416,12 +416,6 @@ export function renderSessionList(): void {
       }
     }
   });
-
-  // Update count (only non-pending sessions)
-  const realSessionCount = sessions.filter((s) => !pendingSessions.has(s.id)).length;
-  if (dom.sessionCount) {
-    dom.sessionCount.textContent = String(realSessionCount);
-  }
 }
 
 /**

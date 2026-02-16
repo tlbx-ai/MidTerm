@@ -89,7 +89,6 @@ export let suppressLayoutAutoFit = false;
 /** Cached DOM elements */
 export const dom: DOMElements = {
   sessionList: null,
-  sessionCount: null,
   terminalsArea: null,
   emptyState: null,
   mobileTitle: null,
@@ -172,7 +171,6 @@ export function setWsRateEma(tx: number, rx: number): void {
  */
 export function cacheDOMElements(): void {
   dom.sessionList = document.getElementById('session-list');
-  dom.sessionCount = document.getElementById('session-count');
   dom.terminalsArea = document.querySelector('.terminals-area');
   dom.emptyState = document.getElementById('empty-state');
   dom.mobileTitle = document.getElementById('mobile-title');

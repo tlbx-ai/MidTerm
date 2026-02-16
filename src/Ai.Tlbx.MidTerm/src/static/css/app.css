@@ -877,26 +877,26 @@ html, body {
 
 .sidebar-footer .footer-row {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-}
-
-.sidebar-footer .footer-sessions {
-    font-size: 11.5px;
+    gap: 6px;
 }
 
 .sidebar-footer .version {
     font-size: 10.5px;
-    color: var(--text-muted);
+    color: color-mix(in srgb, var(--text-muted) 90%, transparent);
 }
 
 .sidebar-footer .footer-traffic {
     font-size: 10.5px;
-    color: var(--text-muted);
+    color: color-mix(in srgb, var(--text-muted) 90%, transparent);
     font-variant-numeric: tabular-nums;
-    min-width: 55px;
-    text-align: right;
     transition: opacity 0.2s;
+}
+
+.sidebar-footer .footer-separator {
+    font-size: 10.5px;
+    color: color-mix(in srgb, var(--text-muted) 90%, transparent);
 }
 
 .sidebar-footer .footer-traffic::before {

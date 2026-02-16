@@ -419,7 +419,6 @@ export interface DisplayLayout {
 /** Cached DOM elements */
 export interface DOMElements {
   sessionList: HTMLElement | null;
-  sessionCount: HTMLElement | null;
   terminalsArea: HTMLElement | null;
   emptyState: HTMLElement | null;
   mobileTitle: HTMLElement | null;
