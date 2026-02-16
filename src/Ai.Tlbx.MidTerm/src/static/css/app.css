@@ -2326,6 +2326,10 @@ html, body {
     color: var(--text-primary);
 }
 
+.sidebar-nav-btn:hover .icon {
+    color: var(--accent-gold);
+}
+
 .sidebar-nav-btn:active {
     transform: scale(0.98);
 }
