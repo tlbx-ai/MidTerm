@@ -199,9 +199,7 @@ function createSessionItem(
   item.draggable = !isPending && !isChild;
 
   if (!isPending) {
-    item.addEventListener('click', (e) => {
-      // Don't select if clicking on drag handle
-      if ((e.target as HTMLElement).closest('.drag-handle')) return;
+    item.addEventListener('click', () => {
       closeMobileActionMenu();
       if (callbacks && sessionId) {
         callbacks.onSelect(sessionId);
@@ -209,14 +207,6 @@ function createSessionItem(
       }
     });
   }
-
-  // Drag handle
-  const dragHandle = document.createElement('div');
-  dragHandle.className = 'drag-handle';
-  const dragDots = document.createElement('div');
-  dragDots.className = 'drag-handle-dots';
-  dragHandle.appendChild(dragDots);
-  item.appendChild(dragHandle);
 
   const info = document.createElement('div');
   info.className = 'session-info';
@@ -244,15 +234,15 @@ function createSessionItem(
   layoutBadge.title = 'Session is in a split layout';
   titleRow.appendChild(layoutBadge);
 
-  info.appendChild(titleRow);
-
   if (displayInfo.secondary) {
     item.classList.add('two-line');
     const subtitle = document.createElement('span');
     subtitle.className = 'session-subtitle truncate';
     subtitle.textContent = displayInfo.secondary;
-    info.appendChild(subtitle);
+    titleRow.appendChild(subtitle);
   }
+
+  info.appendChild(titleRow);
 
   // Process indicator container
   const processInfo = document.createElement('div');
@@ -327,14 +317,6 @@ function createSessionItem(
   }
 
   item.appendChild(info);
-
-  // Action hint indicator (desktop - subtle dots to indicate hover actions)
-  if (!isPending) {
-    const actionHint = document.createElement('span');
-    actionHint.className = 'session-action-hint';
-    actionHint.innerHTML = icon('more');
-    item.appendChild(actionHint);
-  }
 
   // Mobile menu button (toggles action bar visibility)
   if (!isPending) {

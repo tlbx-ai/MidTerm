@@ -57,16 +57,16 @@
     --terminal-bg: #05050A;         /* Alias for compatibility */
     --bg-primary: #0D0E14;          /* L: 3.5% - Main canvas */
     --bg-elevated: #161821;         /* L: 6.5% - Cards, panels */
-    --bg-sidebar: #1C1E2A;          /* L: 9% - Sidebar */
+    --bg-sidebar: #161821;          /* L: 6.5% - Sidebar */
     --bg-surface: #242735;          /* L: 12.5% - Input fields, dropdowns */
     --bg-input: #242735;            /* Alias for compatibility */
     --bg-dropdown: #242735;         /* Alias for compatibility */
     --bg-hover: #2D3044;            /* L: 16% - Hover states */
     --bg-active: #363A50;           /* L: 19% - Active/selected */
-    --bg-session-hover: #2D3044;    /* Same as bg-hover */
-    --bg-session-active: #363A50;   /* Same as bg-active */
+    --bg-session-hover: #1C1E2A;    /* Subtle hover */
+    --bg-session-active: #1C1E2A;   /* Active session */
     --bg-settings: #161821;         /* Same as bg-elevated */
-    --bg-tertiary: #1C1E2A;         /* Alias for bg-sidebar */
+    --bg-tertiary: #161821;         /* Alias for bg-sidebar */
 
     /* === BORDERS === */
     --border-color: #1E202B;
@@ -372,8 +372,8 @@ html, body {
 .session-item {
     display: flex;
     align-items: center;
-    padding: 6px 8px 6px 0;
-    cursor: pointer;
+    padding: 6px 8px 6px 10px;
+    cursor: grab;
     border-left: 3px solid transparent;
     gap: 0;
     position: relative;
@@ -381,66 +381,13 @@ html, body {
     transition: transform 0.2s ease, background-color 0.15s, opacity 0.2s;
 }
 
-/* Drag handle grip */
-.drag-handle {
-    width: 18px;
-    height: 100%;
-    min-height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: grab;
-    opacity: 0.35;
-    transition: opacity 0.15s, background-color 0.15s;
-    flex-shrink: 0;
-    margin-right: 4px;
-    border-radius: 3px;
-}
-
-.drag-handle:hover {
-    background-color: var(--accent-blue-15);
-    opacity: 1;
-}
-
-.drag-handle:active {
+.session-item:active {
     cursor: grabbing;
-    background-color: var(--accent-blue-25);
 }
 
-.drag-handle-dots {
-    display: grid;
-    grid-template-columns: repeat(2, 4px);
-    grid-template-rows: repeat(3, 4px);
-    gap: 2px;
-}
-
-.drag-handle-dots::before,
-.drag-handle-dots::after {
-    content: '';
-    width: 4px;
-    height: 4px;
-    background: var(--text-muted);
-    border-radius: 1px;
-    box-shadow:
-        6px 0 0 var(--text-muted),
-        0 6px 0 var(--text-muted),
-        6px 6px 0 var(--text-muted),
-        0 12px 0 var(--text-muted),
-        6px 12px 0 var(--text-muted);
-}
-
-.drag-handle-dots::after {
-    display: none;
-}
-
-@media (hover: hover) {
-    .session-item:hover .drag-handle {
-        opacity: 1;
-    }
-}
-
-.session-item.dragging .drag-handle {
-    opacity: 1;
+.session-item.tmux-child,
+.session-item.pending {
+    cursor: pointer;
 }
 
 /* Drag states */
@@ -525,20 +472,19 @@ html, body {
 
 .session-title-row {
     display: flex;
-    align-items: center;
-    gap: 4px;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
 }
 
 .session-title {
     font-size: 12.5px;
     color: var(--text-primary);
-    display: block;
-}
-
-.session-item.two-line .session-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 0;
 }
 
 .session-item.two-line .session-title {
@@ -546,9 +492,13 @@ html, body {
 }
 
 .session-subtitle {
-    font-size: 11.5px;
-    color: var(--text-secondary);
-    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 0;
 }
 
 .session-details {
