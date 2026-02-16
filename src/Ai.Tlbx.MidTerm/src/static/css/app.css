@@ -577,7 +577,7 @@ html, body {
 }
 
 /* Command History Dropdown */
-.btn-history {
+.btn-history:not(.sidebar-nav-btn) {
     width: 24px;
     height: 24px;
     border: none;
@@ -592,7 +592,7 @@ html, body {
     transition: color 0.15s, background 0.15s;
 }
 
-.btn-history:hover {
+.btn-history:not(.sidebar-nav-btn):hover {
     color: var(--text-primary);
     background: var(--btn-secondary);
 }
@@ -1385,6 +1385,7 @@ html, body {
     display: flex;
     background: none !important;
     border: none !important;
+    color: var(--text-muted) !important;
 }
 
 .collapsed-title-bar {
@@ -5879,7 +5880,7 @@ html, body {
     height: var(--bar-height);
     box-sizing: border-box;
     border-bottom: 1px solid var(--border-color);
-    background: var(--bg-elevated);
+    background: var(--bg-terminal);
     gap: 8px;
 }
 
@@ -5965,7 +5966,7 @@ html, body {
     height: var(--bar-height);
     box-sizing: border-box;
     border-bottom: 1px solid var(--border-color);
-    background: var(--bg-elevated);
+    background: var(--bg-terminal);
     gap: 8px;
 }
 
@@ -6165,7 +6166,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 0;
-    background: var(--bg-elevated);
+    background: var(--bg-terminal);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     padding: 0 8px;
