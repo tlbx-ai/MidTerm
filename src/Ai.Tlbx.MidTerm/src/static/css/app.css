@@ -274,7 +274,8 @@ html, body {
     transition: border-color 0.15s;
 }
 
-.sidebar:hover {
+.sidebar:has(.sidebar-resize-grip:hover),
+.sidebar:has(.sidebar-resize-grip:active) {
     border-right-color: var(--border-color);
 }
 
