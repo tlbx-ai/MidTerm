@@ -350,6 +350,7 @@ export function applyCssTheme(themeName: ThemeName): void {
     for (const [prop, value] of Object.entries(palette)) {
       root.style.setProperty(prop, value);
     }
+    updateThemeColor(palette['--bg-primary'] ?? '#0D0E14');
   } else {
     // Dark is the base theme in app.css — clear any overrides
     const anyPalette = Object.values(CSS_THEMES)[0];
@@ -358,5 +359,13 @@ export function applyCssTheme(themeName: ThemeName): void {
         root.style.removeProperty(prop);
       }
     }
+    updateThemeColor('#0D0E14');
+  }
+}
+
+function updateThemeColor(color: string): void {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.setAttribute('content', color);
   }
 }
