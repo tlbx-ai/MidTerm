@@ -430,6 +430,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public void SetTmuxParent(string childSessionId, string parentSessionId)
     {
+        while (_tmuxParentSessions.TryGetValue(parentSessionId, out var grandparent))
+        {
+            parentSessionId = grandparent;
+        }
+
         _tmuxParentSessions[childSessionId] = parentSessionId;
     }
 

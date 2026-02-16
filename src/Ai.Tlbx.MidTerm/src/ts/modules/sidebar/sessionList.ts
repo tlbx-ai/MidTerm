@@ -7,13 +7,7 @@
 
 import type { Session, ProcessState } from '../../types';
 import { pendingSessions, dom } from '../../state';
-import {
-  $settingsOpen,
-  $activeSessionId,
-  $sessionList,
-  isChildSession,
-  getParentSessionId,
-} from '../../stores';
+import { $settingsOpen, $activeSessionId, $sessionList, isChildSession } from '../../stores';
 import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import { isSessionInLayout, undockSession } from '../layout/layoutStore';
@@ -210,8 +204,7 @@ function createSessionItem(
       if ((e.target as HTMLElement).closest('.drag-handle')) return;
       closeMobileActionMenu();
       if (callbacks && sessionId) {
-        const targetId = getParentSessionId(sessionId) ?? sessionId;
-        callbacks.onSelect(targetId);
+        callbacks.onSelect(sessionId);
         callbacks.onCloseSidebar();
       }
     });
