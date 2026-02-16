@@ -10,115 +10,6 @@ import type { ThemeName } from '../../types';
 
 type CssThemePalette = Record<string, string>;
 
-const dark: CssThemePalette = {
-  '--bg-terminal': '#05050A',
-  '--terminal-bg': '#05050A',
-  '--bg-primary': '#0D0E14',
-  '--bg-elevated': '#161821',
-  '--bg-sidebar': '#1C1E2A',
-  '--bg-surface': '#242735',
-  '--bg-input': '#242735',
-  '--bg-dropdown': '#242735',
-  '--bg-hover': '#2D3044',
-  '--bg-active': '#363A50',
-  '--bg-session-hover': '#2D3044',
-  '--bg-session-active': '#363A50',
-  '--bg-settings': '#161821',
-  '--bg-tertiary': '#1C1E2A',
-
-  '--border-color': '#1E202B',
-  '--border-default': '#1E202B',
-  '--border-subtle': '#282B3A',
-  '--border-emphasis': '#3A3E52',
-
-  '--text-primary': '#D4D7E8',
-  '--text-terminal': '#E0E2F0',
-  '--text-secondary': '#8B8FA6',
-  '--text-muted': '#767B94',
-
-  '--accent-blue': '#7BA2F7',
-  '--accent-blue-hover': '#8FB5FF',
-  '--accent-cyan': '#7DCFFF',
-  '--accent-green': '#8FD694',
-  '--accent-orange': '#F5A962',
-  '--accent-red': '#F07A8D',
-  '--accent-violet': '#9D8CFF',
-
-  '--accent-gold': '#E8B44C',
-  '--accent-gold-muted': '#C9A04A',
-  '--cta-primary': '#E8B44C',
-  '--cta-primary-muted': '#C9A04A',
-  '--cta-primary-text': '#0D0E14',
-
-  '--btn-primary': '#7BA2F7',
-  '--btn-primary-hover': '#8FB5FF',
-  '--btn-secondary': '#3A3E52',
-  '--btn-secondary-hover': '#4A4F68',
-
-  '--bg-success': '#152A20',
-  '--border-success': '#2B5A42',
-  '--bg-error': '#2A1519',
-  '--border-error': '#5A3538',
-  '--bg-warning': '#2A2215',
-  '--border-warning': '#5A4A2A',
-  '--accent-warning': '#F5A962',
-
-  '--diag-exception': '#F07A8D',
-  '--progress-bar': '#7BA2F7',
-  '--progress-warning': '#F5A962',
-  '--warning-badge': '#F5A962',
-
-  '--accent-blue-08': 'rgba(123, 162, 247, 0.08)',
-  '--accent-blue-10': 'rgba(123, 162, 247, 0.1)',
-  '--accent-blue-15': 'rgba(123, 162, 247, 0.15)',
-  '--accent-blue-25': 'rgba(123, 162, 247, 0.25)',
-  '--accent-blue-40': 'rgba(123, 162, 247, 0.4)',
-
-  '--accent-gold-10': 'rgba(232, 180, 76, 0.1)',
-  '--accent-gold-15': 'rgba(232, 180, 76, 0.15)',
-  '--accent-gold-25': 'rgba(232, 180, 76, 0.25)',
-  '--accent-gold-40': 'rgba(232, 180, 76, 0.4)',
-  '--cta-primary-25': 'rgba(232, 180, 76, 0.25)',
-  '--cta-primary-40': 'rgba(232, 180, 76, 0.4)',
-
-  '--accent-orange-08': 'rgba(245, 169, 98, 0.08)',
-  '--accent-orange-10': 'rgba(245, 169, 98, 0.1)',
-  '--accent-orange-15': 'rgba(245, 169, 98, 0.15)',
-
-  '--accent-red-10': 'rgba(240, 122, 141, 0.1)',
-  '--accent-red-15': 'rgba(240, 122, 141, 0.15)',
-
-  '--accent-green-10': 'rgba(143, 214, 148, 0.1)',
-  '--accent-green-15': 'rgba(143, 214, 148, 0.15)',
-
-  '--accent-purple': '#9D8CFF',
-
-  '--tool-yellow-bg': 'rgba(232, 180, 76, 0.1)',
-  '--tool-yellow-border': 'rgba(232, 180, 76, 0.2)',
-  '--tool-yellow-border-strong': 'rgba(232, 180, 76, 0.3)',
-  '--tool-yellow-border-emphasis': 'rgba(232, 180, 76, 0.4)',
-  '--tool-yellow-gradient':
-    'linear-gradient(135deg, rgba(232, 180, 76, 0.15), rgba(201, 160, 74, 0.15))',
-  '--tool-purple-bg': 'rgba(157, 140, 255, 0.08)',
-  '--tool-purple-bg-light': 'rgba(157, 140, 255, 0.12)',
-  '--tool-purple-border': 'rgba(157, 140, 255, 0.15)',
-  '--tool-purple-border-strong': 'rgba(157, 140, 255, 0.35)',
-  '--tool-purple-gradient':
-    'linear-gradient(135deg, rgba(157, 140, 255, 0.12), rgba(123, 162, 247, 0.12))',
-
-  '--shadow-color': 'rgba(0, 0, 0, 0.3)',
-  '--shadow-color-md': 'rgba(0, 0, 0, 0.4)',
-  '--shadow-color-lg': 'rgba(0, 0, 0, 0.5)',
-  '--overlay-bg': 'rgba(0, 0, 0, 0.6)',
-  '--overlay-bg-dark': 'rgba(0, 0, 0, 0.7)',
-
-  '--white-03': 'rgba(255, 255, 255, 0.03)',
-  '--white-60': 'rgba(255, 255, 255, 0.6)',
-
-  '--logo-filter': 'none',
-  '--text-on-accent': '#FFFFFF',
-};
-
 const light: CssThemePalette = {
   '--bg-terminal': '#F5F0E8',
   '--terminal-bg': '#F5F0E8',
@@ -446,17 +337,26 @@ const solarizedLight: CssThemePalette = {
   '--text-on-accent': '#FFFDF6',
 };
 
-export const CSS_THEMES: Record<ThemeName, CssThemePalette> = {
-  dark,
+const CSS_THEMES: Record<string, CssThemePalette> = {
   light,
   solarizedDark,
   solarizedLight,
 };
 
 export function applyCssTheme(themeName: ThemeName): void {
-  const palette = CSS_THEMES[themeName] || CSS_THEMES.dark;
   const root = document.documentElement;
-  for (const [prop, value] of Object.entries(palette)) {
-    root.style.setProperty(prop, value);
+  const palette = CSS_THEMES[themeName];
+  if (palette) {
+    for (const [prop, value] of Object.entries(palette)) {
+      root.style.setProperty(prop, value);
+    }
+  } else {
+    // Dark is the base theme in app.css — clear any overrides
+    const anyPalette = Object.values(CSS_THEMES)[0];
+    if (anyPalette) {
+      for (const prop of Object.keys(anyPalette)) {
+        root.style.removeProperty(prop);
+      }
+    }
   }
 }
