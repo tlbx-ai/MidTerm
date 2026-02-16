@@ -95,6 +95,11 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     panels.terminal.appendChild(termState.container);
   }
 
+  const processState = $processStates.get()[sessionId];
+  if (processState?.foregroundCwd) {
+    updateCwd(tabBar, processState.foregroundCwd);
+  }
+
   return state;
 }
 
