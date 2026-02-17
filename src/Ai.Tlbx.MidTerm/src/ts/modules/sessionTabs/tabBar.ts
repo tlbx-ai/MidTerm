@@ -36,6 +36,10 @@ export function createTabBar(
   bar.className = 'session-tab-bar';
   bar.dataset.sessionId = sessionId;
 
+  const cwdSpan = document.createElement('span');
+  cwdSpan.className = 'session-cwd';
+  bar.appendChild(cwdSpan);
+
   for (const [tabId, label] of Object.entries(TAB_LABELS)) {
     const btn = document.createElement('button');
     btn.className = 'session-tab';
@@ -45,10 +49,6 @@ export function createTabBar(
     btn.addEventListener('click', () => onTabSelect(tabId as SessionTabId));
     bar.appendChild(btn);
   }
-
-  const cwdSpan = document.createElement('span');
-  cwdSpan.className = 'session-cwd';
-  bar.appendChild(cwdSpan);
 
   const actions = document.createElement('div');
   actions.className = 'ide-bar-actions';
