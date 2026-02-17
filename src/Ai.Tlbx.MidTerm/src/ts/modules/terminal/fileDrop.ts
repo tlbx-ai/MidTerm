@@ -8,6 +8,7 @@
 import { $activeSessionId } from '../../stores';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
+import { t } from '../i18n';
 
 // =============================================================================
 // Constants
@@ -140,16 +141,16 @@ function showHttpsRequiredToast(): void {
 
   const title = document.createElement('div');
   title.className = 'toast-title';
-  title.textContent = 'Clipboard requires trusted HTTPS';
+  title.textContent = t('fileDrop.httpsRequired');
 
   const desc = document.createElement('div');
   desc.className = 'toast-desc';
-  desc.textContent = 'Your browser blocks clipboard access on untrusted connections.';
+  desc.textContent = t('fileDrop.browserBlocks');
 
   const link = document.createElement('a');
   link.href = '/trust';
   link.className = 'toast-link';
-  link.textContent = 'Trust Certificate →';
+  link.textContent = t('fileDrop.trustCertificate');
 
   content.appendChild(title);
   content.appendChild(desc);
@@ -218,11 +219,11 @@ async function uploadFile(sessionId: string, file: File): Promise<string | null>
 
     if (!response.ok) {
       if (response.status === 401) {
-        showDropToast('Upload failed: not authenticated');
+        showDropToast(t('fileDrop.uploadFailedAuth'));
       } else if (response.status === 404) {
-        showDropToast('Upload failed: session not found');
+        showDropToast(t('fileDrop.uploadFailedSession'));
       } else {
-        showDropToast(`Upload failed: ${response.status}`);
+        showDropToast(`${t('fileDrop.uploadFailed')}: ${response.status}`);
       }
       return null;
     }
@@ -230,7 +231,7 @@ async function uploadFile(sessionId: string, file: File): Promise<string | null>
     const result = await response.json();
     return result.path;
   } catch (_error) {
-    showDropToast('Upload failed: network error');
+    showDropToast(t('fileDrop.uploadFailedNetwork'));
     return null;
   }
 }
@@ -258,13 +259,13 @@ async function handleFileDrop(files: FileList): Promise<void> {
     // Rejected files: show error toast
     if (isRejectedFile(file.name)) {
       const ext = getFileExtension(file.name);
-      showDropToast(`Cannot paste ${ext} files`);
+      showDropToast(t('fileDrop.cannotPaste').replace('{ext}', ext));
       continue;
     }
 
     // Text files: check size limit
     if (file.size > TEXT_FILE_SIZE_LIMIT) {
-      showDropToast(`File too large (max 40KB): ${file.name}`);
+      showDropToast(`${t('fileDrop.fileTooLarge')}: ${file.name}`);
       continue;
     }
 
@@ -275,7 +276,7 @@ async function handleFileDrop(files: FileList): Promise<void> {
       pasteToTerminal(activeId, sanitized, false);
     } catch (err) {
       console.error(`[FileDrop] Failed to read file: ${file.name}`, err);
-      showDropToast(`Failed to read: ${file.name}`);
+      showDropToast(`${t('fileDrop.failedToRead')}: ${file.name}`);
     }
   }
 
@@ -290,6 +291,8 @@ async function handleFileDrop(files: FileList): Promise<void> {
  * Set up drag-and-drop handlers for a terminal container
  */
 export function setupFileDrop(container: HTMLElement): void {
+  container.dataset.dropText = t('fileDrop.dropToUpload');
+
   // Prevent default drag behaviors - but only show indicator for file drags
   container.addEventListener('dragover', (e) => {
     // Don't show file drop indicator during session docking
@@ -412,7 +415,7 @@ export async function handleNativeImagePaste(sessionId: string): Promise<Clipboa
           body: formData,
         });
         if (resp.ok) return 'image';
-        showDropToast(`Clipboard injection failed: ${resp.status}`);
+        showDropToast(`${t('fileDrop.clipboardFailed')}: ${resp.status}`);
         return 'none';
       }
     }

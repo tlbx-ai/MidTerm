@@ -7,15 +7,18 @@
  */
 
 import type { GitStatusResponse } from '../git/types';
+import { t } from '../i18n';
 
 export type SessionTabId = 'terminal' | 'files';
 
 export type IdeBarActionId = 'git' | 'commands';
 
-const TAB_LABELS: Record<SessionTabId, string> = {
-  terminal: 'Terminal',
-  files: 'Files',
-};
+function getTabLabels(): Record<SessionTabId, string> {
+  return {
+    terminal: t('session.terminal'),
+    files: t('modal.file'),
+  };
+}
 
 let commandsClickHandler: (() => void) | null = null;
 let gitClickHandler: (() => void) | null = null;
@@ -40,7 +43,7 @@ export function createTabBar(
   cwdSpan.className = 'session-cwd';
   bar.appendChild(cwdSpan);
 
-  for (const [tabId, label] of Object.entries(TAB_LABELS)) {
+  for (const [tabId, label] of Object.entries(getTabLabels())) {
     const btn = document.createElement('button');
     btn.className = 'session-tab';
     if (tabId === 'terminal') btn.classList.add('active');
@@ -56,7 +59,7 @@ export function createTabBar(
   const cmdBtn = document.createElement('button');
   cmdBtn.className = 'ide-bar-btn ide-bar-commands';
   cmdBtn.dataset.action = 'commands';
-  cmdBtn.title = 'Commands';
+  cmdBtn.title = t('sessionTabs.commands');
   cmdBtn.innerHTML = '<span class="ide-bar-btn-icon">\u26A1</span>';
   cmdBtn.addEventListener('click', () => commandsClickHandler?.());
   actions.appendChild(cmdBtn);
@@ -64,7 +67,7 @@ export function createTabBar(
   const gitBtn = document.createElement('button');
   gitBtn.className = 'ide-bar-btn git-indicator';
   gitBtn.dataset.action = 'git';
-  gitBtn.title = 'Git';
+  gitBtn.title = t('sessionTabs.git');
   gitBtn.innerHTML =
     '<span class="git-indicator-branch">\u2387</span>' +
     '<span class="git-indicator-stats"></span>';

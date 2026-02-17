@@ -8,6 +8,7 @@ import type { GitStatusResponse, GitFileEntry, GitLogEntry } from './types';
 import { fetchDiff, fetchGitStatus } from './gitApi';
 import { renderDiff } from './gitDiff';
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 
 interface GitPanelState {
   sessionId: string;
@@ -81,8 +82,8 @@ function renderPanel(state: GitPanelState): void {
     container.innerHTML = `
       <div class="git-panel">
         <div class="git-panel-empty">
-          <p>Not a git repository</p>
-          <p class="git-panel-hint">Navigate to a git repository to see status</p>
+          <p>${t('git.notARepo')}</p>
+          <p class="git-panel-hint">${t('git.notARepoHint')}</p>
         </div>
       </div>`;
     return;
@@ -97,20 +98,20 @@ function renderPanel(state: GitPanelState): void {
       ${status.ahead > 0 ? `<span class="git-badge git-badge-ahead">\u2191${status.ahead}</span>` : ''}
       ${status.behind > 0 ? `<span class="git-badge git-badge-behind">\u2193${status.behind}</span>` : ''}
     </div>
-    ${status.stashCount > 0 ? `<span class="git-badge git-badge-stash">Stash (${status.stashCount})</span>` : ''}
+    ${status.stashCount > 0 ? `<span class="git-badge git-badge-stash">${t('git.stash')} (${status.stashCount})</span>` : ''}
   </div>`;
 
   if (status.conflicted.length > 0) {
-    html += renderFileSection(state, 'Conflicts', 'conflicted', status.conflicted, 'red');
+    html += renderFileSection(state, t('git.conflicts'), 'conflicted', status.conflicted, 'red');
   }
 
-  html += renderFileSection(state, 'Staged Changes', 'staged', status.staged, 'green');
-  html += renderFileSection(state, 'Changes', 'modified', status.modified, 'yellow');
-  html += renderFileSection(state, 'Untracked', 'untracked', status.untracked, 'grey');
+  html += renderFileSection(state, t('git.stagedChanges'), 'staged', status.staged, 'green');
+  html += renderFileSection(state, t('git.changes'), 'modified', status.modified, 'yellow');
+  html += renderFileSection(state, t('git.untracked'), 'untracked', status.untracked, 'grey');
 
   html += `<div class="git-commits-section">
     <button class="git-section-toggle" data-section="commits">
-      Recent Commits (${status.recentCommits.length})
+      ${t('git.recentCommits')} (${status.recentCommits.length})
       <span class="git-section-chevron">${state.showCommits ? '\u25BE' : '\u25B8'}</span>
     </button>
     ${state.showCommits ? renderCommitList(status.recentCommits) : ''}
@@ -159,7 +160,7 @@ function renderFileSection(
 }
 
 function renderCommitList(commits: GitLogEntry[]): string {
-  if (commits.length === 0) return '<div class="git-commits-empty">No commits</div>';
+  if (commits.length === 0) return `<div class="git-commits-empty">${t('git.noCommits')}</div>`;
 
   let html = '<div class="git-commits-list">';
   for (const commit of commits) {

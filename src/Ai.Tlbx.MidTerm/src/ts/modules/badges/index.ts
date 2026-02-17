@@ -7,6 +7,7 @@
 
 import { $connectionStatus, $dataLossDetected, getSession } from '../../stores';
 import { getSessionDisplayName } from '../sidebar/sessionList';
+import { t } from '../i18n';
 
 let connectionBadge: HTMLElement | null = null;
 let pasteBadge: HTMLElement | null = null;
@@ -54,7 +55,7 @@ function showDataLossWarning(sessionId: string): void {
 
   const session = getSession(sessionId);
   const name = session ? getSessionDisplayName(session) : sessionId;
-  dataLossBadge.textContent = `⚠ Output overflow (${name})`;
+  dataLossBadge.textContent = `⚠ ${t('badges.overflow')} (${name})`;
   dataLossBadge.classList.add('active');
 
   // Clear any existing timer
@@ -87,7 +88,7 @@ function hideDataLossWarning(): void {
  */
 export function showPasteIndicator(): void {
   if (pasteBadge) {
-    pasteBadge.textContent = 'Pasting...';
+    pasteBadge.textContent = t('badges.pasting');
     pasteBadge.classList.add('active');
   }
 }

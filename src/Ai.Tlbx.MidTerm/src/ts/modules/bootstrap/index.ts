@@ -30,6 +30,7 @@ import { checkVoiceServerHealth } from '../voice';
 import { consumePendingChangelogFlag } from '../updating/checker';
 import { showChangelog } from '../updating/changelog';
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 
 const log = createLogger('bootstrap');
 
@@ -208,7 +209,8 @@ function populateShellDropdown(shells: ShellInfoDto[], defaultShell: string): vo
   shells.forEach((shell) => {
     const option = document.createElement('option');
     option.value = shell.type;
-    option.textContent = shell.displayName + (shell.isAvailable ? '' : ' (not found)');
+    option.textContent =
+      shell.displayName + (shell.isAvailable ? '' : ' ' + t('settings.options.shellNotFound'));
     option.disabled = !shell.isAvailable;
     if (shell.type === defaultShell) {
       option.selected = true;

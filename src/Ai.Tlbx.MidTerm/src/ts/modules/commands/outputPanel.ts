@@ -8,6 +8,7 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { createLogger } from '../logging';
+import { t } from '../i18n';
 import { sessionTerminals, hiddenSessionIds } from '../../state';
 import { sendInput, sendResize } from '../comms/muxChannel';
 import { getTerminalOptions } from '../terminal/manager';
@@ -69,7 +70,7 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
   overlay.innerHTML = `
     <div class="command-overlay-header">
       <span class="command-overlay-title">${escapeHtml(scriptName)}</span>
-      <button class="command-overlay-close" title="Close">&times;</button>
+      <button class="command-overlay-close" title="${t('commands.close')}">&times;</button>
     </div>
     <div class="command-overlay-body"></div>`;
 

@@ -115,6 +115,13 @@ export function applyAttributeTranslations(): void {
       (el as HTMLInputElement).placeholder = t(key);
     }
   });
+
+  document.querySelectorAll('[data-i18n-text]').forEach((el) => {
+    const key = (el as HTMLElement).dataset.i18nText;
+    if (key) {
+      (el as HTMLElement).setAttribute('data-tooltip', t(key));
+    }
+  });
 }
 
 /**

@@ -8,6 +8,7 @@
 
 import type { FilePathInfo, DirectoryEntry, DirectoryListResponse } from '../../types';
 import { createLogger } from '../logging';
+import { t } from '../i18n';
 import {
   $activeSessionId,
   $fileViewerDocked,
@@ -176,18 +177,20 @@ async function renderInDock(path: string): Promise<void> {
 
   if (titleEl) titleEl.textContent = getFileName(path);
   if (pathEl) pathEl.textContent = path;
-  if (bodyEl) bodyEl.innerHTML = '<div class="file-viewer-loading">Loading...</div>';
+  if (bodyEl)
+    bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   const info = await checkFilePath(path);
 
   if (!info || !info.exists) {
-    if (bodyEl) bodyEl.innerHTML = '<div class="file-viewer-error">File not found</div>';
+    if (bodyEl)
+      bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
     return;
   }
 
   if (info.isDirectory) {
     if (bodyEl)
-      bodyEl.innerHTML = '<div class="file-viewer-error">Directories not supported in dock</div>';
+      bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.dirNotSupported')}</div>`;
   } else {
     await renderFile(path, info, bodyEl!);
   }
@@ -219,7 +222,8 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
 
   if (titleEl) titleEl.textContent = getFileName(path);
   if (pathEl) pathEl.textContent = path;
-  if (bodyEl) bodyEl.innerHTML = '<div class="file-viewer-loading">Loading...</div>';
+  if (bodyEl)
+    bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   if (downloadBtn) {
     downloadBtn.onclick = () => downloadFile(path);
@@ -230,7 +234,8 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
   }
 
   if (!info || !info.exists) {
-    if (bodyEl) bodyEl.innerHTML = '<div class="file-viewer-error">File not found</div>';
+    if (bodyEl)
+      bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
     return;
   }
 
@@ -272,7 +277,7 @@ async function renderDirectory(path: string, container: Element): Promise<void> 
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
       log.error(() => `List directory failed: ${resp.status} ${resp.statusText} ${body}`);
-      container.innerHTML = `<div class="file-viewer-error">Failed to list directory (${resp.status})</div>`;
+      container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')} (${resp.status})</div>`;
       return;
     }
 
@@ -280,7 +285,7 @@ async function renderDirectory(path: string, container: Element): Promise<void> 
     renderDirectoryListing(data.entries, path, container);
   } catch (e) {
     log.error(() => `Failed to list directory: ${e}`);
-    container.innerHTML = '<div class="file-viewer-error">Failed to list directory</div>';
+    container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')}</div>`;
   }
 }
 
@@ -317,7 +322,7 @@ function renderDirectoryListing(
       `;
         })
         .join('')}
-      ${entries.length === 0 ? '<div class="file-list-empty">Empty directory</div>' : ''}
+      ${entries.length === 0 ? `<div class="file-list-empty">${t('fileViewer.emptyDirectory')}</div>` : ''}
     </div>
   `;
 
@@ -401,7 +406,7 @@ async function renderTextFile(path: string, container: Element): Promise<void> {
     const viewUrl = buildViewUrl(path);
     const resp = await fetch(viewUrl);
     if (!resp.ok) {
-      container.innerHTML = '<div class="file-viewer-error">Failed to load file</div>';
+      container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
       return;
     }
 
@@ -412,7 +417,7 @@ async function renderTextFile(path: string, container: Element): Promise<void> {
     const ext = getExtension(path).toLowerCase();
 
     if (ext === '.md') {
-      container.innerHTML = `<div class="md-content">${renderMarkdown(displayText)}${truncated ? '<p><em>... (truncated)</em></p>' : ''}</div>`;
+      container.innerHTML = `<div class="md-content">${renderMarkdown(displayText)}${truncated ? `<p><em>${t('fileViewer.truncated')}</em></p>` : ''}</div>`;
     } else {
       const highlighted = highlightCode(displayText, ext);
       const lines = highlighted.split('\n');
@@ -420,11 +425,11 @@ async function renderTextFile(path: string, container: Element): Promise<void> {
       const linesHtml = lines
         .map((line, i) => `<div class="code-line" data-line="${i + 1}">${line || ' '}</div>`)
         .join('');
-      container.innerHTML = `<pre class="file-viewer-text" style="--gutter-width: ${gutterWidth}ch">${linesHtml}${truncated ? '<div class="code-line">... (truncated)</div>' : ''}</pre>`;
+      container.innerHTML = `<pre class="file-viewer-text" style="--gutter-width: ${gutterWidth}ch">${linesHtml}${truncated ? `<div class="code-line">${t('fileViewer.truncated')}</div>` : ''}</pre>`;
     }
   } catch (e) {
     log.error(() => `Failed to load text file: ${e}`);
-    container.innerHTML = '<div class="file-viewer-error">Failed to load file</div>';
+    container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
   }
 }
 
@@ -434,11 +439,11 @@ function renderBinaryFile(info: FilePathInfo, container: Element): void {
     <div class="file-viewer-binary">
       <div class="file-viewer-binary-icon">📄</div>
       <div class="file-viewer-binary-info">
-        <div class="file-viewer-binary-type">${info.mimeType || 'Binary file'}</div>
+        <div class="file-viewer-binary-type">${info.mimeType || t('fileViewer.binaryFile')}</div>
         ${size != null ? `<div class="file-viewer-binary-size">${formatSize(size)}</div>` : ''}
-        ${info.modified ? `<div class="file-viewer-binary-modified">Modified: ${formatDate(info.modified)}</div>` : ''}
+        ${info.modified ? `<div class="file-viewer-binary-modified">${t('fileViewer.modified')}: ${formatDate(info.modified)}</div>` : ''}
       </div>
-      <p class="file-viewer-binary-hint">Use the download button to save this file.</p>
+      <p class="file-viewer-binary-hint">${t('fileViewer.downloadHint')}</p>
     </div>
   `;
 }

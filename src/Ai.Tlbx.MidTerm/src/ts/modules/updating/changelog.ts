@@ -5,6 +5,7 @@
  */
 
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 
 const GITHUB_RELEASES_BASE = 'https://api.github.com/repos/tlbx-ai/MidTerm/releases';
 const PER_PAGE = 30;
@@ -34,7 +35,7 @@ export function showChangelog(): void {
   isLoading = false;
 
   if (modal) modal.classList.remove('hidden');
-  if (body) body.innerHTML = '<div class="changelog-loading">Loading changelog...</div>';
+  if (body) body.innerHTML = `<div class="changelog-loading">${t('changelog.loading')}</div>`;
 
   fetchReleases(true);
 }
@@ -58,7 +59,7 @@ function fetchReleases(isInitial: boolean): void {
 
       if (!releases || !Array.isArray(releases)) {
         if (isInitial) {
-          body.innerHTML = '<p>No releases found.</p>';
+          body.innerHTML = `<p>${t('changelog.noReleases')}</p>`;
         }
         hasMoreReleases = false;
         return;
@@ -69,7 +70,7 @@ function fetchReleases(isInitial: boolean): void {
 
       if (releases.length === 0) {
         if (isInitial) {
-          body.innerHTML = '<p>No releases found.</p>';
+          body.innerHTML = `<p>${t('changelog.noReleases')}</p>`;
         }
         hasMoreReleases = false;
         return;
@@ -83,7 +84,7 @@ function fetchReleases(isInitial: boolean): void {
           ? new Date(release.published_at).toLocaleDateString()
           : '';
         // Strip version prefix from body since version is already shown in header
-        const rawNotes = release.body || 'No release notes.';
+        const rawNotes = release.body || t('changelog.noNotes');
         const notes = stripVersionPrefix(rawNotes, version);
 
         html += '<div class="changelog-release">';
@@ -106,10 +107,10 @@ function fetchReleases(isInitial: boolean): void {
       if (hasMoreReleases) {
         const loadMoreBtn = document.createElement('button');
         loadMoreBtn.className = 'changelog-load-more';
-        loadMoreBtn.textContent = 'Load older releases';
+        loadMoreBtn.textContent = t('changelog.loadOlder');
         loadMoreBtn.addEventListener('click', () => {
           currentPage++;
-          loadMoreBtn.textContent = 'Loading...';
+          loadMoreBtn.textContent = t('changelog.loadingMore');
           loadMoreBtn.disabled = true;
           fetchReleases(false);
         });
@@ -120,10 +121,14 @@ function fetchReleases(isInitial: boolean): void {
       isLoading = false;
       if (isInitial) {
         body.innerHTML =
-          '<p class="changelog-error">Failed to load changelog. ' +
+          '<p class="changelog-error">' +
+          t('changelog.failed') +
+          ' ' +
           '<a href="' +
           GITHUB_RELEASES_PAGE +
-          '" target="_blank">View on GitHub</a></p>';
+          '" target="_blank">' +
+          t('changelog.viewOnGithub') +
+          '</a></p>';
       }
       console.error('Changelog error:', e);
     });

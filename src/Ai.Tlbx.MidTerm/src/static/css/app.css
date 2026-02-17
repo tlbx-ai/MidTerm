@@ -1064,7 +1064,7 @@ html, body {
 }
 
 .terminal-container.drag-over::after {
-    content: 'Drop file to upload';
+    content: attr(data-drop-text);
     position: absolute;
     top: 50%;
     left: 50%;
@@ -4556,7 +4556,7 @@ html, body {
 }
 
 .network-section.untrusted .network-section-title::after {
-    content: ' (not trusted)';
+    content: attr(data-not-trusted);
     color: var(--accent-red);
     font-size: 9px;
 }
@@ -6155,7 +6155,7 @@ html, body {
 }
 
 .manager-bar-help:hover::after {
-    content: 'Disable in Settings → Behavior';
+    content: attr(data-tooltip);
     position: absolute;
     bottom: calc(100% + 6px);
     right: 0;

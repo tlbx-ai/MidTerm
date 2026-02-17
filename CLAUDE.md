@@ -248,6 +248,18 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 3. If creating new module, add `index.ts` barrel and import in `main.ts`
 4. Register any callbacks needed in `main.ts` `registerCallbacks()`
 
+## i18n Requirements
+
+**Every user-facing string must use the i18n system.** When adding or changing UI text:
+
+1. Add the key to `src/static/locales/en.json`
+2. Add translations to ALL 9 other locale files (zh, es, hi, fr, bn, pt, ru, ja, de)
+3. In TypeScript: use `t('key.name')` from `modules/i18n`
+4. In HTML: use `data-i18n="key"`, `data-i18n-title="key"`, or `data-i18n-placeholder="key"`
+5. Never use CSS `content:` for translatable text — use `content: attr(data-*)` with JS
+
+**What doesn't need translation:** Brand names (MidTerm), shell names (Pwsh, Bash), font names, theme identifiers, keyboard key names, technical identifiers.
+
 ## API Endpoints
 
 ```

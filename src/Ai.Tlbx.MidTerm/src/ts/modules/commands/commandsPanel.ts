@@ -5,6 +5,7 @@
  */
 
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 import type { ScriptDefinition } from './commandsApi';
 import {
   fetchScripts,
@@ -78,8 +79,8 @@ function renderPanel(state: CommandsPanelState): void {
   html += '<div class="commands-list">';
   if (scripts.length === 0 && !showForm) {
     html += `<div class="commands-empty">
-      <p>No scripts found</p>
-      <p class="commands-hint">Create script files in .midterm/</p>
+      <p>${t('commands.noScripts')}</p>
+      <p class="commands-hint">${t('commands.createHint')}</p>
     </div>`;
   }
 
@@ -91,8 +92,8 @@ function renderPanel(state: CommandsPanelState): void {
 
     const running = getRunningSessionId(script.filename);
     const runBtn = running
-      ? `<button class="command-stop-btn" data-filename="${escapeHtml(script.filename)}" title="Stop">\u25A0</button>`
-      : `<button class="command-run-btn" data-filename="${escapeHtml(script.filename)}" title="Run">\u25B6</button>`;
+      ? `<button class="command-stop-btn" data-filename="${escapeHtml(script.filename)}" title="${t('commands.stop')}">\u25A0</button>`
+      : `<button class="command-run-btn" data-filename="${escapeHtml(script.filename)}" title="${t('commands.run')}">\u25B6</button>`;
 
     html += `<div class="command-item" data-filename="${escapeHtml(script.filename)}">
       <div class="command-item-info">
@@ -101,8 +102,8 @@ function renderPanel(state: CommandsPanelState): void {
       </div>
       <div class="command-item-actions">
         ${runBtn}
-        <button class="command-edit-btn" data-filename="${escapeHtml(script.filename)}" title="Edit">\u270E</button>
-        <button class="command-delete-btn" data-filename="${escapeHtml(script.filename)}" title="Delete">\u2715</button>
+        <button class="command-edit-btn" data-filename="${escapeHtml(script.filename)}" title="${t('commands.edit')}">\u270E</button>
+        <button class="command-delete-btn" data-filename="${escapeHtml(script.filename)}" title="${t('commands.delete')}">\u2715</button>
       </div>
     </div>`;
   }
@@ -112,7 +113,7 @@ function renderPanel(state: CommandsPanelState): void {
   if (showForm) {
     html += '<div class="command-create-slot"></div>';
   } else {
-    html += '<button class="command-add-btn">+ New Script</button>';
+    html += `<button class="command-add-btn">+ ${t('commands.newScript')}</button>`;
   }
   html += '</div>';
 
@@ -212,7 +213,7 @@ function bindEvents(state: CommandsPanelState): void {
     btn.addEventListener('click', async () => {
       const filename = (btn as HTMLElement).dataset.filename;
       if (!filename) return;
-      if (!confirm('Delete this script?')) return;
+      if (!confirm(t('commands.deleteConfirm'))) return;
       await deleteScript(filename, sessionId);
       await refreshCommandsPanel(sessionId);
     });

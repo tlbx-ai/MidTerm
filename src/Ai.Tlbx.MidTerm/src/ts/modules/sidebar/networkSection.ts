@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../logging';
+import { t } from '../i18n';
 
 const log = createLogger('networkSection');
 const STORAGE_KEY = 'midterm.networkSectionCollapsed';
@@ -23,13 +24,17 @@ export function initNetworkSection(): void {
 
   if (isUntrusted) {
     section.classList.add('untrusted');
+    const titleEl = section.querySelector('.network-section-title') as HTMLElement | null;
+    if (titleEl) {
+      titleEl.dataset.notTrusted = t('network.notTrusted');
+    }
 
     const trustLink = document.getElementById('trust-link');
     if (trustLink) {
       trustLink.classList.add('trust-warning');
       const helpText = document.createElement('span');
       helpText.className = 'trust-help-text';
-      helpText.textContent = 'Click to enable clipboard & secure features';
+      helpText.textContent = t('network.enableClipboard');
       trustLink.parentElement?.insertBefore(helpText, trustLink.nextSibling);
     }
   } else {
