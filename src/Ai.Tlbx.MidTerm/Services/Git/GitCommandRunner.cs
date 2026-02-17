@@ -265,6 +265,8 @@ internal static class GitCommandRunner
             StandardErrorEncoding = Encoding.UTF8
         };
 
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("safe.directory=*");
         foreach (var arg in args)
         {
             psi.ArgumentList.Add(arg);
