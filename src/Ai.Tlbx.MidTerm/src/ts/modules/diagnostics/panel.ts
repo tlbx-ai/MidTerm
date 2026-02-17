@@ -9,6 +9,7 @@ import { measureLatency, onOutputRtt } from '../comms';
 import { $activeSessionId, getSession } from '../../stores';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
+import { enableGitStatusOverlay, disableGitStatusOverlay } from './gitStatusOverlay';
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -16,6 +17,7 @@ export function initDiagnosticsPanel(): void {
   loadPaths();
   bindReloadSettingsButton();
   bindOverlayToggle();
+  bindGitOverlayToggle();
 }
 
 export function startLatencyMeasurement(): void {
@@ -125,6 +127,27 @@ function bindReloadSettingsButton(): void {
       console.error('Failed to reload settings:', e);
     } finally {
       btn.classList.remove('spinning');
+    }
+  });
+}
+
+function bindGitOverlayToggle(): void {
+  const toggle = document.getElementById('diag-git-overlay-toggle') as HTMLInputElement | null;
+  if (!toggle) return;
+
+  const saved = localStorage.getItem('git-overlay-enabled') === 'true';
+  toggle.checked = saved;
+  if (saved) {
+    enableGitStatusOverlay();
+  }
+
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      enableGitStatusOverlay();
+      localStorage.setItem('git-overlay-enabled', 'true');
+    } else {
+      disableGitStatusOverlay();
+      localStorage.removeItem('git-overlay-enabled');
     }
   });
 }

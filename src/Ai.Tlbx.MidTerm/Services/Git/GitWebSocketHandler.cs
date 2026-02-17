@@ -13,17 +13,20 @@ public sealed class GitWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
+    private readonly TtyHostSessionManager _sessionManager;
 
     public GitWebSocketHandler(
         GitWatcherService gitWatcher,
         SettingsService settingsService,
         AuthService authService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService,
+        TtyHostSessionManager sessionManager)
     {
         _gitWatcher = gitWatcher;
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
+        _sessionManager = sessionManager;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -185,6 +188,14 @@ public sealed class GitWebSocketHandler
                             SessionId = sessionId,
                             Status = cached
                         });
+                    }
+                    else
+                    {
+                        var session = _sessionManager.GetSession(sessionId);
+                        if (session is not null && !string.IsNullOrEmpty(session.CurrentDirectory))
+                        {
+                            await _gitWatcher.RegisterSessionAsync(sessionId, session.CurrentDirectory);
+                        }
                     }
                     break;
 

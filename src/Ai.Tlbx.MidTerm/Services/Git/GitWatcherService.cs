@@ -35,6 +35,12 @@ public sealed class GitWatcherService : IDisposable
 
         repoRoot = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
 
+        if (_sessionToRepo.TryGetValue(sessionId, out var existing)
+            && string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         UnregisterSession(sessionId);
 
         _sessionToRepo[sessionId] = repoRoot;

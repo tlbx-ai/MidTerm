@@ -194,7 +194,7 @@ public class Program
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
-            if (!string.IsNullOrEmpty(payload.Cwd) && settings.IdeMode)
+            if (!string.IsNullOrEmpty(payload.Cwd) && settingsService.Load().IdeMode)
             {
                 _ = gitWatcher.RegisterSessionAsync(sessionId, payload.Cwd);
             }

@@ -9,15 +9,26 @@
 import { createLogger } from '../logging';
 import { setGitClickHandler, updateAllGitIndicators } from '../sessionTabs';
 import { $activeSessionId } from '../../stores';
+import { addProcessStateListener } from '../process';
 import { updateGitStatus, destroyGitPanel } from './gitPanel';
-import { setGitStatusCallback, subscribeToSession, unsubscribeFromSession } from './gitChannel';
+import {
+  setGitStatusCallback,
+  subscribeToSession,
+  unsubscribeFromSession,
+  triggerGitFallback,
+} from './gitChannel';
 import { toggleGitDock, closeGitDock, setupGitDockResize } from './gitDock';
 import { registerGitDockCloser } from '../commands/dock';
 import type { GitStatusResponse } from './types';
+import type { GitDiagEvent } from './gitChannel';
 
 const log = createLogger('git');
 
 const cachedStatuses = new Map<string, GitStatusResponse>();
+const sessionCwds = new Map<string, string>();
+let previousSessionId: string | null = null;
+
+export type { GitDiagEvent };
 
 export function initGitPanel(): void {
   setGitStatusCallback((sessionId, status) => {
@@ -31,6 +42,11 @@ export function initGitPanel(): void {
   });
 
   $activeSessionId.subscribe((sessionId) => {
+    if (previousSessionId && previousSessionId !== sessionId) {
+      unsubscribeFromSession(previousSessionId);
+    }
+    previousSessionId = sessionId ?? null;
+
     if (!sessionId) {
       updateAllGitIndicators(null);
       return;
@@ -38,6 +54,25 @@ export function initGitPanel(): void {
     subscribeToSession(sessionId);
     const cached = cachedStatuses.get(sessionId);
     updateAllGitIndicators(cached ?? null);
+  });
+
+  addProcessStateListener((sessionId, state) => {
+    const oldCwd = sessionCwds.get(sessionId);
+    const newCwd = state.foregroundCwd;
+
+    if (!newCwd || newCwd === oldCwd) return;
+
+    sessionCwds.set(sessionId, newCwd);
+
+    if (oldCwd) {
+      emitCwdDiag(sessionId, oldCwd, newCwd);
+      cachedStatuses.delete(sessionId);
+      const activeId = $activeSessionId.get();
+      if (activeId === sessionId) {
+        updateAllGitIndicators(null);
+      }
+      triggerGitFallback(sessionId);
+    }
   });
 
   setGitClickHandler(() => {
@@ -55,10 +90,34 @@ export function initGitPanel(): void {
   log.info(() => 'Git panel initialized');
 }
 
-export { connectGitWebSocket, disconnectGitWebSocket } from './gitChannel';
+let cwdDiagCb: ((event: GitDiagEvent) => void) | null = null;
+
+export function setGitCwdDiagCallback(cb: ((event: GitDiagEvent) => void) | null): void {
+  cwdDiagCb = cb;
+}
+
+function emitCwdDiag(sessionId: string, oldCwd: string, newCwd: string): void {
+  cwdDiagCb?.({
+    type: 'cwd-change',
+    detail: `${sessionId.substring(0, 8)}: ${oldCwd} → ${newCwd}`,
+    timestamp: Date.now(),
+  });
+}
+
+export {
+  connectGitWebSocket,
+  disconnectGitWebSocket,
+  setGitDiagCallback,
+  getGitWsState,
+  getSubscribedSessions,
+} from './gitChannel';
 
 export function destroyGitSession(sessionId: string): void {
   unsubscribeFromSession(sessionId);
   destroyGitPanel(sessionId);
   cachedStatuses.delete(sessionId);
+  sessionCwds.delete(sessionId);
+  if (previousSessionId === sessionId) {
+    previousSessionId = null;
+  }
 }
