@@ -7,7 +7,7 @@
 
 import { createLogger } from '../logging';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
-import { $processStates } from '../../stores';
+import { addProcessStateListener } from '../process';
 import { createTreeView, setTreeRoot, destroyTreeView } from './treeView';
 import { renderPreview, clearPreview } from './filePreview';
 
@@ -25,14 +25,12 @@ export function initFileBrowser(): void {
     // Nothing to clean up on deactivation
   });
 
-  $processStates.subscribe((states) => {
-    for (const [sessionId, state] of Object.entries(states)) {
-      const cwd = state.foregroundCwd;
-      if (cwd && cwd !== sessionCwds.get(sessionId)) {
-        sessionCwds.set(sessionId, cwd);
-        if (initializedSessions.has(sessionId)) {
-          setTreeRoot(sessionId, cwd);
-        }
+  addProcessStateListener((sessionId, state) => {
+    const cwd = state.foregroundCwd;
+    if (cwd && cwd !== sessionCwds.get(sessionId)) {
+      sessionCwds.set(sessionId, cwd);
+      if (initializedSessions.has(sessionId)) {
+        setTreeRoot(sessionId, cwd);
       }
     }
   });
