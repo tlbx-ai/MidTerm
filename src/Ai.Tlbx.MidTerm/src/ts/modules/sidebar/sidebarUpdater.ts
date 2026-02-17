@@ -112,14 +112,13 @@ function updateSessionItemContent(sessionId: string, session: Session): void {
         subtitleEl.textContent = displayInfo.secondary;
       }
     } else {
-      // Need to add subtitle
+      // Need to add subtitle inside the title row (same as createSessionItem)
       const newSubtitle = document.createElement('span');
       newSubtitle.className = 'session-subtitle truncate';
       newSubtitle.textContent = displayInfo.secondary;
-      const info = item.querySelector('.session-info');
-      const processInfo = item.querySelector('.session-process-info');
-      if (info && processInfo) {
-        info.insertBefore(newSubtitle, processInfo);
+      const titleRow = item.querySelector('.session-title-row');
+      if (titleRow) {
+        titleRow.appendChild(newSubtitle);
       }
     }
   } else {
