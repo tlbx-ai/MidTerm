@@ -13,6 +13,24 @@ The `run_in_background` feature of Claude Code is currently broken. Never use:
 
 ---
 
+## ⚠️ BASH + POWERSHELL INTEROP ⚠️
+
+**The Bash tool runs under bash, not PowerShell.** PowerShell-specific syntax like `@()` arrays will cause bash parse errors.
+
+**NEVER** use `pwsh -File script.ps1` when passing PowerShell arrays or complex arguments. Instead:
+
+```bash
+# WRONG — bash chokes on @()
+pwsh -NoProfile -File scripts/release-dev.ps1 -ReleaseNotes @("note1", "note2")
+
+# RIGHT — wrap everything in single quotes via -Command
+pwsh -NoProfile -Command '& ./scripts/release-dev.ps1 -ReleaseNotes @("note1", "note2")'
+```
+
+**Rule:** Always use `pwsh -NoProfile -Command '...'` for any pwsh invocation that uses PowerShell-specific syntax (arrays, splatting, script blocks, etc.).
+
+---
+
 ## ⚠️ INSTALLER / SELF-UPDATER ROBUSTNESS ⚠️
 
 **Changes to `install.sh`, `install.ps1`, or `UpdateScriptGenerator.cs` must NEVER cause user lockouts.**
