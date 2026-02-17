@@ -29,6 +29,23 @@ const SCALE_TOLERANCE = 0.97;
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 
 /**
+ * Get the width of the currently visible dock panel (git, commands, or file viewer).
+ * Only one dock panel can be open at a time.
+ */
+function getDockPanelWidth(): number {
+  const gitDock = document.getElementById('git-dock');
+  if (gitDock && !gitDock.classList.contains('hidden')) return gitDock.offsetWidth;
+
+  const cmdDock = document.getElementById('commands-dock');
+  if (cmdDock && !cmdDock.classList.contains('hidden')) return cmdDock.offsetWidth;
+
+  const fvDock = document.getElementById('file-viewer-dock');
+  if (fvDock && !fvDock.classList.contains('hidden')) return fvDock.offsetWidth;
+
+  return 0;
+}
+
+/**
  * Get cell dimensions from xterm.js internal render service.
  * These are the true cell sizes unaffected by CSS layout constraints,
  * avoiding circular measurements when the terminal overflows its container.
@@ -209,9 +226,10 @@ export async function calculateOptimalDimensions(
     }
   }
 
-  // Account for padding, scrollbar width, and session tab bar
+  // Account for padding, scrollbar width, session tab bar, and dock panels
   const tabBarH = getTabBarHeight();
-  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+  const dockWidth = getDockPanelWidth();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
   const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
 
   const cols = Math.floor(availWidth / cellWidth);
@@ -324,10 +342,11 @@ export function fitSessionToScreen(sessionId: string): void {
     return;
   }
 
-  // Calculate available space (accounting for container padding, scrollbar, and tab bar)
+  // Calculate available space (accounting for container padding, scrollbar, tab bar, and dock panels)
   const rect = dom.terminalsArea.getBoundingClientRect();
   const tabBarH = getTabBarHeight();
-  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+  const dockWidth = getDockPanelWidth();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
   const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
 
   // Calculate cols/rows that fit in available space
@@ -632,7 +651,8 @@ function resizeBackgroundSessions(alreadyResized: Set<string>): void {
 
   const rect = dom.terminalsArea.getBoundingClientRect();
   const tabBarH = getTabBarHeight();
-  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+  const dockWidth = getDockPanelWidth();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
   const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
 
   const cols = Math.max(
@@ -723,7 +743,8 @@ function periodicResizeCheck(): void {
 
     const rect = container.getBoundingClientRect();
     const tabBarH = layoutPane ? 0 : getTabBarHeight();
-    const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+    const dockWidth = layoutPane ? 0 : getDockPanelWidth();
+    const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
     const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
 
     let optimalCols = Math.floor(availWidth / cellWidth);

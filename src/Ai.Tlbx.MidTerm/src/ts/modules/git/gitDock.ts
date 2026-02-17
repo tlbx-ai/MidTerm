@@ -10,8 +10,9 @@ import {
   $fileViewerDocked,
   $dockedFilePath,
   $commandsPanelDocked,
+  $isMainBrowser,
 } from '../../stores';
-import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { renderGitPanelInto } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
@@ -19,6 +20,13 @@ import { closeCommandsDock } from '../commands/dock';
 import { createLogger } from '../logging';
 
 const log = createLogger('gitDock');
+
+function handleDockLayoutChange(): void {
+  const handler = $isMainBrowser.get()
+    ? autoResizeAllTerminalsImmediate
+    : rescaleAllTerminalsImmediate;
+  requestAnimationFrame(handler);
+}
 
 const DOCK_MIN_WIDTH = 250;
 const DOCK_MAX_WIDTH = 600;
@@ -82,7 +90,7 @@ function openGitDock(sessionId: string): void {
     renderGitPanelInto(body, sessionId);
   }
 
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  handleDockLayoutChange();
 
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
@@ -120,7 +128,7 @@ export function closeGitDock(): void {
     .querySelectorAll<HTMLElement>('.session-tab-panels')
     .forEach((p) => (p.style.marginRight = ''));
 
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  handleDockLayoutChange();
 
   log.info(() => 'Git dock closed');
 }
@@ -161,7 +169,7 @@ export function setupGitDockResize(): void {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     localStorage.setItem(DOCK_WIDTH_KEY, String(dockPanel!.offsetWidth));
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
+    handleDockLayoutChange();
   }
 
   grip.addEventListener('mousedown', (e: MouseEvent) => {

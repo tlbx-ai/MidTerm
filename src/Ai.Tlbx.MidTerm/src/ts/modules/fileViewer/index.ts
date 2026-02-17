@@ -15,8 +15,9 @@ import {
   $dockedFilePath,
   $commandsPanelDocked,
   $gitPanelDocked,
+  $isMainBrowser,
 } from '../../stores';
-import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { closeCommandsDock } from '../commands/dock';
 import { closeGitDock } from '../git/gitDock';
 import { escapeHtml } from '../../utils';
@@ -128,7 +129,10 @@ function dockViewer(): void {
   renderInDock(path);
 
   // Trigger terminal resize
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  const handler = $isMainBrowser.get()
+    ? autoResizeAllTerminalsImmediate
+    : rescaleAllTerminalsImmediate;
+  requestAnimationFrame(handler);
 }
 
 function closeDock(): void {
@@ -146,7 +150,10 @@ function closeDock(): void {
   currentSessionId = null;
 
   // Trigger terminal resize
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  const handler = $isMainBrowser.get()
+    ? autoResizeAllTerminalsImmediate
+    : rescaleAllTerminalsImmediate;
+  requestAnimationFrame(handler);
 }
 
 function undockViewer(): void {

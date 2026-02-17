@@ -11,13 +11,21 @@ import {
   $fileViewerDocked,
   $dockedFilePath,
   $gitPanelDocked,
+  $isMainBrowser,
 } from '../../stores';
-import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { renderCommandsPanelInto } from './commandsPanel';
 import { createLogger } from '../logging';
 
 const log = createLogger('commandsDock');
+
+function handleDockLayoutChange(): void {
+  const handler = $isMainBrowser.get()
+    ? autoResizeAllTerminalsImmediate
+    : rescaleAllTerminalsImmediate;
+  requestAnimationFrame(handler);
+}
 
 const DOCK_MIN_WIDTH = 250;
 const DOCK_MAX_WIDTH = 600;
@@ -85,7 +93,7 @@ function openCommandsDock(sessionId: string): void {
     renderCommandsPanelInto(body, sessionId);
   }
 
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  handleDockLayoutChange();
 
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
@@ -122,7 +130,7 @@ export function closeCommandsDock(): void {
     .querySelectorAll<HTMLElement>('.session-tab-panels')
     .forEach((p) => (p.style.marginRight = ''));
 
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  handleDockLayoutChange();
 
   log.info(() => 'Commands dock closed');
 }
@@ -163,7 +171,7 @@ export function setupDockResize(): void {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     localStorage.setItem(DOCK_WIDTH_KEY, String(dockPanel!.offsetWidth));
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
+    handleDockLayoutChange();
   }
 
   grip.addEventListener('mousedown', (e: MouseEvent) => {
