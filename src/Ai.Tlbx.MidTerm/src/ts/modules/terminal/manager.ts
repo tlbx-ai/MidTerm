@@ -83,6 +83,7 @@ export function refreshCursorBlink(terminal: Terminal): void {
  */
 export function focusActiveTerminal(): void {
   if (isSearchVisible()) return;
+  if (hasNonTerminalFocus()) return;
 
   if (focusDebounceTimer !== null) {
     window.clearTimeout(focusDebounceTimer);
@@ -90,6 +91,8 @@ export function focusActiveTerminal(): void {
 
   focusDebounceTimer = window.setTimeout(() => {
     focusDebounceTimer = null;
+    if (hasNonTerminalFocus()) return;
+
     const activeId = $activeSessionId.get();
     if (!activeId) return;
 
@@ -98,7 +101,19 @@ export function focusActiveTerminal(): void {
       state.terminal.focus();
       refreshCursorBlink(state.terminal);
     }
-  }, 16); // Single frame (60fps) prevents focus/blur thrashing
+  }, 16);
+}
+
+function hasNonTerminalFocus(): boolean {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    (el as HTMLElement).isContentEditable
+  );
 }
 
 const FOCUS_STEALING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
@@ -580,18 +595,6 @@ export function setupTerminalEvents(
   };
 
   container.addEventListener('contextmenu', contextMenuHandler);
-
-  // Defensive refocus when terminal loses focus unexpectedly
-  const xtermElement = terminal.element;
-  if (xtermElement) {
-    xtermElement.addEventListener('blur', () => {
-      setTimeout(() => {
-        if (!isSearchVisible() && $activeSessionId.get() === sessionId) {
-          focusActiveTerminal();
-        }
-      }, 100);
-    });
-  }
 
   // Auto-hide mouse cursor after 2 seconds of inactivity
   let cursorHideTimer: number | null = null;
