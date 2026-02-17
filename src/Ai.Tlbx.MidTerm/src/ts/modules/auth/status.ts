@@ -6,6 +6,7 @@
 
 import { getAuthStatus, logout as apiLogout } from '../../api/client';
 import { $authStatus } from '../../stores';
+import { t } from '../i18n';
 
 /**
  * Check authentication status from server
@@ -56,16 +57,16 @@ export function updatePasswordStatus(): void {
 
   const status = $authStatus.get();
   if (!status) {
-    statusEl.textContent = 'Checking...';
+    statusEl.textContent = t('settings.security.checking');
     statusEl.className = '';
     return;
   }
 
   if (status.passwordSet) {
-    statusEl.textContent = 'Password is set';
+    statusEl.textContent = t('settings.security.passwordSet');
     statusEl.className = 'status-set';
   } else {
-    statusEl.textContent = 'No password set';
+    statusEl.textContent = t('settings.security.noPasswordSet');
     statusEl.className = 'status-missing';
   }
 }

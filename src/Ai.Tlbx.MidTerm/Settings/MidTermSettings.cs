@@ -55,6 +55,14 @@ public sealed class MidTermSettings
     // Tmux Compatibility - Injects tmux shim into spawned terminals for AI tool integration
     public bool TmuxCompatibility { get; set; } = true;
 
+    public bool IdeMode { get; set; } = true;
+
+    // Show changelog automatically after a successful update
+    public bool ShowChangelogAfterUpdate { get; set; } = true;
+
+    // UI Language
+    public LanguageSetting Language { get; set; } = LanguageSetting.Auto;
+
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }
     public string? RunAsUserSid { get; set; }  // Windows: User SID for token lookup

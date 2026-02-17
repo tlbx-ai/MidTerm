@@ -32,12 +32,18 @@ public static class HistoryEndpoints
             return Results.Ok(new { id });
         });
 
-        // PATCH /api/history/{id} - update history entry (currently only supports isStarred)
         app.MapPatch("/api/history/{id}", (string id, HistoryPatchRequest request) =>
         {
             if (request.IsStarred.HasValue)
             {
                 if (!historyService.SetStarred(id, request.IsStarred.Value))
+                {
+                    return Results.NotFound();
+                }
+            }
+            if (request.Label is not null)
+            {
+                if (!historyService.SetLabel(id, request.Label))
                 {
                     return Results.NotFound();
                 }

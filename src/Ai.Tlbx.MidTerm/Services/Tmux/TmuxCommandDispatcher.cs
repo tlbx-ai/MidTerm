@@ -91,7 +91,7 @@ public sealed class TmuxCommandDispatcher
                 "swap-pane" or "swapp" => _paneCommands.SwapPane(cmd, callerPaneId),
 
                 // Window commands
-                "new-window" or "neww" => await _windowCommands.NewWindowAsync(cmd, ct),
+                "new-window" or "neww" => await _windowCommands.NewWindowAsync(cmd, callerPaneId, ct),
                 "select-window" or "selectw" => _windowCommands.SelectWindow(cmd, callerPaneId),
                 "kill-window" or "killw" => await _windowCommands.KillWindowAsync(cmd, callerPaneId, ct),
                 "select-layout" or "selectl" => TmuxResult.Ok(),

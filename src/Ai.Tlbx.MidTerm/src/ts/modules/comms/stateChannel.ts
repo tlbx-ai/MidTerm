@@ -14,7 +14,7 @@ import type {
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
-import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
+import { scheduleReconnect, createWsUrl, closeWebSocket, getOrCreateClientId } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
@@ -22,6 +22,8 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { handleSessionClosed } from '../layout';
 import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
 import { renderUpdatePanel } from '../updating/checker';
+import { handleHiddenSessionClosed } from '../commands/commandsPanel';
+import { closeOverlay } from '../commands/outputPanel';
 
 const log = createLogger('state');
 import {
@@ -29,6 +31,7 @@ import {
   stateReconnectTimer,
   sessionTerminals,
   newlyCreatedSessions,
+  hiddenSessionIds,
   setStateWs,
   setStateReconnectTimer,
 } from '../../state';
@@ -49,7 +52,9 @@ import {
   $sessionList,
   $updateInfo,
   $isMainBrowser,
+  $showMainBrowserButton,
   setSessions,
+  getParentSessionId,
 } from '../../stores';
 import {
   restoreLayoutFromStorage,
@@ -87,7 +92,8 @@ export function setSelectSessionCallback(
 export function connectStateWebSocket(): void {
   closeWebSocket(stateWs, setStateWs);
 
-  const ws = new WebSocket(createWsUrl('/ws/state'));
+  const clientId = getOrCreateClientId();
+  const ws = new WebSocket(createWsUrl(`/ws/state?clientId=${encodeURIComponent(clientId)}`));
   setStateWs(ws);
 
   ws.onopen = () => {
@@ -119,14 +125,27 @@ export function connectStateWebSocket(): void {
           });
           return;
         }
-        dockSession(data.relativeToSessionId, data.newSessionId, data.position);
+        dockSession(data.relativeToSessionId, data.newSessionId, data.position, true);
         return;
       }
 
       // Handle tmux focus instructions
       if (data.type === 'tmux-focus') {
         log.verbose(() => `Tmux focus: ${data.sessionId}`);
-        focusLayoutSession(data.sessionId);
+        // Only focus if the session shares a parent with the current active session,
+        // or is the active session's child/parent — don't steal from unrelated sessions
+        const activeId = $activeSessionId.get();
+        const activeParent = activeId ? getParentSessionId(activeId) : null;
+        const focusParent = getParentSessionId(data.sessionId);
+        const isRelated =
+          !activeId ||
+          activeId === data.sessionId ||
+          activeId === focusParent ||
+          activeParent === data.sessionId ||
+          (activeParent !== null && activeParent === focusParent);
+        if (isRelated) {
+          focusLayoutSession(data.sessionId);
+        }
         return;
       }
 
@@ -140,6 +159,7 @@ export function connectStateWebSocket(): void {
       // Handle main browser status (server-driven)
       if (data.type === 'main-browser-status') {
         $isMainBrowser.set(data.isMain === true);
+        $showMainBrowserButton.set(data.showButton === true);
         return;
       }
 
@@ -180,15 +200,23 @@ export function handleStateUpdate(newSessions: Session[]): void {
   // Filter out sessions without required id field
   const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
 
-  // Remove terminals for deleted sessions
+  // Remove terminals for deleted sessions (skip hidden command overlay sessions)
   const newIds = new Set(validSessions.map((s) => s.id));
   sessionTerminals.forEach((_, id) => {
-    if (!newIds.has(id)) {
+    if (!newIds.has(id) && !hiddenSessionIds.has(id)) {
       handleSessionClosed(id);
       destroyTerminalForSession(id);
       newlyCreatedSessions.delete(id);
     }
   });
+
+  // Clean up hidden sessions that no longer exist on the server (script finished)
+  for (const hiddenId of hiddenSessionIds) {
+    if (!newIds.has(hiddenId)) {
+      handleHiddenSessionClosed(hiddenId);
+      closeOverlay(hiddenId);
+    }
+  }
 
   // Update dimensions and resize terminals when server dimensions change
   // Also create terminals proactively for sessions that don't have one yet
@@ -231,7 +259,7 @@ export function handleStateUpdate(newSessions: Session[]): void {
     const dock = pendingDocks[i]!;
     if (sessionTerminals.has(dock.newSessionId)) {
       pendingDocks.splice(i, 1);
-      dockSession(dock.targetSessionId, dock.newSessionId, dock.position as DockPosition);
+      dockSession(dock.targetSessionId, dock.newSessionId, dock.position as DockPosition, true);
     }
   }
 

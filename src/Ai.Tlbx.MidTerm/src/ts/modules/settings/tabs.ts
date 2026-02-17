@@ -6,11 +6,24 @@
 
 import { startLatencyMeasurement, stopLatencyMeasurement } from '../diagnostics';
 
-export type SettingsTab = 'general' | 'appearance' | 'behavior' | 'security' | 'diagnostics';
+export type SettingsTab =
+  | 'general'
+  | 'appearance'
+  | 'behavior'
+  | 'security'
+  | 'ide'
+  | 'diagnostics';
 
 const STORAGE_KEY = 'settings-tab';
 const DEFAULT_TAB: SettingsTab = 'general';
-const VALID_TABS: SettingsTab[] = ['general', 'appearance', 'behavior', 'security', 'diagnostics'];
+const VALID_TABS: SettingsTab[] = [
+  'general',
+  'appearance',
+  'behavior',
+  'security',
+  'ide',
+  'diagnostics',
+];
 
 let activeTab: SettingsTab = DEFAULT_TAB;
 let initialized = false;

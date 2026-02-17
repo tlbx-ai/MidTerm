@@ -1,13 +1,12 @@
 /**
  * Sidebar Updater Module
  *
- * Manages intelligent sidebar updates with deferral during rename
- * and surgical DOM updates for data-only changes. Uses nanostores
- * subscriptions for reactive updates.
+ * Manages intelligent sidebar updates with surgical DOM updates
+ * for data-only changes. Uses nanostores subscriptions for reactive updates.
  */
 
 import type { Session } from '../../types';
-import { $sessions, $activeSessionId, $renamingSessionId, $layout } from '../../stores';
+import { $sessions, $activeSessionId, $layout } from '../../stores';
 import { createLogger } from '../logging';
 import {
   renderSessionList,
@@ -28,9 +27,6 @@ let previousSessionIds = new Set<string>();
 
 /** Previous session data for data change detection */
 let previousSessions: Record<string, Session> = {};
-
-/** Deferred update type during rename */
-let deferredUpdateType: 'none' | 'membership' | 'data' = 'none';
 
 /** Whether the updater has been initialized */
 let initialized = false;
@@ -60,6 +56,14 @@ function detectChangeType(sessions: Record<string, Session>): ChangeType {
     const prev = previousSessions[id];
     if (prev && session._order !== prev._order) {
       return 'order';
+    }
+  }
+
+  // Check for parent change (triggers full re-render since ordering changes)
+  for (const [id, session] of Object.entries(sessions)) {
+    const prev = previousSessions[id];
+    if (prev && session.parentSessionId !== prev.parentSessionId) {
+      return 'membership';
     }
   }
 
@@ -152,7 +156,6 @@ function applyUpdate(type: ChangeType, sessions: Record<string, Session>): void 
     renderSessionList();
   } else if (type === 'data') {
     log.verbose(() => 'Applying data update (surgical)');
-    // Surgical updates for each changed session
     for (const [id, session] of Object.entries(sessions)) {
       const prev = previousSessions[id];
       if (
@@ -164,25 +167,8 @@ function applyUpdate(type: ChangeType, sessions: Record<string, Session>): void 
         updateSessionItemContent(id, session);
       }
     }
-    // Update mobile title in case active session changed
     updateMobileTitle();
   }
-}
-
-/**
- * Flush any deferred updates
- */
-function flushDeferredUpdates(): void {
-  if (deferredUpdateType === 'none') return;
-
-  log.info(() => `Flushing deferred ${deferredUpdateType} update`);
-  const sessions = $sessions.get();
-  applyUpdate(deferredUpdateType, sessions);
-  deferredUpdateType = 'none';
-
-  // Update tracking state
-  previousSessions = { ...sessions };
-  previousSessionIds = new Set(Object.keys(sessions));
 }
 
 // =============================================================================
@@ -208,58 +194,15 @@ export function initializeSidebarUpdater(): void {
     const changeType = detectChangeType(sessions);
     if (changeType === 'none') return;
 
-    const renamingId = $renamingSessionId.get();
-
-    if (renamingId && changeType === 'membership') {
-      // Defer membership changes during rename (can't add/remove DOM while input is focused)
-      log.info(() => 'Deferring membership update during rename');
-      deferredUpdateType = 'membership';
-      previousSessions = { ...sessions };
-      previousSessionIds = new Set(Object.keys(sessions));
-    } else if (changeType === 'data') {
-      // Data changes: apply surgical updates to all sessions
-      // The renaming session's title element is replaced with input, so it's naturally skipped
-      log.verbose(() => 'Applying data update (surgical)');
-      for (const [id, session] of Object.entries(sessions)) {
-        const prev = previousSessions[id];
-        if (
-          prev &&
-          (session.name !== prev.name ||
-            session.terminalTitle !== prev.terminalTitle ||
-            session.shellType !== prev.shellType)
-        ) {
-          updateSessionItemContent(id, session);
-        }
-      }
-      updateMobileTitle();
-      previousSessions = { ...sessions };
-      previousSessionIds = new Set(Object.keys(sessions));
-    } else if (changeType === 'order') {
-      // Order change - re-render the list
-      applyUpdate(changeType, sessions);
-      previousSessions = { ...sessions };
-      previousSessionIds = new Set(Object.keys(sessions));
-    } else {
-      // Membership change, not renaming - full re-render
-      applyUpdate(changeType, sessions);
-      previousSessions = { ...sessions };
-      previousSessionIds = new Set(Object.keys(sessions));
-    }
+    applyUpdate(changeType, sessions);
+    previousSessions = { ...sessions };
+    previousSessionIds = new Set(Object.keys(sessions));
   });
 
   // Subscribe to active session changes for active class and title updates
   $activeSessionId.subscribe((activeId) => {
-    const isRenaming = $renamingSessionId.get() !== null;
-    if (isRenaming) return;
     updateActiveStates(activeId);
     updateMobileTitle();
-  });
-
-  // When rename ends, flush deferred updates
-  $renamingSessionId.subscribe((renamingId) => {
-    if (renamingId === null) {
-      flushDeferredUpdates();
-    }
   });
 
   // Subscribe to layout changes to update in-layout class on session items

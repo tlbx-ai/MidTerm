@@ -23,6 +23,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, int> _sessionOrder = new();
     private readonly ConcurrentDictionary<string, byte> _tmuxCreatedSessions = new();
     private readonly ConcurrentDictionary<string, byte> _tmuxCommandStarted = new();
+    private readonly ConcurrentDictionary<string, byte> _hiddenSessions = new();
+    private readonly ConcurrentDictionary<string, string> _tmuxParentSessions = new();
     private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
@@ -426,6 +428,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _tmuxCreatedSessions.TryAdd(sessionId, 0);
     }
 
+    public void SetTmuxParent(string childSessionId, string parentSessionId)
+    {
+        while (_tmuxParentSessions.TryGetValue(parentSessionId, out var grandparent))
+        {
+            parentSessionId = grandparent;
+        }
+
+        _tmuxParentSessions[childSessionId] = parentSessionId;
+    }
+
     public async Task<SessionInfo?> GetSessionFreshAsync(string sessionId, CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
@@ -477,6 +489,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
+    public void MarkHidden(string sessionId)
+    {
+        _hiddenSessions.TryAdd(sessionId, 0);
+    }
+
+    public bool IsHidden(string sessionId)
+    {
+        return _hiddenSessions.ContainsKey(sessionId);
+    }
+
     public IReadOnlyList<SessionInfo> GetAllSessions()
     {
         return _sessionCache.Values.ToList();
@@ -486,7 +508,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         return new SessionListDto
         {
-            Sessions = _sessionCache.Values.Select(s => new SessionInfoDto
+            Sessions = _sessionCache.Values
+                .Where(s => !_hiddenSessions.ContainsKey(s.Id))
+                .Select(s => new SessionInfoDto
             {
                 Id = s.Id,
                 Pid = s.Pid,
@@ -503,7 +527,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 ForegroundPid = s.ForegroundPid,
                 ForegroundName = s.ForegroundName,
                 ForegroundCommandLine = s.ForegroundCommandLine,
-                Order = _sessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue
+                Order = _sessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
+                ParentSessionId = _tmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null
             }).OrderBy(s => s.Order).ToList()
         };
     }
@@ -519,6 +544,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _sessionOrder.TryRemove(sessionId, out _);
         _tmuxCreatedSessions.TryRemove(sessionId, out _);
         _tmuxCommandStarted.TryRemove(sessionId, out _);
+        _hiddenSessions.TryRemove(sessionId, out _);
+        _tmuxParentSessions.TryRemove(sessionId, out _);
+
+        // Orphan children whose parent is being closed
+        foreach (var kvp in _tmuxParentSessions)
+        {
+            if (kvp.Value == sessionId)
+            {
+                _tmuxParentSessions.TryRemove(kvp.Key, out _);
+            }
+        }
+
         CleanupTempDirectory(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);

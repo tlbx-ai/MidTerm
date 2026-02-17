@@ -7,7 +7,7 @@
 
 import type { Session, ProcessState } from '../../types';
 import { pendingSessions, dom } from '../../state';
-import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
+import { $settingsOpen, $activeSessionId, $sessionList, isChildSession } from '../../stores';
 import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import { isSessionInLayout, undockSession } from '../layout/layoutStore';
@@ -184,19 +184,22 @@ function createSessionItem(
 ): HTMLDivElement {
   const sessionId = session.id;
   const inLayout = isSessionInLayout(sessionId);
+  const isChild = isChildSession(sessionId);
   const item = document.createElement('div');
   item.className =
     'session-item' +
     (isActive ? ' active' : '') +
     (isPending ? ' pending' : '') +
-    (inLayout ? ' in-layout' : '');
+    (inLayout ? ' in-layout' : '') +
+    (isChild ? ' tmux-child' : '');
   item.dataset.sessionId = sessionId;
-  item.draggable = !isPending;
+  if (isChild) {
+    item.dataset.parentId = session.parentSessionId ?? '';
+  }
+  item.draggable = !isPending && !isChild;
 
   if (!isPending) {
-    item.addEventListener('click', (e) => {
-      // Don't select if clicking on drag handle
-      if ((e.target as HTMLElement).closest('.drag-handle')) return;
+    item.addEventListener('click', () => {
       closeMobileActionMenu();
       if (callbacks && sessionId) {
         callbacks.onSelect(sessionId);
@@ -204,14 +207,6 @@ function createSessionItem(
       }
     });
   }
-
-  // Drag handle
-  const dragHandle = document.createElement('div');
-  dragHandle.className = 'drag-handle';
-  const dragDots = document.createElement('div');
-  dragDots.className = 'drag-handle-dots';
-  dragHandle.appendChild(dragDots);
-  item.appendChild(dragHandle);
 
   const info = document.createElement('div');
   info.className = 'session-info';
@@ -239,15 +234,15 @@ function createSessionItem(
   layoutBadge.title = 'Session is in a split layout';
   titleRow.appendChild(layoutBadge);
 
-  info.appendChild(titleRow);
-
   if (displayInfo.secondary) {
     item.classList.add('two-line');
     const subtitle = document.createElement('span');
     subtitle.className = 'session-subtitle truncate';
     subtitle.textContent = displayInfo.secondary;
-    info.appendChild(subtitle);
+    titleRow.appendChild(subtitle);
   }
+
+  info.appendChild(titleRow);
 
   // Process indicator container
   const processInfo = document.createElement('div');
@@ -322,14 +317,6 @@ function createSessionItem(
   }
 
   item.appendChild(info);
-
-  // Action hint indicator (desktop - subtle dots to indicate hover actions)
-  if (!isPending) {
-    const actionHint = document.createElement('span');
-    actionHint.className = 'session-action-hint';
-    actionHint.innerHTML = icon('more');
-    item.appendChild(actionHint);
-  }
 
   // Mobile menu button (toggles action bar visibility)
   if (!isPending) {
@@ -412,11 +399,23 @@ export function renderSessionList(): void {
     }
   });
 
-  // Update count (only non-pending sessions)
-  const realSessionCount = sessions.filter((s) => !pendingSessions.has(s.id)).length;
-  if (dom.sessionCount) {
-    dom.sessionCount.textContent = String(realSessionCount);
-  }
+  // Mark last child in each tmux group
+  const allItems = sessionList.querySelectorAll('.session-item');
+  allItems.forEach((item) => {
+    (item as HTMLElement).classList.remove('tmux-last-child');
+  });
+  allItems.forEach((item, idx) => {
+    if ((item as HTMLElement).classList.contains('tmux-child')) {
+      const nextItem = allItems[idx + 1] as HTMLElement | undefined;
+      if (
+        !nextItem ||
+        !nextItem.classList.contains('tmux-child') ||
+        nextItem.dataset.parentId !== (item as HTMLElement).dataset.parentId
+      ) {
+        (item as HTMLElement).classList.add('tmux-last-child');
+      }
+    }
+  });
 }
 
 /**

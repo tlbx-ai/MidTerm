@@ -117,6 +117,7 @@ export function dockSession(
   targetSessionId: string,
   draggedSessionId: string,
   position: DockPosition,
+  preventFocusSteal = false,
 ): void {
   if (targetSessionId === draggedSessionId) return;
 
@@ -141,7 +142,9 @@ export function dockSession(
     $layout.set({
       root: { type: 'split', direction, children },
     });
-    $focusedSessionId.set(draggedSessionId);
+    if (!preventFocusSteal) {
+      $focusedSessionId.set(draggedSessionId);
+    }
     return;
   }
 
@@ -154,7 +157,9 @@ export function dockSession(
     insertBefore,
   );
   $layout.set({ root: newRoot });
-  $focusedSessionId.set(draggedSessionId);
+  if (!preventFocusSteal) {
+    $focusedSessionId.set(draggedSessionId);
+  }
 }
 
 /**

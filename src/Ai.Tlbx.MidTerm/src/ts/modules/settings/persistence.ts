@@ -30,6 +30,8 @@ import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
 } from '../terminal/scrollbarStyle';
+import { setLocale } from '../i18n';
+import type { LanguageSetting } from '../../api/types';
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
@@ -142,6 +144,9 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-file-radar', settings.fileRadar !== false);
   setElementChecked('setting-manager-bar', settings.managerBarEnabled !== false);
   setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility !== false);
+  setElementChecked('setting-ide-mode', settings.ideMode !== false);
+  setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate !== false);
+  setElementValue('setting-language', settings.language ?? 'auto');
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
 
@@ -226,6 +231,10 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
   applyCssTheme(themeName);
   setCookie('mm-theme', themeName);
 
+  const languageValue = settings.language ?? 'auto';
+  setCookie('mm-language', languageValue);
+  setLocale(languageValue);
+
   applySettingsToTerminals();
   updateTabTitle();
 }
@@ -277,11 +286,17 @@ export function saveAllSettings(): void {
     managerBarEnabled: getElementChecked('setting-manager-bar'),
     managerBarButtons: prevSettings?.managerBarButtons ?? [],
     tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
+    ideMode: getElementChecked('setting-ide-mode'),
+    showChangelogAfterUpdate: getElementChecked('setting-changelog-after-update'),
+    language: getElementValue('setting-language', 'auto') as LanguageSetting,
     runAsUser: runAsUserValue || null,
   };
 
   const themeName = settings.theme ?? 'dark';
   setCookie('mm-theme', themeName);
+
+  const languageValue = settings.language ?? 'auto';
+  setCookie('mm-language', languageValue);
 
   updateSettings(settings)
     .then(({ response, error }) => {
@@ -292,6 +307,7 @@ export function saveAllSettings(): void {
         applyCssTheme(themeName);
         applySettingsToTerminals();
         updateTabTitle();
+        setLocale(languageValue);
       } else {
         console.error('Settings save failed:', response.status, error);
       }

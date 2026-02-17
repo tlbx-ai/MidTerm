@@ -32,6 +32,7 @@ import {
   bindSearchEvents,
   scrollToBottom,
   focusActiveTerminal,
+  setupGlobalFocusReclaim,
   calculateOptimalDimensions,
 } from './modules/terminal';
 import {
@@ -51,6 +52,7 @@ import {
   initSessionDrag,
   initTrafficIndicator,
 } from './modules/sidebar';
+import { initI18n } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
@@ -72,7 +74,7 @@ import {
   refreshHistory,
   type LaunchEntry,
 } from './modules/history';
-import { getForegroundInfo } from './modules/process';
+import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import { initTouchController } from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
@@ -88,6 +90,22 @@ import {
   getLayoutRoot,
 } from './modules/layout';
 import {
+  initSessionTabs,
+  ensureSessionWrapper,
+  destroySessionWrapper,
+  setIdeModeEnabled,
+  reparentTerminalContainer,
+} from './modules/sessionTabs';
+import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
+import {
+  initGitPanel,
+  connectGitWebSocket,
+  disconnectGitWebSocket,
+  destroyGitSession,
+} from './modules/git';
+import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
+import { closeGitDock } from './modules/git/gitDock';
+import {
   cacheDOMElements,
   sessionTerminals,
   dom,
@@ -102,12 +120,13 @@ import {
   $muxWsConnected,
   $activeSessionId,
   $sessionList,
-  $renamingSessionId,
   $currentSettings,
   $isMainBrowser,
+  $showMainBrowserButton,
   setSession,
   removeSession,
   getSession,
+  setProcessState,
   setPendingRename,
   clearPendingRename,
 } from './stores';
@@ -118,6 +137,7 @@ import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
+  patchHistoryEntry,
 } from './api/client';
 
 // Create logger for main module
@@ -158,6 +178,7 @@ async function init(): Promise<void> {
   log.info(() => 'MidTerm frontend initializing');
 
   cacheDOMElements();
+  await initI18n();
   initMainBrowserButton();
   initTrafficIndicator();
   initBadges();
@@ -187,6 +208,7 @@ async function init(): Promise<void> {
   bindEvents();
   bindAuthEvents();
   bindSearchEvents();
+  setupGlobalFocusReclaim();
   initShareAccessButton();
   initNetworkSection();
   initVoiceSection();
@@ -197,6 +219,27 @@ async function init(): Promise<void> {
   setupVisualViewport();
   initTouchController();
   initManagerBar();
+  initSessionTabs();
+  initFileBrowser();
+  initGitPanel();
+  initCommandsPanel();
+
+  // React to ideMode setting: toggle tab bar visibility and git WS connection
+  let gitWsConnected = false;
+  $currentSettings.subscribe((settings) => {
+    if (!settings) return;
+    const ideEnabled = settings.ideMode !== false;
+    setIdeModeEnabled(ideEnabled);
+    if (ideEnabled && !gitWsConnected) {
+      connectGitWebSocket();
+      gitWsConnected = true;
+    } else if (!ideEnabled && gitWsConnected) {
+      disconnectGitWebSocket();
+      gitWsConnected = false;
+      closeGitDock();
+      closeCommandsDock();
+    }
+  });
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
@@ -221,6 +264,10 @@ async function init(): Promise<void> {
 function registerCallbacks(): void {
   setSelectSessionCallback(selectSession);
   setShowBellCallback(showBellNotification);
+
+  addProcessStateListener((sessionId, state) => {
+    setProcessState(sessionId, { ...state });
+  });
 
   setSessionListCallbacks({
     onSelect: selectSession,
@@ -318,6 +365,7 @@ async function createSession(): Promise<void> {
     rows: rows,
     manuallyNamed: false,
     order: Date.now(),
+    parentSessionId: null,
   };
   setSession(tempSession);
   pendingSessions.add(tempId);
@@ -410,6 +458,17 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
 
+  // Ensure session wrapper with tabs (standalone mode only)
+  const tabState = ensureSessionWrapper(sessionId);
+  reparentTerminalContainer(sessionId, state.container);
+  if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
+    dom.terminalsArea.appendChild(tabState.wrapper);
+  }
+  // Hide all other wrappers
+  dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((w) => {
+    (w as HTMLElement).classList.toggle('hidden', w.getAttribute('data-session-id') !== sessionId);
+  });
+
   state.container.classList.remove('hidden');
   if (isLayoutActive()) {
     getLayoutRoot()?.classList.add('hidden');
@@ -431,6 +490,12 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 function deleteSession(sessionId: string): void {
   // Remove from layout if present
   handleSessionClosed(sessionId);
+
+  // Remove session tab wrapper and feature panels
+  destroyFileBrowser(sessionId);
+  destroyGitSession(sessionId);
+  destroyCommandsSession(sessionId);
+  destroySessionWrapper(sessionId);
 
   // Optimistic UI: remove session immediately for better UX
   destroyTerminalForSession(sessionId);
@@ -474,55 +539,63 @@ function renameSession(sessionId: string, newName: string | null): void {
   setSession({ ...session, name: nameToSend, manuallyNamed: true });
   // Subscription handles renderSessionList and updateMobileTitle via store change
 
-  apiRenameSession(sessionId, nameToSend).catch((e) => {
-    // Clear pending and rollback on error
-    clearPendingRename(sessionId);
-    const currentSession = getSession(sessionId);
-    if (currentSession) {
-      setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
-    }
-    // Subscription handles renderSessionList and updateMobileTitle via store change
-    log.error(() => `Failed to rename session ${sessionId}: ${e}`);
-  });
+  apiRenameSession(sessionId, nameToSend)
+    .then(() => {
+      if (session._bookmarkId) {
+        patchHistoryEntry(session._bookmarkId, { label: nameToSend || '' }).catch(() => {});
+      }
+    })
+    .catch((e) => {
+      // Clear pending and rollback on error
+      clearPendingRename(sessionId);
+      const currentSession = getSession(sessionId);
+      if (currentSession) {
+        setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
+      }
+      // Subscription handles renderSessionList and updateMobileTitle via store change
+      log.error(() => `Failed to rename session ${sessionId}: ${e}`);
+    });
 }
 
 function startInlineRename(sessionId: string): void {
   const item = dom.sessionList?.querySelector(`[data-session-id="${sessionId}"]`);
   if (!item) return;
 
-  const titleSpan = item.querySelector('.session-title');
+  const titleSpan = item.querySelector('.session-title') as HTMLElement | null;
   if (!titleSpan) return;
 
   const session = getSession(sessionId);
   const currentName = session ? session.name || session.shellType : '';
 
-  // Mark this session as being renamed (prevents re-render from destroying input)
-  $renamingSessionId.set(sessionId);
+  // Position overlay input on top of the title span
+  const rect = titleSpan.getBoundingClientRect();
 
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'session-rename-input';
   input.value = currentName;
+  input.style.position = 'fixed';
+  input.style.left = `${rect.left}px`;
+  input.style.top = `${rect.top}px`;
+  input.style.width = `${rect.width + 20}px`;
+  input.style.height = `${rect.height}px`;
+  input.style.zIndex = '10000';
 
-  // Prevent clicks inside input from bubbling to session item (which would select it)
-  input.addEventListener('click', (e) => e.stopPropagation());
-  input.addEventListener('mousedown', (e) => e.stopPropagation());
+  document.body.appendChild(input);
 
   let committed = false;
   function finishRename(): void {
     if (committed) return;
     committed = true;
     const newName = input.value;
-    input.replaceWith(titleSpan as Node);
-    $renamingSessionId.set(null);
+    input.remove();
     renameSession(sessionId, newName);
   }
 
   function cancelRename(): void {
     if (committed) return;
     committed = true;
-    $renamingSessionId.set(null);
-    input.replaceWith(titleSpan as Node);
+    input.remove();
   }
 
   input.addEventListener('blur', finishRename);
@@ -536,7 +609,6 @@ function startInlineRename(sessionId: string): void {
     }
   });
 
-  titleSpan.replaceWith(input);
   input.focus();
   input.select();
 }
@@ -611,6 +683,20 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
+
+      // Link session to bookmark and apply label (deferred until session is in store)
+      const applyBookmark = (): void => {
+        const session = getSession(data.id!);
+        if (!session) {
+          setTimeout(applyBookmark, 100);
+          return;
+        }
+        setSession({ ...session, _bookmarkId: entry.id });
+        if (entry.label) {
+          renameSession(data.id!, entry.label);
+        }
+      };
+      applyBookmark();
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);
@@ -695,6 +781,8 @@ function initMainBrowserButton(): void {
   const btn = document.getElementById('btn-main-browser');
   if (!btn) return;
 
+  btn.style.display = 'none';
+
   function updateButton(isMain: boolean): void {
     if (!btn) return;
     btn.classList.toggle('active', isMain);
@@ -716,6 +804,10 @@ function initMainBrowserButton(): void {
     if (isMain) {
       requestAnimationFrame(autoResizeAllTerminalsImmediate);
     }
+  });
+
+  $showMainBrowserButton.subscribe((show) => {
+    btn.style.display = show ? '' : 'none';
   });
 }
 

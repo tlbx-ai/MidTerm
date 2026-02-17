@@ -1239,7 +1239,8 @@
           "updateResult",
           "devMode",
           "features",
-          "voicePassword"
+          "voicePassword",
+          "gitVersion"
         ],
         "type": "object",
         "properties": {
@@ -1306,6 +1307,12 @@
             "$ref": "#/components/schemas/FeatureFlags"
           },
           "voicePassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "gitVersion": {
             "type": [
               "null",
               "string"
@@ -1721,12 +1728,33 @@
               "null",
               "boolean"
             ]
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
       "IFormFile": {
         "type": "string",
         "format": "binary"
+      },
+      "LanguageSetting": {
+        "enum": [
+          "auto",
+          "en",
+          "zh",
+          "es",
+          "hi",
+          "fr",
+          "bn",
+          "pt",
+          "ru",
+          "ja",
+          "de"
+        ]
       },
       "LaunchEntry": {
         "required": [
@@ -1736,6 +1764,7 @@
           "commandLine",
           "workingDirectory",
           "isStarred",
+          "label",
           "weight",
           "lastUsed"
         ],
@@ -1761,6 +1790,12 @@
           },
           "isStarred": {
             "type": "boolean"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "weight": {
             "type": "integer",
@@ -1960,7 +1995,10 @@
           "scrollbackProtection",
           "fileRadar",
           "tmuxCompatibility",
+          "ideMode",
           "managerBarEnabled",
+          "showChangelogAfterUpdate",
+          "language",
           "managerBarButtons",
           "runAsUser",
           "runAsUserSid",
@@ -2050,8 +2088,17 @@
           "tmuxCompatibility": {
             "type": "boolean"
           },
+          "ideMode": {
+            "type": "boolean"
+          },
           "managerBarEnabled": {
             "type": "boolean"
+          },
+          "showChangelogAfterUpdate": {
+            "type": "boolean"
+          },
+          "language": {
+            "$ref": "#/components/schemas/LanguageSetting"
           },
           "managerBarButtons": {
             "type": "array",
@@ -2236,7 +2283,8 @@
           "foregroundPid",
           "foregroundName",
           "foregroundCommandLine",
-          "order"
+          "order",
+          "parentSessionId"
         ],
         "type": "object",
         "properties": {
@@ -2315,6 +2363,12 @@
           "order": {
             "type": "integer",
             "format": "int32"
+          },
+          "parentSessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

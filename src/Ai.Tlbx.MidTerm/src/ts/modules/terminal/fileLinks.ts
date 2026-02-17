@@ -524,10 +524,8 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
 
-  // Cast to 'any' because xterm-link-provider was built for xterm 4.x
-  // but we use @xterm/xterm 5+. The APIs are compatible at runtime.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const term = terminal as any;
+  // xterm-link-provider expects old 'xterm' types, cast for @xterm/xterm compat
+  const term = terminal as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   // 1. Folder paths — least specific (e.g., docs/, src\components\)
   terminal.registerLinkProvider(

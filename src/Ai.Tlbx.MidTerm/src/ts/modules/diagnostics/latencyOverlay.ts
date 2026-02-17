@@ -16,6 +16,7 @@ import {
 import { $activeSessionId } from '../../stores';
 import { sessionTerminals } from '../../state';
 import { TERMINAL_PADDING } from '../../constants';
+import { getLastPeriodicCheckResult } from '../terminal/scaling';
 
 let overlayEl: HTMLDivElement | null = null;
 let enabled = false;
@@ -38,6 +39,7 @@ interface MetricElements {
   termColsRows: HTMLSpanElement;
   cellPx: HTMLSpanElement;
   xtermPx: HTMLSpanElement;
+  resizeTimer: HTMLSpanElement;
 }
 
 let metricEls: MetricElements | null = null;
@@ -96,6 +98,7 @@ function ensureOverlay(): void {
     { label: 'Dim', id: 'termColsRows' },
     { label: 'Cell', id: 'cellPx' },
     { label: 'XTrm', id: 'xtermPx' },
+    { label: 'RTmr', id: 'resizeTimer' },
   ] as const;
 
   const els: Partial<MetricElements> = {};
@@ -161,6 +164,7 @@ async function runPingAndScrollback(): Promise<void> {
   updateScrollback(sessionId);
   updateCursorState(sessionId);
   updateScalingMetrics(sessionId);
+  updateResizeTimerStatus();
 
   const result = await measureLatency(sessionId);
   if (!metricEls) return;
@@ -271,6 +275,15 @@ function updateCursorState(sessionId: string): void {
   const buf = state.terminal.buffer.active;
   metricEls.cursorPos.textContent = `${buf.cursorX},${buf.cursorY}`;
   applyColor(metricEls.cursorPos, 'good');
+}
+
+function updateResizeTimerStatus(): void {
+  if (!metricEls) return;
+  const result = getLastPeriodicCheckResult();
+  metricEls.resizeTimer.textContent = result;
+  const isNoChange = result === 'no change' || result === 'idle';
+  const isSkipped = result.startsWith('skipped');
+  applyColor(metricEls.resizeTimer, isNoChange ? 'good' : isSkipped ? 'warn' : 'bad');
 }
 
 function handleOutputRtt(sessionId: string, rtt: number): void {

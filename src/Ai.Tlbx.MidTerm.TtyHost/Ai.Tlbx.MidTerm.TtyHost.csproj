@@ -35,13 +35,11 @@
 
   <!-- Publish-only: AOT optimizations -->
   <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(IsPublishing)' == 'true'">
-    <!-- If not present it means we use balanced (fast code, size-aware) -->
-    <!-- <OptimizationPreference>Speed</OptimizationPreference> -->
+    <OptimizationPreference>Speed</OptimizationPreference>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <!-- If not present it means we use balanced (fast code, size-aware) -->
-    <!-- <IlcOptimizationPreference>Speed</IlcOptimizationPreference> -->
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
     <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
     <IlcTrimMetadata>true</IlcTrimMetadata>
     <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
@@ -50,7 +48,7 @@
     <StackTraceSupport>false</StackTraceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
-    <UseSizeOptimizedLinq>true</UseSizeOptimizedLinq>
+    <UseSizeOptimizedLinq>false</UseSizeOptimizedLinq>
     <DebuggerSupport>false</DebuggerSupport>
     <DebugType>none</DebugType>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>

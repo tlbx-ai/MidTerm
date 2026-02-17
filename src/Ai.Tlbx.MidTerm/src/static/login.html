@@ -22,19 +22,19 @@
                     <img src="/img/logo.png" alt="" class="login-logo" />
                 </div>
                 <h1>MidTerm</h1>
-                <p class="login-tagline">Terminal Multiplexer</p>
+                <p class="login-tagline" data-i18n="auth.terminalMultiplexer">Terminal Multiplexer</p>
             </div>
 
             <form id="login-form" class="login-form">
                 <input type="text" name="username" autocomplete="username" tabindex="-1" style="position:absolute;left:-9999px;opacity:0" aria-hidden="true" />
                 <div class="form-group">
-                    <label for="password">Password</label>
+                    <label for="password" data-i18n="auth.password">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password" autofocus />
                 </div>
 
                 <div id="error-message" class="error-message hidden"></div>
 
-                <button type="submit" id="login-btn" class="login-btn">Login</button>
+                <button type="submit" id="login-btn" class="login-btn" data-i18n="auth.login">Login</button>
             </form>
 
             <div class="login-version" id="login-version"></div>
@@ -42,8 +42,8 @@
 
         <div id="cert-info" class="cert-info hidden">
             <div class="cert-info-header">
-                <span class="cert-info-title">Certificate Fingerprint</span>
-                <button type="button" id="cert-hide-btn" class="cert-hide-btn" title="Hide this panel">×</button>
+                <span class="cert-info-title" data-i18n="auth.certFingerprint">Certificate Fingerprint</span>
+                <button type="button" id="cert-hide-btn" class="cert-hide-btn" data-i18n-title="auth.certHidePanel" title="Hide this panel">×</button>
             </div>
             <div class="cert-fingerprint" id="cert-fingerprint"></div>
             <div class="cert-dates">
@@ -51,7 +51,7 @@
                 <span id="cert-valid-until"></span>
             </div>
             <div class="cert-hint">
-                Verify this matches across devices. See Settings → Security for details.
+                <span data-i18n="auth.certVerifyHint">Verify this matches across devices. See Settings → Security for details.</span>
             </div>
         </div>
     </div>

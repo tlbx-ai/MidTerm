@@ -6,9 +6,10 @@
  */
 
 import type { UpdateInfo, UpdateResult } from '../../api/types';
-import { $updateInfo } from '../../stores';
+import { $updateInfo, $currentSettings } from '../../stores';
 import { createLogger } from '../logging';
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 import {
   applyUpdate as apiApplyUpdate,
   checkUpdate,
@@ -47,16 +48,16 @@ export function renderUpdatePanel(): void {
   if (latestEl) latestEl.textContent = info.latestVersion;
 
   if (info.sessionsPreserved) {
-    if (headerEl) headerEl.textContent = 'Quick Update';
+    if (headerEl) headerEl.textContent = t('sidebar.quickUpdate');
     if (noteEl) {
-      noteEl.textContent = 'Terminals stay connected';
+      noteEl.textContent = t('sidebar.terminalsStayConnected');
       noteEl.classList.add('update-note-safe');
       noteEl.classList.remove('update-note-warning');
     }
   } else {
-    if (headerEl) headerEl.textContent = 'Update Available';
+    if (headerEl) headerEl.textContent = t('sidebar.updateAvailable');
     if (noteEl) {
-      noteEl.textContent = 'Save your work - terminals will close';
+      noteEl.textContent = t('sidebar.saveWorkTerminalsClose');
       noteEl.classList.add('update-note-warning');
       noteEl.classList.remove('update-note-safe');
     }
@@ -75,18 +76,20 @@ export function applyUpdate(): void {
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Updating...';
+    btn.textContent = t('update.updating');
   }
+
+  setPendingChangelogFlag();
 
   apiApplyUpdate()
     .then(({ response }) => {
       if (response.ok) {
-        if (btn) btn.textContent = 'Restarting...';
+        if (btn) btn.textContent = t('update.restarting');
         waitForServerAndReload();
       } else {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = 'Update & Restart';
+          btn.textContent = t('sidebar.updateRestart');
         }
         console.error('Update failed');
       }
@@ -94,7 +97,7 @@ export function applyUpdate(): void {
     .catch((e) => {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Update & Restart';
+        btn.textContent = t('sidebar.updateRestart');
       }
       console.error('Update error:', e);
     });
@@ -139,14 +142,14 @@ export function checkForUpdates(e?: MouseEvent): void {
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Checking...';
+    btn.textContent = t('update.checking');
   }
 
   checkUpdate()
     .then(({ data }) => {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Check for Updates';
+        btn.textContent = t('settings.general.checkForUpdates');
       }
 
       if (data) {
@@ -154,15 +157,15 @@ export function checkForUpdates(e?: MouseEvent): void {
         renderUpdatePanel();
         renderUpdateCards(data);
       } else {
-        renderUpdateCards(null, 'Failed to check for updates');
+        renderUpdateCards(null, t('update.failed'));
       }
     })
     .catch((e) => {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Check for Updates';
+        btn.textContent = t('settings.general.checkForUpdates');
       }
-      renderUpdateCards(null, 'Failed to check for updates');
+      renderUpdateCards(null, t('update.failed'));
       console.error('Update check error:', e);
     });
 }
@@ -237,7 +240,9 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
   card.id = `update-card-${opts.type}`;
 
   const warningClass = opts.sessionsPreserved ? 'safe' : 'warn';
-  const warningText = opts.sessionsPreserved ? 'Terminals stay connected' : 'Terminals will close';
+  const warningText = opts.sessionsPreserved
+    ? t('sidebar.terminalsStayConnected')
+    : t('sidebar.saveWorkTerminalsClose');
 
   card.innerHTML = `
     <div class="update-card-header">
@@ -254,7 +259,7 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
   if (btn) {
     btn.addEventListener('click', () => {
       btn.disabled = true;
-      btn.textContent = 'Applying...';
+      btn.textContent = t('update.applying');
       opts.onApply();
     });
   }
@@ -266,6 +271,7 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
  * Apply local update from C:\temp\mtlocalrelease
  */
 export function applyLocalUpdate(): void {
+  setPendingChangelogFlag();
   apiApplyUpdate('local')
     .then(({ response }) => {
       const btn = document.querySelector(
@@ -301,6 +307,24 @@ export function handleUpdateInfo(update: UpdateInfo): void {
   $updateInfo.set(update);
   renderUpdatePanel();
   renderUpdateCards(update);
+}
+
+const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';
+
+function setPendingChangelogFlag(): void {
+  const settings = $currentSettings.get();
+  if (settings?.showChangelogAfterUpdate !== false) {
+    localStorage.setItem(PENDING_CHANGELOG_KEY, '1');
+  }
+}
+
+export function consumePendingChangelogFlag(): boolean {
+  const flag = localStorage.getItem(PENDING_CHANGELOG_KEY);
+  if (flag) {
+    localStorage.removeItem(PENDING_CHANGELOG_KEY);
+    return true;
+  }
+  return false;
 }
 
 let lastUpdateResult: UpdateResult | null = null;
@@ -346,17 +370,17 @@ export function renderUpdateResult(): void {
 
   container.classList.remove('hidden');
   const statusClass = lastUpdateResult.success ? 'update-result-success' : 'update-result-failed';
-  const statusText = lastUpdateResult.success ? 'Success' : 'Failed';
+  const statusText = lastUpdateResult.success ? t('update.success') : t('update.failed');
   const timestamp = new Date(lastUpdateResult.timestamp).toLocaleString();
 
   container.className = `update-result ${statusClass}`;
   container.innerHTML = `
     <div class="update-result-header">
-      <span class="update-result-status">Last update: ${statusText}</span>
+      <span class="update-result-status">${t('update.lastUpdate')} ${statusText}</span>
       <span class="update-result-time">${timestamp}</span>
     </div>
     ${!lastUpdateResult.success ? `<div class="update-result-message">${escapeHtml(lastUpdateResult.message)}</div>` : ''}
-    <button class="btn-secondary btn-view-log">View Update Log</button>
+    <button class="btn-secondary btn-view-log">${t('update.viewUpdateLog')}</button>
   `;
 
   container.querySelector('.btn-view-log')?.addEventListener('click', showUpdateLog);
@@ -371,14 +395,14 @@ export async function showUpdateLog(): Promise<void> {
   modal.innerHTML = `
     <div class="modal update-log-modal">
       <div class="modal-header">
-        <span>Update Log</span>
+        <span>${t('settings.general.updateLog')}</span>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
-        <pre class="update-log-content">Loading...</pre>
+        <pre class="update-log-content">${t('settings.general.loading')}</pre>
       </div>
       <div class="modal-footer">
-        <button class="btn-secondary btn-copy-log">Copy Log</button>
+        <button class="btn-secondary btn-copy-log">${t('update.copyLog')}</button>
       </div>
     </div>
   `;
@@ -391,7 +415,7 @@ export async function showUpdateLog(): Promise<void> {
     if (response.ok && data) {
       logContent.textContent = data;
     } else {
-      logContent.textContent = 'No update log found';
+      logContent.textContent = t('update.noLogFound');
     }
   } catch (e) {
     logContent.textContent = `Failed to load log: ${e}`;

@@ -10,207 +10,101 @@ import type { ThemeName } from '../../types';
 
 type CssThemePalette = Record<string, string>;
 
-const dark: CssThemePalette = {
-  '--bg-terminal': '#05050A',
-  '--terminal-bg': '#05050A',
-  '--bg-primary': '#0D0E14',
-  '--bg-elevated': '#161821',
-  '--bg-sidebar': '#1C1E2A',
-  '--bg-surface': '#242735',
-  '--bg-input': '#242735',
-  '--bg-dropdown': '#242735',
-  '--bg-hover': '#2D3044',
-  '--bg-active': '#363A50',
-  '--bg-session-hover': '#2D3044',
-  '--bg-session-active': '#363A50',
-  '--bg-settings': '#161821',
-  '--bg-tertiary': '#1C1E2A',
-
-  '--border-color': '#1E202B',
-  '--border-default': '#1E202B',
-  '--border-subtle': '#282B3A',
-  '--border-emphasis': '#3A3E52',
-
-  '--text-primary': '#D4D7E8',
-  '--text-terminal': '#E0E2F0',
-  '--text-secondary': '#8B8FA6',
-  '--text-muted': '#767B94',
-
-  '--accent-blue': '#7BA2F7',
-  '--accent-blue-hover': '#8FB5FF',
-  '--accent-cyan': '#7DCFFF',
-  '--accent-green': '#8FD694',
-  '--accent-orange': '#F5A962',
-  '--accent-red': '#F07A8D',
-  '--accent-violet': '#9D8CFF',
-
-  '--accent-gold': '#E8B44C',
-  '--accent-gold-muted': '#C9A04A',
-  '--cta-primary': '#E8B44C',
-  '--cta-primary-muted': '#C9A04A',
-  '--cta-primary-text': '#0D0E14',
-
-  '--btn-primary': '#7BA2F7',
-  '--btn-primary-hover': '#8FB5FF',
-  '--btn-secondary': '#3A3E52',
-  '--btn-secondary-hover': '#4A4F68',
-
-  '--bg-success': '#152A20',
-  '--border-success': '#2B5A42',
-  '--bg-error': '#2A1519',
-  '--border-error': '#5A3538',
-  '--bg-warning': '#2A2215',
-  '--border-warning': '#5A4A2A',
-  '--accent-warning': '#F5A962',
-
-  '--diag-exception': '#F07A8D',
-  '--progress-bar': '#7BA2F7',
-  '--progress-warning': '#F5A962',
-  '--warning-badge': '#F5A962',
-
-  '--accent-blue-08': 'rgba(123, 162, 247, 0.08)',
-  '--accent-blue-10': 'rgba(123, 162, 247, 0.1)',
-  '--accent-blue-15': 'rgba(123, 162, 247, 0.15)',
-  '--accent-blue-25': 'rgba(123, 162, 247, 0.25)',
-  '--accent-blue-40': 'rgba(123, 162, 247, 0.4)',
-
-  '--accent-gold-10': 'rgba(232, 180, 76, 0.1)',
-  '--accent-gold-15': 'rgba(232, 180, 76, 0.15)',
-  '--accent-gold-25': 'rgba(232, 180, 76, 0.25)',
-  '--accent-gold-40': 'rgba(232, 180, 76, 0.4)',
-  '--cta-primary-25': 'rgba(232, 180, 76, 0.25)',
-  '--cta-primary-40': 'rgba(232, 180, 76, 0.4)',
-
-  '--accent-orange-08': 'rgba(245, 169, 98, 0.08)',
-  '--accent-orange-10': 'rgba(245, 169, 98, 0.1)',
-  '--accent-orange-15': 'rgba(245, 169, 98, 0.15)',
-
-  '--accent-red-10': 'rgba(240, 122, 141, 0.1)',
-  '--accent-red-15': 'rgba(240, 122, 141, 0.15)',
-
-  '--accent-green-10': 'rgba(143, 214, 148, 0.1)',
-  '--accent-green-15': 'rgba(143, 214, 148, 0.15)',
-
-  '--accent-purple': '#9D8CFF',
-
-  '--tool-yellow-bg': 'rgba(232, 180, 76, 0.1)',
-  '--tool-yellow-border': 'rgba(232, 180, 76, 0.2)',
-  '--tool-yellow-border-strong': 'rgba(232, 180, 76, 0.3)',
-  '--tool-yellow-border-emphasis': 'rgba(232, 180, 76, 0.4)',
-  '--tool-yellow-gradient':
-    'linear-gradient(135deg, rgba(232, 180, 76, 0.15), rgba(201, 160, 74, 0.15))',
-  '--tool-purple-bg': 'rgba(157, 140, 255, 0.08)',
-  '--tool-purple-bg-light': 'rgba(157, 140, 255, 0.12)',
-  '--tool-purple-border': 'rgba(157, 140, 255, 0.15)',
-  '--tool-purple-border-strong': 'rgba(157, 140, 255, 0.35)',
-  '--tool-purple-gradient':
-    'linear-gradient(135deg, rgba(157, 140, 255, 0.12), rgba(123, 162, 247, 0.12))',
-
-  '--shadow-color': 'rgba(0, 0, 0, 0.3)',
-  '--shadow-color-md': 'rgba(0, 0, 0, 0.4)',
-  '--shadow-color-lg': 'rgba(0, 0, 0, 0.5)',
-  '--overlay-bg': 'rgba(0, 0, 0, 0.6)',
-  '--overlay-bg-dark': 'rgba(0, 0, 0, 0.7)',
-
-  '--white-03': 'rgba(255, 255, 255, 0.03)',
-  '--white-60': 'rgba(255, 255, 255, 0.6)',
-};
-
 const light: CssThemePalette = {
-  '--bg-terminal': '#F8F9FA',
-  '--terminal-bg': '#F8F9FA',
-  '--bg-primary': '#EDEEF2',
-  '--bg-elevated': '#FFFFFF',
-  '--bg-sidebar': '#E4E6EC',
-  '--bg-surface': '#FFFFFF',
-  '--bg-input': '#FFFFFF',
-  '--bg-dropdown': '#FFFFFF',
-  '--bg-hover': '#DCDEE6',
-  '--bg-active': '#D4D7E0',
-  '--bg-session-hover': '#DCDEE6',
-  '--bg-session-active': '#D4D7E0',
-  '--bg-settings': '#FFFFFF',
-  '--bg-tertiary': '#E4E6EC',
+  '--bg-terminal': '#F5F0E8',
+  '--terminal-bg': '#F5F0E8',
+  '--bg-primary': '#EAE2D8',
+  '--bg-elevated': '#FEFCF9',
+  '--bg-sidebar': '#E6DDD1',
+  '--bg-surface': '#FEFCF9',
+  '--bg-input': '#FEFCF9',
+  '--bg-dropdown': '#FEFCF9',
+  '--bg-hover': '#DDD4C8',
+  '--bg-active': '#D5CBBD',
+  '--bg-session-hover': '#DDD4C8',
+  '--bg-session-active': '#D5CBBD',
+  '--bg-settings': '#FEFCF9',
+  '--bg-tertiary': '#E6DDD1',
 
-  '--border-color': '#D0D2DA',
-  '--border-default': '#D0D2DA',
-  '--border-subtle': '#E0E1E6',
-  '--border-emphasis': '#B8BBCA',
+  '--border-color': '#D2C8BA',
+  '--border-default': '#D2C8BA',
+  '--border-subtle': '#E2D9CE',
+  '--border-emphasis': '#BAB0A0',
 
-  '--text-primary': '#24292F',
-  '--text-terminal': '#1A1B26',
-  '--text-secondary': '#4B535C',
-  '--text-muted': '#8B949E',
+  '--text-primary': '#2E2720',
+  '--text-terminal': '#2E2720',
+  '--text-secondary': '#5C5044',
+  '--text-muted': '#978B7E',
 
-  '--accent-blue': '#2563EB',
-  '--accent-blue-hover': '#1D4ED8',
-  '--accent-cyan': '#0891B2',
-  '--accent-green': '#16A34A',
-  '--accent-orange': '#D97706',
-  '--accent-red': '#DC2626',
-  '--accent-violet': '#7C3AED',
+  '--accent-blue': '#A7694D',
+  '--accent-blue-hover': '#935B40',
+  '--accent-cyan': '#5B8F7D',
+  '--accent-green': '#6B8F4A',
+  '--accent-orange': '#D97908',
+  '--accent-red': '#DC2828',
+  '--accent-violet': '#8B5F9E',
 
-  '--accent-gold': '#B45309',
-  '--accent-gold-muted': '#92400E',
-  '--cta-primary': '#2563EB',
-  '--cta-primary-muted': '#1D4ED8',
-  '--cta-primary-text': '#FFFFFF',
+  '--accent-gold': '#B6550B',
+  '--accent-gold-muted': '#944210',
+  '--cta-primary': '#A7694D',
+  '--cta-primary-muted': '#935B40',
+  '--cta-primary-text': '#FFFEFA',
 
-  '--btn-primary': '#2563EB',
-  '--btn-primary-hover': '#1D4ED8',
-  '--btn-secondary': '#D0D2DA',
-  '--btn-secondary-hover': '#B8BBCA',
+  '--btn-primary': '#A7694D',
+  '--btn-primary-hover': '#935B40',
+  '--btn-secondary': '#D2C8BA',
+  '--btn-secondary-hover': '#BAB0A0',
 
-  '--bg-success': '#DCFCE7',
-  '--border-success': '#86EFAC',
-  '--bg-error': '#FEE2E2',
-  '--border-error': '#FCA5A5',
-  '--bg-warning': '#FEF3C7',
-  '--border-warning': '#FCD34D',
-  '--accent-warning': '#D97706',
+  '--bg-success': '#DDFCE5',
+  '--border-success': '#88EFAA',
+  '--bg-error': '#FEE3E1',
+  '--border-error': '#FCA7A3',
+  '--bg-warning': '#FEF3C5',
+  '--border-warning': '#FCD44F',
+  '--accent-warning': '#D97908',
 
-  '--diag-exception': '#DC2626',
-  '--progress-bar': '#2563EB',
-  '--progress-warning': '#D97706',
-  '--warning-badge': '#D97706',
+  '--diag-exception': '#DC2828',
+  '--progress-bar': '#A7694D',
+  '--progress-warning': '#D97908',
+  '--warning-badge': '#D97908',
 
-  '--accent-blue-08': 'rgba(37, 99, 235, 0.08)',
-  '--accent-blue-10': 'rgba(37, 99, 235, 0.1)',
-  '--accent-blue-15': 'rgba(37, 99, 235, 0.15)',
-  '--accent-blue-25': 'rgba(37, 99, 235, 0.25)',
-  '--accent-blue-40': 'rgba(37, 99, 235, 0.4)',
+  '--accent-blue-08': 'rgba(167, 105, 77, 0.08)',
+  '--accent-blue-10': 'rgba(167, 105, 77, 0.1)',
+  '--accent-blue-15': 'rgba(167, 105, 77, 0.15)',
+  '--accent-blue-25': 'rgba(167, 105, 77, 0.25)',
+  '--accent-blue-40': 'rgba(167, 105, 77, 0.4)',
 
-  '--accent-gold-10': 'rgba(180, 83, 9, 0.1)',
-  '--accent-gold-15': 'rgba(180, 83, 9, 0.15)',
-  '--accent-gold-25': 'rgba(180, 83, 9, 0.25)',
-  '--accent-gold-40': 'rgba(180, 83, 9, 0.4)',
-  '--cta-primary-25': 'rgba(37, 99, 235, 0.25)',
-  '--cta-primary-40': 'rgba(37, 99, 235, 0.4)',
+  '--accent-gold-10': 'rgba(182, 85, 11, 0.1)',
+  '--accent-gold-15': 'rgba(182, 85, 11, 0.15)',
+  '--accent-gold-25': 'rgba(182, 85, 11, 0.25)',
+  '--accent-gold-40': 'rgba(182, 85, 11, 0.4)',
+  '--cta-primary-25': 'rgba(167, 105, 77, 0.25)',
+  '--cta-primary-40': 'rgba(167, 105, 77, 0.4)',
 
-  '--accent-orange-08': 'rgba(217, 119, 6, 0.08)',
-  '--accent-orange-10': 'rgba(217, 119, 6, 0.1)',
-  '--accent-orange-15': 'rgba(217, 119, 6, 0.15)',
+  '--accent-orange-08': 'rgba(217, 121, 8, 0.08)',
+  '--accent-orange-10': 'rgba(217, 121, 8, 0.1)',
+  '--accent-orange-15': 'rgba(217, 121, 8, 0.15)',
 
-  '--accent-red-10': 'rgba(220, 38, 38, 0.1)',
-  '--accent-red-15': 'rgba(220, 38, 38, 0.15)',
+  '--accent-red-10': 'rgba(220, 40, 40, 0.1)',
+  '--accent-red-15': 'rgba(220, 40, 40, 0.15)',
 
-  '--accent-green-10': 'rgba(22, 163, 74, 0.1)',
-  '--accent-green-15': 'rgba(22, 163, 74, 0.15)',
+  '--accent-green-10': 'rgba(107, 143, 74, 0.1)',
+  '--accent-green-15': 'rgba(107, 143, 74, 0.15)',
 
-  '--accent-purple': '#7C3AED',
+  '--accent-purple': '#8B5F9E',
 
-  '--tool-yellow-bg': 'rgba(180, 83, 9, 0.1)',
-  '--tool-yellow-border': 'rgba(180, 83, 9, 0.2)',
-  '--tool-yellow-border-strong': 'rgba(180, 83, 9, 0.3)',
-  '--tool-yellow-border-emphasis': 'rgba(180, 83, 9, 0.4)',
+  '--tool-yellow-bg': 'rgba(182, 85, 11, 0.1)',
+  '--tool-yellow-border': 'rgba(182, 85, 11, 0.2)',
+  '--tool-yellow-border-strong': 'rgba(182, 85, 11, 0.3)',
+  '--tool-yellow-border-emphasis': 'rgba(182, 85, 11, 0.4)',
   '--tool-yellow-gradient':
-    'linear-gradient(135deg, rgba(180, 83, 9, 0.1), rgba(146, 64, 14, 0.1))',
-  '--tool-purple-bg': 'rgba(124, 58, 237, 0.08)',
-  '--tool-purple-bg-light': 'rgba(124, 58, 237, 0.12)',
-  '--tool-purple-border': 'rgba(124, 58, 237, 0.15)',
-  '--tool-purple-border-strong': 'rgba(124, 58, 237, 0.35)',
+    'linear-gradient(135deg, rgba(182, 85, 11, 0.1), rgba(148, 66, 16, 0.1))',
+  '--tool-purple-bg': 'rgba(139, 95, 158, 0.08)',
+  '--tool-purple-bg-light': 'rgba(139, 95, 158, 0.12)',
+  '--tool-purple-border': 'rgba(139, 95, 158, 0.15)',
+  '--tool-purple-border-strong': 'rgba(139, 95, 158, 0.35)',
   '--tool-purple-gradient':
-    'linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(37, 99, 235, 0.1))',
+    'linear-gradient(135deg, rgba(139, 95, 158, 0.1), rgba(167, 105, 77, 0.1))',
 
   '--shadow-color': 'rgba(0, 0, 0, 0.08)',
   '--shadow-color-md': 'rgba(0, 0, 0, 0.12)',
@@ -220,6 +114,9 @@ const light: CssThemePalette = {
 
   '--white-03': 'rgba(0, 0, 0, 0.03)',
   '--white-60': 'rgba(0, 0, 0, 0.45)',
+
+  '--logo-filter': 'invert(1)',
+  '--text-on-accent': '#FFFEFA',
 };
 
 const solarizedDark: CssThemePalette = {
@@ -326,6 +223,9 @@ const solarizedDark: CssThemePalette = {
 
   '--white-03': 'rgba(255, 255, 255, 0.03)',
   '--white-60': 'rgba(255, 255, 255, 0.6)',
+
+  '--logo-filter': 'none',
+  '--text-on-accent': '#FFFFFF',
 };
 
 const solarizedLight: CssThemePalette = {
@@ -432,19 +332,40 @@ const solarizedLight: CssThemePalette = {
 
   '--white-03': 'rgba(0, 0, 0, 0.03)',
   '--white-60': 'rgba(0, 0, 0, 0.45)',
+
+  '--logo-filter': 'invert(1)',
+  '--text-on-accent': '#FFFDF6',
 };
 
-export const CSS_THEMES: Record<ThemeName, CssThemePalette> = {
-  dark,
+const CSS_THEMES: Record<string, CssThemePalette> = {
   light,
   solarizedDark,
   solarizedLight,
 };
 
 export function applyCssTheme(themeName: ThemeName): void {
-  const palette = CSS_THEMES[themeName] || CSS_THEMES.dark;
   const root = document.documentElement;
-  for (const [prop, value] of Object.entries(palette)) {
-    root.style.setProperty(prop, value);
+  const palette = CSS_THEMES[themeName];
+  if (palette) {
+    for (const [prop, value] of Object.entries(palette)) {
+      root.style.setProperty(prop, value);
+    }
+    updateThemeColor(palette['--bg-primary'] ?? '#0D0E14');
+  } else {
+    // Dark is the base theme in app.css — clear any overrides
+    const anyPalette = Object.values(CSS_THEMES)[0];
+    if (anyPalette) {
+      for (const prop of Object.keys(anyPalette)) {
+        root.style.removeProperty(prop);
+      }
+    }
+    updateThemeColor('#0D0E14');
+  }
+}
+
+function updateThemeColor(color: string): void {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.setAttribute('content', color);
   }
 }

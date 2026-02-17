@@ -73,3 +73,20 @@ public sealed class FileResolveResponse
     public DateTime? Modified { get; set; }
     public bool? IsText { get; set; }
 }
+
+public sealed class FileTreeResponse
+{
+    public string Path { get; set; } = string.Empty;
+    public FileTreeEntry[] Entries { get; set; } = [];
+    public bool IsGitRepo { get; set; }
+}
+
+public sealed class FileTreeEntry
+{
+    public string Name { get; set; } = string.Empty;
+    public string FullPath { get; set; } = string.Empty;
+    public bool IsDirectory { get; set; }
+    public long? Size { get; set; }
+    public string? MimeType { get; set; }
+    public string? GitStatus { get; set; }
+}

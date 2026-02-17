@@ -84,4 +84,9 @@ public sealed class HistoryPatchRequest
     /// Set star status (true = starred, false = not starred)
     /// </summary>
     public bool? IsStarred { get; init; }
+
+    /// <summary>
+    /// Set label (null = not provided, "" = clear, "text" = set)
+    /// </summary>
+    public string? Label { get; init; }
 }

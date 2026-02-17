@@ -1665,6 +1665,7 @@ export interface components {
       devMode: boolean;
       features: components['schemas']['FeatureFlags'];
       voicePassword: null | string;
+      gitVersion: null | string;
     };
     CertificateDownloadInfo: {
       fingerprint: string;
@@ -1765,9 +1766,12 @@ export interface components {
     };
     HistoryPatchRequest: {
       isStarred?: null | boolean;
+      label?: null | string;
     };
     /** Format: binary */
     IFormFile: string;
+    /** @enum {unknown} */
+    LanguageSetting: 'auto' | 'en' | 'zh' | 'es' | 'hi' | 'fr' | 'bn' | 'pt' | 'ru' | 'ja' | 'de';
     LaunchEntry: {
       id: string;
       shellType: string;
@@ -1775,6 +1779,7 @@ export interface components {
       commandLine: null | string;
       workingDirectory: string;
       isStarred: boolean;
+      label: null | string;
       /** Format: int32 */
       weight: number;
       /** Format: date-time */
@@ -1850,7 +1855,10 @@ export interface components {
       scrollbackProtection: boolean;
       fileRadar: boolean;
       tmuxCompatibility: boolean;
+      ideMode: boolean;
       managerBarEnabled: boolean;
+      showChangelogAfterUpdate: boolean;
+      language: components['schemas']['LanguageSetting'];
       managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;
       runAsUserSid: null | string;
@@ -1919,6 +1927,7 @@ export interface components {
       foregroundCommandLine: null | string;
       /** Format: int32 */
       order: number;
+      parentSessionId: null | string;
     };
     SessionListDto: {
       sessions: components['schemas']['SessionInfoDto'][];

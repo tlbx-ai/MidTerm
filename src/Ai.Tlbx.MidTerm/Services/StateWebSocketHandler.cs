@@ -136,10 +136,15 @@ public sealed class StateWebSocketHandler
         }
 
         var connectionToken = new object();
+        var clientId = context.Request.Query["clientId"].FirstOrDefault();
 
         async Task SendMainBrowserStatusAsync()
         {
-            var status = new MainBrowserStatusMessage { IsMain = _mainBrowserService.IsMain(connectionToken) };
+            var status = new MainBrowserStatusMessage
+            {
+                IsMain = _mainBrowserService.IsMain(connectionToken),
+                ShowButton = _mainBrowserService.HasMultipleClients
+            };
             await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
         }
 
@@ -187,7 +192,7 @@ public sealed class StateWebSocketHandler
             lastUpdate = _updateService.LatestUpdate;
             await SendStateAsync();
             _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
-            _mainBrowserService.Register(connectionToken);
+            _mainBrowserService.Register(connectionToken, clientId);
             await SendMainBrowserStatusAsync();
 
             var buffer = new byte[8192];

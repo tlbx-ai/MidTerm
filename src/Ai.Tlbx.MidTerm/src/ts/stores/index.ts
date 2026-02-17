@@ -35,9 +35,6 @@ export const $sessions = map<Record<string, Session>>({});
 /** Currently active session ID */
 export const $activeSessionId = atom<string | null>(null);
 
-/** Session currently being renamed (guards input focus during re-renders) */
-export const $renamingSessionId = atom<string | null>(null);
-
 /**
  * Pending renames awaiting server confirmation.
  * Maps sessionId -> pending name (empty string means clearing the name).
@@ -62,11 +59,57 @@ export function clearPendingRename(sessionId: string): void {
 
 /**
  * Sessions as a sorted array for rendering.
- * Sorted by _order (which is set from server's order field on load).
+ * Top-level sessions sorted by _order, with tmux children inserted after their parent.
  */
 export const $sessionList = computed($sessions, (sessions) => {
-  return Object.values(sessions).sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+  const all = Object.values(sessions);
+  const topLevel = all
+    .filter((s) => !s.parentSessionId)
+    .sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+  const childrenByParent = new Map<string, Session[]>();
+  for (const s of all) {
+    if (s.parentSessionId) {
+      let children = childrenByParent.get(s.parentSessionId);
+      if (!children) {
+        children = [];
+        childrenByParent.set(s.parentSessionId, children);
+      }
+      children.push(s);
+    }
+  }
+  const result: Session[] = [];
+  for (const parent of topLevel) {
+    result.push(parent);
+    const children = childrenByParent.get(parent.id);
+    if (children) {
+      children.sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+      result.push(...children);
+    }
+  }
+  // Orphaned children (parent no longer exists) go at the end
+  for (const s of all) {
+    if (s.parentSessionId && !all.some((p) => p.id === s.parentSessionId)) {
+      result.push(s);
+    }
+  }
+  return result;
 });
+
+/**
+ * Check if a session is a tmux child session.
+ */
+export function isChildSession(sessionId: string): boolean {
+  const session = $sessions.get()[sessionId];
+  return !!session?.parentSessionId;
+}
+
+/**
+ * Get the parent session ID for a tmux child session.
+ */
+export function getParentSessionId(sessionId: string): string | null {
+  const session = $sessions.get()[sessionId];
+  return session?.parentSessionId ?? null;
+}
 
 /** Current active session object (derived) */
 export const $activeSession = computed([$sessions, $activeSessionId], (sessions, activeId) =>
@@ -104,6 +147,12 @@ export const $fileViewerDocked = atom<boolean>(false);
 
 /** Docked file path */
 export const $dockedFilePath = atom<string | null>(null);
+
+/** Commands panel docked to right sidebar */
+export const $commandsPanelDocked = atom<boolean>(false);
+
+/** Git panel docked to right sidebar */
+export const $gitPanelDocked = atom<boolean>(false);
 
 // =============================================================================
 // Connection State Stores
@@ -219,7 +268,10 @@ export function setSessions(sessionList: Session[]): void {
       }
     }
 
-    sessionsMap[id] = { ...session, name, _order: session.order ?? i };
+    const existing = $sessions.get()[id];
+    const entry: Session = { ...session, name, _order: session.order ?? i };
+    if (existing?._bookmarkId) entry._bookmarkId = existing._bookmarkId;
+    sessionsMap[id] = entry;
   });
   $sessions.set(sessionsMap);
 }
@@ -288,3 +340,6 @@ export const $focusedSessionId = atom<string | null>(null);
 
 /** Whether this browser is the "main" browser that auto-resizes terminals (server-driven) */
 export const $isMainBrowser = atom<boolean>(false);
+
+/** Whether the main browser button should be visible (server has seen 2+ unique clients) */
+export const $showMainBrowserButton = atom<boolean>(false);

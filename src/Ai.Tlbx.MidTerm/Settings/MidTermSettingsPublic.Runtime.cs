@@ -31,8 +31,11 @@ public sealed partial class MidTermSettingsPublic
             ScrollbackProtection = settings.ScrollbackProtection,
             FileRadar = settings.FileRadar,
             TmuxCompatibility = settings.TmuxCompatibility,
+            IdeMode = settings.IdeMode,
             ManagerBarEnabled = settings.ManagerBarEnabled,
             ManagerBarButtons = settings.ManagerBarButtons,
+            ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
+            Language = settings.Language,
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
             AuthenticationEnabled = settings.AuthenticationEnabled,
@@ -65,8 +68,11 @@ public sealed partial class MidTermSettingsPublic
         settings.ScrollbackProtection = ScrollbackProtection;
         settings.FileRadar = FileRadar;
         settings.TmuxCompatibility = TmuxCompatibility;
+        settings.IdeMode = IdeMode;
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.ManagerBarButtons = ManagerBarButtons;
+        settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
+        settings.Language = Language;
 
         // SECURITY: Validate RunAsUser before applying
         if (!OperatingSystem.IsWindows())

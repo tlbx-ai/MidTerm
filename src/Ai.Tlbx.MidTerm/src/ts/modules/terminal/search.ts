@@ -7,6 +7,7 @@
 
 import { sessionTerminals } from '../../state';
 import { $activeSessionId } from '../../stores';
+import { t } from '../i18n';
 
 import { type Terminal } from '@xterm/xterm';
 import { SearchAddon } from '@xterm/addon-search';
@@ -137,10 +138,10 @@ export function findPrevious(): void {
 function updateSearchResults(found: boolean): void {
   if (searchResults) {
     if (found) {
-      searchResults.textContent = 'Found';
+      searchResults.textContent = t('terminal.searchFound');
       searchResults.style.color = '';
     } else {
-      searchResults.textContent = 'No matches';
+      searchResults.textContent = t('terminal.searchNoMatches');
       searchResults.style.color = 'var(--accent-red)';
     }
   }

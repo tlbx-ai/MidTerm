@@ -27,6 +27,8 @@ import {
 import { updateSecurityWarning, updatePasswordStatus } from '../auth/status';
 import { setDevMode, setVoiceChatEnabled, setVoiceSectionVisible } from '../sidebar/voiceSection';
 import { checkVoiceServerHealth } from '../voice';
+import { consumePendingChangelogFlag } from '../updating/checker';
+import { showChangelog } from '../updating/changelog';
 import { escapeHtml } from '../../utils';
 
 const log = createLogger('bootstrap');
@@ -109,6 +111,9 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     // Check system health (TtyHost compatibility)
     checkTtyHostHealth(data);
 
+    // Render reinstall hint with platform-specific install command
+    renderReinstallHint(data.platform);
+
     // Feature flags - enable/disable UI features
     setVoiceChatEnabled(data.features.voiceChat);
 
@@ -122,6 +127,9 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
       });
     }
 
+    // Git availability indicator in IDE settings
+    renderGitAvailability(data.gitVersion ?? null);
+
     // Apply settings to any terminals that were created before settings loaded
     applySettingsToTerminals();
 
@@ -130,6 +138,21 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
   } catch (e) {
     log.error(() => `Bootstrap failed: ${e}`);
     return null;
+  }
+}
+
+/**
+ * Render git availability in IDE settings panel
+ */
+function renderGitAvailability(gitVersion: string | null): void {
+  const el = document.getElementById('ide-git-status');
+  if (!el) return;
+  if (gitVersion) {
+    el.textContent = gitVersion;
+    el.classList.add('git-found');
+  } else {
+    el.textContent = 'not found';
+    el.classList.add('git-not-found');
   }
 }
 
@@ -200,6 +223,10 @@ function populateShellDropdown(shells: ShellInfoDto[], defaultShell: string): vo
 function handleUpdateResult(result: UpdateResult): void {
   const status = result.success ? 'success' : 'failed';
   log.info(() => `Update result: ${status} - ${result.message || 'no error'}`);
+
+  if (result.success && consumePendingChangelogFlag()) {
+    showChangelog();
+  }
 }
 
 /**
@@ -218,6 +245,38 @@ function checkTtyHostHealth(data: BootstrapResponse): void {
   } else {
     warning.classList.add('hidden');
   }
+}
+
+/**
+ * Render the reinstall hint with platform-specific install command.
+ */
+function renderReinstallHint(platform: string): void {
+  const container = document.getElementById('reinstall-hint');
+  if (!container) return;
+
+  const isWindows = /win/i.test(platform);
+  const cmd = isWindows
+    ? 'irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex'
+    : 'curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash';
+
+  container.classList.remove('hidden');
+  container.innerHTML =
+    '<div class="reinstall-hint-text">If an update fails, re-run the installer (preserves settings):</div>' +
+    '<div class="reinstall-hint-cmd">' +
+    '<code>' +
+    escapeHtml(cmd) +
+    '</code>' +
+    '<button class="btn-copy-cmd" title="Copy to clipboard">Copy</button>' +
+    '</div>';
+
+  container.querySelector('.btn-copy-cmd')?.addEventListener('click', (e) => {
+    const btn = e.target as HTMLButtonElement;
+    navigator.clipboard.writeText(cmd);
+    btn.textContent = 'Copied!';
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+    }, 1500);
+  });
 }
 
 /**

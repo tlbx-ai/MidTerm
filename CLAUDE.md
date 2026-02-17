@@ -221,10 +221,12 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 | `comms/` | WebSocket connections: `muxChannel.ts` (binary I/O), `stateChannel.ts` (session state), `settingsChannel.ts` (settings sync) |
 | `diagnostics/` | Diagnostics panel for debugging |
 | `fileViewer/` | In-terminal file preview |
+| `git/` | Git status WebSocket, staging, diff viewer for IDE mode Git tab |
 | `history/` | Command history dropdown and API |
 | `logging/` | Client-side logger with levels |
 | `process/` | Foreground process monitoring |
 | `settings/` | Settings panel UI, tabs, persistence |
+| `sessionTabs/` | IDE mode tab bar: Terminal, Files, Git, Commands per session |
 | `sidebar/` | Session list, collapse/expand, drag reorder, network section |
 | `terminal/` | xterm.js lifecycle, scaling, search, file drop, file links |
 | `theming/` | Theme application and persistence |

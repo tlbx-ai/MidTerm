@@ -42,6 +42,7 @@ public sealed class WindowsPty : IPtyConnection
     }
 
     public int Pid { get; private set; }
+    public int MasterFd => -1;
 
     public bool IsRunning
     {

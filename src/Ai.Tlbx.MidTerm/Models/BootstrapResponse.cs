@@ -86,6 +86,11 @@ public sealed class BootstrapResponse
     /// Browser appends this to WebSocket URL for MidTerm.Voice authentication.
     /// </summary>
     public string? VoicePassword { get; init; }
+
+    /// <summary>
+    /// Git version string if git is available, null otherwise
+    /// </summary>
+    public string? GitVersion { get; init; }
 }
 
 /// <summary>
