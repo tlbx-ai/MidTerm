@@ -725,46 +725,101 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
     {
         OnOutput?.Invoke(sessionId, cols, rows, data);
-        ScanForOsc7(sessionId, data.Span);
+        ScanForOscSequences(sessionId, data.Span);
     }
 
     /// <summary>
-    /// Scan terminal output for OSC-7 (CWD reporting) sequences.
-    /// Format: ESC ] 7 ; file://hostname/path BEL  or  ESC ] 7 ; file://hostname/path ESC \
+    /// Scan terminal output for OSC sequences we care about:
+    /// - OSC 0/2: Window title (ESC ] 0 ; title BEL)
+    /// - OSC 7: CWD reporting (ESC ] 7 ; file://host/path BEL)
     /// </summary>
-    private void ScanForOsc7(string sessionId, ReadOnlySpan<byte> data)
+    private static ReadOnlySpan<byte> EscOsc => [0x1B, 0x5D];
+
+    private void ScanForOscSequences(string sessionId, ReadOnlySpan<byte> data)
     {
-        // Quick check: does the data contain ESC ] 7 ; (0x1B 0x5D 0x37 0x3B)?
-        var idx = data.IndexOf(stackalloc byte[] { 0x1B, 0x5D, 0x37, 0x3B });
-        if (idx < 0) return;
+        // Quick check: does the data contain ESC ] at all?
+        if (data.IndexOf(EscOsc) < 0) return;
 
-        // Find the payload start (after "ESC ] 7 ;")
-        var start = idx + 4;
-        if (start >= data.Length) return;
+        var pos = 0;
+        var changed = false;
 
-        // Find terminator: BEL (0x07) or ST (ESC \ = 0x1B 0x5C)
-        var end = -1;
-        for (var i = start; i < data.Length; i++)
+        while (pos < data.Length - 2)
         {
-            if (data[i] == 0x07)
+            // Find next ESC ]
+            var idx = data[pos..].IndexOf(EscOsc);
+            if (idx < 0) break;
+            idx += pos;
+
+            // Read the OSC number and semicolon
+            var numStart = idx + 2;
+            if (numStart >= data.Length) break;
+
+            // Parse single-digit OSC number followed by ;
+            var oscNum = -1;
+            var payloadStart = -1;
+            if (numStart + 1 < data.Length && data[numStart] >= (byte)'0' && data[numStart] <= (byte)'9' && data[numStart + 1] == (byte)';')
             {
-                end = i;
-                break;
+                oscNum = data[numStart] - '0';
+                payloadStart = numStart + 2;
             }
-            if (data[i] == 0x1B && i + 1 < data.Length && data[i + 1] == 0x5C)
+
+            if (oscNum < 0 || payloadStart >= data.Length)
             {
-                end = i;
-                break;
+                pos = numStart;
+                continue;
             }
+
+            // Find terminator: BEL (0x07) or ST (ESC \ = 0x1B 0x5C)
+            var end = -1;
+            for (var i = payloadStart; i < data.Length; i++)
+            {
+                if (data[i] == 0x07) { end = i; break; }
+                if (data[i] == 0x1B && i + 1 < data.Length && data[i + 1] == 0x5C) { end = i; break; }
+            }
+            if (end <= payloadStart)
+            {
+                pos = payloadStart;
+                continue;
+            }
+
+            var payload = System.Text.Encoding.UTF8.GetString(data[payloadStart..end]);
+
+            switch (oscNum)
+            {
+                case 0:
+                case 2:
+                    changed |= HandleOscTitle(sessionId, payload);
+                    break;
+                case 7:
+                    changed |= HandleOscCwdUpdate(sessionId, payload);
+                    break;
+            }
+
+            pos = end + 1;
         }
-        if (end <= start) return;
 
-        var payload = System.Text.Encoding.UTF8.GetString(data[start..end]);
+        if (changed)
+        {
+            NotifyStateChange();
+        }
+    }
 
-        // Parse file://hostname/path
-        if (!payload.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return;
+    private bool HandleOscTitle(string sessionId, string title)
+    {
+        if (!_sessionCache.TryGetValue(sessionId, out var info)) return false;
+        var trimmed = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        if (string.Equals(info.TerminalTitle, trimmed, StringComparison.Ordinal)) return false;
+        info.TerminalTitle = trimmed;
+        return true;
+    }
+
+    private bool HandleOscCwdUpdate(string sessionId, string payload)
+    {
+        if (!_sessionCache.TryGetValue(sessionId, out var info)) return false;
+
+        if (!payload.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return false;
         var pathStart = payload.IndexOf('/', 7);
-        if (pathStart < 0) return;
+        if (pathStart < 0) return false;
 
         var path = Uri.UnescapeDataString(payload[pathStart..]);
 
@@ -774,16 +829,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             path = path[1..].Replace('/', '\\');
         }
 
-        if (string.IsNullOrWhiteSpace(path)) return;
-
-        if (_sessionCache.TryGetValue(sessionId, out var info))
-        {
-            if (!string.Equals(info.CurrentDirectory, path, StringComparison.OrdinalIgnoreCase))
-            {
-                info.CurrentDirectory = path;
-                NotifyStateChange();
-            }
-        }
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (string.Equals(info.CurrentDirectory, path, StringComparison.OrdinalIgnoreCase)) return false;
+        info.CurrentDirectory = path;
+        return true;
     }
 
     private void HandleClientForegroundChanged(string sessionId, ForegroundChangePayload payload)
