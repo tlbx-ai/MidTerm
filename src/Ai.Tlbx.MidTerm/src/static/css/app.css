@@ -498,7 +498,7 @@ html, body {
 }
 
 .session-title {
-    font-size: var(--fs-md);
+    font-size: var(--fs-lg);
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
