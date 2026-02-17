@@ -191,19 +191,25 @@
     --radius-2xl: 12px;
     --radius-3xl: 16px;
 
-    /* Type scale (~1.2 ratio) */
-    --text-xs: 10px;
-    --text-sm: 12px;
-    --text-base: 14px;
-    --text-lg: 16px;
-    --text-xl: 20px;
-    --text-2xl: 24px;
+    /* Font stacks — change UI font in one place */
+    --font-ui: "ui-sans-serif", "-apple-system", "system-ui", "Segoe UI", "Helvetica", "Apple Color Emoji", "Arial", "sans-serif", "Segoe UI Emoji", "Segoe UI Symbol";
+    --font-ui-emoji: var(--font-ui);
+    --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+
+    /* Type scale */
+    --fs-2xs: 9px;
+    --fs-xs: 10px;
+    --fs-sm: 11px;
+    --fs-md: 12px;
+    --fs-base: 13px;
+    --fs-lg: 14px;
+    --fs-xl: 16px;
+    --fs-2xl: 18px;
+    --fs-3xl: 20px;
+    --fs-4xl: 24px;
 
     /* Layout sizing */
     --bar-height: 40px;
-
-    /* Monospace font stack */
-    --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
 
     /* Transition durations */
     --transition-fast: 0.1s;
@@ -251,7 +257,7 @@ html, body {
     overflow: hidden;
     background-color: var(--bg-primary);
     color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-ui);
 }
 
 .terminal-page {
@@ -328,7 +334,7 @@ html, body {
 }
 
 .sidebar-title {
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -344,7 +350,7 @@ html, body {
     color: var(--text-primary);
     border-radius: 4px;
     cursor: pointer;
-    font-size: 18px;
+    font-size: var(--fs-2xl);
     line-height: 1;
     display: flex;
     align-items: center;
@@ -390,7 +396,7 @@ html, body {
     border-left: 2px solid transparent;
     gap: 0;
     position: relative;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+    font-family: var(--font-ui-emoji);
     transition: transform 0.2s ease-in-out, background-color 0.15s ease-in-out, opacity 0.2s;
 }
 
@@ -492,7 +498,7 @@ html, body {
 }
 
 .session-title {
-    font-size: 12.5px;
+    font-size: var(--fs-md);
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -506,7 +512,7 @@ html, body {
 }
 
 .session-subtitle {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -516,7 +522,7 @@ html, body {
 }
 
 .session-details {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-secondary);
     display: flex;
     align-items: center;
@@ -524,7 +530,7 @@ html, body {
 }
 
 .passive-indicator {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     opacity: 0.7;
 }
 
@@ -537,7 +543,7 @@ html, body {
 }
 
 .session-foreground {
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     color: var(--text-muted);
     display: flex;
     align-items: center;
@@ -571,7 +577,7 @@ html, body {
 }
 
 .session-racing-log {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--accent-orange);
     display: block;
     animation: racingFade 0.3s ease-in-out;
@@ -594,7 +600,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     transition: color 0.15s, background 0.15s;
 }
 
@@ -629,7 +635,7 @@ html, body {
 
 .history-dropdown-header {
     padding: 8px 12px;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -645,7 +651,7 @@ html, body {
     padding: 16px 12px;
     text-align: center;
     color: var(--text-muted);
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
 }
 
 .history-item {
@@ -671,7 +677,7 @@ html, body {
 
 .history-item-label {
     width: 100%;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
@@ -681,12 +687,12 @@ html, body {
 
 .history-item-text {
     flex: 1;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     color: var(--text-primary);
 }
 
 .history-item-meta {
-    font-size: var(--text-xs);
+    font-size: var(--fs-xs);
     color: var(--text-muted);
     flex-shrink: 0;
 }
@@ -702,7 +708,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     opacity: 0;
     transition: opacity 0.1s, color 0.1s;
 }
@@ -726,7 +732,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     flex-shrink: 0;
     margin-right: 4px;
     transition: color 0.1s;
@@ -748,7 +754,7 @@ html, body {
 
 .history-section-header {
     padding: 6px 12px;
-    font-size: var(--text-xs);
+    font-size: var(--fs-xs);
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -760,7 +766,7 @@ html, body {
 }
 
 .session-rename-input {
-    font-size: 13px;
+    font-size: var(--fs-base);
     padding: 2px 4px;
     border: 1px solid var(--btn-secondary);
     border-radius: 3px;
@@ -810,7 +816,7 @@ html, body {
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--fs-md);
     line-height: 1;
     border-radius: 3px;
     display: flex;
@@ -819,7 +825,7 @@ html, body {
 }
 
 .session-pin {
-    font-size: 14px;
+    font-size: var(--fs-lg);
 }
 
 .session-pin:hover,
@@ -844,7 +850,7 @@ html, body {
     position: absolute;
     right: 8px;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--fs-lg);
     opacity: 0.55;
     display: flex;
     align-items: center;
@@ -859,7 +865,7 @@ html, body {
 }
 
 .session-name {
-    font-size: 13px;
+    font-size: var(--fs-lg);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -884,7 +890,7 @@ html, body {
 .sidebar-footer {
     padding: 6px 12px;
     border-top: 1px solid var(--border-color);
-    font-size: var(--text-xs);
+    font-size: var(--fs-xs);
     color: var(--text-muted);
     background-color: var(--terminal-bg);
 }
@@ -897,19 +903,19 @@ html, body {
 }
 
 .sidebar-footer .version {
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     color: color-mix(in srgb, var(--text-muted) 90%, transparent);
 }
 
 .sidebar-footer .footer-traffic {
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     color: color-mix(in srgb, var(--text-muted) 90%, transparent);
     font-variant-numeric: tabular-nums;
     transition: opacity 0.2s;
 }
 
 .sidebar-footer .footer-separator {
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     color: color-mix(in srgb, var(--text-muted) 90%, transparent);
 }
 
@@ -920,9 +926,28 @@ html, body {
     margin-right: 4px;
 }
 
+.footer-update-hint {
+    font-size: var(--fs-xs);
+    color: color-mix(in srgb, var(--text-muted) 90%, transparent);
+}
+
+.footer-update-hint.hidden {
+    display: none;
+}
+
+.footer-update-hint a {
+    color: var(--accent-cyan);
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.footer-update-hint a:hover {
+    text-decoration: underline;
+}
+
 .network-list {
     margin-bottom: 6px;
-    font-size: 9.5px;
+    font-size: var(--fs-2xs);
     color: var(--text-secondary);
     line-height: 1.5;
     display: grid;
@@ -959,7 +984,7 @@ html, body {
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 16px;
+    font-size: var(--fs-xl);
     line-height: 1;
     border-radius: 3px;
     display: flex;
@@ -1024,7 +1049,7 @@ html, body {
     z-index: 10;
     padding: 4px 8px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     line-height: 1.5;
     border-radius: var(--radius-md);
     background: rgba(0, 0, 0, 0.7);
@@ -1059,8 +1084,8 @@ html, body {
     z-index: 100;
     background: rgba(30, 30, 30, 0.92);
     color: #ccc;
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
     line-height: 1.4;
     padding: 8px 10px;
     border-radius: 4px;
@@ -1110,7 +1135,7 @@ html, body {
     border: 1px solid var(--accent-blue);
     border-radius: 8px;
     color: var(--accent-blue);
-    font-size: 14px;
+    font-size: var(--fs-lg);
     font-weight: 500;
     z-index: 100;
     pointer-events: none;
@@ -1459,7 +1484,7 @@ html, body {
     color: var(--text-primary);
     border-radius: 3px;
     cursor: pointer;
-    font-size: 10px;
+    font-size: var(--fs-xs);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1474,7 +1499,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: var(--fs-md);
     overflow: hidden;
     min-width: 0;
 }
@@ -1645,7 +1670,7 @@ html, body {
         border: none;
         background: transparent;
         color: var(--text-primary);
-        font-size: 20px;
+        font-size: var(--fs-3xl);
         cursor: pointer;
         border-radius: 8px;
         display: flex;
@@ -1663,13 +1688,13 @@ html, body {
 
     /* Hamburger button */
     .topbar-hamburger {
-        font-size: 22px;
+        font-size: var(--fs-3xl);
     }
 
     /* Title in center */
     .topbar-title {
         flex: 1;
-        font-size: 15px;
+        font-size: var(--fs-xl);
         font-weight: 500;
         white-space: nowrap;
         overflow: hidden;
@@ -1689,7 +1714,7 @@ html, body {
 
     /* Action buttons - slightly smaller visual but same touch target */
     .topbar-action {
-        font-size: 16px;
+        font-size: var(--fs-xl);
         color: var(--text-secondary);
     }
 
@@ -1700,9 +1725,9 @@ html, body {
 
     /* Ctrl+C button - orange accent for interrupt actions */
     .topbar-ctrlc {
-        font-family: monospace;
-        font-weight: bold;
-        font-size: 13px;
+        font-family: var(--font-mono);
+        font-weight: 600;
+        font-size: var(--fs-base);
         color: var(--accent-orange);
     }
 
@@ -1714,7 +1739,7 @@ html, body {
     /* Fullscreen button - prominent green accent */
     .topbar-fullscreen {
         color: var(--accent-green);
-        font-size: 18px;
+        font-size: var(--fs-2xl);
     }
 
     .topbar-fullscreen:active {
@@ -1732,7 +1757,7 @@ html, body {
     .topbar-add {
         background-color: var(--btn-primary);
         color: var(--bg-primary);
-        font-size: 22px;
+        font-size: var(--fs-3xl);
         font-weight: 500;
     }
 
@@ -1805,7 +1830,7 @@ html, body {
         display: flex;
         width: 56px;
         height: 56px;
-        font-size: 20px;
+        font-size: var(--fs-3xl);
         border-radius: 8px;
         background-color: var(--btn-secondary);
     }
@@ -1845,7 +1870,7 @@ html, body {
         background: transparent;
         color: var(--text-secondary);
         cursor: pointer;
-        font-size: 18px;
+        font-size: var(--fs-2xl);
         border-radius: 6px;
         flex-shrink: 0;
         -webkit-tap-highlight-color: transparent;
@@ -1873,11 +1898,11 @@ html, body {
     }
 
     .session-title {
-        font-size: 15px;
+        font-size: var(--fs-xl);
     }
 
     .session-subtitle {
-        font-size: 12px;
+        font-size: var(--fs-md);
     }
 
     /* Mobile action bar backdrop (created via JS) */
@@ -1930,11 +1955,11 @@ html, body {
     }
 
     .settings-tab .icon {
-        font-size: 20px;
+        font-size: var(--fs-3xl);
     }
 
     .settings-tab .tab-label {
-        font-size: 11px;
+        font-size: var(--fs-sm);
     }
 
     .settings-content {
@@ -1948,7 +1973,7 @@ html, body {
     }
 
     .settings-panel h2 {
-        font-size: 20px;
+        font-size: var(--fs-3xl);
     }
 
     .setting-row {
@@ -2030,15 +2055,15 @@ html, body {
     }
 
     .topbar-title {
-        font-size: 14px;
+        font-size: var(--fs-lg);
     }
 
     .topbar-action {
-        font-size: 14px;
+        font-size: var(--fs-lg);
     }
 
     .topbar-add {
-        font-size: 20px;
+        font-size: var(--fs-3xl);
     }
 
     /* Sidebar narrower on very small screens */
@@ -2084,7 +2109,7 @@ html, body {
 
 .empty-state-hint {
     margin-top: 24px !important;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     color: var(--text-muted);
 }
 
@@ -2095,7 +2120,7 @@ html, body {
     border-radius: 4px;
     padding: 2px 6px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-secondary);
     box-shadow: 0 1px 2px var(--shadow-color);
 }
@@ -2107,7 +2132,7 @@ html, body {
     border: none;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     font-weight: 600;
     box-shadow: 0 4px 16px var(--cta-primary-25);
     transition: transform 0.15s, box-shadow 0.15s;
@@ -2128,7 +2153,7 @@ html, body {
     bottom: 8px;
     padding: 4px 8px;
     border-radius: var(--radius-md);
-    font-size: var(--text-xs);
+    font-size: var(--fs-xs);
     opacity: 0;
     transition: opacity 0.15s;
     z-index: 1000;
@@ -2204,7 +2229,7 @@ html, body {
     justify-content: center;
     align-items: center;
     gap: 20px;
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     box-shadow: 0 2px 8px var(--shadow-color);
 }
 
@@ -2234,7 +2259,7 @@ html, body {
     left: 0;
     right: 0;
     padding: 12px 20px;
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     z-index: 2000;
     text-align: center;
     display: none;
@@ -2271,7 +2296,7 @@ html, body {
     background-color: var(--btn-secondary);
     opacity: 0.9;
     color: var(--text-secondary);
-    font-size: 10px;
+    font-size: var(--fs-xs);
     border-radius: 4px;
     border: none;
     cursor: pointer;
@@ -2289,7 +2314,7 @@ html, body {
 }
 
 .scaled-overlay .icon {
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 /* Sidebar header buttons */
@@ -2307,7 +2332,7 @@ html, body {
     color: var(--text-primary);
     border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     line-height: 1;
     display: flex;
     align-items: center;
@@ -2321,7 +2346,7 @@ html, body {
 .sidebar-btn.primary {
     background: linear-gradient(135deg, var(--cta-primary), var(--cta-primary-muted));
     color: var(--cta-primary-text);
-    font-size: 18px;
+    font-size: var(--fs-2xl);
     transition: transform 0.15s, box-shadow 0.15s;
 }
 
@@ -2363,7 +2388,7 @@ html, body {
     border: none;
     background: none;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--fs-lg);
     cursor: pointer;
     border-radius: 0;
     text-align: left;
@@ -2383,7 +2408,7 @@ html, body {
 }
 
 .sidebar-nav-btn .icon {
-    font-size: 15px;
+    font-size: var(--fs-xl);
     width: 18px;
     text-align: center;
     flex-shrink: 0;
@@ -2391,7 +2416,7 @@ html, body {
 
 .sidebar-section-label {
     padding: 6px 12px;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-muted);
     background-color: var(--bg-sidebar);
     text-transform: uppercase;
@@ -2464,14 +2489,14 @@ html, body {
 }
 
 .settings-tab .icon {
-    font-size: 18px;
+    font-size: var(--fs-2xl);
     width: 24px;
     text-align: center;
     flex-shrink: 0;
 }
 
 .settings-tab .tab-label {
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     font-weight: 500;
 }
 
@@ -2498,7 +2523,7 @@ html, body {
 
 .settings-panel h2 {
     margin: 0 0 24px 0;
-    font-size: var(--text-2xl);
+    font-size: var(--fs-4xl);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -2513,7 +2538,7 @@ html, body {
 
 .settings-section h3 {
     margin: 0 0 16px 0;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     font-weight: 600;
     text-transform: uppercase;
     color: var(--accent-blue);
@@ -2540,7 +2565,7 @@ html, body {
 }
 
 .setting-row label {
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     color: var(--text-primary);
     flex-shrink: 0;
 }
@@ -2551,7 +2576,7 @@ html, body {
     color: var(--text-primary);
     border: 1px solid var(--btn-secondary);
     border-radius: var(--radius-md);
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     width: 200px;
     cursor: pointer;
 }
@@ -2569,7 +2594,7 @@ html, body {
 /* Path value display */
 .path-value {
     font-family: var(--font-mono);
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     color: var(--text-secondary);
     background-color: var(--bg-input);
     padding: 6px 10px;
@@ -2632,7 +2657,7 @@ html, body {
     color: var(--text-secondary);
     border-radius: 4px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: var(--fs-xl);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2662,7 +2687,7 @@ html, body {
     border: none;
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     font-weight: 500;
 }
 
@@ -2677,7 +2702,7 @@ html, body {
     border: 1px solid var(--btn-secondary);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
 }
 
 .btn-secondary:hover {
@@ -2692,7 +2717,7 @@ html, body {
     color: var(--text-primary);
     border: 1px solid var(--btn-secondary);
     border-radius: var(--radius-md);
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
 }
 
 .setting-row input[type="text"]:hover,
@@ -2762,7 +2787,7 @@ html, body {
 
 /* Settings hint and info text */
 .setting-hint {
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: var(--text-secondary);
     margin: 0 0 12px 0;
 }
@@ -2772,7 +2797,7 @@ html, body {
     background-color: var(--bg-dropdown);
     border-radius: 4px;
     margin-bottom: 8px;
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: var(--text-primary);
 }
 
@@ -2801,12 +2826,12 @@ html, body {
 }
 
 .license-version {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-secondary);
 }
 
 .license-type {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--accent-green);
     background-color: var(--bg-success);
     padding: 2px 8px;
@@ -2814,7 +2839,7 @@ html, body {
 }
 
 .license-item a {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--accent-blue);
     text-decoration: none;
     margin-left: auto;
@@ -2846,6 +2871,7 @@ html, body {
 
 /* Update panel */
 .update-panel {
+    position: relative;
     margin-bottom: 12px;
     padding: 10px;
     background-color: var(--bg-success);
@@ -2853,12 +2879,31 @@ html, body {
     border-radius: 4px;
 }
 
+.update-dismiss-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: var(--fs-2xl);
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.update-dismiss-btn:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
 .update-panel.hidden {
     display: none;
 }
 
 .update-header {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     color: var(--accent-green);
     text-transform: uppercase;
@@ -2866,7 +2911,7 @@ html, body {
 }
 
 .update-versions {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-primary);
     margin-bottom: 8px;
     display: flex;
@@ -2899,7 +2944,7 @@ html, body {
 
 .update-changelog-link {
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--fs-md);
     cursor: pointer;
     margin-left: auto;
     flex-shrink: 0;
@@ -2918,7 +2963,7 @@ html, body {
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--fs-md);
     font-weight: 500;
 }
 
@@ -2932,7 +2977,7 @@ html, body {
 }
 
 .update-note {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
     margin-top: 6px;
     text-align: center;
@@ -2948,7 +2993,7 @@ html, body {
 
 /* About & Updates section in settings */
 .version-value {
-    font-size: var(--text-base);
+    font-size: var(--fs-lg);
     font-family: var(--font-mono);
     color: var(--accent-cyan);
 }
@@ -2960,7 +3005,7 @@ html, body {
 
 .update-actions-inline .btn-secondary {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 /* Update cards - unified style for both GitHub and Local updates */
@@ -3041,7 +3086,7 @@ html, body {
     padding: 6px 14px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-weight: 500;
 }
 
@@ -3076,7 +3121,7 @@ html, body {
     padding: 6px 14px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-weight: 500;
 }
 
@@ -3092,7 +3137,7 @@ html, body {
 /* No updates state */
 .update-status-none {
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     text-align: center;
     padding: 8px 0;
 }
@@ -3103,7 +3148,7 @@ html, body {
 
 .update-status-error {
     color: var(--accent-orange);
-    font-size: 13px;
+    font-size: var(--fs-base);
     text-align: center;
     padding: 8px 0;
 }
@@ -3163,7 +3208,7 @@ html, body {
 
 .modal-header h3 {
     margin: 0;
-    font-size: 16px;
+    font-size: var(--fs-xl);
     color: var(--text-primary);
 }
 
@@ -3171,7 +3216,7 @@ html, body {
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 24px;
+    font-size: var(--fs-4xl);
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -3211,32 +3256,32 @@ html, body {
 }
 
 .changelog-version {
-    font-size: 18px;
-    font-weight: bold;
+    font-size: var(--fs-2xl);
+    font-weight: 600;
     color: var(--accent-cyan);
     margin-bottom: 4px;
 }
 
 .changelog-date {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-secondary);
     margin-bottom: 8px;
 }
 
 .changelog-notes {
-    font-size: 13px;
+    font-size: var(--fs-base);
     line-height: 1.6;
     color: var(--text-primary);
 }
 
 .changelog-notes h3 {
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
     margin: 16px 0 8px 0;
 }
 
 .changelog-notes h4 {
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: var(--text-secondary);
     margin: 12px 0 6px 0;
 }
@@ -3277,7 +3322,7 @@ html, body {
     border: 1px solid var(--border-color);
     border-radius: 6px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--fs-base);
     transition: background-color 0.2s;
 }
 
@@ -3311,14 +3356,14 @@ html, body {
 
 .status-label {
     display: block;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-secondary);
     text-transform: uppercase;
     margin-bottom: 4px;
 }
 
 .status-value {
-    font-size: 14px;
+    font-size: var(--fs-lg);
     font-weight: 500;
 }
 
@@ -3338,7 +3383,7 @@ html, body {
     background-color: var(--bg-sidebar);
     border-radius: 6px;
     padding: 12px;
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .status-detail-row {
@@ -3365,7 +3410,7 @@ html, body {
     padding: 2px 6px;
     border-radius: 3px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-sm);
 }
 
 .status-error-msg {
@@ -3375,7 +3420,7 @@ html, body {
     border: 1px solid var(--border-error);
     border-radius: 6px;
     color: var(--accent-red);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 @media (max-width: 600px) {
@@ -3393,7 +3438,7 @@ html, body {
     background-color: var(--bg-warning);
     border-bottom: 1px solid var(--accent-orange);
     color: var(--accent-orange);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .security-warning.hidden {
@@ -3401,7 +3446,7 @@ html, body {
 }
 
 .warning-icon {
-    font-size: 18px;
+    font-size: var(--fs-2xl);
     flex-shrink: 0;
 }
 
@@ -3416,7 +3461,7 @@ html, body {
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--fs-md);
     font-weight: 500;
     flex-shrink: 0;
 }
@@ -3429,7 +3474,7 @@ html, body {
     background: none;
     border: none;
     color: var(--accent-orange);
-    font-size: 20px;
+    font-size: var(--fs-3xl);
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -3517,7 +3562,7 @@ html, body {
 
 .login-header h1 {
     margin: 0 0 6px 0;
-    font-size: var(--text-2xl);
+    font-size: var(--fs-4xl);
     font-weight: 600;
     color: var(--text-primary);
     letter-spacing: -0.5px;
@@ -3525,7 +3570,7 @@ html, body {
 
 .login-tagline {
     margin: 0;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     color: var(--text-muted);
     letter-spacing: 0.5px;
     text-transform: uppercase;
@@ -3534,7 +3579,7 @@ html, body {
 .login-version {
     margin-top: 24px;
     text-align: center;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-muted);
     opacity: 0.6;
 }
@@ -3545,7 +3590,7 @@ html, body {
     bottom: 12px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 10px;
+    font-size: var(--fs-xs);
     font-family: var(--font-mono);
     color: var(--bg-primary);
     text-align: center;
@@ -3561,7 +3606,7 @@ html, body {
 
 .login-form label {
     display: block;
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     color: var(--text-muted);
     margin-bottom: 8px;
     text-transform: uppercase;
@@ -3575,7 +3620,7 @@ html, body {
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-xl);
-    font-size: 15px;
+    font-size: var(--fs-xl);
     outline: none;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -3594,7 +3639,7 @@ html, body {
     border: none;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     font-weight: 600;
     letter-spacing: 0.3px;
     box-shadow: 0 4px 16px var(--cta-primary-25);
@@ -3621,7 +3666,7 @@ html, body {
     border: 1px solid var(--border-error);
     border-radius: var(--radius-lg);
     color: var(--accent-red);
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     margin-bottom: 16px;
     text-align: center;
 }
@@ -3637,7 +3682,7 @@ html, body {
     background-color: var(--bg-sidebar);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-xl);
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     opacity: 0.8;
 }
 
@@ -3654,7 +3699,7 @@ html, body {
 
 .cert-info-title {
     color: var(--text-secondary);
-    font-size: var(--text-sm);
+    font-size: var(--fs-md);
     text-transform: uppercase;
 }
 
@@ -3663,7 +3708,7 @@ html, body {
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 18px;
+    font-size: var(--fs-2xl);
     line-height: 1;
     padding: 0 4px;
     opacity: 0.6;
@@ -3676,7 +3721,7 @@ html, body {
 
 .cert-fingerprint {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-primary);
     word-break: break-all;
     line-height: 1.6;
@@ -3690,13 +3735,13 @@ html, body {
     display: flex;
     justify-content: space-between;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     margin-bottom: 10px;
 }
 
 .cert-hint {
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-style: italic;
     opacity: 0.8;
 }
@@ -3712,7 +3757,7 @@ html, body {
 
 .password-modal-content label {
     display: block;
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: var(--text-secondary);
     margin-bottom: 6px;
 }
@@ -3724,7 +3769,7 @@ html, body {
     color: var(--text-primary);
     border: 1px solid var(--btn-secondary);
     border-radius: 4px;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     outline: none;
 }
 
@@ -3800,7 +3845,7 @@ html, body {
     max-height: 55vh;
     overflow: auto;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-md);
     white-space: pre-wrap;
     word-break: break-all;
     background: var(--bg-primary);
@@ -3830,7 +3875,7 @@ html, body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .update-result-status {
@@ -3847,13 +3892,13 @@ html, body {
 
 .update-result-time {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .update-result-message {
     margin: 8px 0;
     color: var(--accent-red);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .update-result .btn-view-log {
@@ -3866,7 +3911,7 @@ html, body {
     padding: 10px 12px;
     border-radius: 4px;
     border: 1px solid var(--border-color);
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: var(--text-secondary);
 }
 
@@ -3882,7 +3927,7 @@ html, body {
 
 .reinstall-hint-cmd code {
     flex: 1;
-    font-size: 12px;
+    font-size: var(--fs-md);
     padding: 6px 8px;
     border-radius: 3px;
     background: var(--bg-secondary);
@@ -3895,7 +3940,7 @@ html, body {
 .reinstall-hint-cmd .btn-copy-cmd {
     flex-shrink: 0;
     padding: 4px 10px;
-    font-size: 12px;
+    font-size: var(--fs-md);
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 3px;
@@ -3917,12 +3962,12 @@ html, body {
 
 .password-status .status-set {
     color: var(--accent-green);
-    font-size: 14px;
+    font-size: var(--fs-lg);
 }
 
 .password-status .status-missing {
     color: var(--accent-orange);
-    font-size: 14px;
+    font-size: var(--fs-lg);
 }
 
 /* Version Mismatch Warning Banner */
@@ -3931,7 +3976,7 @@ html, body {
     background-color: var(--bg-warning);
     border-bottom: 1px solid var(--accent-orange);
     color: var(--accent-orange);
-    font-size: 13px;
+    font-size: var(--fs-base);
     display: none;
 }
 
@@ -3950,7 +3995,7 @@ html, body {
     transform: translateX(-50%);
     padding: 10px 20px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: var(--fs-base);
     z-index: 9999;
     opacity: 1;
     transition: opacity 0.3s;
@@ -3977,7 +4022,7 @@ html, body {
 }
 
 .drop-toast .toast-icon {
-    font-size: 20px;
+    font-size: var(--fs-3xl);
     flex-shrink: 0;
     margin-top: 2px;
 }
@@ -3993,7 +4038,7 @@ html, body {
 }
 
 .drop-toast .toast-desc {
-    font-size: 12px;
+    font-size: var(--fs-md);
     opacity: 0.9;
     margin-bottom: 8px;
     line-height: 1.4;
@@ -4002,7 +4047,7 @@ html, body {
 .drop-toast .toast-link {
     display: inline-block;
     color: var(--text-on-accent);
-    font-size: 12px;
+    font-size: var(--fs-md);
     font-weight: 500;
     text-decoration: underline;
     opacity: 0.95;
@@ -4016,7 +4061,7 @@ html, body {
     background: none;
     border: none;
     color: var(--text-on-accent);
-    font-size: 18px;
+    font-size: var(--fs-2xl);
     cursor: pointer;
     padding: 0;
     margin: -4px -4px 0 0;
@@ -4054,7 +4099,7 @@ html, body {
 .terminal-search input {
     width: 180px;
     padding: 4px 8px;
-    font-size: 13px;
+    font-size: var(--fs-base);
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -4069,7 +4114,7 @@ html, body {
 .terminal-search .search-results {
     min-width: 45px;
     text-align: center;
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-secondary);
     padding: 0 4px;
 }
@@ -4080,7 +4125,7 @@ html, body {
     color: var(--text-secondary);
     cursor: pointer;
     padding: 4px 6px;
-    font-size: 12px;
+    font-size: var(--fs-md);
     border-radius: 4px;
     transition: background-color 0.15s, color 0.15s;
 }
@@ -4104,7 +4149,7 @@ html, body {
 }
 
 .diag-help-text {
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: var(--text-secondary);
     margin: 0 0 8px 0;
     line-height: 1.5;
@@ -4115,7 +4160,7 @@ html, body {
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     border-radius: 3px;
-    font-size: 12px;
+    font-size: var(--fs-md);
     font-family: inherit;
 }
 
@@ -4124,12 +4169,12 @@ html, body {
     grid-template-columns: auto 1fr;
     gap: 4px 12px;
     margin-bottom: 10px;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .diag-help-commands code {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--accent-cyan);
     white-space: nowrap;
 }
@@ -4185,7 +4230,7 @@ html, body {
 
 .trust-header p {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-secondary);
 }
 
@@ -4199,7 +4244,7 @@ html, body {
 
 .trust-section h2 {
     margin: 0 0 16px 0;
-    font-size: 16px;
+    font-size: var(--fs-xl);
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 12px;
@@ -4207,7 +4252,7 @@ html, body {
 
 .trust-section h3 {
     margin: 0 0 16px 0;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
 }
 
@@ -4221,7 +4266,7 @@ html, body {
 .fingerprint-display {
     flex: 1;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--accent-green);
     background-color: var(--bg-primary);
     padding: 12px 16px;
@@ -4237,7 +4282,7 @@ html, body {
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--fs-md);
     white-space: nowrap;
 }
 
@@ -4247,13 +4292,13 @@ html, body {
 
 .trust-hint {
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     line-height: 1.5;
 }
 
 .platform-detected {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--fs-md);
     margin-bottom: 16px;
 }
 
@@ -4276,7 +4321,7 @@ html, body {
 
 .platform-group-title {
     margin: 0 0 16px 0;
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -4292,12 +4337,12 @@ html, body {
 
 .platform-panel h4 {
     margin: 0 0 12px 0;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
 }
 
 .detected-badge {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     color: var(--accent-green);
     margin-left: 8px;
@@ -4315,7 +4360,7 @@ html, body {
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     font-weight: 500;
     margin-bottom: 20px;
 }
@@ -4337,7 +4382,7 @@ html, body {
     margin: 0;
     padding-left: 20px;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     line-height: 1.8;
 }
 
@@ -4353,12 +4398,12 @@ html, body {
     background-color: var(--bg-primary);
     padding: 2px 6px;
     border-radius: 3px;
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .install-note {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-style: italic;
     margin-top: 12px;
 }
@@ -4376,7 +4421,7 @@ html, body {
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .os-tab:hover {
@@ -4401,7 +4446,7 @@ html, body {
 .os-instructions p {
     margin: 0 0 12px 0;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .command-block {
@@ -4410,7 +4455,7 @@ html, body {
     padding: 12px 16px;
     border-radius: 4px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-primary);
     margin-bottom: 16px;
     white-space: pre-wrap;
@@ -4424,7 +4469,7 @@ html, body {
     padding: 16px;
     margin-top: 16px;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     line-height: 1.5;
 }
 
@@ -4448,12 +4493,12 @@ html, body {
 
 .endpoint-name {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .endpoint-url {
     color: var(--accent-blue);
-    font-size: 12px;
+    font-size: var(--fs-md);
     text-decoration: none;
     font-family: var(--font-mono);
 }
@@ -4464,13 +4509,13 @@ html, body {
 
 .endpoint-addr {
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-family: var(--font-mono);
 }
 
 .cert-validity {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     text-align: right;
 }
 
@@ -4482,7 +4527,7 @@ html, body {
 .back-link {
     color: var(--text-secondary);
     text-decoration: none;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .back-link:hover {
@@ -4503,7 +4548,7 @@ html, body {
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -4516,7 +4561,7 @@ html, body {
 }
 
 .network-section-chevron {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     transition: transform 0.2s ease;
 }
 
@@ -4550,7 +4595,7 @@ html, body {
     gap: 6px;
     padding: 4px 0;
     color: var(--text-secondary);
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     text-decoration: none;
     transition: color 0.15s;
 }
@@ -4560,7 +4605,7 @@ html, body {
 }
 
 .network-action-link .icon {
-    font-size: 11px;
+    font-size: var(--fs-sm);
 }
 
 /* Trust warning state (untrusted HTTPS) */
@@ -4585,7 +4630,7 @@ html, body {
 
 .trust-help-text {
     display: block;
-    font-size: 9px;
+    font-size: var(--fs-2xs);
     color: var(--text-muted);
     margin-top: 2px;
     margin-left: 17px;
@@ -4594,7 +4639,7 @@ html, body {
 .network-section.untrusted .network-section-title::after {
     content: attr(data-not-trusted);
     color: var(--accent-red);
-    font-size: 9px;
+    font-size: var(--fs-2xs);
 }
 
 /* Share Access Link (subtle) */
@@ -4606,7 +4651,7 @@ html, body {
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     cursor: pointer;
     transition: color 0.15s;
 }
@@ -4616,7 +4661,7 @@ html, body {
 }
 
 .share-access-link .icon {
-    font-size: 11px;
+    font-size: var(--fs-sm);
 }
 
 /* Voice Assistant Section (dev mode only) */
@@ -4637,7 +4682,7 @@ html, body {
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -4650,7 +4695,7 @@ html, body {
 }
 
 .voice-section-chevron {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     transition: transform 0.2s ease;
 }
 
@@ -4720,7 +4765,7 @@ html, body {
 .voice-btn .icon,
 .voice-btn [class^="midFont-"],
 .voice-btn [class*=" midFont-"] {
-    font-size: 14px;
+    font-size: var(--fs-lg);
 }
 
 .voice-btn.hidden {
@@ -4728,7 +4773,7 @@ html, body {
 }
 
 .voice-status {
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
     padding: 2px 0;
 }
@@ -4751,7 +4796,7 @@ html, body {
 }
 
 .voice-setting-row label {
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
     flex-shrink: 0;
 }
@@ -4760,7 +4805,7 @@ html, body {
     flex: 1;
     min-width: 0;
     padding: 3px 6px;
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     color: var(--text-primary);
     background-color: var(--bg-input);
     border: 1px solid var(--btn-secondary);
@@ -4821,7 +4866,7 @@ html, body {
 }
 
 #voice-speed-value {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
     min-width: 28px;
     text-align: right;
@@ -4857,7 +4902,7 @@ html, body {
 }
 
 .chat-title {
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -4895,7 +4940,7 @@ html, body {
     max-width: 85%;
     padding: 8px 12px;
     border-radius: 12px;
-    font-size: 12px;
+    font-size: var(--fs-md);
     line-height: 1.4;
     word-wrap: break-word;
 }
@@ -4942,7 +4987,7 @@ html, body {
     padding: 6px 10px;
     max-width: 95%;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-xs);
 }
 
 /* Tool message header row */
@@ -4956,23 +5001,23 @@ html, body {
 
 .chat-msg-tool-call .chat-msg-tool-icon,
 .chat-msg-tool-response .chat-msg-tool-icon {
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .chat-msg-tool-call .chat-msg-tool-name {
     color: var(--accent-gold);
     font-weight: 600;
-    font-size: 11px;
+    font-size: var(--fs-sm);
 }
 
 .chat-msg-tool-response .chat-msg-tool-name {
     color: var(--accent-purple);
     font-weight: 600;
-    font-size: 11px;
+    font-size: var(--fs-sm);
 }
 
 .chat-msg-tool-label {
-    font-size: 9px;
+    font-size: var(--fs-2xs);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -4987,7 +5032,7 @@ html, body {
     padding: 6px 8px;
     margin: 4px 0;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
     white-space: pre-wrap;
     word-break: break-all;
@@ -5003,7 +5048,7 @@ html, body {
     padding: 6px 8px;
     margin: 4px 0;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
     white-space: pre-wrap;
     word-break: break-all;
@@ -5023,7 +5068,7 @@ html, body {
 }
 
 .chat-msg-time {
-    font-size: 9px;
+    font-size: var(--fs-2xs);
     color: var(--white-60);
     margin-top: 4px;
     text-align: right;
@@ -5059,13 +5104,13 @@ html, body {
 }
 
 .chat-msg-tool-icon {
-    font-size: 14px;
+    font-size: var(--fs-lg);
 }
 
 .chat-msg-tool-title {
     color: var(--accent-gold);
     font-weight: 600;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -5073,7 +5118,7 @@ html, body {
 .chat-msg-tool-confirm .chat-msg-tool-name {
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     margin-bottom: 6px;
 }
@@ -5085,7 +5130,7 @@ html, body {
     padding: 8px 10px;
     margin: 8px 0;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--accent-cyan);
     white-space: pre-wrap;
     word-break: break-all;
@@ -5095,7 +5140,7 @@ html, body {
 
 .chat-msg-tool-justification {
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-style: italic;
     margin-bottom: 10px;
     padding: 6px 8px;
@@ -5116,7 +5161,7 @@ html, body {
     padding: 6px 14px;
     border: none;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     cursor: pointer;
     transition: opacity 0.15s;
@@ -5141,7 +5186,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
     cursor: pointer;
     margin-left: auto;
@@ -5154,7 +5199,7 @@ html, body {
 }
 
 .tool-status {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     padding: 4px 10px;
     border-radius: 4px;
@@ -5175,7 +5220,7 @@ html, body {
 /* Certificate fingerprint inline display in settings */
 .cert-fingerprint-inline {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--accent-green);
     background-color: var(--bg-primary);
     padding: 4px 8px;
@@ -5246,7 +5291,7 @@ html, body {
     border-radius: 8px;
     background: var(--btn-secondary);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-family: inherit;
     cursor: pointer;
     transition: background-color 0.1s;
@@ -5269,7 +5314,7 @@ html, body {
         min-width: 38px;
         min-height: 38px;
         padding: 6px 8px;
-        font-size: 11px;
+        font-size: var(--fs-sm);
     }
 
     .touch-modifiers .touch-key {
@@ -5284,7 +5329,7 @@ html, body {
 }
 
 .touch-cat {
-    font-size: 12px;
+    font-size: var(--fs-md);
     padding: 8px 10px;
     background: var(--surface-secondary, var(--btn-secondary));
 }
@@ -5359,7 +5404,7 @@ html, body {
 }
 
 .touch-popup-group-label {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -5376,7 +5421,7 @@ html, body {
     min-width: 36px;
     min-height: 36px;
     padding: 6px 8px;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 /* ==========================================================================
@@ -5400,7 +5445,7 @@ html, body {
     min-width: 36px;
     min-height: 36px;
     padding: 6px 8px;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 /* Accessibility: Focus states for keyboard navigation */
@@ -5480,7 +5525,7 @@ html, body {
 
 .file-viewer-title {
     margin: 0;
-    font-size: 16px;
+    font-size: var(--fs-xl);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -5488,7 +5533,7 @@ html, body {
 }
 
 .file-viewer-path {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-secondary);
     display: block;
     overflow: hidden;
@@ -5557,7 +5602,7 @@ html, body {
     margin: 0;
     padding: 16px;
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: var(--fs-xl);
     line-height: 1.5;
     color: var(--text-primary);
     background: var(--bg-primary);
@@ -5585,26 +5630,26 @@ html, body {
 }
 
 .file-viewer-binary-type {
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
     margin-bottom: 4px;
 }
 
 .file-viewer-binary-size {
-    font-size: 18px;
+    font-size: var(--fs-2xl);
     font-weight: 600;
     color: var(--accent-blue);
 }
 
 .file-viewer-binary-modified {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-secondary);
     margin-top: 4px;
 }
 
 .file-viewer-binary-hint {
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     margin: 0;
 }
 
@@ -5627,7 +5672,7 @@ html, body {
 
 .file-icon {
     margin-right: 12px;
-    font-size: 16px;
+    font-size: var(--fs-xl);
     flex-shrink: 0;
 }
 
@@ -5645,7 +5690,7 @@ html, body {
 
 .file-size {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--fs-md);
     margin-left: 12px;
     flex-shrink: 0;
 }
@@ -5710,8 +5755,8 @@ html, body {
 
 /* Markdown Rendering */
 .md-content {
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: 14px;
+    font-family: var(--font-ui);
+    font-size: var(--fs-lg);
     line-height: 1.6;
     padding: 16px;
     color: var(--text-primary);
@@ -5732,10 +5777,10 @@ html, body {
     margin-top: 0;
 }
 
-.md-content h1 { font-size: 24px; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
-.md-content h2 { font-size: 20px; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
-.md-content h3 { font-size: 16px; font-weight: 600; }
-.md-content h4 { font-size: 14px; font-weight: 600; }
+.md-content h1 { font-size: var(--fs-4xl); font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+.md-content h2 { font-size: var(--fs-3xl); font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+.md-content h3 { font-size: var(--fs-xl); font-weight: 600; }
+.md-content h4 { font-size: var(--fs-lg); font-weight: 600; }
 
 .md-content p {
     margin: 1em 0;
@@ -5779,7 +5824,7 @@ html, body {
 .md-content pre code {
     background: none;
     padding: 0;
-    font-size: 13px;
+    font-size: var(--fs-base);
     line-height: 1.5;
 }
 
@@ -5846,14 +5891,14 @@ html, body {
 
 .file-viewer-dock-title {
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
     flex-shrink: 0;
 }
 
 .file-viewer-dock-path {
     flex: 1;
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -5947,7 +5992,7 @@ html, body {
 .commands-dock-title {
     flex: 1;
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
 }
 
@@ -6033,7 +6078,7 @@ html, body {
 .git-dock-title {
     flex: 1;
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
 }
 
@@ -6099,7 +6144,7 @@ html, body {
     border-radius: 4px;
     background: none;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     line-height: 1;
     cursor: pointer;
     white-space: nowrap;
@@ -6113,7 +6158,7 @@ html, body {
 }
 
 .manager-btn-input {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     padding: 2px 6px;
     border: 1px solid var(--accent-blue);
     border-radius: 3px;
@@ -6134,7 +6179,7 @@ html, body {
 
 .manager-btn-edit,
 .manager-btn-delete {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     padding: 0;
     border: none;
     background: none;
@@ -6155,7 +6200,7 @@ html, body {
     border: 1px dashed var(--border-color);
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-family: inherit;
     line-height: 1;
     transition: color 0.15s, border-color 0.15s;
@@ -6176,7 +6221,7 @@ html, body {
     border: 1px solid var(--text-muted);
     background: none;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -6199,7 +6244,7 @@ html, body {
     border-radius: 4px;
     background: var(--bg-sidebar);
     color: var(--text-primary);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 400;
     white-space: nowrap;
     border: 1px solid var(--border-color);
@@ -6239,7 +6284,7 @@ html, body {
     border: none;
     background: none;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-family: inherit;
     cursor: pointer;
     border-bottom: 1px solid transparent;
@@ -6260,7 +6305,7 @@ html, body {
 }
 
 .session-cwd {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-muted);
     font-family: var(--font-mono);
     overflow: hidden;
@@ -6282,7 +6327,7 @@ html, body {
     border: none;
     background: none;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-family: inherit;
     cursor: pointer;
     padding: 4px 10px;
@@ -6306,16 +6351,16 @@ html, body {
 }
 
 .ide-bar-btn-icon {
-    font-size: 14px;
+    font-size: var(--fs-lg);
 }
 
 .git-indicator-branch {
-    font-size: 14px;
+    font-size: var(--fs-lg);
     opacity: 0.7;
 }
 
 .git-indicator-stats {
-    font-size: 12px;
+    font-size: var(--fs-md);
     font-family: var(--font-mono);
     display: flex;
     gap: 6px;
@@ -6385,7 +6430,7 @@ body.ide-mode-off .session-tab-bar {
 
     .session-tab {
         padding: 6px 10px;
-        font-size: 12px;
+        font-size: var(--fs-md);
     }
 
     .session-cwd {
@@ -6415,7 +6460,7 @@ body.ide-mode-off .session-tab-bar {
     align-items: center;
     padding: 3px 8px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: var(--text-primary);
     transition: background-color 0.1s;
     white-space: nowrap;
@@ -6438,7 +6483,7 @@ body.ide-mode-off .session-tab-bar {
     width: 16px;
     flex-shrink: 0;
     text-align: center;
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: var(--text-secondary);
 }
 
@@ -6449,7 +6494,7 @@ body.ide-mode-off .session-tab-bar {
 .tree-icon {
     margin: 0 6px;
     flex-shrink: 0;
-    font-size: 14px;
+    font-size: var(--fs-lg);
 }
 
 .tree-name {
@@ -6462,7 +6507,7 @@ body.ide-mode-off .session-tab-bar {
     margin-left: auto;
     padding-left: 12px;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     flex-shrink: 0;
 }
 
@@ -6470,7 +6515,7 @@ body.ide-mode-off .session-tab-bar {
     margin-left: 6px;
     padding: 0 4px;
     border-radius: 3px;
-    font-size: 10px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     color: var(--accent-green);
     background: var(--accent-green-15);
@@ -6480,7 +6525,7 @@ body.ide-mode-off .session-tab-bar {
     padding: 20px;
     text-align: center;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 /* File Browser Preview */
@@ -6490,7 +6535,7 @@ body.ide-mode-off .session-tab-bar {
     justify-content: center;
     height: 100%;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .preview-loading {
@@ -6507,7 +6552,7 @@ body.ide-mode-off .session-tab-bar {
     justify-content: center;
     height: 100%;
     color: var(--accent-red);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .preview-image-container {
@@ -6549,12 +6594,12 @@ body.ide-mode-off .session-tab-bar {
 }
 
 .preview-binary-name {
-    font-size: 14px;
+    font-size: var(--fs-lg);
     color: var(--text-primary);
 }
 
 .preview-binary-size {
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .preview-download-btn {
@@ -6563,7 +6608,7 @@ body.ide-mode-off .session-tab-bar {
     color: var(--text-primary);
     border-radius: var(--radius-md);
     text-decoration: none;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .preview-download-btn:hover {
@@ -6580,7 +6625,7 @@ body.ide-mode-off .session-tab-bar {
     height: 100%;
     overflow-y: auto;
     background: var(--bg-primary);
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 
 .git-panel-empty {
@@ -6594,7 +6639,7 @@ body.ide-mode-off .session-tab-bar {
 }
 
 .git-panel-hint {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-muted);
 }
 
@@ -6615,7 +6660,7 @@ body.ide-mode-off .session-tab-bar {
 }
 
 .git-branch-icon {
-    font-size: 16px;
+    font-size: var(--fs-xl);
     color: var(--text-secondary);
 }
 
@@ -6627,7 +6672,7 @@ body.ide-mode-off .session-tab-bar {
 .git-badge {
     padding: 1px 6px;
     border-radius: 10px;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 500;
 }
 
@@ -6656,7 +6701,7 @@ body.ide-mode-off .session-tab-bar {
     gap: 8px;
     padding: 8px 12px;
     font-weight: 600;
-    font-size: 12px;
+    font-size: var(--fs-md);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -6670,7 +6715,7 @@ body.ide-mode-off .session-tab-bar {
     background: var(--bg-surface);
     padding: 0 6px;
     border-radius: 10px;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-secondary);
 }
 
@@ -6696,7 +6741,7 @@ body.ide-mode-off .session-tab-bar {
 .git-file-status {
     width: 16px;
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: var(--fs-md);
     font-weight: 600;
     font-family: var(--font-mono);
 }
@@ -6731,7 +6776,7 @@ body.ide-mode-off .session-tab-bar {
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--fs-md);
     cursor: pointer;
 }
 
@@ -6740,7 +6785,7 @@ body.ide-mode-off .session-tab-bar {
 }
 
 .git-section-chevron {
-    font-size: 10px;
+    font-size: var(--fs-xs);
 }
 
 .git-commits-list {
@@ -6753,13 +6798,13 @@ body.ide-mode-off .session-tab-bar {
     align-items: center;
     gap: 8px;
     padding: 4px 12px;
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .git-commit-hash {
     font-family: var(--font-mono);
     color: var(--accent-blue);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     flex-shrink: 0;
 }
 
@@ -6773,7 +6818,7 @@ body.ide-mode-off .session-tab-bar {
 
 .git-commit-author {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     flex-shrink: 0;
 }
 
@@ -6781,7 +6826,7 @@ body.ide-mode-off .session-tab-bar {
     padding: 12px;
     text-align: center;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 /* Diff view */
@@ -6800,7 +6845,7 @@ body.ide-mode-off .session-tab-bar {
     margin: 0;
     padding: 8px 12px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-md);
     line-height: 1.5;
     white-space: pre;
     overflow-x: auto;
@@ -6846,7 +6891,7 @@ body.ide-mode-off .session-tab-bar {
 }
 
 .commands-hint {
-    font-size: 12px;
+    font-size: var(--fs-md);
     color: var(--text-muted);
 }
 
@@ -6868,14 +6913,14 @@ body.ide-mode-off .session-tab-bar {
 
 .command-item-name {
     display: block;
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-weight: 500;
     color: var(--text-primary);
 }
 
 .command-item-desc {
     display: block;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -6901,7 +6946,7 @@ body.ide-mode-off .session-tab-bar {
     color: var(--text-secondary);
     cursor: pointer;
     padding: 4px 6px;
-    font-size: 12px;
+    font-size: var(--fs-md);
     border-radius: 3px;
 }
 
@@ -6916,7 +6961,7 @@ body.ide-mode-off .session-tab-bar {
     color: var(--accent-red);
     cursor: pointer;
     padding: 4px 6px;
-    font-size: 12px;
+    font-size: var(--fs-md);
     border-radius: 3px;
 }
 
@@ -6944,7 +6989,7 @@ body.ide-mode-off .session-tab-bar {
     border: 1px dashed var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     cursor: pointer;
     transition: color 0.15s, border-color 0.15s;
 }
@@ -7013,7 +7058,7 @@ body.ide-mode-off .session-tab-bar {
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-family: inherit;
 }
 
@@ -7029,7 +7074,7 @@ body.ide-mode-off .session-tab-bar {
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-family: inherit;
 }
 
@@ -7047,7 +7092,7 @@ body.ide-mode-off .session-tab-bar {
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--fs-md);
     font-family: var(--font-mono);
     resize: vertical;
     min-height: 80px;
@@ -7065,7 +7110,7 @@ body.ide-mode-off .session-tab-bar {
     color: white;
     border: none;
     border-radius: var(--radius-md);
-    font-size: 13px;
+    font-size: var(--fs-base);
     cursor: pointer;
 }
 
@@ -7079,7 +7124,7 @@ body.ide-mode-off .session-tab-bar {
     color: var(--text-primary);
     border: none;
     border-radius: var(--radius-md);
-    font-size: 13px;
+    font-size: var(--fs-base);
     cursor: pointer;
 }
 
@@ -7088,7 +7133,7 @@ body.ide-mode-off .session-tab-bar {
 }
 
 .command-item-ext {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--text-secondary);
     font-family: var(--font-mono);
     background: var(--bg-elevated);
@@ -7127,7 +7172,7 @@ body.ide-mode-off .session-tab-bar {
 
 .command-overlay-title {
     flex: 1;
-    font-size: 13px;
+    font-size: var(--fs-base);
     font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
@@ -7141,7 +7186,7 @@ body.ide-mode-off .session-tab-bar {
     color: var(--text-secondary);
     cursor: pointer;
     padding: 2px 6px;
-    font-size: 16px;
+    font-size: var(--fs-xl);
     border-radius: var(--radius-sm);
     line-height: 1;
 }
@@ -7173,7 +7218,7 @@ body.ide-mode-off .session-tab-bar {
     padding: 6px 12px;
     background: var(--bg-elevated);
     border-bottom: 1px solid var(--border-color);
-    font-size: 12px;
+    font-size: var(--fs-md);
 }
 
 .commands-output-status {
@@ -7194,7 +7239,7 @@ body.ide-mode-off .session-tab-bar {
     color: white;
     border: none;
     border-radius: 3px;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     cursor: pointer;
 }
 
@@ -7202,7 +7247,7 @@ body.ide-mode-off .session-tab-bar {
     margin: 0;
     padding: 8px 12px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-md);
     line-height: 1.5;
     color: var(--text-terminal);
     max-height: 300px;

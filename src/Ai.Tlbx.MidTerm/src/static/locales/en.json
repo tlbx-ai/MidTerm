@@ -16,6 +16,8 @@
   "sidebar.sessionsClosed": "Sessions will be closed",
   "sidebar.terminalsStayConnected": "Terminals stay connected",
   "sidebar.saveWorkTerminalsClose": "Save your work - terminals will close",
+  "sidebar.updateDismiss": "Dismiss",
+  "sidebar.footerUpdateAvailable": "Update available",
 
   "sidebar.voiceAssistant": "Voice Assistant",
   "sidebar.voiceStartStop": "Start/Stop",
@@ -72,6 +74,7 @@
   "settings.general.changelog": "Changelog",
   "settings.general.updateLog": "Update Log",
   "settings.general.latestVersion": "You are running the latest version",
+  "settings.general.showUpdateNotification": "Show updates prominently in sidebar",
   "settings.general.serverSection": "Server",
   "settings.general.serverHint": "Server settings are configured via command line arguments:",
   "settings.general.portHint": "Port to listen on (default: 2000)",

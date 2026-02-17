@@ -64,6 +64,8 @@ import {
   showChangelog,
   closeChangelog,
   showUpdateLog,
+  dismissUpdateNotification,
+  bindFooterUpdateLink,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
@@ -903,6 +905,8 @@ function bindEvents(): void {
   bindClick('btn-view-update-log', showUpdateLog);
   bindClick('btn-close-changelog', closeChangelog);
   bindClick('update-changelog-link', showChangelog);
+  bindClick('update-dismiss-btn', dismissUpdateNotification);
+  bindFooterUpdateLink();
 
   const changelogBackdrop = document.querySelector('#changelog-modal .modal-backdrop');
   if (changelogBackdrop) {

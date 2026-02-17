@@ -52,6 +52,7 @@
             <div class="session-list" id="session-list"></div>
             <div class="sidebar-footer">
                 <div id="update-panel" class="update-panel hidden">
+                    <button id="update-dismiss-btn" class="update-dismiss-btn" data-i18n-title="sidebar.updateDismiss" title="Dismiss">&times;</button>
                     <div class="update-header" data-i18n="sidebar.updateAvailable">Update Available</div>
                     <div class="update-versions">
                         <span class="update-current"></span>
@@ -126,6 +127,7 @@
                     <span class="footer-traffic" id="ws-traffic" title="WebSocket throughput">0 B/s</span>
                     <span class="footer-separator">&mdash;</span>
                     <span class="version" id="app-version" title="Assembly version"></span>
+                    <span id="footer-update-hint" class="footer-update-hint hidden">&mdash; <a id="footer-update-link" data-i18n="sidebar.footerUpdateAvailable">Update available</a></span>
                 </div>
             </div>
         </aside>
@@ -243,6 +245,10 @@
                                     <div id="update-status-none" class="update-status-none hidden" data-i18n="settings.general.latestVersion">You are running the latest version</div>
                                     <div id="update-cards" class="update-cards"></div>
                                     <div id="update-result" class="update-result hidden"></div>
+                                    <div class="setting-row">
+                                        <label for="setting-show-update-notification" data-i18n="settings.general.showUpdateNotification">Show updates prominently in sidebar</label>
+                                        <input type="checkbox" id="setting-show-update-notification" checked />
+                                    </div>
                                     <div id="reinstall-hint" class="reinstall-hint hidden"></div>
                                 </div>
 

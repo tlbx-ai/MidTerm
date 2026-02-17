@@ -35,6 +35,7 @@ public sealed partial class MidTermSettingsPublic
             ManagerBarEnabled = settings.ManagerBarEnabled,
             ManagerBarButtons = settings.ManagerBarButtons,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
+            ShowUpdateNotification = settings.ShowUpdateNotification,
             Language = settings.Language,
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
@@ -72,6 +73,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.ManagerBarButtons = ManagerBarButtons;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
+        settings.ShowUpdateNotification = ShowUpdateNotification;
         settings.Language = Language;
 
         // SECURITY: Validate RunAsUser before applying

@@ -1998,6 +1998,7 @@
           "ideMode",
           "managerBarEnabled",
           "showChangelogAfterUpdate",
+          "showUpdateNotification",
           "language",
           "managerBarButtons",
           "runAsUser",
@@ -2095,6 +2096,9 @@
             "type": "boolean"
           },
           "showChangelogAfterUpdate": {
+            "type": "boolean"
+          },
+          "showUpdateNotification": {
             "type": "boolean"
           },
           "language": {

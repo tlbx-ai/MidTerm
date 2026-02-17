@@ -35,6 +35,7 @@ public sealed partial class MidTermSettingsPublic
     public bool IdeMode { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
     public bool ShowChangelogAfterUpdate { get; set; } = true;
+    public bool ShowUpdateNotification { get; set; } = true;
     public LanguageSetting Language { get; set; } = LanguageSetting.Auto;
     public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];
 
