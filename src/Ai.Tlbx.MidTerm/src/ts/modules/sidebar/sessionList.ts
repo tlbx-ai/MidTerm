@@ -104,11 +104,20 @@ function updateSessionProcessInfo(sessionId: string): void {
   // Clear existing content
   processInfoEl.innerHTML = '';
 
-  // Foreground process indicator
+  // Foreground process indicator (skip when shell is idle — that's obvious)
   const fgInfo = getForegroundInfo(sessionId);
-  if (fgInfo.name) {
+  if (fgInfo.name && fgInfo.name !== 'shell') {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
+  } else if (fgInfo.cwd) {
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'session-foreground';
+    const cwdInner = document.createElement('span');
+    cwdInner.className = 'fg-cwd';
+    cwdInner.textContent = fgInfo.cwd;
+    cwdSpan.appendChild(cwdInner);
+    cwdSpan.title = fgInfo.cwd;
+    processInfoEl.appendChild(cwdSpan);
   }
 }
 
@@ -249,11 +258,20 @@ function createSessionItem(
   processInfo.className = 'session-process-info';
   processInfo.dataset.sessionId = sessionId;
 
-  // Foreground process indicator
+  // Foreground process indicator (skip idle shell)
   const fgInfo = getForegroundInfo(sessionId);
-  if (fgInfo.name) {
+  if (fgInfo.name && fgInfo.name !== 'shell') {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfo.appendChild(fgIndicator);
+  } else if (fgInfo.cwd) {
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'session-foreground';
+    const cwdInner = document.createElement('span');
+    cwdInner.className = 'fg-cwd';
+    cwdInner.textContent = fgInfo.cwd;
+    cwdSpan.appendChild(cwdInner);
+    cwdSpan.title = fgInfo.cwd;
+    processInfo.appendChild(cwdSpan);
   }
 
   // Always add processInfo container so updateSessionProcessInfo can find it later
