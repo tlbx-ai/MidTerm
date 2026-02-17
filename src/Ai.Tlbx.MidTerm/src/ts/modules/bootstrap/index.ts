@@ -105,7 +105,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
 
     // Handle update result if present
     if (data.updateResult?.found) {
-      handleUpdateResult(data.updateResult);
+      handleUpdateResult(data.updateResult, data.version);
     }
 
     // Check system health (TtyHost compatibility)
@@ -220,11 +220,11 @@ function populateShellDropdown(shells: ShellInfoDto[], defaultShell: string): vo
 /**
  * Handle update result from previous update
  */
-function handleUpdateResult(result: UpdateResult): void {
+function handleUpdateResult(result: UpdateResult, version: string): void {
   const status = result.success ? 'success' : 'failed';
   log.info(() => `Update result: ${status} - ${result.message || 'no error'}`);
 
-  if (result.success && consumePendingChangelogFlag()) {
+  if (result.success && consumePendingChangelogFlag(version)) {
     showChangelog();
   }
 }

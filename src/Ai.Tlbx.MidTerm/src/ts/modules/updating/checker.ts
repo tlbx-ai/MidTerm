@@ -310,6 +310,7 @@ export function handleUpdateInfo(update: UpdateInfo): void {
 }
 
 const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';
+const CHANGELOG_SHOWN_KEY = 'mt-changelog-shown-version';
 
 function setPendingChangelogFlag(): void {
   const settings = $currentSettings.get();
@@ -318,10 +319,13 @@ function setPendingChangelogFlag(): void {
   }
 }
 
-export function consumePendingChangelogFlag(): boolean {
+export function consumePendingChangelogFlag(currentVersion: string): boolean {
   const flag = localStorage.getItem(PENDING_CHANGELOG_KEY);
   if (flag) {
     localStorage.removeItem(PENDING_CHANGELOG_KEY);
+    const shownVersion = localStorage.getItem(CHANGELOG_SHOWN_KEY);
+    if (shownVersion === currentVersion) return false;
+    localStorage.setItem(CHANGELOG_SHOWN_KEY, currentVersion);
     return true;
   }
   return false;
