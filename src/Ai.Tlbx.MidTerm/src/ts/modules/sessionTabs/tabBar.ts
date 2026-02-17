@@ -117,14 +117,16 @@ export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusRespons
   }
 
   const added = status.staged.length + status.untracked.length;
-  const changed = status.modified.length;
+  const deleted = [...status.staged, ...status.modified].filter(
+    (f) => f.status === 'deleted',
+  ).length;
 
   const parts: string[] = [];
   if (added > 0) {
     parts.push(`<span class="git-indicator-added">+${added}</span>`);
   }
-  if (changed > 0) {
-    parts.push(`<span class="git-indicator-changed">\u00B1${changed}</span>`);
+  if (deleted > 0) {
+    parts.push(`<span class="git-indicator-deleted">-${deleted}</span>`);
   }
 
   statsSpan.innerHTML = parts.join(' ');

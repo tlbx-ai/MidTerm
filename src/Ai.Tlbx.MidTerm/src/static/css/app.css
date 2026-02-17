@@ -1989,7 +1989,7 @@ html, body {
         display: none !important;
     }
 
-    .terminal-page.file-viewer-docked .terminals-area {
+    .terminal-page.file-viewer-docked .session-tab-panels {
         margin-right: 0;
     }
 
@@ -1998,7 +1998,7 @@ html, body {
         display: none !important;
     }
 
-    .terminal-page.commands-docked .terminals-area {
+    .terminal-page.commands-docked .session-tab-panels {
         margin-right: 0;
     }
 
@@ -2007,7 +2007,7 @@ html, body {
         display: none !important;
     }
 
-    .terminal-page.git-docked .terminals-area {
+    .terminal-page.git-docked .session-tab-panels {
         margin-right: 0;
     }
 }
@@ -5818,7 +5818,7 @@ html, body {
 /* File Viewer Dock Panel */
 .file-viewer-dock {
     position: absolute;
-    top: 0;
+    top: var(--bar-height);
     right: 0;
     bottom: 0;
     width: 400px;
@@ -5873,7 +5873,7 @@ html, body {
 }
 
 /* Terminal shrinks when dock is open */
-.terminal-page.file-viewer-docked .terminals-area {
+.terminal-page.file-viewer-docked .session-tab-panels {
     margin-right: 400px;
 }
 
@@ -5903,7 +5903,7 @@ html, body {
 
 .commands-dock {
     position: absolute;
-    top: 0;
+    top: var(--bar-height);
     right: 0;
     bottom: 0;
     width: 400px;
@@ -5979,7 +5979,7 @@ html, body {
     overflow: auto;
 }
 
-.terminal-page.commands-docked .terminals-area {
+.terminal-page.commands-docked .session-tab-panels {
     margin-right: 400px;
 }
 
@@ -5989,7 +5989,7 @@ html, body {
 
 .git-dock {
     position: absolute;
-    top: 0;
+    top: var(--bar-height);
     right: 0;
     bottom: 0;
     width: 400px;
@@ -6065,7 +6065,7 @@ html, body {
     overflow: auto;
 }
 
-.terminal-page.git-docked .terminals-area {
+.terminal-page.git-docked .session-tab-panels {
     margin-right: 400px;
 }
 
@@ -6325,7 +6325,7 @@ html, body {
     color: #4ec968;
 }
 
-.git-indicator-changed {
+.git-indicator-deleted {
     color: #e06c60;
 }
 

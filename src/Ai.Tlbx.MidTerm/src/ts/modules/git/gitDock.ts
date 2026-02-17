@@ -68,8 +68,10 @@ function openGitDock(sessionId: string): void {
     const w = parseInt(savedWidth, 10);
     if (w >= DOCK_MIN_WIDTH && w <= DOCK_MAX_WIDTH) {
       dockPanel.style.width = w + 'px';
-      const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
-      if (terminalsArea) terminalsArea.style.marginRight = w + 'px';
+      const panels = document.querySelector(
+        '.session-wrapper:not(.hidden) .session-tab-panels',
+      ) as HTMLElement;
+      if (panels) panels.style.marginRight = w + 'px';
     }
   }
 
@@ -114,8 +116,9 @@ export function closeGitDock(): void {
   }
   app?.classList.remove('git-docked');
 
-  const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
-  if (terminalsArea) terminalsArea.style.marginRight = '';
+  document
+    .querySelectorAll<HTMLElement>('.session-tab-panels')
+    .forEach((p) => (p.style.marginRight = ''));
 
   requestAnimationFrame(rescaleAllTerminalsImmediate);
 
@@ -145,8 +148,10 @@ export function setupGitDockResize(): void {
     const delta = startX - clientX;
     const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
     dockPanel!.style.width = newWidth + 'px';
-    const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
-    if (terminalsArea) terminalsArea.style.marginRight = newWidth + 'px';
+    const panels = document.querySelector(
+      '.session-wrapper:not(.hidden) .session-tab-panels',
+    ) as HTMLElement;
+    if (panels) panels.style.marginRight = newWidth + 'px';
   }
 
   function endResize(): void {
