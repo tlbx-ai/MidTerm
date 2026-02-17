@@ -57,7 +57,7 @@
     --terminal-bg: #05050A;         /* Alias for compatibility */
     --bg-primary: #0D0E14;          /* L: 3.5% - Main canvas */
     --bg-elevated: #161821;         /* L: 6.5% - Cards, panels */
-    --bg-sidebar: #131520;          /* L: 7.5% - Sidebar */
+    --bg-sidebar: #0D0E14;          /* L: 3.5% - Sidebar */
     --bg-surface: #242735;          /* L: 12.5% - Input fields, dropdowns */
     --bg-input: #242735;            /* Alias for compatibility */
     --bg-dropdown: #242735;         /* Alias for compatibility */
