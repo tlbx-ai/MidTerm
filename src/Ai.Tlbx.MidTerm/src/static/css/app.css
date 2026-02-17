@@ -1394,6 +1394,12 @@ html, body {
     color: var(--text-muted) !important;
 }
 
+#btn-main-browser {
+    background: none !important;
+    border: none !important;
+    color: var(--accent-blue) !important;
+}
+
 .collapsed-title-bar {
     display: none;
     position: fixed;
