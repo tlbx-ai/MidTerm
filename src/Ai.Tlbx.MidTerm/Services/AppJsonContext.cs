@@ -53,6 +53,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(BellStyleSetting))]
 [JsonSerializable(typeof(ClipboardShortcutsSetting))]
 [JsonSerializable(typeof(ScrollbarStyleSetting))]
+[JsonSerializable(typeof(LanguageSetting))]
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(List<LaunchEntry>))]

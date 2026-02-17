@@ -5,6 +5,7 @@
  */
 
 import { escapeHtml } from '../utils';
+import { t, initI18n } from './i18n';
 
 export function initTrustPage(): void {
   // Platform detection
@@ -19,6 +20,9 @@ export function initTrustPage(): void {
   const detectedPlatformEl = document.getElementById('detected-platform');
 
   if (!detectedPlatformEl) return;
+
+  // Initialize i18n for trust page
+  initI18n();
 
   // Show detected platform text and badge
   if (isIOS) {
@@ -65,8 +69,8 @@ export function initTrustPage(): void {
       const fp = fpEl.textContent ?? '';
       try {
         await navigator.clipboard.writeText(fp);
-        copyBtn.textContent = 'Copied!';
-        setTimeout(() => (copyBtn.textContent = 'Copy'), 2000);
+        copyBtn.textContent = t('trust.copied');
+        setTimeout(() => (copyBtn.textContent = t('trust.copy')), 2000);
       } catch {
         // Fallback for older browsers
         const textarea = document.createElement('textarea');
@@ -142,11 +146,11 @@ async function loadCertificateInfo(): Promise<void> {
           )
           .join('');
       } else {
-        endpointsList.innerHTML = '<p>No addresses in certificate</p>';
+        endpointsList.innerHTML = `<p>${t('trust.noAddresses')}</p>`;
       }
     }
   } catch {
     const fpEl = document.getElementById('fingerprint');
-    if (fpEl) fpEl.textContent = 'Error loading certificate info';
+    if (fpEl) fpEl.textContent = t('trust.errorLoading');
   }
 }

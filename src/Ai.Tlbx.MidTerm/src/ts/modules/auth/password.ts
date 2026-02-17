@@ -8,6 +8,7 @@ import { changePassword } from '../../api/client';
 import { $authStatus } from '../../stores';
 import { bindClick } from '../../utils';
 import { checkAuthStatus, dismissSecurityWarning, logout } from './status';
+import { t } from '../i18n';
 
 let passwordModalHasPassword = false;
 
@@ -25,7 +26,9 @@ export function showPasswordModal(_isInitialSetup: boolean): void {
   passwordModalHasPassword = $authStatus.get()?.passwordSet ?? false;
 
   if (title) {
-    title.textContent = passwordModalHasPassword ? 'Change Password' : 'Set Password';
+    title.textContent = passwordModalHasPassword
+      ? t('modal.changePassword')
+      : t('modal.setPassword');
   }
 
   if (currentGroup) {
@@ -76,17 +79,17 @@ export async function handlePasswordSubmit(e: Event): Promise<void> {
   const confirmPassword = confirmPw?.value ?? '';
 
   if (!newPassword) {
-    showPasswordError('New password is required');
+    showPasswordError(t('error.newPasswordRequired'));
     return;
   }
 
   if (newPassword !== confirmPassword) {
-    showPasswordError('Passwords do not match');
+    showPasswordError(t('error.passwordsNoMatch'));
     return;
   }
 
   if (newPassword.length < 4) {
-    showPasswordError('Password must be at least 4 characters');
+    showPasswordError(t('error.passwordTooShort'));
     return;
   }
 
@@ -94,7 +97,7 @@ export async function handlePasswordSubmit(e: Event): Promise<void> {
 
   if (saveBtn) {
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
+    saveBtn.textContent = t('modal.saving');
   }
 
   try {
@@ -102,21 +105,21 @@ export async function handlePasswordSubmit(e: Event): Promise<void> {
 
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = 'Save';
+      saveBtn.textContent = t('modal.save');
     }
 
     if (response.ok && data?.success) {
       hidePasswordModal();
       checkAuthStatus();
     } else {
-      showPasswordError(data?.error ?? 'Failed to change password');
+      showPasswordError(data?.error ?? t('error.passwordChangeFailed'));
     }
   } catch {
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = 'Save';
+      saveBtn.textContent = t('modal.save');
     }
-    showPasswordError('Connection error');
+    showPasswordError(t('error.connectionError'));
   }
 }
 

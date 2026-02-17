@@ -52,6 +52,7 @@ import {
   initSessionDrag,
   initTrafficIndicator,
 } from './modules/sidebar';
+import { initI18n } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
@@ -177,6 +178,7 @@ async function init(): Promise<void> {
   log.info(() => 'MidTerm frontend initializing');
 
   cacheDOMElements();
+  await initI18n();
   initMainBrowserButton();
   initTrafficIndicator();
   initBadges();

@@ -5,6 +5,7 @@
  */
 
 import { login, getBootstrapLogin } from '../api/client';
+import { t, initI18n } from './i18n';
 
 const CERT_HIDDEN_KEY = 'mt-cert-info-hidden';
 
@@ -16,6 +17,9 @@ export function initLoginPage(): void {
 
   if (!form || !passwordInput || !errorDiv || !loginBtn) return;
 
+  // Initialize i18n for login page
+  initI18n();
+
   // Load version and insider info
   loadVersionAndPaths();
 
@@ -24,12 +28,12 @@ export function initLoginPage(): void {
 
     const password = passwordInput.value;
     if (!password) {
-      showError(errorDiv, 'Password required');
+      showError(errorDiv, t('auth.passwordRequired'));
       return;
     }
 
     loginBtn.disabled = true;
-    loginBtn.textContent = 'Logging in...';
+    loginBtn.textContent = t('auth.loggingIn');
     errorDiv.classList.add('hidden');
 
     try {
@@ -38,15 +42,15 @@ export function initLoginPage(): void {
       if (response.ok && data?.success) {
         window.location.href = '/';
       } else {
-        showError(errorDiv, data?.error ?? 'Login failed');
+        showError(errorDiv, data?.error ?? t('auth.loginFailed'));
         passwordInput.value = '';
         passwordInput.focus();
       }
     } catch {
-      showError(errorDiv, 'Connection error. Please try again.');
+      showError(errorDiv, t('auth.connectionError'));
     } finally {
       loginBtn.disabled = false;
-      loginBtn.textContent = 'Login';
+      loginBtn.textContent = t('auth.login');
     }
   });
 

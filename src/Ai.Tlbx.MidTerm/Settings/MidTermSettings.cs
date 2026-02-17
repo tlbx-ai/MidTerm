@@ -60,6 +60,9 @@ public sealed class MidTermSettings
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;
 
+    // UI Language
+    public LanguageSetting Language { get; set; } = LanguageSetting.Auto;
+
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }
     public string? RunAsUserSid { get; set; }  // Windows: User SID for token lookup

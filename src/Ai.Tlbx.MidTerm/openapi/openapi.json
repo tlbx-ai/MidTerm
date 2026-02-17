@@ -1741,6 +1741,21 @@
         "type": "string",
         "format": "binary"
       },
+      "LanguageSetting": {
+        "enum": [
+          "auto",
+          "en",
+          "zh",
+          "es",
+          "hi",
+          "fr",
+          "bn",
+          "pt",
+          "ru",
+          "ja",
+          "de"
+        ]
+      },
       "LaunchEntry": {
         "required": [
           "id",
@@ -1983,6 +1998,7 @@
           "ideMode",
           "managerBarEnabled",
           "showChangelogAfterUpdate",
+          "language",
           "managerBarButtons",
           "runAsUser",
           "runAsUserSid",
@@ -2080,6 +2096,9 @@
           },
           "showChangelogAfterUpdate": {
             "type": "boolean"
+          },
+          "language": {
+            "$ref": "#/components/schemas/LanguageSetting"
           },
           "managerBarButtons": {
             "type": "array",

@@ -63,3 +63,18 @@ public enum ScrollbarStyleSetting
     [JsonStringEnumMemberName("hover")] Hover,
     [JsonStringEnumMemberName("always")] Always
 }
+
+public enum LanguageSetting
+{
+    [JsonStringEnumMemberName("auto")] Auto,
+    [JsonStringEnumMemberName("en")] English,
+    [JsonStringEnumMemberName("zh")] Chinese,
+    [JsonStringEnumMemberName("es")] Spanish,
+    [JsonStringEnumMemberName("hi")] Hindi,
+    [JsonStringEnumMemberName("fr")] French,
+    [JsonStringEnumMemberName("bn")] Bengali,
+    [JsonStringEnumMemberName("pt")] Portuguese,
+    [JsonStringEnumMemberName("ru")] Russian,
+    [JsonStringEnumMemberName("ja")] Japanese,
+    [JsonStringEnumMemberName("de")] German
+}

@@ -102,6 +102,7 @@ export type BellStyleSetting = Schemas['BellStyleSetting'];
 export type ClipboardShortcutsSetting = Schemas['ClipboardShortcutsSetting'];
 export type TabTitleModeSetting = Schemas['TabTitleModeSetting'];
 export type ScrollbarStyleSetting = Schemas['ScrollbarStyleSetting'];
+export type LanguageSetting = Schemas['LanguageSetting'];
 
 // =============================================================================
 // Client-Extended Types

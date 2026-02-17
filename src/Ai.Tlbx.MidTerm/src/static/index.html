@@ -25,8 +25,8 @@
 <body>
     <div id="security-warning" class="security-warning hidden">
         <span class="warning-icon">&#9888;</span>
-        <span class="warning-text">No password set. Anyone on the network can access your terminals.</span>
-        <button id="btn-set-password-warning" class="warning-btn">Set Password</button>
+        <span class="warning-text" data-i18n="security.warning">No password set. Anyone on the network can access your terminals.</span>
+        <button id="btn-set-password-warning" class="warning-btn" data-i18n="security.setPassword">Set Password</button>
         <button id="btn-dismiss-warning" class="warning-dismiss">&times;</button>
     </div>
 
@@ -39,85 +39,85 @@
                     <span class="sidebar-title">MidTerm</span>
                 </div>
                 <div class="sidebar-header-buttons">
-                    <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" title="Hide sidebar"><span class="icon">&#xe913;</span></button>
-                    <button class="sidebar-btn" id="btn-main-browser" title="Following browser (scale only)"><span class="icon">&#xe989;</span></button>
+                    <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" data-i18n-title="sidebar.hide" title="Hide sidebar"><span class="icon">&#xe913;</span></button>
+                    <button class="sidebar-btn" id="btn-main-browser" data-i18n-title="sidebar.followingBrowser" title="Following browser (scale only)"><span class="icon">&#xe989;</span></button>
                 </div>
             </div>
             <div class="sidebar-nav">
-                <button class="sidebar-nav-btn" id="btn-new-session"><span class="icon">&#xea81;</span>New Terminal</button>
-                <button class="sidebar-nav-btn" id="btn-settings"><span class="icon">&#xe991;</span>Settings</button>
-                <button class="sidebar-nav-btn btn-history" id="btn-history"><span class="icon">&#xe997;</span>Load bookmarked terminal</button>
+                <button class="sidebar-nav-btn" id="btn-new-session"><span class="icon">&#xea81;</span><span data-i18n="sidebar.newTerminal">New Terminal</span></button>
+                <button class="sidebar-nav-btn" id="btn-settings"><span class="icon">&#xe991;</span><span data-i18n="sidebar.settings">Settings</span></button>
+                <button class="sidebar-nav-btn btn-history" id="btn-history"><span class="icon">&#xe997;</span><span data-i18n="sidebar.loadBookmarked">Load bookmarked terminal</span></button>
             </div>
-            <div class="sidebar-section-label">Terminals</div>
+            <div class="sidebar-section-label" data-i18n="sidebar.terminals">Terminals</div>
             <div class="session-list" id="session-list"></div>
             <div class="sidebar-footer">
                 <div id="update-panel" class="update-panel hidden">
-                    <div class="update-header">Update Available</div>
+                    <div class="update-header" data-i18n="sidebar.updateAvailable">Update Available</div>
                     <div class="update-versions">
                         <span class="update-current"></span>
                         <span class="update-arrow icon">&#xe91b;</span>
                         <span class="update-latest"></span>
-                        <span id="update-changelog-link" class="update-changelog-link">Show Changelog</span>
+                        <span id="update-changelog-link" class="update-changelog-link" data-i18n="sidebar.showChangelog">Show Changelog</span>
                     </div>
-                    <button id="update-btn" class="update-btn">Update & Restart</button>
-                    <div class="update-note">Sessions will be closed</div>
+                    <button id="update-btn" class="update-btn" data-i18n="sidebar.updateRestart">Update & Restart</button>
+                    <div class="update-note" data-i18n="sidebar.sessionsClosed">Sessions will be closed</div>
                 </div>
                 <div id="voice-section" class="voice-section hidden">
                     <button class="voice-section-header" id="btn-toggle-voice">
-                        <span class="voice-section-title">Voice Assistant</span>
+                        <span class="voice-section-title" data-i18n="sidebar.voiceAssistant">Voice Assistant</span>
                         <span class="voice-section-chevron icon">&#xe910;</span>
                     </button>
                     <div class="voice-section-content" id="voice-section-content">
                         <div class="voice-controls">
-                            <button id="btn-voice-toggle" class="voice-btn" title="Start/Stop">
+                            <button id="btn-voice-toggle" class="voice-btn" data-i18n-title="sidebar.voiceStartStop" title="Start/Stop">
                                 <span class="icon">&#xea15;</span>
                             </button>
-                            <button id="btn-voice-sync" class="voice-btn hidden" title="Test Voice Server Connection">
+                            <button id="btn-voice-sync" class="voice-btn hidden" data-i18n-title="sidebar.voiceTestConnection" title="Test Voice Server Connection">
                                 <span class="icon">&#xea2e;</span>
                             </button>
-                            <button id="btn-voice-chat" class="voice-btn" title="Toggle Chat Panel">
+                            <button id="btn-voice-chat" class="voice-btn" data-i18n-title="sidebar.voiceToggleChat" title="Toggle Chat Panel">
                                 <span class="icon">&#xe96b;</span>
                             </button>
                         </div>
                         <div class="voice-settings" id="voice-settings">
                             <div class="voice-setting-row">
-                                <label>Voice</label>
+                                <label data-i18n="sidebar.voiceLabel">Voice</label>
                                 <select id="voice-select" class="voice-select">
-                                    <option value="">Loading...</option>
+                                    <option value="" data-i18n="sidebar.voiceLoading">Loading...</option>
                                 </select>
                             </div>
                             <div class="voice-setting-row">
-                                <label>Microphone</label>
+                                <label data-i18n="sidebar.voiceMicrophone">Microphone</label>
                                 <select id="mic-select" class="voice-select">
-                                    <option value="">Default</option>
+                                    <option value="" data-i18n="sidebar.voiceDefault">Default</option>
                                 </select>
                             </div>
                             <div class="voice-setting-row">
-                                <label>Speed</label>
+                                <label data-i18n="sidebar.voiceSpeed">Speed</label>
                                 <div class="voice-speed-control">
                                     <input type="range" id="voice-speed" min="0.25" max="1.5" step="0.25" value="1.0">
                                     <span id="voice-speed-value">1.0x</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="voice-status" id="voice-status">Not connected</div>
+                        <div class="voice-status" id="voice-status" data-i18n="sidebar.voiceNotConnected">Not connected</div>
                     </div>
                 </div>
                 <div class="network-section" id="network-section">
                     <button class="network-section-header" id="btn-toggle-network" title="Toggle Network & Remote Access">
-                        <span class="network-section-title">Network & Remote Access</span>
+                        <span class="network-section-title" data-i18n="sidebar.networkRemoteAccess">Network & Remote Access</span>
                         <span class="network-section-chevron icon">&#xe910;</span>
                     </button>
                     <div class="network-section-content" id="network-section-content">
                         <div class="network-list" id="network-list"></div>
                         <div class="network-actions">
-                            <a id="trust-link" href="/trust" class="network-action-link" title="Trust certificate on this or other devices">
+                            <a id="trust-link" href="/trust" class="network-action-link" data-i18n-title="sidebar.trustCertificateHint" title="Trust certificate on this or other devices">
                                 <span class="icon">&#xe908;</span>
-                                Trust Certificate
+                                <span data-i18n="sidebar.trustCertificate">Trust Certificate</span>
                             </a>
-                            <button id="btn-share-access" class="share-access-link" title="Share connection info via email">
+                            <button id="btn-share-access" class="share-access-link" data-i18n-title="sidebar.shareAccessHint" title="Share connection info via email">
                                 <span class="icon">&#xe925;</span>
-                                Share Access...
+                                <span data-i18n="sidebar.shareAccess">Share Access...</span>
                             </button>
                         </div>
                     </div>
@@ -133,8 +133,8 @@
 
         <aside class="chat-panel hidden" id="chat-panel">
             <div class="chat-header">
-                <span class="chat-title">Voice Chat</span>
-                <button id="btn-collapse-chat" class="chat-collapse-btn" title="Hide chat panel">
+                <span class="chat-title" data-i18n="chat.title">Voice Chat</span>
+                <button id="btn-collapse-chat" class="chat-collapse-btn" data-i18n-title="chat.hide" title="Hide chat panel">
                     <span class="midFont-keyboard_arrow_left"></span>
                 </button>
             </div>
@@ -143,8 +143,8 @@
 
         <div class="collapsed-title-bar" id="collapsed-title-bar">
             <div class="title-bar-buttons">
-                <button class="title-bar-btn" id="btn-expand-sidebar" title="Show sidebar"><span class="icon">&#xe910;</span></button>
-                <button class="title-bar-btn" id="btn-rename-titlebar" title="Rename"><span class="icon">&#xe91f;</span></button>
+                <button class="title-bar-btn" id="btn-expand-sidebar" data-i18n-title="sidebar.show" title="Show sidebar"><span class="icon">&#xe910;</span></button>
+                <button class="title-bar-btn" id="btn-rename-titlebar" data-i18n-title="sidebar.rename" title="Rename"><span class="icon">&#xe91f;</span></button>
             </div>
             <div class="title-bar-titles">
                 <span class="title-bar-custom" id="title-bar-custom"></span>
@@ -155,29 +155,29 @@
 
         <div class="main-content">
             <header class="mobile-topbar" id="mobile-topbar">
-                <button class="topbar-btn topbar-hamburger" id="btn-hamburger" title="Sessions"><span class="icon">&#xe919;</span></button>
+                <button class="topbar-btn topbar-hamburger" id="btn-hamburger" data-i18n-title="topbar.sessions" title="Sessions"><span class="icon">&#xe919;</span></button>
                 <div class="topbar-title" id="mobile-title">MidTerm</div>
                 <div class="topbar-actions no-terminal" id="topbar-actions">
-                    <button class="topbar-btn topbar-action topbar-fullscreen" id="btn-fullscreen-mobile" title="Fullscreen"><span class="icon">&#xe90c;</span></button>
-                    <button class="topbar-btn topbar-action topbar-ctrlc" id="btn-ctrlc-mobile" title="Send Ctrl+C"><span class="icon">&#xe9b5;</span></button>
-                    <button class="topbar-btn topbar-action" id="btn-rename-mobile" title="Rename"><span class="icon">&#xe91f;</span></button>
-                    <button class="topbar-btn topbar-action topbar-close" id="btn-close-mobile" title="Close terminal"><span class="icon">&#xe909;</span></button>
-                    <button class="topbar-btn topbar-add" id="btn-new-session-mobile" title="New Terminal"><span class="icon">&#xea81;</span></button>
+                    <button class="topbar-btn topbar-action topbar-fullscreen" id="btn-fullscreen-mobile" data-i18n-title="topbar.fullscreen" title="Fullscreen"><span class="icon">&#xe90c;</span></button>
+                    <button class="topbar-btn topbar-action topbar-ctrlc" id="btn-ctrlc-mobile" data-i18n-title="topbar.sendCtrlC" title="Send Ctrl+C"><span class="icon">&#xe9b5;</span></button>
+                    <button class="topbar-btn topbar-action" id="btn-rename-mobile" data-i18n-title="sidebar.rename" title="Rename"><span class="icon">&#xe91f;</span></button>
+                    <button class="topbar-btn topbar-action topbar-close" id="btn-close-mobile" data-i18n-title="topbar.closeTerminal" title="Close terminal"><span class="icon">&#xe909;</span></button>
+                    <button class="topbar-btn topbar-add" id="btn-new-session-mobile" data-i18n-title="sidebar.newTerminal" title="New Terminal"><span class="icon">&#xea81;</span></button>
                 </div>
             </header>
 
             <div class="terminals-area">
                 <div id="terminal-search" class="terminal-search hidden">
-                    <input type="text" id="search-input" placeholder="Search..." autocomplete="off" />
+                    <input type="text" id="search-input" data-i18n-placeholder="terminal.search" placeholder="Search..." autocomplete="off" />
                     <span id="search-results" class="search-results">0/0</span>
-                    <button id="search-prev" class="search-btn" title="Previous (Shift+Enter)"><span class="icon">&#xe913;</span></button>
-                    <button id="search-next" class="search-btn" title="Next (Enter)"><span class="icon">&#xe910;</span></button>
-                    <button id="search-close" class="search-btn" title="Close (Esc)"><span class="icon">&#xe909;</span></button>
+                    <button id="search-prev" class="search-btn" data-i18n-title="terminal.searchPrevious" title="Previous (Shift+Enter)"><span class="icon">&#xe913;</span></button>
+                    <button id="search-next" class="search-btn" data-i18n-title="terminal.searchNext" title="Next (Enter)"><span class="icon">&#xe910;</span></button>
+                    <button id="search-close" class="search-btn" data-i18n-title="terminal.searchClose" title="Close (Esc)"><span class="icon">&#xe909;</span></button>
                 </div>
                 <div id="empty-state" class="empty-state">
                     <img src="/img/logo.png" alt="" class="empty-state-logo" />
-                    <p>No terminals open</p>
-                    <button id="btn-create-terminal">Create Terminal</button>
+                    <p data-i18n="terminal.noTerminals">No terminals open</p>
+                    <button id="btn-create-terminal" data-i18n="terminal.createTerminal">Create Terminal</button>
                     <p class="empty-state-hint">Press <kbd>Alt</kbd>+<kbd>T</kbd> to create a new terminal</p>
                 </div>
                 <div id="settings-view" class="settings-view hidden">
@@ -186,27 +186,27 @@
                         <nav class="settings-tabs" role="tablist">
                             <button class="settings-tab active" data-tab="general" role="tab" aria-selected="true">
                                 <span class="icon">&#xea0c;</span>
-                                <span class="tab-label">General</span>
+                                <span class="tab-label" data-i18n="settings.general">General</span>
                             </button>
                             <button class="settings-tab" data-tab="appearance" role="tab" aria-selected="false">
                                 <span class="icon">&#xe90d;</span>
-                                <span class="tab-label">Appearance</span>
+                                <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
                             </button>
                             <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
                                 <span class="icon">&#xe993;</span>
-                                <span class="tab-label">Behavior</span>
+                                <span class="tab-label" data-i18n="settings.behavior">Behavior</span>
                             </button>
                             <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
                                 <span class="icon">&#xe908;</span>
-                                <span class="tab-label">Security</span>
+                                <span class="tab-label" data-i18n="settings.security">Security</span>
                             </button>
                             <button class="settings-tab" data-tab="ide" role="tab" aria-selected="false">
                                 <span class="icon">&#xea57;</span>
-                                <span class="tab-label">IDE Mode</span>
+                                <span class="tab-label" data-i18n="settings.ideMode">IDE Mode</span>
                             </button>
                             <button class="settings-tab" data-tab="diagnostics" role="tab" aria-selected="false">
                                 <span class="icon">&#xe9ce;</span>
-                                <span class="tab-label">Diagnostics</span>
+                                <span class="tab-label" data-i18n="settings.diagnostics">Diagnostics</span>
                             </button>
                         </nav>
 
@@ -215,32 +215,32 @@
 
                             <!-- General Panel -->
                             <section class="settings-panel" data-panel="general">
-                                <h2>General</h2>
+                                <h2 data-i18n="settings.general.title">General</h2>
 
                                 <!-- About & Updates -->
                                 <div class="settings-section">
-                                    <h3>About & Updates</h3>
+                                    <h3 data-i18n="settings.general.aboutUpdates">About & Updates</h3>
                                     <div class="setting-row">
-                                        <label>Server</label>
+                                        <label data-i18n="settings.general.server">Server</label>
                                         <span class="version-value" id="version-server" title="mt.exe binary version">-</span>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Frontend</label>
+                                        <label data-i18n="settings.general.frontend">Frontend</label>
                                         <span class="version-value" id="version-frontend" title="JavaScript build version">-</span>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Host</label>
+                                        <label data-i18n="settings.general.host">Host</label>
                                         <span class="version-value" id="version-host" title="mthost.exe binary version">-</span>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Updates</label>
+                                        <label data-i18n="settings.general.updates">Updates</label>
                                         <div class="update-actions-inline">
-                                            <button id="btn-check-updates" class="btn-secondary">Check for Updates</button>
-                                            <button id="btn-show-changelog" class="btn-secondary">Changelog</button>
-                                            <button id="btn-view-update-log" class="btn-secondary">Update Log</button>
+                                            <button id="btn-check-updates" class="btn-secondary" data-i18n="settings.general.checkForUpdates">Check for Updates</button>
+                                            <button id="btn-show-changelog" class="btn-secondary" data-i18n="settings.general.changelog">Changelog</button>
+                                            <button id="btn-view-update-log" class="btn-secondary" data-i18n="settings.general.updateLog">Update Log</button>
                                         </div>
                                     </div>
-                                    <div id="update-status-none" class="update-status-none hidden">You are running the latest version</div>
+                                    <div id="update-status-none" class="update-status-none hidden" data-i18n="settings.general.latestVersion">You are running the latest version</div>
                                     <div id="update-cards" class="update-cards"></div>
                                     <div id="update-result" class="update-result hidden"></div>
                                     <div id="reinstall-hint" class="reinstall-hint hidden"></div>
@@ -248,8 +248,8 @@
 
                                 <!-- Server -->
                                 <div class="settings-section">
-                                    <h3>Server</h3>
-                                    <p class="setting-hint">Server settings are configured via command line arguments:</p>
+                                    <h3 data-i18n="settings.general.serverSection">Server</h3>
+                                    <p class="setting-hint" data-i18n="settings.general.serverHint">Server settings are configured via command line arguments:</p>
                                     <div class="setting-info">
                                         <code>--port 2000</code> - Port to listen on (default: 2000)
                                     </div>
@@ -260,16 +260,16 @@
 
                                 <!-- System Status -->
                                 <div class="settings-section system-status-section">
-                                    <h3>System Status</h3>
+                                    <h3 data-i18n="settings.general.systemStatus">System Status</h3>
                                     <div id="system-status-content">
-                                        <div class="status-loading">Loading...</div>
+                                        <div class="status-loading" data-i18n="settings.general.loading">Loading...</div>
                                     </div>
                                 </div>
 
                                 <!-- OSS Licenses -->
                                 <div class="settings-section">
-                                    <h3>Open Source Licenses</h3>
-                                    <p class="setting-hint">MidTerm uses the following open source components:</p>
+                                    <h3 data-i18n="settings.general.ossLicenses">Open Source Licenses</h3>
+                                    <p class="setting-hint" data-i18n="settings.general.ossHint">MidTerm uses the following open source components:</p>
                                     <div class="license-item">
                                         <strong>xterm.js</strong> <span class="license-version">v6.0.0</span>
                                         <span class="license-type">MIT License</span>
@@ -335,19 +335,35 @@
 
                             <!-- Appearance Panel -->
                             <section class="settings-panel hidden" data-panel="appearance">
-                                <h2>Appearance</h2>
+                                <h2 data-i18n="settings.appearance.title">Appearance</h2>
 
                                 <div class="settings-section">
-                                    <h3>Terminal Appearance</h3>
+                                    <h3 data-i18n="settings.appearance.terminalAppearance">Terminal Appearance</h3>
                                     <div class="setting-row">
-                                        <label for="setting-font-size">Font Size</label>
+                                        <label for="setting-language" data-i18n="settings.appearance.language">Language</label>
+                                        <select id="setting-language">
+                                            <option value="auto" data-i18n="settings.appearance.languageAuto">Auto (browser default)</option>
+                                            <option value="en">English</option>
+                                            <option value="zh">中文</option>
+                                            <option value="es">Español</option>
+                                            <option value="hi">हिन्दी</option>
+                                            <option value="fr">Français</option>
+                                            <option value="bn">বাংলা</option>
+                                            <option value="pt">Português</option>
+                                            <option value="ru">Русский</option>
+                                            <option value="ja">日本語</option>
+                                            <option value="de">Deutsch</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-font-size" data-i18n="settings.appearance.fontSize">Font Size</label>
                                         <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
                                             <input type="number" id="setting-font-size" min="8" max="24" value="14" />
                                             <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
                                         </div>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-font-family">Font</label>
+                                        <label for="setting-font-family" data-i18n="settings.appearance.font">Font</label>
                                         <select id="setting-font-family">
                                             <option value="Cascadia Code">Cascadia Code</option>
                                             <option value="JetBrains Mono">JetBrains Mono</option>
@@ -355,7 +371,7 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-cursor-style">Cursor Style</label>
+                                        <label for="setting-cursor-style" data-i18n="settings.appearance.cursorStyle">Cursor Style</label>
                                         <select id="setting-cursor-style">
                                             <option value="bar">Bar</option>
                                             <option value="block">Block</option>
@@ -363,11 +379,11 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-cursor-blink">Cursor Blink</label>
+                                        <label for="setting-cursor-blink" data-i18n="settings.appearance.cursorBlink">Cursor Blink</label>
                                         <input type="checkbox" id="setting-cursor-blink" checked />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-cursor-inactive">Cursor (Unfocused)</label>
+                                        <label for="setting-cursor-inactive" data-i18n="settings.appearance.cursorUnfocused">Cursor (Unfocused)</label>
                                         <select id="setting-cursor-inactive">
                                             <option value="outline">Outline</option>
                                             <option value="block">Block</option>
@@ -377,7 +393,7 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-theme">Theme</label>
+                                        <label for="setting-theme" data-i18n="settings.appearance.theme">Theme</label>
                                         <select id="setting-theme">
                                             <option value="dark">Dark</option>
                                             <option value="light">Light</option>
@@ -386,7 +402,7 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-tab-title">Browser Tab Title</label>
+                                        <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle">Browser Tab Title</label>
                                         <select id="setting-tab-title">
                                             <option value="hostname">Hostname</option>
                                             <option value="static">Just MidTerm</option>
@@ -396,7 +412,7 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-contrast">Minimum Contrast</label>
+                                        <label for="setting-contrast" data-i18n="settings.appearance.minimumContrast">Minimum Contrast</label>
                                         <select id="setting-contrast">
                                             <option value="1">Off</option>
                                             <option value="4.5">WCAG AA (4.5:1)</option>
@@ -405,7 +421,7 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-scrollbar-style">Terminal Scrollbar</label>
+                                        <label for="setting-scrollbar-style" data-i18n="settings.appearance.terminalScrollbar">Terminal Scrollbar</label>
                                         <select id="setting-scrollbar-style">
                                             <option value="off">Off</option>
                                             <option value="hover">Hover</option>
@@ -417,13 +433,13 @@
 
                             <!-- Behavior Panel -->
                             <section class="settings-panel hidden" data-panel="behavior">
-                                <h2>Behavior</h2>
+                                <h2 data-i18n="settings.behavior.title">Behavior</h2>
 
                                 <!-- Session Defaults -->
                                 <div class="settings-section">
-                                    <h3>Session Defaults</h3>
+                                    <h3 data-i18n="settings.behavior.sessionDefaults">Session Defaults</h3>
                                     <div class="setting-row">
-                                        <label for="setting-default-shell">Default Shell</label>
+                                        <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell">Default Shell</label>
                                         <select id="setting-default-shell">
                                             <option value="Pwsh">PowerShell 7</option>
                                             <option value="PowerShell">Windows PowerShell</option>
@@ -431,9 +447,9 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-working-dir">Default Working Directory</label>
+                                        <label for="setting-working-dir" data-i18n="settings.behavior.defaultWorkingDir">Default Working Directory</label>
                                         <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
-                                            <input type="text" id="setting-working-dir" placeholder="Leave empty for home directory" />
+                                            <input type="text" id="setting-working-dir" data-i18n-placeholder="settings.behavior.defaultWorkingDirHint" placeholder="Leave empty for home directory" />
                                             <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
                                         </div>
                                     </div>
@@ -441,16 +457,16 @@
 
                                 <!-- Terminal Behavior -->
                                 <div class="settings-section">
-                                    <h3>Terminal Behavior</h3>
+                                    <h3 data-i18n="settings.behavior.terminalBehavior">Terminal Behavior</h3>
                                     <div class="setting-row">
-                                        <label for="setting-scrollback">Scrollback Lines</label>
+                                        <label for="setting-scrollback" data-i18n="settings.behavior.scrollbackLines">Scrollback Lines</label>
                                         <div class="text-input-wrapper" data-setting="scrollbackLines" data-type="number">
                                             <input type="number" id="setting-scrollback" min="500" max="100000" step="500" value="10000" />
                                             <button class="inline-save-btn" title="Save"><span class="icon">&#xe90f;</span></button>
                                         </div>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-bell-style">Bell Style</label>
+                                        <label for="setting-bell-style" data-i18n="settings.behavior.bellStyle">Bell Style</label>
                                         <select id="setting-bell-style">
                                             <option value="notification">Desktop Notification</option>
                                             <option value="sound">Sound</option>
@@ -459,15 +475,15 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-copy-on-select">Copy on Select</label>
+                                        <label for="setting-copy-on-select" data-i18n="settings.behavior.copyOnSelect">Copy on Select</label>
                                         <input type="checkbox" id="setting-copy-on-select" />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-right-click-paste">Right-Click Paste</label>
+                                        <label for="setting-right-click-paste" data-i18n="settings.behavior.rightClickPaste">Right-Click Paste</label>
                                         <input type="checkbox" id="setting-right-click-paste" checked />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-clipboard-shortcuts">Copy/Paste Shortcuts</label>
+                                        <label for="setting-clipboard-shortcuts" data-i18n="settings.behavior.clipboardShortcuts">Copy/Paste Shortcuts</label>
                                         <select id="setting-clipboard-shortcuts">
                                             <option value="auto">Auto (detect platform)</option>
                                             <option value="windows">Windows (Ctrl+C/V)</option>
@@ -475,91 +491,91 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-smooth-scrolling">Smooth Scrolling</label>
+                                        <label for="setting-smooth-scrolling" data-i18n="settings.behavior.smoothScrolling">Smooth Scrolling</label>
                                         <input type="checkbox" id="setting-smooth-scrolling" />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-webgl">GPU Rendering (WebGL)</label>
+                                        <label for="setting-webgl" data-i18n="settings.behavior.gpuRendering">GPU Rendering (WebGL)</label>
                                         <input type="checkbox" id="setting-webgl" />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-scrollback-protection">Claude Code scrollback glitch protection</label>
+                                        <label for="setting-scrollback-protection" data-i18n="settings.behavior.scrollbackProtection">Claude Code scrollback glitch protection</label>
                                         <input type="checkbox" id="setting-scrollback-protection" />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely.">File Radar</label>
+                                        <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely." data-i18n="settings.behavior.fileRadar">File Radar</label>
                                         <input type="checkbox" id="setting-file-radar" />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-manager-bar">Middle Manager Bar</label>
+                                        <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar">Middle Manager Bar</label>
                                         <input type="checkbox" id="setting-manager-bar" />
                                     </div>
                                     <div class="setting-row">
-                                        <label for="setting-changelog-after-update">Show changelog after update</label>
+                                        <label for="setting-changelog-after-update" data-i18n="settings.behavior.changelogAfterUpdate">Show changelog after update</label>
                                         <input type="checkbox" id="setting-changelog-after-update" checked />
                                     </div>
                                     <div class="setting-row hidden" id="pwa-install-row">
-                                        <label>Install as App</label>
-                                        <button id="btn-install-pwa" class="btn-secondary" title="Install MidTerm as App">Install</button>
+                                        <label data-i18n="settings.behavior.installAsApp">Install as App</label>
+                                        <button id="btn-install-pwa" class="btn-secondary" title="Install MidTerm as App" data-i18n="settings.behavior.install">Install</button>
                                     </div>
                                 </div>
                                 <!-- Integrations -->
                                 <div class="settings-section">
-                                    <h3>Integrations</h3>
+                                    <h3 data-i18n="settings.behavior.integrations">Integrations</h3>
                                     <div class="setting-row">
-                                        <label for="setting-tmux-compatibility" title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH).">Tmux Compatibility</label>
+                                        <label for="setting-tmux-compatibility" title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH)." data-i18n="settings.behavior.tmuxCompatibility">Tmux Compatibility</label>
                                         <input type="checkbox" id="setting-tmux-compatibility" />
                                     </div>
-                                    <p class="setting-hint">Enables AI coding tools to manage panes via tmux commands. Disable if you SSH into remote hosts that run real tmux. Requires restart.</p>
+                                    <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">Enables AI coding tools to manage panes via tmux commands. Disable if you SSH into remote hosts that run real tmux. Requires restart.</p>
                                 </div>
                             </section>
 
                             <!-- Security Panel -->
                             <section class="settings-panel hidden" data-panel="security" id="security-section">
-                                <h2>Security</h2>
+                                <h2 data-i18n="settings.security.title">Security</h2>
 
                                 <div class="settings-section">
-                                    <h3>Authentication</h3>
+                                    <h3 data-i18n="settings.security.authentication">Authentication</h3>
                                     <div class="setting-row">
-                                        <label>Password</label>
+                                        <label data-i18n="settings.security.password">Password</label>
                                         <div class="password-status">
-                                            <span id="password-status-text" class="status-missing">Checking...</span>
+                                            <span id="password-status-text" class="status-missing" data-i18n="settings.security.checking">Checking...</span>
                                         </div>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Change Password</label>
-                                        <button id="btn-change-password" class="btn-secondary">Change...</button>
+                                        <label data-i18n="settings.security.changePassword">Change Password</label>
+                                        <button id="btn-change-password" class="btn-secondary" data-i18n="settings.security.change">Change...</button>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Session</label>
-                                        <button id="btn-logout" class="btn-secondary">Logout</button>
+                                        <label data-i18n="settings.security.session">Session</label>
+                                        <button id="btn-logout" class="btn-secondary" data-i18n="settings.security.logout">Logout</button>
                                     </div>
                                 </div>
 
                                 <div class="settings-section">
-                                    <h3>Process Identity</h3>
+                                    <h3 data-i18n="settings.security.processIdentity">Process Identity</h3>
                                     <div class="setting-row">
-                                        <label for="setting-run-as-user">Terminal User</label>
+                                        <label for="setting-run-as-user" data-i18n="settings.security.terminalUser">Terminal User</label>
                                         <select id="setting-run-as-user">
-                                            <option value="">Process Owner (default)</option>
+                                            <option value="" data-i18n="settings.security.processOwnerDefault">Process Owner (default)</option>
                                         </select>
                                     </div>
-                                    <p class="setting-hint">When running as a system service, terminals spawn as this user instead of the service account.</p>
+                                    <p class="setting-hint" data-i18n="settings.security.terminalUserHint">When running as a system service, terminals spawn as this user instead of the service account.</p>
                                 </div>
 
                                 <div class="settings-section">
-                                    <h3>HTTPS Certificate</h3>
+                                    <h3 data-i18n="settings.security.httpsCertificate">HTTPS Certificate</h3>
                                     <div class="setting-row">
-                                        <label>Fingerprint</label>
+                                        <label data-i18n="settings.security.fingerprint">Fingerprint</label>
                                         <code class="cert-fingerprint-inline" id="settings-cert-fingerprint">Loading...</code>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Valid Until</label>
+                                        <label data-i18n="settings.security.validUntil">Valid Until</label>
                                         <span id="settings-cert-validity">-</span>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Trust on Other Devices</label>
-                                        <a href="/trust" target="_blank" class="btn-secondary">Open Trust Page</a>
+                                        <label data-i18n="settings.security.trustOtherDevices">Trust on Other Devices</label>
+                                        <a href="/trust" target="_blank" class="btn-secondary" data-i18n="settings.security.openTrustPage">Open Trust Page</a>
                                     </div>
                                     <p class="setting-hint">
                                         <strong>Fingerprint verification:</strong> When connecting from a new device,
@@ -571,24 +587,24 @@
 
                             <!-- IDE Mode Panel -->
                             <section class="settings-panel hidden" data-panel="ide">
-                                <h2>IDE Mode</h2>
+                                <h2 data-i18n="settings.ide.title">IDE Mode</h2>
 
                                 <div class="settings-section">
-                                    <h3>Overview</h3>
+                                    <h3 data-i18n="settings.ide.overview">Overview</h3>
                                     <p class="setting-hint">
                                         IDE Mode adds per-session tabs (Terminal, Files, Git, Commands) above the terminal area.
                                         When disabled, sessions show only the terminal with no tab bar, file browser, git panel, or command runner.
                                     </p>
                                     <div class="setting-row">
-                                        <label for="setting-ide-mode">Enable IDE Mode</label>
+                                        <label for="setting-ide-mode" data-i18n="settings.ide.enableIdeMode">Enable IDE Mode</label>
                                         <input type="checkbox" id="setting-ide-mode" checked />
                                     </div>
                                 </div>
 
                                 <div class="settings-section">
-                                    <h3>Git</h3>
+                                    <h3 data-i18n="settings.ide.git">Git</h3>
                                     <div class="setting-row">
-                                        <label>Git executable</label>
+                                        <label data-i18n="settings.ide.gitExecutable">Git executable</label>
                                         <code class="path-value" id="ide-git-status">checking...</code>
                                     </div>
                                 </div>
@@ -596,29 +612,29 @@
 
                             <!-- Diagnostics Panel -->
                             <section class="settings-panel hidden" data-panel="diagnostics">
-                                <h2>Diagnostics</h2>
+                                <h2 data-i18n="settings.diagnostics.title">Diagnostics</h2>
 
                                 <!-- Latency -->
                                 <div class="settings-section">
-                                    <h3>Latency</h3>
+                                    <h3 data-i18n="settings.diagnostics.latency">Latency</h3>
                                     <div class="setting-row">
-                                        <label>Server RTT</label>
+                                        <label data-i18n="settings.diagnostics.serverRtt">Server RTT</label>
                                         <code class="path-value" id="diag-server-rtt">-</code>
                                     </div>
                                     <div class="setting-row">
-                                        <label>MTHost RTT</label>
+                                        <label data-i18n="settings.diagnostics.mthostRtt">MTHost RTT</label>
                                         <code class="path-value" id="diag-mthost-rtt">-</code>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Active Session</label>
+                                        <label data-i18n="settings.diagnostics.activeSession">Active Session</label>
                                         <code class="path-value" id="diag-ping-session">-</code>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Output RTT</label>
-                                        <code class="path-value" id="diag-output-rtt">type to measure</code>
+                                        <label data-i18n="settings.diagnostics.outputRtt">Output RTT</label>
+                                        <code class="path-value" id="diag-output-rtt" data-i18n="settings.diagnostics.typeToMeasure">type to measure</code>
                                     </div>
                                     <div class="setting-row">
-                                        <label for="diag-overlay-toggle">Show overlay on terminal</label>
+                                        <label for="diag-overlay-toggle" data-i18n="settings.diagnostics.showOverlay">Show overlay on terminal</label>
                                         <label class="toggle-switch">
                                             <input type="checkbox" id="diag-overlay-toggle">
                                             <span class="toggle-slider"></span>
@@ -628,9 +644,9 @@
 
                                 <!-- Paths -->
                                 <div class="settings-section">
-                                    <h3>File Paths</h3>
+                                    <h3 data-i18n="settings.diagnostics.filePaths">File Paths</h3>
                                     <div class="setting-row">
-                                        <label>Settings</label>
+                                        <label data-i18n="settings.diagnostics.pathSettings">Settings</label>
                                         <div class="path-value-row">
                                             <code class="path-value" id="path-settings">-</code>
                                             <button id="btn-reload-settings" class="btn-icon" title="Reload settings from file">
@@ -639,22 +655,22 @@
                                         </div>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Secrets</label>
+                                        <label data-i18n="settings.diagnostics.pathSecrets">Secrets</label>
                                         <code class="path-value" id="path-secrets">-</code>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Certificate</label>
+                                        <label data-i18n="settings.diagnostics.pathCertificate">Certificate</label>
                                         <code class="path-value" id="path-certificate">-</code>
                                     </div>
                                     <div class="setting-row">
-                                        <label>Log Directory</label>
+                                        <label data-i18n="settings.diagnostics.pathLogDir">Log Directory</label>
                                         <code class="path-value" id="path-logs">-</code>
                                     </div>
                                 </div>
 
                                 <!-- Frontend Logging -->
                                 <div class="settings-section">
-                                    <h3>Frontend Logging</h3>
+                                    <h3 data-i18n="settings.diagnostics.frontendLogging">Frontend Logging</h3>
                                     <p class="diag-help-text">
                                         Use the browser console (<kbd>F12</kbd>) to control frontend logging.
                                         Errors and warnings always appear. Info and verbose output is per-module.
@@ -680,8 +696,8 @@
             <!-- Middle Manager Bar -->
             <div id="manager-bar" class="manager-bar">
                 <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
-                <button class="manager-bar-add" id="manager-bar-add" title="Add button">+</button>
-                <button class="manager-bar-help" title="Disable in Settings → Behavior">?</button>
+                <button class="manager-bar-add" id="manager-bar-add" data-i18n-title="managerBar.addButton" title="Add button">+</button>
+                <button class="manager-bar-help" data-i18n-title="managerBar.disableHint" title="Disable in Settings → Behavior">?</button>
             </div>
 
             <!-- File Viewer Dock Panel -->
@@ -716,7 +732,7 @@
             <aside id="git-dock" class="git-dock hidden">
                 <div class="git-dock-resize-grip"></div>
                 <div class="git-dock-header">
-                    <span class="git-dock-title">Git</span>
+                    <span class="git-dock-title" data-i18n="git.title">Git</span>
                     <div class="git-dock-actions">
                         <button class="btn-icon" id="git-dock-close" title="Close">&times;</button>
                     </div>
@@ -728,7 +744,7 @@
             <aside id="commands-dock" class="commands-dock hidden">
                 <div class="commands-dock-resize-grip"></div>
                 <div class="commands-dock-header">
-                    <span class="commands-dock-title">Commands</span>
+                    <span class="commands-dock-title" data-i18n="commands.title">Commands</span>
                     <div class="commands-dock-actions">
                         <button class="btn-icon" id="cmd-dock-close" title="Close">&times;</button>
                     </div>
@@ -776,7 +792,7 @@
         <div class="modal-backdrop"></div>
         <div class="modal-content changelog-modal-content">
             <div class="modal-header">
-                <h3>Changelog</h3>
+                <h3 data-i18n="modal.changelog">Changelog</h3>
                 <button id="btn-close-changelog" class="modal-close">&times;</button>
             </div>
             <div class="modal-body" id="changelog-body">
@@ -790,28 +806,28 @@
         <div class="modal-backdrop"></div>
         <div class="modal-content password-modal-content">
             <div class="modal-header">
-                <h3 id="password-modal-title">Change Password</h3>
+                <h3 id="password-modal-title" data-i18n="modal.changePassword">Change Password</h3>
                 <button id="btn-close-password" class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="password-form">
                     <input type="text" name="username" autocomplete="username" tabindex="-1" style="position:absolute;left:-9999px;opacity:0" aria-hidden="true" />
                     <div class="form-group" id="current-password-group">
-                        <label for="current-password">Current Password</label>
+                        <label for="current-password" data-i18n="modal.currentPassword">Current Password</label>
                         <input type="password" id="current-password" autocomplete="current-password" />
                     </div>
                     <div class="form-group">
-                        <label for="new-password">New Password</label>
+                        <label for="new-password" data-i18n="modal.newPassword">New Password</label>
                         <input type="password" id="new-password" required autocomplete="new-password" />
                     </div>
                     <div class="form-group">
-                        <label for="confirm-password">Confirm Password</label>
+                        <label for="confirm-password" data-i18n="modal.confirmPassword">Confirm Password</label>
                         <input type="password" id="confirm-password" required autocomplete="new-password" />
                     </div>
                     <div id="password-error" class="error-message hidden"></div>
                     <div class="modal-footer">
-                        <button type="button" id="btn-cancel-password" class="btn-secondary">Cancel</button>
-                        <button type="submit" id="btn-save-password" class="btn-primary">Save</button>
+                        <button type="button" id="btn-cancel-password" class="btn-secondary" data-i18n="modal.cancel">Cancel</button>
+                        <button type="submit" id="btn-save-password" class="btn-primary" data-i18n="modal.save">Save</button>
                     </div>
                 </form>
             </div>
@@ -824,7 +840,7 @@
         <div class="modal-content file-viewer-modal-content">
             <div class="modal-header">
                 <div class="file-viewer-header-info">
-                    <h3 class="file-viewer-title">File</h3>
+                    <h3 class="file-viewer-title" data-i18n="modal.file">File</h3>
                     <span class="file-viewer-path"></span>
                 </div>
                 <div class="file-viewer-header-actions">

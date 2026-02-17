@@ -1770,6 +1770,8 @@ export interface components {
     };
     /** Format: binary */
     IFormFile: string;
+    /** @enum {unknown} */
+    LanguageSetting: 'auto' | 'en' | 'zh' | 'es' | 'hi' | 'fr' | 'bn' | 'pt' | 'ru' | 'ja' | 'de';
     LaunchEntry: {
       id: string;
       shellType: string;
@@ -1856,6 +1858,7 @@ export interface components {
       ideMode: boolean;
       managerBarEnabled: boolean;
       showChangelogAfterUpdate: boolean;
+      language: components['schemas']['LanguageSetting'];
       managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;
       runAsUserSid: null | string;

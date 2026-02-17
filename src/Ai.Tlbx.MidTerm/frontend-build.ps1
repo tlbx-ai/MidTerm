@@ -332,6 +332,27 @@ Get-ChildItem -Path "$fontsSource\*" -Include @('*.txt') | ForEach-Object {
     }
 }
 
+# Locale translation files -> wwwroot/locales/
+$localesSource = Join-Path $StaticSource "locales"
+if (Test-Path $localesSource) {
+    $localesDir = Join-Path $WwwRoot "locales"
+    if (-not (Test-Path $localesDir)) {
+        New-Item -ItemType Directory -Path $localesDir -Force | Out-Null
+    }
+    Get-ChildItem -Path "$localesSource\*.json" | ForEach-Object {
+        $dstPath = Join-Path $localesDir $_.Name
+        $result = Process-TextFile -Source $_.FullName -Destination $dstPath -Compress $Publish
+
+        if ($Publish) {
+            $totalSaved += $result.Saved
+            Write-Host "  locales/$($_.Name) -> locales/$($_.Name).br ($($result.Reduction)% reduction)" -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host "  locales/$($_.Name)" -ForegroundColor DarkGray
+        }
+    }
+}
+
 # Additional JS files (not bundled, e.g. audio worklets) -> wwwroot/js/
 $jsSource = Join-Path $StaticSource "js"
 if (Test-Path $jsSource) {
