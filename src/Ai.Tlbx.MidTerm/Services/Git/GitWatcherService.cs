@@ -28,16 +28,28 @@ public sealed class GitWatcherService : IDisposable
 
     public async Task RegisterSessionAsync(string sessionId, string? workingDir)
     {
-        if (string.IsNullOrEmpty(workingDir)) return;
+        if (string.IsNullOrEmpty(workingDir))
+        {
+            Log.Verbose(() => $"[Git] RegisterSession({sessionId}): workingDir is null/empty");
+            return;
+        }
+
+        Log.Verbose(() => $"[Git] RegisterSession({sessionId}): cwd={workingDir}");
 
         var repoRoot = await GitCommandRunner.GetRepoRootAsync(workingDir);
-        if (repoRoot is null) return;
+        if (repoRoot is null)
+        {
+            Log.Verbose(() => $"[Git] RegisterSession({sessionId}): not a git repo at {workingDir}");
+            return;
+        }
 
         repoRoot = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
+        Log.Verbose(() => $"[Git] RegisterSession({sessionId}): repoRoot={repoRoot}");
 
         if (_sessionToRepo.TryGetValue(sessionId, out var existing)
             && string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
         {
+            Log.Verbose(() => $"[Git] RegisterSession({sessionId}): already registered for {repoRoot}");
             return;
         }
 
@@ -48,6 +60,7 @@ public sealed class GitWatcherService : IDisposable
         Interlocked.Increment(ref watcher.RefCount);
 
         await RefreshStatusAsync(repoRoot);
+        Log.Verbose(() => $"[Git] RegisterSession({sessionId}): refresh complete, cached={_watchers.TryGetValue(repoRoot, out var w) && w.CachedStatus is not null}");
     }
 
     public void UnregisterSession(string sessionId)

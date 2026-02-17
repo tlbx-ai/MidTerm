@@ -1,12 +1,72 @@
-using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Git;
+
+public sealed class GitDebugResponse
+{
+    public bool IdeMode { get; set; }
+    public string? RequestedSessionId { get; set; }
+    public bool SessionFound { get; set; }
+    public string? CurrentDirectory { get; set; }
+    public string? GitVersion { get; set; }
+    public string? RepoRootFromCwd { get; set; }
+    public string? CachedRepoRoot { get; set; }
+    public bool HasCachedStatus { get; set; }
+    public string? CachedBranch { get; set; }
+    public GitDebugSessionInfo[] Sessions { get; set; } = [];
+}
+
+public sealed class GitDebugSessionInfo
+{
+    public string Id { get; set; } = "";
+    public string? CurrentDirectory { get; set; }
+    public string? RegisteredRepo { get; set; }
+}
 
 public static class GitEndpoints
 {
     public static void MapGitEndpoints(WebApplication app, GitWatcherService gitWatcher, TtyHostSessionManager sessionManager)
     {
+        app.MapGet("/api/git/debug", async (string? sessionId, SettingsService settingsService) =>
+        {
+            var settings = settingsService.Load();
+            var session = string.IsNullOrEmpty(sessionId) ? null : sessionManager.GetSession(sessionId);
+            var cwd = session?.CurrentDirectory;
+            string? repoRoot = null;
+
+            var gitVersionOutput = await GitCommandRunner.GetGitVersionAsync();
+
+            if (!string.IsNullOrEmpty(cwd))
+            {
+                repoRoot = await GitCommandRunner.GetRepoRootAsync(cwd);
+            }
+
+            var cachedRepoRoot = string.IsNullOrEmpty(sessionId) ? null : gitWatcher.GetRepoRoot(sessionId!);
+            var cachedStatus = string.IsNullOrEmpty(sessionId) ? null : gitWatcher.GetCachedStatus(sessionId!);
+
+            var debug = new GitDebugResponse
+            {
+                IdeMode = settings.IdeMode,
+                RequestedSessionId = sessionId,
+                SessionFound = session is not null,
+                CurrentDirectory = cwd,
+                GitVersion = gitVersionOutput,
+                RepoRootFromCwd = repoRoot,
+                CachedRepoRoot = cachedRepoRoot,
+                HasCachedStatus = cachedStatus is not null,
+                CachedBranch = cachedStatus?.Branch,
+                Sessions = sessionManager.GetAllSessions().Select(s => new GitDebugSessionInfo
+                {
+                    Id = s.Id,
+                    CurrentDirectory = s.CurrentDirectory,
+                    RegisteredRepo = gitWatcher.GetRepoRoot(s.Id)
+                }).ToArray()
+            };
+
+            return Results.Json(debug, GitJsonContext.Default.GitDebugResponse);
+        });
+
         app.MapGet("/api/git/status", async (string? sessionId) =>
         {
             if (string.IsNullOrEmpty(sessionId))
