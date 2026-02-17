@@ -725,6 +725,65 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
     {
         OnOutput?.Invoke(sessionId, cols, rows, data);
+        ScanForOsc7(sessionId, data.Span);
+    }
+
+    /// <summary>
+    /// Scan terminal output for OSC-7 (CWD reporting) sequences.
+    /// Format: ESC ] 7 ; file://hostname/path BEL  or  ESC ] 7 ; file://hostname/path ESC \
+    /// </summary>
+    private void ScanForOsc7(string sessionId, ReadOnlySpan<byte> data)
+    {
+        // Quick check: does the data contain ESC ] 7 ; (0x1B 0x5D 0x37 0x3B)?
+        var idx = data.IndexOf(stackalloc byte[] { 0x1B, 0x5D, 0x37, 0x3B });
+        if (idx < 0) return;
+
+        // Find the payload start (after "ESC ] 7 ;")
+        var start = idx + 4;
+        if (start >= data.Length) return;
+
+        // Find terminator: BEL (0x07) or ST (ESC \ = 0x1B 0x5C)
+        var end = -1;
+        for (var i = start; i < data.Length; i++)
+        {
+            if (data[i] == 0x07)
+            {
+                end = i;
+                break;
+            }
+            if (data[i] == 0x1B && i + 1 < data.Length && data[i + 1] == 0x5C)
+            {
+                end = i;
+                break;
+            }
+        }
+        if (end <= start) return;
+
+        var payload = System.Text.Encoding.UTF8.GetString(data[start..end]);
+
+        // Parse file://hostname/path
+        if (!payload.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return;
+        var pathStart = payload.IndexOf('/', 7);
+        if (pathStart < 0) return;
+
+        var path = Uri.UnescapeDataString(payload[pathStart..]);
+
+        // Windows: /C:/foo → C:\foo
+        if (path.Length >= 3 && path[0] == '/' && char.IsLetter(path[1]) && path[2] == ':')
+        {
+            path = path[1..].Replace('/', '\\');
+        }
+
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        if (_sessionCache.TryGetValue(sessionId, out var info))
+        {
+            if (!string.Equals(info.CurrentDirectory, path, StringComparison.OrdinalIgnoreCase))
+            {
+                info.CurrentDirectory = path;
+                NotifyStateChange();
+            }
+        }
     }
 
     private void HandleClientForegroundChanged(string sessionId, ForegroundChangePayload payload)
