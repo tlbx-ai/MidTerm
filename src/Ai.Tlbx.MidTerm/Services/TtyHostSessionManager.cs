@@ -755,6 +755,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         OnForegroundChanged?.Invoke(sessionId, payload);
+        NotifyStateChange();
     }
 
     private async Task HandleClientStateChangedAsync(string sessionId)

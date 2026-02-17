@@ -11,4 +11,5 @@ export {
   clearProcessState,
   initializeFromSession,
   getForegroundInfo,
+  handleOsc7Cwd,
 } from './processMonitor';

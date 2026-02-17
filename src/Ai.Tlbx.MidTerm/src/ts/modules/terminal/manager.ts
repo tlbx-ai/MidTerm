@@ -47,6 +47,7 @@ import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './c
 
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
+import { handleOsc7Cwd } from '../process';
 
 let showBellNotification: (sessionId: string) => void = () => {};
 
@@ -449,6 +450,20 @@ export function setupTerminalEvents(
       } catch {
         // invalid base64 or clipboard unavailable
       }
+      return true;
+    }),
+  );
+
+  // OSC 7: CWD reporting — shells emit file://hostname/path on every prompt
+  disposables.push(
+    terminal.parser.registerOscHandler(7, (data: string) => {
+      const match = data.match(/^file:\/\/[^/]*(\/.*)/);
+      if (!match) return false;
+      let path = decodeURIComponent(match[1]!);
+      if (/^\/[A-Za-z]:/.test(path)) {
+        path = path.substring(1).replace(/\//g, '\\');
+      }
+      handleOsc7Cwd(sessionId, path);
       return true;
     }),
   );

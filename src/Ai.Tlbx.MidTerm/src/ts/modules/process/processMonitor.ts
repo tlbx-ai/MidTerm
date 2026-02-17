@@ -112,6 +112,17 @@ export function getForegroundInfo(sessionId: string): {
   };
 }
 
+/**
+ * Handle OSC-7 CWD update from shell prompt.
+ */
+export function handleOsc7Cwd(sessionId: string, cwd: string): void {
+  const state = getProcessState(sessionId);
+  if (state.foregroundCwd === cwd) return;
+  state.foregroundCwd = cwd;
+  notifyStateChange(sessionId, state);
+  log.verbose(() => `OSC-7 CWD: ${cwd}`);
+}
+
 function notifyStateChange(sessionId: string, state: ProcessState): void {
   for (const listener of processStateListeners) {
     listener(sessionId, state);
