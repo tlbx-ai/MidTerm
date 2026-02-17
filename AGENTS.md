@@ -22,6 +22,12 @@ Rules:
 - Test the generated update script, not only generator code.
 - Assume update scripts run unattended.
 
+### Bash + PowerShell Interop
+- Shell context matters: bash and PowerShell parse arguments differently.
+- For PowerShell-specific syntax (arrays, splatting, script blocks), use:
+  - `pwsh -NoProfile -Command '& ./path/to/script.ps1 ...'`
+- Avoid `pwsh -File ...` when passing PowerShell arrays/complex argument expressions.
+
 ## What MidTerm Is
 
 MidTerm is a web-based terminal multiplexer (Native AOT, macOS/Windows/Linux).
@@ -172,6 +178,17 @@ If creating a module:
 1. add `index.ts` barrel,
 2. wire into `main.ts` init/register flow as needed.
 
+## i18n Requirements
+
+Every user-facing string in the frontend must go through i18n.
+
+When adding/changing UI text:
+1. Add key(s) to `src/static/locales/en.json`.
+2. Add translations to all supported locale files.
+3. In TypeScript, use `t('key.name')` from `modules/i18n`.
+4. In HTML, use `data-i18n`, `data-i18n-title`, or `data-i18n-placeholder`.
+5. Do not rely on CSS `content:` for translatable text.
+
 ## API Endpoints (Core)
 
 Authentication:
@@ -179,6 +196,11 @@ Authentication:
 - `POST /api/auth/logout`
 - `POST /api/auth/change-password`
 - `GET /api/auth/status`
+- `GET /api/security/status`
+
+Bootstrap:
+- `GET /api/bootstrap`
+- `GET /api/bootstrap/login`
 
 Sessions:
 - `GET /api/sessions`
@@ -186,18 +208,60 @@ Sessions:
 - `DELETE /api/sessions/{id}`
 - `POST /api/sessions/{id}/resize`
 - `PUT /api/sessions/{id}/name`
+- `POST /api/sessions/{id}/input`
+- `GET /api/sessions/{id}/buffer`
+- `POST /api/sessions/{id}/upload`
+- `POST /api/sessions/{id}/paste-clipboard-image`
 
-System/settings/update:
+System:
+- `GET /api/system`
 - `GET/PUT /api/settings`
 - `GET /api/shells`
 - `GET /api/version`
 - `GET /api/health`
+- `GET /api/version/details`
+- `GET /api/networks`
+- `GET /api/paths`
+- `GET /api/users`
+
+Settings:
+- `POST /api/settings/reload`
+
+Files:
+- `POST /api/files/register`
+- `POST /api/files/check`
+- `GET /api/files/list`
+- `GET /api/files/view`
+- `GET /api/files/download`
+- `GET /api/files/resolve`
+
+History:
+- `GET /api/history`
+- `POST /api/history`
+- `PATCH /api/history/{id}`
+- `PUT /api/history/{id}/star`
+- `DELETE /api/history/{id}`
+
+Certificates:
+- `GET /api/certificate/info`
+- `GET /api/certificate/download/pem`
+- `GET /api/certificate/download/mobileconfig`
+- `GET /api/certificate/share-packet`
+
+Updates:
 - `GET /api/update/check`
 - `POST /api/update/apply`
+- `GET /api/update/result`
+- `GET /api/update/log`
+
+Tmux Compatibility:
+- `POST /api/tmux`
+- `POST /api/tmux/layout`
 
 WebSockets:
 - `/ws/mux` (binary terminal I/O protocol)
 - `/ws/state` (JSON session state)
+- `/ws/settings` (JSON settings sync)
 
 ## Mux Protocol Notes
 
@@ -233,6 +297,19 @@ The user decides when to resize. Never auto-resize existing sessions.
 - `state.ts` for ephemeral infrastructure (sockets, DOM refs, timers, frame buffers).
 - Store naming convention: `$storeName`.
 
+## Architecture Patterns
+
+- Process isolation is intentional: `mt` handles web/API orchestration, `mthost` handles per-session TTY.
+- Keep AOT-safe coding patterns: avoid runtime reflection-based serialization and register JSON types explicitly.
+- Prefer explicit platform branches (`#if WINDOWS` and `OperatingSystem.Is*`) over generic abstraction layers.
+- Static asset serving uses compressed/embedded pipeline; preserve middleware/file-provider boundaries when changing static delivery.
+
+## Type-Safe API Bridge
+
+- C# DTOs are the source of truth for request/response contracts.
+- Frontend API typing should stay aligned with backend models; update generated/bridged TS types when backend contracts change.
+- Avoid hand-maintained duplicate contracts where a generated/shared type exists.
+
 ## Platform-Specific Defaults
 
 - Windows: ConPTY, default shell `Pwsh`
@@ -260,7 +337,7 @@ The user decides when to resize. Never auto-resize existing sessions.
 6. Set `-mthostUpdate yes|no` based on TtyHost/Common/protocol impact.
 7. Run:
 
-`pwsh -NoProfile -File scripts/release-dev.ps1 -Bump <major|minor|patch> -ReleaseTitle "<title>" -ReleaseNotes @("<note1>", "<note2>") -mthostUpdate <yes|no>`
+`pwsh -NoProfile -Command '& ./scripts/release-dev.ps1 -Bump <major|minor|patch> -ReleaseTitle "<title>" -ReleaseNotes @("<note1>", "<note2>") -mthostUpdate <yes|no>'`
 
 Avoid:
 - releasing with dirty tree
