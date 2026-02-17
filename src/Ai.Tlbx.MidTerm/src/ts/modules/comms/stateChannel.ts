@@ -14,7 +14,7 @@ import type {
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
-import { scheduleReconnect, createWsUrl, closeWebSocket, getOrCreateClientId } from '../../utils';
+import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
@@ -92,8 +92,7 @@ export function setSelectSessionCallback(
 export function connectStateWebSocket(): void {
   closeWebSocket(stateWs, setStateWs);
 
-  const clientId = getOrCreateClientId();
-  const ws = new WebSocket(createWsUrl(`/ws/state?clientId=${encodeURIComponent(clientId)}`));
+  const ws = new WebSocket(createWsUrl('/ws/state'));
   setStateWs(ws);
 
   ws.onopen = () => {

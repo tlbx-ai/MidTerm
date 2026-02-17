@@ -5,6 +5,7 @@
   "sidebar.terminals": "Terminals",
   "sidebar.hide": "Hide sidebar",
   "sidebar.show": "Show sidebar",
+  "sidebar.claimMainBrowser": "Become the leading browser \u2014 terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead.",
   "sidebar.followingBrowser": "Following browser (scale only)",
   "sidebar.rename": "Rename",
 

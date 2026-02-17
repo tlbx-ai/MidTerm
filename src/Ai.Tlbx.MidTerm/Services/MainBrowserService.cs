@@ -4,7 +4,6 @@ public sealed class MainBrowserService
 {
     private readonly Lock _lock = new();
     private readonly HashSet<object> _connections = new(ReferenceEqualityComparer.Instance);
-    private readonly HashSet<string> _uniqueClientIds = new(StringComparer.Ordinal);
     private object? _mainBrowserToken;
 
     public event Action? OnMainBrowserChanged;
@@ -15,27 +14,22 @@ public sealed class MainBrowserService
         {
             lock (_lock)
             {
-                return _uniqueClientIds.Count >= 2;
+                return _connections.Count >= 2;
             }
         }
     }
 
-    public void Register(object token, string? clientId = null)
+    public void Register(object token)
     {
-        bool promoted;
-        bool newMultiClient = false;
+        bool notify;
         lock (_lock)
         {
             _connections.Add(token);
-            promoted = _mainBrowserToken is null;
+            var promoted = _mainBrowserToken is null;
             if (promoted) _mainBrowserToken = token;
-
-            if (clientId is not null && _uniqueClientIds.Add(clientId) && _uniqueClientIds.Count == 2)
-            {
-                newMultiClient = true;
-            }
+            notify = promoted || _connections.Count == 2;
         }
-        if (promoted || newMultiClient) OnMainBrowserChanged?.Invoke();
+        if (notify) OnMainBrowserChanged?.Invoke();
     }
 
     public void Unregister(object token)
@@ -43,10 +37,13 @@ public sealed class MainBrowserService
         bool changed;
         lock (_lock)
         {
+            var wasMultiple = _connections.Count >= 2;
             _connections.Remove(token);
+            var isMultiple = _connections.Count >= 2;
+
             if (!ReferenceEquals(_mainBrowserToken, token))
             {
-                changed = false;
+                changed = wasMultiple != isMultiple;
             }
             else if (_connections.Count == 1)
             {
