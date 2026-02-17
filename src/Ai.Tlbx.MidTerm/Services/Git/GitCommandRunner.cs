@@ -2,10 +2,6 @@ using System.Diagnostics;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
-#if WINDOWS
-using System.Runtime.Versioning;
-using System.Security.Principal;
-#endif
 
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
@@ -265,6 +261,36 @@ internal static class GitCommandRunner
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
     {
+        using var cts = new CancellationTokenSource(CommandTimeout);
+
+        try
+        {
+#if WINDOWS
+            if (_isServiceMode && OperatingSystem.IsWindows())
+            {
+                var result = await TtyHostSpawner.RunCommandAsUserAsync("git", args, workingDir, _runAsUser, cts.Token);
+                RecordCommand(workingDir, args, result.ExitCode, result.Stdout, result.Stderr);
+                return result;
+            }
+#endif
+
+            return await RunGitDirectAsync(workingDir, args, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Warn(() => $"[Git] Command timed out: git {string.Join(' ', args)}");
+            return (-1, "", "Command timed out");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(() => $"[Git] Command failed: {ex.Message}");
+            return (-1, "", ex.Message);
+        }
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitDirectAsync(
+        string workingDir, string[] args, CancellationToken ct)
+    {
         var psi = new ProcessStartInfo
         {
             FileName = "git",
@@ -282,72 +308,22 @@ internal static class GitCommandRunner
             psi.ArgumentList.Add(arg);
         }
 
-        using var cts = new CancellationTokenSource(CommandTimeout);
-
-#if WINDOWS
-        if (_isServiceMode && OperatingSystem.IsWindows())
+        using var process = Process.Start(psi);
+        if (process is null)
         {
-            return await RunGitImpersonatedAsync(psi, args, workingDir, cts.Token);
+            Log.Error(() => "[Git] Failed to start git process");
+            return (-1, "", "Failed to start git process");
         }
-#endif
 
-        return await RunGitCoreAsync(psi, args, workingDir, cts.Token);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+
+        await process.WaitForExitAsync(ct);
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        RecordCommand(workingDir, args, process.ExitCode, stdout, stderr);
+        return (process.ExitCode, stdout, stderr);
     }
-
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitCoreAsync(
-        ProcessStartInfo psi, string[] args, string workingDir, CancellationToken ct)
-    {
-        try
-        {
-            using var process = Process.Start(psi);
-            if (process is null)
-            {
-                Log.Error(() => "[Git] Failed to start git process");
-                return (-1, "", "Failed to start git process");
-            }
-
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-            var stderrTask = process.StandardError.ReadToEndAsync(ct);
-
-            await process.WaitForExitAsync(ct);
-
-            var stdout = await stdoutTask;
-            var stderr = await stderrTask;
-
-            RecordCommand(workingDir, args, process.ExitCode, stdout, stderr);
-            return (process.ExitCode, stdout, stderr);
-        }
-        catch (OperationCanceledException)
-        {
-            Log.Warn(() => $"[Git] Command timed out: git {string.Join(' ', args)}");
-            return (-1, "", "Command timed out");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(() => $"[Git] Command failed: {ex.Message}");
-            return (-1, "", ex.Message);
-        }
-    }
-
-#if WINDOWS
-    [SupportedOSPlatform("windows")]
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitImpersonatedAsync(
-        ProcessStartInfo psi, string[] args, string workingDir, CancellationToken ct)
-    {
-        var identity = TtyHostSpawner.GetImpersonationIdentity(_runAsUser);
-        if (identity is null)
-        {
-            Log.Verbose(() => "[Git] No impersonation identity available, running as current user");
-            return await RunGitCoreAsync(psi, args, workingDir, ct);
-        }
-
-        using (identity)
-        {
-            return await WindowsIdentity.RunImpersonatedAsync(identity.AccessToken, async () =>
-            {
-                return await RunGitCoreAsync(psi, args, workingDir, ct);
-            });
-        }
-    }
-#endif
 }
