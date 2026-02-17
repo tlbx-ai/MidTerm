@@ -119,7 +119,6 @@ import {
   $muxWsConnected,
   $activeSessionId,
   $sessionList,
-  $renamingSessionId,
   $currentSettings,
   $isMainBrowser,
   $showMainBrowserButton,
@@ -560,39 +559,41 @@ function startInlineRename(sessionId: string): void {
   const item = dom.sessionList?.querySelector(`[data-session-id="${sessionId}"]`);
   if (!item) return;
 
-  const titleSpan = item.querySelector('.session-title');
+  const titleSpan = item.querySelector('.session-title') as HTMLElement | null;
   if (!titleSpan) return;
 
   const session = getSession(sessionId);
   const currentName = session ? session.name || session.shellType : '';
 
-  // Mark this session as being renamed (prevents re-render from destroying input)
-  $renamingSessionId.set(sessionId);
+  // Position overlay input on top of the title span
+  const rect = titleSpan.getBoundingClientRect();
 
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'session-rename-input';
   input.value = currentName;
+  input.style.position = 'fixed';
+  input.style.left = `${rect.left}px`;
+  input.style.top = `${rect.top}px`;
+  input.style.width = `${rect.width + 20}px`;
+  input.style.height = `${rect.height}px`;
+  input.style.zIndex = '10000';
 
-  // Prevent clicks inside input from bubbling to session item (which would select it)
-  input.addEventListener('click', (e) => e.stopPropagation());
-  input.addEventListener('mousedown', (e) => e.stopPropagation());
+  document.body.appendChild(input);
 
   let committed = false;
   function finishRename(): void {
     if (committed) return;
     committed = true;
     const newName = input.value;
-    input.replaceWith(titleSpan as Node);
-    $renamingSessionId.set(null);
+    input.remove();
     renameSession(sessionId, newName);
   }
 
   function cancelRename(): void {
     if (committed) return;
     committed = true;
-    $renamingSessionId.set(null);
-    input.replaceWith(titleSpan as Node);
+    input.remove();
   }
 
   input.addEventListener('blur', finishRename);
@@ -606,7 +607,6 @@ function startInlineRename(sessionId: string): void {
     }
   });
 
-  titleSpan.replaceWith(input);
   input.focus();
   input.select();
 }

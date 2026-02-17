@@ -766,8 +766,8 @@ html, body {
     border-radius: 3px;
     background: var(--bg-input);
     color: var(--text-primary);
-    max-width: 70%;
     box-sizing: border-box;
+    margin: 0;
 }
 
 .session-rename-input:focus {

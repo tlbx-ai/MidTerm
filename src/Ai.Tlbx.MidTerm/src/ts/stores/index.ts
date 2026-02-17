@@ -35,9 +35,6 @@ export const $sessions = map<Record<string, Session>>({});
 /** Currently active session ID */
 export const $activeSessionId = atom<string | null>(null);
 
-/** Session currently being renamed (guards input focus during re-renders) */
-export const $renamingSessionId = atom<string | null>(null);
-
 /**
  * Pending renames awaiting server confirmation.
  * Maps sessionId -> pending name (empty string means clearing the name).
