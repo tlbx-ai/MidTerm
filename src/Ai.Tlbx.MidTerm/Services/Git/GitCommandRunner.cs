@@ -2,12 +2,24 @@ using System.Diagnostics;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
+#if WINDOWS
+using System.Runtime.Versioning;
+using System.Security.Principal;
+#endif
 
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
 internal static class GitCommandRunner
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
+    private static string? _runAsUser;
+    private static bool _isServiceMode;
+
+    internal static void Configure(string? runAsUser, bool isServiceMode)
+    {
+        _runAsUser = runAsUser;
+        _isServiceMode = isServiceMode;
+    }
 
     private static readonly object _logLock = new();
     private static (string Args, string WorkingDir, int ExitCode, string Stdout, string Stderr, DateTime Timestamp)? _lastCommand;
@@ -265,8 +277,6 @@ internal static class GitCommandRunner
             StandardErrorEncoding = Encoding.UTF8
         };
 
-        psi.ArgumentList.Add("-c");
-        psi.ArgumentList.Add("safe.directory=*");
         foreach (var arg in args)
         {
             psi.ArgumentList.Add(arg);
@@ -274,6 +284,19 @@ internal static class GitCommandRunner
 
         using var cts = new CancellationTokenSource(CommandTimeout);
 
+#if WINDOWS
+        if (_isServiceMode && OperatingSystem.IsWindows())
+        {
+            return await RunGitImpersonatedAsync(psi, args, workingDir, cts.Token);
+        }
+#endif
+
+        return await RunGitCoreAsync(psi, args, workingDir, cts.Token);
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitCoreAsync(
+        ProcessStartInfo psi, string[] args, string workingDir, CancellationToken ct)
+    {
         try
         {
             using var process = Process.Start(psi);
@@ -283,10 +306,10 @@ internal static class GitCommandRunner
                 return (-1, "", "Failed to start git process");
             }
 
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
-            var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+            var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
-            await process.WaitForExitAsync(cts.Token);
+            await process.WaitForExitAsync(ct);
 
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
@@ -305,4 +328,26 @@ internal static class GitCommandRunner
             return (-1, "", ex.Message);
         }
     }
+
+#if WINDOWS
+    [SupportedOSPlatform("windows")]
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitImpersonatedAsync(
+        ProcessStartInfo psi, string[] args, string workingDir, CancellationToken ct)
+    {
+        var identity = TtyHostSpawner.GetImpersonationIdentity(_runAsUser);
+        if (identity is null)
+        {
+            Log.Verbose(() => "[Git] No impersonation identity available, running as current user");
+            return await RunGitCoreAsync(psi, args, workingDir, ct);
+        }
+
+        using (identity)
+        {
+            return await WindowsIdentity.RunImpersonatedAsync(identity.AccessToken, async () =>
+            {
+                return await RunGitCoreAsync(psi, args, workingDir, ct);
+            });
+        }
+    }
+#endif
 }

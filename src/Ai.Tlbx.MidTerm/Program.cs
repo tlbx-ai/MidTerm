@@ -155,6 +155,7 @@ public class Program
         var historyService = new HistoryService(settingsService);
         var fileRadarAllowlistService = new FileRadarAllowlistService();
         var gitWatcher = new GitWatcherService();
+        GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
         var commandService = new CommandService();
 
         // Tmux compatibility layer (conditional on setting)
@@ -220,6 +221,7 @@ public class Program
             if (isValid)
             {
                 sessionManager.UpdateRunAsUser(newSettings.RunAsUser);
+                GitCommandRunner.Configure(newSettings.RunAsUser, settingsService.IsRunningAsService);
             }
             else
             {

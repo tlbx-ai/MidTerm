@@ -435,7 +435,7 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool IsRunningAsSystem()
+    internal static bool IsRunningAsSystem()
     {
         try
         {
@@ -445,6 +445,21 @@ public static class TtyHostSpawner
         catch
         {
             return false;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    internal static System.Security.Principal.WindowsIdentity? GetImpersonationIdentity(string? runAsUser)
+    {
+        if (!IsRunningAsSystem()) return null;
+        if (!TryGetUserToken(runAsUser, out var token, out _)) return null;
+        try
+        {
+            return new System.Security.Principal.WindowsIdentity(token);
+        }
+        finally
+        {
+            CloseHandle(token);
         }
     }
 
