@@ -66,7 +66,7 @@ public sealed partial class IoCommands
         return TmuxResult.Ok();
     }
 
-    [GeneratedRegex(@"(?:^|&&\s*)[A-Z_][A-Z0-9_]*=\S+")]
+    [GeneratedRegex(@"(?:^|&&\s*)(?:env\s+)?[A-Z_][A-Z0-9_]*=\S+")]
     private static partial Regex BashEnvVarPattern();
 
     [GeneratedRegex(@"^([A-Z_][A-Z0-9_]*)=(\S+)\s*")]
@@ -98,6 +98,12 @@ public sealed partial class IoCommands
     private static string TranslateSegmentForPowerShell(string segment)
     {
         var remaining = segment.TrimStart();
+
+        // Strip `env` prefix (bash utility for setting env vars)
+        if (remaining.StartsWith("env ", StringComparison.Ordinal))
+        {
+            remaining = remaining[4..].TrimStart();
+        }
 
         if (!LeadingEnvVarPattern().IsMatch(remaining))
         {
@@ -139,6 +145,12 @@ public sealed partial class IoCommands
     private static string TranslateSegmentForCmd(string segment)
     {
         var remaining = segment.TrimStart();
+
+        // Strip `env` prefix (bash utility for setting env vars)
+        if (remaining.StartsWith("env ", StringComparison.Ordinal))
+        {
+            remaining = remaining[4..].TrimStart();
+        }
 
         if (!LeadingEnvVarPattern().IsMatch(remaining))
         {
