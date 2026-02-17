@@ -40,6 +40,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public event Action<string>? OnSessionClosed;
     public event Action<string, int>? OnSessionCreated;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
+    public event Action<string, string>? OnCwdChanged;
 
     public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
     {
@@ -832,6 +833,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(path)) return false;
         if (string.Equals(info.CurrentDirectory, path, StringComparison.OrdinalIgnoreCase)) return false;
         info.CurrentDirectory = path;
+        OnCwdChanged?.Invoke(sessionId, path);
         return true;
     }
 
@@ -842,7 +844,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             info.ForegroundPid = payload.Pid;
             info.ForegroundName = payload.Name;
             info.ForegroundCommandLine = payload.CommandLine;
-            info.CurrentDirectory = payload.Cwd;
+            if (!string.IsNullOrEmpty(payload.Cwd))
+            {
+                info.CurrentDirectory = payload.Cwd;
+            }
         }
 
         if (_tmuxCreatedSessions.ContainsKey(sessionId))

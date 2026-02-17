@@ -200,6 +200,14 @@ public class Program
             }
         };
 
+        sessionManager.OnCwdChanged += (sessionId, cwd) =>
+        {
+            if (settingsService.Load().IdeMode)
+            {
+                _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
+            }
+        };
+
         sessionManager.OnSessionClosed += sessionId =>
         {
             fileRadarAllowlistService.ClearSession(sessionId);
