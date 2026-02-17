@@ -597,24 +597,26 @@ export function setupTerminalEvents(
   container.addEventListener('contextmenu', contextMenuHandler);
 
   // Auto-hide mouse cursor after 2 seconds of inactivity
-  let cursorHideTimer: number | null = null;
   const CURSOR_HIDE_DELAY = 2000;
 
   const mouseMoveHandler = () => {
     container.classList.remove('cursor-hidden');
-    if (cursorHideTimer !== null) {
-      window.clearTimeout(cursorHideTimer);
+    const s = sessionTerminals.get(sessionId);
+    if (s?.cursorHideTimer != null) {
+      window.clearTimeout(s.cursorHideTimer);
     }
-    cursorHideTimer = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       container.classList.add('cursor-hidden');
     }, CURSOR_HIDE_DELAY);
+    if (s) s.cursorHideTimer = timer;
   };
 
   const mouseLeaveHandler = () => {
     container.classList.remove('cursor-hidden');
-    if (cursorHideTimer !== null) {
-      window.clearTimeout(cursorHideTimer);
-      cursorHideTimer = null;
+    const s = sessionTerminals.get(sessionId);
+    if (s?.cursorHideTimer != null) {
+      window.clearTimeout(s.cursorHideTimer);
+      s.cursorHideTimer = null;
     }
   };
 
@@ -668,6 +670,11 @@ export function destroyTerminalForSession(sessionId: string): void {
 
   // Clean up search addon state
   cleanupSearchForTerminal(sessionId);
+
+  // Clean up cursor hide timer
+  if (state.cursorHideTimer != null) {
+    clearTimeout(state.cursorHideTimer);
+  }
 
   // Clean up pending title update timer
   const titleTimer = pendingTitleUpdates.get(sessionId);

@@ -93,6 +93,7 @@ export interface TerminalState {
   mouseMoveHandler?: () => void;
   mouseLeaveHandler?: () => void;
   earlyDataDisposable?: { dispose: () => void };
+  cursorHideTimer?: number | null;
 }
 
 // =============================================================================

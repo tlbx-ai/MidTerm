@@ -8,7 +8,6 @@ export {
   addProcessStateListener,
   getProcessState,
   handleForegroundChange,
-  clearProcessState,
   initializeFromSession,
   getForegroundInfo,
   handleOsc7Cwd,

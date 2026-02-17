@@ -120,6 +120,7 @@ src/                                 C# solution and projects
 │   │   │   ├── types.ts             Shared interfaces and types
 │   │   │   ├── constants.ts         Protocol constants, themes
 │   │   │   ├── state.ts             Ephemeral state (WebSockets, DOM, timers)
+│   │   │   ├── api/                  OpenAPI generated client and types
 │   │   │   ├── stores/              Reactive state (nanostores)
 │   │   │   ├── modules/             Feature modules (comms, terminal, sidebar, etc.)
 │   │   │   └── utils/               DOM helpers, cookies, debounce
@@ -220,11 +221,14 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 | `chat/` | AI chat panel integration |
 | `comms/` | WebSocket connections: `muxChannel.ts` (binary I/O), `stateChannel.ts` (session state), `settingsChannel.ts` (settings sync) |
 | `diagnostics/` | Diagnostics panel for debugging |
-| `fileViewer/` | In-terminal file preview |
+| `fileBrowser/` | IDE-mode Files tab: tree navigation, file preview |
+| `fileViewer/` | In-terminal file preview (inline viewer) |
 | `git/` | Git status WebSocket, staging, diff viewer for IDE mode Git tab |
 | `history/` | Command history dropdown and API |
+| `i18n/` | Internationalization with language detection and translation |
 | `logging/` | Client-side logger with levels |
 | `process/` | Foreground process monitoring |
+| `commands/` | Saved command scripts: form, panel, dock, API, output viewer |
 | `settings/` | Settings panel UI, tabs, persistence |
 | `sessionTabs/` | IDE mode tab bar: Terminal, Files, Git, Commands per session |
 | `sidebar/` | Session list, collapse/expand, drag reorder, network section |
@@ -429,17 +433,30 @@ The frontend uses [nanostores](https://github.com/nanostores/nanostores) (~1KB) 
 **Nanostores (`stores/index.ts`)** - Reactive UI and session state:
 - `$sessions` (map) - All sessions keyed by ID
 - `$activeSessionId` (atom) - Currently selected session
+- `$activeSession` (computed) - Current active session object
 - `$sessionList` (computed) - Sessions sorted by `_order`
-- `$connectionStatus` (computed) - 'connected' | 'disconnected' | 'reconnecting'
+- `$hasSessions` (computed) - Whether any sessions exist
+- `$processStates` (map) - Per-session foreground process info
 - `$currentSettings` (atom) - Current settings from server
+- `$updateInfo` (atom) - Update info from server
+- `$authStatus` (atom) - Auth status from server
+- `$windowsBuildNumber` (atom) - Windows build number for ConPTY
+- `$serverHostname` (atom) - Server hostname for tab title
+- `$voiceServerPassword` (atom) - Voice server password
 - `$layout` (atom) - Current layout tree (multi-pane)
 - `$focusedSessionId` (atom) - Keyboard focus in layout
 - `$isMainBrowser` (atom) - Whether this browser controls auto-resize
-- `$renamingSessionId` (atom) - Session being renamed
+- `$showMainBrowserButton` (atom) - Main browser button visibility
+- `$connectionStatus` (computed) - 'connected' | 'disconnected' | 'reconnecting'
+- `$stateWsConnected` (atom) - State WebSocket connected flag
+- `$muxWsConnected` (atom) - Mux WebSocket connected flag
+- `$muxHasConnected` (atom) - Tracks if mux WS ever connected
+- `$settingsWsConnected` (atom) - Settings WebSocket connected flag
+- `$dataLossDetected` (atom) - Buffer overflow tracking
 - `$fileViewerDocked` (atom) - File viewer dock state
 - `$dockedFilePath` (atom) - Current docked file path
-- `$dataLossDetected` (atom) - Buffer overflow tracking
-- `$processStates` (map) - Per-session foreground process info
+- `$commandsPanelDocked` (atom) - Commands panel docked state
+- `$gitPanelDocked` (atom) - Git panel docked state
 - UI flags: `$settingsOpen`, `$sidebarOpen`, `$sidebarCollapsed`
 
 **Ephemeral state (`state.ts`)** - Non-reactive infrastructure:

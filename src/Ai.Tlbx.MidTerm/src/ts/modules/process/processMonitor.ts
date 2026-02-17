@@ -60,13 +60,6 @@ export function handleForegroundChange(sessionId: string, payload: ForegroundCha
 }
 
 /**
- * Clear process state for a session.
- */
-export function clearProcessState(sessionId: string): void {
-  processStates.delete(sessionId);
-}
-
-/**
  * Initialize process state from session data (e.g., on reconnect).
  * Only updates if the session has foreground process info.
  */

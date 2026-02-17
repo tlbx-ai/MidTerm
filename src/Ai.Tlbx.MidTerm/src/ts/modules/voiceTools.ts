@@ -36,20 +36,6 @@ import { JS_BUILD_VERSION } from '../constants';
 const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
-const MAX_BELL_HISTORY = 10;
-
-/**
- * Record a bell notification for a session
- */
-export function recordBell(sessionId: string): void {
-  recentBells.push({
-    sessionId,
-    timestamp: new Date().toISOString(),
-  });
-  if (recentBells.length > MAX_BELL_HISTORY) {
-    recentBells.shift();
-  }
-}
 
 /**
  * Get only the visible viewport content (cols x rows).

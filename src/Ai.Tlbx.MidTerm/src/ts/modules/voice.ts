@@ -152,24 +152,6 @@ function updateSpeedDisplay(): void {
 }
 
 /**
- * Get selected voice settings
- */
-export function getVoiceSettings(): { provider: string; voice: string; speed: number } {
-  return {
-    provider: selectedProvider,
-    voice: selectedVoice,
-    speed: selectedSpeed,
-  };
-}
-
-/**
- * Get current voice server availability status
- */
-export function isVoiceServerAvailable(): boolean {
-  return voiceServerAvailable;
-}
-
-/**
  * Check microphone permission status without triggering a prompt.
  * Returns 'granted', 'prompt', or 'denied'.
  */
