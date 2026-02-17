@@ -1,10 +1,12 @@
 using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Settings;
+using Ai.Tlbx.MidTerm.Startup;
 
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
 public sealed class GitDebugResponse
 {
+    public string? MidTermVersion { get; set; }
     public bool IdeMode { get; set; }
     public string? RequestedSessionId { get; set; }
     public bool SessionFound { get; set; }
@@ -15,6 +17,17 @@ public sealed class GitDebugResponse
     public bool HasCachedStatus { get; set; }
     public string? CachedBranch { get; set; }
     public GitDebugSessionInfo[] Sessions { get; set; } = [];
+    public GitCommandLog? LastGitCommand { get; set; }
+}
+
+public sealed class GitCommandLog
+{
+    public string Args { get; set; } = "";
+    public string WorkingDir { get; set; } = "";
+    public int ExitCode { get; set; }
+    public string Stdout { get; set; } = "";
+    public string Stderr { get; set; } = "";
+    public string Timestamp { get; set; } = "";
 }
 
 public sealed class GitDebugSessionInfo
@@ -22,6 +35,8 @@ public sealed class GitDebugSessionInfo
     public string Id { get; set; } = "";
     public string? CurrentDirectory { get; set; }
     public string? RegisteredRepo { get; set; }
+    public string? RepoRootProbe { get; set; }
+    public string? ProbeError { get; set; }
 }
 
 public static class GitEndpoints
@@ -47,6 +62,7 @@ public static class GitEndpoints
 
             var debug = new GitDebugResponse
             {
+                MidTermVersion = CliCommands.GetVersion(),
                 IdeMode = settings.IdeMode,
                 RequestedSessionId = sessionId,
                 SessionFound = session is not null,
@@ -56,12 +72,31 @@ public static class GitEndpoints
                 CachedRepoRoot = cachedRepoRoot,
                 HasCachedStatus = cachedStatus is not null,
                 CachedBranch = cachedStatus?.Branch,
-                Sessions = sessionManager.GetAllSessions().Select(s => new GitDebugSessionInfo
+                Sessions = await Task.WhenAll(sessionManager.GetAllSessions().Select(async s =>
                 {
-                    Id = s.Id,
-                    CurrentDirectory = s.CurrentDirectory,
-                    RegisteredRepo = gitWatcher.GetRepoRoot(s.Id)
-                }).ToArray()
+                    string? probeRoot = null;
+                    string? probeError = null;
+                    if (!string.IsNullOrEmpty(s.CurrentDirectory))
+                    {
+                        try
+                        {
+                            probeRoot = await GitCommandRunner.GetRepoRootAsync(s.CurrentDirectory);
+                        }
+                        catch (Exception ex)
+                        {
+                            probeError = ex.Message;
+                        }
+                    }
+                    return new GitDebugSessionInfo
+                    {
+                        Id = s.Id,
+                        CurrentDirectory = s.CurrentDirectory,
+                        RegisteredRepo = gitWatcher.GetRepoRoot(s.Id),
+                        RepoRootProbe = probeRoot,
+                        ProbeError = probeError
+                    };
+                })),
+                LastGitCommand = GitCommandRunner.GetLastCommandLog()
             };
 
             return Results.Json(debug, GitJsonContext.Default.GitDebugResponse);

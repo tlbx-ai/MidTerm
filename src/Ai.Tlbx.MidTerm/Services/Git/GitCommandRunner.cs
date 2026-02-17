@@ -9,6 +9,34 @@ internal static class GitCommandRunner
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
 
+    private static readonly object _logLock = new();
+    private static (string Args, string WorkingDir, int ExitCode, string Stdout, string Stderr, DateTime Timestamp)? _lastCommand;
+
+    internal static GitCommandLog? GetLastCommandLog()
+    {
+        lock (_logLock)
+        {
+            if (_lastCommand is not var (args, dir, exit, stdout, stderr, ts)) return null;
+            return new GitCommandLog
+            {
+                Args = args,
+                WorkingDir = dir,
+                ExitCode = exit,
+                Stdout = stdout.Length > 500 ? stdout[..500] + "..." : stdout,
+                Stderr = stderr.Length > 500 ? stderr[..500] + "..." : stderr,
+                Timestamp = ts.ToString("O")
+            };
+        }
+    }
+
+    private static void RecordCommand(string workingDir, string[] args, int exitCode, string stdout, string stderr)
+    {
+        lock (_logLock)
+        {
+            _lastCommand = ($"git {string.Join(' ', args)}", workingDir, exitCode, stdout, stderr, DateTime.UtcNow);
+        }
+    }
+
     internal static async Task<string?> GetGitVersionAsync()
     {
         try
@@ -261,6 +289,7 @@ internal static class GitCommandRunner
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
 
+            RecordCommand(workingDir, args, process.ExitCode, stdout, stderr);
             return (process.ExitCode, stdout, stderr);
         }
         catch (OperationCanceledException)
