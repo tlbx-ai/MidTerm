@@ -13,7 +13,7 @@ import {
   getLastFlushDelay,
   getLastServerIoRtt,
 } from '../comms/muxChannel';
-import { $activeSessionId } from '../../stores';
+import { $activeSessionId, $isMainBrowser } from '../../stores';
 import { sessionTerminals } from '../../state';
 import { TERMINAL_PADDING } from '../../constants';
 import { getLastPeriodicCheckResult } from '../terminal/scaling';
@@ -40,6 +40,7 @@ interface MetricElements {
   cellPx: HTMLSpanElement;
   xtermPx: HTMLSpanElement;
   resizeTimer: HTMLSpanElement;
+  mainBrowser: HTMLSpanElement;
 }
 
 let metricEls: MetricElements | null = null;
@@ -99,6 +100,7 @@ function ensureOverlay(): void {
     { label: 'Cell', id: 'cellPx' },
     { label: 'XTrm', id: 'xtermPx' },
     { label: 'RTmr', id: 'resizeTimer' },
+    { label: 'Main', id: 'mainBrowser' },
   ] as const;
 
   const els: Partial<MetricElements> = {};
@@ -224,8 +226,19 @@ function updateScalingMetrics(sessionId: string): void {
   metricEls.termColsRows.textContent = `${cols}×${rows} (srv ${srvCols}×${srvRows})`;
   applyColor(metricEls.termColsRows, cols === srvCols && rows === srvRows ? 'good' : 'warn');
 
-  // Cell dimensions
-  if (screen && cols > 0 && rows > 0) {
+  // Cell dimensions — show xterm.js internal dims (accurate) vs DOM-derived
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const xtermDims = (state.terminal as any)?._core?._renderService?.dimensions?.css?.cell;
+  if (xtermDims) {
+    let cellText = `${xtermDims.width.toFixed(2)}×${xtermDims.height.toFixed(2)}`;
+    if (screen && cols > 0 && rows > 0) {
+      const domW = screen.offsetWidth / cols;
+      if (Math.abs(domW - xtermDims.width) > 0.1) {
+        cellText += ` (DOM: ${domW.toFixed(2)})`;
+      }
+    }
+    metricEls.cellPx.textContent = cellText;
+  } else if (screen && cols > 0 && rows > 0) {
     const cellW = screen.offsetWidth / cols;
     const cellH = screen.offsetHeight / rows;
     metricEls.cellPx.textContent = `${cellW.toFixed(2)}×${cellH.toFixed(2)}`;
@@ -284,6 +297,10 @@ function updateResizeTimerStatus(): void {
   const isNoChange = result === 'no change' || result === 'idle';
   const isSkipped = result.startsWith('skipped');
   applyColor(metricEls.resizeTimer, isNoChange ? 'good' : isSkipped ? 'warn' : 'bad');
+
+  const isMain = $isMainBrowser.get();
+  metricEls.mainBrowser.textContent = isMain ? 'yes' : 'no';
+  applyColor(metricEls.mainBrowser, isMain ? 'good' : 'warn');
 }
 
 function handleOutputRtt(sessionId: string, rtt: number): void {

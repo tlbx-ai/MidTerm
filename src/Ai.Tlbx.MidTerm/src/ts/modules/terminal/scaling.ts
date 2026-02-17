@@ -26,7 +26,19 @@ import { getTabBarHeight } from '../sessionTabs';
 
 const SCALE_TOLERANCE = 0.97;
 
-type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe';
+type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
+
+/**
+ * Get cell dimensions from xterm.js internal render service.
+ * These are the true cell sizes unaffected by CSS layout constraints,
+ * avoiding circular measurements when the terminal overflows its container.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getXtermCellDimensions(terminal: any): { cellWidth: number; cellHeight: number } | null {
+  const dims = terminal?._core?._renderService?.dimensions?.css?.cell;
+  if (!dims || dims.width < 1 || dims.height < 1) return null;
+  return { cellWidth: dims.width, cellHeight: dims.height };
+}
 
 function logResizeDiagnostics(
   operation: 'create' | 'manual-resize',
@@ -87,12 +99,17 @@ function measureFromExistingTerminal(
   for (const state of sessionTerminals.values()) {
     if (!state.opened) continue;
 
+    // Only trust measurements from terminals using the same font size we plan to apply.
+    if (state.terminal.options.fontSize !== fontSize) continue;
+
+    // Prefer xterm.js internal dimensions (accurate, not affected by CSS layout)
+    const xtermDims = getXtermCellDimensions(state.terminal);
+    if (xtermDims) return xtermDims;
+
+    // Fallback to DOM measurement
     const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
     const cols = state.terminal.cols;
     const rows = state.terminal.rows;
-
-    // Only trust measurements from terminals using the same font size we plan to apply.
-    if (state.terminal.options.fontSize !== fontSize) continue;
 
     if (screen && cols > 0 && rows > 0) {
       const cellWidth = screen.offsetWidth / cols;
@@ -270,17 +287,20 @@ export function fitSessionToScreen(sessionId: string): void {
     return;
   }
 
-  // Get cell dimensions by measuring the terminal's rendered size
-  const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
-  const terminalCols = state.terminal.cols;
-  const terminalRows = state.terminal.rows;
+  // Get cell dimensions — prefer xterm.js internal render dimensions
+  // to avoid circular measurements when terminal overflows container
+  const xtermCellDims = getXtermCellDimensions(state.terminal);
+  let cellWidth: number | null = xtermCellDims?.cellWidth ?? null;
+  let cellHeight: number | null = xtermCellDims?.cellHeight ?? null;
 
-  let cellWidth: number | null = null;
-  let cellHeight: number | null = null;
-
-  if (screen && terminalCols > 0 && terminalRows > 0) {
-    cellWidth = screen.offsetWidth / terminalCols;
-    cellHeight = screen.offsetHeight / terminalRows;
+  if (!cellWidth || !cellHeight) {
+    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const terminalCols = state.terminal.cols;
+    const terminalRows = state.terminal.rows;
+    if (screen && terminalCols > 0 && terminalRows > 0) {
+      cellWidth = screen.offsetWidth / terminalCols;
+      cellHeight = screen.offsetHeight / terminalRows;
+    }
   }
 
   if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
@@ -363,17 +383,19 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
   const state = sessionTerminals.get(sessionId);
   if (!state || !state.opened) return;
 
-  // Get cell dimensions from the terminal's rendered size
-  const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
-  const terminalCols = state.terminal.cols;
-  const terminalRows = state.terminal.rows;
+  // Get cell dimensions — prefer xterm.js internal render dimensions
+  const xtermCellDims = getXtermCellDimensions(state.terminal);
+  let cellWidth: number | null = xtermCellDims?.cellWidth ?? null;
+  let cellHeight: number | null = xtermCellDims?.cellHeight ?? null;
 
-  let cellWidth: number | null = null;
-  let cellHeight: number | null = null;
-
-  if (screen && terminalCols > 0 && terminalRows > 0) {
-    cellWidth = screen.offsetWidth / terminalCols;
-    cellHeight = screen.offsetHeight / terminalRows;
+  if (!cellWidth || !cellHeight) {
+    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const terminalCols = state.terminal.cols;
+    const terminalRows = state.terminal.rows;
+    if (screen && terminalCols > 0 && terminalRows > 0) {
+      cellWidth = screen.offsetWidth / terminalCols;
+      cellHeight = screen.offsetHeight / terminalRows;
+    }
   }
 
   if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
@@ -678,14 +700,26 @@ function periodicResizeCheck(): void {
     const container = layoutPane ?? dom.terminalsArea;
     if (!container) return;
 
-    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
     const termCols = state.terminal.cols;
     const termRows = state.terminal.rows;
-    if (!screen || termCols <= 0 || termRows <= 0) return;
+    if (termCols <= 0 || termRows <= 0) return;
 
-    const cellWidth = screen.offsetWidth / termCols;
-    const cellHeight = screen.offsetHeight / termRows;
-    if (cellWidth < 1 || cellHeight < 1) return;
+    // Use xterm.js internal cell dimensions to avoid circular measurements
+    // when the terminal overflows its container (screen.offsetWidth gets
+    // constrained by CSS layout, making floor(availWidth / cellWidth) === cols)
+    const xtermDims = getXtermCellDimensions(state.terminal);
+    let cellWidth: number;
+    let cellHeight: number;
+    if (xtermDims) {
+      cellWidth = xtermDims.cellWidth;
+      cellHeight = xtermDims.cellHeight;
+    } else {
+      const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+      if (!screen) return;
+      cellWidth = screen.offsetWidth / termCols;
+      cellHeight = screen.offsetHeight / termRows;
+      if (cellWidth < 1 || cellHeight < 1) return;
+    }
 
     const rect = container.getBoundingClientRect();
     const tabBarH = layoutPane ? 0 : getTabBarHeight();
