@@ -98,7 +98,6 @@ public sealed class HistoryService
             var existing = _history.Entries.FirstOrDefault(e => e.Id == id);
             if (existing is not null)
             {
-                existing.Weight++;
                 existing.LastUsed = DateTime.UtcNow;
             }
             else
@@ -111,7 +110,6 @@ public sealed class HistoryService
                     CommandLine = commandLine,
                     WorkingDirectory = workingDirectory,
                     IsStarred = false,
-                    Weight = 1,
                     LastUsed = DateTime.UtcNow
                 };
                 _history.Entries.Add(entry);
@@ -129,10 +127,8 @@ public sealed class HistoryService
     {
         lock (_lock)
         {
-            // Starred first, then by weight (descending), then by lastUsed (descending)
             return _history.Entries
                 .OrderByDescending(e => e.IsStarred)
-                .ThenByDescending(e => e.Weight)
                 .ThenByDescending(e => e.LastUsed)
                 .ToList();
         }

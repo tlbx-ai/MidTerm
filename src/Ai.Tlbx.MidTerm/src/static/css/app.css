@@ -623,7 +623,7 @@ html, body {
     visibility: hidden;
     transform: translateY(-4px);
     transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
-    max-height: 300px;
+    max-height: max(200px, 60vh);
     overflow-y: auto;
 }
 
@@ -689,12 +689,6 @@ html, body {
     flex: 1;
     font-size: var(--fs-md);
     color: var(--text-primary);
-}
-
-.history-item-meta {
-    font-size: var(--fs-xs);
-    color: var(--text-muted);
-    flex-shrink: 0;
 }
 
 .history-item-delete {

@@ -11,7 +11,6 @@ public sealed class LaunchEntry
     public string WorkingDirectory { get; set; } = "";
     public bool IsStarred { get; set; }
     public string? Label { get; set; }
-    public int Weight { get; set; } = 1;
     public DateTime LastUsed { get; set; }
 }
 

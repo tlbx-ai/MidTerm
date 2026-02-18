@@ -179,11 +179,6 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   );
   infoDiv.appendChild(fgIndicator);
 
-  const meta = document.createElement('span');
-  meta.className = 'history-item-meta';
-  meta.textContent = `${entry.weight}x`;
-  infoDiv.appendChild(meta);
-
   item.appendChild(infoDiv);
 
   const deleteBtn = document.createElement('button');
