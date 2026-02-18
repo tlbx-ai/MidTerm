@@ -18,9 +18,13 @@ public sealed class GitWatcherService : IDisposable
         public CancellationTokenSource? DebounceCts;
         public GitStatusResponse? CachedStatus;
         public string? LastFingerprint;
+        public volatile bool IsDisposed;
 
         public void Dispose()
         {
+            IsDisposed = true;
+            if (GitDirWatcher is not null) GitDirWatcher.EnableRaisingEvents = false;
+            if (WorkTreeWatcher is not null) WorkTreeWatcher.EnableRaisingEvents = false;
             DebounceCts?.Cancel();
             DebounceCts?.Dispose();
             GitDirWatcher?.Dispose();
@@ -218,17 +222,29 @@ public sealed class GitWatcherService : IDisposable
 
     private void DebouncedRefresh(string repoRoot, RepoWatcher watcher)
     {
-        watcher.DebounceCts?.Cancel();
-        watcher.DebounceCts = new CancellationTokenSource();
-        var token = watcher.DebounceCts.Token;
+        if (watcher.IsDisposed) return;
 
-        _ = Task.Delay(300, token).ContinueWith(async _ =>
+        try
         {
-            if (!token.IsCancellationRequested)
+            var oldCts = watcher.DebounceCts;
+            var newCts = new CancellationTokenSource();
+            watcher.DebounceCts = newCts;
+            var token = newCts.Token;
+
+            oldCts?.Cancel();
+            oldCts?.Dispose();
+
+            _ = Task.Delay(300, token).ContinueWith(async _ =>
             {
-                await RefreshStatusAsync(repoRoot);
-            }
-        }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+                if (!token.IsCancellationRequested)
+                {
+                    await RefreshStatusAsync(repoRoot);
+                }
+            }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     private static string StatusFingerprint(GitStatusResponse s)
