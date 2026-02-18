@@ -2,6 +2,8 @@ using System.Reflection;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
+using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.Secrets;
 namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class CliCommands

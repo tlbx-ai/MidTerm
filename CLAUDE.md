@@ -123,38 +123,47 @@ src/                                 C# solution and projects
 ├── MidTerm.slnx                     Solution file
 ├── Directory.Build.props            Shared build properties
 ├── Ai.Tlbx.MidTerm/                 Web Server (mt.exe)
-│   ├── Program.cs                   Entry point, API endpoints, auth middleware
+│   ├── Program.cs                   Entry point, DI registration
 │   ├── Services/
-│   │   ├── AuthService.cs           Password hashing (PBKDF2), session tokens
-│   │   ├── SessionManager.cs        Terminal session lifecycle
-│   │   ├── UpdateService.cs         GitHub release check, version comparison
-│   │   ├── SettingsService.cs       Settings persistence
-│   │   └── AppJsonContext.cs        AOT-safe JSON serialization
-│   ├── Settings/
-│   │   └── MidTermSettings.cs       Settings model (auth, defaults, appearance)
-│   ├── src/
-│   │   ├── ts/                      TypeScript source (compiled by esbuild)
-│   │   │   ├── main.ts              Entry point, initialization
-│   │   │   ├── types.ts             Shared interfaces and types
-│   │   │   ├── constants.ts         Protocol constants, themes
-│   │   │   ├── state.ts             Ephemeral state (WebSockets, DOM, timers)
-│   │   │   ├── api/                  OpenAPI generated client and types
-│   │   │   ├── stores/              Reactive state (nanostores)
-│   │   │   ├── modules/             Feature modules (comms, terminal, sidebar, etc.)
-│   │   │   └── utils/               DOM helpers, cookies, debounce
-│   │   └── static/                  Source static assets
-│   │       ├── *.html               HTML pages (index, login, trust)
-│   │       ├── css/                 Stylesheets (app.css, xterm.css)
-│   │       ├── fonts/               Web fonts (woff/woff2)
-│   │       ├── img/                 Images (logo.png)
-│   │       └── favicon/             Favicon files (ico, png)
+│   │   ├── Certificates/            HTTPS cert generation, trust info, cleanup
+│   │   ├── Git/                     Git status WebSocket, watcher, diff commands
+│   │   ├── Secrets/                 Platform-specific secure storage (DPAPI, Keychain, file)
+│   │   ├── Security/                Certificate key protection (DPAPI, encrypted file)
+│   │   ├── Sessions/                Terminal session lifecycle, spawning, mux connections
+│   │   ├── StaticFiles/             Brotli-compressed embedded asset serving
+│   │   ├── Tmux/                    Tmux shim compatibility layer for AI tools
+│   │   ├── Updates/                 GitHub release check, script generation, verification
+│   │   ├── WebSockets/              Mux binary protocol, state sync, settings broadcast
+│   │   ├── AuthService.cs           Password hashing, session tokens
+│   │   ├── AppJsonContext.cs        Central AOT-safe JSON serialization
+│   │   └── ...                      (~17 flat files: auth, history, commands, files, system)
+│   ├── Models/
+│   │   ├── Auth/                    Login, password, auth status DTOs
+│   │   ├── Certificates/            Certificate info, download, share packet DTOs
+│   │   ├── Files/                   File operations, command DTOs
+│   │   ├── Git/                     Git status, WebSocket message DTOs
+│   │   ├── History/                 Launch history DTOs
+│   │   ├── Sessions/                Session create, resize, rename, state DTOs
+│   │   ├── System/                  Bootstrap, health, paths, network, user DTOs
+│   │   ├── Update/                  Update info, version manifest DTOs
+│   │   └── ...                      (~4 flat files: WS commands, settings messages, flags)
+│   ├── Settings/                    Settings model, persistence, enums
+│   ├── Startup/                     CLI parsing, cert setup, endpoint registration
+│   ├── src/ts/                      TypeScript source (compiled by esbuild)
+│   │   ├── modules/                 Feature modules (24 modules with barrel exports)
+│   │   ├── stores/                  Reactive state (nanostores)
+│   │   ├── utils/                   DOM helpers, cookies, WebSocket
+│   │   └── api/                     OpenAPI generated client and types
 │   └── wwwroot/                     GENERATED (gitignored) - built by frontend-build.ps1
-├── Ai.Tlbx.MidTerm.Common/          Shared protocol code
+├── Ai.Tlbx.MidTerm.Api/             OpenAPI spec generation (handler interfaces)
+├── Ai.Tlbx.MidTerm.OpenApi/         OpenAPI stub implementations
+├── Ai.Tlbx.MidTerm.Common/          Shared protocol, logging, shells
 ├── Ai.Tlbx.MidTerm.Tests/           Integration tests
+├── Ai.Tlbx.MidTerm.UnitTests/       Unit tests
 └── Ai.Tlbx.MidTerm.TtyHost/         TTY Host (all platforms)
-    ├── Program.cs                   Spawned per terminal, hosts PTY session
-    └── Pty/
-        └── IPtyConnection.cs        Cross-platform PTY abstraction
+    ├── Pty/                         Cross-platform PTY abstraction
+    ├── Process/                     Platform-specific process monitoring
+    └── Ipc/                         Named pipe server
 
 scripts/                             Build and release scripts
 docs/                                Documentation and marketing assets
@@ -162,29 +171,35 @@ docs/                                Documentation and marketing assets
 
 ## Services Overview
 
-The `Services/` folder contains ~45 files organized by responsibility. When adding new functionality, check if an existing service already handles that domain.
+`Services/` is organized into subfolders by domain. Files that don't belong to a clear domain cluster remain flat in the root. When adding new functionality, check if an existing subfolder or service already handles that domain.
 
-| Category | Services | Purpose |
-|----------|----------|---------|
+**Subfolders** (each has its own sub-namespace, e.g., `Ai.Tlbx.MidTerm.Services.Sessions`):
+
+| Subfolder | Key Files | Purpose |
+|-----------|-----------|---------|
+| **Sessions/** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `TtyHostMuxConnectionManager`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
+| **WebSockets/** | `MuxWebSocketHandler`, `StateWebSocketHandler`, `SettingsWebSocketHandler`, `MuxClient`, `MuxProtocol` | Binary mux protocol, JSON state sync, settings broadcast |
+| **Secrets/** | `ISecretStorage`, `WindowsSecretStorage`, `MacOsSecretStorage`, `UnixFileSecretStorage`, `SecretStorageFactory`, `SecretKeys`, `SecretsJsonContext` | Platform-specific secure storage (DPAPI, Keychain, file) |
+| **Certificates/** | `CertificateGenerator`, `CertificateInfoService`, `CertificateCleanupService` | HTTPS cert generation, trust info |
+| **Updates/** | `UpdateService`, `UpdateVerification`, `UpdateScriptGenerator`, `GitHubReleaseContext`, `VersionManifestContext` | GitHub release check, script generation, signature verification |
+| **StaticFiles/** | `CompressedStaticFilesMiddleware`, `EmbeddedWebRootFileProvider`, `EmbeddedFileInfo`, `EnumerableDirectoryContents` | Serve Brotli-compressed embedded assets |
+| **Security/** | `SecurityStatusService`, `UserValidationService`, `UserEnumerationService` | Security posture checks, RunAsUser validation |
+| **Tmux/** | `TmuxCommandDispatcher`, `TmuxCommandParser`, `TmuxFormatter`, `TmuxPaneMapper`, `TmuxTargetResolver`, `TmuxLayoutBridge`, `TmuxScriptWriter`, `TmuxKeyTranslator`, `TmuxLog`, `TmuxEndpoints` | Tmux shim compatibility layer for AI tools |
+| **Git/** | `GitService`, `GitEndpoints` | Git integration for IDE mode |
+| **CertificateProtection/** | `ICertificateProtector`, `WindowsDpapiProtector`, `EncryptedFileProtector`, `CertificateProtectorFactory` | Platform-specific certificate key protection |
+
+**Flat files** (remain in `Services/` root, namespace `Ai.Tlbx.MidTerm.Services`):
+
+| Category | Files | Purpose |
+|----------|-------|---------|
 | **Authentication** | `AuthService`, `AuthEndpoints` | Password hashing (PBKDF2), session tokens, login/logout |
-| **Sessions** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `TtyHostMuxConnectionManager`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
-| **WebSockets** | `MuxWebSocketHandler`, `StateWebSocketHandler`, `SettingsWebSocketHandler`, `MuxClient`, `MuxProtocol` | Binary mux protocol, JSON state sync, settings broadcast |
-| **Settings** | `SettingsService` (in Settings/) | Load/save settings.json, settings validation |
-| **Security** | `SecurityStatusService`, `UserValidationService`, `UserEnumerationService` | Security posture checks, RunAsUser validation |
-| **Secrets** | `ISecretStorage`, `WindowsSecretStorage`, `MacOsSecretStorage`, `UnixFileSecretStorage`, `SecretStorageFactory` | Platform-specific secure storage (DPAPI, Keychain, file) |
-| **Certificates** | `CertificateGenerator`, `CertificateInfoService`, `CertificateCleanupService` | HTTPS cert generation, trust info |
-| **Updates** | `UpdateService`, `UpdateVerification`, `UpdateScriptGenerator` | GitHub release check, script generation, signature verification |
-| **Static Files** | `CompressedStaticFilesMiddleware`, `EmbeddedWebRootFileProvider`, `EmbeddedFileInfo` | Serve Brotli-compressed embedded assets |
-| **System** | `SingleInstanceGuard`, `ShutdownService`, `TempCleanupService` | Instance locking, graceful shutdown, temp file cleanup |
-| **Tray** | `SystemTrayService`, `TrayHelperService` | Windows/macOS system tray integration |
 | **History** | `HistoryService`, `HistoryEndpoints` | Command launch history |
+| **Commands** | `CommandService`, `CommandEndpoints` | Saved command scripts |
 | **Files** | `FileEndpoints`, `FileRadarAllowlistService` | File uploads, path validation for FileRadar |
 | **Logging** | `LogEndpoints` | Log streaming WebSocket, log file access |
-| **Clipboard** | `ClipboardService` | Cross-platform clipboard image injection (Alt+V) |
-| **Main Browser** | `MainBrowserService` | Multi-client coordination: which browser controls resize |
-| **Tmux Compat** | `TmuxCommandDispatcher`, `TmuxCommandParser`, `TmuxFormatter`, `TmuxPaneMapper`, `TmuxTargetResolver`, `TmuxLayoutBridge`, `TmuxScriptWriter`, `TmuxKeyTranslator`, `TmuxLog` | Tmux shim compatibility layer for AI tools |
-| **Certificate Protection** | `ICertificateProtector`, `WindowsDpapiProtector`, `EncryptedFileProtector`, `CertificateProtectorFactory` | Platform-specific certificate key protection |
-| **JSON Contexts** | `AppJsonContext`, `GitHubReleaseContext`, `SecretsJsonContext`, `VersionManifestContext`, `TmuxJsonContext` | AOT-safe JSON serialization (see below) |
+| **System** | `SingleInstanceGuard`, `ShutdownService`, `TempCleanupService` | Instance locking, graceful shutdown, temp file cleanup |
+| **Tray** | `SystemTrayService`, `TrayHelperService` | Windows/macOS system tray integration |
+| **Other** | `ClipboardService`, `MainBrowserService`, `AppJsonContext` | Clipboard, multi-client coordination, central JSON context |
 
 ## Settings Model Pattern
 

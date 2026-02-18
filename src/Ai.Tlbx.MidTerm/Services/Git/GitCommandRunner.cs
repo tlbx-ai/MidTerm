@@ -3,6 +3,7 @@ using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
 
+using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
 internal static class GitCommandRunner

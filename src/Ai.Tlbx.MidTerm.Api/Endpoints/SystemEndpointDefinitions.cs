@@ -6,6 +6,12 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 
+using Ai.Tlbx.MidTerm.Models.Auth;
+using Ai.Tlbx.MidTerm.Models.Certificates;
+using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Models.History;
+using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Api.Endpoints;
 
 public static class SystemEndpointDefinitions

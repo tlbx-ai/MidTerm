@@ -2,6 +2,13 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models;
 
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Models.Auth;
+using Ai.Tlbx.MidTerm.Models.Certificates;
+using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Models.History;
+using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
 /// <summary>

@@ -3,6 +3,8 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
 
+using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.Secrets;
 namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class SettingsService

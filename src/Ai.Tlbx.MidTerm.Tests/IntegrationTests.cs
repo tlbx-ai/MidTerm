@@ -2,9 +2,16 @@ using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
+using Ai.Tlbx.MidTerm.Models.Auth;
+using Ai.Tlbx.MidTerm.Models.Certificates;
+using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Models.History;
+using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Tests;
 
 public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime

@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
