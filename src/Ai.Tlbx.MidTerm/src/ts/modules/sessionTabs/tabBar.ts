@@ -108,26 +108,20 @@ export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusRespons
 
   if (!status) {
     if (branchSpan) branchSpan.textContent = '\u2387';
-    statsSpan.innerHTML = '';
+    statsSpan.innerHTML =
+      '<span class="git-indicator-added">+0</span> ' +
+      '<span class="git-indicator-deleted">-0</span>';
     return;
   }
 
   if (branchSpan) {
-    branchSpan.textContent = status.branch || '\u2387';
+    branchSpan.textContent = '\u2387';
   }
 
-  const added = status.staged.length + status.untracked.length;
-  const deleted = [...status.staged, ...status.modified].filter(
-    (f) => f.status === 'deleted',
-  ).length;
+  const additions = status.totalAdditions ?? 0;
+  const deletions = status.totalDeletions ?? 0;
 
-  const parts: string[] = [];
-  if (added > 0) {
-    parts.push(`<span class="git-indicator-added">+${added}</span>`);
-  }
-  if (deleted > 0) {
-    parts.push(`<span class="git-indicator-deleted">-${deleted}</span>`);
-  }
-
-  statsSpan.innerHTML = parts.join(' ');
+  statsSpan.innerHTML =
+    `<span class="git-indicator-added">+${additions}</span> ` +
+    `<span class="git-indicator-deleted">-${deletions}</span>`;
 }

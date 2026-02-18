@@ -173,6 +173,44 @@ internal static class GitCommandRunner
         return string.IsNullOrEmpty(trimmed) ? 0 : trimmed.Split('\n').Length;
     }
 
+    internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
+    {
+        var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);
+
+        var unstagedTask = RunGitAsync(repoRoot, "diff", "--numstat");
+        var stagedTask = RunGitAsync(repoRoot, "diff", "--cached", "--numstat");
+
+        await Task.WhenAll(unstagedTask, stagedTask);
+
+        ParseNumStat(result, (await unstagedTask).Stdout);
+        ParseNumStat(result, (await stagedTask).Stdout);
+
+        return result;
+    }
+
+    private static void ParseNumStat(Dictionary<string, (int Additions, int Deletions)> result, string output)
+    {
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('\t');
+            if (parts.Length < 3) continue;
+            if (parts[0] == "-" || parts[1] == "-") continue;
+
+            if (!int.TryParse(parts[0], out var additions)) continue;
+            if (!int.TryParse(parts[1], out var deletions)) continue;
+
+            var path = parts[2];
+            if (result.TryGetValue(path, out var existing))
+            {
+                result[path] = (existing.Additions + additions, existing.Deletions + deletions);
+            }
+            else
+            {
+                result[path] = (additions, deletions);
+            }
+        }
+    }
+
     internal static async Task<string> GetDiffAsync(string repoRoot, string path, bool staged)
     {
         var args = staged

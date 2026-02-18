@@ -96,12 +96,16 @@ public sealed class GitWatcherService : IDisposable
             var statusTask = GitCommandRunner.GetStatusAsync(repoRoot);
             var logTask = GitCommandRunner.GetLogAsync(repoRoot);
             var stashTask = GitCommandRunner.GetStashCountAsync(repoRoot);
+            var numStatTask = GitCommandRunner.GetNumStatAsync(repoRoot);
 
-            await Task.WhenAll(statusTask, logTask, stashTask);
+            await Task.WhenAll(statusTask, logTask, stashTask, numStatTask);
 
             var status = await statusTask;
             status.RecentCommits = await logTask;
             status.StashCount = await stashTask;
+
+            var numStat = await numStatTask;
+            MergeNumStat(status, numStat);
 
             if (_watchers.TryGetValue(repoRoot, out var watcher))
             {
@@ -114,6 +118,32 @@ public sealed class GitWatcherService : IDisposable
         {
             Log.Error(() => $"[Git] RefreshStatus failed for {repoRoot}: {ex.Message}");
         }
+    }
+
+    private static void MergeNumStat(GitStatusResponse status, Dictionary<string, (int Additions, int Deletions)> numStat)
+    {
+        var totalAdd = 0;
+        var totalDel = 0;
+
+        void ApplyToEntries(GitFileEntry[] entries)
+        {
+            foreach (var entry in entries)
+            {
+                if (numStat.TryGetValue(entry.Path, out var stats))
+                {
+                    entry.Additions = stats.Additions;
+                    entry.Deletions = stats.Deletions;
+                    totalAdd += stats.Additions;
+                    totalDel += stats.Deletions;
+                }
+            }
+        }
+
+        ApplyToEntries(status.Staged);
+        ApplyToEntries(status.Modified);
+
+        status.TotalAdditions = totalAdd;
+        status.TotalDeletions = totalDel;
     }
 
     private RepoWatcher CreateWatcher(string repoRoot)

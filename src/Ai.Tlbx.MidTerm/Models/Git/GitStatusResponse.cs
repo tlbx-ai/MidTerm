@@ -12,6 +12,8 @@ public sealed class GitStatusResponse
     public GitLogEntry[] RecentCommits { get; set; } = [];
     public int StashCount { get; set; }
     public string RepoRoot { get; set; } = "";
+    public int TotalAdditions { get; set; }
+    public int TotalDeletions { get; set; }
 }
 
 public sealed class GitFileEntry
@@ -19,6 +21,8 @@ public sealed class GitFileEntry
     public string Path { get; set; } = "";
     public string Status { get; set; } = "";
     public string? OriginalPath { get; set; }
+    public int Additions { get; set; }
+    public int Deletions { get; set; }
 }
 
 public sealed class GitLogEntry

@@ -16,6 +16,7 @@ import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '.
 import { setActionButtonActive } from '../sessionTabs';
 import { renderGitPanelInto } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
+import { closeDiffOverlay } from './gitDiff';
 import { closeCommandsDock } from '../commands/dock';
 import { createLogger } from '../logging';
 
@@ -111,6 +112,7 @@ function openGitDock(sessionId: string): void {
 export function closeGitDock(): void {
   activeUnsub?.();
   activeUnsub = null;
+  closeDiffOverlay();
 
   $gitPanelDocked.set(false);
   setActionButtonActive('git', false);

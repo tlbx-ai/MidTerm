@@ -82,8 +82,6 @@ export function initGitPanel(): void {
     }
   });
 
-  document.getElementById('git-dock-close')?.addEventListener('click', closeGitDock);
-
   registerGitDockCloser(closeGitDock);
   setupGitDockResize();
 
