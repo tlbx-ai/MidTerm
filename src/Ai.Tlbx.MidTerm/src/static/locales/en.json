@@ -325,10 +325,6 @@
   "update.viewUpdateLog": "View Update Log",
   "update.noLogFound": "No update log found",
   "update.copyLog": "Copy Log",
-  "update.refreshBanner": "MidTerm updated to v{version}. Refresh to apply changes.",
-  "update.refreshNow": "Refresh Now",
-  "update.later": "Later",
-
   "badges.overflow": "Output overflow",
   "badges.pasting": "Pasting...",
 

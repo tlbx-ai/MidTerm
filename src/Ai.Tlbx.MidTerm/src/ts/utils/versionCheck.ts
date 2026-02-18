@@ -3,23 +3,23 @@
  *
  * Checks if the frontend JS version matches the server version.
  * Used on WebSocket reconnect to detect server updates.
+ * Auto-reloads when a mismatch is detected.
  */
 
 import { JS_BUILD_VERSION } from '../constants';
 import { createLogger } from '../modules/logging';
 import { getVersion } from '../api/client';
-import { t } from '../modules/i18n';
 
 const log = createLogger('version');
 
-let updateBannerShown = false;
+let reloadTriggered = false;
 
 /**
  * Check if server version differs from frontend version.
- * If versions differ, shows a banner to let user refresh at their convenience.
+ * If versions differ, auto-reloads the page.
  */
 export async function checkVersionAndReload(): Promise<void> {
-  if (updateBannerShown) return;
+  if (reloadTriggered) return;
 
   try {
     const { data, response } = await getVersion();
@@ -27,44 +27,13 @@ export async function checkVersionAndReload(): Promise<void> {
 
     const serverVersion = data;
     if (serverVersion && serverVersion !== JS_BUILD_VERSION) {
-      log.info(() => `Version mismatch: client=${JS_BUILD_VERSION}, server=${serverVersion}`);
-      showUpdateBanner(serverVersion);
+      log.info(
+        () => `Version mismatch: client=${JS_BUILD_VERSION}, server=${serverVersion} — reloading`,
+      );
+      reloadTriggered = true;
+      location.reload();
     }
   } catch {
     // Network error during version check - ignore, will retry on next reconnect
   }
-}
-
-/**
- * Show an update banner at the top of the screen.
- * User can click to refresh or dismiss.
- */
-function showUpdateBanner(serverVersion: string): void {
-  if (updateBannerShown) return;
-  updateBannerShown = true;
-
-  const banner = document.createElement('div');
-  banner.id = 'update-banner';
-  banner.className = 'update-banner';
-
-  const message = document.createElement('span');
-  message.textContent = t('update.refreshBanner').replace('{version}', serverVersion);
-
-  const refreshBtn = document.createElement('button');
-  refreshBtn.textContent = t('update.refreshNow');
-  refreshBtn.className = 'update-banner-btn';
-  refreshBtn.onclick = () => location.reload();
-
-  const dismissBtn = document.createElement('button');
-  dismissBtn.textContent = t('update.later');
-  dismissBtn.className = 'update-banner-dismiss';
-  dismissBtn.onclick = () => {
-    banner.remove();
-  };
-
-  banner.appendChild(message);
-  banner.appendChild(refreshBtn);
-  banner.appendChild(dismissBtn);
-
-  document.body.appendChild(banner);
 }

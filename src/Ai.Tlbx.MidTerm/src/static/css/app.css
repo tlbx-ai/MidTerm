@@ -2215,43 +2215,6 @@ html, body {
     opacity: 1;
 }
 
-/* Version update banner */
-.update-banner {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 10000;
-    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--bg-sidebar) 100%);
-    color: var(--text-on-accent);
-    padding: 10px 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
-    font-size: var(--fs-lg);
-    box-shadow: 0 2px 8px var(--shadow-color);
-}
-
-.update-banner-btn {
-    background: var(--text-on-accent);
-    color: var(--bg-primary);
-    border: none;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-}
-
-.update-banner-dismiss {
-    background: transparent;
-    color: var(--text-on-accent);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    padding: 6px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
 /* Host connection status indicator - prominent banner */
 .host-status {
     position: fixed;
