@@ -738,7 +738,7 @@ No manual type definitions. No `any` casts. No runtime surprises from API drift.
 
 ### Example: CreateSessionRequest
 
-**1. C# definition** (`Models/CreateSessionRequest.cs`):
+**1. C# definition** (`Models/Sessions/CreateSessionRequest.cs`):
 ```csharp
 public sealed class CreateSessionRequest
 {
@@ -783,10 +783,10 @@ const { data, response } = await createSession({ cols: 120, rows: 30, shell: 'pw
 | Area | Key Files |
 |------|-----------|
 | Entry point | `src/Ai.Tlbx.MidTerm/Program.cs` |
-| Mux protocol | `src/Ai.Tlbx.MidTerm/Services/MuxClient.cs`, `MuxProtocol.cs` |
-| Session management | `src/Ai.Tlbx.MidTerm/Services/TtyHostSessionManager.cs` |
+| Mux protocol | `src/Ai.Tlbx.MidTerm/Services/WebSockets/MuxClient.cs`, `MuxProtocol.cs` |
+| Session management | `src/Ai.Tlbx.MidTerm/Services/Sessions/TtyHostSessionManager.cs` |
 | AOT JSON | `src/Ai.Tlbx.MidTerm/Services/AppJsonContext.cs` |
-| Settings WebSocket | `src/Ai.Tlbx.MidTerm/Services/SettingsWebSocketHandler.cs` |
+| Settings WebSocket | `src/Ai.Tlbx.MidTerm/Services/WebSockets/SettingsWebSocketHandler.cs` |
 | File Radar | `src/Ai.Tlbx.MidTerm/Services/FileRadarAllowlistService.cs` |
 | History | `src/Ai.Tlbx.MidTerm/Services/HistoryService.cs` |
 | PTY (Windows) | `src/Ai.Tlbx.MidTerm.TtyHost/Pty/ConPty/` |
@@ -816,7 +816,7 @@ const { data, response } = await createSession({ cols: 120, rows: 30, shell: 'pw
 | Frontend build | `src/Ai.Tlbx.MidTerm/frontend-build.ps1` |
 | Version source | `version.json` |
 | Authentication | `src/Ai.Tlbx.MidTerm/Services/AuthService.cs`, `Services/AuthEndpoints.cs` |
-| Secret storage | `src/Ai.Tlbx.MidTerm/Services/ISecretStorage.cs` + platform implementations |
+| Secret storage | `src/Ai.Tlbx.MidTerm/Services/Secrets/ISecretStorage.cs` + platform implementations |
 | Certificate protection | `src/Ai.Tlbx.MidTerm/Services/Security/` |
 | TLS & server setup | `src/Ai.Tlbx.MidTerm/Startup/ServerSetup.cs` |
-| Certificate generation | `src/Ai.Tlbx.MidTerm/Startup/CertificateSetup.cs`, `Services/CertificateGenerator.cs` |
+| Certificate generation | `src/Ai.Tlbx.MidTerm/Startup/CertificateSetup.cs`, `Services/Certificates/CertificateGenerator.cs` |
