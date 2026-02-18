@@ -269,6 +269,7 @@
   "git.stash": "スタッシュ",
   "git.recentCommits": "最近のコミット",
   "git.noCommits": "コミットなし",
+  "git.workingTreeClean": "ワーキングツリーはクリーンです",
   "commands.stop": "停止",
   "commands.run": "実行",
   "commands.edit": "編集",

@@ -6603,6 +6603,13 @@ body.ide-mode-off .session-tab-bar {
     color: var(--text-muted);
 }
 
+.git-panel-clean {
+    padding: 12px;
+    color: var(--text-secondary);
+    font-size: var(--fs-md);
+    text-align: center;
+}
+
 /* --- Accordion sections --- */
 
 .git-section {

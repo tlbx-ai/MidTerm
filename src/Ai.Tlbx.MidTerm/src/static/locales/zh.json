@@ -272,6 +272,7 @@
   "git.stash": "Stash",
   "git.recentCommits": "最近的提交",
   "git.noCommits": "没有提交",
+  "git.workingTreeClean": "工作区干净",
   "commands.stop": "停止",
   "commands.run": "运行",
   "commands.edit": "编辑",

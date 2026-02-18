@@ -203,8 +203,8 @@ function renderPanel(state: GitPanelState): void {
   }
 
   if (!hasStaged && !hasChanges && !hasUntracked) {
-    html += `<div class="git-panel-empty">
-      <p>${t('git.notARepo')}</p>
+    html += `<div class="git-panel-clean">
+      <span>\u2714</span> ${t('git.workingTreeClean')}
     </div>`;
   }
 

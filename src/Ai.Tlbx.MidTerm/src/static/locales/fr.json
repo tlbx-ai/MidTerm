@@ -269,6 +269,7 @@
   "git.stash": "Stash",
   "git.recentCommits": "Commits récents",
   "git.noCommits": "Aucun commit",
+  "git.workingTreeClean": "Arbre de travail propre",
   "commands.stop": "Arrêter",
   "commands.run": "Exécuter",
   "commands.edit": "Modifier",

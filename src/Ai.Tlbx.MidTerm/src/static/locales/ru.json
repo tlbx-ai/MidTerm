@@ -269,6 +269,7 @@
   "git.stash": "Тайник",
   "git.recentCommits": "Последние коммиты",
   "git.noCommits": "Нет коммитов",
+  "git.workingTreeClean": "Рабочее дерево чистое",
   "commands.stop": "Остановить",
   "commands.run": "Запустить",
   "commands.edit": "Редактировать",
