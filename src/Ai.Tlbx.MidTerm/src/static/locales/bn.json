@@ -138,6 +138,7 @@
   "settings.diagnostics.activeSession": "সক্রিয় সেশন",
   "settings.diagnostics.outputRtt": "আউটপুট RTT",
   "settings.diagnostics.typeToMeasure": "পরিমাপ করতে টাইপ করুন",
+  "settings.diagnostics.showGitDebugOverlay": "Git ডিবাগ ওভারলে দেখান",
   "settings.diagnostics.showOverlay": "টার্মিনালে ওভারলে দেখান",
   "settings.diagnostics.filePaths": "ফাইল পাথ",
   "settings.diagnostics.pathSettings": "সেটিংস",

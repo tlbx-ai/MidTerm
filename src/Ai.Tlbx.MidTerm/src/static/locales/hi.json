@@ -138,6 +138,7 @@
   "settings.diagnostics.activeSession": "सक्रिय सत्र",
   "settings.diagnostics.outputRtt": "आउटपुट RTT",
   "settings.diagnostics.typeToMeasure": "मापने के लिए टाइप करें",
+  "settings.diagnostics.showGitDebugOverlay": "Git डीबग ओवरले दिखाएं",
   "settings.diagnostics.showOverlay": "टर्मिनल पर ओवरले दिखाएं",
   "settings.diagnostics.filePaths": "फ़ाइल पथ",
   "settings.diagnostics.pathSettings": "सेटिंग्स",

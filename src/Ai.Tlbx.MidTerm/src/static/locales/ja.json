@@ -138,6 +138,7 @@
   "settings.diagnostics.activeSession": "アクティブセッション",
   "settings.diagnostics.outputRtt": "出力RTT",
   "settings.diagnostics.typeToMeasure": "計測するにはタイプ",
+  "settings.diagnostics.showGitDebugOverlay": "Gitデバッグオーバーレイを表示",
   "settings.diagnostics.showOverlay": "ターミナルにオーバーレイ表示",
   "settings.diagnostics.filePaths": "ファイルパス",
   "settings.diagnostics.pathSettings": "設定",

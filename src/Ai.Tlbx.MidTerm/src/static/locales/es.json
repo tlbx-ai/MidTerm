@@ -138,6 +138,7 @@
   "settings.diagnostics.activeSession": "Sesión Activa",
   "settings.diagnostics.outputRtt": "RTT de Salida",
   "settings.diagnostics.typeToMeasure": "escribe para medir",
+  "settings.diagnostics.showGitDebugOverlay": "Mostrar superposición de depuración Git",
   "settings.diagnostics.showOverlay": "Mostrar superposición en la terminal",
   "settings.diagnostics.filePaths": "Rutas de Archivos",
   "settings.diagnostics.pathSettings": "Configuración",

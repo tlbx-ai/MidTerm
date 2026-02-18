@@ -138,6 +138,7 @@
   "settings.diagnostics.activeSession": "Aktive Sitzung",
   "settings.diagnostics.outputRtt": "Ausgabe RTT",
   "settings.diagnostics.typeToMeasure": "tippen zum messen",
+  "settings.diagnostics.showGitDebugOverlay": "Git-Debug-Overlay anzeigen",
   "settings.diagnostics.showOverlay": "Overlay auf Terminal anzeigen",
   "settings.diagnostics.filePaths": "Dateipfade",
   "settings.diagnostics.pathSettings": "Einstellungen",

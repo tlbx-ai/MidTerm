@@ -138,6 +138,7 @@
   "settings.diagnostics.activeSession": "Активный сеанс",
   "settings.diagnostics.outputRtt": "RTT вывода",
   "settings.diagnostics.typeToMeasure": "печатайте для измерения",
+  "settings.diagnostics.showGitDebugOverlay": "Показать отладочное наложение Git",
   "settings.diagnostics.showOverlay": "Показать наложение на терминале",
   "settings.diagnostics.filePaths": "Пути к файлам",
   "settings.diagnostics.pathSettings": "Настройки",

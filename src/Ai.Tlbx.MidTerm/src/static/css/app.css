@@ -2696,52 +2696,6 @@ html, body {
     cursor: pointer;
 }
 
-/* Toggle switch */
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 36px;
-    height: 20px;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-}
-
-.toggle-slider {
-    position: absolute;
-    inset: 0;
-    background-color: var(--bg-tertiary);
-    border-radius: 10px;
-    transition: background-color 0.2s;
-}
-
-.toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 14px;
-    height: 14px;
-    left: 3px;
-    bottom: 3px;
-    background-color: var(--text-secondary);
-    border-radius: 50%;
-    transition: transform 0.2s, background-color 0.2s;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-    background-color: var(--accent-blue);
-}
-
-.toggle-switch input:checked + .toggle-slider::before {
-    transform: translateX(16px);
-    background-color: var(--text-primary);
-}
-
 /* Settings hint and info text */
 .setting-hint {
     font-size: var(--fs-base);
@@ -5174,18 +5128,6 @@ html, body {
 
 /* Chat panel is a flex sibling - main-content shrinks automatically when chat opens */
 
-/* Certificate fingerprint inline display in settings */
-.cert-fingerprint-inline {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    color: var(--accent-green);
-    background-color: var(--bg-primary);
-    padding: 4px 8px;
-    border-radius: 4px;
-    word-break: break-all;
-    max-width: 280px;
-    display: inline-block;
-}
 
 /* ==========================================================================
    Touch Controller Bar (Mobile)
