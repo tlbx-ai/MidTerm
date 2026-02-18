@@ -6170,46 +6170,6 @@ html, body {
     border-color: var(--text-secondary);
 }
 
-.manager-bar-help {
-    position: relative;
-    margin-left: auto;
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    border: 1px solid var(--text-muted);
-    background: none;
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: help;
-    transition: color 0.15s, border-color 0.15s;
-}
-
-.manager-bar-help:hover {
-    color: var(--text-secondary);
-    border-color: var(--text-secondary);
-}
-
-.manager-bar-help:hover::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: calc(100% + 6px);
-    right: 0;
-    padding: 4px 8px;
-    border-radius: 4px;
-    background: var(--bg-sidebar);
-    color: var(--text-primary);
-    font-size: var(--fs-sm);
-    font-weight: 400;
-    white-space: nowrap;
-    border: 1px solid var(--border-color);
-    pointer-events: none;
-    z-index: 10;
-}
 
 /* =============================================================================
    Session Tabs (IDE-like per-session tab bar)
