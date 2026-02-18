@@ -10,15 +10,24 @@ import {
   $fileViewerDocked,
   $dockedFilePath,
   $commandsPanelDocked,
+  $isMainBrowser,
 } from '../../stores';
-import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { renderGitPanelInto } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
+import { closeDiffOverlay } from './gitDiff';
 import { closeCommandsDock } from '../commands/dock';
 import { createLogger } from '../logging';
 
 const log = createLogger('gitDock');
+
+function handleDockLayoutChange(): void {
+  const handler = $isMainBrowser.get()
+    ? autoResizeAllTerminalsImmediate
+    : rescaleAllTerminalsImmediate;
+  requestAnimationFrame(handler);
+}
 
 const DOCK_MIN_WIDTH = 250;
 const DOCK_MAX_WIDTH = 600;
@@ -68,8 +77,10 @@ function openGitDock(sessionId: string): void {
     const w = parseInt(savedWidth, 10);
     if (w >= DOCK_MIN_WIDTH && w <= DOCK_MAX_WIDTH) {
       dockPanel.style.width = w + 'px';
-      const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
-      if (terminalsArea) terminalsArea.style.marginRight = w + 'px';
+      const panels = document.querySelector(
+        '.session-wrapper:not(.hidden) .session-tab-panels',
+      ) as HTMLElement;
+      if (panels) panels.style.marginRight = w + 'px';
     }
   }
 
@@ -80,7 +91,7 @@ function openGitDock(sessionId: string): void {
     renderGitPanelInto(body, sessionId);
   }
 
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  handleDockLayoutChange();
 
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
@@ -101,6 +112,7 @@ function openGitDock(sessionId: string): void {
 export function closeGitDock(): void {
   activeUnsub?.();
   activeUnsub = null;
+  closeDiffOverlay();
 
   $gitPanelDocked.set(false);
   setActionButtonActive('git', false);
@@ -114,10 +126,11 @@ export function closeGitDock(): void {
   }
   app?.classList.remove('git-docked');
 
-  const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
-  if (terminalsArea) terminalsArea.style.marginRight = '';
+  document
+    .querySelectorAll<HTMLElement>('.session-tab-panels')
+    .forEach((p) => (p.style.marginRight = ''));
 
-  requestAnimationFrame(rescaleAllTerminalsImmediate);
+  handleDockLayoutChange();
 
   log.info(() => 'Git dock closed');
 }
@@ -145,8 +158,10 @@ export function setupGitDockResize(): void {
     const delta = startX - clientX;
     const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
     dockPanel!.style.width = newWidth + 'px';
-    const terminalsArea = document.querySelector('.terminals-area') as HTMLElement;
-    if (terminalsArea) terminalsArea.style.marginRight = newWidth + 'px';
+    const panels = document.querySelector(
+      '.session-wrapper:not(.hidden) .session-tab-panels',
+    ) as HTMLElement;
+    if (panels) panels.style.marginRight = newWidth + 'px';
   }
 
   function endResize(): void {
@@ -156,7 +171,7 @@ export function setupGitDockResize(): void {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     localStorage.setItem(DOCK_WIDTH_KEY, String(dockPanel!.offsetWidth));
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
+    handleDockLayoutChange();
   }
 
   grip.addEventListener('mousedown', (e: MouseEvent) => {

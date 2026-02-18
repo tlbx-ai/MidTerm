@@ -11,3 +11,8 @@ export {
   isLatencyOverlayEnabled,
   reattachOverlay,
 } from './latencyOverlay';
+export {
+  enableGitStatusOverlay,
+  disableGitStatusOverlay,
+  isGitStatusOverlayEnabled,
+} from './gitStatusOverlay';

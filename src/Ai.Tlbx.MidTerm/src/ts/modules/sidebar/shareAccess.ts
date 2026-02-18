@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../logging';
+import { t } from '../i18n';
 import { getSharePacket, type SharePacketInfo } from '../../api/client';
 
 const log = createLogger('shareAccess');
@@ -26,7 +27,7 @@ async function openShareEmail(): Promise<void> {
     const { data, response } = await getSharePacket();
     if (!response.ok || !data) {
       log.error(() => 'Failed to fetch share packet');
-      showFallbackMessage('Failed to load connection info');
+      showFallbackMessage(t('share.failedToLoad'));
       return;
     }
 
@@ -49,7 +50,7 @@ async function openShareEmail(): Promise<void> {
     }, 1000);
   } catch (e) {
     log.error(() => `Failed to open share email: ${e}`);
-    showFallbackMessage('Failed to generate share info');
+    showFallbackMessage(t('share.failedToGenerate'));
   }
 }
 
@@ -72,13 +73,18 @@ function showCopyFallback(subject: string, body: string, trustPageUrl: string): 
     .writeText(copyText)
     .then(() => {
       alert(
-        'No email client detected.\n\nConnection info has been copied to your clipboard!\n\nYou can also visit the trust page directly:\n' +
+        t('share.noEmailClient') +
+          '\n\n' +
+          t('share.copiedToClipboard') +
+          '\n\n' +
+          t('share.visitTrustPage') +
+          ':\n' +
           trustPageUrl,
       );
     })
     .catch(() => {
       // Clipboard failed, show the trust page URL at least
-      alert('No email client detected.\n\nVisit the trust page to share access:\n' + trustPageUrl);
+      alert(t('share.noEmailClient') + '\n\n' + t('share.visitTrustPage') + ':\n' + trustPageUrl);
     });
 }
 

@@ -8,6 +8,7 @@
 import { JS_BUILD_VERSION } from '../constants';
 import { createLogger } from '../modules/logging';
 import { getVersion } from '../api/client';
+import { t } from '../modules/i18n';
 
 const log = createLogger('version');
 
@@ -47,15 +48,15 @@ function showUpdateBanner(serverVersion: string): void {
   banner.className = 'update-banner';
 
   const message = document.createElement('span');
-  message.textContent = `MidTerm updated to v${serverVersion}. Refresh to apply changes.`;
+  message.textContent = t('update.refreshBanner').replace('{version}', serverVersion);
 
   const refreshBtn = document.createElement('button');
-  refreshBtn.textContent = 'Refresh Now';
+  refreshBtn.textContent = t('update.refreshNow');
   refreshBtn.className = 'update-banner-btn';
   refreshBtn.onclick = () => location.reload();
 
   const dismissBtn = document.createElement('button');
-  dismissBtn.textContent = 'Later';
+  dismissBtn.textContent = t('update.later');
   dismissBtn.className = 'update-banner-dismiss';
   dismissBtn.onclick = () => {
     banner.remove();

@@ -32,6 +32,7 @@ import {
 } from '../terminal/scrollbarStyle';
 import { setLocale } from '../i18n';
 import type { LanguageSetting } from '../../api/types';
+import { renderUpdatePanel } from '../updating/checker';
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
@@ -146,6 +147,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility !== false);
   setElementChecked('setting-ide-mode', settings.ideMode !== false);
   setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate !== false);
+  setElementChecked('setting-show-update-notification', settings.showUpdateNotification !== false);
   setElementValue('setting-language', settings.language ?? 'auto');
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
@@ -237,6 +239,7 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
 
   applySettingsToTerminals();
   updateTabTitle();
+  renderUpdatePanel();
 }
 
 /**
@@ -288,6 +291,7 @@ export function saveAllSettings(): void {
     tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
     ideMode: getElementChecked('setting-ide-mode'),
     showChangelogAfterUpdate: getElementChecked('setting-changelog-after-update'),
+    showUpdateNotification: getElementChecked('setting-show-update-notification'),
     language: getElementValue('setting-language', 'auto') as LanguageSetting,
     runAsUser: runAsUserValue || null,
   };

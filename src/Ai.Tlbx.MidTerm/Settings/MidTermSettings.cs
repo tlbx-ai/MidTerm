@@ -60,6 +60,9 @@ public sealed class MidTermSettings
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;
 
+    // Show prominent update notification in sidebar (false = subtle footer hint only)
+    public bool ShowUpdateNotification { get; set; } = true;
+
     // UI Language
     public LanguageSetting Language { get; set; } = LanguageSetting.Auto;
 

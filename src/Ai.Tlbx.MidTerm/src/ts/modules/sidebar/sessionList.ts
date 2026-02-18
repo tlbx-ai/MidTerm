@@ -6,6 +6,7 @@
  */
 
 import type { Session, ProcessState } from '../../types';
+import { t } from '../i18n';
 import { pendingSessions, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList, isChildSession } from '../../stores';
 import { icon } from '../../constants';
@@ -104,11 +105,20 @@ function updateSessionProcessInfo(sessionId: string): void {
   // Clear existing content
   processInfoEl.innerHTML = '';
 
-  // Foreground process indicator
+  // Foreground process indicator (skip when shell is idle — that's obvious)
   const fgInfo = getForegroundInfo(sessionId);
-  if (fgInfo.name) {
+  if (fgInfo.name && fgInfo.name !== 'shell') {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
+  } else if (fgInfo.cwd) {
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'session-foreground';
+    const cwdInner = document.createElement('span');
+    cwdInner.className = 'fg-cwd';
+    cwdInner.textContent = fgInfo.cwd;
+    cwdSpan.appendChild(cwdInner);
+    cwdSpan.title = fgInfo.cwd;
+    processInfoEl.appendChild(cwdSpan);
   }
 }
 
@@ -155,7 +165,7 @@ interface SessionDisplayInfo {
  * Get display info for a session (primary title and optional secondary subtitle)
  */
 export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
-  const termTitle = session.terminalTitle || session.shellType || 'Terminal';
+  const termTitle = session.terminalTitle || session.shellType || t('session.terminal');
   if (session.name) {
     return { primary: session.name, secondary: termTitle };
   }
@@ -230,8 +240,8 @@ function createSessionItem(
   // Layout badge (shown when session is in layout)
   const layoutBadge = document.createElement('span');
   layoutBadge.className = 'layout-badge';
-  layoutBadge.textContent = 'SPLIT';
-  layoutBadge.title = 'Session is in a split layout';
+  layoutBadge.textContent = t('session.split');
+  layoutBadge.title = t('session.splitTooltip');
   titleRow.appendChild(layoutBadge);
 
   if (displayInfo.secondary) {
@@ -249,11 +259,20 @@ function createSessionItem(
   processInfo.className = 'session-process-info';
   processInfo.dataset.sessionId = sessionId;
 
-  // Foreground process indicator
+  // Foreground process indicator (skip idle shell)
   const fgInfo = getForegroundInfo(sessionId);
-  if (fgInfo.name) {
+  if (fgInfo.name && fgInfo.name !== 'shell') {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfo.appendChild(fgIndicator);
+  } else if (fgInfo.cwd) {
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'session-foreground';
+    const cwdInner = document.createElement('span');
+    cwdInner.className = 'fg-cwd';
+    cwdInner.textContent = fgInfo.cwd;
+    cwdSpan.appendChild(cwdInner);
+    cwdSpan.title = fgInfo.cwd;
+    processInfo.appendChild(cwdSpan);
   }
 
   // Always add processInfo container so updateSessionProcessInfo can find it later
@@ -266,7 +285,7 @@ function createSessionItem(
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
     pinBtn.textContent = '\u2606';
-    pinBtn.title = 'Pin to QuickLaunch';
+    pinBtn.title = t('session.pinToQuickLaunch');
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -278,7 +297,7 @@ function createSessionItem(
     const renameBtn = document.createElement('button');
     renameBtn.className = 'session-rename';
     renameBtn.innerHTML = icon('rename');
-    renameBtn.title = 'Rename session';
+    renameBtn.title = t('session.rename');
     renameBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -290,7 +309,7 @@ function createSessionItem(
     const closeBtn = document.createElement('button');
     closeBtn.className = 'session-close';
     closeBtn.innerHTML = icon('close');
-    closeBtn.title = 'Close session';
+    closeBtn.title = t('session.close');
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -303,7 +322,7 @@ function createSessionItem(
     const undockBtn = document.createElement('button');
     undockBtn.className = 'session-undock';
     undockBtn.innerHTML = icon('undock');
-    undockBtn.title = 'Remove from split layout';
+    undockBtn.title = t('session.removeFromLayout');
     undockBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -323,7 +342,7 @@ function createSessionItem(
     const menuBtn = document.createElement('button');
     menuBtn.className = 'session-menu-btn';
     menuBtn.innerHTML = icon('more');
-    menuBtn.title = 'Actions';
+    menuBtn.title = t('session.actions');
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const isOpen = item.classList.contains('menu-open');

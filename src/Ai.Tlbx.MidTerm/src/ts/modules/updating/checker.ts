@@ -17,7 +17,9 @@ import {
   getUpdateResult,
   deleteUpdateResult,
   getUpdateLog,
+  updateSettings,
 } from '../../api/client';
+import { openSettings, switchSettingsTab } from '../settings';
 
 const log = createLogger('updating');
 
@@ -35,10 +37,20 @@ export function renderUpdatePanel(): void {
   const info = $updateInfo.get();
   if (!info || !info.available) {
     panel.classList.add('hidden');
+    renderUpdateFooterHint();
+    return;
+  }
+
+  const settings = $currentSettings.get();
+  if (settings?.showUpdateNotification === false) {
+    panel.classList.add('hidden');
+    renderUpdateFooterHint();
     return;
   }
 
   panel.classList.remove('hidden');
+  renderUpdateFooterHint();
+
   const currentEl = panel.querySelector('.update-current');
   const latestEl = panel.querySelector('.update-latest');
   const noteEl = panel.querySelector('.update-note');
@@ -62,6 +74,52 @@ export function renderUpdatePanel(): void {
       noteEl.classList.remove('update-note-safe');
     }
   }
+}
+
+function renderUpdateFooterHint(): void {
+  const hint = document.getElementById('footer-update-hint');
+  if (!hint) return;
+
+  const info = $updateInfo.get();
+  const settings = $currentSettings.get();
+  const showProminent = settings?.showUpdateNotification !== false;
+
+  if (info?.available && !showProminent) {
+    hint.classList.remove('hidden');
+  } else {
+    hint.classList.add('hidden');
+  }
+}
+
+let footerLinkBound = false;
+
+export function bindFooterUpdateLink(): void {
+  if (footerLinkBound) return;
+  footerLinkBound = true;
+
+  const link = document.getElementById('footer-update-link');
+  if (link) {
+    link.addEventListener('click', () => {
+      openSettings();
+      switchSettingsTab('general');
+    });
+  }
+}
+
+export function dismissUpdateNotification(): void {
+  const panel = document.getElementById('update-panel');
+  if (panel) panel.classList.add('hidden');
+
+  const current = $currentSettings.get();
+  if (!current) return;
+
+  const updated = { ...current, showUpdateNotification: false };
+  $currentSettings.set(updated);
+  renderUpdateFooterHint();
+
+  updateSettings(updated).catch((e) => {
+    log.warn(() => `Failed to save dismiss setting: ${e}`);
+  });
 }
 
 /**
@@ -310,6 +368,7 @@ export function handleUpdateInfo(update: UpdateInfo): void {
 }
 
 const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';
+const CHANGELOG_SHOWN_KEY = 'mt-changelog-shown-version';
 
 function setPendingChangelogFlag(): void {
   const settings = $currentSettings.get();
@@ -318,10 +377,13 @@ function setPendingChangelogFlag(): void {
   }
 }
 
-export function consumePendingChangelogFlag(): boolean {
+export function consumePendingChangelogFlag(currentVersion: string): boolean {
   const flag = localStorage.getItem(PENDING_CHANGELOG_KEY);
   if (flag) {
     localStorage.removeItem(PENDING_CHANGELOG_KEY);
+    const shownVersion = localStorage.getItem(CHANGELOG_SHOWN_KEY);
+    if (shownVersion === currentVersion) return false;
+    localStorage.setItem(CHANGELOG_SHOWN_KEY, currentVersion);
     return true;
   }
   return false;

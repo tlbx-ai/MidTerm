@@ -7,6 +7,7 @@
 
 import { fetchHistory, toggleStar, removeHistoryEntry, type LaunchEntry } from './historyApi';
 import { icon } from '../../constants';
+import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
 
@@ -86,10 +87,10 @@ function createDropdownElement(): void {
   dropdownEl.className = 'history-dropdown';
   dropdownEl.innerHTML = `
     <div class="history-dropdown-header">
-      <span>Quick Launch</span>
+      <span>${t('history.quickLaunch')}</span>
     </div>
     <div class="history-dropdown-content"></div>
-    <div class="history-dropdown-empty">No history yet</div>
+    <div class="history-dropdown-empty">${t('history.noHistory')}</div>
   `;
 
   const headerArea = document.querySelector('.sidebar-header');
@@ -121,7 +122,7 @@ function renderDropdownContent(): void {
   if (pinnedEntries.length > 0) {
     const pinnedHeader = document.createElement('div');
     pinnedHeader.className = 'history-section-header';
-    pinnedHeader.textContent = '\u2b50 Pinned';
+    pinnedHeader.textContent = '\u2b50 ' + t('history.pinned');
     content.appendChild(pinnedHeader);
 
     pinnedEntries.forEach((entry) => {
@@ -132,7 +133,7 @@ function renderDropdownContent(): void {
   if (recentEntries.length > 0) {
     const recentHeader = document.createElement('div');
     recentHeader.className = 'history-section-header';
-    recentHeader.textContent = '\ud83d\udd70 Recent';
+    recentHeader.textContent = '\ud83d\udd70 ' + t('history.recent');
     content.appendChild(recentHeader);
 
     recentEntries.forEach((entry) => {
@@ -148,7 +149,7 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
 
   const starBtn = document.createElement('button');
   starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
-  starBtn.title = entry.isStarred ? 'Unstar' : 'Star';
+  starBtn.title = entry.isStarred ? t('history.unstar') : t('history.star');
   starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
   starBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -187,13 +188,13 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'history-item-delete';
-  deleteBtn.title = 'Remove';
+  deleteBtn.title = t('history.remove');
   deleteBtn.innerHTML = icon('close');
   deleteBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!entry.id) return;
     if (entry.isStarred) {
-      if (!confirm('Delete starred item?')) {
+      if (!confirm(t('history.deleteStarred'))) {
         return;
       }
     }

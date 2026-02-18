@@ -17,7 +17,6 @@ import {
   sendInput,
   sendActiveSessionHint,
   claimMainBrowser,
-  releaseMainBrowser,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -65,6 +64,8 @@ import {
   showChangelog,
   closeChangelog,
   showUpdateLog,
+  dismissUpdateNotification,
+  bindFooterUpdateLink,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
@@ -781,33 +782,27 @@ function initMainBrowserButton(): void {
   const btn = document.getElementById('btn-main-browser');
   if (!btn) return;
 
-  btn.style.display = 'none';
-
-  function updateButton(isMain: boolean): void {
-    if (!btn) return;
-    btn.classList.toggle('active', isMain);
-    btn.title = isMain ? 'Main browser (auto-resize)' : 'Following browser (scale only)';
+  function updateVisibility(): void {
+    const isMain = $isMainBrowser.get();
+    const showButton = $showMainBrowserButton.get();
+    btn!.style.display = !isMain && showButton ? '' : 'none';
   }
 
-  updateButton($isMainBrowser.get());
+  updateVisibility();
 
   btn.addEventListener('click', () => {
-    if ($isMainBrowser.get()) {
-      releaseMainBrowser();
-    } else {
-      claimMainBrowser();
-    }
+    claimMainBrowser();
   });
 
   $isMainBrowser.subscribe((isMain) => {
-    updateButton(isMain);
+    updateVisibility();
     if (isMain) {
       requestAnimationFrame(autoResizeAllTerminalsImmediate);
     }
   });
 
-  $showMainBrowserButton.subscribe((show) => {
-    btn.style.display = show ? '' : 'none';
+  $showMainBrowserButton.subscribe(() => {
+    updateVisibility();
   });
 }
 
@@ -910,6 +905,8 @@ function bindEvents(): void {
   bindClick('btn-view-update-log', showUpdateLog);
   bindClick('btn-close-changelog', closeChangelog);
   bindClick('update-changelog-link', showChangelog);
+  bindClick('update-dismiss-btn', dismissUpdateNotification);
+  bindFooterUpdateLink();
 
   const changelogBackdrop = document.querySelector('#changelog-modal .modal-backdrop');
   if (changelogBackdrop) {

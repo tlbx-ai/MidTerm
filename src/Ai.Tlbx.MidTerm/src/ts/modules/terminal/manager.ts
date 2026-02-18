@@ -17,9 +17,14 @@ import {
   MAX_WEBGL_CONTEXTS,
   terminalsWithWebgl,
 } from '../../state';
-import { $activeSessionId, $currentSettings, $windowsBuildNumber } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $isMainBrowser,
+  $windowsBuildNumber,
+} from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
-import { applyTerminalScalingSync } from './scaling';
+import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import {
   setupFileDrop,
   handleClipboardPaste,
@@ -47,6 +52,7 @@ import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './c
 
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
+import { handleOsc7Cwd } from '../process';
 
 let showBellNotification: (sessionId: string) => void = () => {};
 
@@ -82,6 +88,7 @@ export function refreshCursorBlink(terminal: Terminal): void {
  */
 export function focusActiveTerminal(): void {
   if (isSearchVisible()) return;
+  if (hasNonTerminalFocus()) return;
 
   if (focusDebounceTimer !== null) {
     window.clearTimeout(focusDebounceTimer);
@@ -89,6 +96,8 @@ export function focusActiveTerminal(): void {
 
   focusDebounceTimer = window.setTimeout(() => {
     focusDebounceTimer = null;
+    if (hasNonTerminalFocus()) return;
+
     const activeId = $activeSessionId.get();
     if (!activeId) return;
 
@@ -97,7 +106,19 @@ export function focusActiveTerminal(): void {
       state.terminal.focus();
       refreshCursorBlink(state.terminal);
     }
-  }, 16); // Single frame (60fps) prevents focus/blur thrashing
+  }, 16);
+}
+
+function hasNonTerminalFocus(): boolean {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    (el as HTMLElement).isContentEditable
+  );
 }
 
 const FOCUS_STEALING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
@@ -320,7 +341,18 @@ export function createTerminalForSession(
 
       // Double-rAF: let the resize paint before measuring for scaling
       requestAnimationFrame(() => {
-        applyTerminalScalingSync(state);
+        if ($isMainBrowser.get()) {
+          const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+          if (layoutPane) {
+            fitTerminalToContainer(sessionId, layoutPane);
+          } else if (!container.classList.contains('hidden')) {
+            fitSessionToScreen(sessionId);
+          } else {
+            applyTerminalScalingSync(state);
+          }
+        } else {
+          applyTerminalScalingSync(state);
+        }
         setupTerminalEvents(sessionId, terminal, container);
         focusActiveTerminal();
       });
@@ -453,6 +485,20 @@ export function setupTerminalEvents(
     }),
   );
 
+  // OSC 7: CWD reporting — shells emit file://hostname/path on every prompt
+  disposables.push(
+    terminal.parser.registerOscHandler(7, (data: string) => {
+      const match = data.match(/^file:\/\/[^/]*(\/.*)/);
+      if (!match) return false;
+      let path = decodeURIComponent(match[1]!);
+      if (/^\/[A-Za-z]:/.test(path)) {
+        path = path.substring(1).replace(/\//g, '\\');
+      }
+      handleOsc7Cwd(sessionId, path);
+      return true;
+    }),
+  );
+
   disposables.push(
     terminal.onSelectionChange(() => {
       if ($currentSettings.get()?.copyOnSelect && terminal.hasSelection()) {
@@ -566,37 +612,27 @@ export function setupTerminalEvents(
 
   container.addEventListener('contextmenu', contextMenuHandler);
 
-  // Defensive refocus when terminal loses focus unexpectedly
-  const xtermElement = terminal.element;
-  if (xtermElement) {
-    xtermElement.addEventListener('blur', () => {
-      setTimeout(() => {
-        if (!isSearchVisible() && $activeSessionId.get() === sessionId) {
-          focusActiveTerminal();
-        }
-      }, 100);
-    });
-  }
-
   // Auto-hide mouse cursor after 2 seconds of inactivity
-  let cursorHideTimer: number | null = null;
   const CURSOR_HIDE_DELAY = 2000;
 
   const mouseMoveHandler = () => {
     container.classList.remove('cursor-hidden');
-    if (cursorHideTimer !== null) {
-      window.clearTimeout(cursorHideTimer);
+    const s = sessionTerminals.get(sessionId);
+    if (s?.cursorHideTimer != null) {
+      window.clearTimeout(s.cursorHideTimer);
     }
-    cursorHideTimer = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       container.classList.add('cursor-hidden');
     }, CURSOR_HIDE_DELAY);
+    if (s) s.cursorHideTimer = timer;
   };
 
   const mouseLeaveHandler = () => {
     container.classList.remove('cursor-hidden');
-    if (cursorHideTimer !== null) {
-      window.clearTimeout(cursorHideTimer);
-      cursorHideTimer = null;
+    const s = sessionTerminals.get(sessionId);
+    if (s?.cursorHideTimer != null) {
+      window.clearTimeout(s.cursorHideTimer);
+      s.cursorHideTimer = null;
     }
   };
 
@@ -650,6 +686,11 @@ export function destroyTerminalForSession(sessionId: string): void {
 
   // Clean up search addon state
   cleanupSearchForTerminal(sessionId);
+
+  // Clean up cursor hide timer
+  if (state.cursorHideTimer != null) {
+    clearTimeout(state.cursorHideTimer);
+  }
 
   // Clean up pending title update timer
   const titleTimer = pendingTitleUpdates.get(sessionId);

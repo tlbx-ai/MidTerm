@@ -578,7 +578,7 @@ public static class EndpointSetup
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
-        var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService);
+        var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
 
         app.Use(async (context, next) =>
         {

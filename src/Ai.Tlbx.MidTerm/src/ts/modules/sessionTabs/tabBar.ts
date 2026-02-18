@@ -7,15 +7,18 @@
  */
 
 import type { GitStatusResponse } from '../git/types';
+import { t } from '../i18n';
 
 export type SessionTabId = 'terminal' | 'files';
 
 export type IdeBarActionId = 'git' | 'commands';
 
-const TAB_LABELS: Record<SessionTabId, string> = {
-  terminal: 'Terminal',
-  files: 'Files',
-};
+function getTabLabels(): Record<SessionTabId, string> {
+  return {
+    terminal: t('session.terminal'),
+    files: t('modal.file'),
+  };
+}
 
 let commandsClickHandler: (() => void) | null = null;
 let gitClickHandler: (() => void) | null = null;
@@ -40,7 +43,7 @@ export function createTabBar(
   cwdSpan.className = 'session-cwd';
   bar.appendChild(cwdSpan);
 
-  for (const [tabId, label] of Object.entries(TAB_LABELS)) {
+  for (const [tabId, label] of Object.entries(getTabLabels())) {
     const btn = document.createElement('button');
     btn.className = 'session-tab';
     if (tabId === 'terminal') btn.classList.add('active');
@@ -56,7 +59,7 @@ export function createTabBar(
   const cmdBtn = document.createElement('button');
   cmdBtn.className = 'ide-bar-btn ide-bar-commands';
   cmdBtn.dataset.action = 'commands';
-  cmdBtn.title = 'Commands';
+  cmdBtn.title = t('sessionTabs.commands');
   cmdBtn.innerHTML = '<span class="ide-bar-btn-icon">\u26A1</span>';
   cmdBtn.addEventListener('click', () => commandsClickHandler?.());
   actions.appendChild(cmdBtn);
@@ -64,7 +67,7 @@ export function createTabBar(
   const gitBtn = document.createElement('button');
   gitBtn.className = 'ide-bar-btn git-indicator';
   gitBtn.dataset.action = 'git';
-  gitBtn.title = 'Git';
+  gitBtn.title = t('sessionTabs.git');
   gitBtn.innerHTML =
     '<span class="git-indicator-branch">\u2387</span>' +
     '<span class="git-indicator-stats"></span>';
@@ -105,24 +108,20 @@ export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusRespons
 
   if (!status) {
     if (branchSpan) branchSpan.textContent = '\u2387';
-    statsSpan.innerHTML = '';
+    statsSpan.innerHTML =
+      '<span class="git-indicator-added">+0</span> ' +
+      '<span class="git-indicator-deleted">-0</span>';
     return;
   }
 
   if (branchSpan) {
-    branchSpan.textContent = status.branch || '\u2387';
+    branchSpan.textContent = '\u2387';
   }
 
-  const added = status.staged.length + status.untracked.length;
-  const changed = status.modified.length;
+  const additions = status.totalAdditions ?? 0;
+  const deletions = status.totalDeletions ?? 0;
 
-  const parts: string[] = [];
-  if (added > 0) {
-    parts.push(`<span class="git-indicator-added">+${added}</span>`);
-  }
-  if (changed > 0) {
-    parts.push(`<span class="git-indicator-changed">\u00B1${changed}</span>`);
-  }
-
-  statsSpan.innerHTML = parts.join(' ');
+  statsSpan.innerHTML =
+    `<span class="git-indicator-added">+${additions}</span> ` +
+    `<span class="git-indicator-deleted">-${deletions}</span>`;
 }

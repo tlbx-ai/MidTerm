@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../logging';
+import { t } from '../i18n';
 import type { FileTreeEntry } from './treeApi';
 import { escapeHtml } from '../../utils';
 import {
@@ -31,7 +32,7 @@ export function renderPreview(
   container.innerHTML = '';
 
   if (entry.isDirectory) {
-    container.innerHTML = '<div class="preview-empty">Select a file to preview</div>';
+    container.innerHTML = `<div class="preview-empty">${t('fileBrowser.selectFile')}</div>`;
     return;
   }
 
@@ -55,7 +56,7 @@ export function renderPreview(
   }
 
   if (isTextFile(ext, mime) || !mime) {
-    container.innerHTML = '<div class="preview-loading">Loading...</div>';
+    container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
     fetchAndRenderText(container, viewUrl, entry.name, ext);
     return;
   }
@@ -64,8 +65,8 @@ export function renderPreview(
     <div class="preview-binary">
       <div class="preview-binary-icon">${getFileIcon(entry.name, false)}</div>
       <div class="preview-binary-name">${escapeHtml(entry.name)}</div>
-      <div class="preview-binary-size">${entry.size !== undefined ? formatSize(entry.size) : 'Unknown size'}</div>
-      <a href="${escapeHtml(viewUrl)}" class="preview-download-btn" download>Download</a>
+      <div class="preview-binary-size">${entry.size !== undefined ? formatSize(entry.size) : t('fileBrowser.unknownSize')}</div>
+      <a href="${escapeHtml(viewUrl)}" class="preview-download-btn" download>${t('fileBrowser.download')}</a>
     </div>`;
 }
 
@@ -78,7 +79,7 @@ async function fetchAndRenderText(
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      container.innerHTML = `<div class="preview-error">Failed to load file (${res.status})</div>`;
+      container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')} (${res.status})</div>`;
       return;
     }
 
@@ -93,10 +94,10 @@ async function fetchAndRenderText(
     }
   } catch (e) {
     log.error(() => `Failed to load preview: ${e}`);
-    container.innerHTML = '<div class="preview-error">Failed to load file</div>';
+    container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')}</div>`;
   }
 }
 
 export function clearPreview(container: HTMLElement): void {
-  container.innerHTML = '<div class="preview-empty">Select a file to preview</div>';
+  container.innerHTML = `<div class="preview-empty">${t('fileBrowser.selectFile')}</div>`;
 }

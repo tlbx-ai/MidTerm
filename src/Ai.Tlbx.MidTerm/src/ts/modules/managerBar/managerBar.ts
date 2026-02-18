@@ -8,6 +8,7 @@
 import { $currentSettings, $activeSessionId } from '../../stores';
 import { sendInput } from '../comms';
 import { updateSettings } from '../../api/client';
+import { t } from '../i18n';
 
 interface ManagerButton {
   id: string;
@@ -68,8 +69,8 @@ function renderButtons(buttons: ManagerButton[]): void {
     span.innerHTML =
       `<span class="manager-btn-label">${escapeHtml(btn.label)}</span>` +
       `<span class="manager-btn-actions">` +
-      `<button class="manager-btn-edit" title="Edit"><span class="icon">\ue91f</span></button>` +
-      `<button class="manager-btn-delete" title="Remove"><span class="icon">\ue909</span></button>` +
+      `<button class="manager-btn-edit" title="${t('managerBar.edit')}"><span class="icon">\ue91f</span></button>` +
+      `<button class="manager-btn-delete" title="${t('managerBar.remove')}"><span class="icon">\ue909</span></button>` +
       `</span>`;
     buttonsEl.appendChild(span);
   }
@@ -153,7 +154,7 @@ function startInlineAdd(): void {
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'manager-btn-input';
-  input.placeholder = 'label…';
+  input.placeholder = t('managerBar.labelHint');
   span.appendChild(input);
   buttonsEl.appendChild(span);
 

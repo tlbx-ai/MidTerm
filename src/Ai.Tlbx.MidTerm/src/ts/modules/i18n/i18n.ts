@@ -54,6 +54,7 @@ export async function initI18n(settingsLanguage?: string): Promise<void> {
 
   applyTranslations();
   applyAttributeTranslations();
+  document.documentElement.lang = currentLocale;
 }
 
 /**
@@ -84,6 +85,7 @@ export async function setLocale(locale: string): Promise<void> {
 
   applyTranslations();
   applyAttributeTranslations();
+  document.documentElement.lang = currentLocale;
 }
 
 /**
@@ -113,6 +115,13 @@ export function applyAttributeTranslations(): void {
     const key = (el as HTMLElement).dataset.i18nPlaceholder;
     if (key) {
       (el as HTMLInputElement).placeholder = t(key);
+    }
+  });
+
+  document.querySelectorAll('[data-i18n-text]').forEach((el) => {
+    const key = (el as HTMLElement).dataset.i18nText;
+    if (key) {
+      (el as HTMLElement).setAttribute('data-tooltip', t(key));
     }
   });
 }

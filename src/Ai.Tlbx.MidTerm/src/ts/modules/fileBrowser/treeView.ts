@@ -6,6 +6,7 @@
 
 import type { FileTreeEntry } from './treeApi';
 import { fetchTree } from './treeApi';
+import { t } from '../i18n';
 import { getFileIcon, formatSize } from '../fileViewer/rendering';
 
 interface TreeState {
@@ -50,7 +51,7 @@ export async function setTreeRoot(sessionId: string, rootPath: string): Promise<
   state.rootPath = rootPath;
   const data = await fetchTree(rootPath, sessionId);
   if (!data) {
-    state.container.innerHTML = '<div class="tree-empty">Unable to load directory</div>';
+    state.container.innerHTML = `<div class="tree-empty">${t('fileBrowser.unableToLoad')}</div>`;
     return;
   }
 

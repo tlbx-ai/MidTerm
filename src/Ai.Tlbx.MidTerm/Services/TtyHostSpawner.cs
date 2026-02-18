@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
@@ -435,7 +436,7 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool IsRunningAsSystem()
+    internal static bool IsRunningAsSystem()
     {
         try
         {
@@ -446,6 +447,148 @@ public static class TtyHostSpawner
         {
             return false;
         }
+    }
+
+    [SupportedOSPlatform("windows")]
+    internal static async Task<(int ExitCode, string Stdout, string Stderr)> RunCommandAsUserAsync(
+        string fileName, IReadOnlyList<string> args, string workingDir, string? runAsUser, CancellationToken ct)
+    {
+        if (!TryGetUserToken(runAsUser, out var userToken, out _))
+        {
+            return (-1, "", "Failed to get user token for impersonation");
+        }
+
+        try
+        {
+            return await RunCommandWithTokenAsync(fileName, args, workingDir, userToken, ct);
+        }
+        finally
+        {
+            CloseHandle(userToken);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunCommandWithTokenAsync(
+        string fileName, IReadOnlyList<string> args, string workingDir, IntPtr userToken, CancellationToken ct)
+    {
+        var sa = new SECURITY_ATTRIBUTES
+        {
+            bInheritHandle = true
+        };
+        sa.nLength = Marshal.SizeOf(sa);
+
+        if (!CreatePipe(out var stdoutRead, out var stdoutWrite, ref sa, 0))
+            return (-1, "", $"CreatePipe stdout failed: {Marshal.GetLastWin32Error()}");
+        if (!CreatePipe(out var stderrRead, out var stderrWrite, ref sa, 0))
+        {
+            CloseHandle(stdoutRead);
+            CloseHandle(stdoutWrite);
+            return (-1, "", $"CreatePipe stderr failed: {Marshal.GetLastWin32Error()}");
+        }
+
+        SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0);
+        SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0);
+
+        if (!CreateEnvironmentBlock(out var envBlock, userToken, false))
+        {
+            CloseHandle(stdoutRead); CloseHandle(stdoutWrite);
+            CloseHandle(stderrRead); CloseHandle(stderrWrite);
+            return (-1, "", $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}");
+        }
+
+        try
+        {
+            var cmdLine = BuildCommandLine(fileName, args);
+
+            var si = new STARTUPINFO();
+            si.cb = Marshal.SizeOf<STARTUPINFO>();
+            si.lpDesktop = Marshal.StringToHGlobalUni("winsta0\\default");
+            si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+            si.wShowWindow = SW_HIDE;
+            si.hStdInput = IntPtr.Zero;
+            si.hStdOutput = stdoutWrite;
+            si.hStdError = stderrWrite;
+
+            try
+            {
+                var success = CreateProcessAsUser(
+                    userToken,
+                    null,
+                    cmdLine,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    true,
+                    CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+                    envBlock,
+                    workingDir,
+                    ref si,
+                    out var pi);
+
+                if (!success)
+                {
+                    return (-1, "", $"CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}");
+                }
+
+                CloseHandle(pi.hThread);
+                CloseHandle(stdoutWrite); stdoutWrite = IntPtr.Zero;
+                CloseHandle(stderrWrite); stderrWrite = IntPtr.Zero;
+
+                using var stdoutSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stdoutRead, true);
+                using var stderrSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stderrRead, true);
+                stdoutRead = IntPtr.Zero;
+                stderrRead = IntPtr.Zero;
+
+                using var stdoutStream = new FileStream(stdoutSafe, FileAccess.Read);
+                using var stderrStream = new FileStream(stderrSafe, FileAccess.Read);
+                using var stdoutReader = new StreamReader(stdoutStream, Encoding.UTF8);
+                using var stderrReader = new StreamReader(stderrStream, Encoding.UTF8);
+
+                var stdoutTask = stdoutReader.ReadToEndAsync(ct);
+                var stderrTask = stderrReader.ReadToEndAsync(ct);
+
+                using var processSafe = new Microsoft.Win32.SafeHandles.SafeProcessHandle(pi.hProcess, true);
+                using var process = Process.GetProcessById(pi.dwProcessId);
+                await process.WaitForExitAsync(ct);
+
+                var stdout = await stdoutTask;
+                var stderr = await stderrTask;
+
+                return (process.ExitCode, stdout, stderr);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(si.lpDesktop);
+            }
+        }
+        finally
+        {
+            DestroyEnvironmentBlock(envBlock);
+            if (stdoutRead != IntPtr.Zero) CloseHandle(stdoutRead);
+            if (stdoutWrite != IntPtr.Zero) CloseHandle(stdoutWrite);
+            if (stderrRead != IntPtr.Zero) CloseHandle(stderrRead);
+            if (stderrWrite != IntPtr.Zero) CloseHandle(stderrWrite);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string BuildCommandLine(string fileName, IReadOnlyList<string> args)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append('"').Append(fileName).Append('"');
+        foreach (var arg in args)
+        {
+            sb.Append(' ');
+            if (arg.Contains(' ') || arg.Contains('"'))
+            {
+                sb.Append('"').Append(arg.Replace("\"", "\\\"")).Append('"');
+            }
+            else
+            {
+                sb.Append(arg);
+            }
+        }
+        return sb.ToString();
     }
 
     [SupportedOSPlatform("windows")]
@@ -621,7 +764,9 @@ public static class TtyHostSpawner
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
     private const uint CREATE_NO_WINDOW = 0x08000000;
     private const int STARTF_USESHOWWINDOW = 0x00000001;
+    private const int STARTF_USESTDHANDLES = 0x00000100;
     private const short SW_HIDE = 0;
+    private const uint HANDLE_FLAG_INHERIT = 0x00000001;
 
     [DllImport("kernel32.dll")]
     private static extern uint WTSGetActiveConsoleSessionId();
@@ -710,6 +855,24 @@ public static class TtyHostSpawner
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CreatePipe(
+        out IntPtr hReadPipe,
+        out IntPtr hWritePipe,
+        ref SECURITY_ATTRIBUTES lpPipeAttributes,
+        uint nSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetHandleInformation(IntPtr hObject, uint dwMask, uint dwFlags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SECURITY_ATTRIBUTES
+    {
+        public int nLength;
+        public IntPtr lpSecurityDescriptor;
+        public bool bInheritHandle;
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFO

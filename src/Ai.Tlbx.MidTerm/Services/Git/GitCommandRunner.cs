@@ -8,6 +8,42 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 internal static class GitCommandRunner
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
+    private static string? _runAsUser;
+    private static bool _isServiceMode;
+
+    internal static void Configure(string? runAsUser, bool isServiceMode)
+    {
+        _runAsUser = runAsUser;
+        _isServiceMode = isServiceMode;
+    }
+
+    private static readonly object _logLock = new();
+    private static (string Args, string WorkingDir, int ExitCode, string Stdout, string Stderr, DateTime Timestamp)? _lastCommand;
+
+    internal static GitCommandLog? GetLastCommandLog()
+    {
+        lock (_logLock)
+        {
+            if (_lastCommand is not var (args, dir, exit, stdout, stderr, ts)) return null;
+            return new GitCommandLog
+            {
+                Args = args,
+                WorkingDir = dir,
+                ExitCode = exit,
+                Stdout = stdout.Length > 500 ? stdout[..500] + "..." : stdout,
+                Stderr = stderr.Length > 500 ? stderr[..500] + "..." : stderr,
+                Timestamp = ts.ToString("O")
+            };
+        }
+    }
+
+    private static void RecordCommand(string workingDir, string[] args, int exitCode, string stdout, string stderr)
+    {
+        lock (_logLock)
+        {
+            _lastCommand = ($"git {string.Join(' ', args)}", workingDir, exitCode, stdout, stderr, DateTime.UtcNow);
+        }
+    }
 
     internal static async Task<string?> GetGitVersionAsync()
     {
@@ -137,6 +173,44 @@ internal static class GitCommandRunner
         return string.IsNullOrEmpty(trimmed) ? 0 : trimmed.Split('\n').Length;
     }
 
+    internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
+    {
+        var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);
+
+        var unstagedTask = RunGitAsync(repoRoot, "diff", "--numstat");
+        var stagedTask = RunGitAsync(repoRoot, "diff", "--cached", "--numstat");
+
+        await Task.WhenAll(unstagedTask, stagedTask);
+
+        ParseNumStat(result, (await unstagedTask).Stdout);
+        ParseNumStat(result, (await stagedTask).Stdout);
+
+        return result;
+    }
+
+    private static void ParseNumStat(Dictionary<string, (int Additions, int Deletions)> result, string output)
+    {
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('\t');
+            if (parts.Length < 3) continue;
+            if (parts[0] == "-" || parts[1] == "-") continue;
+
+            if (!int.TryParse(parts[0], out var additions)) continue;
+            if (!int.TryParse(parts[1], out var deletions)) continue;
+
+            var path = parts[2];
+            if (result.TryGetValue(path, out var existing))
+            {
+                result[path] = (existing.Additions + additions, existing.Deletions + deletions);
+            }
+            else
+            {
+                result[path] = (additions, deletions);
+            }
+        }
+    }
+
     internal static async Task<string> GetDiffAsync(string repoRoot, string path, bool staged)
     {
         var args = staged
@@ -225,6 +299,36 @@ internal static class GitCommandRunner
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
     {
+        using var cts = new CancellationTokenSource(CommandTimeout);
+
+        try
+        {
+#if WINDOWS
+            if (_isServiceMode && OperatingSystem.IsWindows())
+            {
+                var result = await TtyHostSpawner.RunCommandAsUserAsync("git", args, workingDir, _runAsUser, cts.Token);
+                RecordCommand(workingDir, args, result.ExitCode, result.Stdout, result.Stderr);
+                return result;
+            }
+#endif
+
+            return await RunGitDirectAsync(workingDir, args, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Warn(() => $"[Git] Command timed out: git {string.Join(' ', args)}");
+            return (-1, "", "Command timed out");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(() => $"[Git] Command failed: {ex.Message}");
+            return (-1, "", ex.Message);
+        }
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitDirectAsync(
+        string workingDir, string[] args, CancellationToken ct)
+    {
         var psi = new ProcessStartInfo
         {
             FileName = "git",
@@ -242,36 +346,22 @@ internal static class GitCommandRunner
             psi.ArgumentList.Add(arg);
         }
 
-        using var cts = new CancellationTokenSource(CommandTimeout);
-
-        try
+        using var process = Process.Start(psi);
+        if (process is null)
         {
-            using var process = Process.Start(psi);
-            if (process is null)
-            {
-                Log.Error(() => "[Git] Failed to start git process");
-                return (-1, "", "Failed to start git process");
-            }
-
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
-            var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
-
-            await process.WaitForExitAsync(cts.Token);
-
-            var stdout = await stdoutTask;
-            var stderr = await stderrTask;
-
-            return (process.ExitCode, stdout, stderr);
+            Log.Error(() => "[Git] Failed to start git process");
+            return (-1, "", "Failed to start git process");
         }
-        catch (OperationCanceledException)
-        {
-            Log.Warn(() => $"[Git] Command timed out: git {string.Join(' ', args)}");
-            return (-1, "", "Command timed out");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(() => $"[Git] Command failed: {ex.Message}");
-            return (-1, "", ex.Message);
-        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+
+        await process.WaitForExitAsync(ct);
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        RecordCommand(workingDir, args, process.ExitCode, stdout, stderr);
+        return (process.ExitCode, stdout, stderr);
     }
 }

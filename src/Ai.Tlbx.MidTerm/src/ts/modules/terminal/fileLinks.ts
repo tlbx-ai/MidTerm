@@ -36,6 +36,7 @@ import { LinkProvider } from 'xterm-link-provider';
 import type { FilePathInfo, FileCheckResponse, FileResolveResponse } from '../../types';
 import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
+import { t } from '../i18n';
 import { $activeSessionId, $currentSettings } from '../../stores';
 import {
   UNIX_PATH_PATTERN,
@@ -130,7 +131,7 @@ function showFileNotFoundToast(path: string): void {
 
   const toast = document.createElement('div');
   toast.className = 'drop-toast error';
-  toast.textContent = `File not found: ${path}`;
+  toast.textContent = `${t('fileLinks.notFound')}: ${path}`;
   document.body.appendChild(toast);
 
   setTimeout(() => {

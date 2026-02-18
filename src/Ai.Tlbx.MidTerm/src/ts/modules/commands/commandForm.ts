@@ -6,6 +6,7 @@
  */
 
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 import type { ScriptDefinition } from './commandsApi';
 
 export interface ScriptFormData {
@@ -40,17 +41,17 @@ export function createCommandForm(
   container.innerHTML = `
     <div class="command-form">
       <div class="command-form-name-row">
-        <input class="command-form-name" type="text" placeholder="Script name"
+        <input class="command-form-name" type="text" placeholder="${t('commands.scriptName')}"
           value="${existing ? escapeHtml(existing.name) : ''}" ${isEdit ? 'readonly' : ''} />
         <select class="command-form-ext" ${isEdit ? 'disabled' : ''}>
           ${extensionOptions}
         </select>
       </div>
-      <textarea class="command-form-commands" placeholder="Script content..."
+      <textarea class="command-form-commands" placeholder="${t('commands.scriptContent')}"
         rows="8">${existing ? escapeHtml(existing.content) : ''}</textarea>
       <div class="command-form-actions">
-        <button class="command-form-save">${isEdit ? 'Update' : 'Create'}</button>
-        <button class="command-form-cancel">Cancel</button>
+        <button class="command-form-save">${isEdit ? t('commands.update') : t('commands.create')}</button>
+        <button class="command-form-cancel">${t('commands.cancel')}</button>
       </div>
     </div>`;
 

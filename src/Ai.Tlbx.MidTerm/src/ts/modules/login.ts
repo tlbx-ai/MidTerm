@@ -94,8 +94,10 @@ async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
 
     const validFromEl = document.getElementById('cert-valid-from');
     const validUntilEl = document.getElementById('cert-valid-until');
-    if (validFromEl) validFromEl.textContent = 'From: ' + formatDate(data.certificate.notBefore);
-    if (validUntilEl) validUntilEl.textContent = 'Until: ' + formatDate(data.certificate.notAfter);
+    if (validFromEl)
+      validFromEl.textContent = t('auth.certFrom') + ': ' + formatDate(data.certificate.notBefore);
+    if (validUntilEl)
+      validUntilEl.textContent = t('auth.certUntil') + ': ' + formatDate(data.certificate.notAfter);
 
     certInfoDiv.classList.remove('hidden');
   } catch {

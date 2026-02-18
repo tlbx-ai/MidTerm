@@ -40,6 +40,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public event Action<string>? OnSessionClosed;
     public event Action<string, int>? OnSessionCreated;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
+    public event Action<string, string>? OnCwdChanged;
 
     public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
     {
@@ -725,6 +726,115 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
     {
         OnOutput?.Invoke(sessionId, cols, rows, data);
+        ScanForOscSequences(sessionId, data.Span);
+    }
+
+    /// <summary>
+    /// Scan terminal output for OSC sequences we care about:
+    /// - OSC 0/2: Window title (ESC ] 0 ; title BEL)
+    /// - OSC 7: CWD reporting (ESC ] 7 ; file://host/path BEL)
+    /// </summary>
+    private static ReadOnlySpan<byte> EscOsc => [0x1B, 0x5D];
+
+    private void ScanForOscSequences(string sessionId, ReadOnlySpan<byte> data)
+    {
+        // Quick check: does the data contain ESC ] at all?
+        if (data.IndexOf(EscOsc) < 0) return;
+
+        var pos = 0;
+        var changed = false;
+
+        while (pos < data.Length - 2)
+        {
+            // Find next ESC ]
+            var idx = data[pos..].IndexOf(EscOsc);
+            if (idx < 0) break;
+            idx += pos;
+
+            // Read the OSC number and semicolon
+            var numStart = idx + 2;
+            if (numStart >= data.Length) break;
+
+            // Parse single-digit OSC number followed by ;
+            var oscNum = -1;
+            var payloadStart = -1;
+            if (numStart + 1 < data.Length && data[numStart] >= (byte)'0' && data[numStart] <= (byte)'9' && data[numStart + 1] == (byte)';')
+            {
+                oscNum = data[numStart] - '0';
+                payloadStart = numStart + 2;
+            }
+
+            if (oscNum < 0 || payloadStart >= data.Length)
+            {
+                pos = numStart;
+                continue;
+            }
+
+            // Find terminator: BEL (0x07) or ST (ESC \ = 0x1B 0x5C)
+            var end = -1;
+            for (var i = payloadStart; i < data.Length; i++)
+            {
+                if (data[i] == 0x07) { end = i; break; }
+                if (data[i] == 0x1B && i + 1 < data.Length && data[i + 1] == 0x5C) { end = i; break; }
+            }
+            if (end <= payloadStart)
+            {
+                pos = payloadStart;
+                continue;
+            }
+
+            var payload = System.Text.Encoding.UTF8.GetString(data[payloadStart..end]);
+
+            switch (oscNum)
+            {
+                case 0:
+                case 2:
+                    changed |= HandleOscTitle(sessionId, payload);
+                    break;
+                case 7:
+                    changed |= HandleOscCwdUpdate(sessionId, payload);
+                    break;
+            }
+
+            pos = end + 1;
+        }
+
+        if (changed)
+        {
+            NotifyStateChange();
+        }
+    }
+
+    private bool HandleOscTitle(string sessionId, string title)
+    {
+        if (!_sessionCache.TryGetValue(sessionId, out var info)) return false;
+        var trimmed = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        if (string.Equals(info.TerminalTitle, trimmed, StringComparison.Ordinal)) return false;
+        info.TerminalTitle = trimmed;
+        return true;
+    }
+
+    private bool HandleOscCwdUpdate(string sessionId, string payload)
+    {
+        if (!_sessionCache.TryGetValue(sessionId, out var info)) return false;
+
+        if (!payload.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return false;
+        var pathStart = payload.IndexOf('/', 7);
+        if (pathStart < 0) return false;
+
+        var path = Uri.UnescapeDataString(payload[pathStart..]);
+
+        // Windows: /C:/foo → C:\foo
+        if (path.Length >= 3 && path[0] == '/' && char.IsLetter(path[1]) && path[2] == ':')
+        {
+            path = path[1..].Replace('/', '\\');
+        }
+
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (string.Equals(info.CurrentDirectory, path, StringComparison.OrdinalIgnoreCase)) return false;
+        info.CurrentDirectory = path;
+        OnCwdChanged?.Invoke(sessionId, path);
+        return true;
     }
 
     private void HandleClientForegroundChanged(string sessionId, ForegroundChangePayload payload)
@@ -734,7 +844,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             info.ForegroundPid = payload.Pid;
             info.ForegroundName = payload.Name;
             info.ForegroundCommandLine = payload.CommandLine;
-            info.CurrentDirectory = payload.Cwd;
+            if (!string.IsNullOrEmpty(payload.Cwd))
+            {
+                info.CurrentDirectory = payload.Cwd;
+            }
         }
 
         if (_tmuxCreatedSessions.ContainsKey(sessionId))
@@ -755,6 +868,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         OnForegroundChanged?.Invoke(sessionId, payload);
+        NotifyStateChange();
     }
 
     private async Task HandleClientStateChangedAsync(string sessionId)

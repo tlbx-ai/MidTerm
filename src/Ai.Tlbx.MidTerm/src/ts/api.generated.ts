@@ -1858,6 +1858,7 @@ export interface components {
       ideMode: boolean;
       managerBarEnabled: boolean;
       showChangelogAfterUpdate: boolean;
+      showUpdateNotification: boolean;
       language: components['schemas']['LanguageSetting'];
       managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;

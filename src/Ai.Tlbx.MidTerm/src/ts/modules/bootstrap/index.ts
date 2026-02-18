@@ -30,6 +30,7 @@ import { checkVoiceServerHealth } from '../voice';
 import { consumePendingChangelogFlag } from '../updating/checker';
 import { showChangelog } from '../updating/changelog';
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 
 const log = createLogger('bootstrap');
 
@@ -105,7 +106,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
 
     // Handle update result if present
     if (data.updateResult?.found) {
-      handleUpdateResult(data.updateResult);
+      handleUpdateResult(data.updateResult, data.version);
     }
 
     // Check system health (TtyHost compatibility)
@@ -208,7 +209,8 @@ function populateShellDropdown(shells: ShellInfoDto[], defaultShell: string): vo
   shells.forEach((shell) => {
     const option = document.createElement('option');
     option.value = shell.type;
-    option.textContent = shell.displayName + (shell.isAvailable ? '' : ' (not found)');
+    option.textContent =
+      shell.displayName + (shell.isAvailable ? '' : ' ' + t('settings.options.shellNotFound'));
     option.disabled = !shell.isAvailable;
     if (shell.type === defaultShell) {
       option.selected = true;
@@ -220,11 +222,11 @@ function populateShellDropdown(shells: ShellInfoDto[], defaultShell: string): vo
 /**
  * Handle update result from previous update
  */
-function handleUpdateResult(result: UpdateResult): void {
+function handleUpdateResult(result: UpdateResult, version: string): void {
   const status = result.success ? 'success' : 'failed';
   log.info(() => `Update result: ${status} - ${result.message || 'no error'}`);
 
-  if (result.success && consumePendingChangelogFlag()) {
+  if (result.success && consumePendingChangelogFlag(version)) {
     showChangelog();
   }
 }

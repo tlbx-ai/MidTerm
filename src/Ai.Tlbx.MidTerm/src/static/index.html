@@ -40,18 +40,19 @@
                 </div>
                 <div class="sidebar-header-buttons">
                     <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" data-i18n-title="sidebar.hide" title="Hide sidebar"><span class="icon">&#xe913;</span></button>
-                    <button class="sidebar-btn" id="btn-main-browser" data-i18n-title="sidebar.followingBrowser" title="Following browser (scale only)"><span class="icon">&#xe989;</span></button>
+                    <button class="sidebar-btn" id="btn-main-browser" data-i18n-title="sidebar.claimMainBrowser" title="Become the leading browser — terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead."><span class="icon">&#xe989;</span></button>
                 </div>
             </div>
             <div class="sidebar-nav">
                 <button class="sidebar-nav-btn" id="btn-new-session"><span class="icon">&#xea81;</span><span data-i18n="sidebar.newTerminal">New Terminal</span></button>
+                <button class="sidebar-nav-btn btn-history" id="btn-history"><span class="icon">&#x2606;</span><span data-i18n="sidebar.loadBookmarked">Bookmarks</span></button>
                 <button class="sidebar-nav-btn" id="btn-settings"><span class="icon">&#xe991;</span><span data-i18n="sidebar.settings">Settings</span></button>
-                <button class="sidebar-nav-btn btn-history" id="btn-history"><span class="icon">&#xe997;</span><span data-i18n="sidebar.loadBookmarked">Load bookmarked terminal</span></button>
             </div>
             <div class="sidebar-section-label" data-i18n="sidebar.terminals">Terminals</div>
             <div class="session-list" id="session-list"></div>
             <div class="sidebar-footer">
                 <div id="update-panel" class="update-panel hidden">
+                    <button id="update-dismiss-btn" class="update-dismiss-btn" data-i18n-title="sidebar.updateDismiss" title="Dismiss">&times;</button>
                     <div class="update-header" data-i18n="sidebar.updateAvailable">Update Available</div>
                     <div class="update-versions">
                         <span class="update-current"></span>
@@ -126,6 +127,7 @@
                     <span class="footer-traffic" id="ws-traffic" title="WebSocket throughput">0 B/s</span>
                     <span class="footer-separator">&mdash;</span>
                     <span class="version" id="app-version" title="Assembly version"></span>
+                    <span id="footer-update-hint" class="footer-update-hint hidden">&mdash; <a id="footer-update-link" data-i18n="sidebar.footerUpdateAvailable">Update available</a></span>
                 </div>
             </div>
         </aside>
@@ -243,6 +245,10 @@
                                     <div id="update-status-none" class="update-status-none hidden" data-i18n="settings.general.latestVersion">You are running the latest version</div>
                                     <div id="update-cards" class="update-cards"></div>
                                     <div id="update-result" class="update-result hidden"></div>
+                                    <div class="setting-row">
+                                        <label for="setting-show-update-notification" data-i18n="settings.general.showUpdateNotification">Show updates prominently in sidebar</label>
+                                        <input type="checkbox" id="setting-show-update-notification" checked />
+                                    </div>
                                     <div id="reinstall-hint" class="reinstall-hint hidden"></div>
                                 </div>
 
@@ -356,6 +362,15 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
+                                        <label for="setting-theme" data-i18n="settings.appearance.theme">Theme</label>
+                                        <select id="setting-theme">
+                                            <option value="dark" data-i18n="settings.options.themeDark">Dark</option>
+                                            <option value="light" data-i18n="settings.options.themeLight">Light</option>
+                                            <option value="solarizedDark" data-i18n="settings.options.themeSolarizedDark">Solarized Dark</option>
+                                            <option value="solarizedLight" data-i18n="settings.options.themeSolarizedLight">Solarized Light</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
                                         <label for="setting-font-size" data-i18n="settings.appearance.fontSize">Font Size</label>
                                         <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
                                             <input type="number" id="setting-font-size" min="8" max="24" value="14" />
@@ -373,9 +388,9 @@
                                     <div class="setting-row">
                                         <label for="setting-cursor-style" data-i18n="settings.appearance.cursorStyle">Cursor Style</label>
                                         <select id="setting-cursor-style">
-                                            <option value="bar">Bar</option>
-                                            <option value="block">Block</option>
-                                            <option value="underline">Underline</option>
+                                            <option value="bar" data-i18n="settings.options.cursorBar">Bar</option>
+                                            <option value="block" data-i18n="settings.options.cursorBlock">Block</option>
+                                            <option value="underline" data-i18n="settings.options.cursorUnderline">Underline</option>
                                         </select>
                                     </div>
                                     <div class="setting-row">
@@ -385,47 +400,38 @@
                                     <div class="setting-row">
                                         <label for="setting-cursor-inactive" data-i18n="settings.appearance.cursorUnfocused">Cursor (Unfocused)</label>
                                         <select id="setting-cursor-inactive">
-                                            <option value="outline">Outline</option>
-                                            <option value="block">Block</option>
-                                            <option value="bar">Bar</option>
-                                            <option value="underline">Underline</option>
-                                            <option value="none">Hidden</option>
-                                        </select>
-                                    </div>
-                                    <div class="setting-row">
-                                        <label for="setting-theme" data-i18n="settings.appearance.theme">Theme</label>
-                                        <select id="setting-theme">
-                                            <option value="dark">Dark</option>
-                                            <option value="light">Light</option>
-                                            <option value="solarizedDark">Solarized Dark</option>
-                                            <option value="solarizedLight">Solarized Light</option>
+                                            <option value="outline" data-i18n="settings.options.cursorOutline">Outline</option>
+                                            <option value="block" data-i18n="settings.options.cursorBlock">Block</option>
+                                            <option value="bar" data-i18n="settings.options.cursorBar">Bar</option>
+                                            <option value="underline" data-i18n="settings.options.cursorUnderline">Underline</option>
+                                            <option value="none" data-i18n="settings.options.cursorHidden">Hidden</option>
                                         </select>
                                     </div>
                                     <div class="setting-row">
                                         <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle">Browser Tab Title</label>
                                         <select id="setting-tab-title">
-                                            <option value="hostname">Hostname</option>
-                                            <option value="static">Just MidTerm</option>
-                                            <option value="sessionName">Session Name</option>
-                                            <option value="terminalTitle">Terminal Title</option>
-                                            <option value="foregroundProcess">Foreground Process</option>
+                                            <option value="hostname" data-i18n="settings.options.tabHostname">Hostname</option>
+                                            <option value="static" data-i18n="settings.options.tabStatic">Just MidTerm</option>
+                                            <option value="sessionName" data-i18n="settings.options.tabSessionName">Session Name</option>
+                                            <option value="terminalTitle" data-i18n="settings.options.tabTerminalTitle">Terminal Title</option>
+                                            <option value="foregroundProcess" data-i18n="settings.options.tabForegroundProcess">Foreground Process</option>
                                         </select>
                                     </div>
                                     <div class="setting-row">
                                         <label for="setting-contrast" data-i18n="settings.appearance.minimumContrast">Minimum Contrast</label>
                                         <select id="setting-contrast">
-                                            <option value="1">Off</option>
-                                            <option value="4.5">WCAG AA (4.5:1)</option>
-                                            <option value="7">WCAG AAA (7:1)</option>
-                                            <option value="21">Maximum (21:1)</option>
+                                            <option value="1" data-i18n="settings.options.contrastOff">Off</option>
+                                            <option value="4.5" data-i18n="settings.options.contrastAA">WCAG AA (4.5:1)</option>
+                                            <option value="7" data-i18n="settings.options.contrastAAA">WCAG AAA (7:1)</option>
+                                            <option value="21" data-i18n="settings.options.contrastMax">Maximum (21:1)</option>
                                         </select>
                                     </div>
                                     <div class="setting-row">
                                         <label for="setting-scrollbar-style" data-i18n="settings.appearance.terminalScrollbar">Terminal Scrollbar</label>
                                         <select id="setting-scrollbar-style">
-                                            <option value="off">Off</option>
-                                            <option value="hover">Hover</option>
-                                            <option value="always">Always</option>
+                                            <option value="off" data-i18n="settings.options.scrollbarOff">Off</option>
+                                            <option value="hover" data-i18n="settings.options.scrollbarHover">Hover</option>
+                                            <option value="always" data-i18n="settings.options.scrollbarAlways">Always</option>
                                         </select>
                                     </div>
                                 </div>
@@ -468,10 +474,10 @@
                                     <div class="setting-row">
                                         <label for="setting-bell-style" data-i18n="settings.behavior.bellStyle">Bell Style</label>
                                         <select id="setting-bell-style">
-                                            <option value="notification">Desktop Notification</option>
-                                            <option value="sound">Sound</option>
-                                            <option value="visual">Visual Flash</option>
-                                            <option value="off">Off</option>
+                                            <option value="notification" data-i18n="settings.options.bellNotification">Desktop Notification</option>
+                                            <option value="sound" data-i18n="settings.options.bellSound">Sound</option>
+                                            <option value="visual" data-i18n="settings.options.bellVisual">Visual Flash</option>
+                                            <option value="off" data-i18n="settings.options.bellOff">Off</option>
                                         </select>
                                     </div>
                                     <div class="setting-row">
@@ -485,9 +491,9 @@
                                     <div class="setting-row">
                                         <label for="setting-clipboard-shortcuts" data-i18n="settings.behavior.clipboardShortcuts">Copy/Paste Shortcuts</label>
                                         <select id="setting-clipboard-shortcuts">
-                                            <option value="auto">Auto (detect platform)</option>
-                                            <option value="windows">Windows (Ctrl+C/V)</option>
-                                            <option value="unix">Unix (Ctrl+Shift+C/V)</option>
+                                            <option value="auto" data-i18n="settings.options.clipboardAuto">Auto (detect platform)</option>
+                                            <option value="windows" data-i18n="settings.options.clipboardWindows">Windows (Ctrl+C/V)</option>
+                                            <option value="unix" data-i18n="settings.options.clipboardUnix">Unix (Ctrl+Shift+C/V)</option>
                                         </select>
                                     </div>
                                     <div class="setting-row">
@@ -640,6 +646,13 @@
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
+                                    <div class="setting-row">
+                                        <label for="diag-git-overlay-toggle">Show git debug overlay</label>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="diag-git-overlay-toggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
 
                                 <!-- Paths -->
@@ -697,7 +710,6 @@
             <div id="manager-bar" class="manager-bar">
                 <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
                 <button class="manager-bar-add" id="manager-bar-add" data-i18n-title="managerBar.addButton" title="Add button">+</button>
-                <button class="manager-bar-help" data-i18n-title="managerBar.disableHint" title="Disable in Settings → Behavior">?</button>
             </div>
 
             <!-- File Viewer Dock Panel -->
@@ -731,12 +743,6 @@
             <!-- Git Dock Panel -->
             <aside id="git-dock" class="git-dock hidden">
                 <div class="git-dock-resize-grip"></div>
-                <div class="git-dock-header">
-                    <span class="git-dock-title" data-i18n="git.title">Git</span>
-                    <div class="git-dock-actions">
-                        <button class="btn-icon" id="git-dock-close" title="Close">&times;</button>
-                    </div>
-                </div>
                 <div class="git-dock-body"></div>
             </aside>
 

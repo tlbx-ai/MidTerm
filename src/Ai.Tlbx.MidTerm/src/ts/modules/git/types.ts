@@ -15,12 +15,16 @@ export interface GitStatusResponse {
   recentCommits: GitLogEntry[];
   stashCount: number;
   repoRoot: string;
+  totalAdditions: number;
+  totalDeletions: number;
 }
 
 export interface GitFileEntry {
   path: string;
   status: string;
   originalPath?: string;
+  additions: number;
+  deletions: number;
 }
 
 export interface GitLogEntry {

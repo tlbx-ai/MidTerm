@@ -136,7 +136,6 @@ public sealed class StateWebSocketHandler
         }
 
         var connectionToken = new object();
-        var clientId = context.Request.Query["clientId"].FirstOrDefault();
 
         async Task SendMainBrowserStatusAsync()
         {
@@ -192,7 +191,7 @@ public sealed class StateWebSocketHandler
             lastUpdate = _updateService.LatestUpdate;
             await SendStateAsync();
             _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
-            _mainBrowserService.Register(connectionToken, clientId);
+            _mainBrowserService.Register(connectionToken);
             await SendMainBrowserStatusAsync();
 
             var buffer = new byte[8192];

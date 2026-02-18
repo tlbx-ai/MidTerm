@@ -60,13 +60,6 @@ export function handleForegroundChange(sessionId: string, payload: ForegroundCha
 }
 
 /**
- * Clear process state for a session.
- */
-export function clearProcessState(sessionId: string): void {
-  processStates.delete(sessionId);
-}
-
-/**
  * Initialize process state from session data (e.g., on reconnect).
  * Only updates if the session has foreground process info.
  */
@@ -110,6 +103,17 @@ export function getForegroundInfo(sessionId: string): {
     commandLine: state?.foregroundCommandLine ?? null,
     cwd: state?.foregroundCwd ?? null,
   };
+}
+
+/**
+ * Handle OSC-7 CWD update from shell prompt.
+ */
+export function handleOsc7Cwd(sessionId: string, cwd: string): void {
+  const state = getProcessState(sessionId);
+  if (state.foregroundCwd === cwd) return;
+  state.foregroundCwd = cwd;
+  notifyStateChange(sessionId, state);
+  log.verbose(() => `OSC-7 CWD: ${cwd}`);
 }
 
 function notifyStateChange(sessionId: string, state: ProcessState): void {

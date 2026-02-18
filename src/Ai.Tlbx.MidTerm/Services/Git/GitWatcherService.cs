@@ -28,12 +28,30 @@ public sealed class GitWatcherService : IDisposable
 
     public async Task RegisterSessionAsync(string sessionId, string? workingDir)
     {
-        if (string.IsNullOrEmpty(workingDir)) return;
+        if (string.IsNullOrEmpty(workingDir))
+        {
+            Log.Verbose(() => $"[Git] RegisterSession({sessionId}): workingDir is null/empty");
+            return;
+        }
+
+        Log.Verbose(() => $"[Git] RegisterSession({sessionId}): cwd={workingDir}");
 
         var repoRoot = await GitCommandRunner.GetRepoRootAsync(workingDir);
-        if (repoRoot is null) return;
+        if (repoRoot is null)
+        {
+            Log.Verbose(() => $"[Git] RegisterSession({sessionId}): not a git repo at {workingDir}");
+            return;
+        }
 
         repoRoot = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
+        Log.Verbose(() => $"[Git] RegisterSession({sessionId}): repoRoot={repoRoot}");
+
+        if (_sessionToRepo.TryGetValue(sessionId, out var existing)
+            && string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            Log.Verbose(() => $"[Git] RegisterSession({sessionId}): already registered for {repoRoot}");
+            return;
+        }
 
         UnregisterSession(sessionId);
 
@@ -42,6 +60,7 @@ public sealed class GitWatcherService : IDisposable
         Interlocked.Increment(ref watcher.RefCount);
 
         await RefreshStatusAsync(repoRoot);
+        Log.Verbose(() => $"[Git] RegisterSession({sessionId}): refresh complete, cached={_watchers.TryGetValue(repoRoot, out var w) && w.CachedStatus is not null}");
     }
 
     public void UnregisterSession(string sessionId)
@@ -77,12 +96,16 @@ public sealed class GitWatcherService : IDisposable
             var statusTask = GitCommandRunner.GetStatusAsync(repoRoot);
             var logTask = GitCommandRunner.GetLogAsync(repoRoot);
             var stashTask = GitCommandRunner.GetStashCountAsync(repoRoot);
+            var numStatTask = GitCommandRunner.GetNumStatAsync(repoRoot);
 
-            await Task.WhenAll(statusTask, logTask, stashTask);
+            await Task.WhenAll(statusTask, logTask, stashTask, numStatTask);
 
             var status = await statusTask;
             status.RecentCommits = await logTask;
             status.StashCount = await stashTask;
+
+            var numStat = await numStatTask;
+            MergeNumStat(status, numStat);
 
             if (_watchers.TryGetValue(repoRoot, out var watcher))
             {
@@ -95,6 +118,32 @@ public sealed class GitWatcherService : IDisposable
         {
             Log.Error(() => $"[Git] RefreshStatus failed for {repoRoot}: {ex.Message}");
         }
+    }
+
+    private static void MergeNumStat(GitStatusResponse status, Dictionary<string, (int Additions, int Deletions)> numStat)
+    {
+        var totalAdd = 0;
+        var totalDel = 0;
+
+        void ApplyToEntries(GitFileEntry[] entries)
+        {
+            foreach (var entry in entries)
+            {
+                if (numStat.TryGetValue(entry.Path, out var stats))
+                {
+                    entry.Additions = stats.Additions;
+                    entry.Deletions = stats.Deletions;
+                    totalAdd += stats.Additions;
+                    totalDel += stats.Deletions;
+                }
+            }
+        }
+
+        ApplyToEntries(status.Staged);
+        ApplyToEntries(status.Modified);
+
+        status.TotalAdditions = totalAdd;
+        status.TotalDeletions = totalDel;
     }
 
     private RepoWatcher CreateWatcher(string repoRoot)
