@@ -129,10 +129,11 @@ function dockViewer(): void {
   renderInDock(path);
 
   // Trigger terminal resize
-  const handler = $isMainBrowser.get()
-    ? autoResizeAllTerminalsImmediate
-    : rescaleAllTerminalsImmediate;
-  requestAnimationFrame(handler);
+  if ($isMainBrowser.get()) {
+    autoResizeAllTerminalsImmediate();
+  } else {
+    requestAnimationFrame(rescaleAllTerminalsImmediate);
+  }
 }
 
 function closeDock(): void {
@@ -150,10 +151,11 @@ function closeDock(): void {
   currentSessionId = null;
 
   // Trigger terminal resize
-  const handler = $isMainBrowser.get()
-    ? autoResizeAllTerminalsImmediate
-    : rescaleAllTerminalsImmediate;
-  requestAnimationFrame(handler);
+  if ($isMainBrowser.get()) {
+    autoResizeAllTerminalsImmediate();
+  } else {
+    requestAnimationFrame(rescaleAllTerminalsImmediate);
+  }
 }
 
 function undockViewer(): void {

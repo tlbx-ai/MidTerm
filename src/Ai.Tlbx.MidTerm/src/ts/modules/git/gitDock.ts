@@ -23,10 +23,11 @@ import { createLogger } from '../logging';
 const log = createLogger('gitDock');
 
 function handleDockLayoutChange(): void {
-  const handler = $isMainBrowser.get()
-    ? autoResizeAllTerminalsImmediate
-    : rescaleAllTerminalsImmediate;
-  requestAnimationFrame(handler);
+  if ($isMainBrowser.get()) {
+    autoResizeAllTerminalsImmediate();
+  } else {
+    requestAnimationFrame(rescaleAllTerminalsImmediate);
+  }
 }
 
 const DOCK_MIN_WIDTH = 250;
