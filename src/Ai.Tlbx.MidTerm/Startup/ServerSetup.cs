@@ -7,6 +7,9 @@ using Ai.Tlbx.MidTerm.Settings;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 
+using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.StaticFiles;
+using Ai.Tlbx.MidTerm.Services.Certificates;
 namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class ServerSetup

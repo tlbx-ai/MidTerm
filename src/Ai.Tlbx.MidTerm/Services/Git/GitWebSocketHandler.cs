@@ -5,6 +5,8 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Settings;
 
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Services.WebSockets;
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
 public sealed class GitWebSocketHandler

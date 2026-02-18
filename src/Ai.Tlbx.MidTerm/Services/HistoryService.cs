@@ -5,6 +5,12 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Settings;
 
+using Ai.Tlbx.MidTerm.Models.Auth;
+using Ai.Tlbx.MidTerm.Models.Certificates;
+using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Models.History;
+using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class HistoryService
@@ -98,7 +104,6 @@ public sealed class HistoryService
             var existing = _history.Entries.FirstOrDefault(e => e.Id == id);
             if (existing is not null)
             {
-                existing.Weight++;
                 existing.LastUsed = DateTime.UtcNow;
             }
             else
@@ -111,7 +116,6 @@ public sealed class HistoryService
                     CommandLine = commandLine,
                     WorkingDirectory = workingDirectory,
                     IsStarred = false,
-                    Weight = 1,
                     LastUsed = DateTime.UtcNow
                 };
                 _history.Entries.Add(entry);
@@ -129,10 +133,8 @@ public sealed class HistoryService
     {
         lock (_lock)
         {
-            // Starred first, then by weight (descending), then by lastUsed (descending)
             return _history.Entries
                 .OrderByDescending(e => e.IsStarred)
-                .ThenByDescending(e => e.Weight)
                 .ThenByDescending(e => e.LastUsed)
                 .ToList();
         }

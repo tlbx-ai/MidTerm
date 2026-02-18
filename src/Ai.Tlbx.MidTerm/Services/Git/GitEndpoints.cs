@@ -2,6 +2,7 @@ using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Startup;
 
+using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
 public sealed class GitDebugResponse

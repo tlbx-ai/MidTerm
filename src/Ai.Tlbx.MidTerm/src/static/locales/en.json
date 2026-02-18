@@ -157,6 +157,7 @@
   "settings.diagnostics.outputRtt": "Output RTT",
   "settings.diagnostics.typeToMeasure": "type to measure",
   "settings.diagnostics.showOverlay": "Show overlay on terminal",
+  "settings.diagnostics.showGitDebugOverlay": "Show git debug overlay",
   "settings.diagnostics.filePaths": "File Paths",
   "settings.diagnostics.pathSettings": "Settings",
   "settings.diagnostics.pathSecrets": "Secrets",
@@ -325,10 +326,6 @@
   "update.viewUpdateLog": "View Update Log",
   "update.noLogFound": "No update log found",
   "update.copyLog": "Copy Log",
-  "update.refreshBanner": "MidTerm updated to v{version}. Refresh to apply changes.",
-  "update.refreshNow": "Refresh Now",
-  "update.later": "Later",
-
   "badges.overflow": "Output overflow",
   "badges.pasting": "Pasting...",
 

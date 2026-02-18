@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
+using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 
 /// <summary>

@@ -357,40 +357,36 @@ export function fitSessionToScreen(sessionId: string): void {
   cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
   rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
 
-  // Resize terminal and notify server
-  requestAnimationFrame(() => {
-    try {
-      if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
-        state.terminal.resize(cols, rows);
-        sendResize(sessionId, state.terminal.cols, state.terminal.rows);
-      }
-    } catch {
-      // Resize may fail if terminal is disposed
+  // Resize terminal and notify server (synchronous — xterm reflows immediately,
+  // offsetWidth forces layout so scaling check gets accurate measurements)
+  try {
+    if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
+      state.terminal.resize(cols, rows);
+      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
     }
+  } catch {
+    // Resize may fail if terminal is disposed
+  }
 
-    // Defer scaling check to next frame so the browser has laid out the resized terminal
-    requestAnimationFrame(() => {
-      applyTerminalScalingSync(state);
+  applyTerminalScalingSync(state);
 
-      logResizeDiagnostics(
-        'manual-resize',
-        sessionId,
-        dom.terminalsArea!,
-        fontSize,
-        cellWidth,
-        cellHeight,
-        'existing-terminal',
-        cols,
-        rows,
-        state,
-      );
+  logResizeDiagnostics(
+    'manual-resize',
+    sessionId,
+    dom.terminalsArea!,
+    fontSize,
+    cellWidth,
+    cellHeight,
+    'existing-terminal',
+    cols,
+    rows,
+    state,
+  );
 
-      if (wasHidden) {
-        state.container.classList.add('hidden');
-      }
-      focusActiveTerminal();
-    });
-  });
+  if (wasHidden) {
+    state.container.classList.add('hidden');
+  }
+  focusActiveTerminal();
 }
 
 /**

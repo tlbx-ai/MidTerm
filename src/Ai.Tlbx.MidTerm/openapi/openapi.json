@@ -1765,7 +1765,6 @@
           "workingDirectory",
           "isStarred",
           "label",
-          "weight",
           "lastUsed"
         ],
         "type": "object",
@@ -1796,10 +1795,6 @@
               "null",
               "string"
             ]
-          },
-          "weight": {
-            "type": "integer",
-            "format": "int32"
           },
           "lastUsed": {
             "type": "string",

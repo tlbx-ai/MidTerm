@@ -3,6 +3,7 @@ using System.Text;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
+using Ai.Tlbx.MidTerm.Services.Certificates;
 namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class CertificateSetup

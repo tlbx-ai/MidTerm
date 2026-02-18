@@ -3,6 +3,7 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
+using Ai.Tlbx.MidTerm.Services.Updates;
 namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class WelcomeScreen

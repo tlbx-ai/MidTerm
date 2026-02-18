@@ -623,7 +623,7 @@ html, body {
     visibility: hidden;
     transform: translateY(-4px);
     transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
-    max-height: 300px;
+    max-height: max(200px, 60vh);
     overflow-y: auto;
 }
 
@@ -689,12 +689,6 @@ html, body {
     flex: 1;
     font-size: var(--fs-md);
     color: var(--text-primary);
-}
-
-.history-item-meta {
-    font-size: var(--fs-xs);
-    color: var(--text-muted);
-    flex-shrink: 0;
 }
 
 .history-item-delete {
@@ -2215,43 +2209,6 @@ html, body {
     opacity: 1;
 }
 
-/* Version update banner */
-.update-banner {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 10000;
-    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--bg-sidebar) 100%);
-    color: var(--text-on-accent);
-    padding: 10px 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
-    font-size: var(--fs-lg);
-    box-shadow: 0 2px 8px var(--shadow-color);
-}
-
-.update-banner-btn {
-    background: var(--text-on-accent);
-    color: var(--bg-primary);
-    border: none;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-}
-
-.update-banner-dismiss {
-    background: transparent;
-    color: var(--text-on-accent);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    padding: 6px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
 /* Host connection status indicator - prominent banner */
 .host-status {
     position: fixed;
@@ -2737,52 +2694,6 @@ html, body {
     height: 18px;
     accent-color: var(--accent-blue);
     cursor: pointer;
-}
-
-/* Toggle switch */
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 36px;
-    height: 20px;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-}
-
-.toggle-slider {
-    position: absolute;
-    inset: 0;
-    background-color: var(--bg-tertiary);
-    border-radius: 10px;
-    transition: background-color 0.2s;
-}
-
-.toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 14px;
-    height: 14px;
-    left: 3px;
-    bottom: 3px;
-    background-color: var(--text-secondary);
-    border-radius: 50%;
-    transition: transform 0.2s, background-color 0.2s;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-    background-color: var(--accent-blue);
-}
-
-.toggle-switch input:checked + .toggle-slider::before {
-    transform: translateX(16px);
-    background-color: var(--text-primary);
 }
 
 /* Settings hint and info text */
@@ -5217,18 +5128,6 @@ html, body {
 
 /* Chat panel is a flex sibling - main-content shrinks automatically when chat opens */
 
-/* Certificate fingerprint inline display in settings */
-.cert-fingerprint-inline {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    color: var(--accent-green);
-    background-color: var(--bg-primary);
-    padding: 4px 8px;
-    border-radius: 4px;
-    word-break: break-all;
-    max-width: 280px;
-    display: inline-block;
-}
 
 /* ==========================================================================
    Touch Controller Bar (Mobile)

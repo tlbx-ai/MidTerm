@@ -7,6 +7,9 @@ using Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Startup;
 
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.Certificates;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program

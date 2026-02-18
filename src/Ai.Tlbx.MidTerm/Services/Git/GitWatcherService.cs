@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
 
@@ -11,16 +12,19 @@ public sealed class GitWatcherService : IDisposable
 
     private sealed class RepoWatcher : IDisposable
     {
-        public FileSystemWatcher? Watcher { get; set; }
+        public FileSystemWatcher? GitDirWatcher { get; set; }
+        public FileSystemWatcher? WorkTreeWatcher { get; set; }
         public int RefCount;
         public CancellationTokenSource? DebounceCts;
         public GitStatusResponse? CachedStatus;
+        public string? LastFingerprint;
 
         public void Dispose()
         {
             DebounceCts?.Cancel();
             DebounceCts?.Dispose();
-            Watcher?.Dispose();
+            GitDirWatcher?.Dispose();
+            WorkTreeWatcher?.Dispose();
         }
     }
 
@@ -109,7 +113,10 @@ public sealed class GitWatcherService : IDisposable
 
             if (_watchers.TryGetValue(repoRoot, out var watcher))
             {
+                var fingerprint = StatusFingerprint(status);
+                if (watcher.LastFingerprint == fingerprint) return;
                 watcher.CachedStatus = status;
+                watcher.LastFingerprint = fingerprint;
             }
 
             OnStatusChanged?.Invoke(repoRoot, status);
@@ -148,31 +155,63 @@ public sealed class GitWatcherService : IDisposable
 
     private RepoWatcher CreateWatcher(string repoRoot)
     {
+        var watcher = new RepoWatcher();
         var gitDir = Path.Combine(repoRoot, ".git");
-        if (!Directory.Exists(gitDir))
+
+        if (Directory.Exists(gitDir))
         {
-            return new RepoWatcher();
+            var gitFsw = new FileSystemWatcher(gitDir)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName
+            };
+
+            void OnGitChange(object? s, FileSystemEventArgs e)
+            {
+                if (e.Name?.EndsWith(".lock", StringComparison.OrdinalIgnoreCase) == true) return;
+                DebouncedRefresh(repoRoot, watcher);
+            }
+
+            gitFsw.Changed += OnGitChange;
+            gitFsw.Created += OnGitChange;
+            gitFsw.Deleted += OnGitChange;
+            gitFsw.Renamed += (s, e) => OnGitChange(s, e);
+            gitFsw.EnableRaisingEvents = true;
+            watcher.GitDirWatcher = gitFsw;
         }
 
-        var fsw = new FileSystemWatcher(gitDir)
+        try
         {
-            IncludeSubdirectories = true,
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName
-        };
+            var gitDirPrefix = gitDir + Path.DirectorySeparatorChar;
+            var workFsw = new FileSystemWatcher(repoRoot)
+            {
+                IncludeSubdirectories = true,
+                InternalBufferSize = 65536,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite
+            };
 
-        var watcher = new RepoWatcher { Watcher = fsw };
+            void OnWorkTreeChange(object? s, FileSystemEventArgs e)
+            {
+                if (e.FullPath.StartsWith(gitDirPrefix, StringComparison.OrdinalIgnoreCase)) return;
+                DebouncedRefresh(repoRoot, watcher);
+            }
 
-        void OnChange(object? s, FileSystemEventArgs e)
-        {
-            if (e.Name?.EndsWith(".lock", StringComparison.OrdinalIgnoreCase) == true) return;
-            DebouncedRefresh(repoRoot, watcher);
+            workFsw.Changed += OnWorkTreeChange;
+            workFsw.Created += OnWorkTreeChange;
+            workFsw.Deleted += OnWorkTreeChange;
+            workFsw.Renamed += (s, e) => OnWorkTreeChange(s, e);
+            workFsw.Error += (s, e) =>
+            {
+                Log.Warn(() => $"[Git] WorkTree watcher buffer overflow for {repoRoot}");
+                DebouncedRefresh(repoRoot, watcher);
+            };
+            workFsw.EnableRaisingEvents = true;
+            watcher.WorkTreeWatcher = workFsw;
         }
-
-        fsw.Changed += OnChange;
-        fsw.Created += OnChange;
-        fsw.Deleted += OnChange;
-        fsw.Renamed += (s, e) => OnChange(s, e);
-        fsw.EnableRaisingEvents = true;
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"[Git] Failed to watch working tree for {repoRoot}: {ex.Message}");
+        }
 
         return watcher;
     }
@@ -190,6 +229,26 @@ public sealed class GitWatcherService : IDisposable
                 await RefreshStatusAsync(repoRoot);
             }
         }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+    }
+
+    private static string StatusFingerprint(GitStatusResponse s)
+    {
+        var sb = new StringBuilder(256);
+        sb.Append(s.Branch).Append('|');
+        sb.Append(s.Ahead).Append('|').Append(s.Behind).Append('|');
+        sb.Append(s.TotalAdditions).Append('|').Append(s.TotalDeletions).Append('|');
+        sb.Append(s.StashCount);
+        if (s.RecentCommits.Length > 0)
+            sb.Append('|').Append(s.RecentCommits[0].ShortHash);
+        foreach (var f in s.Staged)
+            sb.Append('|').Append(f.Path).Append(':').Append(f.Additions).Append(',').Append(f.Deletions);
+        sb.Append('\x1F');
+        foreach (var f in s.Modified)
+            sb.Append('|').Append(f.Path).Append(':').Append(f.Additions).Append(',').Append(f.Deletions);
+        sb.Append('\x1F');
+        foreach (var f in s.Untracked)
+            sb.Append('|').Append(f.Path);
+        return sb.ToString();
     }
 
     public void Dispose()

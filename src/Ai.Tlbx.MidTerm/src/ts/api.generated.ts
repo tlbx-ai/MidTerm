@@ -1780,8 +1780,6 @@ export interface components {
       workingDirectory: string;
       isStarred: boolean;
       label: null | string;
-      /** Format: int32 */
-      weight: number;
       /** Format: date-time */
       lastUsed: string;
     };
