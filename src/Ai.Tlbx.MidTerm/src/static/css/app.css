@@ -6872,6 +6872,7 @@ body.ide-mode-off .session-tab-bar {
     white-space: nowrap;
 }
 
+.git-diff-overlay-popout,
 .git-diff-overlay-close {
     background: none;
     border: none;
@@ -6884,6 +6885,7 @@ body.ide-mode-off .session-tab-bar {
     flex-shrink: 0;
 }
 
+.git-diff-overlay-popout:hover,
 .git-diff-overlay-close:hover {
     background: var(--bg-hover);
     color: var(--text-primary);

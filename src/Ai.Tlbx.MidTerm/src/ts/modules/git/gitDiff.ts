@@ -97,12 +97,16 @@ export async function openDiffOverlay(
     <div class="git-diff-overlay-header">
       <span class="git-diff-overlay-title" title="${escapeHtml(path)}">${escapeHtml(fileName)}</span>
       <span class="git-diff-overlay-path">${escapeHtml(path)}</span>
+      <button class="git-diff-overlay-popout" title="Open in window">&#x2197;</button>
       <button class="git-diff-overlay-close" title="${t('commands.close')}">&times;</button>
     </div>
     <div class="git-diff-overlay-body">${diffHtml}</div>`;
 
   document.body.appendChild(overlay);
 
+  overlay.querySelector('.git-diff-overlay-popout')?.addEventListener('click', () => {
+    popOutDiff(overlay, fileName, path);
+  });
   overlay.querySelector('.git-diff-overlay-close')?.addEventListener('click', closeDiffOverlay);
 
   setupDrag(overlay, overlay.querySelector('.git-diff-overlay-header') as HTMLElement);
@@ -113,6 +117,51 @@ export async function openDiffOverlay(
   });
 
   activeOverlay = { overlay, path };
+}
+
+function popOutDiff(overlay: HTMLElement, fileName: string, path: string): void {
+  const body = overlay.querySelector('.git-diff-overlay-body');
+  if (!body) return;
+
+  const styles = document.querySelectorAll<HTMLStyleElement | HTMLLinkElement>(
+    'link[rel="stylesheet"], style',
+  );
+  let css = '';
+  for (const s of styles) {
+    if (s instanceof HTMLLinkElement) {
+      css += `<link rel="stylesheet" href="${s.href}">`;
+    } else {
+      css += s.outerHTML;
+    }
+  }
+
+  const themeVars = document.documentElement.style.cssText;
+
+  const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>${escapeHtml(fileName)} — ${escapeHtml(path)}</title>
+${css}
+<style>
+  :root { ${themeVars} }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg-primary); }
+  .popout-body { height: 100%; overflow: auto; }
+</style>
+</head><body>
+<div class="popout-body">${body.innerHTML}</div>
+</body></html>`;
+
+  const popup = window.open(
+    '',
+    '_blank',
+    'width=900,height=700,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes',
+  );
+  if (!popup) return;
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+
+  closeDiffOverlay();
 }
 
 function setupDrag(overlay: HTMLElement, handle: HTMLElement): void {
