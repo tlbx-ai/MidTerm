@@ -54,6 +54,7 @@ export async function initI18n(settingsLanguage?: string): Promise<void> {
 
   applyTranslations();
   applyAttributeTranslations();
+  document.documentElement.lang = currentLocale;
 }
 
 /**
@@ -84,6 +85,7 @@ export async function setLocale(locale: string): Promise<void> {
 
   applyTranslations();
   applyAttributeTranslations();
+  document.documentElement.lang = currentLocale;
 }
 
 /**
