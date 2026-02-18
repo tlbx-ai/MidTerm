@@ -7249,3 +7249,47 @@ body.ide-mode-off .session-tab-bar {
     white-space: pre-wrap;
     word-break: break-all;
 }
+
+/* =============================================================================
+   PWA Window Controls Overlay
+   Active only when installed as PWA and browser title bar is hidden.
+   ============================================================================= */
+
+@media (display-mode: window-controls-overlay) {
+    :root {
+        --wco-inset-right: calc(100% - env(titlebar-area-width) - env(titlebar-area-x));
+    }
+
+    /* --- Drag regions on top bars --- */
+
+    .sidebar-header {
+        -webkit-app-region: drag;
+    }
+
+    .session-tab-bar {
+        -webkit-app-region: drag;
+    }
+
+    .collapsed-title-bar {
+        -webkit-app-region: drag;
+        padding-right: var(--wco-inset-right);
+    }
+
+    /* --- Exempt interactive children from drag --- */
+
+    .sidebar-header-buttons,
+    .sidebar-brand,
+    .session-tab,
+    .session-cwd,
+    .ide-bar-actions,
+    .title-bar-buttons,
+    .title-bar-titles {
+        -webkit-app-region: no-drag;
+    }
+
+    /* --- Right-side ducking for elements near window controls --- */
+
+    .ide-bar-actions {
+        padding-right: var(--wco-inset-right);
+    }
+}
