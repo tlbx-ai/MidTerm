@@ -17,9 +17,14 @@ import {
   MAX_WEBGL_CONTEXTS,
   terminalsWithWebgl,
 } from '../../state';
-import { $activeSessionId, $currentSettings, $windowsBuildNumber } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $isMainBrowser,
+  $windowsBuildNumber,
+} from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
-import { applyTerminalScalingSync } from './scaling';
+import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import {
   setupFileDrop,
   handleClipboardPaste,
@@ -336,7 +341,18 @@ export function createTerminalForSession(
 
       // Double-rAF: let the resize paint before measuring for scaling
       requestAnimationFrame(() => {
-        applyTerminalScalingSync(state);
+        if ($isMainBrowser.get()) {
+          const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+          if (layoutPane) {
+            fitTerminalToContainer(sessionId, layoutPane);
+          } else if (!container.classList.contains('hidden')) {
+            fitSessionToScreen(sessionId);
+          } else {
+            applyTerminalScalingSync(state);
+          }
+        } else {
+          applyTerminalScalingSync(state);
+        }
         setupTerminalEvents(sessionId, terminal, container);
         focusActiveTerminal();
       });

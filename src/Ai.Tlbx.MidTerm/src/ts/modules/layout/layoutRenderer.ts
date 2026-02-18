@@ -113,8 +113,8 @@ export function renderLayout(root: LayoutNode | null): void {
   requestAnimationFrame(() => {
     if (suppressLayoutAutoFit) {
       setSuppressLayoutAutoFit(false);
-      scaleTerminalsInLayout();
-    } else if ($isMainBrowser.get()) {
+    }
+    if ($isMainBrowser.get()) {
       fitTerminalsInLayout();
     } else {
       scaleTerminalsInLayout();
