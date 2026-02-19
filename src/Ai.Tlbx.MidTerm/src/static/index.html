@@ -371,6 +371,17 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
+                                        <label for="setting-terminal-color-scheme" data-i18n="settings.appearance.terminalColorScheme">Terminal Colors</label>
+                                        <select id="setting-terminal-color-scheme">
+                                            <option value="auto" data-i18n="settings.options.colorSchemeAuto">Auto (follows theme)</option>
+                                            <option value="dark" data-i18n="settings.options.themeDark">Dark</option>
+                                            <option value="light" data-i18n="settings.options.themeLight">Light</option>
+                                            <option value="solarizedDark" data-i18n="settings.options.themeSolarizedDark">Solarized Dark</option>
+                                            <option value="solarizedLight" data-i18n="settings.options.themeSolarizedLight">Solarized Light</option>
+                                            <option value="matrix" data-i18n="settings.options.colorSchemeMatrix">Matrix</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
                                         <label for="setting-font-size" data-i18n="settings.appearance.fontSize">Font Size</label>
                                         <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
                                             <input type="number" id="setting-font-size" min="8" max="24" value="14" />

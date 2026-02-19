@@ -1977,6 +1977,7 @@
           "cursorBlink",
           "cursorInactiveStyle",
           "theme",
+          "terminalColorScheme",
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
@@ -2042,6 +2043,9 @@
           },
           "theme": {
             "$ref": "#/components/schemas/ThemeSetting"
+          },
+          "terminalColorScheme": {
+            "$ref": "#/components/schemas/TerminalColorSchemeSetting"
           },
           "tabTitleMode": {
             "$ref": "#/components/schemas/TabTitleModeSetting"
@@ -2569,6 +2573,16 @@
           "sessionName",
           "terminalTitle",
           "foregroundProcess"
+        ]
+      },
+      "TerminalColorSchemeSetting": {
+        "enum": [
+          "auto",
+          "dark",
+          "light",
+          "solarizedDark",
+          "solarizedLight",
+          "matrix"
         ]
       },
       "ThemeSetting": {
