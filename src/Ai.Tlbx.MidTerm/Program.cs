@@ -10,6 +10,7 @@ using Ai.Tlbx.MidTerm.Startup;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.Certificates;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program
@@ -251,6 +252,8 @@ public class Program
         FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
+        var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
+        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService);
         var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
         EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, tmuxLayoutBridge);
 

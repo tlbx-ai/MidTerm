@@ -24,4 +24,4 @@ export {
 } from './tabManager';
 export type { SessionTabId } from './tabBar';
 export type { IdeBarActionId } from './tabBar';
-export { setCommandsClickHandler, setGitClickHandler } from './tabBar';
+export { setCommandsClickHandler, setGitClickHandler, setWebClickHandler } from './tabBar';

@@ -16,6 +16,7 @@ import {
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { renderCommandsPanelInto } from './commandsPanel';
+import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { createLogger } from '../logging';
 
 const log = createLogger('commandsDock');
@@ -81,10 +82,6 @@ function openCommandsDock(sessionId: string): void {
     const w = parseInt(savedWidth, 10);
     if (w >= DOCK_MIN_WIDTH && w <= DOCK_MAX_WIDTH) {
       dockPanel.style.width = w + 'px';
-      const panels = document.querySelector(
-        '.session-wrapper:not(.hidden) .session-tab-panels',
-      ) as HTMLElement;
-      if (panels) panels.style.marginRight = w + 'px';
     }
   }
 
@@ -94,6 +91,8 @@ function openCommandsDock(sessionId: string): void {
     renderCommandsPanelInto(body, sessionId);
   }
 
+  adjustInnerDockPositions();
+  updateAllDockMargins();
   handleDockLayoutChange();
 
   activeUnsub?.();
@@ -127,10 +126,8 @@ export function closeCommandsDock(): void {
   }
   app?.classList.remove('commands-docked');
 
-  document
-    .querySelectorAll<HTMLElement>('.session-tab-panels')
-    .forEach((p) => (p.style.marginRight = ''));
-
+  adjustInnerDockPositions();
+  updateAllDockMargins();
   handleDockLayoutChange();
 
   log.info(() => 'Commands dock closed');
@@ -159,10 +156,8 @@ export function setupDockResize(): void {
     const delta = startX - clientX;
     const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
     dockPanel!.style.width = newWidth + 'px';
-    const panels = document.querySelector(
-      '.session-wrapper:not(.hidden) .session-tab-panels',
-    ) as HTMLElement;
-    if (panels) panels.style.marginRight = newWidth + 'px';
+    adjustInnerDockPositions();
+    updateAllDockMargins();
   }
 
   function endResize(): void {

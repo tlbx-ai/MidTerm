@@ -10,6 +10,7 @@ using Microsoft.Extensions.FileProviders;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.StaticFiles;
 using Ai.Tlbx.MidTerm.Services.Certificates;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class ServerSetup
@@ -106,6 +107,11 @@ public static class ServerSetup
         builder.Services.AddSingleton<SecurityStatusService>();
         builder.Services.AddSingleton<MainBrowserService>();
         builder.Services.AddSingleton<ClipboardService>();
+        builder.Services.AddSingleton<WebPreviewService>(sp =>
+        {
+            var (port, _) = ArgumentParser.Parse(args);
+            return new WebPreviewService(port);
+        });
 
         return builder;
     }
@@ -198,11 +204,14 @@ public static class ServerSetup
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
         AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
 
+        // Web preview reverse proxy — after auth, before security headers (short-circuits for /webpreview/*)
+        app.UseMiddleware<WebPreviewProxyMiddleware>();
+
         // Security headers middleware
         app.Use(async (context, next) =>
         {
             var headers = context.Response.Headers;
-            headers["X-Frame-Options"] = "DENY";
+            headers["X-Frame-Options"] = "SAMEORIGIN";
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
@@ -214,7 +223,8 @@ public static class ServerSetup
                       "img-src 'self' data:; " +
                       "font-src 'self' data:; " +
                       "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
-                      "frame-ancestors 'none'";
+                      "frame-src 'self'; " +
+                      "frame-ancestors 'self'";
             headers.ContentSecurityPolicy = csp;
 
             await next();

@@ -1,27 +1,25 @@
 /**
- * Git Dock
+ * Web Preview Dock
  *
- * Dock logic for snapping the git panel to the right sidebar.
+ * Dock/undock logic for the web preview panel.
+ * Unlike commands/git docks, this panel COEXISTS with other docks.
+ * The web preview dock sits as the outermost (rightmost) panel.
  */
 
 import {
-  $gitPanelDocked,
-  $activeSessionId,
-  $fileViewerDocked,
-  $dockedFilePath,
-  $commandsPanelDocked,
+  $webPreviewDocked,
   $isMainBrowser,
 } from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { renderGitPanelInto } from './gitPanel';
-import { subscribeToSession } from './gitChannel';
-import { closeDiffOverlay } from './gitDiff';
-import { closeCommandsDock } from '../commands/dock';
-import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
+import { restoreLastUrl, showIframe } from './webPanel';
 import { createLogger } from '../logging';
 
-const log = createLogger('gitDock');
+const log = createLogger('webDock');
+
+const DOCK_MIN_WIDTH = 250;
+const DOCK_MAX_WIDTH = 800;
+const DOCK_WIDTH_KEY = 'mt-web-preview-dock-width';
 
 function handleDockLayoutChange(): void {
   if ($isMainBrowser.get()) {
@@ -31,49 +29,59 @@ function handleDockLayoutChange(): void {
   }
 }
 
-const DOCK_MIN_WIDTH = 250;
-const DOCK_MAX_WIDTH = 600;
-const DOCK_WIDTH_KEY = 'mt-git-dock-width';
-
-let activeUnsub: (() => void) | null = null;
-
-function closeFileViewerDockIfOpen(): void {
-  if (!$fileViewerDocked.get()) return;
-  $fileViewerDocked.set(false);
-  $dockedFilePath.set(null);
-  const fvDock = document.getElementById('file-viewer-dock');
-  if (fvDock) fvDock.classList.add('hidden');
-  document.getElementById('app')?.classList.remove('file-viewer-docked');
+/**
+ * Get the current web preview dock width (0 if hidden).
+ */
+export function getWebPreviewDockWidth(): number {
+  const dock = document.getElementById('web-preview-dock');
+  if (dock && !dock.classList.contains('hidden')) return dock.offsetWidth;
+  return 0;
 }
 
-function closeCommandsDockIfOpen(): void {
-  if ($commandsPanelDocked.get()) {
-    closeCommandsDock();
+/**
+ * Adjust the CSS `right` position of inner docks (commands, git, file-viewer)
+ * so they sit to the left of the web preview dock.
+ */
+export function adjustInnerDockPositions(): void {
+  const wpWidth = getWebPreviewDockWidth();
+  for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock']) {
+    const el = document.getElementById(id);
+    if (el) el.style.right = wpWidth > 0 ? wpWidth + 'px' : '';
   }
 }
 
-export function toggleGitDock(sessionId: string): void {
-  if ($gitPanelDocked.get()) {
-    closeGitDock();
+/**
+ * Recalculate the combined marginRight for all visible dock panels
+ * on session-tab-panels elements.
+ */
+export function updateAllDockMargins(): void {
+  let total = 0;
+  for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock', 'web-preview-dock']) {
+    const el = document.getElementById(id);
+    if (el && !el.classList.contains('hidden')) total += el.offsetWidth;
+  }
+  document.querySelectorAll<HTMLElement>('.session-tab-panels')
+    .forEach(p => p.style.marginRight = total > 0 ? total + 'px' : '');
+}
+
+export function toggleWebPreviewDock(): void {
+  if ($webPreviewDocked.get()) {
+    closeWebPreviewDock();
   } else {
-    openGitDock(sessionId);
+    openWebPreviewDock();
   }
 }
 
-function openGitDock(sessionId: string): void {
-  closeFileViewerDockIfOpen();
-  closeCommandsDockIfOpen();
+function openWebPreviewDock(): void {
+  $webPreviewDocked.set(true);
+  setActionButtonActive('web', true);
 
-  $gitPanelDocked.set(true);
-  setActionButtonActive('git', true);
-
-  const dockPanel = document.getElementById('git-dock');
-  const app = document.getElementById('app');
+  const dockPanel = document.getElementById('web-preview-dock');
   if (!dockPanel) return;
 
   dockPanel.classList.remove('hidden');
-  app?.classList.add('git-docked');
 
+  // Restore saved width
   const savedWidth = localStorage.getItem(DOCK_WIDTH_KEY);
   if (savedWidth) {
     const w = parseInt(savedWidth, 10);
@@ -82,60 +90,38 @@ function openGitDock(sessionId: string): void {
     }
   }
 
-  const body = dockPanel.querySelector('.git-dock-body') as HTMLElement;
-  if (body) {
-    body.innerHTML = '';
-    subscribeToSession(sessionId);
-    renderGitPanelInto(body, sessionId);
-  }
+  showIframe();
+  restoreLastUrl();
 
+  // Adjust inner docks and margins for coexistence
   adjustInnerDockPositions();
   updateAllDockMargins();
   handleDockLayoutChange();
 
-  activeUnsub?.();
-  activeUnsub = $activeSessionId.subscribe((newId) => {
-    if (!$gitPanelDocked.get() || !newId) return;
-    const dockBody = document
-      .getElementById('git-dock')
-      ?.querySelector('.git-dock-body') as HTMLElement;
-    if (dockBody) {
-      dockBody.innerHTML = '';
-      subscribeToSession(newId);
-      renderGitPanelInto(dockBody, newId);
-    }
-  });
-
-  log.info(() => 'Git dock opened');
+  log.info(() => 'Web preview dock opened');
 }
 
-export function closeGitDock(): void {
-  activeUnsub?.();
-  activeUnsub = null;
-  closeDiffOverlay();
+export function closeWebPreviewDock(): void {
+  $webPreviewDocked.set(false);
+  setActionButtonActive('web', false);
 
-  $gitPanelDocked.set(false);
-  setActionButtonActive('git', false);
-
-  const dockPanel = document.getElementById('git-dock');
-  const app = document.getElementById('app');
-
+  const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {
     dockPanel.classList.add('hidden');
     dockPanel.style.width = '';
   }
-  app?.classList.remove('git-docked');
 
+  // Reset inner dock positions and margins
   adjustInnerDockPositions();
   updateAllDockMargins();
   handleDockLayoutChange();
 
-  log.info(() => 'Git dock closed');
+  log.info(() => 'Web preview dock closed');
 }
 
-export function setupGitDockResize(): void {
-  const dockPanel = document.getElementById('git-dock');
-  const grip = dockPanel?.querySelector('.git-dock-resize-grip') as HTMLElement;
+export function setupWebPreviewDockResize(): void {
+  const dockPanel = document.getElementById('web-preview-dock');
+  const grip = dockPanel?.querySelector('.web-preview-dock-resize-grip') as HTMLElement;
   if (!dockPanel || !grip) return;
 
   let isResizing = false;

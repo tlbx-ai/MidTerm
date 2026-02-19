@@ -106,6 +106,7 @@ import {
 } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
 import { closeGitDock } from './modules/git/gitDock';
+import { initWebPreview, closeWebPreviewDock } from './modules/web';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -224,6 +225,7 @@ async function init(): Promise<void> {
   initFileBrowser();
   initGitPanel();
   initCommandsPanel();
+  initWebPreview();
 
   // React to ideMode setting: toggle tab bar visibility and git WS connection
   let gitWsConnected = false;
@@ -239,6 +241,7 @@ async function init(): Promise<void> {
       gitWsConnected = false;
       closeGitDock();
       closeCommandsDock();
+      closeWebPreviewDock();
     }
   });
 
