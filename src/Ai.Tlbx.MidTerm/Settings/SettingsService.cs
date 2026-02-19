@@ -319,8 +319,15 @@ public sealed class SettingsService
     {
         lock (_lock)
         {
-            // Save secrets to secure storage
-            SaveSecretsFromSettings(settings);
+            // Save secrets to secure storage (best-effort — don't block settings file write)
+            try
+            {
+                SaveSecretsFromSettings(settings);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Failed to save secrets to secure storage: {ex.Message}");
+            }
 
             var dir = Path.GetDirectoryName(_settingsPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
