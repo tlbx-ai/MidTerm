@@ -593,12 +593,12 @@ The release script will fail if local is ahead of remote without pushing first (
 # Find what's new since last tag
 git log --oneline $(git describe --tags --abbrev=0)..HEAD
 ```
-Use these commits to draft `-ReleaseTitle` (concise headline) and `-ReleaseNotes` (array of meaningful changelog entries). Ask the user to confirm if the notes look right.
+Use these commits to draft `-ReleaseTitle` (concise headline) and `-ReleaseNotes` (array of meaningful changelog entries). **Do NOT ask the user to confirm release titles or notes — write them yourself with care and proceed immediately.** The user trusts you to make good choices, and asking breaks their multi-agent workflow.
 
 **Step 5 — Determine `-mthostUpdate`**
 - Check if any commits touched `Ai.Tlbx.MidTerm.TtyHost/`, `Ai.Tlbx.MidTerm.Common/`, or protocol code → `yes`
 - Web-only / frontend-only changes → `no`
-- If unclear, ask the user
+- If unclear, default to `yes` (safer)
 
 **Step 6 — Run the release script**
 ```powershell
