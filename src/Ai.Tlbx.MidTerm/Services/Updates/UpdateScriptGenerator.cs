@@ -879,12 +879,17 @@ safe_copy() {{
     if $IS_MACOS; then
         # macOS: service user owns the files but NOT the directory (/usr/local/bin/).
         # Cannot create temp files — must overwrite in-place.
-        # launchd KeepAlive respawns the process after kill, causing ETXTBSY on cp.
-        # Retry loop: kill → cp → codesign, repeat until we win the race.
+        # launchd KeepAlive respawns the process after kill, causing ETXTBSY on cp
+        # and codesign races (binary executed before signing completes).
+        #
+        # Strategy: kill → rm → copy → codesign. Removing the binary ensures that
+        # when launchd respawns, exec() fails (file not found) and launchd backs off
+        # with throttle delay, giving us time to copy and codesign undisturbed.
         local _copy_ok=false
         for _copy_attempt in 1 2 3 4 5; do
             kill_process_by_path ""$dst""
-            sleep 0.3
+            rm -f ""$dst"" 2>/dev/null || true
+            sleep 0.5
 
             if cp ""$src"" ""$dst"" 2>/dev/null; then
                 chmod +x ""$dst""
@@ -896,7 +901,7 @@ safe_copy() {{
                 fi
                 log ""Codesign race (attempt $_copy_attempt) — retrying..."" ""WARN""
             else
-                log ""Copy ETXTBSY (attempt $_copy_attempt) — retrying..."" ""WARN""
+                log ""Copy failed (attempt $_copy_attempt) — retrying..."" ""WARN""
             fi
             sleep 1
         done
