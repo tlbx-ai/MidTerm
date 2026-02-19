@@ -24,6 +24,7 @@ public sealed class WebPreviewService
         {
             AllowAutoRedirect = false,
             UseCookies = false,
+            AutomaticDecompression = System.Net.DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(10),
             SslOptions = new SslClientAuthenticationOptions
             {

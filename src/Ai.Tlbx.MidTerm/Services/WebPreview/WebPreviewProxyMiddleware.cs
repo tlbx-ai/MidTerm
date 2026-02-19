@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -20,12 +21,12 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         "Content-Security-Policy", "Content-Security-Policy-Report-Only",
         "X-Frame-Options", "Cross-Origin-Opener-Policy", "Cross-Origin-Embedder-Policy",
-        "Cross-Origin-Resource-Policy", "Content-Encoding", "Content-Length"
+        "Cross-Origin-Resource-Policy"
     };
 
     private static readonly HashSet<string> ForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Accept", "Accept-Language", "Authorization", "Cache-Control",
+        "Accept", "Accept-Encoding", "Accept-Language", "Authorization", "Cache-Control",
         "Content-Type", "Content-Length", "Cookie", "If-Match", "If-Modified-Since",
         "If-None-Match", "If-Unmodified-Since", "Range", "Referer", "User-Agent"
     };
@@ -201,13 +202,33 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyHtmlResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
     {
-        var html = await upstreamResponse.Content.ReadAsStringAsync(context.RequestAborted);
+        // HTML needs modification (<base> injection), so we must decompress manually,
+        // modify the HTML, then send uncompressed. Non-HTML responses flow through
+        // compressed since AutomaticDecompression is None on the HttpClient.
+        var contentEncoding = upstreamResponse.Content.Headers.ContentEncoding.FirstOrDefault();
+        await using var rawStream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
+
+        Stream decompressed = contentEncoding?.ToLowerInvariant() switch
+        {
+            "gzip" => new GZipStream(rawStream, CompressionMode.Decompress),
+            "br" => new BrotliStream(rawStream, CompressionMode.Decompress),
+            "deflate" => new DeflateStream(rawStream, CompressionMode.Decompress),
+            _ => rawStream
+        };
+
+        string html;
+        await using (decompressed)
+        {
+            using var reader = new StreamReader(decompressed, Encoding.UTF8);
+            html = await reader.ReadToEndAsync(context.RequestAborted);
+        }
 
         // Inject <base href="/webpreview/"> after <head> or <head ...>
         html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">", 1);
 
-        // Remove Content-Length since we modified the body
+        // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
+        context.Response.Headers.Remove("Content-Encoding");
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html, context.RequestAborted);
     }
