@@ -20,12 +20,12 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         "Content-Security-Policy", "Content-Security-Policy-Report-Only",
         "X-Frame-Options", "Cross-Origin-Opener-Policy", "Cross-Origin-Embedder-Policy",
-        "Cross-Origin-Resource-Policy"
+        "Cross-Origin-Resource-Policy", "Content-Encoding", "Content-Length"
     };
 
     private static readonly HashSet<string> ForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Accept", "Accept-Encoding", "Accept-Language", "Authorization", "Cache-Control",
+        "Accept", "Accept-Language", "Authorization", "Cache-Control",
         "Content-Type", "Content-Length", "Cookie", "If-Match", "If-Modified-Since",
         "If-None-Match", "If-Unmodified-Since", "Range", "Referer", "User-Agent"
     };
