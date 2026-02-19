@@ -397,13 +397,14 @@ public sealed partial class WebPreviewProxyMiddleware
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]
     private static partial Regex HeadTagRegex();
 
-    // Matches src="/...", href="/...", action="/...", poster="/...", data="/..."
-    // but NOT protocol-relative "//..." URLs. Captures the attribute name + =" prefix.
-    [GeneratedRegex(@"((?:src|href|action|poster|data)\s*=\s*[""'])/(?!/)", RegexOptions.IgnoreCase)]
+    // Matches src="/...", href="/...", action="/...", poster="/..." with word boundaries
+    // to avoid matching data-src, data-href, metadata, etc.
+    // Requires at least one path character after / to avoid matching broken attributes like href="/".
+    [GeneratedRegex(@"(\b(?:src|href|action|poster)\s*=\s*[""'])/(?![/""'\s>])", RegexOptions.IgnoreCase)]
     private static partial Regex RootRelativeAttrRegex();
 
     // Matches root-relative URLs in srcset attributes (e.g., srcset="/img/foo.png 2x")
-    [GeneratedRegex(@"(srcset\s*=\s*[""'](?:[^""']*,\s*)?)/(?!/)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(\bsrcset\s*=\s*[""'](?:[^""']*,\s*)?)/(?![/""'\s>])", RegexOptions.IgnoreCase)]
     private static partial Regex RootRelativeSrcsetRegex();
 
     // Matches url(/...) in inline CSS (with optional quotes)
