@@ -9,26 +9,31 @@ public sealed class GitWatcherService : IDisposable
 {
     private readonly ConcurrentDictionary<string, RepoWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _sessionToRepo = new();
+    private static readonly SemaphoreSlim _globalRefreshThrottle = new(2, 2);
 
     private sealed class RepoWatcher : IDisposable
     {
-        public FileSystemWatcher? GitDirWatcher { get; set; }
-        public FileSystemWatcher? WorkTreeWatcher { get; set; }
+        public FileSystemWatcher? IndexWatcher { get; set; }
         public int RefCount;
         public CancellationTokenSource? DebounceCts;
         public GitStatusResponse? CachedStatus;
         public string? LastFingerprint;
         public volatile bool IsDisposed;
+        public readonly SemaphoreSlim RefreshGate = new(1, 1);
+        public volatile bool RefreshPending;
+        public int SubscriberCount;
+        public CancellationTokenSource? PollCts;
 
         public void Dispose()
         {
             IsDisposed = true;
-            if (GitDirWatcher is not null) GitDirWatcher.EnableRaisingEvents = false;
-            if (WorkTreeWatcher is not null) WorkTreeWatcher.EnableRaisingEvents = false;
+            PollCts?.Cancel();
+            PollCts?.Dispose();
+            if (IndexWatcher is not null) IndexWatcher.EnableRaisingEvents = false;
             DebounceCts?.Cancel();
             DebounceCts?.Dispose();
-            GitDirWatcher?.Dispose();
-            WorkTreeWatcher?.Dispose();
+            IndexWatcher?.Dispose();
+            RefreshGate.Dispose();
         }
     }
 
@@ -101,18 +106,10 @@ public sealed class GitWatcherService : IDisposable
     {
         try
         {
-            var statusTask = GitCommandRunner.GetStatusAsync(repoRoot);
-            var logTask = GitCommandRunner.GetLogAsync(repoRoot);
-            var stashTask = GitCommandRunner.GetStashCountAsync(repoRoot);
-            var numStatTask = GitCommandRunner.GetNumStatAsync(repoRoot);
-
-            await Task.WhenAll(statusTask, logTask, stashTask, numStatTask);
-
-            var status = await statusTask;
-            status.RecentCommits = await logTask;
-            status.StashCount = await stashTask;
-
-            var numStat = await numStatTask;
+            var status = await GitCommandRunner.GetStatusAsync(repoRoot);
+            status.RecentCommits = await GitCommandRunner.GetLogAsync(repoRoot);
+            status.StashCount = await GitCommandRunner.GetStashCountAsync(repoRoot);
+            var numStat = await GitCommandRunner.GetNumStatAsync(repoRoot);
             MergeNumStat(status, numStat);
 
             if (_watchers.TryGetValue(repoRoot, out var watcher))
@@ -164,57 +161,25 @@ public sealed class GitWatcherService : IDisposable
 
         if (Directory.Exists(gitDir))
         {
-            var gitFsw = new FileSystemWatcher(gitDir)
+            var fsw = new FileSystemWatcher(gitDir)
             {
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName
+                IncludeSubdirectories = false,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
             };
+            fsw.Filters.Add("index");
+            fsw.Filters.Add("HEAD");
+            fsw.Filters.Add("FETCH_HEAD");
 
-            void OnGitChange(object? s, FileSystemEventArgs e)
+            void OnIndexChange(object? s, FileSystemEventArgs e)
             {
-                if (e.Name?.EndsWith(".lock", StringComparison.OrdinalIgnoreCase) == true) return;
                 DebouncedRefresh(repoRoot, watcher);
             }
 
-            gitFsw.Changed += OnGitChange;
-            gitFsw.Created += OnGitChange;
-            gitFsw.Deleted += OnGitChange;
-            gitFsw.Renamed += (s, e) => OnGitChange(s, e);
-            gitFsw.EnableRaisingEvents = true;
-            watcher.GitDirWatcher = gitFsw;
-        }
-
-        try
-        {
-            var gitDirPrefix = gitDir + Path.DirectorySeparatorChar;
-            var workFsw = new FileSystemWatcher(repoRoot)
-            {
-                IncludeSubdirectories = true,
-                InternalBufferSize = 65536,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite
-            };
-
-            void OnWorkTreeChange(object? s, FileSystemEventArgs e)
-            {
-                if (e.FullPath.StartsWith(gitDirPrefix, StringComparison.OrdinalIgnoreCase)) return;
-                DebouncedRefresh(repoRoot, watcher);
-            }
-
-            workFsw.Changed += OnWorkTreeChange;
-            workFsw.Created += OnWorkTreeChange;
-            workFsw.Deleted += OnWorkTreeChange;
-            workFsw.Renamed += (s, e) => OnWorkTreeChange(s, e);
-            workFsw.Error += (s, e) =>
-            {
-                Log.Warn(() => $"[Git] WorkTree watcher buffer overflow for {repoRoot}");
-                DebouncedRefresh(repoRoot, watcher);
-            };
-            workFsw.EnableRaisingEvents = true;
-            watcher.WorkTreeWatcher = workFsw;
-        }
-        catch (Exception ex)
-        {
-            Log.Warn(() => $"[Git] Failed to watch working tree for {repoRoot}: {ex.Message}");
+            fsw.Changed += OnIndexChange;
+            fsw.Created += OnIndexChange;
+            fsw.Renamed += (s, e) => OnIndexChange(s, e);
+            fsw.EnableRaisingEvents = true;
+            watcher.IndexWatcher = fsw;
         }
 
         return watcher;
@@ -234,16 +199,93 @@ public sealed class GitWatcherService : IDisposable
             oldCts?.Cancel();
             oldCts?.Dispose();
 
-            _ = Task.Delay(300, token).ContinueWith(async _ =>
+            _ = Task.Delay(500, token).ContinueWith(async _ =>
             {
                 if (!token.IsCancellationRequested)
                 {
-                    await RefreshStatusAsync(repoRoot);
+                    await CoalescedRefreshAsync(repoRoot, watcher);
                 }
             }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
         }
         catch (ObjectDisposedException)
         {
+        }
+    }
+
+    private async Task CoalescedRefreshAsync(string repoRoot, RepoWatcher watcher)
+    {
+        if (!watcher.RefreshGate.Wait(0))
+        {
+            watcher.RefreshPending = true;
+            return;
+        }
+
+        try
+        {
+            await _globalRefreshThrottle.WaitAsync();
+            try
+            {
+                do
+                {
+                    watcher.RefreshPending = false;
+                    await RefreshStatusAsync(repoRoot);
+                } while (watcher.RefreshPending && !watcher.IsDisposed);
+            }
+            finally
+            {
+                _globalRefreshThrottle.Release();
+            }
+        }
+        finally
+        {
+            watcher.RefreshGate.Release();
+        }
+    }
+
+    public void Subscribe(string sessionId)
+    {
+        if (!_sessionToRepo.TryGetValue(sessionId, out var repoRoot)) return;
+        if (!_watchers.TryGetValue(repoRoot, out var watcher)) return;
+        if (Interlocked.Increment(ref watcher.SubscriberCount) == 1)
+        {
+            StartPolling(repoRoot, watcher);
+        }
+    }
+
+    public void Unsubscribe(string sessionId)
+    {
+        if (!_sessionToRepo.TryGetValue(sessionId, out var repoRoot)) return;
+        if (!_watchers.TryGetValue(repoRoot, out var watcher)) return;
+        if (Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
+        {
+            watcher.PollCts?.Cancel();
+            watcher.PollCts?.Dispose();
+            watcher.PollCts = null;
+        }
+    }
+
+    private void StartPolling(string repoRoot, RepoWatcher watcher)
+    {
+        watcher.PollCts?.Cancel();
+        watcher.PollCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        watcher.PollCts = cts;
+        _ = PollLoopAsync(repoRoot, watcher, cts.Token);
+    }
+
+    private async Task PollLoopAsync(string repoRoot, RepoWatcher watcher, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && !watcher.IsDisposed)
+        {
+            try
+            {
+                await Task.Delay(5000, ct);
+                await CoalescedRefreshAsync(repoRoot, watcher);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 

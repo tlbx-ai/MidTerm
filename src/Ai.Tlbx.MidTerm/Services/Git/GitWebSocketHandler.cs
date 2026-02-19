@@ -136,6 +136,16 @@ public sealed class GitWebSocketHandler
         finally
         {
             _gitWatcher.OnStatusChanged -= OnStatusChanged;
+
+            lock (subscribedSessions)
+            {
+                foreach (var sid in subscribedSessions)
+                {
+                    _gitWatcher.Unsubscribe(sid);
+                }
+                subscribedSessions.Clear();
+            }
+
             sendLock.Dispose();
 
             if (ws.State == WebSocketState.Open)
@@ -176,9 +186,10 @@ public sealed class GitWebSocketHandler
             switch (type)
             {
                 case "subscribe":
+                    bool isNew;
                     lock (subscribedSessions)
                     {
-                        subscribedSessions.Add(sessionId);
+                        isNew = subscribedSessions.Add(sessionId);
                     }
 
                     var cached = _gitWatcher.GetCachedStatus(sessionId);
@@ -191,7 +202,8 @@ public sealed class GitWebSocketHandler
                             Status = cached
                         });
                     }
-                    else
+
+                    if (_gitWatcher.GetRepoRoot(sessionId) is null)
                     {
                         var session = _sessionManager.GetSession(sessionId);
                         if (session is not null && !string.IsNullOrEmpty(session.CurrentDirectory))
@@ -199,12 +211,28 @@ public sealed class GitWebSocketHandler
                             await _gitWatcher.RegisterSessionAsync(sessionId, session.CurrentDirectory);
                         }
                     }
+
+                    if (isNew)
+                    {
+                        _gitWatcher.Subscribe(sessionId);
+                    }
+
+                    var repoRoot = _gitWatcher.GetRepoRoot(sessionId);
+                    if (repoRoot is not null)
+                    {
+                        _ = _gitWatcher.RefreshStatusAsync(repoRoot);
+                    }
                     break;
 
                 case "unsubscribe":
+                    bool wasPresent;
                     lock (subscribedSessions)
                     {
-                        subscribedSessions.Remove(sessionId);
+                        wasPresent = subscribedSessions.Remove(sessionId);
+                    }
+                    if (wasPresent)
+                    {
+                        _gitWatcher.Unsubscribe(sessionId);
                     }
                     break;
             }
