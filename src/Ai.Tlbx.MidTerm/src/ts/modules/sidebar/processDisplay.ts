@@ -40,7 +40,9 @@ export function formatRuntimeDisplay(processName: string, commandLine: string | 
     const baseName = basename(processName).replace(/\.exe$/i, '');
     if (commandLine) {
       const firstToken = trimmed.split(/\s/)[0] ?? '';
-      const firstBase = basename(firstToken).replace(/\.exe$/i, '').toLowerCase();
+      const firstBase = basename(firstToken)
+        .replace(/\.exe$/i, '')
+        .toLowerCase();
       if (firstBase !== baseName.toLowerCase()) {
         // macOS/Linux: commandLine doesn't include the process name
         const stripped = stripExePath(trimmed);
