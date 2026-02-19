@@ -116,12 +116,59 @@ public sealed class LinuxProcessMonitor : IProcessMonitor
         try
         {
             var commPath = $"/proc/{pid}/comm";
-            return File.Exists(commPath) ? File.ReadAllText(commPath).Trim() : null;
+            var name = File.Exists(commPath) ? File.ReadAllText(commPath).Trim() : null;
+
+            // Some tools store binaries at versioned paths like
+            // ~/.local/share/claude/versions/2.1.47 where comm is the version.
+            // Fall back to /proc/pid/exe symlink and walk up the path.
+            if (name is not null && IsVersionString(name))
+            {
+                var exePath = ReadLink($"/proc/{pid}/exe");
+                if (exePath is not null)
+                {
+                    var exeName = Path.GetFileName(exePath);
+                    if (!IsVersionString(exeName))
+                        return exeName;
+
+                    var dir = Path.GetDirectoryName(exePath);
+                    while (!string.IsNullOrEmpty(dir))
+                    {
+                        var dirName = Path.GetFileName(dir);
+                        if (!string.IsNullOrEmpty(dirName)
+                            && !IsVersionString(dirName)
+                            && !IsGenericDirName(dirName))
+                        {
+                            return dirName;
+                        }
+                        dir = Path.GetDirectoryName(dir);
+                    }
+                }
+            }
+
+            return name;
         }
         catch
         {
             return null;
         }
+    }
+
+    private static bool IsVersionString(string name)
+    {
+        if (name.Length == 0) return false;
+        var start = (name[0] is 'v' or 'V') ? 1 : 0;
+        if (start >= name.Length) return false;
+        for (var i = start; i < name.Length; i++)
+        {
+            if (name[i] != '.' && !char.IsAsciiDigit(name[i])) return false;
+        }
+        return char.IsAsciiDigit(name[start]);
+    }
+
+    private static bool IsGenericDirName(string name)
+    {
+        return name is "versions" or "bin" or "lib" or "libexec" or "share"
+            or "sbin" or "opt" or "usr" or "local" or "dist" or "build";
     }
 
     private static string? GetProcessCwd(int pid)

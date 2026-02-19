@@ -10,6 +10,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Models.WebPreview;
 namespace Ai.Tlbx.MidTerm.Services;
 
 [JsonSerializable(typeof(BootstrapResponse))]
@@ -86,6 +87,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(RunScriptRequest))]
 [JsonSerializable(typeof(RunScriptResponse))]
 [JsonSerializable(typeof(StopScriptRequest))]
+[JsonSerializable(typeof(WebPreviewTargetRequest))]
+[JsonSerializable(typeof(WebPreviewTargetResponse))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

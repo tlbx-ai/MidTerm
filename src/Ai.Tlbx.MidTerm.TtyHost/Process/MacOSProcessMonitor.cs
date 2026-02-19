@@ -192,7 +192,48 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         var buffer = PathBuffer;
         var len = proc_pidpath(pid, buffer, buffer.Length);
         if (len <= 0) return null;
-        return Path.GetFileName(Encoding.UTF8.GetString(buffer, 0, len));
+        var fullPath = Encoding.UTF8.GetString(buffer, 0, len);
+        var name = Path.GetFileName(fullPath);
+
+        // Some tools (e.g. Claude Code) store binaries at versioned paths like
+        // ~/.local/share/claude/versions/2.1.47 where the filename IS the version.
+        // Walk up the directory tree to find a meaningful name.
+        if (IsVersionString(name))
+        {
+            var dir = Path.GetDirectoryName(fullPath);
+            while (!string.IsNullOrEmpty(dir))
+            {
+                var dirName = Path.GetFileName(dir);
+                if (!string.IsNullOrEmpty(dirName)
+                    && !IsVersionString(dirName)
+                    && !IsGenericDirName(dirName))
+                {
+                    return dirName;
+                }
+                dir = Path.GetDirectoryName(dir);
+            }
+        }
+
+        return name;
+    }
+
+    private static bool IsVersionString(string name)
+    {
+        // Matches "2.1.47", "v2.1.47", "3.11.5", etc.
+        if (name.Length == 0) return false;
+        var start = (name[0] is 'v' or 'V') ? 1 : 0;
+        if (start >= name.Length) return false;
+        for (var i = start; i < name.Length; i++)
+        {
+            if (name[i] != '.' && !char.IsAsciiDigit(name[i])) return false;
+        }
+        return char.IsAsciiDigit(name[start]);
+    }
+
+    private static bool IsGenericDirName(string name)
+    {
+        return name is "versions" or "bin" or "lib" or "libexec" or "share"
+            or "sbin" or "opt" or "usr" or "local" or "dist" or "build";
     }
 
     private static string? GetProcessCwd(int pid)

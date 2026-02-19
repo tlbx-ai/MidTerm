@@ -154,6 +154,15 @@ export const $commandsPanelDocked = atom<boolean>(false);
 /** Git panel docked to right sidebar */
 export const $gitPanelDocked = atom<boolean>(false);
 
+/** Web preview panel docked to right sidebar */
+export const $webPreviewDocked = atom<boolean>(false);
+
+/** Current web preview URL */
+export const $webPreviewUrl = atom<string | null>(null);
+
+/** Whether web preview is detached to popup window */
+export const $webPreviewDetached = atom<boolean>(false);
+
 // =============================================================================
 // Connection State Stores
 // =============================================================================

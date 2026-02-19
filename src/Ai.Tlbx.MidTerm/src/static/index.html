@@ -760,6 +760,30 @@
                 <div class="commands-dock-body"></div>
             </aside>
 
+            <!-- Web Preview Dock Panel -->
+            <aside id="web-preview-dock" class="web-preview-dock hidden">
+                <div class="web-preview-dock-resize-grip"></div>
+                <div class="web-preview-dock-header">
+                    <span class="web-preview-dock-title" data-i18n="webPreview.title">Web Preview</span>
+                    <div class="web-preview-dock-actions">
+                        <button class="btn-icon" id="web-preview-refresh" data-i18n-title="webPreview.refresh" title="Refresh">&#x21bb;</button>
+                        <button class="btn-icon" id="web-preview-detach" data-i18n-title="webPreview.detach" title="Pop out">&#x2197;</button>
+                        <button class="btn-icon" id="web-preview-close" title="Close">&times;</button>
+                    </div>
+                </div>
+                <div class="web-preview-dock-url-bar">
+                    <input type="url" id="web-preview-url-input" data-i18n-placeholder="webPreview.urlPlaceholder" placeholder="https://localhost:3000" spellcheck="false" />
+                    <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
+                </div>
+                <div class="web-preview-dock-body">
+                    <iframe id="web-preview-iframe" src="about:blank"></iframe>
+                </div>
+                <div class="web-preview-detached-placeholder hidden" id="web-preview-detached-msg">
+                    <span data-i18n="webPreview.detachedPlaceholder">Preview is open in a separate window</span>
+                    <button class="btn-icon" id="web-preview-dock-back" data-i18n="webPreview.dockBack">Dock back</button>
+                </div>
+            </aside>
+
             <!-- Touch Controller Bar (mobile only) -->
             <div id="touch-controller" class="touch-controller" aria-label="Terminal touch controls">
                 <div class="touch-bar-main">

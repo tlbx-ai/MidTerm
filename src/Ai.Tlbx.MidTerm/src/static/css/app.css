@@ -5983,6 +5983,167 @@ html, body {
 }
 
 /* =============================================
+   Web Preview Dock Panel
+   ============================================= */
+
+.web-preview-dock {
+    position: absolute;
+    top: var(--bar-height);
+    right: 0;
+    bottom: 0;
+    width: 400px;
+    background: var(--bg-sidebar);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    z-index: 51;
+}
+
+.web-preview-dock.hidden {
+    display: none;
+}
+
+.web-preview-dock-resize-grip {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 10;
+}
+
+.web-preview-dock-resize-grip:hover,
+.web-preview-dock-resize-grip.active {
+    background-color: var(--bg-hover);
+}
+
+.web-preview-dock-header {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    height: var(--bar-height);
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-terminal);
+    gap: 8px;
+}
+
+.web-preview-dock-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: var(--fs-lg);
+    color: var(--text-primary);
+}
+
+.web-preview-dock-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.web-preview-dock-actions .btn-icon {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-size: var(--fs-lg);
+}
+
+.web-preview-dock-actions .btn-icon:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.web-preview-dock-url-bar {
+    display: flex;
+    padding: 6px 8px;
+    gap: 4px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-elevated);
+}
+
+.web-preview-dock-url-bar input {
+    flex: 1;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: var(--fs-sm);
+    font-family: var(--font-mono);
+    outline: none;
+}
+
+.web-preview-dock-url-bar input:focus {
+    border-color: var(--text-accent);
+}
+
+.web-preview-dock-url-bar .btn-icon {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: var(--fs-md);
+}
+
+.web-preview-dock-url-bar .btn-icon:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.web-preview-dock-body {
+    flex: 1;
+    overflow: hidden;
+}
+
+#web-preview-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fff;
+}
+
+.web-preview-detached-placeholder {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: var(--fs-md);
+}
+
+.web-preview-detached-placeholder.hidden {
+    display: none;
+}
+
+.web-preview-detached-placeholder button {
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: var(--fs-md);
+}
+
+.web-preview-detached-placeholder button:hover {
+    background: var(--bg-elevated);
+}
+
+@media (max-width: 768px) {
+    .web-preview-dock {
+        display: none !important;
+    }
+}
+
+/* =============================================
    Middle Manager Bar
    ============================================= */
 

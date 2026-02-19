@@ -29,20 +29,16 @@ const SCALE_TOLERANCE = 0.97;
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 
 /**
- * Get the width of the currently visible dock panel (git, commands, or file viewer).
- * Only one dock panel can be open at a time.
+ * Get the total width of all visible dock panels.
+ * Web preview can coexist with one other dock (commands, git, or file viewer).
  */
 function getDockPanelWidth(): number {
-  const gitDock = document.getElementById('git-dock');
-  if (gitDock && !gitDock.classList.contains('hidden')) return gitDock.offsetWidth;
-
-  const cmdDock = document.getElementById('commands-dock');
-  if (cmdDock && !cmdDock.classList.contains('hidden')) return cmdDock.offsetWidth;
-
-  const fvDock = document.getElementById('file-viewer-dock');
-  if (fvDock && !fvDock.classList.contains('hidden')) return fvDock.offsetWidth;
-
-  return 0;
+  let total = 0;
+  for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock', 'web-preview-dock']) {
+    const el = document.getElementById(id);
+    if (el && !el.classList.contains('hidden')) total += el.offsetWidth;
+  }
+  return total;
 }
 
 /**

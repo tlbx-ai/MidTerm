@@ -11,7 +11,7 @@ import { t } from '../i18n';
 
 export type SessionTabId = 'terminal' | 'files';
 
-export type IdeBarActionId = 'git' | 'commands';
+export type IdeBarActionId = 'git' | 'commands' | 'web';
 
 function getTabLabels(): Record<SessionTabId, string> {
   return {
@@ -22,6 +22,7 @@ function getTabLabels(): Record<SessionTabId, string> {
 
 let commandsClickHandler: (() => void) | null = null;
 let gitClickHandler: (() => void) | null = null;
+let webClickHandler: (() => void) | null = null;
 
 export function setCommandsClickHandler(handler: () => void): void {
   commandsClickHandler = handler;
@@ -29,6 +30,10 @@ export function setCommandsClickHandler(handler: () => void): void {
 
 export function setGitClickHandler(handler: () => void): void {
   gitClickHandler = handler;
+}
+
+export function setWebClickHandler(handler: () => void): void {
+  webClickHandler = handler;
 }
 
 export function createTabBar(
@@ -55,6 +60,14 @@ export function createTabBar(
 
   const actions = document.createElement('div');
   actions.className = 'ide-bar-actions';
+
+  const webBtn = document.createElement('button');
+  webBtn.className = 'ide-bar-btn ide-bar-web';
+  webBtn.dataset.action = 'web';
+  webBtn.title = t('sessionTabs.web');
+  webBtn.innerHTML = '<span class="ide-bar-btn-icon">\u{1F310}</span>';
+  webBtn.addEventListener('click', () => webClickHandler?.());
+  actions.appendChild(webBtn);
 
   const cmdBtn = document.createElement('button');
   cmdBtn.className = 'ide-bar-btn ide-bar-commands';

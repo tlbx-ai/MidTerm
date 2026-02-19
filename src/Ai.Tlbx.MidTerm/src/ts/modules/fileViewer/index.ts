@@ -20,6 +20,7 @@ import {
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { closeCommandsDock } from '../commands/dock';
 import { closeGitDock } from '../git/gitDock';
+import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { escapeHtml } from '../../utils';
 import {
   IMAGE_MIMES,
@@ -128,6 +129,10 @@ function dockViewer(): void {
   // Render the file in dock
   renderInDock(path);
 
+  // Update dock coexistence layout
+  adjustInnerDockPositions();
+  updateAllDockMargins();
+
   // Trigger terminal resize
   if ($isMainBrowser.get()) {
     autoResizeAllTerminalsImmediate();
@@ -149,6 +154,10 @@ function closeDock(): void {
   $dockedFilePath.set(null);
   currentPath = null;
   currentSessionId = null;
+
+  // Update dock coexistence layout
+  adjustInnerDockPositions();
+  updateAllDockMargins();
 
   // Trigger terminal resize
   if ($isMainBrowser.get()) {

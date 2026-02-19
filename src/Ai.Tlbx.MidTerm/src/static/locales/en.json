@@ -309,6 +309,15 @@
 
   "sessionTabs.commands": "Commands",
   "sessionTabs.git": "Git",
+  "sessionTabs.web": "Web Preview",
+  "webPreview.title": "Web Preview",
+  "webPreview.urlPlaceholder": "https://localhost:3000",
+  "webPreview.go": "Go",
+  "webPreview.refresh": "Refresh",
+  "webPreview.detach": "Pop out to window",
+  "webPreview.dockBack": "Dock back",
+  "webPreview.detachedPlaceholder": "Preview is open in a separate window",
+  "webPreview.noTarget": "Enter a URL to preview",
 
   "fileBrowser.unableToLoad": "Unable to load directory",
   "fileBrowser.selectFile": "Select a file to preview",
