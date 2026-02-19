@@ -1995,6 +1995,7 @@
           "managerBarEnabled",
           "showChangelogAfterUpdate",
           "showUpdateNotification",
+          "updateChannel",
           "language",
           "managerBarButtons",
           "runAsUser",
@@ -2099,6 +2100,9 @@
           },
           "showUpdateNotification": {
             "type": "boolean"
+          },
+          "updateChannel": {
+            "type": "string"
           },
           "language": {
             "$ref": "#/components/schemas/LanguageSetting"
