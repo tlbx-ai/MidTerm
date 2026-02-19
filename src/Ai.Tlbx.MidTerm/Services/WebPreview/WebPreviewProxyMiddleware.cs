@@ -68,56 +68,95 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
     {
-        var upstreamUrl = BuildUpstreamUrl(targetUri, path, context.Request.QueryString.Value);
+        var currentUrl = BuildUpstreamUrl(targetUri, path, context.Request.QueryString.Value);
 
-        using var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), upstreamUrl);
+        // Follow redirects internally (up to 10 hops) so the iframe stays at /webpreview/
+        const int maxRedirects = 10;
+        HttpResponseMessage? upstreamResponse = null;
 
-        // Forward request headers
-        foreach (var header in context.Request.Headers)
+        for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
-            if (HopByHopHeaders.Contains(header.Key))
-                continue;
-            if (!ForwardedRequestHeaders.Contains(header.Key))
-                continue;
+            var requestMessage = new HttpRequestMessage(
+                redirect == 0 ? new HttpMethod(context.Request.Method) : HttpMethod.Get,
+                currentUrl);
 
-            requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
-        }
-
-        // Add forwarded headers
-        requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-For",
-            context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1");
-        requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
-        requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
-
-        // Forward request body for methods that have one
-        if (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding"))
-        {
-            requestMessage.Content = new StreamContent(context.Request.Body);
-            if (context.Request.ContentType is not null)
+            // Forward request headers
+            foreach (var header in context.Request.Headers)
             {
-                requestMessage.Content.Headers.ContentType =
-                    System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+                if (HopByHopHeaders.Contains(header.Key))
+                    continue;
+                if (!ForwardedRequestHeaders.Contains(header.Key))
+                    continue;
+
+                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
             }
+
+            // Add forwarded headers
+            requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-For",
+                context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1");
+            requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
+            requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
+
+            // Forward request body only on the first (non-redirect) request
+            if (redirect == 0 && (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")))
+            {
+                requestMessage.Content = new StreamContent(context.Request.Body);
+                if (context.Request.ContentType is not null)
+                {
+                    requestMessage.Content.Headers.ContentType =
+                        System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+                }
+            }
+
+            try
+            {
+                upstreamResponse?.Dispose();
+                upstreamResponse = await _service.HttpClient.SendAsync(
+                    requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+            }
+            catch (HttpRequestException)
+            {
+                requestMessage.Dispose();
+                context.Response.StatusCode = 502;
+                context.Response.ContentType = "text/plain";
+                await context.Response.WriteAsync("Failed to connect to upstream server.");
+                return;
+            }
+            catch (TaskCanceledException)
+            {
+                requestMessage.Dispose();
+                context.Response.StatusCode = 504;
+                context.Response.ContentType = "text/plain";
+                await context.Response.WriteAsync("Upstream server timed out.");
+                return;
+            }
+
+            // Follow redirects internally instead of passing to browser
+            var statusCode = (int)upstreamResponse.StatusCode;
+            if (statusCode is >= 301 and <= 308)
+            {
+                var location = upstreamResponse.Headers.Location?.ToString()
+                    ?? upstreamResponse.Content.Headers.ContentLocation?.ToString();
+                if (location is not null)
+                {
+                    // Resolve relative redirects against current URL
+                    if (Uri.TryCreate(new Uri(currentUrl), location, out var resolved))
+                    {
+                        currentUrl = resolved.ToString();
+                        requestMessage.Dispose();
+                        continue;
+                    }
+                }
+            }
+
+            // Not a redirect — break out and send response
+            requestMessage.Dispose();
+            break;
         }
 
-        HttpResponseMessage upstreamResponse;
-        try
-        {
-            upstreamResponse = await _service.HttpClient.SendAsync(
-                requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
-        }
-        catch (HttpRequestException)
+        if (upstreamResponse is null)
         {
             context.Response.StatusCode = 502;
-            context.Response.ContentType = "text/plain";
-            await context.Response.WriteAsync("Failed to connect to upstream server.");
-            return;
-        }
-        catch (TaskCanceledException)
-        {
-            context.Response.StatusCode = 504;
-            context.Response.ContentType = "text/plain";
-            await context.Response.WriteAsync("Upstream server timed out.");
             return;
         }
 
@@ -131,16 +170,9 @@ public sealed partial class WebPreviewProxyMiddleware
                 if (HopByHopHeaders.Contains(header.Key) || StrippedResponseHeaders.Contains(header.Key))
                     continue;
 
-                // Rewrite Location header for redirects
+                // Strip Location headers — we followed redirects internally
                 if (header.Key.Equals("Location", StringComparison.OrdinalIgnoreCase))
-                {
-                    var rewritten = RewriteLocationHeader(header.Value.FirstOrDefault(), targetUri);
-                    if (rewritten is not null)
-                    {
-                        context.Response.Headers[header.Key] = rewritten;
-                        continue;
-                    }
-                }
+                    continue;
 
                 context.Response.Headers[header.Key] = header.Value.ToArray();
             }
@@ -298,32 +330,6 @@ public sealed partial class WebPreviewProxyMiddleware
             sb.Append(queryString);
         }
         return sb.ToString();
-    }
-
-    private static string? RewriteLocationHeader(string? location, Uri targetUri)
-    {
-        if (string.IsNullOrEmpty(location))
-            return null;
-
-        // Absolute URL pointing to the target — rewrite to /webpreview/...
-        if (Uri.TryCreate(location, UriKind.Absolute, out var locUri))
-        {
-            if (locUri.Host.Equals(targetUri.Host, StringComparison.OrdinalIgnoreCase)
-                && locUri.Port == targetUri.Port)
-            {
-                return ProxyPrefix + locUri.PathAndQuery;
-            }
-            // External redirect — pass through
-            return location;
-        }
-
-        // Relative path — prepend proxy prefix
-        if (location.StartsWith('/'))
-        {
-            return ProxyPrefix + location;
-        }
-
-        return location;
     }
 
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]

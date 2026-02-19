@@ -223,7 +223,7 @@ public static class ServerSetup
                       "img-src 'self' data:; " +
                       "font-src 'self' data:; " +
                       "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
-                      "frame-src 'self'; " +
+                      "frame-src 'self' blob: data:; " +
                       "frame-ancestors 'self'";
             headers.ContentSecurityPolicy = csp;
 

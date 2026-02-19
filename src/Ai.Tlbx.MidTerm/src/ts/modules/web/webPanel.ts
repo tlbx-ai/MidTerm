@@ -38,10 +38,22 @@ export function restoreLastUrl(): void {
   }
 }
 
+function normalizeUrl(raw: string): string {
+  if (!raw.includes('://')) {
+    const isLocal =
+      raw.startsWith('localhost') || raw.startsWith('127.0.0.1') || raw.startsWith('[::1]');
+    return (isLocal ? 'http://' : 'https://') + raw;
+  }
+  return raw;
+}
+
 async function handleGo(): Promise<void> {
   if (!urlInput) return;
-  const url = urlInput.value.trim();
+  const url = normalizeUrl(urlInput.value.trim());
   if (!url) return;
+
+  // Show the normalized URL back to the user
+  urlInput.value = url;
 
   log.info(() => `Setting web preview target: ${url}`);
   const result = await setWebPreviewTarget(url);
