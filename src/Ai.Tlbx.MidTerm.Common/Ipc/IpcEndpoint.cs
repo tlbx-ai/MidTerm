@@ -28,7 +28,7 @@ public static class IpcEndpoint
         }
     }
 
-    private static string GetUnixSocketDirectory()
+    public static string GetUnixSocketDirectory()
     {
         var uid = GetUnixUid();
         var dir = $"/tmp/midterm-{uid}";

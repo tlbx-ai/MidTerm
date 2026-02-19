@@ -1435,13 +1435,34 @@ write_result true ""Update completed successfully""
         }
         else
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "/bin/bash",
-                Arguments = $"\"{scriptPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
+            // macOS: launchd kills all processes in the job's process group when the main
+            // process exits (AbandonProcessGroup defaults to false). The update script must
+            // run in a NEW session/process group so it survives mt's exit.
+            // Linux: setsid is available as a command; macOS: use perl POSIX::setsid().
+            // Both redirect stdio so the script is fully detached from the parent.
+            var psi = OperatingSystem.IsMacOS()
+                ? new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "/usr/bin/perl",
+                    Arguments = $"-e 'use POSIX; POSIX::setsid(); exec(\"/bin/bash\", \"{scriptPath}\") or die \"exec failed: $!\"'",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                }
+                : new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "/usr/bin/setsid",
+                    Arguments = $"--fork /bin/bash \"{scriptPath}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+            System.Diagnostics.Process.Start(psi);
         }
     }
 
