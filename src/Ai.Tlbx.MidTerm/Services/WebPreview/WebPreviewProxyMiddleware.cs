@@ -11,6 +11,20 @@ public sealed partial class WebPreviewProxyMiddleware
     private const int WsBufferSize = 8192;
     private static readonly TimeSpan WsCloseTimeout = TimeSpan.FromSeconds(5);
 
+    // Injected into proxied HTML to rewrite root-relative URLs in fetch/XHR at runtime.
+    // This is safer than regex-replacing JS source code.
+    private const string UrlRewriteScript = """
+        <script>(function(){
+          var P="/webpreview";
+          function r(u){if(typeof u==="string"&&u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;return u;}
+          var F=window.fetch;
+          window.fetch=function(u,o){return F.call(this,typeof u==="string"?r(u):u,o);};
+          var X=XMLHttpRequest.prototype.open;
+          XMLHttpRequest.prototype.open=function(m,u){return X.apply(this,[m,r(u)].concat([].slice.call(arguments,2)));};
+        })();</script>
+        """;
+
+
     private static readonly HashSet<string> HopByHopHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
@@ -185,15 +199,19 @@ public sealed partial class WebPreviewProxyMiddleware
                 context.Response.Headers[header.Key] = header.Value.ToArray();
             }
 
-            // Check if this is an HTML response that needs <base> injection
+            // Rewrite text responses that may contain root-relative URLs
             var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
             if (contentType is "text/html")
             {
                 await ProxyHtmlResponseAsync(context, upstreamResponse);
             }
+            else if (contentType is "text/css")
+            {
+                await ProxyCssResponseAsync(context, upstreamResponse);
+            }
             else
             {
-                // Stream non-HTML responses directly
+                // Stream binary/other responses directly
                 await using var stream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
                 await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
             }
@@ -202,11 +220,44 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyHtmlResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
     {
-        // HTML needs modification (<base> injection), so we must decompress manually,
-        // modify the HTML, then send uncompressed. Non-HTML responses flow through
-        // compressed since AutomaticDecompression is None on the HttpClient.
-        var contentEncoding = upstreamResponse.Content.Headers.ContentEncoding.FirstOrDefault();
-        await using var rawStream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
+        var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+
+        // Rewrite root-relative URLs to go through the proxy.
+        // <base href> only handles truly relative URLs (foo/bar.js),
+        // but root-relative URLs (/path/to/file) need explicit rewriting.
+        html = RootRelativeAttrRegex().Replace(html, "$1=\"/webpreview/");
+        html = RootRelativeSrcsetRegex().Replace(html, "$1/webpreview/");
+        html = RootRelativeCssUrlRegex().Replace(html, "url(/webpreview/");
+
+        // Inject <base href> for truly relative URLs, plus a script that patches
+        // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
+        html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">" + UrlRewriteScript, 1);
+
+        // Send uncompressed — strip Content-Encoding and Content-Length for this response
+        context.Response.Headers.Remove("Content-Length");
+        context.Response.Headers.Remove("Content-Encoding");
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(html, context.RequestAborted);
+    }
+
+    private async Task ProxyCssResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
+    {
+        var css = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+
+        // Rewrite url(/...) references in CSS to go through the proxy
+        css = RootRelativeCssUrlRegex().Replace(css, "url(/webpreview/");
+
+        context.Response.Headers.Remove("Content-Length");
+        context.Response.Headers.Remove("Content-Encoding");
+        context.Response.ContentType = "text/css; charset=utf-8";
+        await context.Response.WriteAsync(css, context.RequestAborted);
+    }
+
+    private static async Task<string> DecompressTextAsync(
+        HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var contentEncoding = response.Content.Headers.ContentEncoding.FirstOrDefault();
+        await using var rawStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
         Stream decompressed = contentEncoding?.ToLowerInvariant() switch
         {
@@ -216,21 +267,11 @@ public sealed partial class WebPreviewProxyMiddleware
             _ => rawStream
         };
 
-        string html;
         await using (decompressed)
         {
             using var reader = new StreamReader(decompressed, Encoding.UTF8);
-            html = await reader.ReadToEndAsync(context.RequestAborted);
+            return await reader.ReadToEndAsync(cancellationToken);
         }
-
-        // Inject <base href="/webpreview/"> after <head> or <head ...>
-        html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">", 1);
-
-        // Send uncompressed — strip Content-Encoding and Content-Length for this response
-        context.Response.Headers.Remove("Content-Length");
-        context.Response.Headers.Remove("Content-Encoding");
-        context.Response.ContentType = "text/html; charset=utf-8";
-        await context.Response.WriteAsync(html, context.RequestAborted);
     }
 
     private async Task ProxyWebSocketAsync(HttpContext context, Uri targetUri, string path)
@@ -355,4 +396,18 @@ public sealed partial class WebPreviewProxyMiddleware
 
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]
     private static partial Regex HeadTagRegex();
+
+    // Matches src="/...", href="/...", action="/...", poster="/...", data="/..."
+    // but NOT protocol-relative "//..." URLs. Captures the attribute name + =" prefix.
+    [GeneratedRegex(@"((?:src|href|action|poster|data)\s*=\s*[""'])/(?!/)", RegexOptions.IgnoreCase)]
+    private static partial Regex RootRelativeAttrRegex();
+
+    // Matches root-relative URLs in srcset attributes (e.g., srcset="/img/foo.png 2x")
+    [GeneratedRegex(@"(srcset\s*=\s*[""'](?:[^""']*,\s*)?)/(?!/)", RegexOptions.IgnoreCase)]
+    private static partial Regex RootRelativeSrcsetRegex();
+
+    // Matches url(/...) in inline CSS (with optional quotes)
+    [GeneratedRegex(@"url\(\s*[""']?/(?!/)", RegexOptions.IgnoreCase)]
+    private static partial Regex RootRelativeCssUrlRegex();
+
 }
