@@ -6,10 +6,7 @@
  * The web preview dock sits as the outermost (rightmost) panel.
  */
 
-import {
-  $webPreviewDocked,
-  $isMainBrowser,
-} from '../../stores';
+import { $webPreviewDocked, $isMainBrowser } from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { restoreLastUrl, showIframe } from './webPanel';
@@ -60,8 +57,9 @@ export function updateAllDockMargins(): void {
     const el = document.getElementById(id);
     if (el && !el.classList.contains('hidden')) total += el.offsetWidth;
   }
-  document.querySelectorAll<HTMLElement>('.session-tab-panels')
-    .forEach(p => p.style.marginRight = total > 0 ? total + 'px' : '');
+  document
+    .querySelectorAll<HTMLElement>('.session-tab-panels')
+    .forEach((p) => (p.style.marginRight = total > 0 ? total + 'px' : ''));
 }
 
 export function toggleWebPreviewDock(): void {
