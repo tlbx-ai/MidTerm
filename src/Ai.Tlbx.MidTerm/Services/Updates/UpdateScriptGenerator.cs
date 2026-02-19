@@ -727,6 +727,15 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 
 set -euo pipefail
 
+# Detach from inherited file descriptors immediately.
+# When launched via .NET Process with redirected stdio, the parent (mt) creates
+# pipes for stdin/stdout/stderr. When mt exits, those pipes break and any write
+# to stdout/stderr sends SIGPIPE which kills this script. Redirect everything
+# to the log file BEFORE any output happens.
+_early_log_dir='{EscapeForBash(logDir)}'
+mkdir -p ""$_early_log_dir"" 2>/dev/null || true
+exec > ""{EscapeForBash(logFilePath)}"" 2>&1 < /dev/null
+
 # === Configuration ===
 # IMPORTANT: These directories are DIFFERENT - don't confuse them!
 INSTALL_DIR='{EscapeForBash(installDir)}'           # Binaries: mt, mthost
@@ -762,9 +771,7 @@ fi
 log() {{
     local level=""${{2:-INFO}}""
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S.%3N')
-    local message=""[$timestamp] [$level] $1""
-    echo ""$message""
-    echo ""$message"" >> ""$LOG_FILE"" 2>/dev/null || true
+    echo ""[$timestamp] [$level] $1""
 }}
 
 write_result() {{
@@ -1017,9 +1024,7 @@ trap cleanup EXIT
 # Ensure log directory exists and has correct ownership
 mkdir -p ""$LOG_DIR"" 2>/dev/null || true
 
-# Clear previous logs — truncate (not rm) because rm needs directory write
-# permission which the service user may not have on /usr/local/var/log/
-: > ""$LOG_FILE"" 2>/dev/null || true
+# Log file is already truncated by exec > redirect at script start
 rm -f ""$RESULT_FILE"" 2>/dev/null || true
 
 log '=========================================='
@@ -1439,27 +1444,25 @@ write_result true ""Update completed successfully""
             // process exits (AbandonProcessGroup defaults to false). The update script must
             // run in a NEW session/process group so it survives mt's exit.
             // Linux: setsid is available as a command; macOS: use perl POSIX::setsid().
-            // Both redirect stdio so the script is fully detached from the parent.
+            //
+            // CRITICAL: Do NOT use RedirectStandard* here! It creates pipes between mt and
+            // the script. When mt exits (Environment.Exit), the pipes break, and SIGPIPE
+            // kills the update script. The script handles its own stdio redirection via
+            // exec > logfile 2>&1 < /dev/null at the top.
             var psi = OperatingSystem.IsMacOS()
                 ? new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "/usr/bin/perl",
                     Arguments = $"-e 'use POSIX; POSIX::setsid(); exec(\"/bin/bash\", \"{scriptPath}\") or die \"exec failed: $!\"'",
                     UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
+                    CreateNoWindow = true
                 }
                 : new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "/usr/bin/setsid",
                     Arguments = $"--fork /bin/bash \"{scriptPath}\"",
                     UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
+                    CreateNoWindow = true
                 };
 
             System.Diagnostics.Process.Start(psi);
