@@ -1838,6 +1838,7 @@ export interface components {
       cursorBlink: boolean;
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];
       theme: components['schemas']['ThemeSetting'];
+      terminalColorScheme: components['schemas']['TerminalColorSchemeSetting'];
       tabTitleMode: components['schemas']['TabTitleModeSetting'];
       /** Format: double */
       minimumContrastRatio: number;
@@ -1985,6 +1986,14 @@ export interface components {
       | 'sessionName'
       | 'terminalTitle'
       | 'foregroundProcess';
+    /** @enum {unknown} */
+    TerminalColorSchemeSetting:
+      | 'auto'
+      | 'dark'
+      | 'light'
+      | 'solarizedDark'
+      | 'solarizedLight'
+      | 'matrix';
     /** @enum {unknown} */
     ThemeSetting: 'dark' | 'light' | 'solarizedDark' | 'solarizedLight';
     TtyHostInfo: {

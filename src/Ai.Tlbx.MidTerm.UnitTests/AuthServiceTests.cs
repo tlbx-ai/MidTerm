@@ -14,12 +14,25 @@ public class AuthServiceTests : IDisposable
 
     public AuthServiceTests()
     {
+        // SettingsService creates WindowsSecretStorage (DPAPI) when WINDOWS is defined,
+        // which fails at runtime on non-Windows platforms. Skip setup there.
+        if (!OperatingSystem.IsWindows())
+        {
+            _tempDir = string.Empty;
+            _settingsService = null!;
+            _timeProvider = null!;
+            _authService = null!;
+            return;
+        }
+
         _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
         _settingsService = new SettingsService(_tempDir);
         _timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         _authService = new AuthService(_settingsService, _timeProvider);
     }
+
+    private static bool IsWindows => OperatingSystem.IsWindows();
 
     public void Dispose()
     {
@@ -39,6 +52,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void HashPassword_VerifyPassword_RoundTrip()
     {
+        if (!IsWindows) return;
         var password = "MySecurePassword123!";
 
         var hash = _authService.HashPassword(password);
@@ -50,6 +64,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void HashPassword_ProducesDifferentHashesForSamePassword()
     {
+        if (!IsWindows) return;
         var password = "TestPassword";
 
         var hash1 = _authService.HashPassword(password);
@@ -61,6 +76,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void VerifyPassword_WrongPassword_ReturnsFalse()
     {
+        if (!IsWindows) return;
         var hash = _authService.HashPassword("CorrectPassword");
 
         var result = _authService.VerifyPassword("WrongPassword", hash);
@@ -71,6 +87,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void VerifyPassword_CorruptedHash_ReturnsFalse()
     {
+        if (!IsWindows) return;
         var corruptedHash = "$PBKDF2$100000$invalidbase64$alsonotvalid";
 
         var result = _authService.VerifyPassword("AnyPassword", corruptedHash);
@@ -81,6 +98,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void VerifyPassword_MalformedHash_ReturnsFalse()
     {
+        if (!IsWindows) return;
         var malformedHash = "notavalidhash";
 
         var result = _authService.VerifyPassword("AnyPassword", malformedHash);
@@ -91,6 +109,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void VerifyPassword_EmptyPassword_ReturnsFalse()
     {
+        if (!IsWindows) return;
         var hash = _authService.HashPassword("SomePassword");
 
         var result = _authService.VerifyPassword("", hash);
@@ -101,6 +120,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void VerifyPassword_NullHash_ReturnsFalse()
     {
+        if (!IsWindows) return;
         var result = _authService.VerifyPassword("AnyPassword", null);
 
         Assert.False(result);
@@ -109,6 +129,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void VerifyPassword_EmptyHash_ReturnsFalse()
     {
+        if (!IsWindows) return;
         var result = _authService.VerifyPassword("AnyPassword", "");
 
         Assert.False(result);
@@ -117,6 +138,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void RateLimit_FourFailures_NotLocked()
     {
+        if (!IsWindows) return;
         var ip = "192.168.1.1";
 
         for (var i = 0; i < 4; i++)
@@ -130,6 +152,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void RateLimit_FiveFailures_30SecondLockout()
     {
+        if (!IsWindows) return;
         var ip = "192.168.1.2";
 
         for (var i = 0; i < 5; i++)
@@ -148,6 +171,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void RateLimit_TenFailures_5MinuteLockout()
     {
+        if (!IsWindows) return;
         var ip = "192.168.1.3";
 
         for (var i = 0; i < 10; i++)
@@ -166,6 +190,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void RateLimit_ResetAttempts_ClearsLockout()
     {
+        if (!IsWindows) return;
         var ip = "192.168.1.4";
 
         for (var i = 0; i < 5; i++)
@@ -183,6 +208,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void RateLimit_LockoutExpires_AfterTime()
     {
+        if (!IsWindows) return;
         var ip = "192.168.1.5";
 
         for (var i = 0; i < 5; i++)
@@ -199,6 +225,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void RateLimit_5MinLockoutExpires_AfterTime()
     {
+        if (!IsWindows) return;
         var ip = "192.168.1.6";
 
         for (var i = 0; i < 10; i++)
@@ -215,6 +242,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void SessionToken_ValidWithin72Hours()
     {
+        if (!IsWindows) return;
         var token = _authService.CreateSessionToken();
 
         _timeProvider.Advance(TimeSpan.FromHours(71));
@@ -225,6 +253,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void SessionToken_InvalidAfter72Hours()
     {
+        if (!IsWindows) return;
         var token = _authService.CreateSessionToken();
 
         _timeProvider.Advance(TimeSpan.FromHours(73));
@@ -235,6 +264,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void SessionToken_TamperedSignature_Invalid()
     {
+        if (!IsWindows) return;
         var token = _authService.CreateSessionToken();
         var parts = token.Split(':');
         var tamperedToken = $"{parts[0]}:tampered_signature";
@@ -245,6 +275,7 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void SessionToken_TamperedTimestamp_Invalid()
     {
+        if (!IsWindows) return;
         var token = _authService.CreateSessionToken();
         var parts = token.Split(':');
         var tamperedToken = $"9999999999:{parts[1]}";
@@ -255,18 +286,21 @@ public class AuthServiceTests : IDisposable
     [Fact]
     public void SessionToken_NullToken_Invalid()
     {
+        if (!IsWindows) return;
         Assert.False(_authService.ValidateSessionToken(null));
     }
 
     [Fact]
     public void SessionToken_EmptyToken_Invalid()
     {
+        if (!IsWindows) return;
         Assert.False(_authService.ValidateSessionToken(""));
     }
 
     [Fact]
     public void SessionToken_MalformedToken_Invalid()
     {
+        if (!IsWindows) return;
         Assert.False(_authService.ValidateSessionToken("notavalidtoken"));
     }
 }

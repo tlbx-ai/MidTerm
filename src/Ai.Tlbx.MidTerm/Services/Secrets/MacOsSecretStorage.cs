@@ -5,6 +5,11 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Secrets;
 
+/// <summary>
+/// Stores secrets in the macOS Data Protection Keychain using modern SecItem* APIs.
+/// Unlike the legacy SecKeychain* APIs, these do not trigger
+/// "would like to access data from other apps" TCC dialogs.
+/// </summary>
 [SupportedOSPlatform("macos")]
 public sealed class MacOsSecretStorage : ISecretStorage
 {
@@ -20,161 +25,267 @@ public sealed class MacOsSecretStorage : ISecretStorage
 
     public string? GetSecret(string key)
     {
-        var status = SecKeychainFindGenericPassword(
-            IntPtr.Zero,
-            (uint)ServiceName.Length,
-            ServiceName,
-            (uint)key.Length,
-            key,
-            out var passwordLength,
-            out var passwordData,
-            out var itemRef);
-
-        if (status == ErrSecItemNotFound)
-        {
-            return null;
-        }
-
-        if (status != ErrSecSuccess)
-        {
-            Log.Error(() => $"Keychain read failed for '{key}' with status {status}");
-            return null;
-        }
+        var query = IntPtr.Zero;
+        var result = IntPtr.Zero;
 
         try
         {
-            var password = new byte[passwordLength];
-            Marshal.Copy(passwordData, password, 0, (int)passwordLength);
-            return Encoding.UTF8.GetString(password);
+            query = CreateQuery(key);
+            CFDictionarySetValue(query, kSecReturnData, kCFBooleanTrue);
+            CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitOne);
+
+            var status = SecItemCopyMatching(query, out result);
+
+            if (status == ErrSecItemNotFound)
+            {
+                return null;
+            }
+
+            if (status != ErrSecSuccess)
+            {
+                Log.Error(() => $"Keychain read failed for '{key}' with status {status}");
+                return null;
+            }
+
+            var length = CFDataGetLength(result);
+            if (length == 0)
+            {
+                return string.Empty;
+            }
+
+            var dataPtr = CFDataGetBytePtr(result);
+            var bytes = new byte[length];
+            Marshal.Copy(dataPtr, bytes, 0, (int)length);
+            return Encoding.UTF8.GetString(bytes);
         }
         finally
         {
-            SecKeychainItemFreeContent(IntPtr.Zero, passwordData);
-            if (itemRef != IntPtr.Zero)
-            {
-                CFRelease(itemRef);
-            }
+            if (query != IntPtr.Zero) CFRelease(query);
+            if (result != IntPtr.Zero) CFRelease(result);
         }
     }
 
     public void SetSecret(string key, string value)
     {
         var passwordBytes = Encoding.UTF8.GetBytes(value);
+        var passwordData = IntPtr.Zero;
+        var addDict = IntPtr.Zero;
+        var updateDict = IntPtr.Zero;
+        var query = IntPtr.Zero;
 
-        var status = SecKeychainAddGenericPassword(
-            IntPtr.Zero,
-            (uint)ServiceName.Length,
-            ServiceName,
-            (uint)key.Length,
-            key,
-            (uint)passwordBytes.Length,
-            passwordBytes,
-            out var itemRef);
-
-        if (status == ErrSecDuplicateItem)
+        try
         {
-            // Release itemRef from failed add attempt (may be non-null on some macOS versions)
-            if (itemRef != IntPtr.Zero)
+            passwordData = CFDataCreate(IntPtr.Zero, passwordBytes, passwordBytes.Length);
+            addDict = CreateQuery(key);
+            CFDictionarySetValue(addDict, kSecValueData, passwordData);
+            CFDictionarySetValue(addDict, kSecUseDataProtectionKeychain, kCFBooleanTrue);
+
+            var status = SecItemAdd(addDict, IntPtr.Zero);
+
+            if (status == ErrSecDuplicateItem)
             {
-                CFRelease(itemRef);
+                // Item exists — update it
+                query = CreateQuery(key);
+                updateDict = CFDictionaryCreateMutable(
+                    IntPtr.Zero, 1,
+                    ref kCFTypeDictionaryKeyCallBacks,
+                    ref kCFTypeDictionaryValueCallBacks);
+                CFDictionarySetValue(updateDict, kSecValueData, passwordData);
+
+                status = SecItemUpdate(query, updateDict);
             }
 
-            // Item exists, find and update it
-            status = SecKeychainFindGenericPassword(
-                IntPtr.Zero,
-                (uint)ServiceName.Length,
-                ServiceName,
-                (uint)key.Length,
-                key,
-                out _,
-                out _,
-                out itemRef);
-
-            if (status == ErrSecSuccess)
+            if (status != ErrSecSuccess)
             {
-                status = SecKeychainItemModifyContent(itemRef, IntPtr.Zero, (uint)passwordBytes.Length, passwordBytes);
-                CFRelease(itemRef);
+                Log.Error(() => $"Keychain write failed for '{key}' with status {status}");
+                throw new InvalidOperationException($"Failed to store secret in Keychain: status {status}");
             }
         }
-        else if (status == ErrSecSuccess && itemRef != IntPtr.Zero)
+        finally
         {
-            CFRelease(itemRef);
-        }
-
-        if (status != ErrSecSuccess)
-        {
-            Log.Error(() => $"Keychain write failed for '{key}' with status {status}");
-            throw new InvalidOperationException($"Failed to store secret in Keychain: status {status}");
+            if (passwordData != IntPtr.Zero) CFRelease(passwordData);
+            if (addDict != IntPtr.Zero) CFRelease(addDict);
+            if (updateDict != IntPtr.Zero) CFRelease(updateDict);
+            if (query != IntPtr.Zero) CFRelease(query);
         }
     }
 
     public void DeleteSecret(string key)
     {
-        var status = SecKeychainFindGenericPassword(
-            IntPtr.Zero,
-            (uint)ServiceName.Length,
-            ServiceName,
-            (uint)key.Length,
-            key,
-            out _,
-            out _,
-            out var itemRef);
+        var query = IntPtr.Zero;
 
-        if (status == ErrSecItemNotFound)
+        try
         {
-            return;
+            query = CreateQuery(key);
+            var status = SecItemDelete(query);
+
+            if (status == ErrSecItemNotFound)
+            {
+                return;
+            }
+
+            if (status != ErrSecSuccess)
+            {
+                Log.Error(() => $"Keychain delete failed for '{key}' with status {status}");
+            }
         }
-
-        if (status != ErrSecSuccess)
+        finally
         {
-            Log.Error(() => $"Keychain find failed for delete '{key}' with status {status}");
-            return;
-        }
-
-        status = SecKeychainItemDelete(itemRef);
-        CFRelease(itemRef);
-
-        if (status != ErrSecSuccess)
-        {
-            Log.Error(() => $"Keychain delete failed for '{key}' with status {status}");
+            if (query != IntPtr.Zero) CFRelease(query);
         }
     }
 
-    [DllImport("/System/Library/Frameworks/Security.framework/Security")]
-    private static extern int SecKeychainAddGenericPassword(
-        IntPtr keychain,
-        uint serviceNameLength,
-        [MarshalAs(UnmanagedType.LPStr)] string serviceName,
-        uint accountNameLength,
-        [MarshalAs(UnmanagedType.LPStr)] string accountName,
-        uint passwordLength,
-        byte[] passwordData,
-        out IntPtr itemRef);
+    /// <summary>
+    /// Builds a base query dictionary with kSecClass, kSecAttrService, kSecAttrAccount,
+    /// and kSecUseDataProtectionKeychain set.
+    /// </summary>
+    private static IntPtr CreateQuery(string account)
+    {
+        var dict = CFDictionaryCreateMutable(
+            IntPtr.Zero, 4,
+            ref kCFTypeDictionaryKeyCallBacks,
+            ref kCFTypeDictionaryValueCallBacks);
 
-    [DllImport("/System/Library/Frameworks/Security.framework/Security")]
-    private static extern int SecKeychainFindGenericPassword(
-        IntPtr keychainOrArray,
-        uint serviceNameLength,
-        [MarshalAs(UnmanagedType.LPStr)] string serviceName,
-        uint accountNameLength,
-        [MarshalAs(UnmanagedType.LPStr)] string accountName,
-        out uint passwordLength,
-        out IntPtr passwordData,
-        out IntPtr itemRef);
+        var cfService = CFStringCreateWithCString(IntPtr.Zero, ServiceName, kCFStringEncodingUTF8);
+        var cfAccount = CFStringCreateWithCString(IntPtr.Zero, account, kCFStringEncodingUTF8);
 
-    [DllImport("/System/Library/Frameworks/Security.framework/Security")]
-    private static extern int SecKeychainItemModifyContent(
-        IntPtr itemRef,
-        IntPtr attrList,
-        uint length,
-        byte[] data);
+        try
+        {
+            CFDictionarySetValue(dict, kSecClass, kSecClassGenericPassword);
+            CFDictionarySetValue(dict, kSecAttrService, cfService);
+            CFDictionarySetValue(dict, kSecAttrAccount, cfAccount);
+            CFDictionarySetValue(dict, kSecUseDataProtectionKeychain, kCFBooleanTrue);
+        }
+        finally
+        {
+            CFRelease(cfService);
+            CFRelease(cfAccount);
+        }
 
-    [DllImport("/System/Library/Frameworks/Security.framework/Security")]
-    private static extern int SecKeychainItemDelete(IntPtr itemRef);
+        return dict;
+    }
 
-    [DllImport("/System/Library/Frameworks/Security.framework/Security")]
-    private static extern int SecKeychainItemFreeContent(IntPtr attrList, IntPtr data);
+    #region Security framework P/Invoke
 
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private const string SecurityLib = "/System/Library/Frameworks/Security.framework/Security";
+
+    [DllImport(SecurityLib)]
+    private static extern int SecItemCopyMatching(IntPtr query, out IntPtr result);
+
+    [DllImport(SecurityLib)]
+    private static extern int SecItemAdd(IntPtr attributes, IntPtr result);
+
+    [DllImport(SecurityLib)]
+    private static extern int SecItemUpdate(IntPtr query, IntPtr attributesToUpdate);
+
+    [DllImport(SecurityLib)]
+    private static extern int SecItemDelete(IntPtr query);
+
+    // Security constants (loaded as extern symbols)
+    private static readonly IntPtr kSecClass = GetConstant(SecurityLib, "kSecClass");
+    private static readonly IntPtr kSecClassGenericPassword = GetConstant(SecurityLib, "kSecClassGenericPassword");
+    private static readonly IntPtr kSecAttrService = GetConstant(SecurityLib, "kSecAttrService");
+    private static readonly IntPtr kSecAttrAccount = GetConstant(SecurityLib, "kSecAttrAccount");
+    private static readonly IntPtr kSecValueData = GetConstant(SecurityLib, "kSecValueData");
+    private static readonly IntPtr kSecReturnData = GetConstant(SecurityLib, "kSecReturnData");
+    private static readonly IntPtr kSecMatchLimit = GetConstant(SecurityLib, "kSecMatchLimit");
+    private static readonly IntPtr kSecMatchLimitOne = GetConstant(SecurityLib, "kSecMatchLimitOne");
+    private static readonly IntPtr kSecUseDataProtectionKeychain = GetConstant(SecurityLib, "kSecUseDataProtectionKeychain");
+
+    #endregion
+
+    #region CoreFoundation P/Invoke
+
+    private const string CoreFoundationLib = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+
+    [DllImport(CoreFoundationLib)]
     private static extern void CFRelease(IntPtr cf);
+
+    [DllImport(CoreFoundationLib)]
+    private static extern IntPtr CFDictionaryCreateMutable(
+        IntPtr allocator,
+        nint capacity,
+        ref CFDictionaryKeyCallBacks keyCallBacks,
+        ref CFDictionaryValueCallBacks valueCallBacks);
+
+    [DllImport(CoreFoundationLib)]
+    private static extern void CFDictionarySetValue(IntPtr theDict, IntPtr key, IntPtr value);
+
+    [DllImport(CoreFoundationLib)]
+    private static extern IntPtr CFStringCreateWithCString(IntPtr alloc, string cStr, uint encoding);
+
+    [DllImport(CoreFoundationLib)]
+    private static extern IntPtr CFDataCreate(IntPtr allocator, byte[] bytes, nint length);
+
+    [DllImport(CoreFoundationLib)]
+    private static extern nint CFDataGetLength(IntPtr theData);
+
+    [DllImport(CoreFoundationLib)]
+    private static extern IntPtr CFDataGetBytePtr(IntPtr theData);
+
+    private const uint kCFStringEncodingUTF8 = 0x08000100;
+
+    // kCFBooleanTrue
+    private static readonly IntPtr kCFBooleanTrue = GetConstant(CoreFoundationLib, "kCFBooleanTrue");
+
+    // Dictionary callback structs
+    [DllImport(CoreFoundationLib)]
+    private static extern ref CFDictionaryKeyCallBacks _kCFTypeDictionaryKeyCallBacks();
+
+    [DllImport(CoreFoundationLib)]
+    private static extern ref CFDictionaryValueCallBacks _kCFTypeDictionaryValueCallBacks();
+
+    private static CFDictionaryKeyCallBacks kCFTypeDictionaryKeyCallBacks = GetKeyCallBacks();
+    private static CFDictionaryValueCallBacks kCFTypeDictionaryValueCallBacks = GetValueCallBacks();
+
+    private static CFDictionaryKeyCallBacks GetKeyCallBacks()
+    {
+        var ptr = GetConstant(CoreFoundationLib, "kCFTypeDictionaryKeyCallBacks");
+        return Marshal.PtrToStructure<CFDictionaryKeyCallBacks>(ptr);
+    }
+
+    private static CFDictionaryValueCallBacks GetValueCallBacks()
+    {
+        var ptr = GetConstant(CoreFoundationLib, "kCFTypeDictionaryValueCallBacks");
+        return Marshal.PtrToStructure<CFDictionaryValueCallBacks>(ptr);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CFDictionaryKeyCallBacks
+    {
+        public nint version;
+        public IntPtr retain;
+        public IntPtr release;
+        public IntPtr copyDescription;
+        public IntPtr equal;
+        public IntPtr hash;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CFDictionaryValueCallBacks
+    {
+        public nint version;
+        public IntPtr retain;
+        public IntPtr release;
+        public IntPtr copyDescription;
+        public IntPtr equal;
+    }
+
+    #endregion
+
+    #region Symbol loader
+
+    private static IntPtr GetConstant(string library, string name)
+    {
+        var lib = NativeLibrary.Load(library);
+        if (!NativeLibrary.TryGetExport(lib, name, out var ptr))
+        {
+            throw new EntryPointNotFoundException($"Symbol '{name}' not found in {library}");
+        }
+
+        // Security constants are pointers-to-CFStringRef; dereference to get the actual CFStringRef
+        return Marshal.ReadIntPtr(ptr);
+    }
+
+    #endregion
 }

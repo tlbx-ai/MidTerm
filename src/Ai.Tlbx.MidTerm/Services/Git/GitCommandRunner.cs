@@ -178,13 +178,11 @@ internal static class GitCommandRunner
     {
         var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);
 
-        var unstagedTask = RunGitAsync(repoRoot, "diff", "--numstat");
-        var stagedTask = RunGitAsync(repoRoot, "diff", "--cached", "--numstat");
+        var (_, unstaged, _) = await RunGitAsync(repoRoot, "diff", "--numstat");
+        ParseNumStat(result, unstaged);
 
-        await Task.WhenAll(unstagedTask, stagedTask);
-
-        ParseNumStat(result, (await unstagedTask).Stdout);
-        ParseNumStat(result, (await stagedTask).Stdout);
+        var (_, staged, _) = await RunGitAsync(repoRoot, "diff", "--cached", "--numstat");
+        ParseNumStat(result, staged);
 
         return result;
     }
@@ -300,6 +298,10 @@ internal static class GitCommandRunner
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
     {
+        var fullArgs = new string[args.Length + 1];
+        fullArgs[0] = "--no-optional-locks";
+        args.CopyTo(fullArgs, 1);
+
         using var cts = new CancellationTokenSource(CommandTimeout);
 
         try
@@ -307,13 +309,13 @@ internal static class GitCommandRunner
 #if WINDOWS
             if (_isServiceMode && OperatingSystem.IsWindows())
             {
-                var result = await TtyHostSpawner.RunCommandAsUserAsync("git", args, workingDir, _runAsUser, cts.Token);
-                RecordCommand(workingDir, args, result.ExitCode, result.Stdout, result.Stderr);
+                var result = await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, workingDir, _runAsUser, cts.Token);
+                RecordCommand(workingDir, fullArgs, result.ExitCode, result.Stdout, result.Stderr);
                 return result;
             }
 #endif
 
-            return await RunGitDirectAsync(workingDir, args, cts.Token);
+            return await RunGitDirectAsync(workingDir, fullArgs, cts.Token);
         }
         catch (OperationCanceledException)
         {

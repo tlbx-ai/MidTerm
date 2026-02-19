@@ -2909,6 +2909,16 @@ html, body {
     color: var(--accent-cyan);
 }
 
+.dev-badge {
+    color: #fff;
+    background: var(--accent-orange);
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: var(--fs-base);
+    letter-spacing: 0.05em;
+}
+
 .update-actions-inline {
     display: flex;
     gap: 8px;

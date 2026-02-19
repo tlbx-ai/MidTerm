@@ -152,6 +152,10 @@ public sealed partial class UpdateService : IDisposable
             var devEnv = GetDevEnvironment();
             var updateChannel = _settingsService.Load().UpdateChannel;
 
+            // Dev environment always uses dev update channel
+            if (devEnv is not null)
+                updateChannel = "dev";
+
             GitHubRelease? release;
             if (updateChannel == "dev")
             {

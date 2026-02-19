@@ -221,7 +221,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 }
             }
 #else
-            const string socketDir = "/tmp";
+            var socketDir = IpcEndpoint.GetUnixSocketDirectory();
             if (Directory.Exists(socketDir))
             {
                 foreach (var socketPath in Directory.GetFiles(socketDir, $"{IpcEndpoint.Prefix}*.sock"))
@@ -284,8 +284,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 return pid;
             }
 #else
-            var pattern = $"/tmp/mthost-{sessionId}-*.sock";
-            var matches = Directory.GetFiles("/tmp", $"mthost-{sessionId}-*.sock");
+            var socketDir = IpcEndpoint.GetUnixSocketDirectory();
+            var matches = Directory.GetFiles(socketDir, $"mthost-{sessionId}-*.sock");
             if (matches.Length == 0) return null;
 
             var fileName = Path.GetFileNameWithoutExtension(matches[0]);

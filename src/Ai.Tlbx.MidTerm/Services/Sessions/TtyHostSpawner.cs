@@ -240,6 +240,9 @@ public static class TtyHostSpawner
     [DllImport("libc", EntryPoint = "geteuid")]
     private static extern uint geteuid();
 
+    [DllImport("libc", EntryPoint = "setpgid")]
+    private static extern int setpgid(int pid, int pgid);
+
     private static bool SpawnUnix(string args, string? runAsUser, out int processId)
     {
         processId = 0;
@@ -294,6 +297,15 @@ public static class TtyHostSpawner
             }
 
             processId = process.Id;
+
+            // Move mthost into its own process group so it survives mt restarts.
+            // When launchd kills mt, it sends SIGTERM to mt's process group.
+            // Without this, mthosts inherit mt's PGID and die with it.
+            if (setpgid(process.Id, 0) != 0)
+            {
+                Log.Warn(() => $"TtyHostSpawner: setpgid failed for PID {process.Id} (errno: {Marshal.GetLastPInvokeError()})");
+            }
+
             if (isRoot && !string.IsNullOrEmpty(runAsUser))
             {
                 Log.Info(() => $"TtyHostSpawner: Spawned via sudo (PID: {process.Id} is sudo, not mthost). Socket discovery will use glob pattern.");

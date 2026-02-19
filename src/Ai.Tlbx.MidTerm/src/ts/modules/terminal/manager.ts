@@ -6,7 +6,8 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { THEMES, MOBILE_BREAKPOINT, TERMINAL_FONT_STACK } from '../../constants';
+import { MOBILE_BREAKPOINT, TERMINAL_FONT_STACK } from '../../constants';
+import { getEffectiveXtermTheme } from '../theming/themes';
 import {
   sessionTerminals,
   pendingOutputFrames,
@@ -169,7 +170,6 @@ export function getTerminalOptions(): ITerminalOptions {
   const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
   const baseFontSize = currentSettings?.fontSize ?? 14;
   const fontSize = isMobile ? Math.max(baseFontSize - 2, 10) : baseFontSize;
-  const themeName = currentSettings?.theme ?? 'dark';
   const fontFamily = currentSettings?.fontFamily ?? 'Cascadia Code';
   const scrollback = currentSettings?.scrollbackLines ?? 10000;
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
@@ -188,7 +188,7 @@ export function getTerminalOptions(): ITerminalOptions {
     allowProposedApi: true,
     customGlyphs: true,
     rescaleOverlappingGlyphs: true,
-    theme: THEMES[themeName] ?? THEMES.dark,
+    theme: getEffectiveXtermTheme(),
   };
 
   // Configure ConPTY for Windows - use server-provided build or detect from userAgent

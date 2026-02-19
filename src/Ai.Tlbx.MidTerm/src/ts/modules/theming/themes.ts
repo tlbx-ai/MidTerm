@@ -12,20 +12,28 @@ import { setCookie } from '../../utils';
 import { applyCssTheme } from './cssThemes';
 
 /**
- * Get the current theme based on settings
+ * Resolve the effective xterm color scheme.
+ * If terminalColorScheme is 'auto', falls back to the UI theme.
  */
-export function getCurrentTheme(): TerminalTheme {
-  const themeName = $currentSettings.get()?.theme || 'dark';
-  return THEMES[themeName] || THEMES.dark;
+export function getEffectiveXtermTheme(): TerminalTheme {
+  const s = $currentSettings.get();
+  const colorScheme = s?.terminalColorScheme ?? 'auto';
+  const key = colorScheme === 'auto' ? (s?.theme ?? 'dark') : colorScheme;
+  return THEMES[key] ?? THEMES['dark']!;
 }
 
 /**
- * Apply theme to all terminals
+ * Get the current theme based on settings
  */
-export function applyThemeToTerminals(themeName: ThemeName): void {
-  const theme = THEMES[themeName];
-  if (!theme) return;
+export function getCurrentTheme(): TerminalTheme {
+  return getEffectiveXtermTheme();
+}
 
+/**
+ * Apply the effective xterm theme to all terminals
+ */
+export function applyXtermThemeToTerminals(): void {
+  const theme = getEffectiveXtermTheme();
   sessionTerminals.forEach((state) => {
     state.terminal.options.theme = theme;
   });
@@ -36,7 +44,7 @@ export function applyThemeToTerminals(themeName: ThemeName): void {
  */
 export function setTheme(themeName: ThemeName): void {
   setCookie('mm-theme', themeName);
-  applyThemeToTerminals(themeName);
+  applyXtermThemeToTerminals();
   applyCssTheme(themeName);
 }
 

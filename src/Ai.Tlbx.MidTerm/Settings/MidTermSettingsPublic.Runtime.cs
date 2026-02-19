@@ -18,6 +18,7 @@ public sealed partial class MidTermSettingsPublic
             CursorBlink = settings.CursorBlink,
             CursorInactiveStyle = settings.CursorInactiveStyle,
             Theme = settings.Theme,
+            TerminalColorScheme = settings.TerminalColorScheme,
             TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
@@ -56,6 +57,7 @@ public sealed partial class MidTermSettingsPublic
         settings.CursorBlink = CursorBlink;
         settings.CursorInactiveStyle = CursorInactiveStyle;
         settings.Theme = Theme;
+        settings.TerminalColorScheme = TerminalColorScheme;
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
         settings.SmoothScrolling = SmoothScrolling;

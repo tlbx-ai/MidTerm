@@ -234,6 +234,10 @@
                                         <label data-i18n="settings.general.host">Host</label>
                                         <span class="version-value" id="version-host" title="mthost.exe binary version">-</span>
                                     </div>
+                                    <div class="setting-row" id="dev-environment-row" style="display:none">
+                                        <label data-i18n="settings.general.environment">Environment</label>
+                                        <span class="version-value dev-badge" id="dev-environment-name">-</span>
+                                    </div>
                                     <div class="setting-row">
                                         <label data-i18n="settings.general.updates">Updates</label>
                                         <div class="update-actions-inline">
@@ -368,6 +372,17 @@
                                             <option value="light" data-i18n="settings.options.themeLight">Light</option>
                                             <option value="solarizedDark" data-i18n="settings.options.themeSolarizedDark">Solarized Dark</option>
                                             <option value="solarizedLight" data-i18n="settings.options.themeSolarizedLight">Solarized Light</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-terminal-color-scheme" data-i18n="settings.appearance.terminalColorScheme">Terminal Colors</label>
+                                        <select id="setting-terminal-color-scheme">
+                                            <option value="auto" data-i18n="settings.options.colorSchemeAuto">Auto (follows theme)</option>
+                                            <option value="dark" data-i18n="settings.options.themeDark">Dark</option>
+                                            <option value="light" data-i18n="settings.options.themeLight">Light</option>
+                                            <option value="solarizedDark" data-i18n="settings.options.themeSolarizedDark">Solarized Dark</option>
+                                            <option value="solarizedLight" data-i18n="settings.options.themeSolarizedLight">Solarized Light</option>
+                                            <option value="matrix" data-i18n="settings.options.colorSchemeMatrix">Matrix</option>
                                         </select>
                                     </div>
                                     <div class="setting-row">

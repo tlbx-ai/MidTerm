@@ -1264,6 +1264,8 @@ install_launchd() {
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>AbandonProcessGroup</key>
+    <true/>
     <key>UserName</key>
     <string>${INSTALLING_USER}</string>
     <key>StandardOutPath</key>

@@ -4,7 +4,7 @@
  * Protocol constants, theme definitions, and configuration values.
  */
 
-import type { TerminalTheme, ThemeName } from './types';
+import type { TerminalTheme } from './types';
 
 // =============================================================================
 // Build Version (injected at compile time via esbuild --define)
@@ -52,8 +52,8 @@ export const WS_CLOSE_PROTOCOL_ERROR = 4400;
 // Terminal Themes
 // =============================================================================
 
-/** Terminal color themes */
-export const THEMES: Record<ThemeName, TerminalTheme> = {
+/** Terminal color themes (keyed by ThemeName or xterm-only scheme names like 'matrix') */
+export const THEMES: Record<string, TerminalTheme> = {
   dark: {
     background: '#05050A',
     foreground: '#E0E2F0',
@@ -158,6 +158,32 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     brightCyan: '#1F8E85',
     brightWhite: '#FDF6E3',
   },
+  matrix: {
+    background: '#0A0A0A',
+    foreground: '#00FF41',
+    cursor: '#00FF41',
+    cursorAccent: '#0A0A0A',
+    selectionBackground: '#0A3A0A',
+    scrollbarSliderBackground: 'rgba(0, 255, 65, 0.2)',
+    scrollbarSliderHoverBackground: 'rgba(0, 255, 65, 0.4)',
+    scrollbarSliderActiveBackground: 'rgba(0, 255, 65, 0.6)',
+    black: '#0D1A0D',
+    red: '#00AA33',
+    green: '#00FF41',
+    yellow: '#55FF55',
+    blue: '#00CC55',
+    magenta: '#33DD77',
+    cyan: '#00EE66',
+    white: '#88FFAA',
+    brightBlack: '#339944',
+    brightRed: '#33DD55',
+    brightGreen: '#66FF88',
+    brightYellow: '#99FF99',
+    brightBlue: '#44EE77',
+    brightMagenta: '#77FFAA',
+    brightCyan: '#55FF88',
+    brightWhite: '#BBFFCC',
+  },
 };
 
 // =============================================================================
@@ -170,7 +196,7 @@ export const DEFAULT_SETTINGS = {
   scrollbackLines: 10000,
   cursorStyle: 'bar' as const,
   cursorBlink: true,
-  theme: 'dark' as ThemeName,
+  theme: 'dark' as const,
   bellStyle: 'notification' as const,
   copyOnSelect: false,
   rightClickPaste: true,

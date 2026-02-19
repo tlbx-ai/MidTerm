@@ -17,9 +17,11 @@ import type {
   ClipboardShortcutsSetting,
   TabTitleModeSetting,
   ScrollbarStyleSetting,
+  TerminalColorSchemeSetting,
 } from '../../api/types';
-import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
+import { TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
+import { getEffectiveXtermTheme } from '../theming/themes';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
@@ -76,6 +78,7 @@ export function populateVersionInfo(
   serverVersion: string | null,
   hostVersion: string | null,
   frontendVersion: string,
+  devMode?: boolean,
 ): void {
   // Strip git hash suffix but preserve [LOCAL] indicator
   const formatVersion = (v: string) => 'v' + v.replace(/[+-][a-f0-9]+$/i, '');
@@ -93,6 +96,13 @@ export function populateVersionInfo(
   const hostEl = document.getElementById('version-host');
   if (hostEl) {
     hostEl.textContent = hostVersion ? formatVersion(hostVersion) : '-';
+  }
+
+  const envRow = document.getElementById('dev-environment-row');
+  const envEl = document.getElementById('dev-environment-name');
+  if (envRow && envEl && devMode) {
+    envRow.style.display = '';
+    envEl.textContent = 'DEV';
   }
 }
 
@@ -131,6 +141,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-cursor-blink', settings.cursorBlink !== false);
   setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle ?? 'outline');
   setElementValue('setting-theme', settings.theme ?? 'dark');
+  setElementValue('setting-terminal-color-scheme', settings.terminalColorScheme ?? 'auto');
   setElementValue('setting-tab-title', settings.tabTitleMode ?? 'hostname');
   setElementValue('setting-contrast', String(settings.minimumContrastRatio ?? 1));
   setElementValue('setting-scrollback', settings.scrollbackLines ?? 10000);
@@ -195,8 +206,7 @@ export function applySettingsToTerminals(): void {
   const settings = $currentSettings.get();
   if (!settings) return;
 
-  const themeName = settings.theme ?? 'dark';
-  const theme = THEMES[themeName] || THEMES.dark;
+  const theme = getEffectiveXtermTheme();
   const fontFamily = `'${settings.fontFamily ?? 'Cascadia Code'}', ${TERMINAL_FONT_STACK}`;
   const fontSize = settings.fontSize ?? 14;
   const contrastRatio = settings.minimumContrastRatio ?? 1;
@@ -271,6 +281,10 @@ export function saveAllSettings(): void {
       'outline',
     ) as CursorInactiveStyleSetting,
     theme: getElementValue('setting-theme', 'dark') as ThemeSetting,
+    terminalColorScheme: getElementValue(
+      'setting-terminal-color-scheme',
+      'auto',
+    ) as TerminalColorSchemeSetting,
     tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleModeSetting,
     minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
     smoothScrolling: getElementChecked('setting-smooth-scrolling'),

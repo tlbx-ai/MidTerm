@@ -31,6 +31,7 @@ public sealed class MidTermSettings
     public bool CursorBlink { get; set; } = true;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.Outline;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
+    public TerminalColorSchemeSetting TerminalColorScheme { get; set; } = TerminalColorSchemeSetting.Auto;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;

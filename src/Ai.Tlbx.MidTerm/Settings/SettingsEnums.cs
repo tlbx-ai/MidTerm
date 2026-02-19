@@ -64,6 +64,16 @@ public enum ScrollbarStyleSetting
     [JsonStringEnumMemberName("always")] Always
 }
 
+public enum TerminalColorSchemeSetting
+{
+    [JsonStringEnumMemberName("auto")] Auto,
+    [JsonStringEnumMemberName("dark")] Dark,
+    [JsonStringEnumMemberName("light")] Light,
+    [JsonStringEnumMemberName("solarizedDark")] SolarizedDark,
+    [JsonStringEnumMemberName("solarizedLight")] SolarizedLight,
+    [JsonStringEnumMemberName("matrix")] Matrix
+}
+
 public enum LanguageSetting
 {
     [JsonStringEnumMemberName("auto")] Auto,
