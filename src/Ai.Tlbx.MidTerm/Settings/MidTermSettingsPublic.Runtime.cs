@@ -37,6 +37,7 @@ public sealed partial class MidTermSettingsPublic
             ManagerBarButtons = settings.ManagerBarButtons,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             ShowUpdateNotification = settings.ShowUpdateNotification,
+            UpdateChannel = settings.UpdateChannel,
             Language = settings.Language,
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
@@ -76,6 +77,8 @@ public sealed partial class MidTermSettingsPublic
         settings.ManagerBarButtons = ManagerBarButtons;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
         settings.ShowUpdateNotification = ShowUpdateNotification;
+        if (UpdateChannel is "stable" or "dev")
+            settings.UpdateChannel = UpdateChannel;
         settings.Language = Language;
 
         // SECURITY: Validate RunAsUser before applying

@@ -159,6 +159,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-ide-mode', settings.ideMode !== false);
   setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate !== false);
   setElementChecked('setting-show-update-notification', settings.showUpdateNotification !== false);
+  setElementValue('setting-update-channel', settings.updateChannel ?? 'stable');
   setElementValue('setting-language', settings.language ?? 'auto');
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
@@ -306,6 +307,7 @@ export function saveAllSettings(): void {
     ideMode: getElementChecked('setting-ide-mode'),
     showChangelogAfterUpdate: getElementChecked('setting-changelog-after-update'),
     showUpdateNotification: getElementChecked('setting-show-update-notification'),
+    updateChannel: getElementValue('setting-update-channel', 'stable'),
     language: getElementValue('setting-language', 'auto') as LanguageSetting,
     runAsUser: runAsUserValue || null,
   };
