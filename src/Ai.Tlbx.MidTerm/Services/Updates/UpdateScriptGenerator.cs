@@ -1449,21 +1449,31 @@ write_result true ""Update completed successfully""
             // the script. When mt exits (Environment.Exit), the pipes break, and SIGPIPE
             // kills the update script. The script handles its own stdio redirection via
             // exec > logfile 2>&1 < /dev/null at the top.
-            var psi = OperatingSystem.IsMacOS()
-                ? new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "/usr/bin/perl",
-                    Arguments = $"-e 'use POSIX; POSIX::setsid(); exec(\"/bin/bash\", \"{scriptPath}\") or die \"exec failed: $!\"'",
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-                : new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "/usr/bin/setsid",
-                    Arguments = $"--fork /bin/bash \"{scriptPath}\"",
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
+            // Use ArgumentList (not Arguments) so .NET passes each element as a separate
+            // argv entry. Arguments is split on whitespace, which breaks multi-word perl scripts
+            // and paths with spaces. ArgumentList handles escaping automatically.
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsMacOS() ? "/usr/bin/perl" : "/usr/bin/setsid",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            if (OperatingSystem.IsMacOS())
+            {
+                // macOS: use perl POSIX::setsid() to create a new session so the script
+                // survives launchd killing mt's process group.
+                psi.ArgumentList.Add("-e");
+                psi.ArgumentList.Add(
+                    $"use POSIX; POSIX::setsid(); exec(\"/bin/bash\", \"{scriptPath}\") or die \"exec failed: $!\"");
+            }
+            else
+            {
+                // Linux: setsid --fork creates a new session directly.
+                psi.ArgumentList.Add("--fork");
+                psi.ArgumentList.Add("/bin/bash");
+                psi.ArgumentList.Add(scriptPath);
+            }
 
             System.Diagnostics.Process.Start(psi);
         }
