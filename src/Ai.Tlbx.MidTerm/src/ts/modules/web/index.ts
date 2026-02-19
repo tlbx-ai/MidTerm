@@ -8,7 +8,7 @@
 import { setWebClickHandler } from '../sessionTabs';
 import { toggleWebPreviewDock, closeWebPreviewDock, setupWebPreviewDockResize } from './webDock';
 import { initWebPanel } from './webPanel';
-import { initDetach, cleanupDetach } from './webDetach';
+import { initDetach } from './webDetach';
 
 export function initWebPreview(): void {
   setWebClickHandler(() => {
