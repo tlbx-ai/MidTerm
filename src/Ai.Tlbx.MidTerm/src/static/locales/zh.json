@@ -59,6 +59,7 @@
   "settings.general.server": "服务器",
   "settings.general.frontend": "前端",
   "settings.general.host": "主机",
+  "settings.general.environment": "环境",
   "settings.general.updates": "更新",
   "settings.general.checkForUpdates": "检查更新",
   "settings.general.changelog": "更新日志",

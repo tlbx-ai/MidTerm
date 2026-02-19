@@ -81,7 +81,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
       populateUserDropdown(users, data.settings.runAsUser ?? null);
       populateSettingsForm(data.settings);
     }
-    populateVersionInfo(data.version, data.ttyHostVersion || null, JS_BUILD_VERSION);
+    populateVersionInfo(data.version, data.ttyHostVersion || null, JS_BUILD_VERSION, data.devMode);
 
     // Initialize auth status
     if (data.auth) {

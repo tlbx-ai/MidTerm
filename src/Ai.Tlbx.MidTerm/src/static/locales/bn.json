@@ -57,6 +57,7 @@
   "settings.general.server": "সার্ভার",
   "settings.general.frontend": "ফ্রন্টএন্ড",
   "settings.general.host": "হোস্ট",
+  "settings.general.environment": "পরিবেশ",
   "settings.general.updates": "আপডেট",
   "settings.general.checkForUpdates": "আপডেট পরীক্ষা করুন",
   "settings.general.changelog": "পরিবর্তন তালিকা",

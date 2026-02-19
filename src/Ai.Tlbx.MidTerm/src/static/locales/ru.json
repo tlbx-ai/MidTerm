@@ -57,6 +57,7 @@
   "settings.general.server": "Сервер",
   "settings.general.frontend": "Frontend",
   "settings.general.host": "Хост",
+  "settings.general.environment": "Среда",
   "settings.general.updates": "Обновления",
   "settings.general.checkForUpdates": "Проверить обновления",
   "settings.general.changelog": "Список изменений",

@@ -57,6 +57,7 @@
   "settings.general.server": "Servidor",
   "settings.general.frontend": "Frontend",
   "settings.general.host": "Host",
+  "settings.general.environment": "Ambiente",
   "settings.general.updates": "Atualizações",
   "settings.general.checkForUpdates": "Verificar Atualizações",
   "settings.general.changelog": "Histórico de Alterações",

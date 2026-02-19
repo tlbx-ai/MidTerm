@@ -78,6 +78,7 @@ export function populateVersionInfo(
   serverVersion: string | null,
   hostVersion: string | null,
   frontendVersion: string,
+  devMode?: boolean,
 ): void {
   // Strip git hash suffix but preserve [LOCAL] indicator
   const formatVersion = (v: string) => 'v' + v.replace(/[+-][a-f0-9]+$/i, '');
@@ -95,6 +96,13 @@ export function populateVersionInfo(
   const hostEl = document.getElementById('version-host');
   if (hostEl) {
     hostEl.textContent = hostVersion ? formatVersion(hostVersion) : '-';
+  }
+
+  const envRow = document.getElementById('dev-environment-row');
+  const envEl = document.getElementById('dev-environment-name');
+  if (envRow && envEl && devMode) {
+    envRow.style.display = '';
+    envEl.textContent = 'DEV';
   }
 }
 
