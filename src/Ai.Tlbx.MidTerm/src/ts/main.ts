@@ -651,6 +651,14 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
   });
 
   if (id) {
+    // Link session to bookmark so future renames propagate
+    setSession({ ...session, _bookmarkId: id });
+
+    // Apply session name as bookmark label (overwrites existing label on re-pin)
+    if (session.name) {
+      await patchHistoryEntry(id, { label: session.name }).catch(() => {});
+    }
+
     refreshHistory();
     log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
   }

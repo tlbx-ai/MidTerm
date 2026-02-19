@@ -44,6 +44,8 @@ public sealed class WebPreviewService
         if (string.IsNullOrWhiteSpace(url))
             return false;
 
+        url = NormalizeUrl(url);
+
         if (!Uri.TryCreate(url.TrimEnd('/'), UriKind.Absolute, out var uri))
             return false;
 
@@ -91,5 +93,28 @@ public sealed class WebPreviewService
     {
         return host is "localhost" or "127.0.0.1" or "::1"
             || host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeUrl(string url)
+    {
+        url = url.Trim();
+
+        // Auto-prepend https:// if no scheme provided
+        if (!url.Contains("://"))
+        {
+            // Check for localhost/127.0.0.1 patterns — use http for those
+            if (url.StartsWith("localhost", StringComparison.OrdinalIgnoreCase)
+                || url.StartsWith("127.0.0.1")
+                || url.StartsWith("[::1]"))
+            {
+                url = "http://" + url;
+            }
+            else
+            {
+                url = "https://" + url;
+            }
+        }
+
+        return url;
     }
 }
