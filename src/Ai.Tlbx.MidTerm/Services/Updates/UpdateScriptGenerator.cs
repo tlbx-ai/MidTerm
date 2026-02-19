@@ -882,34 +882,31 @@ safe_copy() {{
         # launchd KeepAlive respawns the process after kill, causing ETXTBSY on cp
         # and codesign races (binary executed before signing completes).
         #
-        # Strategy: kill → rm → copy → codesign. Removing the binary ensures that
-        # when launchd respawns, exec() fails (file not found) and launchd backs off
-        # with throttle delay, giving us time to copy and codesign undisturbed.
-        local _copy_ok=false
-        for _copy_attempt in 1 2 3 4 5; do
-            kill_process_by_path ""$dst""
-            rm -f ""$dst"" 2>/dev/null || true
-            sleep 0.5
+        # Deterministic strategy (no race):
+        #   1. rm the binary FIRST — running process keeps its inode reference
+        #   2. kill the process — launchd tries to respawn but exec() fails (file gone)
+        #   3. launchd applies throttle delay (~10s) before retrying
+        #   4. copy + chmod + codesign — plenty of time, no competing process
+        #   5. launchd eventually retries → finds new signed binary → starts normally
+        rm -f ""$dst"" 2>/dev/null || true
+        kill_process_by_path ""$dst""
 
-            if cp ""$src"" ""$dst"" 2>/dev/null; then
-                chmod +x ""$dst""
-                log ""Signing $desc for macOS...""
-                if codesign -s - ""$dst"" 2>/dev/null && codesign --verify ""$dst"" 2>/dev/null; then
-                    log ""Signature verified for $desc""
-                    _copy_ok=true
-                    break
-                fi
-                log ""Codesign race (attempt $_copy_attempt) — retrying..."" ""WARN""
-            else
-                log ""Copy failed (attempt $_copy_attempt) — retrying..."" ""WARN""
-            fi
-            sleep 1
-        done
-
-        if [[ ""$_copy_ok"" != ""true"" ]]; then
-            log ""Failed to install $desc after 5 attempts"" ""ERROR""
+        if ! cp ""$src"" ""$dst""; then
+            log ""Failed to copy $desc"" ""ERROR""
             return 1
         fi
+        chmod +x ""$dst""
+
+        log ""Signing $desc for macOS...""
+        if ! codesign -s - ""$dst"" 2>/dev/null; then
+            log ""Codesign failed for $desc"" ""ERROR""
+            return 1
+        fi
+        if ! codesign --verify ""$dst"" 2>/dev/null; then
+            log ""Codesign verification failed for $desc"" ""ERROR""
+            return 1
+        fi
+        log ""Signature verified for $desc""
     else
         # Linux: atomic temp+rename (systemd runs as root, has dir write)
         local tmp_dst=""$dst.new""
