@@ -107,6 +107,30 @@ log_echo() {
     fi
 }
 
+# Structured output helpers
+print_phase() {
+    local title="$1"
+    local pad_len=$((38 - ${#title}))
+    [ $pad_len -lt 2 ] && pad_len=2
+    local padding=$(printf '─%.0s' $(seq 1 $pad_len))
+    echo ""
+    echo -e "  ${CYAN}── ${title} ${padding}${NC}"
+}
+
+print_status() {
+    local label="$1"
+    local value="$2"
+    local color="${3:-$GRAY}"
+    printf "  %-14s: %b%s%b\n" "$label" "$color" "$value" "$NC"
+}
+
+print_step() {
+    local label="$1"
+    local status="$2"
+    local color="${3:-$GREEN}"
+    printf "  %-34s%b%s%b\n" "$label" "$color" "$status" "$NC"
+}
+
 # Variables passed through sudo
 INSTALLING_USER="${INSTALLING_USER:-}"
 INSTALLING_UID="${INSTALLING_UID:-}"
@@ -194,12 +218,12 @@ detect_platform() {
     fi
 
     ASSET_NAME="mt-${PLATFORM}-${ARCH}.tar.gz"
-    echo -e "${GRAY}Detected: $OS $ARCH${NC}"
+    print_status "Platform" "$OS $ARCH" "$CYAN"
 }
 
 get_latest_release() {
     if [ "$DEV_CHANNEL" = true ]; then
-        echo -e "${GRAY}Fetching latest dev release...${NC}"
+        printf "  Fetching latest dev release...        "
         # Fetch all releases and find first prerelease
         ALL_RELEASES=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases")
 
@@ -238,10 +262,10 @@ get_latest_release() {
             exit 1
         fi
 
-        echo -e "  Latest dev version: ${CYAN}$VERSION${NC}"
-        echo ""
+        echo -e "${GREEN}done${NC}"
+        print_status "Version" "$VERSION" "$CYAN"
     else
-        echo -e "${GRAY}Fetching latest release...${NC}"
+        printf "  Fetching latest release...            "
         RELEASE_INFO=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
         VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
         ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
@@ -251,8 +275,8 @@ get_latest_release() {
             exit 1
         fi
 
-        echo -e "  Latest version: ${CYAN}$VERSION${NC}"
-        echo ""
+        echo -e "${GREEN}done${NC}"
+        print_status "Version" "$VERSION" "$CYAN"
     fi
 }
 
@@ -617,13 +641,12 @@ generate_certificate() {
     log "  install_dir: $install_dir"
     log "  settings_dir: $settings_dir"
     log "  is_service: $is_service"
-    echo ""
-    echo -e "  ${GRAY}Generating self-signed certificate with OS-protected key...${NC}"
+    printf "  Generating certificate...              "
 
     local mt_path="$install_dir/mt"
     if [ ! -f "$mt_path" ]; then
         log "mt not found at $mt_path" "ERROR"
-        echo -e "  ${RED}Error: mt not found at $mt_path${NC}"
+        echo -e "${RED}failed (mt not found)${NC}"
         return 1
     fi
 
@@ -644,7 +667,7 @@ generate_certificate() {
 
     if [ $exit_code -ne 0 ]; then
         log "Certificate generation failed" "ERROR"
-        echo -e "  ${RED}Failed to generate certificate: $output${NC}"
+        echo -e "${RED}failed${NC}"
         return 1
     fi
 
@@ -660,7 +683,7 @@ generate_certificate() {
     fi
 
     log "Certificate path: $CERT_PATH"
-    echo -e "  ${GREEN}Certificate generated with OS-protected private key${NC}"
+    echo -e "${GREEN}done${NC}"
 
     return 0
 }
@@ -689,7 +712,6 @@ write_service_settings() {
         json_content="$json_content,
   \"certificatePath\": \"$CERT_PATH\",
   \"keyProtection\": \"osProtected\""
-        echo -e "  ${GREEN}HTTPS: enabled (OS-protected key)${NC}"
     fi
 
     json_content="$json_content
@@ -701,8 +723,7 @@ write_service_settings() {
         chmod 644 "$merge_path"
         if ! chown "$INSTALLING_USER" "$merge_path"; then
             log "Failed to set ownership on $merge_path for user $INSTALLING_USER" "ERROR"
-            echo -e "  ${RED}Failed to set merge-settings file ownership${NC}"
-            exit 1
+            return 1
         fi
         log "Wrote merge-settings.json for mt to merge on startup"
     else
@@ -711,17 +732,9 @@ write_service_settings() {
         chmod 644 "$settings_path"
         if ! chown "$INSTALLING_USER" "$settings_path"; then
             log "Failed to set ownership on $settings_path for user $INSTALLING_USER" "ERROR"
-            echo -e "  ${RED}Failed to set settings file ownership${NC}"
-            exit 1
+            return 1
         fi
         log "Wrote initial settings.json"
-    fi
-    echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
-    echo -e "  ${GRAY}Port: $PORT${NC}"
-    if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
-        echo -e "  ${GRAY}Binding: localhost only${NC}"
-    else
-        echo -e "  ${GRAY}Binding: all interfaces${NC}"
     fi
 }
 
@@ -741,7 +754,6 @@ write_user_settings() {
         json_content="$json_content,
   \"certificatePath\": \"$CERT_PATH\",
   \"keyProtection\": \"osProtected\""
-        echo -e "  ${GREEN}HTTPS: enabled (OS-protected key)${NC}"
     fi
 
     json_content="$json_content
@@ -758,8 +770,6 @@ write_user_settings() {
         chmod 600 "$settings_path"
         log "Wrote initial settings.json"
     fi
-
-    echo -e "  ${GRAY}Settings: $settings_path${NC}"
 }
 
 get_existing_user_password_hash() {
@@ -801,7 +811,7 @@ copy_with_retry() {
         if cp "$src" "$dest" 2>/dev/null; then
             return 0
         fi
-        [ $i -eq 0 ] && echo -e "  ${YELLOW}Waiting for file to be released...${NC}"
+        [ $i -eq 0 ] && log "Waiting for file to be released..."
         sleep 0.$delay_ms
     done
     return 1
@@ -825,14 +835,14 @@ check_existing_certificate() {
     local days_left=$(( (expiry_ts - now_ts) / 86400 ))
 
     if [ $days_left -lt 0 ]; then
-        echo -e "  ${YELLOW}Existing certificate has expired${NC}"
+        print_step "Certificate..." "expired, regenerating" "$YELLOW"
         return 1
     elif [ $days_left -lt 30 ]; then
-        echo -e "  ${YELLOW}Certificate expires in $days_left days - regenerating${NC}"
+        print_step "Certificate..." "expiring ($days_left days), regenerating" "$YELLOW"
         return 1
     fi
 
-    echo -e "  ${GREEN}Existing certificate valid (expires in $days_left days)${NC}"
+    print_step "Certificate..." "preserved ($days_left days left)"
     return 0
 }
 
@@ -869,20 +879,17 @@ execute_certificate_trust() {
             -k /Library/Keychains/System.keychain "$cert_path" 2>&1)
         exit_code=$?
         if [ $exit_code -eq 0 ]; then
-            echo -e "  ${GREEN}Certificate trusted${NC}"
+            print_step "Trusting certificate..." "done"
         else
-            echo -e "  ${YELLOW}Could not auto-trust certificate (code: $exit_code)${NC}"
-            if [ -n "$output" ]; then
-                echo -e "  ${GRAY}$output${NC}"
-            fi
-            echo -e "  ${GRAY}You may need to trust manually in Keychain Access${NC}"
+            print_step "Trusting certificate..." "manual trust needed" "$YELLOW"
+            log "Could not auto-trust certificate (code: $exit_code): $output"
         fi
     else
         if cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
            update-ca-certificates 2>/dev/null; then
-            echo -e "  ${GREEN}Certificate trusted${NC}"
+            print_step "Trusting certificate..." "done"
         else
-            echo -e "  ${YELLOW}Could not auto-trust certificate${NC}"
+            print_step "Trusting certificate..." "manual trust needed" "$YELLOW"
         fi
     fi
 }
@@ -903,20 +910,17 @@ prompt_certificate_trust() {
                 -k /Library/Keychains/System.keychain "$cert_path" 2>&1)
             exit_code=$?
             if [ $exit_code -eq 0 ]; then
-                echo -e "  ${GREEN}Certificate trusted${NC}"
+                print_step "Trusting certificate..." "done"
             else
-                echo -e "  ${YELLOW}Could not auto-trust certificate (code: $exit_code)${NC}"
-                if [ -n "$output" ]; then
-                    echo -e "  ${GRAY}$output${NC}"
-                fi
-                echo -e "  ${GRAY}You may need to trust manually in Keychain Access${NC}"
+                print_step "Trusting certificate..." "manual trust needed" "$YELLOW"
+                log "Could not auto-trust certificate (code: $exit_code): $output"
             fi
         else
             if sudo cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
                sudo update-ca-certificates 2>/dev/null; then
-                echo -e "  ${GREEN}Certificate trusted${NC}"
+                print_step "Trusting certificate..." "done"
             else
-                echo -e "  ${YELLOW}Could not auto-trust - use manual commands above${NC}"
+                print_step "Trusting certificate..." "manual trust needed" "$YELLOW"
             fi
         fi
     fi
@@ -925,21 +929,20 @@ prompt_certificate_trust() {
 show_process_status() {
     local port="$1"
 
-    echo ""
-    echo -e "${CYAN}Process Status:${NC}"
+    print_phase "Status"
 
     # Check service status
     if [ "$(uname -s)" = "Darwin" ]; then
         if launchctl list 2>/dev/null | grep -q "$LAUNCHD_LABEL"; then
-            echo -e "  Service    : ${GREEN}Running${NC}"
+            print_status "Service" "running" "$GREEN"
         else
-            echo -e "  Service    : ${YELLOW}Starting...${NC}"
+            print_status "Service" "starting..." "$YELLOW"
         fi
     else
         if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-            echo -e "  Service    : ${GREEN}Running${NC}"
+            print_status "Service" "running" "$GREEN"
         else
-            echo -e "  Service    : ${YELLOW}Starting...${NC}"
+            print_status "Service" "starting..." "$YELLOW"
         fi
     fi
 
@@ -947,15 +950,12 @@ show_process_status() {
     local mt_pid
     mt_pid=$(pgrep -f "^/usr/local/bin/mt" 2>/dev/null | head -1 || true)
     if [ -n "$mt_pid" ]; then
-        echo -e "  mt (web)   : ${GREEN}Running (PID $mt_pid)${NC}"
+        print_status "mt (web)" "running (PID $mt_pid)" "$GREEN"
     else
-        echo -e "  mt (web)   : ${YELLOW}Starting...${NC}"
+        print_status "mt (web)" "starting..." "$YELLOW"
     fi
 
     # Health check with version info
-    echo ""
-    echo -e "${CYAN}Health Check:${NC}"
-
     sleep 2
     local health_response
     health_response=$(curl -fsSk "https://localhost:$port/api/health" 2>/dev/null || true)
@@ -966,16 +966,16 @@ show_process_status() {
         version=$(echo "$health_response" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
 
         if [ -n "$healthy" ]; then
-            echo -e "  Status     : ${GREEN}Healthy${NC}"
+            if [ -n "$version" ]; then
+                print_status "Health" "healthy (v$version)" "$GREEN"
+            else
+                print_status "Health" "healthy" "$GREEN"
+            fi
         else
-            echo -e "  Status     : ${RED}Unhealthy${NC}"
-        fi
-
-        if [ -n "$version" ]; then
-            echo -e "  ${GRAY}Version    : $version${NC}"
+            print_status "Health" "unhealthy" "$RED"
         fi
     else
-        echo -e "  Status     : ${YELLOW}Could not connect to https://localhost:$port${NC}"
+        print_status "Health" "could not connect" "$YELLOW"
     fi
 }
 
@@ -985,10 +985,10 @@ check_health() {
 
     # Try curl with insecure flag (self-signed cert)
     if curl -fsSk "https://localhost:$port/api/health" >/dev/null 2>&1; then
-        echo -e "  ${GREEN}Health check passed${NC}"
+        log "Health check passed"
         return 0
     else
-        echo -e "  ${YELLOW}Health check pending - check logs if issues persist${NC}"
+        log "Health check pending"
         return 1
     fi
 }
@@ -998,18 +998,20 @@ install_binary() {
     local temp_dir=$(mktemp -d)
 
     log "Downloading from: $ASSET_URL"
-    echo -e "${GRAY}Downloading...${NC}"
+    printf "  Downloading v%s...                  " "$VERSION"
     if ! curl -fsSL "$ASSET_URL" -o "$temp_dir/mt.tar.gz"; then
         log "Download failed" "ERROR"
-        echo -e "${RED}Download failed${NC}"
+        echo -e "${RED}failed${NC}"
         rm -rf "$temp_dir"
         exit 1
     fi
+    echo -e "${GREEN}done${NC}"
     log "Download complete"
 
     log "Extracting to: $temp_dir"
-    echo -e "${GRAY}Extracting...${NC}"
+    printf "  Extracting binaries...                "
     tar -xzf "$temp_dir/mt.tar.gz" -C "$temp_dir"
+    echo -e "${GREEN}done${NC}"
 
     # Create install directory
     mkdir -p "$install_dir"
@@ -1018,7 +1020,7 @@ install_binary() {
     log "Copying mt to $install_dir/mt"
     if ! copy_with_retry "$temp_dir/mt" "$install_dir/mt"; then
         log "Failed to copy mt - file locked" "ERROR"
-        echo -e "${RED}Failed to copy mt - file locked${NC}"
+        print_step "Copying mt..." "failed (locked)" "$RED"
         rm -rf "$temp_dir"
         exit 1
     fi
@@ -1030,7 +1032,7 @@ install_binary() {
         log "Copying mthost to $install_dir/mthost"
         if ! copy_with_retry "$temp_dir/mthost" "$install_dir/mthost"; then
             log "Failed to copy mthost - file locked" "ERROR"
-            echo -e "${RED}Failed to copy mthost - file locked${NC}"
+            print_step "Copying mthost..." "failed (locked)" "$RED"
             rm -rf "$temp_dir"
             exit 1
         fi
@@ -1080,6 +1082,8 @@ install_as_service() {
     # Now running as root - initialize logging
     init_log "service"
 
+    print_phase "Installing"
+
     log "=== PHASE 1: Installing binaries ==="
     install_binary "$install_dir"
 
@@ -1109,10 +1113,10 @@ install_as_service() {
         if [ -n "$existing_hash" ]; then
             PASSWORD_HASH="$existing_hash"
             log "Existing password hash found after elevation"
-            echo -e "  ${GREEN}Existing password preserved${NC}"
+            print_step "Password..." "preserved" "$GREEN"
         else
             log "No password available - user must set password via web UI" "WARN"
-            echo -e "  ${YELLOW}No password set - set one at first login${NC}"
+            print_step "Password..." "not set (use web UI)" "$YELLOW"
         fi
     fi
 
@@ -1127,22 +1131,24 @@ install_as_service() {
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
             log "Password hashed successfully"
-            echo -e "  ${GRAY}Password: hashed${NC}"
+            print_step "Hashing password..." "done"
         else
             log "Failed to hash password" "ERROR"
-            echo -e "  ${RED}Failed to hash password${NC}"
+            print_step "Hashing password..." "failed" "$RED"
             exit 1
         fi
+    elif [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
+        print_step "Password..." "preserved"
     fi
 
     # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
     if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode 2>/dev/null; then
             log "Password stored in secure secrets storage"
-            echo -e "  ${GRAY}Password: stored securely${NC}"
+            print_step "Storing password..." "done"
         else
             log "Failed to store password in secure storage" "WARN"
-            echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
+            print_step "Storing password..." "warning" "$YELLOW"
         fi
     fi
 
@@ -1154,7 +1160,7 @@ install_as_service() {
         CERT_PATH="$existing_cert"
     elif ! generate_certificate "$install_dir" "$settings_dir" true; then
         log "Certificate generation failed - app will use fallback" "WARN"
-        echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
+        print_step "Certificate..." "fallback (generation failed)" "$YELLOW"
     else
         log "Certificate generated: $CERT_PATH"
         # Show fingerprint so user can verify connections from other devices
@@ -1168,6 +1174,7 @@ install_as_service() {
     if [ -n "$INSTALLING_USER" ] && [ -n "$INSTALLING_UID" ]; then
         write_service_settings
         log "Settings written to $settings_dir/settings.json"
+        print_step "Writing settings..." "done"
     fi
 
     log "=== PHASE 5: Service installation ==="
@@ -1196,11 +1203,15 @@ install_as_service() {
     log "=========================================="
 
     echo ""
-    echo -e "${GREEN}Installation complete!${NC}"
+    echo -e "  ${CYAN}════════════════════════════════════════${NC}"
+    echo -e "  ${GREEN}Installation complete${NC}"
     echo ""
-    echo -e "  ${GRAY}Location: $install_dir/mt${NC}"
-    echo -e "  ${CYAN}URL:      https://localhost:$PORT${NC}"
-    echo -e "  ${YELLOW}Note:     Browser may show certificate warning until trusted${NC}"
+    print_status "Location" "$install_dir/mt"
+    print_status "URL" "https://localhost:$PORT" "$CYAN"
+    if [ "$TRUST_CERT" != "yes" ]; then
+        echo -e "  ${GRAY}Note: browser may show cert warning${NC}"
+    fi
+    echo -e "  ${CYAN}════════════════════════════════════════${NC}"
     echo ""
 }
 
@@ -1214,7 +1225,7 @@ install_launchd() {
     log "  Plist path: $plist_path"
     log "  Install dir: $install_dir"
     log "  Service user: $INSTALLING_USER"
-    echo -e "${GRAY}Creating launchd service...${NC}"
+    printf "  Creating launchd service...            "
 
     # Create log directory and ensure log files are owned by the service user.
     # The self-update script runs as the service user and needs write access to these files.
@@ -1229,17 +1240,19 @@ install_launchd() {
     # the subsequent bootstrap can fail with "error 5: Input/output error"
     sleep 2
 
+    echo -e "${GREEN}done${NC}"
+
     # Migration: remove old org launchd service
     local old_org_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist"
     if [ -f "$old_org_plist" ]; then
-        echo -e "${YELLOW}Migrating from old org service name...${NC}"
+        log "Migrating from old org service name..."
         launchctl bootout system/"$OLD_LAUNCHD_LABEL" 2>/dev/null || launchctl unload "$old_org_plist" 2>/dev/null || true
         rm -f "$old_org_plist"
     fi
 
     # Migration: remove old host service from pre-v4
     if [ -f "$old_host_plist" ]; then
-        echo -e "${YELLOW}Migrating from old architecture...${NC}"
+        log "Migrating from old architecture..."
         launchctl bootout system/"$OLD_LAUNCHD_HOST_LABEL" 2>/dev/null || launchctl unload "$old_host_plist" 2>/dev/null || true
         rm -f "$old_host_plist"
     fi
@@ -1283,7 +1296,7 @@ EOF
 
     # Load and start service
     log "Starting launchd service..."
-    echo -e "${GRAY}Starting service...${NC}"
+    printf "  Starting service...                   "
 
     # Bootstrap registers the service with launchd (modern macOS).
     # After bootout, launchd may still be cleaning up — retry with backoff.
@@ -1309,7 +1322,7 @@ EOF
     else
         bootstrap_ok=false
         log "Service NOT found in launchd after all registration attempts" "ERROR"
-        echo -e "  ${RED}Failed to register service${NC}"
+        echo -e "${RED}failed${NC}"
         echo -e "  ${GRAY}Check logs at: /usr/local/var/log/MidTerm.log${NC}"
         return 1
     fi
@@ -1339,7 +1352,7 @@ EOF
 
     if [ -n "$pid" ]; then
         log "Service started successfully with PID $pid (via pgrep)"
-        echo -e "  ${GREEN}Service started successfully (PID $pid)${NC}"
+        echo -e "${GREEN}done (PID $pid)${NC}"
     else
         # Method 2: Parse launchctl list output (JSON-like format)
         # Note: launchctl list $LABEL returns JSON-like dict, NOT tabular format
@@ -1356,17 +1369,17 @@ EOF
 
         if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
             log "Service started successfully with PID $pid (via launchctl)"
-            echo -e "  ${GREEN}Service started successfully (PID $pid)${NC}"
+            echo -e "${GREEN}done (PID $pid)${NC}"
         else
             # Service registered but not running - check for errors
             log "Service not running. Last exit code: $last_exit" "WARN"
 
             if [ -n "$last_exit" ] && [ "$last_exit" != "0" ] 2>/dev/null; then
                 log "Service failed to start with exit code $last_exit" "ERROR"
-                echo -e "  ${RED}Service failed to start (exit code: $last_exit)${NC}"
+                echo -e "${RED}failed (exit code: $last_exit)${NC}"
             else
                 log "Service registered but may still be starting" "WARN"
-                echo -e "  ${YELLOW}Service registered but may still be starting...${NC}"
+                echo -e "${YELLOW}starting...${NC}"
             fi
             echo -e "  ${GRAY}Check logs: tail -f /usr/local/var/log/MidTerm.log${NC}"
         fi
@@ -1415,7 +1428,7 @@ install_systemd() {
     local service_path="/etc/systemd/system/${SERVICE_NAME}.service"
     local old_host_service="/etc/systemd/system/${OLD_HOST_SERVICE_NAME}.service"
 
-    echo -e "${GRAY}Creating systemd service...${NC}"
+    printf "  Creating systemd service...            "
 
     # Unload existing service if present
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
@@ -1423,7 +1436,7 @@ install_systemd() {
 
     # Migration: remove old host service from pre-v4
     if [ -f "$old_host_service" ]; then
-        echo -e "${YELLOW}Migrating from old architecture...${NC}"
+        log "Migrating from old architecture..."
         systemctl stop "$OLD_HOST_SERVICE_NAME" 2>/dev/null || true
         systemctl disable "$OLD_HOST_SERVICE_NAME" 2>/dev/null || true
         rm -f "$old_host_service"
@@ -1448,8 +1461,10 @@ Environment=PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
 WantedBy=multi-user.target
 EOF
 
+    echo -e "${GREEN}done${NC}"
+
     # Reload and start service
-    echo -e "${GRAY}Starting service...${NC}"
+    printf "  Starting service...                   "
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
 
@@ -1457,12 +1472,12 @@ EOF
         # Give it a moment to initialize
         sleep 1
         if systemctl is-active --quiet "$SERVICE_NAME"; then
-            echo -e "  ${GREEN}Service started successfully${NC}"
+            echo -e "${GREEN}done${NC}"
         else
-            echo -e "  ${YELLOW}Service may still be starting...${NC}"
+            echo -e "${YELLOW}starting...${NC}"
         fi
     else
-        echo -e "  ${RED}Failed to start service${NC}"
+        echo -e "${RED}failed${NC}"
         echo -e "  ${GRAY}Check logs with: journalctl -u $SERVICE_NAME -f${NC}"
     fi
 }
@@ -1475,6 +1490,8 @@ install_as_user() {
     # Initialize logging
     init_log "user"
 
+    print_phase "Installing"
+
     log "=== PHASE 1: Installing binaries ==="
     install_binary "$install_dir"
     log "Binaries installed to $install_dir"
@@ -1484,7 +1501,7 @@ install_as_user() {
     existing_hash=$(get_existing_user_password_hash || true)
     if [ -n "$existing_hash" ]; then
         log "Existing password hash found and preserved"
-        echo -e "  ${GREEN}Existing password preserved${NC}"
+        print_step "Password..." "preserved"
         PASSWORD_HASH="$existing_hash"
     elif [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
         # Hash the password now that binary is installed (decode from base64)
@@ -1497,17 +1514,17 @@ install_as_user() {
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
             log "Password hashed successfully"
-            echo -e "  ${GRAY}Password: hashed${NC}"
+            print_step "Hashing password..." "done"
         else
             log "Failed to hash password" "ERROR"
-            echo -e "  ${RED}Failed to hash password${NC}"
+            print_step "Hashing password..." "failed" "$RED"
             exit 1
         fi
     else
         # Could not read existing password and no password was passed
         # Per robustness rules: losing password is better than failing the update
         log "Could not read existing password - prompting for new one" "WARN"
-        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
+        print_step "Password..." "not found, prompting" "$YELLOW"
         prompt_password
 
         # Hash the new password
@@ -1520,9 +1537,10 @@ install_as_user() {
             if [[ "$hash" == '$PBKDF2$'* ]]; then
                 PASSWORD_HASH="$hash"
                 log "Password hashed successfully"
+                print_step "Hashing password..." "done"
             else
                 log "Failed to hash password" "ERROR"
-                echo -e "  ${RED}Failed to hash password${NC}"
+                print_step "Hashing password..." "failed" "$RED"
                 exit 1
             fi
         fi
@@ -1532,10 +1550,10 @@ install_as_user() {
     if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash 2>/dev/null; then
             log "Password stored in secure secrets storage"
-            echo -e "  ${GRAY}Password: stored securely${NC}"
+            print_step "Storing password..." "done"
         else
             log "Failed to store password in secure storage" "WARN"
-            echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
+            print_step "Storing password..." "warning" "$YELLOW"
         fi
     fi
 
@@ -1547,7 +1565,7 @@ install_as_user() {
         CERT_PATH="$existing_cert"
     elif ! generate_certificate "$install_dir" "$settings_dir" false; then
         log "Certificate generation failed - app will use fallback" "WARN"
-        echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
+        print_step "Certificate..." "fallback (generation failed)" "$YELLOW"
     else
         log "Certificate generated: $CERT_PATH"
         # Show fingerprint so user can verify connections from other devices
@@ -1560,6 +1578,7 @@ install_as_user() {
     # Write user settings
     write_user_settings
     log "Settings written to $settings_dir/settings.json"
+    print_step "Writing settings..." "done"
 
     # Handle PATH modification
     if [[ ":$PATH:" != *":$install_dir:"* ]]; then
@@ -1580,12 +1599,13 @@ install_as_user() {
     log "=========================================="
 
     echo ""
-    echo -e "${GREEN}Installation complete!${NC}"
+    echo -e "  ${CYAN}════════════════════════════════════════${NC}"
+    echo -e "  ${GREEN}Installation complete${NC}"
     echo ""
-    echo -e "  ${GRAY}Location: $install_dir/mt${NC}"
-    echo -e "  ${CYAN}URL:      https://localhost:$PORT${NC}"
+    print_status "Location" "$install_dir/mt"
+    print_status "URL" "https://localhost:$PORT" "$CYAN"
     echo -e "  ${YELLOW}Run 'mt' to start MidTerm${NC}"
-    echo -e "  ${YELLOW}Note: Browser may show certificate warning until trusted${NC}"
+    echo -e "  ${CYAN}════════════════════════════════════════${NC}"
     echo ""
 }
 
@@ -1654,6 +1674,133 @@ EOF
     chmod +x "$uninstall_script"
 }
 
+detect_existing_install() {
+    # Probe for existing installations (quiet — sets globals for display)
+    EXISTING_SERVICE_VERSION=""
+    EXISTING_USER_VERSION=""
+    EXISTING_SERVICE_PASSWORD=false
+    EXISTING_USER_PASSWORD=false
+    EXISTING_SERVICE_CERT=false
+    EXISTING_USER_CERT=false
+    EXISTING_SERVICE_CERT_DAYS=""
+    EXISTING_USER_CERT_DAYS=""
+
+    # Service install
+    if [ -f "$UNIX_SERVICE_BIN_DIR/mt" ]; then
+        EXISTING_SERVICE_VERSION=$("$UNIX_SERVICE_BIN_DIR/mt" --version 2>/dev/null || echo "installed")
+    fi
+    if check_existing_password_file "service" 2>/dev/null; then
+        EXISTING_SERVICE_PASSWORD=true
+    fi
+    local svc_cert="$UNIX_SERVICE_SETTINGS_DIR/midterm.pem"
+    if [ -f "$svc_cert" ]; then
+        local expiry
+        expiry=$(openssl x509 -in "$svc_cert" -noout -enddate 2>/dev/null | cut -d= -f2)
+        if [ -n "$expiry" ]; then
+            local exp_ts now_ts
+            exp_ts=$(date -d "$expiry" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry" +%s 2>/dev/null)
+            now_ts=$(date +%s)
+            if [ -n "$exp_ts" ]; then
+                local days=$(( (exp_ts - now_ts) / 86400 ))
+                if [ $days -gt 0 ]; then
+                    EXISTING_SERVICE_CERT=true
+                    EXISTING_SERVICE_CERT_DAYS="$days"
+                fi
+            fi
+        fi
+    fi
+
+    # User install
+    if [ -f "$HOME/.local/bin/mt" ]; then
+        EXISTING_USER_VERSION=$("$HOME/.local/bin/mt" --version 2>/dev/null || echo "installed")
+    fi
+    if check_existing_password_file "user" 2>/dev/null; then
+        EXISTING_USER_PASSWORD=true
+    fi
+    local usr_cert="$UNIX_USER_SETTINGS_DIR/midterm.pem"
+    if [ -f "$usr_cert" ]; then
+        local expiry
+        expiry=$(openssl x509 -in "$usr_cert" -noout -enddate 2>/dev/null | cut -d= -f2)
+        if [ -n "$expiry" ]; then
+            local exp_ts now_ts
+            exp_ts=$(date -d "$expiry" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry" +%s 2>/dev/null)
+            now_ts=$(date +%s)
+            if [ -n "$exp_ts" ]; then
+                local days=$(( (exp_ts - now_ts) / 86400 ))
+                if [ $days -gt 0 ]; then
+                    EXISTING_USER_CERT=true
+                    EXISTING_USER_CERT_DAYS="$days"
+                fi
+            fi
+        fi
+    fi
+
+    # Show existing install info
+    local has_existing=false
+    if [ -n "$EXISTING_SERVICE_VERSION" ] || [ -n "$EXISTING_USER_VERSION" ]; then
+        has_existing=true
+    fi
+
+    if [ "$has_existing" = true ]; then
+        print_phase "Existing Install"
+
+        if [ -n "$EXISTING_SERVICE_VERSION" ]; then
+            print_status "Version" "$EXISTING_SERVICE_VERSION" "$CYAN"
+            print_status "Location" "$UNIX_SERVICE_BIN_DIR/mt"
+
+            if [ "$EXISTING_SERVICE_PASSWORD" = true ]; then
+                print_status "Password" "found" "$GREEN"
+            else
+                print_status "Password" "not found" "$YELLOW"
+            fi
+
+            if [ "$EXISTING_SERVICE_CERT" = true ]; then
+                print_status "Certificate" "valid ($EXISTING_SERVICE_CERT_DAYS days left)" "$GREEN"
+            else
+                print_status "Certificate" "not found or expired" "$YELLOW"
+            fi
+        elif [ -n "$EXISTING_USER_VERSION" ]; then
+            print_status "Version" "$EXISTING_USER_VERSION" "$CYAN"
+            print_status "Location" "$HOME/.local/bin/mt"
+
+            if [ "$EXISTING_USER_PASSWORD" = true ]; then
+                print_status "Password" "found" "$GREEN"
+            else
+                print_status "Password" "not found" "$YELLOW"
+            fi
+
+            if [ "$EXISTING_USER_CERT" = true ]; then
+                print_status "Certificate" "valid ($EXISTING_USER_CERT_DAYS days left)" "$GREEN"
+            else
+                print_status "Certificate" "not found or expired" "$YELLOW"
+            fi
+        fi
+    else
+        print_phase "New Install"
+        echo -e "  ${GRAY}No existing installation detected${NC}"
+    fi
+}
+
+print_preparation_summary() {
+    local install_dir="$1"
+    local password_status="$2"
+    local cert_status="$3"
+
+    print_phase "Preparation Summary"
+    print_status "Install to" "$install_dir"
+    print_status "Port" "$PORT"
+    if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
+        print_status "Binding" "localhost only"
+    else
+        print_status "Binding" "all interfaces"
+    fi
+    print_status "Password" "$password_status"
+    print_status "Certificate" "$cert_status"
+    if [ -n "$TRUST_CERT" ] && [ "$TRUST_CERT" = "yes" ]; then
+        print_status "Trust cert" "yes"
+    fi
+}
+
 # Parse command line arguments
 for arg in "$@"; do
     case "$arg" in
@@ -1707,6 +1854,7 @@ fi
 
 detect_platform
 get_latest_release
+detect_existing_install
 prompt_service_mode
 
 # Start logging for user mode (service mode logging starts after sudo elevation)
@@ -1720,11 +1868,11 @@ if [ "$SERVICE_MODE" = true ]; then
     # If it fails (permissions, corruption, missing), prompt here (interactive OK before sudo)
     existing_hash=$(get_existing_password_hash 2>/dev/null || true)
     if [ -n "$existing_hash" ]; then
-        echo ""
-        echo -e "  ${GREEN}Existing password found${NC}"
         PASSWORD_HASH="$existing_hash"
+        _pw_status="existing (preserved)"
     else
         prompt_password
+        _pw_status="new"
     fi
 
     # Prompt for network configuration
@@ -1733,20 +1881,38 @@ if [ "$SERVICE_MODE" = true ]; then
     # Prompt for certificate trust choice (will be executed after cert generation)
     prompt_certificate_trust_choice
 
+    # Determine certificate status for summary
+    if [ "$EXISTING_SERVICE_CERT" = true ]; then
+        _cert_status="existing (preserved)"
+    else
+        _cert_status="new (will generate)"
+    fi
+
+    print_preparation_summary "$UNIX_SERVICE_BIN_DIR" "$_pw_status" "$_cert_status"
+
     install_as_service
 else
     # User mode: try to read existing hash, prompt if not found
     existing_hash=$(get_existing_user_password_hash 2>/dev/null || true)
     if [ -n "$existing_hash" ]; then
-        echo ""
-        echo -e "  ${GREEN}Existing password found${NC}"
         PASSWORD_HASH="$existing_hash"
+        _pw_status="existing (preserved)"
     else
         prompt_password
+        _pw_status="new"
     fi
 
     # Prompt for network configuration (was missing in user mode)
     prompt_network_config
+
+    # Determine certificate status for summary
+    if [ "$EXISTING_USER_CERT" = true ]; then
+        _cert_status="existing (preserved)"
+    else
+        _cert_status="new (will generate)"
+    fi
+
+    print_preparation_summary "$HOME/.local/bin" "$_pw_status" "$_cert_status"
 
     install_as_user
 fi
