@@ -581,7 +581,7 @@ public static class EndpointSetup
             }
             catch (ArgumentException ex)
             {
-                return Results.BadRequest(new { error = ex.Message });
+                return Results.Problem(ex.Message, statusCode: 400);
             }
             catch (Exception ex)
             {

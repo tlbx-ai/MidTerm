@@ -129,57 +129,98 @@ public static class UserEnumerationService
 
         try
         {
-            // Read /etc/passwd and filter for regular users
-            var passwdPath = "/etc/passwd";
-            if (!File.Exists(passwdPath))
+            if (OperatingSystem.IsMacOS())
             {
-                return users;
+                // macOS stores users in Directory Services, not /etc/passwd.
+                // Use 'dscl' to enumerate local users with their UIDs.
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "dscl",
+                    Arguments = ". -list /Users UniqueID",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process is not null)
+                {
+                    var output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length < 2)
+                        {
+                            continue;
+                        }
+
+                        var username = parts[0];
+                        if (!int.TryParse(parts[^1], out var uid))
+                        {
+                            continue;
+                        }
+
+                        if (uid < 500 || username == "nobody" || username == "daemon" || username.StartsWith("_"))
+                        {
+                            continue;
+                        }
+
+                        users.Add(new UserInfo { Username = username, Uid = uid });
+                    }
+                }
             }
-
-            var lines = File.ReadAllLines(passwdPath);
-            foreach (var line in lines)
+            else
             {
-                var parts = line.Split(':');
-                if (parts.Length < 7)
+                // Linux: read /etc/passwd
+                var passwdPath = "/etc/passwd";
+                if (!File.Exists(passwdPath))
                 {
-                    continue;
+                    return users;
                 }
 
-                var username = parts[0];
-                var uidStr = parts[2];
-                var gidStr = parts[3];
-                var shell = parts[6];
-
-                if (!int.TryParse(uidStr, out var uid) || !int.TryParse(gidStr, out var gid))
+                var lines = File.ReadAllLines(passwdPath);
+                foreach (var line in lines)
                 {
-                    continue;
+                    var parts = line.Split(':');
+                    if (parts.Length < 7)
+                    {
+                        continue;
+                    }
+
+                    var username = parts[0];
+                    var uidStr = parts[2];
+                    var gidStr = parts[3];
+                    var shell = parts[6];
+
+                    if (!int.TryParse(uidStr, out var uid) || !int.TryParse(gidStr, out var gid))
+                    {
+                        continue;
+                    }
+
+                    if (uid < 1000)
+                    {
+                        continue;
+                    }
+
+                    if (shell.Contains("nologin") || shell.Contains("false"))
+                    {
+                        continue;
+                    }
+
+                    if (username == "nobody" || username == "daemon" || username.StartsWith("_"))
+                    {
+                        continue;
+                    }
+
+                    users.Add(new UserInfo
+                    {
+                        Username = username,
+                        Uid = uid,
+                        Gid = gid
+                    });
                 }
-
-                // Filter: UID >= 500 (macOS) or >= 1000 (Linux) for regular users
-                // Also filter out nologin shells
-                var minUid = OperatingSystem.IsMacOS() ? 500 : 1000;
-                if (uid < minUid)
-                {
-                    continue;
-                }
-
-                if (shell.Contains("nologin") || shell.Contains("false"))
-                {
-                    continue;
-                }
-
-                // Skip special users
-                if (username == "nobody" || username == "daemon" || username.StartsWith("_"))
-                {
-                    continue;
-                }
-
-                users.Add(new UserInfo
-                {
-                    Username = username,
-                    Uid = uid,
-                    Gid = gid
-                });
             }
         }
         catch
