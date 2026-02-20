@@ -902,14 +902,18 @@ safe_copy() {{
         fi
         chmod +x ""$staged""
 
+        # Strip quarantine xattr (downloaded files get quarantined by macOS)
+        xattr -d com.apple.quarantine ""$staged"" 2>/dev/null || true
+
         log ""Signing $desc for macOS...""
-        if ! codesign -s - ""$staged"" 2>/dev/null; then
-            log ""Codesign failed for $desc"" ""ERROR""
+        local _cs_err
+        if ! _cs_err=$(codesign --force -s - ""$staged"" 2>&1); then
+            log ""Codesign failed for $desc: $_cs_err"" ""ERROR""
             rm -f ""$staged"" 2>/dev/null || true
             return 1
         fi
-        if ! codesign --verify ""$staged"" 2>/dev/null; then
-            log ""Codesign verification failed for $desc"" ""ERROR""
+        if ! _cs_err=$(codesign --verify ""$staged"" 2>&1); then
+            log ""Codesign verification failed for $desc: $_cs_err"" ""ERROR""
             rm -f ""$staged"" 2>/dev/null || true
             return 1
         fi
@@ -969,7 +973,8 @@ cleanup() {{
                 local _mt_staged=""$CONFIG_DIR/mt.rollback""
                 cp ""$_mt_bak"" ""$_mt_staged"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
                 chmod +x ""$_mt_staged"" 2>/dev/null || true
-                codesign -s - ""$_mt_staged"" 2>/dev/null || true
+                xattr -d com.apple.quarantine ""$_mt_staged"" 2>/dev/null || true
+                codesign --force -s - ""$_mt_staged"" 2>/dev/null || true
                 cat ""$_mt_staged"" > ""$CURRENT_MT"" 2>/dev/null || true
                 chmod +x ""$CURRENT_MT"" 2>/dev/null || true
                 rm -f ""$_mt_staged"" 2>/dev/null || true
@@ -986,7 +991,8 @@ cleanup() {{
                 local _mthost_staged=""$CONFIG_DIR/mthost.rollback""
                 cp ""$_mthost_bak"" ""$_mthost_staged"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
                 chmod +x ""$_mthost_staged"" 2>/dev/null || true
-                codesign -s - ""$_mthost_staged"" 2>/dev/null || true
+                xattr -d com.apple.quarantine ""$_mthost_staged"" 2>/dev/null || true
+                codesign --force -s - ""$_mthost_staged"" 2>/dev/null || true
                 cat ""$_mthost_staged"" > ""$CURRENT_MTHOST"" 2>/dev/null || true
                 chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
                 rm -f ""$_mthost_staged"" 2>/dev/null || true
