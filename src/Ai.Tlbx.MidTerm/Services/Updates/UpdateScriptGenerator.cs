@@ -1060,24 +1060,32 @@ fi
 log """"
 log '=== PHASE 1: Stopping processes ==='
 
-# Stop service
-log ""Stopping service...""
-{stopServiceCmd}
+if $IS_MACOS; then
+    # macOS: DON'T kill processes here. launchd KeepAlive respawns immediately,
+    # and if safe_copy's cat > truncates the binary while the respawned process
+    # is loading, it causes cascading crashes → launchd throttle → startup failure.
+    # safe_copy handles the kill AFTER the binary is fully written.
+    log ""macOS: skipping process kill (safe_copy handles kill after overwrite)""
+else
+    # Linux: systemd stop cleanly stops the service
+    log ""Stopping service...""
+    {stopServiceCmd}
 
-# Wait for process to actually exit (up to 5s) before force-killing
-for _i in $(seq 1 10); do
-    pgrep -f ""/${{CURRENT_MT##*/}}$"" >/dev/null 2>&1 || break
-    sleep 0.5
-done
+    # Wait for process to actually exit (up to 5s) before force-killing
+    for _i in $(seq 1 10); do
+        pgrep -f ""/${{CURRENT_MT##*/}}$"" >/dev/null 2>&1 || break
+        sleep 0.5
+    done
 
-# Kill mt processes (by full path to avoid killing unrelated processes)
-log ""Killing mt processes...""
-kill_process_by_path ""$CURRENT_MT""
+    # Kill mt processes (by full path to avoid killing unrelated processes)
+    log ""Killing mt processes...""
+    kill_process_by_path ""$CURRENT_MT""
 
-# Kill mthost processes (only for full updates)
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
-    log ""Killing mthost processes...""
-    kill_process_by_path ""$CURRENT_MTHOST""
+    # Kill mthost processes (only for full updates)
+    if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
+        log ""Killing mthost processes...""
+        kill_process_by_path ""$CURRENT_MTHOST""
+    fi
 fi
 
 log ""All processes stopped""
@@ -1089,10 +1097,9 @@ log """"
 log '=== PHASE 2: Waiting for file handles ==='
 
 if $IS_MACOS; then
-    # macOS: launchd KeepAlive respawns the process immediately after kill,
-    # so the binary is always locked. safe_copy handles the kill+cp race.
-    log ""macOS: skipping file lock wait (KeepAlive keeps respawning)""
-    log ""Will use kill+copy retry loop during installation""
+    # macOS: no ETXTBSY, can write to running binaries directly.
+    # safe_copy overwrites in place, then kills. No file lock issues.
+    log ""macOS: skipping file lock wait (no ETXTBSY on macOS)""
 else
     if ! wait_for_file_writable ""$CURRENT_MT""; then
         log ""mt is still locked after $MAX_RETRIES retries"" ""ERROR""
