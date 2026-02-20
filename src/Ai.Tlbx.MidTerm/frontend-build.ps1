@@ -117,7 +117,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Bundling with esbuild (version: $Version)..." -ForegroundColor Cyan
 
 $mainTs = Join-Path $TsSource "main.ts"
-$jsonVersion = "'""$Version""'"
+$jsonVersion = """$Version"""
 $includeSourceMap = -not $Publish -or $DevRelease
 $sourcemapArg = if ($includeSourceMap) { "--sourcemap=linked" } else { $null }
 $esbuildArgs = @($mainTs, "--bundle", "--minify", "--outfile=$OutFile", "--target=es2020", "--define:BUILD_VERSION=$jsonVersion")

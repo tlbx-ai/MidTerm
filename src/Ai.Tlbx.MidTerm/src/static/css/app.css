@@ -2904,7 +2904,7 @@ html, body {
 
 /* About & Updates section in settings */
 .version-value {
-    font-size: var(--fs-lg);
+    font-size: var(--fs-md);
     font-family: var(--font-mono);
     color: var(--accent-cyan);
 }
