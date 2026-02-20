@@ -22,7 +22,10 @@ public sealed partial class WebPreviewProxyMiddleware
             if(typeof u!=="string")return u;
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
             if(u.startsWith("http://")|| u.startsWith("https://")){
-              try{var h=new URL(u);if(h.host!==location.host)return E+encodeURIComponent(u);}catch(e){}
+              try{var h=new URL(u);
+                if(h.host===location.host&&!h.pathname.startsWith(P+"/"))return P+h.pathname+h.search+h.hash;
+                if(h.host!==location.host)return E+encodeURIComponent(u);
+              }catch(e){}
             }
             return u;
           }
@@ -76,7 +79,8 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         "Content-Security-Policy", "Content-Security-Policy-Report-Only",
         "X-Frame-Options", "Cross-Origin-Opener-Policy", "Cross-Origin-Embedder-Policy",
-        "Cross-Origin-Resource-Policy"
+        "Cross-Origin-Resource-Policy",
+        "Set-Cookie"  // Cookies managed by server-side cookie jar, not forwarded to browser
     };
 
     private static readonly HashSet<string> ForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
@@ -328,7 +332,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, extUri);
+        using var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), extUri);
 
         // Forward minimal headers
         foreach (var header in context.Request.Headers)
@@ -336,6 +340,17 @@ public sealed partial class WebPreviewProxyMiddleware
             if (!ForwardedRequestHeaders.Contains(header.Key) || HopByHopHeaders.Contains(header.Key))
                 continue;
             requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+        }
+
+        // Forward request body for POST/PUT/PATCH
+        if (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding"))
+        {
+            requestMessage.Content = new StreamContent(context.Request.Body);
+            if (context.Request.ContentType is not null)
+            {
+                requestMessage.Content.Headers.ContentType =
+                    System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+            }
         }
 
         HttpResponseMessage upstreamResponse;

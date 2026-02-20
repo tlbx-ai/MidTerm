@@ -86,6 +86,13 @@ export function hideIframe(): void {
   if (iframe) iframe.classList.add('hidden');
 }
 
+export function unloadIframe(): void {
+  if (iframe) {
+    iframe.src = 'about:blank';
+    iframe.classList.add('hidden');
+  }
+}
+
 export function showDetachedPlaceholder(): void {
   hideIframe();
   const placeholder = document.getElementById('web-preview-detached-msg');

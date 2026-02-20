@@ -9,7 +9,9 @@
 import { $webPreviewDocked, $isMainBrowser } from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { restoreLastUrl, showIframe } from './webPanel';
+import { restoreLastUrl, showIframe, unloadIframe } from './webPanel';
+import { cleanupDetach } from './webDetach';
+import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
 
 const log = createLogger('webDock');
@@ -102,6 +104,11 @@ function openWebPreviewDock(): void {
 export function closeWebPreviewDock(): void {
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
+
+  // Unload iframe to stop all network activity
+  unloadIframe();
+  cleanupDetach();
+  clearWebPreviewTarget();
 
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {
