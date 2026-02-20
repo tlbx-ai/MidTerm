@@ -91,13 +91,24 @@ public sealed partial class WebPreviewProxyMiddleware
         "Set-Cookie"  // Cookies managed by server-side cookie jar, not forwarded to browser
     };
 
-    private static readonly HashSet<string> ForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
+    // Headers that must NOT be forwarded from browser to upstream.
+    // Everything else is forwarded (blocklist approach for maximum compatibility).
+    private static readonly HashSet<string> BlockedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Accept", "Accept-Encoding", "Accept-Language", "Authorization", "Cache-Control",
-        "Content-Type", "Content-Length", "If-Match", "If-Modified-Since",
-        "If-None-Match", "If-Unmodified-Since", "Range", "Referer", "User-Agent"
-        // Note: Cookie intentionally excluded — upstream cookies are managed by the
-        // server-side CookieContainer. Browser cookies are MT session cookies.
+        // Hop-by-hop (also in HopByHopHeaders, but listed for completeness)
+        "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+        "TE", "Trailer", "Transfer-Encoding", "Upgrade",
+        // Host is set by HttpClient from the request URI
+        "Host",
+        // Browser cookies are MT session cookies — upstream cookies come from CookieContainer
+        "Cookie",
+        // WebSocket negotiation headers managed by ClientWebSocket
+        "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions",
+        "Sec-WebSocket-Protocol",
+        // Browser security headers that would confuse the upstream
+        "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Sec-Fetch-User",
+        // Content headers are set on HttpContent, not the request
+        "Content-Type", "Content-Length"
     };
 
     private readonly RequestDelegate _next;
@@ -178,7 +189,9 @@ public sealed partial class WebPreviewProxyMiddleware
             || path.StartsWith("/js/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/css/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/fonts/", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/locales/", StringComparison.OrdinalIgnoreCase))
+            || path.StartsWith("/locales/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/img/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/favicon/", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -189,7 +202,10 @@ public sealed partial class WebPreviewProxyMiddleware
             or "/login.html"
             or "/trust.html"
             or "/web-preview-popup.html"
-            or "/favicon.ico";
+            or "/favicon.ico"
+            or "/site.webmanifest"
+            or "/THIRD-PARTY-LICENSES.txt"
+            or "/midFont-style.css";
     }
 
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
@@ -200,18 +216,17 @@ public sealed partial class WebPreviewProxyMiddleware
         const int maxRedirects = 10;
         HttpResponseMessage? upstreamResponse = null;
 
+        var originalMethod = new HttpMethod(context.Request.Method);
+        var currentMethod = originalMethod;
+
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
-            var requestMessage = new HttpRequestMessage(
-                redirect == 0 ? new HttpMethod(context.Request.Method) : HttpMethod.Get,
-                currentUrl);
+            var requestMessage = new HttpRequestMessage(currentMethod, currentUrl);
 
-            // Forward request headers
+            // Forward all request headers except blocked ones (blocklist approach)
             foreach (var header in context.Request.Headers)
             {
-                if (HopByHopHeaders.Contains(header.Key))
-                    continue;
-                if (!ForwardedRequestHeaders.Contains(header.Key))
+                if (BlockedRequestHeaders.Contains(header.Key))
                     continue;
 
                 requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
@@ -223,8 +238,9 @@ public sealed partial class WebPreviewProxyMiddleware
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
 
-            // Forward request body only on the first (non-redirect) request
-            if (redirect == 0 && (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")))
+            // Forward request body on initial request and 307/308 redirects (which preserve method)
+            if (redirect == 0 && currentMethod != HttpMethod.Get
+                && (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")))
             {
                 requestMessage.Content = new StreamContent(context.Request.Body);
                 if (context.Request.ContentType is not null)
@@ -269,6 +285,8 @@ public sealed partial class WebPreviewProxyMiddleware
                     if (Uri.TryCreate(new Uri(currentUrl), location, out var resolved))
                     {
                         currentUrl = resolved.ToString();
+                        // 307/308 preserve method; 301/302/303 switch to GET
+                        currentMethod = statusCode is 307 or 308 ? originalMethod : HttpMethod.Get;
                         requestMessage.Dispose();
                         continue;
                     }
@@ -392,10 +410,10 @@ public sealed partial class WebPreviewProxyMiddleware
 
         using var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), extUri);
 
-        // Forward minimal headers
+        // Forward all headers except blocked ones
         foreach (var header in context.Request.Headers)
         {
-            if (!ForwardedRequestHeaders.Contains(header.Key) || HopByHopHeaders.Contains(header.Key))
+            if (BlockedRequestHeaders.Contains(header.Key))
                 continue;
             requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
         }
@@ -490,28 +508,52 @@ public sealed partial class WebPreviewProxyMiddleware
         // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
         _service.ConfigureWebSocket(upstream, upstreamUri);
 
-        // Forward relevant request headers (User-Agent, etc.)
+        // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)
         {
-            if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase)
-                || header.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)
-                || header.Key.Equals("Accept-Language", StringComparison.OrdinalIgnoreCase))
+            if (BlockedRequestHeaders.Contains(header.Key))
+                continue;
+            // Skip WebSocket upgrade headers — ClientWebSocket manages these
+            if (header.Key.StartsWith("Sec-WebSocket-", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
             {
                 upstream.Options.SetRequestHeader(header.Key, header.Value.ToString());
             }
+            catch (ArgumentException)
+            {
+                // Some headers can't be set on ClientWebSocket — skip silently
+            }
+        }
+
+        // Forward WebSocket sub-protocols (critical for SignalR)
+        var subProtocols = context.WebSockets.WebSocketRequestedProtocols;
+        foreach (var protocol in subProtocols)
+        {
+            upstream.Options.AddSubProtocol(protocol);
         }
 
         try
         {
             await upstream.ConnectAsync(upstreamUri, context.RequestAborted);
         }
-        catch (Exception)
+        catch (WebSocketException)
+        {
+            context.Response.StatusCode = 502;
+            return;
+        }
+        catch (HttpRequestException)
         {
             context.Response.StatusCode = 502;
             return;
         }
 
-        using var downstream = await context.WebSockets.AcceptWebSocketAsync();
+        // Accept downstream with the negotiated sub-protocol from upstream
+        var acceptProtocol = upstream.SubProtocol;
+        using var downstream = acceptProtocol is not null
+            ? await context.WebSockets.AcceptWebSocketAsync(acceptProtocol)
+            : await context.WebSockets.AcceptWebSocketAsync();
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
 
