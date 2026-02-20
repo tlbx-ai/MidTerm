@@ -75,9 +75,17 @@ public sealed class WebPreviewService
         }
     }
 
-    public void ConfigureWebSocket(ClientWebSocket ws)
+    public void ConfigureWebSocket(ClientWebSocket ws, Uri upstreamUri)
     {
         ws.Options.RemoteCertificateValidationCallback = ValidateCertificate;
+
+        // Forward cookies from server-side cookie jar so WebSocket connections
+        // share the same session context as HTTP requests (critical for SignalR)
+        var cookieHeader = _cookieContainer.GetCookieHeader(upstreamUri);
+        if (!string.IsNullOrEmpty(cookieHeader))
+        {
+            ws.Options.SetRequestHeader("Cookie", cookieHeader);
+        }
     }
 
     private bool ValidateCertificate(

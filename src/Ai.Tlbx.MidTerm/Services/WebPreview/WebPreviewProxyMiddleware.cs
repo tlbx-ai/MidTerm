@@ -94,8 +94,10 @@ public sealed partial class WebPreviewProxyMiddleware
     private static readonly HashSet<string> ForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         "Accept", "Accept-Encoding", "Accept-Language", "Authorization", "Cache-Control",
-        "Content-Type", "Content-Length", "Cookie", "If-Match", "If-Modified-Since",
+        "Content-Type", "Content-Length", "If-Match", "If-Modified-Since",
         "If-None-Match", "If-Unmodified-Since", "Range", "Referer", "User-Agent"
+        // Note: Cookie intentionally excluded — upstream cookies are managed by the
+        // server-side CookieContainer. Browser cookies are MT session cookies.
     };
 
     private readonly RequestDelegate _next;
@@ -482,20 +484,26 @@ public sealed partial class WebPreviewProxyMiddleware
     private async Task ProxyWebSocketAsync(HttpContext context, Uri targetUri, string path)
     {
         var upstreamUrl = BuildUpstreamWsUrl(targetUri, path, context.Request.QueryString.Value);
+        var upstreamUri = new Uri(upstreamUrl);
 
         using var upstream = new ClientWebSocket();
-        _service.ConfigureWebSocket(upstream);
+        // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
+        _service.ConfigureWebSocket(upstream, upstreamUri);
 
-        // Forward cookies
-        var cookies = context.Request.Headers.Cookie;
-        if (cookies.Count > 0)
+        // Forward relevant request headers (User-Agent, etc.)
+        foreach (var header in context.Request.Headers)
         {
-            upstream.Options.SetRequestHeader("Cookie", string.Join("; ", cookies!));
+            if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase)
+                || header.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)
+                || header.Key.Equals("Accept-Language", StringComparison.OrdinalIgnoreCase))
+            {
+                upstream.Options.SetRequestHeader(header.Key, header.Value.ToString());
+            }
         }
 
         try
         {
-            await upstream.ConnectAsync(new Uri(upstreamUrl), context.RequestAborted);
+            await upstream.ConnectAsync(upstreamUri, context.RequestAborted);
         }
         catch (Exception)
         {
