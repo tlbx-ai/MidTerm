@@ -169,7 +169,9 @@ setup_logging() {
         chown "$INSTALLING_USER" "$log_file" 2>/dev/null || true
     fi
 
-    exec > >(tee -a "$log_file") 2>&1
+    # Tee stdout to both terminal (with colors) and log file (ANSI codes stripped).
+    # Uses sed to remove escape sequences like [0;32m from the file output.
+    exec > >(tee >(sed $'s/\033\\[[0-9;]*m//g' >> "$log_file")) 2>&1
     LOGGING_STARTED=true
     export LOGGING_STARTED
 }

@@ -17,7 +17,6 @@ import {
   getUpdateResult,
   deleteUpdateResult,
   getUpdateLog,
-  updateSettings,
 } from '../../api/client';
 import { openSettings, switchSettingsTab } from '../settings';
 
@@ -26,6 +25,8 @@ const log = createLogger('updating');
 const MAX_RELOAD_ATTEMPTS = 30;
 const RELOAD_INTERVAL_MS = 2000;
 const INITIAL_RESTART_DELAY_MS = 3000;
+
+const DISMISSED_VERSION_KEY = 'mt-dismissed-update-version';
 
 /**
  * Render the update panel based on current update info
@@ -42,7 +43,16 @@ export function renderUpdatePanel(): void {
   }
 
   const settings = $currentSettings.get();
+  // Master toggle in settings — if explicitly disabled, never show
   if (settings?.showUpdateNotification === false) {
+    panel.classList.add('hidden');
+    renderUpdateFooterHint();
+    return;
+  }
+
+  // Version-specific dismiss — only suppresses the specific version the user dismissed
+  const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
+  if (dismissedVersion === info.latestVersion) {
     panel.classList.add('hidden');
     renderUpdateFooterHint();
     return;
@@ -82,9 +92,12 @@ function renderUpdateFooterHint(): void {
 
   const info = $updateInfo.get();
   const settings = $currentSettings.get();
-  const showProminent = settings?.showUpdateNotification !== false;
+  const masterDisabled = settings?.showUpdateNotification === false;
+  const dismissed = localStorage.getItem(DISMISSED_VERSION_KEY);
+  const versionDismissed = dismissed === info?.latestVersion;
 
-  if (info?.available && !showProminent) {
+  // Show footer hint when update exists but panel is hidden (dismissed or master off)
+  if (info?.available && (masterDisabled || versionDismissed)) {
     hint.classList.remove('hidden');
   } else {
     hint.classList.add('hidden');
@@ -110,16 +123,13 @@ export function dismissUpdateNotification(): void {
   const panel = document.getElementById('update-panel');
   if (panel) panel.classList.add('hidden');
 
-  const current = $currentSettings.get();
-  if (!current) return;
+  // Save the dismissed version so new versions still show notifications
+  const info = $updateInfo.get();
+  if (info?.latestVersion) {
+    localStorage.setItem(DISMISSED_VERSION_KEY, info.latestVersion);
+  }
 
-  const updated = { ...current, showUpdateNotification: false };
-  $currentSettings.set(updated);
   renderUpdateFooterHint();
-
-  updateSettings(updated).catch((e) => {
-    log.warn(() => `Failed to save dismiss setting: ${e}`);
-  });
 }
 
 /**
