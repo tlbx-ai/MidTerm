@@ -1217,9 +1217,11 @@ install_as_service() {
 
 install_launchd() {
     local install_dir="$1"
+    local config_dir="$UNIX_SERVICE_SETTINGS_DIR"
     local plist_path="/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist"
     local old_host_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_HOST_LABEL}.plist"
     local log_dir="/usr/local/var/log"
+    local launcher_path="$config_dir/launcher.sh"
 
     log "Creating launchd service..."
     log "  Plist path: $plist_path"
@@ -1233,6 +1235,50 @@ install_launchd() {
     touch "$log_dir/MidTerm.log" "$log_dir/update.log"
     chown "$INSTALLING_USER" "$log_dir/MidTerm.log" "$log_dir/update.log" 2>/dev/null || \
         log "Failed to set ownership on log files for user $INSTALLING_USER" "WARN"
+
+    # Write launcher script — update-aware wrapper for launchd.
+    # launchd calls this instead of mt directly. On each respawn,
+    # the launcher applies any staged update BEFORE exec'ing mt.
+    # This eliminates race conditions: mt is never running when its binary is overwritten.
+    cat > "$launcher_path" << 'LAUNCHER_EOF'
+#!/bin/bash
+# MidTerm Launcher — update-aware wrapper for launchd
+# launchd calls this instead of mt directly. On each respawn,
+# this script applies any staged update before exec'ing mt.
+
+CONFIG_DIR="/usr/local/etc/midterm"
+INSTALL_DIR="/usr/local/bin"
+STAGING="$CONFIG_DIR/update-staging"
+
+if [ -d "$STAGING" ] && [ -f "$STAGING/mt" ]; then
+    # Verify staged files are non-empty before applying (guards against partial downloads)
+    if [ -s "$STAGING/mt" ]; then
+        # Apply staged update — mt is NOT running, no race possible
+        cat "$STAGING/mt" > "$INSTALL_DIR/mt"
+        chmod +x "$INSTALL_DIR/mt"
+
+        [ -f "$STAGING/mthost" ] && [ -s "$STAGING/mthost" ] && \
+            cat "$STAGING/mthost" > "$INSTALL_DIR/mthost" && chmod +x "$INSTALL_DIR/mthost"
+        [ -f "$STAGING/version.json" ] && \
+            cat "$STAGING/version.json" > "$INSTALL_DIR/version.json"
+
+        # Write result (read by mt on startup via bootstrap API)
+        printf '{"success":true,"message":"Update applied","timestamp":"%s"}\n' \
+            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$CONFIG_DIR/update-result.json"
+
+        rm -rf "$STAGING"
+    else
+        # Staged mt binary is empty/corrupt — discard staging dir
+        rm -rf "$STAGING"
+    fi
+fi
+
+# Replace this process with mt (launchd tracks the PID)
+exec "$INSTALL_DIR/mt" "$@"
+LAUNCHER_EOF
+    chmod +x "$launcher_path"
+    chown "$INSTALLING_USER" "$launcher_path" 2>/dev/null || true
+    log "Launcher script written to $launcher_path"
 
     # Unload existing services if present (try modern bootout first, fallback to legacy unload)
     launchctl bootout system/"$LAUNCHD_LABEL" 2>/dev/null || launchctl unload "$plist_path" 2>/dev/null || true
@@ -1257,7 +1303,8 @@ install_launchd() {
         rm -f "$old_host_plist"
     fi
 
-    # Create service plist
+    # Create service plist — launches the launcher script, NOT mt directly.
+    # The launcher applies staged updates before exec'ing mt.
     cat > "$plist_path" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1267,7 +1314,7 @@ install_launchd() {
     <string>${LAUNCHD_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${install_dir}/mt</string>
+        <string>${launcher_path}</string>
         <string>--port</string>
         <string>${PORT}</string>
         <string>--bind</string>
