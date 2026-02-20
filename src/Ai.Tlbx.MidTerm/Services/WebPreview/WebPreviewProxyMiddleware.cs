@@ -48,6 +48,14 @@ public sealed partial class WebPreviewProxyMiddleware
           // Patch window.open
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
+          // Patch Audio constructor (new Audio('/path/to/file.mp3'))
+          var OA=window.Audio;
+          if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
+          // Patch navigator.sendBeacon
+          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
+          // Patch Image constructor (new Image().src is handled by setter, but direct constructor arg)
+          var OI=window.Image;
+          if(OI){window.Image=function(w,h){var i=new OI(w,h);return i;};window.Image.prototype=OI.prototype;}
           // MutationObserver: catch elements added via innerHTML/insertAdjacentHTML/document.write
           new MutationObserver(function(muts){
             for(var i=0;i<muts.length;i++){
@@ -101,37 +109,85 @@ public sealed partial class WebPreviewProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!context.Request.Path.StartsWithSegments(ProxyPrefix, out var remaining))
+        var path = context.Request.Path;
+
+        if (path.StartsWithSegments(ProxyPrefix, out var remaining))
         {
-            await _next(context);
+            // External URL proxy: /webpreview/_ext?u=https%3A%2F%2Fexample.com%2Fscript.js
+            var remainingPath = remaining.Value ?? "";
+            if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
+            {
+                await ProxyExternalAsync(context);
+                return;
+            }
+
+            var targetUri = _service.TargetUri;
+            if (targetUri is null)
+            {
+                context.Response.StatusCode = 502;
+                context.Response.ContentType = "text/plain";
+                await context.Response.WriteAsync("No web preview target configured.");
+                return;
+            }
+
+            if (context.WebSockets.IsWebSocketRequest)
+            {
+                await ProxyWebSocketAsync(context, targetUri, remaining.Value ?? "/");
+            }
+            else
+            {
+                await ProxyHttpAsync(context, targetUri, remaining.Value ?? "/");
+            }
+
             return;
         }
 
-        // External URL proxy: /webpreview/_ext?u=https%3A%2F%2Fexample.com%2Fscript.js
-        var remainingPath = remaining.Value ?? "";
-        if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
+        // Catch-all: if web preview is active and this isn't a known MidTerm path,
+        // it's likely a leaked root-relative URL from the proxied site (e.g. /s/player/...,
+        // /youtubei/v1/...). Proxy it to the upstream target directly.
+        if (_service.IsActive && !IsMidTermPath(path.Value ?? "/"))
         {
-            await ProxyExternalAsync(context);
+            var targetUri = _service.TargetUri!;
+            var proxyPath = path.Value ?? "/";
+            if (context.WebSockets.IsWebSocketRequest)
+            {
+                await ProxyWebSocketAsync(context, targetUri, proxyPath);
+            }
+            else
+            {
+                await ProxyHttpAsync(context, targetUri, proxyPath);
+            }
+
             return;
         }
 
-        var targetUri = _service.TargetUri;
-        if (targetUri is null)
+        await _next(context);
+    }
+
+    /// <summary>
+    /// Returns true if the path belongs to MidTerm itself (API, WebSocket, static files).
+    /// Paths that don't match are candidates for proxying to the web preview target.
+    /// </summary>
+    private static bool IsMidTermPath(string path)
+    {
+        // Known MidTerm path prefixes
+        if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/ws/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/js/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/css/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/fonts/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/locales/", StringComparison.OrdinalIgnoreCase))
         {
-            context.Response.StatusCode = 502;
-            context.Response.ContentType = "text/plain";
-            await context.Response.WriteAsync("No web preview target configured.");
-            return;
+            return true;
         }
 
-        if (context.WebSockets.IsWebSocketRequest)
-        {
-            await ProxyWebSocketAsync(context, targetUri, remaining.Value ?? "/");
-        }
-        else
-        {
-            await ProxyHttpAsync(context, targetUri, remaining.Value ?? "/");
-        }
+        // Root-level MidTerm files
+        return path is "/"
+            or "/index.html"
+            or "/login.html"
+            or "/trust.html"
+            or "/web-preview-popup.html"
+            or "/favicon.ico";
     }
 
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
