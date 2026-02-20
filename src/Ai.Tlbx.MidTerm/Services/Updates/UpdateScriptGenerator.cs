@@ -877,56 +877,41 @@ safe_copy() {{
     fi
 
     if $IS_MACOS; then
-        # macOS permissions: /usr/local/bin/ is root-owned, user owns the FILES.
-        # - Can't create new files in dir (no dir write) → no staging as mt.update
-        # - Can't mv/rename into dir (rename needs dir write) → no atomic swap
-        # - CAN overwrite file content (user owns the file) → cat > dst works
-        # - macOS has NO ETXTBSY — can write to running binaries (unlike Linux)
+        # macOS: binaries are pre-signed (ad-hoc codesign) in GitHub Actions CI.
+        # No need to re-sign here — just strip quarantine and copy.
         #
-        # Race-free strategy:
-        #   1. Copy new binary to CONFIG_DIR staging area (user-owned, writable)
-        #   2. chmod + codesign the staged copy — no time pressure at all
-        #   3. Overwrite destination: cat staged > dst (writes signed bytes in place)
-        #      Works even while binary is running (macOS allows it, no ETXTBSY)
-        #   4. chmod +x to ensure executable bit
-        #   5. Kill old process — launchd respawns with new signed binary
+        # /usr/local/bin/ is root-owned but user owns the FILES, so:
+        # - Can't create new files (no dir write) or mv into dir (needs dir write)
+        # - CAN overwrite file content via cat > dst (file write permission)
+        # - macOS has NO ETXTBSY — can write to running binaries
         #
-        # The ad-hoc signature is embedded in the Mach-O binary bytes, so cat > dst
-        # preserves it. Verified: codesign --verify works after byte-level copy.
-        local staged=""$CONFIG_DIR/$(basename ""$dst"").update""
+        # Strategy:
+        #   1. Strip quarantine xattr from source (downloaded files get quarantined)
+        #   2. Verify the CI-applied signature is intact
+        #   3. Overwrite destination: cat src > dst (writes pre-signed bytes in place)
+        #   4. Kill old process — launchd respawns with new binary
 
-        if ! cp ""$src"" ""$staged""; then
-            log ""Failed to stage $desc"" ""ERROR""
-            rm -f ""$staged"" 2>/dev/null || true
-            return 1
-        fi
-        chmod +x ""$staged""
+        # Strip quarantine xattr (macOS quarantines downloaded files)
+        xattr -d com.apple.quarantine ""$src"" 2>/dev/null || true
 
-        # Strip quarantine xattr (downloaded files get quarantined by macOS)
-        xattr -d com.apple.quarantine ""$staged"" 2>/dev/null || true
-
-        log ""Signing $desc for macOS...""
+        # Verify the CI-applied signature is intact
         local _cs_err
-        if ! _cs_err=$(codesign --force -s - ""$staged"" 2>&1); then
-            log ""Codesign failed for $desc: $_cs_err"" ""ERROR""
-            rm -f ""$staged"" 2>/dev/null || true
-            return 1
-        fi
-        if ! _cs_err=$(codesign --verify ""$staged"" 2>&1); then
-            log ""Codesign verification failed for $desc: $_cs_err"" ""ERROR""
-            rm -f ""$staged"" 2>/dev/null || true
-            return 1
+        if ! _cs_err=$(codesign --verify ""$src"" 2>&1); then
+            log ""Signature verification failed for $desc (pre-signed binary): $_cs_err"" ""WARN""
+            log ""Attempting to re-sign $desc...""
+            if ! _cs_err=$(codesign --force -s - ""$src"" 2>&1); then
+                log ""Re-sign failed for $desc: $_cs_err"" ""ERROR""
+                return 1
+            fi
         fi
         log ""Signature verified for $desc""
 
         # Overwrite running binary in place (macOS has no ETXTBSY restriction)
-        if ! cat ""$staged"" > ""$dst""; then
+        if ! cat ""$src"" > ""$dst""; then
             log ""Failed to overwrite $desc"" ""ERROR""
-            rm -f ""$staged"" 2>/dev/null || true
             return 1
         fi
         chmod +x ""$dst""
-        rm -f ""$staged"" 2>/dev/null || true
 
         # Kill old process — launchd KeepAlive respawns with the new binary
         kill_process_by_path ""$dst""
@@ -969,15 +954,9 @@ cleanup() {{
         if [[ -f ""$_mt_bak"" ]]; then
             log ""Restoring mt from backup...""
             if $IS_MACOS; then
-                # Stage in config dir, codesign, overwrite in place, then kill
-                local _mt_staged=""$CONFIG_DIR/mt.rollback""
-                cp ""$_mt_bak"" ""$_mt_staged"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
-                chmod +x ""$_mt_staged"" 2>/dev/null || true
-                xattr -d com.apple.quarantine ""$_mt_staged"" 2>/dev/null || true
-                codesign --force -s - ""$_mt_staged"" 2>/dev/null || true
-                cat ""$_mt_staged"" > ""$CURRENT_MT"" 2>/dev/null || true
+                # Backup is already signed — just overwrite in place and kill
+                cat ""$_mt_bak"" > ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
                 chmod +x ""$CURRENT_MT"" 2>/dev/null || true
-                rm -f ""$_mt_staged"" 2>/dev/null || true
                 kill_process_by_path ""$CURRENT_MT""
             else
                 cp -f ""$_mt_bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
@@ -988,14 +967,8 @@ cleanup() {{
         if [[ -f ""$_mthost_bak"" ]]; then
             log ""Restoring mthost from backup...""
             if $IS_MACOS; then
-                local _mthost_staged=""$CONFIG_DIR/mthost.rollback""
-                cp ""$_mthost_bak"" ""$_mthost_staged"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
-                chmod +x ""$_mthost_staged"" 2>/dev/null || true
-                xattr -d com.apple.quarantine ""$_mthost_staged"" 2>/dev/null || true
-                codesign --force -s - ""$_mthost_staged"" 2>/dev/null || true
-                cat ""$_mthost_staged"" > ""$CURRENT_MTHOST"" 2>/dev/null || true
+                cat ""$_mthost_bak"" > ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
                 chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
-                rm -f ""$_mthost_staged"" 2>/dev/null || true
                 kill_process_by_path ""$CURRENT_MTHOST""
             else
                 cp -f ""$_mthost_bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
