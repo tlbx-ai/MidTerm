@@ -11,14 +11,22 @@ public sealed partial class WebPreviewProxyMiddleware
     private const int WsBufferSize = 8192;
     private static readonly TimeSpan WsCloseTimeout = TimeSpan.FromSeconds(5);
 
-    // Injected into proxied HTML to rewrite root-relative URLs in fetch/XHR at runtime.
-    // This is safer than regex-replacing JS source code.
+    // Injected into proxied HTML to rewrite URLs in fetch/XHR at runtime.
+    // Rewrites root-relative URLs to /webpreview/... and absolute external URLs
+    // to /webpreview/_ext?u=... so all requests go through the MT proxy.
     private const string UrlRewriteScript = """
         <script>(function(){
-          var P="/webpreview";
-          function r(u){if(typeof u==="string"&&u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;return u;}
+          var P="/webpreview",E=P+"/_ext?u=";
+          function r(u){
+            if(typeof u!=="string")return u;
+            if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
+            if(u.startsWith("http://")|| u.startsWith("https://")){
+              try{var h=new URL(u);if(h.host!==location.host)return E+encodeURIComponent(u);}catch(e){}
+            }
+            return u;
+          }
           var F=window.fetch;
-          window.fetch=function(u,o){return F.call(this,typeof u==="string"?r(u):u,o);};
+          window.fetch=function(u,o){return F.call(this,r(u),o);};
           var X=XMLHttpRequest.prototype.open;
           XMLHttpRequest.prototype.open=function(m,u){return X.apply(this,[m,r(u)].concat([].slice.call(arguments,2)));};
         })();</script>
@@ -59,6 +67,14 @@ public sealed partial class WebPreviewProxyMiddleware
         if (!context.Request.Path.StartsWithSegments(ProxyPrefix, out var remaining))
         {
             await _next(context);
+            return;
+        }
+
+        // External URL proxy: /webpreview/_ext?u=https%3A%2F%2Fexample.com%2Fscript.js
+        var remainingPath = remaining.Value ?? "";
+        if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
+        {
+            await ProxyExternalAsync(context);
             return;
         }
 
@@ -229,6 +245,12 @@ public sealed partial class WebPreviewProxyMiddleware
         html = RootRelativeSrcsetRegex().Replace(html, "$1/webpreview/");
         html = RootRelativeCssUrlRegex().Replace(html, "url(/webpreview/");
 
+        // Rewrite absolute external URLs (https://cdn.example.com/...) to go through _ext proxy.
+        // This allows MT to fetch third-party resources server-side, bypassing CORS/ad blockers.
+        var targetHost = _service.TargetUri?.Host;
+        html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetHost));
+        html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetHost));
+
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
         html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">" + UrlRewriteScript, 1);
@@ -247,10 +269,89 @@ public sealed partial class WebPreviewProxyMiddleware
         // Rewrite url(/...) references in CSS to go through the proxy
         css = RootRelativeCssUrlRegex().Replace(css, "url(/webpreview/");
 
+        // Rewrite absolute external url() references
+        css = AbsoluteUrlCssRegex().Replace(css, m => RewriteExternalCssUrl(m, null));
+
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");
         context.Response.ContentType = "text/css; charset=utf-8";
         await context.Response.WriteAsync(css, context.RequestAborted);
+    }
+
+    private async Task ProxyExternalAsync(HttpContext context)
+    {
+        var externalUrl = context.Request.Query["u"].FirstOrDefault();
+        if (string.IsNullOrEmpty(externalUrl) || !Uri.TryCreate(externalUrl, UriKind.Absolute, out var extUri))
+        {
+            context.Response.StatusCode = 400;
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync("Missing or invalid 'u' parameter.");
+            return;
+        }
+
+        if (extUri.Scheme is not ("http" or "https"))
+        {
+            context.Response.StatusCode = 400;
+            return;
+        }
+
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, extUri);
+
+        // Forward minimal headers
+        foreach (var header in context.Request.Headers)
+        {
+            if (!ForwardedRequestHeaders.Contains(header.Key) || HopByHopHeaders.Contains(header.Key))
+                continue;
+            requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+        }
+
+        HttpResponseMessage upstreamResponse;
+        try
+        {
+            upstreamResponse = await _service.HttpClient.SendAsync(
+                requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+        }
+        catch (HttpRequestException)
+        {
+            context.Response.StatusCode = 502;
+            return;
+        }
+        catch (TaskCanceledException)
+        {
+            context.Response.StatusCode = 504;
+            return;
+        }
+
+        using (upstreamResponse)
+        {
+            context.Response.StatusCode = (int)upstreamResponse.StatusCode;
+
+            foreach (var header in upstreamResponse.Headers)
+            {
+                if (HopByHopHeaders.Contains(header.Key) || StrippedResponseHeaders.Contains(header.Key))
+                    continue;
+                context.Response.Headers[header.Key] = header.Value.ToArray();
+            }
+
+            foreach (var header in upstreamResponse.Content.Headers)
+            {
+                if (StrippedResponseHeaders.Contains(header.Key))
+                    continue;
+                context.Response.Headers[header.Key] = header.Value.ToArray();
+            }
+
+            var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
+            if (contentType is "text/css")
+            {
+                // Rewrite url() in external CSS too
+                await ProxyCssResponseAsync(context, upstreamResponse);
+            }
+            else
+            {
+                await using var stream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
+                await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
+            }
+        }
     }
 
     private static async Task<string> DecompressTextAsync(
@@ -411,4 +512,47 @@ public sealed partial class WebPreviewProxyMiddleware
     [GeneratedRegex(@"url\(\s*[""']?/(?!/)", RegexOptions.IgnoreCase)]
     private static partial Regex RootRelativeCssUrlRegex();
 
+    // Matches absolute http(s) URLs in HTML attributes: src="https://...", href="http://..."
+    [GeneratedRegex(@"(\b(?:src|href|action|poster)\s*=\s*[""'])(https?://[^""'\s>]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex AbsoluteUrlAttrRegex();
+
+    // Matches absolute http(s) URLs in CSS url(): url(https://...) or url("https://...")
+    [GeneratedRegex(@"(url\(\s*[""']?)(https?://[^""')>\s]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex AbsoluteUrlCssRegex();
+
+    /// <summary>
+    /// Rewrite absolute external URL in an HTML attribute to go through the _ext proxy.
+    /// URLs pointing to the target host are rewritten to /webpreview/ (same-origin proxy).
+    /// URLs pointing to other hosts go through /webpreview/_ext?u=...
+    /// </summary>
+    private static string RewriteExternalUrl(Match match, string? targetHost)
+    {
+        var prefix = match.Groups[1].Value;  // e.g. src="
+        var url = match.Groups[2].Value;     // e.g. https://cdn.example.com/script.js
+
+        // Same-host URLs → /webpreview/path (already handled by root-relative rewriting,
+        // but absolute same-host URLs need rewriting too)
+        if (targetHost is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && uri.Host.Equals(targetHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return prefix + "/webpreview" + uri.PathAndQuery;
+        }
+
+        // External URLs → /webpreview/_ext?u=encodedUrl
+        return prefix + "/webpreview/_ext?u=" + Uri.EscapeDataString(url);
+    }
+
+    private static string RewriteExternalCssUrl(Match match, string? targetHost)
+    {
+        var prefix = match.Groups[1].Value;  // e.g. url(
+        var url = match.Groups[2].Value;     // e.g. https://fonts.googleapis.com/css
+
+        if (targetHost is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && uri.Host.Equals(targetHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return prefix + "/webpreview" + uri.PathAndQuery;
+        }
+
+        return prefix + "/webpreview/_ext?u=" + Uri.EscapeDataString(url);
+    }
 }
