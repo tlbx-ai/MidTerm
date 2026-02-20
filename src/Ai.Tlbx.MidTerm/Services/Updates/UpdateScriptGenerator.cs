@@ -877,18 +877,27 @@ safe_copy() {{
     fi
 
     if $IS_MACOS; then
-        # macOS: launchd KeepAlive respawns the process after kill, causing races
-        # with codesign (binary gets executed before signing completes).
+        # macOS permissions: /usr/local/bin/ is root-owned, user owns the FILES.
+        # - Can't create new files in dir (no dir write) → no staging as mt.update
+        # - Can't mv/rename into dir (rename needs dir write) → no atomic swap
+        # - CAN overwrite file content (user owns the file) → cat > dst works
+        # - macOS has NO ETXTBSY — can write to running binaries (unlike Linux)
         #
         # Race-free strategy:
-        #   1. Copy new binary to staging name (mt.update) — no conflict with running process
+        #   1. Copy new binary to CONFIG_DIR staging area (user-owned, writable)
         #   2. chmod + codesign the staged copy — no time pressure at all
-        #   3. mv staged copy over destination — atomic rename on same filesystem
-        #   4. kill the old process — launchd respawns with new signed binary
-        local staged=""$dst.update""
+        #   3. Overwrite destination: cat staged > dst (writes signed bytes in place)
+        #      Works even while binary is running (macOS allows it, no ETXTBSY)
+        #   4. chmod +x to ensure executable bit
+        #   5. Kill old process — launchd respawns with new signed binary
+        #
+        # The ad-hoc signature is embedded in the Mach-O binary bytes, so cat > dst
+        # preserves it. Verified: codesign --verify works after byte-level copy.
+        local staged=""$CONFIG_DIR/$(basename ""$dst"").update""
 
         if ! cp ""$src"" ""$staged""; then
             log ""Failed to stage $desc"" ""ERROR""
+            rm -f ""$staged"" 2>/dev/null || true
             return 1
         fi
         chmod +x ""$staged""
@@ -906,8 +915,16 @@ safe_copy() {{
         fi
         log ""Signature verified for $desc""
 
-        # Atomic swap + restart
-        mv -f ""$staged"" ""$dst""
+        # Overwrite running binary in place (macOS has no ETXTBSY restriction)
+        if ! cat ""$staged"" > ""$dst""; then
+            log ""Failed to overwrite $desc"" ""ERROR""
+            rm -f ""$staged"" 2>/dev/null || true
+            return 1
+        fi
+        chmod +x ""$dst""
+        rm -f ""$staged"" 2>/dev/null || true
+
+        # Kill old process — launchd KeepAlive respawns with the new binary
         kill_process_by_path ""$dst""
     else
         # Linux: atomic temp+rename (systemd runs as root, has dir write)
@@ -948,11 +965,14 @@ cleanup() {{
         if [[ -f ""$_mt_bak"" ]]; then
             log ""Restoring mt from backup...""
             if $IS_MACOS; then
-                # Stage, codesign, then atomic swap (same as safe_copy)
-                cp ""$_mt_bak"" ""$CURRENT_MT.update"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
-                chmod +x ""$CURRENT_MT.update"" 2>/dev/null || true
-                codesign -s - ""$CURRENT_MT.update"" 2>/dev/null || true
-                mv -f ""$CURRENT_MT.update"" ""$CURRENT_MT"" 2>/dev/null || true
+                # Stage in config dir, codesign, overwrite in place, then kill
+                local _mt_staged=""$CONFIG_DIR/mt.rollback""
+                cp ""$_mt_bak"" ""$_mt_staged"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
+                chmod +x ""$_mt_staged"" 2>/dev/null || true
+                codesign -s - ""$_mt_staged"" 2>/dev/null || true
+                cat ""$_mt_staged"" > ""$CURRENT_MT"" 2>/dev/null || true
+                chmod +x ""$CURRENT_MT"" 2>/dev/null || true
+                rm -f ""$_mt_staged"" 2>/dev/null || true
                 kill_process_by_path ""$CURRENT_MT""
             else
                 cp -f ""$_mt_bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
@@ -963,10 +983,13 @@ cleanup() {{
         if [[ -f ""$_mthost_bak"" ]]; then
             log ""Restoring mthost from backup...""
             if $IS_MACOS; then
-                cp ""$_mthost_bak"" ""$CURRENT_MTHOST.update"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
-                chmod +x ""$CURRENT_MTHOST.update"" 2>/dev/null || true
-                codesign -s - ""$CURRENT_MTHOST.update"" 2>/dev/null || true
-                mv -f ""$CURRENT_MTHOST.update"" ""$CURRENT_MTHOST"" 2>/dev/null || true
+                local _mthost_staged=""$CONFIG_DIR/mthost.rollback""
+                cp ""$_mthost_bak"" ""$_mthost_staged"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
+                chmod +x ""$_mthost_staged"" 2>/dev/null || true
+                codesign -s - ""$_mthost_staged"" 2>/dev/null || true
+                cat ""$_mthost_staged"" > ""$CURRENT_MTHOST"" 2>/dev/null || true
+                chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
+                rm -f ""$_mthost_staged"" 2>/dev/null || true
                 kill_process_by_path ""$CURRENT_MTHOST""
             else
                 cp -f ""$_mthost_bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
