@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 namespace Ai.Tlbx.MidTerm.Settings;
 
 [JsonSerializable(typeof(MidTermSettings))]
+[JsonSerializable(typeof(ManagerBarButton))]
+[JsonSerializable(typeof(List<ManagerBarButton>))]
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]

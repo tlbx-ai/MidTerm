@@ -580,6 +580,11 @@ public static class EndpointSetup
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
+            catch (Exception ex)
+            {
+                Common.Logging.Log.Exception(ex, "PUT /api/settings");
+                return Results.Problem($"Failed to save settings: {ex.Message}");
+            }
         });
 
         app.MapPost("/api/settings/reload", () =>

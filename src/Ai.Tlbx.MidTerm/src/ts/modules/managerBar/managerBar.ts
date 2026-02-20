@@ -210,7 +210,13 @@ function saveButtons(buttons: ManagerButton[]): void {
 
   updateSettings({ ...settings, managerBarButtons: buttons } as Parameters<
     typeof updateSettings
-  >[0]).catch((e) => console.error('Failed to save manager bar buttons:', e));
+  >[0])
+    .then(({ response }) => {
+      if (!response.ok) {
+        console.error('Failed to save manager bar buttons:', response.status);
+      }
+    })
+    .catch((e) => console.error('Failed to save manager bar buttons:', e));
 }
 
 function escapeHtml(str: string): string {
