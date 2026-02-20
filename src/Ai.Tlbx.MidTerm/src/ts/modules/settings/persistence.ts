@@ -459,12 +459,12 @@ export function bindDevModeToggle(): void {
       const updated = { ...settings, devMode: newDevMode };
       $currentSettings.set(updated);
       updateSettings(updated as Parameters<typeof updateSettings>[0]).catch(() => {});
-      populateVersionInfo(
-        el.textContent ?? '-',
-        document.getElementById('version-host')?.textContent ?? null,
-        document.getElementById('version-frontend')?.textContent ?? 'dev',
-        newDevMode,
-      );
+      const envRow = document.getElementById('dev-environment-row');
+      const envEl = document.getElementById('dev-environment-name');
+      if (envRow && envEl) {
+        envRow.style.display = newDevMode ? '' : 'none';
+        envEl.textContent = 'DEV';
+      }
     }
 
     timer = setTimeout(() => {
