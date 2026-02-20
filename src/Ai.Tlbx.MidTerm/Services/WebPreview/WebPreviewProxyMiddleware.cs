@@ -225,7 +225,7 @@ public sealed partial class WebPreviewProxyMiddleware
         // Rewrite root-relative URLs to go through the proxy.
         // <base href> only handles truly relative URLs (foo/bar.js),
         // but root-relative URLs (/path/to/file) need explicit rewriting.
-        html = RootRelativeAttrRegex().Replace(html, "$1=\"/webpreview/");
+        html = RootRelativeAttrRegex().Replace(html, "$1/webpreview/");
         html = RootRelativeSrcsetRegex().Replace(html, "$1/webpreview/");
         html = RootRelativeCssUrlRegex().Replace(html, "url(/webpreview/");
 
