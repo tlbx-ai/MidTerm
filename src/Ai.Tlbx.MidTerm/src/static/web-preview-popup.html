@@ -63,45 +63,6 @@
     </div>
     <iframe id="preview-frame" src="about:blank"></iframe>
 
-    <script>
-        const CHANNEL_NAME = 'midterm-web-preview';
-        const channel = new BroadcastChannel(CHANNEL_NAME);
-        const frame = document.getElementById('preview-frame');
-        const urlDisplay = document.getElementById('url-display');
-
-        // Get URL from query parameter
-        const params = new URLSearchParams(window.location.search);
-        const initialUrl = params.get('url');
-        if (initialUrl) {
-            urlDisplay.textContent = initialUrl;
-            frame.src = '/webpreview/';
-        }
-
-        // Listen for messages from parent
-        channel.onmessage = function(e) {
-            if (e.data.type === 'set-url') {
-                urlDisplay.textContent = e.data.url;
-                frame.src = '/webpreview/';
-            } else if (e.data.type === 'refresh') {
-                frame.src = '/webpreview/?' + Date.now();
-            }
-        };
-
-        // Refresh button
-        document.getElementById('refresh-btn').addEventListener('click', function() {
-            frame.src = '/webpreview/?' + Date.now();
-        });
-
-        // Dock back button
-        document.getElementById('dock-back-btn').addEventListener('click', function() {
-            channel.postMessage({ type: 'dock-back' });
-            window.close();
-        });
-
-        // Notify parent on close
-        window.addEventListener('beforeunload', function() {
-            channel.postMessage({ type: 'popup-closed' });
-        });
-    </script>
+    <script src="/js/web-preview-popup.js"></script>
 </body>
 </html>
