@@ -832,13 +832,18 @@ kill_process_by_path() {{
         sleep 1
     fi
 
-    # Double-check
-    pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
-    if [[ -n ""$pids"" ]]; then
-        log ""Force killing remaining $name processes..."" ""WARN""
-        pkill -9 -f ""$full_path"" 2>/dev/null || true
-        sleep 1
+    if ! $IS_MACOS; then
+        # Linux: double-check that processes are gone (no auto-respawn during update)
+        pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
+        if [[ -n ""$pids"" ]]; then
+            log ""Force killing remaining $name processes..."" ""WARN""
+            pkill -9 -f ""$full_path"" 2>/dev/null || true
+            sleep 1
+        fi
     fi
+    # macOS: skip double-check. launchd KeepAlive respawns the process immediately
+    # after kill — that's intentional. Killing the respawned process causes rapid
+    # crash cycles and launchd throttle (10s penalty), breaking the startup check.
 }}
 
 verify_copy() {{
