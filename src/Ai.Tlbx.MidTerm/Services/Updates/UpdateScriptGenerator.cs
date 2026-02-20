@@ -6,8 +6,9 @@ using Ai.Tlbx.MidTerm.Services.Certificates;
 namespace Ai.Tlbx.MidTerm.Services.Updates;
 
 /// <summary>
-/// Generates bulletproof update scripts for Windows, Linux, and macOS.
-/// Scripts include: aggressive process termination, file lock waiting,
+/// Generates update scripts for Windows and Linux.
+/// macOS uses the launcher shim approach instead (see EndpointSetup.cs).
+/// Scripts include: process termination, file lock waiting,
 /// copy verification, rollback on failure, and detailed logging.
 ///
 /// SYNC: Generated scripts use paths that MUST match:
@@ -689,40 +690,25 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var logFilePath = Path.Combine(logDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
-        var isMacOs = OperatingSystem.IsMacOS();
         var isWebOnly = updateType == UpdateType.WebOnly;
         var generatingVersion = typeof(UpdateScriptGenerator).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
         var plusIdx = generatingVersion.IndexOf('+');
         if (plusIdx > 0) generatingVersion = generatingVersion[..plusIdx];
 
-        // macOS: launchd service runs as non-root user (UserName in plist). bootout/bootstrap
-        // require root, so they always fail. Instead, we kill processes directly and rely on
-        // KeepAlive to auto-restart after the new binary is in place.
-        var stopServiceCmd = isMacOs
-            ? "true"
-            : $"systemctl stop {SystemdService} 2>/dev/null || true";
-
-        var startServiceCmd = isMacOs
-            ? "true"
-            : $"systemctl start {SystemdService} 2>/dev/null || true";
-
-        // NOTE: launchctl print only checks if service is REGISTERED, not RUNNING
-        // Use pgrep to actually verify the process is running
-        var checkServiceCmd = isMacOs
-            ? $"pgrep -f \"$CURRENT_MT\" >/dev/null 2>&1"
-            : $"systemctl is-active --quiet {SystemdService}";
+        // macOS uses the launcher shim approach (staging + launchd respawn) — see EndpointSetup.cs.
+        // This script is only generated for Linux now.
+        var stopServiceCmd = $"systemctl stop {SystemdService} 2>/dev/null || true";
+        var startServiceCmd = $"systemctl start {SystemdService} 2>/dev/null || true";
 
         var script = $@"#!/bin/bash
-# MidTerm Update Script (Unix)
+# MidTerm Update Script (Linux)
 # Type: {(isWebOnly ? "Web-only (sessions preserved)" : "Full (sessions will restart)")}
 # Generated: {DateTime.UtcNow:O}
 #
-# IMPORTANT NOTES:
-# - macOS: launchd service runs as USER (not root) via UserName key in plist
-# - Linux: systemd service runs as root (standard behavior)
+# NOTE: macOS uses the launcher shim approach (staging + launchd respawn).
+# This script is only used on Linux.
 # - Binary dir (/usr/local/bin) != Config dir (/usr/local/etc/midterm)
-# - macOS requires codesign after binary copy to avoid SIGKILL on launch
 # - File ownership must be preserved for user-mode service access
 
 set -euo pipefail
@@ -752,7 +738,6 @@ LOG_FILE='{EscapeForBash(logFilePath)}'
 RESULT_FILE='{EscapeForBash(resultFilePath)}'
 MAX_RETRIES={MaxRetries}
 IS_WEB_ONLY={( isWebOnly ? "true" : "false")}
-IS_MACOS={( isMacOs ? "true" : "false")}
 DELETE_SOURCE={( deleteSourceAfter ? "true" : "false")}
 
 ROLLBACK_NEEDED=false
@@ -832,18 +817,13 @@ kill_process_by_path() {{
         sleep 1
     fi
 
-    if ! $IS_MACOS; then
-        # Linux: double-check that processes are gone (no auto-respawn during update)
-        pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
-        if [[ -n ""$pids"" ]]; then
-            log ""Force killing remaining $name processes..."" ""WARN""
-            pkill -9 -f ""$full_path"" 2>/dev/null || true
-            sleep 1
-        fi
+    # Double-check that processes are gone
+    pids=$(pgrep -fx ""$full_path"" 2>/dev/null || pgrep -f ""$full_path"" 2>/dev/null || true)
+    if [[ -n ""$pids"" ]]; then
+        log ""Force killing remaining $name processes..."" ""WARN""
+        pkill -9 -f ""$full_path"" 2>/dev/null || true
+        sleep 1
     fi
-    # macOS: skip double-check. launchd KeepAlive respawns the process immediately
-    # after kill — that's intentional. Killing the respawned process causes rapid
-    # crash cycles and launchd throttle (10s penalty), breaking the startup check.
 }}
 
 verify_copy() {{
@@ -881,52 +861,11 @@ safe_copy() {{
         return 1
     fi
 
-    if $IS_MACOS; then
-        # macOS: binaries are pre-signed (ad-hoc codesign) in GitHub Actions CI.
-        # No need to re-sign here — just strip quarantine and copy.
-        #
-        # /usr/local/bin/ is root-owned but user owns the FILES, so:
-        # - Can't create new files (no dir write) or mv into dir (needs dir write)
-        # - CAN overwrite file content via cat > dst (file write permission)
-        # - macOS has NO ETXTBSY — can write to running binaries
-        #
-        # Strategy:
-        #   1. Strip quarantine xattr from source (downloaded files get quarantined)
-        #   2. Verify the CI-applied signature is intact
-        #   3. Overwrite destination: cat src > dst (writes pre-signed bytes in place)
-        #   4. Kill old process — launchd respawns with new binary
-
-        # Strip quarantine xattr (macOS quarantines downloaded files)
-        xattr -d com.apple.quarantine ""$src"" 2>/dev/null || true
-
-        # Verify the CI-applied signature is intact
-        local _cs_err
-        if ! _cs_err=$(codesign --verify ""$src"" 2>&1); then
-            log ""Signature verification failed for $desc (pre-signed binary): $_cs_err"" ""WARN""
-            log ""Attempting to re-sign $desc...""
-            if ! _cs_err=$(codesign --force -s - ""$src"" 2>&1); then
-                log ""Re-sign failed for $desc: $_cs_err"" ""ERROR""
-                return 1
-            fi
-        fi
-        log ""Signature verified for $desc""
-
-        # Overwrite running binary in place (macOS has no ETXTBSY restriction)
-        if ! cat ""$src"" > ""$dst""; then
-            log ""Failed to overwrite $desc"" ""ERROR""
-            return 1
-        fi
-        chmod +x ""$dst""
-
-        # Kill old process — launchd KeepAlive respawns with the new binary
-        kill_process_by_path ""$dst""
-    else
-        # Linux: atomic temp+rename (systemd runs as root, has dir write)
-        local tmp_dst=""$dst.new""
-        cp ""$src"" ""$tmp_dst""
-        chmod +x ""$tmp_dst""
-        mv -f ""$tmp_dst"" ""$dst""
-    fi
+    # Atomic temp+rename (systemd runs as root, has dir write)
+    local tmp_dst=""$dst.new""
+    cp ""$src"" ""$tmp_dst""
+    chmod +x ""$tmp_dst""
+    mv -f ""$tmp_dst"" ""$dst""
 
     if ! verify_copy ""$src"" ""$dst""; then
         return 1
@@ -944,46 +883,22 @@ cleanup() {{
         # Stop any partially started process
         kill_process_by_path ""$CURRENT_MT""
 
-        # Restore binary backups (macOS: from config dir, Linux: from .bak in install dir)
-        local _mt_bak _mthost_bak _vj_bak
-        if $IS_MACOS; then
-            _mt_bak=""$CONFIG_DIR/update-backup/mt.bak""
-            _mthost_bak=""$CONFIG_DIR/update-backup/mthost.bak""
-            _vj_bak=""$CONFIG_DIR/update-backup/version.json.bak""
-        else
-            _mt_bak=""$CURRENT_MT.bak""
-            _mthost_bak=""$CURRENT_MTHOST.bak""
-            _vj_bak=""$CURRENT_VERSION_JSON.bak""
-        fi
-
-        if [[ -f ""$_mt_bak"" ]]; then
+        # Restore binary backups
+        if [[ -f ""$CURRENT_MT.bak"" ]]; then
             log ""Restoring mt from backup...""
-            if $IS_MACOS; then
-                # Backup is already signed — just overwrite in place and kill
-                cat ""$_mt_bak"" > ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
-                chmod +x ""$CURRENT_MT"" 2>/dev/null || true
-                kill_process_by_path ""$CURRENT_MT""
-            else
-                cp -f ""$_mt_bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
-                chmod +x ""$CURRENT_MT"" 2>/dev/null || true
-            fi
+            cp -f ""$CURRENT_MT.bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
+            chmod +x ""$CURRENT_MT"" 2>/dev/null || true
         fi
 
-        if [[ -f ""$_mthost_bak"" ]]; then
+        if [[ -f ""$CURRENT_MTHOST.bak"" ]]; then
             log ""Restoring mthost from backup...""
-            if $IS_MACOS; then
-                cat ""$_mthost_bak"" > ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
-                chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
-                kill_process_by_path ""$CURRENT_MTHOST""
-            else
-                cp -f ""$_mthost_bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
-                chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
-            fi
+            cp -f ""$CURRENT_MTHOST.bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
+            chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
         fi
 
-        if [[ -f ""$_vj_bak"" ]]; then
+        if [[ -f ""$CURRENT_VERSION_JSON.bak"" ]]; then
             log ""Restoring version.json from backup...""
-            cp -f ""$_vj_bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
+            cp -f ""$CURRENT_VERSION_JSON.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
         fi
 
         # Restore credential files from CONFIG_DIR (not INSTALL_DIR!)
@@ -1011,11 +926,7 @@ cleanup() {{
 
         # Try to restart previous version
         log ""Attempting to restart previous version...""
-        if $IS_MACOS; then
-            {startServiceCmd}
-        else
-            {startServiceCmd}
-        fi
+        {startServiceCmd}
 
         if ! pgrep -f ""$CURRENT_MT"" > /dev/null 2>&1; then
             nohup ""$CURRENT_MT"" > /dev/null 2>&1 &
@@ -1043,7 +954,7 @@ log '=========================================='
 log 'MidTerm Update Script v{generatingVersion}'
 log ""Running as: $(whoami) (SERVICE_USER=${{SERVICE_USER:-unknown}})""
 log ""Update type: $(if $IS_WEB_ONLY; then echo 'Web-only'; else echo 'Full'; fi)""
-log ""Platform: $(if $IS_MACOS; then echo 'macOS'; else echo 'Linux'; fi)""
+log ""Platform: Linux""
 log '=========================================='
 
 # Log version before update
@@ -1065,32 +976,23 @@ fi
 log """"
 log '=== PHASE 1: Stopping processes ==='
 
-if $IS_MACOS; then
-    # macOS: DON'T kill processes here. launchd KeepAlive respawns immediately,
-    # and if safe_copy's cat > truncates the binary while the respawned process
-    # is loading, it causes cascading crashes → launchd throttle → startup failure.
-    # safe_copy handles the kill AFTER the binary is fully written.
-    log ""macOS: skipping process kill (safe_copy handles kill after overwrite)""
-else
-    # Linux: systemd stop cleanly stops the service
-    log ""Stopping service...""
-    {stopServiceCmd}
+log ""Stopping service...""
+{stopServiceCmd}
 
-    # Wait for process to actually exit (up to 5s) before force-killing
-    for _i in $(seq 1 10); do
-        pgrep -f ""/${{CURRENT_MT##*/}}$"" >/dev/null 2>&1 || break
-        sleep 0.5
-    done
+# Wait for process to actually exit (up to 5s) before force-killing
+for _i in $(seq 1 10); do
+    pgrep -f ""/${{CURRENT_MT##*/}}$"" >/dev/null 2>&1 || break
+    sleep 0.5
+done
 
-    # Kill mt processes (by full path to avoid killing unrelated processes)
-    log ""Killing mt processes...""
-    kill_process_by_path ""$CURRENT_MT""
+# Kill mt processes (by full path to avoid killing unrelated processes)
+log ""Killing mt processes...""
+kill_process_by_path ""$CURRENT_MT""
 
-    # Kill mthost processes (only for full updates)
-    if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
-        log ""Killing mthost processes...""
-        kill_process_by_path ""$CURRENT_MTHOST""
-    fi
+# Kill mthost processes (only for full updates)
+if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
+    log ""Killing mthost processes...""
+    kill_process_by_path ""$CURRENT_MTHOST""
 fi
 
 log ""All processes stopped""
@@ -1101,23 +1003,17 @@ log ""All processes stopped""
 log """"
 log '=== PHASE 2: Waiting for file handles ==='
 
-if $IS_MACOS; then
-    # macOS: no ETXTBSY, can write to running binaries directly.
-    # safe_copy overwrites in place, then kills. No file lock issues.
-    log ""macOS: skipping file lock wait (no ETXTBSY on macOS)""
-else
-    if ! wait_for_file_writable ""$CURRENT_MT""; then
-        log ""mt is still locked after $MAX_RETRIES retries"" ""ERROR""
-        write_result false ""mt is still locked. Another process may be using it.""
-        exit 1
-    fi
+if ! wait_for_file_writable ""$CURRENT_MT""; then
+    log ""mt is still locked after $MAX_RETRIES retries"" ""ERROR""
+    write_result false ""mt is still locked. Another process may be using it.""
+    exit 1
+fi
 
-    if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
-        if ! wait_for_file_writable ""$CURRENT_MTHOST""; then
-            log ""mthost is still locked after $MAX_RETRIES retries"" ""ERROR""
-            write_result false ""mthost is still locked. Another process may be using it.""
-            exit 1
-        fi
+if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+    if ! wait_for_file_writable ""$CURRENT_MTHOST""; then
+        log ""mthost is still locked after $MAX_RETRIES retries"" ""ERROR""
+        write_result false ""mthost is still locked. Another process may be using it.""
+        exit 1
     fi
 fi
 
@@ -1129,42 +1025,21 @@ log ""All file handles released""
 log """"
 log '=== PHASE 3: Creating backups ==='
 
-# On macOS, .bak files can't be created in /usr/local/bin/ (root-owned directory).
-# Use config dir for binary backups instead (service user owns it).
-if $IS_MACOS; then
-    BIN_BACKUP_DIR=""$CONFIG_DIR/update-backup""
-    mkdir -p ""$BIN_BACKUP_DIR""
-else
-    BIN_BACKUP_DIR=""$INSTALL_DIR""
-fi
-
 if [[ -f ""$CURRENT_MT"" ]]; then
     log ""Backing up mt...""
-    if $IS_MACOS; then
-        cp ""$CURRENT_MT"" ""$BIN_BACKUP_DIR/mt.bak""
-    else
-        cp -f ""$CURRENT_MT"" ""$CURRENT_MT.bak""
-    fi
+    cp -f ""$CURRENT_MT"" ""$CURRENT_MT.bak""
     log ""mt backed up""
 fi
 
 if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     log ""Backing up mthost...""
-    if $IS_MACOS; then
-        cp ""$CURRENT_MTHOST"" ""$BIN_BACKUP_DIR/mthost.bak""
-    else
-        cp -f ""$CURRENT_MTHOST"" ""$CURRENT_MTHOST.bak""
-    fi
+    cp -f ""$CURRENT_MTHOST"" ""$CURRENT_MTHOST.bak""
     log ""mthost backed up""
 fi
 
 if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
     log ""Backing up version.json...""
-    if $IS_MACOS; then
-        cp ""$CURRENT_VERSION_JSON"" ""$BIN_BACKUP_DIR/version.json.bak""
-    else
-        cp -f ""$CURRENT_VERSION_JSON"" ""$CURRENT_VERSION_JSON.bak""
-    fi
+    cp -f ""$CURRENT_VERSION_JSON"" ""$CURRENT_VERSION_JSON.bak""
     log ""version.json backed up""
 fi
 
@@ -1341,9 +1216,6 @@ if [[ ""$STARTED_OK"" != ""true"" ]]; then
     log ""=== Startup Failure Diagnostics ===""
     log ""Binary exists: $([ -f ""$CURRENT_MT"" ] && echo 'yes' || echo 'NO')""
     log ""Binary executable: $([ -x ""$CURRENT_MT"" ] && echo 'yes' || echo 'NO')""
-    if $IS_MACOS; then
-        log ""Codesign: $(codesign -v ""$CURRENT_MT"" 2>&1 || echo 'FAILED')""
-    fi
     if [[ -f ""$MAIN_LOG"" ]]; then
         log ""Last 10 lines of $MAIN_LOG:""
         tail -10 ""$MAIN_LOG"" 2>/dev/null | while read -r line; do
@@ -1387,13 +1259,9 @@ log """"
 log '=== PHASE 6: Cleanup ==='
 
 # Clean up binary backups
-if $IS_MACOS; then
-    rm -rf ""$CONFIG_DIR/update-backup"" 2>/dev/null || true
-else
-    rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
-    rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
-    rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
-fi
+rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
+rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
+rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
 
 # Clean up credential backups (in CONFIG_DIR, not INSTALL_DIR!)
 rm -f ""$CONFIG_DIR/settings.json.bak"" 2>/dev/null || true
@@ -1459,40 +1327,24 @@ write_result true ""Update completed successfully""
         }
         else
         {
-            // macOS: launchd kills all processes in the job's process group when the main
-            // process exits (AbandonProcessGroup defaults to false). The update script must
-            // run in a NEW session/process group so it survives mt's exit.
-            // Linux: setsid is available as a command; macOS: use perl POSIX::setsid().
+            // Linux: setsid creates a new session so the script survives mt's exit.
             //
             // CRITICAL: Do NOT use RedirectStandard* here! It creates pipes between mt and
             // the script. When mt exits (Environment.Exit), the pipes break, and SIGPIPE
             // kills the update script. The script handles its own stdio redirection via
             // exec > logfile 2>&1 < /dev/null at the top.
-            // Use ArgumentList (not Arguments) so .NET passes each element as a separate
-            // argv entry. Arguments is split on whitespace, which breaks multi-word perl scripts
-            // and paths with spaces. ArgumentList handles escaping automatically.
+            //
+            // Note: macOS uses the launcher shim approach and never calls this method.
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = OperatingSystem.IsMacOS() ? "/usr/bin/perl" : "/usr/bin/setsid",
+                FileName = "/usr/bin/setsid",
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
 
-            if (OperatingSystem.IsMacOS())
-            {
-                // macOS: use perl POSIX::setsid() to create a new session so the script
-                // survives launchd killing mt's process group.
-                psi.ArgumentList.Add("-e");
-                psi.ArgumentList.Add(
-                    $"use POSIX; POSIX::setsid(); exec(\"/bin/bash\", \"{scriptPath}\") or die \"exec failed: $!\"");
-            }
-            else
-            {
-                // Linux: setsid --fork creates a new session directly.
-                psi.ArgumentList.Add("--fork");
-                psi.ArgumentList.Add("/bin/bash");
-                psi.ArgumentList.Add(scriptPath);
-            }
+            psi.ArgumentList.Add("--fork");
+            psi.ArgumentList.Add("/bin/bash");
+            psi.ArgumentList.Add(scriptPath);
 
             System.Diagnostics.Process.Start(psi);
         }

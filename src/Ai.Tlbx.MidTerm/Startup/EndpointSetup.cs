@@ -373,6 +373,50 @@ public static class EndpointSetup
                 updateType = update.Type;
             }
 
+            if (OperatingSystem.IsMacOS())
+            {
+                // macOS: stage new binaries for the launcher script to apply on next respawn.
+                // The launcher.sh (installed by install.sh) runs BEFORE mt on every launchd
+                // respawn, applying staged files when mt is NOT running. No races possible.
+                var stagingDir = Path.Combine(settingsService.SettingsDirectory, "update-staging");
+                Directory.CreateDirectory(stagingDir);
+
+                var mtSrc = Path.Combine(extractedDir, "mt");
+                if (File.Exists(mtSrc))
+                {
+                    File.Copy(mtSrc, Path.Combine(stagingDir, "mt"), overwrite: true);
+                }
+
+                if (updateType != UpdateType.WebOnly)
+                {
+                    var mthostSrc = Path.Combine(extractedDir, "mthost");
+                    if (File.Exists(mthostSrc))
+                    {
+                        File.Copy(mthostSrc, Path.Combine(stagingDir, "mthost"), overwrite: true);
+                    }
+                }
+
+                var vjSrc = Path.Combine(extractedDir, "version.json");
+                if (File.Exists(vjSrc))
+                {
+                    File.Copy(vjSrc, Path.Combine(stagingDir, "version.json"), overwrite: true);
+                }
+
+                if (deleteSourceAfter)
+                {
+                    try { Directory.Delete(extractedDir, recursive: true); } catch { }
+                }
+
+                // Exit — launchd respawns launcher.sh, which applies the staged update
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(1000);
+                    Environment.Exit(0);
+                });
+
+                return Results.Ok("Update staged. Server will restart shortly.");
+            }
+
             var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
                 extractedDir,
                 UpdateService.GetCurrentBinaryPath(),
