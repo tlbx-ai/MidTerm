@@ -80,8 +80,12 @@ public sealed class WebPreviewService
         ws.Options.RemoteCertificateValidationCallback = ValidateCertificate;
 
         // Forward cookies from server-side cookie jar so WebSocket connections
-        // share the same session context as HTTP requests (critical for SignalR)
-        var cookieHeader = _cookieContainer.GetCookieHeader(upstreamUri);
+        // share the same session context as HTTP requests (critical for SignalR).
+        // CookieContainer stores cookies under http(s):// but WebSocket URIs use
+        // ws(s)://, so convert the scheme for lookup.
+        var httpScheme = upstreamUri.Scheme == "wss" ? "https" : "http";
+        var cookieLookupUri = new UriBuilder(upstreamUri) { Scheme = httpScheme }.Uri;
+        var cookieHeader = _cookieContainer.GetCookieHeader(cookieLookupUri);
         if (!string.IsNullOrEmpty(cookieHeader))
         {
             ws.Options.SetRequestHeader("Cookie", cookieHeader);
