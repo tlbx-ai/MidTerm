@@ -109,6 +109,71 @@ export function hideDetachedPlaceholder(): void {
 }
 
 /**
+ * Persistent capture stream — kept alive after the first permission grant
+ * so subsequent screenshots don't show the permission dialog again.
+ */
+let captureStream: MediaStream | null = null;
+let captureVideo: HTMLVideoElement | null = null;
+
+/**
+ * Release the persistent capture stream (called when dock closes).
+ */
+export function releaseCaptureStream(): void {
+  if (captureStream) {
+    captureStream.getTracks().forEach((t) => t.stop());
+    captureStream = null;
+  }
+  if (captureVideo) {
+    captureVideo.pause();
+    captureVideo.srcObject = null;
+    captureVideo = null;
+  }
+}
+
+/**
+ * Ensure a capture stream is available, requesting permission on first call.
+ */
+async function ensureCaptureStream(): Promise<boolean> {
+  // Check if existing stream is still active
+  if (captureStream) {
+    const track = captureStream.getVideoTracks()[0];
+    if (track && track.readyState === 'live') return true;
+    // Stream ended (user revoked, tab changed, etc.) — clean up
+    releaseCaptureStream();
+  }
+
+  try {
+    captureStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: 'browser' },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      preferCurrentTab: true,
+    } as any);
+  } catch {
+    // User cancelled the permission dialog
+    return false;
+  }
+
+  // Listen for track ending (user clicks "Stop sharing" in browser chrome)
+  const track = captureStream.getVideoTracks()[0];
+  if (track) {
+    track.addEventListener('ended', releaseCaptureStream);
+  }
+
+  // Create and start the persistent video element (hidden, never added to DOM)
+  captureVideo = document.createElement('video');
+  captureVideo.srcObject = captureStream;
+  captureVideo.muted = true;
+  await captureVideo.play();
+
+  // Wait for first frame
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+
+  return true;
+}
+
+/**
  * Capture a screenshot of the web preview iframe using the Screen Capture API,
  * upload it to the active session, and paste the file path into the terminal.
  */
@@ -149,7 +214,8 @@ async function handleScreenshot(): Promise<void> {
 }
 
 /**
- * Use getDisplayMedia to capture the current tab, then crop to the iframe area.
+ * Grab a frame from the persistent capture stream, cropped to the iframe area.
+ * First call triggers the permission dialog; subsequent calls are instant.
  */
 async function captureIframeScreenshot(): Promise<Blob | null> {
   if (!iframe) return null;
@@ -157,51 +223,27 @@ async function captureIframeScreenshot(): Promise<Blob | null> {
   const rect = iframe.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return null;
 
-  let stream: MediaStream;
-  try {
-    stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: 'browser' },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      preferCurrentTab: true,
-    } as any);
-  } catch {
-    // User cancelled the permission dialog
-    return null;
-  }
+  if (!(await ensureCaptureStream()) || !captureVideo || !captureStream) return null;
 
-  try {
-    const video = document.createElement('video');
-    video.srcObject = stream;
-    video.muted = true;
-    await video.play();
+  // Calculate scale between captured resolution and CSS pixels
+  const track = captureStream.getVideoTracks()[0]!;
+  const settings = track.getSettings();
+  const captureW = settings.width || captureVideo.videoWidth;
+  const captureH = settings.height || captureVideo.videoHeight;
+  const scaleX = captureW / window.innerWidth;
+  const scaleY = captureH / window.innerHeight;
 
-    // Wait for at least one frame to be rendered
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
+  // Crop to iframe area
+  const sx = Math.round(rect.left * scaleX);
+  const sy = Math.round(rect.top * scaleY);
+  const sw = Math.round(rect.width * scaleX);
+  const sh = Math.round(rect.height * scaleY);
 
-    // Calculate scale between captured resolution and CSS pixels
-    const track = stream.getVideoTracks()[0]!;
-    const settings = track.getSettings();
-    const captureW = settings.width || video.videoWidth;
-    const captureH = settings.height || video.videoHeight;
-    const scaleX = captureW / window.innerWidth;
-    const scaleY = captureH / window.innerHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(captureVideo, sx, sy, sw, sh, 0, 0, sw, sh);
 
-    // Crop to iframe area
-    const sx = Math.round(rect.left * scaleX);
-    const sy = Math.round(rect.top * scaleY);
-    const sw = Math.round(rect.width * scaleX);
-    const sh = Math.round(rect.height * scaleY);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = sw;
-    canvas.height = sh;
-    const ctx = canvas.getContext('2d')!;
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-
-    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-  } finally {
-    stream.getTracks().forEach((t) => t.stop());
-  }
+  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
