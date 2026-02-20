@@ -877,39 +877,38 @@ safe_copy() {{
     fi
 
     if $IS_MACOS; then
-        # macOS: service user owns the files but NOT the directory (/usr/local/bin/).
-        # Cannot create temp files — must overwrite in-place.
-        # launchd KeepAlive respawns the process after kill, causing ETXTBSY on cp
-        # and codesign races (binary executed before signing completes).
+        # macOS: launchd KeepAlive respawns the process after kill, causing races
+        # with codesign (binary gets executed before signing completes).
         #
-        # Strategy: kill → rm → copy → codesign. Removing the binary ensures that
-        # when launchd respawns, exec() fails (file not found) and launchd backs off
-        # with throttle delay, giving us time to copy and codesign undisturbed.
-        local _copy_ok=false
-        for _copy_attempt in 1 2 3 4 5; do
-            kill_process_by_path ""$dst""
-            rm -f ""$dst"" 2>/dev/null || true
-            sleep 0.5
+        # Race-free strategy:
+        #   1. Copy new binary to staging name (mt.update) — no conflict with running process
+        #   2. chmod + codesign the staged copy — no time pressure at all
+        #   3. mv staged copy over destination — atomic rename on same filesystem
+        #   4. kill the old process — launchd respawns with new signed binary
+        local staged=""$dst.update""
 
-            if cp ""$src"" ""$dst"" 2>/dev/null; then
-                chmod +x ""$dst""
-                log ""Signing $desc for macOS...""
-                if codesign -s - ""$dst"" 2>/dev/null && codesign --verify ""$dst"" 2>/dev/null; then
-                    log ""Signature verified for $desc""
-                    _copy_ok=true
-                    break
-                fi
-                log ""Codesign race (attempt $_copy_attempt) — retrying..."" ""WARN""
-            else
-                log ""Copy failed (attempt $_copy_attempt) — retrying..."" ""WARN""
-            fi
-            sleep 1
-        done
-
-        if [[ ""$_copy_ok"" != ""true"" ]]; then
-            log ""Failed to install $desc after 5 attempts"" ""ERROR""
+        if ! cp ""$src"" ""$staged""; then
+            log ""Failed to stage $desc"" ""ERROR""
             return 1
         fi
+        chmod +x ""$staged""
+
+        log ""Signing $desc for macOS...""
+        if ! codesign -s - ""$staged"" 2>/dev/null; then
+            log ""Codesign failed for $desc"" ""ERROR""
+            rm -f ""$staged"" 2>/dev/null || true
+            return 1
+        fi
+        if ! codesign --verify ""$staged"" 2>/dev/null; then
+            log ""Codesign verification failed for $desc"" ""ERROR""
+            rm -f ""$staged"" 2>/dev/null || true
+            return 1
+        fi
+        log ""Signature verified for $desc""
+
+        # Atomic swap + restart
+        mv -f ""$staged"" ""$dst""
+        kill_process_by_path ""$dst""
     else
         # Linux: atomic temp+rename (systemd runs as root, has dir write)
         local tmp_dst=""$dst.new""
@@ -949,11 +948,12 @@ cleanup() {{
         if [[ -f ""$_mt_bak"" ]]; then
             log ""Restoring mt from backup...""
             if $IS_MACOS; then
+                # Stage, codesign, then atomic swap (same as safe_copy)
+                cp ""$_mt_bak"" ""$CURRENT_MT.update"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
+                chmod +x ""$CURRENT_MT.update"" 2>/dev/null || true
+                codesign -s - ""$CURRENT_MT.update"" 2>/dev/null || true
+                mv -f ""$CURRENT_MT.update"" ""$CURRENT_MT"" 2>/dev/null || true
                 kill_process_by_path ""$CURRENT_MT""
-                sleep 0.3
-                cp ""$_mt_bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
-                chmod +x ""$CURRENT_MT"" 2>/dev/null || true
-                codesign -s - ""$CURRENT_MT"" 2>/dev/null || true
             else
                 cp -f ""$_mt_bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
                 chmod +x ""$CURRENT_MT"" 2>/dev/null || true
@@ -963,11 +963,11 @@ cleanup() {{
         if [[ -f ""$_mthost_bak"" ]]; then
             log ""Restoring mthost from backup...""
             if $IS_MACOS; then
+                cp ""$_mthost_bak"" ""$CURRENT_MTHOST.update"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
+                chmod +x ""$CURRENT_MTHOST.update"" 2>/dev/null || true
+                codesign -s - ""$CURRENT_MTHOST.update"" 2>/dev/null || true
+                mv -f ""$CURRENT_MTHOST.update"" ""$CURRENT_MTHOST"" 2>/dev/null || true
                 kill_process_by_path ""$CURRENT_MTHOST""
-                sleep 0.3
-                cp ""$_mthost_bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
-                chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
-                codesign -s - ""$CURRENT_MTHOST"" 2>/dev/null || true
             else
                 cp -f ""$_mthost_bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
                 chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true

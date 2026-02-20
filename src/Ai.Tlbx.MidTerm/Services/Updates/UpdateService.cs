@@ -156,6 +156,8 @@ public sealed partial class UpdateService : IDisposable
             if (devEnv is not null)
                 updateChannel = "dev";
 
+            Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}");
+
             GitHubRelease? release;
             if (updateChannel == "dev")
             {
@@ -175,6 +177,7 @@ public sealed partial class UpdateService : IDisposable
 
             var latestVersion = release.TagName.TrimStart('v');
             var comparison = CompareVersions(latestVersion, _currentVersion);
+            Console.Error.WriteLine($"[UpdateCheck] latest={latestVersion}, comparison={comparison}");
 
             // For stable channel on a dev version, offer downgrade to stable
             var isDowngrade = updateChannel == "stable" && comparison < 0;
@@ -230,8 +233,9 @@ public sealed partial class UpdateService : IDisposable
             NotifyListeners(_latestUpdate);
             return _latestUpdate;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"[UpdateCheck] Error: {ex.Message}");
             // If GitHub check fails but we're in dev mode, still return local update info
             var devEnv = GetDevEnvironment();
             if (devEnv is not null)
