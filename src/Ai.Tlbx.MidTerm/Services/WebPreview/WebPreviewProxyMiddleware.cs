@@ -11,9 +11,10 @@ public sealed partial class WebPreviewProxyMiddleware
     private const int WsBufferSize = 8192;
     private static readonly TimeSpan WsCloseTimeout = TimeSpan.FromSeconds(5);
 
-    // Injected into proxied HTML to rewrite URLs in fetch/XHR at runtime.
+    // Injected into proxied HTML to rewrite URLs in fetch/XHR/DOM at runtime.
     // Rewrites root-relative URLs to /webpreview/... and absolute external URLs
     // to /webpreview/_ext?u=... so all requests go through the MT proxy.
+    // Patches: fetch, XHR, element .src/.href setters, setAttribute, window.open.
     private const string UrlRewriteScript = """
         <script>(function(){
           var P="/webpreview",E=P+"/_ext?u=";
@@ -26,9 +27,41 @@ public sealed partial class WebPreviewProxyMiddleware
             return u;
           }
           var F=window.fetch;
-          window.fetch=function(u,o){return F.call(this,r(u),o);};
+          window.fetch=function(u,o){return F.call(this,typeof u==="string"?r(u):u,o);};
           var X=XMLHttpRequest.prototype.open;
-          XMLHttpRequest.prototype.open=function(m,u){return X.apply(this,[m,r(u)].concat([].slice.call(arguments,2)));};
+          XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);return X.apply(this,a);};
+          // Patch .src property on elements that load resources
+          ["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLEmbedElement","HTMLVideoElement","HTMLAudioElement"].forEach(function(n){
+            var p=window[n]&&window[n].prototype;if(!p)return;
+            var d=Object.getOwnPropertyDescriptor(p,"src");if(!d||!d.set)return;
+            Object.defineProperty(p,"src",{set:function(v){d.set.call(this,r(v));},get:d.get,configurable:true,enumerable:true});
+          });
+          // Patch .href on link elements (stylesheets, preloads)
+          var ld=Object.getOwnPropertyDescriptor(HTMLLinkElement.prototype,"href");
+          if(ld&&ld.set){Object.defineProperty(HTMLLinkElement.prototype,"href",{set:function(v){ld.set.call(this,r(v));},get:ld.get,configurable:true,enumerable:true});}
+          // Patch setAttribute for src/href/action/poster
+          var sa=Element.prototype.setAttribute;
+          Element.prototype.setAttribute=function(n,v){if(typeof v==="string"&&/^(src|href|action|poster)$/i.test(n))v=r(v);return sa.call(this,n,v);};
+          // Patch window.open
+          var wo=window.open;
+          window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
+          // MutationObserver: catch elements added via innerHTML/insertAdjacentHTML/document.write
+          new MutationObserver(function(muts){
+            for(var i=0;i<muts.length;i++){
+              var nodes=muts[i].addedNodes;
+              for(var j=0;j<nodes.length;j++){
+                var n=nodes[j];if(n.nodeType!==1)continue;
+                var els=n.querySelectorAll?[n].concat([].slice.call(n.querySelectorAll("[src],[href]"))):[n];
+                for(var k=0;k<els.length;k++){
+                  var el=els[k];if(!el.getAttribute)continue;
+                  var s=el.getAttribute("src");
+                  if(s){var rs=r(s);if(rs!==s)sa.call(el,"src",rs);}
+                  var h=el.getAttribute("href");
+                  if(h){var rh=r(h);if(rh!==h)sa.call(el,"href",rh);}
+                }
+              }
+            }
+          }).observe(document.documentElement,{childList:true,subtree:true});
         })();</script>
         """;
 
