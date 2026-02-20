@@ -1856,6 +1856,7 @@ export interface components {
       tmuxCompatibility: boolean;
       ideMode: boolean;
       managerBarEnabled: boolean;
+      devMode: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
       updateChannel: string;

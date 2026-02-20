@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Security;
 using System.Net.WebSockets;
 using System.Security.Cryptography.X509Certificates;
@@ -10,7 +11,9 @@ public sealed class WebPreviewService
     private volatile Uri? _targetUri;
     private readonly int _serverPort;
 
-    private readonly HttpClient _httpClient;
+    private HttpClient _httpClient;
+    private CookieContainer _cookieContainer;
+    private readonly object _clientLock = new();
 
     public string? TargetUrl => _targetUrl;
     public Uri? TargetUri => _targetUri;
@@ -19,23 +22,8 @@ public sealed class WebPreviewService
     public WebPreviewService(int serverPort)
     {
         _serverPort = serverPort;
-
-        var handler = new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            UseCookies = false,
-            AutomaticDecompression = System.Net.DecompressionMethods.None,
-            ConnectTimeout = TimeSpan.FromSeconds(10),
-            SslOptions = new SslClientAuthenticationOptions
-            {
-                RemoteCertificateValidationCallback = ValidateCertificate
-            }
-        };
-
-        _httpClient = new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromMinutes(5)
-        };
+        _cookieContainer = new CookieContainer();
+        _httpClient = CreateHttpClient(_cookieContainer);
     }
 
     public HttpClient HttpClient => _httpClient;
@@ -57,6 +45,13 @@ public sealed class WebPreviewService
         if (IsLocalAddress(uri.Host) && uri.Port == _serverPort)
             return false;
 
+        // Reset cookie jar when target changes (new site = fresh cookies)
+        var oldTarget = _targetUri;
+        if (oldTarget is null || !oldTarget.Host.Equals(uri.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            ResetCookieJar();
+        }
+
         _targetUri = uri;
         _targetUrl = uri.ToString();
         return true;
@@ -66,11 +61,35 @@ public sealed class WebPreviewService
     {
         _targetUrl = null;
         _targetUri = null;
+        ResetCookieJar();
     }
 
-    public void ConfigureWebSocket(ClientWebSocket ws)
+    private void ResetCookieJar()
+    {
+        lock (_clientLock)
+        {
+            var oldClient = _httpClient;
+            _cookieContainer = new CookieContainer();
+            _httpClient = CreateHttpClient(_cookieContainer);
+            oldClient.Dispose();
+        }
+    }
+
+    public void ConfigureWebSocket(ClientWebSocket ws, Uri upstreamUri)
     {
         ws.Options.RemoteCertificateValidationCallback = ValidateCertificate;
+
+        // Forward cookies from server-side cookie jar so WebSocket connections
+        // share the same session context as HTTP requests (critical for SignalR).
+        // CookieContainer stores cookies under http(s):// but WebSocket URIs use
+        // ws(s)://, so convert the scheme for lookup.
+        var httpScheme = upstreamUri.Scheme == "wss" ? "https" : "http";
+        var cookieLookupUri = new UriBuilder(upstreamUri) { Scheme = httpScheme }.Uri;
+        var cookieHeader = _cookieContainer.GetCookieHeader(cookieLookupUri);
+        if (!string.IsNullOrEmpty(cookieHeader))
+        {
+            ws.Options.SetRequestHeader("Cookie", cookieHeader);
+        }
     }
 
     private bool ValidateCertificate(
@@ -88,6 +107,24 @@ public sealed class WebPreviewService
             return true;
 
         return false;
+    }
+
+    private HttpClient CreateHttpClient(CookieContainer cookieContainer)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = true,
+            CookieContainer = cookieContainer,
+            AutomaticDecompression = DecompressionMethods.None,
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            SslOptions = new SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = ValidateCertificate
+            }
+        };
+
+        return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
     }
 
     private static bool IsLocalAddress(string host)

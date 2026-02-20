@@ -189,7 +189,6 @@ public static class ServerSetup
             }
         });
 
-        app.UseWebSockets();
     }
 
     public static void ConfigureMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
@@ -203,6 +202,10 @@ public static class ServerSetup
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
         AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
+
+        // WebSockets must be enabled before the web preview proxy middleware so that
+        // context.WebSockets.IsWebSocketRequest is true for proxied WebSocket upgrades
+        app.UseWebSockets();
 
         // Web preview reverse proxy — after auth, before security headers (short-circuits for /webpreview/*)
         app.UseMiddleware<WebPreviewProxyMiddleware>();

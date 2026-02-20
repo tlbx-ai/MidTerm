@@ -35,6 +35,7 @@ public sealed partial class MidTermSettingsPublic
             IdeMode = settings.IdeMode,
             ManagerBarEnabled = settings.ManagerBarEnabled,
             ManagerBarButtons = settings.ManagerBarButtons,
+            DevMode = settings.DevMode,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             ShowUpdateNotification = settings.ShowUpdateNotification,
             UpdateChannel = settings.UpdateChannel,
@@ -75,6 +76,7 @@ public sealed partial class MidTermSettingsPublic
         settings.IdeMode = IdeMode;
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.ManagerBarButtons = ManagerBarButtons;
+        settings.DevMode = DevMode;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
         settings.ShowUpdateNotification = ShowUpdateNotification;
         if (UpdateChannel is "stable" or "dev")

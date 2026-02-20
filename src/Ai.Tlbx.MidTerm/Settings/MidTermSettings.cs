@@ -58,6 +58,9 @@ public sealed class MidTermSettings
 
     public bool IdeMode { get; set; } = true;
 
+    // Developer mode - enables dev features (voice sync, faster update checks, etc.)
+    public bool DevMode { get; set; } = false;
+
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;
 

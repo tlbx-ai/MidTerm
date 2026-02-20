@@ -117,10 +117,12 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Bundling with esbuild (version: $Version)..." -ForegroundColor Cyan
 
 $mainTs = Join-Path $TsSource "main.ts"
-$jsonVersion = "'""$Version""'"
 $includeSourceMap = -not $Publish -or $DevRelease
 $sourcemapArg = if ($includeSourceMap) { "--sourcemap=linked" } else { $null }
-$esbuildArgs = @($mainTs, "--bundle", "--minify", "--outfile=$OutFile", "--target=es2020", "--define:BUILD_VERSION=$jsonVersion")
+# esbuild --define requires a valid JS expression. Use single quotes for the string
+# literal to avoid double-quote escaping issues across PowerShell + Windows cmd.exe.
+$defineArg = "--define:BUILD_VERSION='$Version'"
+$esbuildArgs = @($mainTs, "--bundle", "--minify", "--outfile=$OutFile", "--target=es2020", $defineArg)
 if ($sourcemapArg) { $esbuildArgs += $sourcemapArg }
 & npx esbuild @esbuildArgs
 

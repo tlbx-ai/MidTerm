@@ -73,11 +73,29 @@ public sealed class SettingsService
         {
             return IsWindowsService();
         }
-        else
+
+        var serviceSettingsPath = "/usr/local/etc/midterm/settings.json";
+        if (!File.Exists(serviceSettingsPath))
         {
-            // Check if service settings file exists - this is written by the installer
-            // We can't rely on getuid() == 0 because macOS launchd services can run as non-root
-            return File.Exists("/usr/local/etc/midterm/settings.json");
+            return false;
+        }
+
+        // Service settings file exists, but verify we can actually write to it.
+        // On macOS/Linux, a root-owned service install creates this file, but if mt
+        // is run manually by a non-root user, writes would silently fail (settings
+        // appear saved in-memory but never persist to disk). Fall back to user mode
+        // (~/.midterm/settings.json) when we don't have write access.
+        try
+        {
+            var dir = Path.GetDirectoryName(serviceSettingsPath)!;
+            var testPath = Path.Combine(dir, ".write-check");
+            File.WriteAllBytes(testPath, []);
+            File.Delete(testPath);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

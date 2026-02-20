@@ -21,8 +21,14 @@ public sealed partial class WebPreviewProxyMiddleware
           function r(u){
             if(typeof u!=="string")return u;
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
-            if(u.startsWith("http://")|| u.startsWith("https://")){
-              try{var h=new URL(u);if(h.host!==location.host)return E+encodeURIComponent(u);}catch(e){}
+            if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
+              try{var h=new URL(u);
+                if(h.host===location.host&&!h.pathname.startsWith(P+"/"))return h.protocol+"//"+ h.host+P+h.pathname+h.search+h.hash;
+                if(h.host!==location.host){
+                  if(u.startsWith("ws")){var hu=u.replace(/^ws/,"http");return E+encodeURIComponent(hu);}
+                  return E+encodeURIComponent(u);
+                }
+              }catch(e){}
             }
             return u;
           }
@@ -45,6 +51,14 @@ public sealed partial class WebPreviewProxyMiddleware
           // Patch window.open
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
+          // Patch Audio constructor (new Audio('/path/to/file.mp3'))
+          var OA=window.Audio;
+          if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
+          // Patch navigator.sendBeacon
+          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
+          // Patch Image constructor (new Image().src is handled by setter, but direct constructor arg)
+          var OI=window.Image;
+          if(OI){window.Image=function(w,h){var i=new OI(w,h);return i;};window.Image.prototype=OI.prototype;}
           // MutationObserver: catch elements added via innerHTML/insertAdjacentHTML/document.write
           new MutationObserver(function(muts){
             for(var i=0;i<muts.length;i++){
@@ -76,14 +90,28 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         "Content-Security-Policy", "Content-Security-Policy-Report-Only",
         "X-Frame-Options", "Cross-Origin-Opener-Policy", "Cross-Origin-Embedder-Policy",
-        "Cross-Origin-Resource-Policy"
+        "Cross-Origin-Resource-Policy",
+        "Set-Cookie"  // Cookies managed by server-side cookie jar, not forwarded to browser
     };
 
-    private static readonly HashSet<string> ForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
+    // Headers that must NOT be forwarded from browser to upstream.
+    // Everything else is forwarded (blocklist approach for maximum compatibility).
+    private static readonly HashSet<string> BlockedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Accept", "Accept-Encoding", "Accept-Language", "Authorization", "Cache-Control",
-        "Content-Type", "Content-Length", "Cookie", "If-Match", "If-Modified-Since",
-        "If-None-Match", "If-Unmodified-Since", "Range", "Referer", "User-Agent"
+        // Hop-by-hop (also in HopByHopHeaders, but listed for completeness)
+        "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+        "TE", "Trailer", "Transfer-Encoding", "Upgrade",
+        // Host is set by HttpClient from the request URI
+        "Host",
+        // Browser cookies are MT session cookies — upstream cookies come from CookieContainer
+        "Cookie",
+        // WebSocket negotiation headers managed by ClientWebSocket
+        "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions",
+        "Sec-WebSocket-Protocol",
+        // Browser security headers that would confuse the upstream
+        "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Sec-Fetch-User",
+        // Content headers are set on HttpContent, not the request
+        "Content-Type", "Content-Length"
     };
 
     private readonly RequestDelegate _next;
@@ -97,37 +125,90 @@ public sealed partial class WebPreviewProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!context.Request.Path.StartsWithSegments(ProxyPrefix, out var remaining))
+        var path = context.Request.Path;
+
+        if (path.StartsWithSegments(ProxyPrefix, out var remaining))
         {
-            await _next(context);
+            // External URL proxy: /webpreview/_ext?u=https%3A%2F%2Fexample.com%2Fscript.js
+            var remainingPath = remaining.Value ?? "";
+            if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
+            {
+                await ProxyExternalAsync(context);
+                return;
+            }
+
+            var targetUri = _service.TargetUri;
+            if (targetUri is null)
+            {
+                context.Response.StatusCode = 502;
+                context.Response.ContentType = "text/plain";
+                await context.Response.WriteAsync("No web preview target configured.");
+                return;
+            }
+
+            if (context.WebSockets.IsWebSocketRequest)
+            {
+                await ProxyWebSocketAsync(context, targetUri, remaining.Value ?? "/");
+            }
+            else
+            {
+                await ProxyHttpAsync(context, targetUri, remaining.Value ?? "/");
+            }
+
             return;
         }
 
-        // External URL proxy: /webpreview/_ext?u=https%3A%2F%2Fexample.com%2Fscript.js
-        var remainingPath = remaining.Value ?? "";
-        if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
+        // Catch-all: if web preview is active and this isn't a known MidTerm path,
+        // it's likely a leaked root-relative URL from the proxied site (e.g. /s/player/...,
+        // /youtubei/v1/...). Proxy it to the upstream target directly.
+        if (_service.IsActive && !IsMidTermPath(path.Value ?? "/"))
         {
-            await ProxyExternalAsync(context);
+            var targetUri = _service.TargetUri!;
+            var proxyPath = path.Value ?? "/";
+            if (context.WebSockets.IsWebSocketRequest)
+            {
+                await ProxyWebSocketAsync(context, targetUri, proxyPath);
+            }
+            else
+            {
+                await ProxyHttpAsync(context, targetUri, proxyPath);
+            }
+
             return;
         }
 
-        var targetUri = _service.TargetUri;
-        if (targetUri is null)
+        await _next(context);
+    }
+
+    /// <summary>
+    /// Returns true if the path belongs to MidTerm itself (API, WebSocket, static files).
+    /// Paths that don't match are candidates for proxying to the web preview target.
+    /// </summary>
+    private static bool IsMidTermPath(string path)
+    {
+        // Known MidTerm path prefixes
+        if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/ws/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/js/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/css/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/fonts/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/locales/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/img/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/favicon/", StringComparison.OrdinalIgnoreCase))
         {
-            context.Response.StatusCode = 502;
-            context.Response.ContentType = "text/plain";
-            await context.Response.WriteAsync("No web preview target configured.");
-            return;
+            return true;
         }
 
-        if (context.WebSockets.IsWebSocketRequest)
-        {
-            await ProxyWebSocketAsync(context, targetUri, remaining.Value ?? "/");
-        }
-        else
-        {
-            await ProxyHttpAsync(context, targetUri, remaining.Value ?? "/");
-        }
+        // Root-level MidTerm files
+        return path is "/"
+            or "/index.html"
+            or "/login.html"
+            or "/trust.html"
+            or "/web-preview-popup.html"
+            or "/favicon.ico"
+            or "/site.webmanifest"
+            or "/THIRD-PARTY-LICENSES.txt"
+            or "/midFont-style.css";
     }
 
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
@@ -138,18 +219,17 @@ public sealed partial class WebPreviewProxyMiddleware
         const int maxRedirects = 10;
         HttpResponseMessage? upstreamResponse = null;
 
+        var originalMethod = new HttpMethod(context.Request.Method);
+        var currentMethod = originalMethod;
+
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
-            var requestMessage = new HttpRequestMessage(
-                redirect == 0 ? new HttpMethod(context.Request.Method) : HttpMethod.Get,
-                currentUrl);
+            var requestMessage = new HttpRequestMessage(currentMethod, currentUrl);
 
-            // Forward request headers
+            // Forward all request headers except blocked ones (blocklist approach)
             foreach (var header in context.Request.Headers)
             {
-                if (HopByHopHeaders.Contains(header.Key))
-                    continue;
-                if (!ForwardedRequestHeaders.Contains(header.Key))
+                if (BlockedRequestHeaders.Contains(header.Key))
                     continue;
 
                 requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
@@ -161,8 +241,9 @@ public sealed partial class WebPreviewProxyMiddleware
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
 
-            // Forward request body only on the first (non-redirect) request
-            if (redirect == 0 && (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")))
+            // Forward request body on initial request and 307/308 redirects (which preserve method)
+            if (redirect == 0 && currentMethod != HttpMethod.Get
+                && (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")))
             {
                 requestMessage.Content = new StreamContent(context.Request.Body);
                 if (context.Request.ContentType is not null)
@@ -207,6 +288,8 @@ public sealed partial class WebPreviewProxyMiddleware
                     if (Uri.TryCreate(new Uri(currentUrl), location, out var resolved))
                     {
                         currentUrl = resolved.ToString();
+                        // 307/308 preserve method; 301/302/303 switch to GET
+                        currentMethod = statusCode is 307 or 308 ? originalMethod : HttpMethod.Get;
                         requestMessage.Dispose();
                         continue;
                     }
@@ -328,14 +411,25 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, extUri);
+        using var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), extUri);
 
-        // Forward minimal headers
+        // Forward all headers except blocked ones
         foreach (var header in context.Request.Headers)
         {
-            if (!ForwardedRequestHeaders.Contains(header.Key) || HopByHopHeaders.Contains(header.Key))
+            if (BlockedRequestHeaders.Contains(header.Key))
                 continue;
             requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+        }
+
+        // Forward request body for POST/PUT/PATCH
+        if (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding"))
+        {
+            requestMessage.Content = new StreamContent(context.Request.Body);
+            if (context.Request.ContentType is not null)
+            {
+                requestMessage.Content.Headers.ContentType =
+                    System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+            }
         }
 
         HttpResponseMessage upstreamResponse;
@@ -411,28 +505,58 @@ public sealed partial class WebPreviewProxyMiddleware
     private async Task ProxyWebSocketAsync(HttpContext context, Uri targetUri, string path)
     {
         var upstreamUrl = BuildUpstreamWsUrl(targetUri, path, context.Request.QueryString.Value);
+        var upstreamUri = new Uri(upstreamUrl);
 
         using var upstream = new ClientWebSocket();
-        _service.ConfigureWebSocket(upstream);
+        // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
+        _service.ConfigureWebSocket(upstream, upstreamUri);
 
-        // Forward cookies
-        var cookies = context.Request.Headers.Cookie;
-        if (cookies.Count > 0)
+        // Forward all request headers except blocked ones (same blocklist as HTTP)
+        foreach (var header in context.Request.Headers)
         {
-            upstream.Options.SetRequestHeader("Cookie", string.Join("; ", cookies!));
+            if (BlockedRequestHeaders.Contains(header.Key))
+                continue;
+            // Skip WebSocket upgrade headers — ClientWebSocket manages these
+            if (header.Key.StartsWith("Sec-WebSocket-", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                upstream.Options.SetRequestHeader(header.Key, header.Value.ToString());
+            }
+            catch (ArgumentException)
+            {
+                // Some headers can't be set on ClientWebSocket — skip silently
+            }
+        }
+
+        // Forward WebSocket sub-protocols (critical for SignalR)
+        var subProtocols = context.WebSockets.WebSocketRequestedProtocols;
+        foreach (var protocol in subProtocols)
+        {
+            upstream.Options.AddSubProtocol(protocol);
         }
 
         try
         {
-            await upstream.ConnectAsync(new Uri(upstreamUrl), context.RequestAborted);
+            await upstream.ConnectAsync(upstreamUri, context.RequestAborted);
         }
-        catch (Exception)
+        catch (WebSocketException)
+        {
+            context.Response.StatusCode = 502;
+            return;
+        }
+        catch (HttpRequestException)
         {
             context.Response.StatusCode = 502;
             return;
         }
 
-        using var downstream = await context.WebSockets.AcceptWebSocketAsync();
+        // Accept downstream with the negotiated sub-protocol from upstream
+        var acceptProtocol = upstream.SubProtocol;
+        using var downstream = acceptProtocol is not null
+            ? await context.WebSockets.AcceptWebSocketAsync(acceptProtocol)
+            : await context.WebSockets.AcceptWebSocketAsync();
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
 
