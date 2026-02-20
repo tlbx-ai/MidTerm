@@ -71,11 +71,12 @@ public static class EndpointSetup
             }).ToList();
 
             var updateResult = ReadAndClearUpdateResult(settingsService.SettingsDirectory);
-            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} [LOCAL]" : version;
+            var isDevMode = UpdateService.IsDevEnvironment || settings.DevMode;
+            var displayVersion = isDevMode ? $"{version} [LOCAL]" : version;
 
             var features = new FeatureFlags
             {
-                VoiceChat = UpdateService.IsDevEnvironment
+                VoiceChat = isDevMode
             };
 
             var response = new BootstrapResponse
@@ -92,9 +93,9 @@ public static class EndpointSetup
                 Users = users,
                 Shells = shells,
                 UpdateResult = updateResult,
-                DevMode = UpdateService.IsDevEnvironment,
+                DevMode = isDevMode,
                 Features = features,
-                VoicePassword = UpdateService.IsDevEnvironment ? settings.VoiceServerPassword : null,
+                VoicePassword = isDevMode ? settings.VoiceServerPassword : null,
                 GitVersion = _gitVersionChecked ? _cachedGitVersion : null
             };
 
@@ -197,7 +198,8 @@ public static class EndpointSetup
                 (conHostVersion is not null && manifest.MinCompatiblePty is not null &&
                  UpdateService.CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
 
-            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} [LOCAL]" : version;
+            var isDevMode2 = UpdateService.IsDevEnvironment || settingsService.Load().DevMode;
+            var displayVersion = isDevMode2 ? $"{version} [LOCAL]" : version;
 
             var response = new SystemResponse
             {
@@ -222,7 +224,8 @@ public static class EndpointSetup
         // Legacy endpoints kept for backward compatibility
         app.MapGet("/api/version", () =>
         {
-            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} [LOCAL]" : version;
+            var isDevMode3 = UpdateService.IsDevEnvironment || settingsService.Load().DevMode;
+            var displayVersion = isDevMode3 ? $"{version} [LOCAL]" : version;
             return Results.Text(displayVersion);
         });
 

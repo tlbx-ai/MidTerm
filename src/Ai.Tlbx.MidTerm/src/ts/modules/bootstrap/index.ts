@@ -23,6 +23,7 @@ import {
   populateUserDropdown,
   populateVersionInfo,
   applySettingsToTerminals,
+  bindDevModeToggle,
 } from '../settings/persistence';
 import { updateSecurityWarning, updatePasswordStatus } from '../auth/status';
 import { setDevMode, setVoiceChatEnabled, setVoiceSectionVisible } from '../sidebar/voiceSection';
@@ -82,6 +83,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
       populateSettingsForm(data.settings);
     }
     populateVersionInfo(data.version, data.ttyHostVersion || null, JS_BUILD_VERSION, data.devMode);
+    bindDevModeToggle();
 
     // Initialize auth status
     if (data.auth) {

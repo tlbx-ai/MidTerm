@@ -48,7 +48,7 @@ public sealed partial class UpdateService : IDisposable
 
         _currentVersion = GetCurrentVersion();
         _installedManifest = GetInstalledManifest();
-        var interval = IsDevEnvironment ? DevCheckInterval : CheckInterval;
+        var interval = (IsDevEnvironment || settingsService.Load().DevMode) ? DevCheckInterval : CheckInterval;
         _checkTimer = new Timer(OnCheckTimer, null, TimeSpan.FromSeconds(10), interval);
     }
 

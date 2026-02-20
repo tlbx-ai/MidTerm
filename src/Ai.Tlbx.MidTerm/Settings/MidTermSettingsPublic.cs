@@ -35,6 +35,7 @@ public sealed partial class MidTermSettingsPublic
     public bool TmuxCompatibility { get; set; } = true;
     public bool IdeMode { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
+    public bool DevMode { get; set; } = false;
     public bool ShowChangelogAfterUpdate { get; set; } = true;
     public bool ShowUpdateNotification { get; set; } = true;
     public string UpdateChannel { get; set; } = "stable";

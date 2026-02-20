@@ -100,9 +100,13 @@ export function populateVersionInfo(
 
   const envRow = document.getElementById('dev-environment-row');
   const envEl = document.getElementById('dev-environment-name');
-  if (envRow && envEl && devMode) {
-    envRow.style.display = '';
-    envEl.textContent = 'DEV';
+  if (envRow && envEl) {
+    if (devMode) {
+      envRow.style.display = '';
+      envEl.textContent = 'DEV';
+    } else {
+      envRow.style.display = 'none';
+    }
   }
 }
 
@@ -191,7 +195,12 @@ export async function fetchSettings(): Promise<void> {
     $currentSettings.set(settingsData);
     populateUserDropdown(users, settingsData.runAsUser ?? null);
     populateSettingsForm(settingsData);
-    populateVersionInfo(version, health?.ttyHostVersion ?? null, JS_BUILD_VERSION);
+    populateVersionInfo(
+      version,
+      health?.ttyHostVersion ?? null,
+      JS_BUILD_VERSION,
+      settingsData.devMode,
+    );
 
     applySettingsToTerminals();
     bindSettingsAutoSave();
@@ -251,6 +260,18 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
   applySettingsToTerminals();
   updateTabTitle();
   renderUpdatePanel();
+
+  // Update dev mode badge visibility
+  const envRow = document.getElementById('dev-environment-row');
+  const envEl = document.getElementById('dev-environment-name');
+  if (envRow && envEl) {
+    if (settings.devMode) {
+      envRow.style.display = '';
+      envEl.textContent = 'DEV';
+    } else {
+      envRow.style.display = 'none';
+    }
+  }
 }
 
 /**
@@ -303,6 +324,7 @@ export function saveAllSettings(): void {
     fileRadar: getElementChecked('setting-file-radar'),
     managerBarEnabled: getElementChecked('setting-manager-bar'),
     managerBarButtons: prevSettings?.managerBarButtons ?? [],
+    devMode: prevSettings?.devMode ?? false,
     tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
     ideMode: getElementChecked('setting-ide-mode'),
     showChangelogAfterUpdate: getElementChecked('setting-changelog-after-update'),
@@ -411,4 +433,42 @@ export function unbindSettingsAutoSave(): void {
     settingsAbortController.abort();
     settingsAbortController = null;
   }
+}
+
+/**
+ * Bind the secret dev mode toggle to the server version value.
+ * Click 7 times to toggle dev mode on/off.
+ */
+export function bindDevModeToggle(): void {
+  const el = document.getElementById('version-server');
+  if (!el) return;
+
+  let clicks = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  el.style.cursor = 'default';
+  el.addEventListener('click', () => {
+    clicks++;
+    clearTimeout(timer);
+
+    if (clicks >= 7) {
+      clicks = 0;
+      const settings = $currentSettings.get();
+      if (!settings) return;
+      const newDevMode = !settings.devMode;
+      const updated = { ...settings, devMode: newDevMode };
+      $currentSettings.set(updated);
+      updateSettings(updated as Parameters<typeof updateSettings>[0]).catch(() => {});
+      populateVersionInfo(
+        el.textContent ?? '-',
+        document.getElementById('version-host')?.textContent ?? null,
+        document.getElementById('version-frontend')?.textContent ?? 'dev',
+        newDevMode,
+      );
+    }
+
+    timer = setTimeout(() => {
+      clicks = 0;
+    }, 2000);
+  });
 }
