@@ -21,10 +21,13 @@ public sealed partial class WebPreviewProxyMiddleware
           function r(u){
             if(typeof u!=="string")return u;
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
-            if(u.startsWith("http://")|| u.startsWith("https://")){
+            if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
-                if(h.host===location.host&&!h.pathname.startsWith(P+"/"))return P+h.pathname+h.search+h.hash;
-                if(h.host!==location.host)return E+encodeURIComponent(u);
+                if(h.host===location.host&&!h.pathname.startsWith(P+"/"))return h.protocol+"//"+ h.host+P+h.pathname+h.search+h.hash;
+                if(h.host!==location.host){
+                  if(u.startsWith("ws")){var hu=u.replace(/^ws/,"http");return E+encodeURIComponent(hu);}
+                  return E+encodeURIComponent(u);
+                }
               }catch(e){}
             }
             return u;
