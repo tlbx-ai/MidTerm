@@ -340,6 +340,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "যান",
   "webPreview.refresh": "রিফ্রেশ",
+  "webPreview.screenshot": "টার্মিনালে স্ক্রিনশট",
   "webPreview.detach": "উইন্ডোতে খুলুন",
   "webPreview.dockBack": "ফিরে আনুন",
   "webPreview.detachedPlaceholder": "প্রিভিউ আলাদা উইন্ডোতে খোলা আছে",

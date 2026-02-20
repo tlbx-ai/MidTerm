@@ -340,6 +340,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Los",
   "webPreview.refresh": "Aktualisieren",
+  "webPreview.screenshot": "Screenshot zum Terminal",
   "webPreview.detach": "In Fenster öffnen",
   "webPreview.dockBack": "Andocken",
   "webPreview.detachedPlaceholder": "Vorschau ist in einem separaten Fenster geöffnet",

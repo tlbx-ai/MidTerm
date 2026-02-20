@@ -317,6 +317,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Go",
   "webPreview.refresh": "Refresh",
+  "webPreview.screenshot": "Screenshot to terminal",
   "webPreview.detach": "Pop out to window",
   "webPreview.dockBack": "Dock back",
   "webPreview.detachedPlaceholder": "Preview is open in a separate window",
