@@ -17,6 +17,7 @@ public sealed partial class WebPreviewProxyMiddleware
     // Patches: fetch, XHR, element .src/.href setters, setAttribute, window.open.
     private const string UrlRewriteScript = """
         <script>(function(){
+          if(window.__mtProxy)return;window.__mtProxy=1;
           var P="/webpreview",E=P+"/_ext?u=";
           function r(u){
             if(typeof u!=="string")return u;
@@ -385,6 +386,9 @@ public sealed partial class WebPreviewProxyMiddleware
         html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetHost));
         html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetHost));
 
+        // Remove any existing <base> tags to avoid duplicates — we inject our own
+        html = ExistingBaseTagRegex().Replace(html, "");
+
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
         html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">" + UrlRewriteScript, 1);
@@ -692,6 +696,10 @@ public sealed partial class WebPreviewProxyMiddleware
 
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]
     private static partial Regex HeadTagRegex();
+
+    // Matches existing <base ...> tags (self-closing or not) to remove before injecting ours
+    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex ExistingBaseTagRegex();
 
     // Matches src="/...", href="/...", action="/...", poster="/..." with word boundaries
     // to avoid matching data-src, data-href, metadata, etc.
