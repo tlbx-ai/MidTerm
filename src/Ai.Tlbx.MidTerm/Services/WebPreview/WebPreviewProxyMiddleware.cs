@@ -214,6 +214,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
     {
         var currentUrl = BuildUpstreamUrl(targetUri, path, context.Request.QueryString.Value);
+        var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
 
         // Follow redirects internally (up to 10 hops) so the iframe stays at /webpreview/
         const int maxRedirects = 10;
@@ -231,6 +232,23 @@ public sealed partial class WebPreviewProxyMiddleware
             {
                 if (BlockedRequestHeaders.Contains(header.Key))
                     continue;
+
+                // Rewrite Origin/Referer to match upstream — frameworks validate these
+                if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
+                {
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin);
+                    continue;
+                }
+                if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
+                {
+                    var refValue = header.Value.ToString();
+                    if (Uri.TryCreate(refValue, UriKind.Absolute, out var refUri))
+                    {
+                        refValue = upstreamOrigin + refUri.PathAndQuery.Replace("/webpreview/", "/").Replace("/webpreview", "/");
+                    }
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, refValue);
+                    continue;
+                }
 
                 requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
             }
@@ -511,6 +529,9 @@ public sealed partial class WebPreviewProxyMiddleware
         // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
         _service.ConfigureWebSocket(upstream, upstreamUri);
 
+        // Build upstream origin for header rewriting
+        var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
+
         // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)
         {
@@ -520,9 +541,26 @@ public sealed partial class WebPreviewProxyMiddleware
             if (header.Key.StartsWith("Sec-WebSocket-", StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            var value = header.Value.ToString();
+
+            // Rewrite Origin/Referer to match upstream host — Blazor/SignalR validates
+            // these against its own host and rejects connections from foreign origins
+            if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
+            {
+                value = upstreamOrigin;
+            }
+            else if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
+            {
+                // Rewrite referer: replace MidTerm host+/webpreview/ with upstream host
+                if (Uri.TryCreate(value, UriKind.Absolute, out var refUri))
+                {
+                    value = upstreamOrigin + refUri.PathAndQuery.Replace("/webpreview/", "/").Replace("/webpreview", "/");
+                }
+            }
+
             try
             {
-                upstream.Options.SetRequestHeader(header.Key, header.Value.ToString());
+                upstream.Options.SetRequestHeader(header.Key, value);
             }
             catch (ArgumentException)
             {
