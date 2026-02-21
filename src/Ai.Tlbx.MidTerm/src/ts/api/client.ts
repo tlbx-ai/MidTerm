@@ -111,6 +111,10 @@ export async function reloadSettings() {
   return client.POST('/api/settings/reload');
 }
 
+export async function restartServer(): Promise<Response> {
+  return fetch('/api/restart', { method: 'POST' });
+}
+
 // --- System ---
 
 export async function getVersion() {
