@@ -28,6 +28,76 @@ $WwwRoot = Join-Path $PSScriptRoot "wwwroot"
 $TsSource = Join-Path $PSScriptRoot "src/ts"
 $StaticSource = Join-Path $PSScriptRoot "src/static"
 $OutFile = Join-Path $WwwRoot "js/terminal.min.js"
+$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
+$NodeModulesRoot = Join-Path $RepoRoot "node_modules"
+
+# ===========================================
+# PRECHECK: Required toolchain/dependencies
+# ===========================================
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Error "Node.js is required but was not found in PATH. Install Node.js 20+ and run npm ci."
+    exit 1
+}
+
+if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+    Write-Error "npx is required but was not found in PATH. Install Node.js/npm and run npm ci."
+    exit 1
+}
+
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Error "npm is required but was not found in PATH. Install Node.js/npm and run npm ci."
+    exit 1
+}
+
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+    Write-Error ".NET SDK is required but was not found in PATH."
+    exit 1
+}
+
+$requiredNodeDeps = @(
+    @{ Name = "typescript"; Path = Join-Path $NodeModulesRoot "typescript/lib/tsc.js" },
+    @{ Name = "eslint"; Path = Join-Path $NodeModulesRoot "eslint" },
+    @{ Name = "esbuild"; Path = Join-Path $NodeModulesRoot "esbuild" },
+    @{ Name = "prettier"; Path = Join-Path $NodeModulesRoot "prettier" },
+    @{ Name = "openapi-typescript"; Path = Join-Path $NodeModulesRoot "openapi-typescript" }
+)
+
+function Get-MissingFrontendDeps {
+    param([array]$Deps)
+
+    $missing = @()
+    foreach ($dep in $Deps) {
+        if (-not (Test-Path $dep.Path)) {
+            $missing += $dep.Name
+        }
+    }
+    return $missing
+}
+
+$missingDeps = Get-MissingFrontendDeps -Deps $requiredNodeDeps
+if ($missingDeps.Count -gt 0) {
+    Write-Host ("Missing frontend npm dependencies: {0}" -f ($missingDeps -join ", ")) -ForegroundColor Yellow
+    Write-Host ("Attempting automatic install: npm ci --include=dev (repo root: {0})" -f $RepoRoot) -ForegroundColor Cyan
+
+    Push-Location $RepoRoot
+    try {
+        & npm ci --include=dev
+    }
+    finally {
+        Pop-Location
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error ("Automatic dependency install failed (npm ci exit code {0})." -f $LASTEXITCODE)
+        exit $LASTEXITCODE
+    }
+
+    $missingAfterInstall = Get-MissingFrontendDeps -Deps $requiredNodeDeps
+    if ($missingAfterInstall.Count -gt 0) {
+        Write-Error ("Frontend dependencies still missing after npm ci: {0}" -f ($missingAfterInstall -join ", "))
+        exit 1
+    }
+}
 
 # ===========================================
 # PHASE 0: Prepare wwwroot output directory

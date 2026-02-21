@@ -42,7 +42,7 @@ jobs:
           cache: 'npm'
 
       - name: Install npm packages
-        run: npm ci
+        run: npm ci --include=dev
 
       # Build frontend ONCE here - dotnet publish will skip via SkipFrontendBuild
       # Dev releases (-dev tag) include source maps for debugging; stable releases exclude them
