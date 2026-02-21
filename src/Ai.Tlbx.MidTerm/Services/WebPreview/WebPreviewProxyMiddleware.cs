@@ -19,6 +19,15 @@ public sealed partial class WebPreviewProxyMiddleware
         <script>(function(){
           if(window.__mtProxy)return;window.__mtProxy=1;
           var P="/webpreview",E=P+"/_ext?u=";
+          // Strip /webpreview from the URL so SPA routers (Blazor, React Router, etc.)
+          // see the real app path. Static resources still load through /webpreview/ because
+          // we've already rewritten them in the HTML. Reset <base> to / so document.baseURI
+          // matches the cleaned-up location for framework router compatibility.
+          var bp=document.querySelector("base");if(bp)bp.href="/";
+          if(location.pathname.indexOf(P)===0){
+            var cl=location.pathname.slice(P.length)||"/";
+            try{history.replaceState(null,"",cl+location.search+location.hash);}catch(e){}
+          }
           function r(u){
             if(typeof u!=="string")return u;
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
