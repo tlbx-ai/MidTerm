@@ -69,10 +69,18 @@ public sealed partial class WebPreviewProxyMiddleware
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
           // Patch WebSocket constructor
           var OWS=window.WebSocket;
-          if(OWS){window.WebSocket=function(u,p){var ru=r(u);return p!==undefined?new OWS(ru,p):new OWS(ru);};window.WebSocket.prototype=OWS.prototype;}
+          if(OWS&&window.Proxy){
+            try{
+              window.WebSocket=new Proxy(OWS,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
+            }catch(e){}
+          }
           // Patch EventSource constructor
           var OES=window.EventSource;
-          if(OES){window.EventSource=function(u,c){return new OES(r(u),c);};window.EventSource.prototype=OES.prototype;}
+          if(OES&&window.Proxy){
+            try{
+              window.EventSource=new Proxy(OES,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
+            }catch(e){}
+          }
           // Bridge document.cookie to server-side cookie jar used by proxy.
           var C=P+"/_cookies",cc="";
           function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
