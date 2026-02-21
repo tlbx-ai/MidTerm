@@ -446,6 +446,11 @@ public sealed partial class WebPreviewProxyMiddleware
         // Remove any existing <base> tags to avoid duplicates — we inject our own
         html = ExistingBaseTagRegex().Replace(html, "");
 
+        // Strip upstream CSP and X-Frame-Options meta tags — after proxying, 'self' in those
+        // directives would resolve to MidTerm's origin instead of the upstream site's origin,
+        // causing the proxied page to block framing of external resources.
+        html = UpstreamSecurityMetaTagRegex().Replace(html, "");
+
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
         html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">" + UrlRewriteScript, 1);
@@ -909,6 +914,12 @@ public sealed partial class WebPreviewProxyMiddleware
     // Matches existing <base ...> tags (self-closing or not) to remove before injecting ours
     [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex ExistingBaseTagRegex();
+
+    // Matches <meta http-equiv="content-security-policy" ...> and <meta http-equiv="x-frame-options" ...>
+    // Upstream CSP/XFO meta tags must be stripped: after proxying, 'self' resolves to MidTerm's origin,
+    // which would block framing of the upstream site's own resources.
+    [GeneratedRegex(@"<meta\s[^>]*http-equiv\s*=\s*[""']\s*(?:content-security-policy|x-frame-options)\s*[""'][^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex UpstreamSecurityMetaTagRegex();
 
     // Matches src="/...", href="/...", action="/...", poster="/..." with word boundaries
     // to avoid matching data-src, data-href, metadata, etc.
