@@ -13,6 +13,18 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public static partial class SessionApiEndpoints
 {
+    private static readonly HashSet<string> ClipboardImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".webp",
+        ".tif",
+        ".tiff"
+    };
+
     [LibraryImport("kernel32.dll", EntryPoint = "GetShortPathNameW", StringMarshalling = StringMarshalling.Utf16)]
     private static partial uint GetShortPathName(string lpszLongPath, char[] lpszShortPath, uint cchBuffer);
 
@@ -104,6 +116,11 @@ public static partial class SessionApiEndpoints
 
             var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
 
+            if (IsImageUpload(file, targetPath))
+            {
+                await clipboardService.SetImageAsync(targetPath, file.ContentType);
+            }
+
             // To make Johannes happy
             if (!File.Exists(targetPath))
             {
@@ -130,7 +147,7 @@ public static partial class SessionApiEndpoints
 
             var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
 
-            var success = await clipboardService.SetFileDropAsync(targetPath);
+            var success = await clipboardService.SetImageAsync(targetPath, file.ContentType);
             if (!success)
             {
                 return Results.Problem("Failed to set clipboard");
@@ -170,6 +187,18 @@ public static partial class SessionApiEndpoints
         }
 
         return targetPath;
+    }
+
+    private static bool IsImageUpload(IFormFile file, string savedPath)
+    {
+        if (!string.IsNullOrWhiteSpace(file.ContentType) &&
+            file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var extension = Path.GetExtension(savedPath);
+        return !string.IsNullOrWhiteSpace(extension) && ClipboardImageExtensions.Contains(extension);
     }
 
     private static SessionInfoDto MapToDto(SessionInfo sessionInfo)

@@ -1,55 +1,121 @@
 using System.Diagnostics;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class ClipboardService
 {
-    public async Task<bool> SetFileDropAsync(string filePath)
+    public async Task<bool> SetImageAsync(string filePath, string? mimeType = null)
     {
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        {
+            return false;
+        }
+
+        var resolvedMimeType = ResolveMimeType(filePath, mimeType);
+        if (resolvedMimeType is null)
+        {
+            return false;
+        }
+
         if (OperatingSystem.IsWindows())
         {
-            return await SetFileDropWindowsAsync(filePath);
+            return await SetImageWindowsAsync(filePath);
         }
 
         if (OperatingSystem.IsMacOS())
         {
-            return await SetFileDropMacOsAsync(filePath);
+            return await SetImageMacOsAsync(filePath);
         }
 
         if (OperatingSystem.IsLinux())
         {
-            return await SetFileDropLinuxAsync(filePath);
+            return await SetImageLinuxAsync(filePath, resolvedMimeType);
         }
 
         return false;
     }
 
-    private static async Task<bool> SetFileDropWindowsAsync(string filePath)
+    public Task<bool> SetFileDropAsync(string filePath)
+    {
+        return SetImageAsync(filePath);
+    }
+
+    private static async Task<bool> SetImageWindowsAsync(string filePath)
     {
         var escapedPath = filePath.Replace("'", "''");
         var script =
             "Add-Type -AssemblyName System.Windows.Forms; " +
-            "$c = [System.Collections.Specialized.StringCollection]::new(); " +
-            $"$c.Add('{escapedPath}'); " +
-            "[System.Windows.Forms.Clipboard]::SetFileDropList($c)";
+            "Add-Type -AssemblyName System.Drawing; " +
+            $"$path = '{escapedPath}'; " +
+            "$image = [System.Drawing.Image]::FromFile($path); " +
+            "try { " +
+            "  $data = New-Object System.Windows.Forms.DataObject; " +
+            "  $data.SetData([System.Windows.Forms.DataFormats]::Bitmap, $image); " +
+            "  $files = New-Object System.Collections.Specialized.StringCollection; " +
+            "  [void]$files.Add($path); " +
+            "  $data.SetFileDropList($files); " +
+            "  [System.Windows.Forms.Clipboard]::SetDataObject($data, $true); " +
+            "} finally { " +
+            "  $image.Dispose(); " +
+            "}";
 
-        return await RunProcessAsync("powershell.exe", $"-NoProfile -Command \"{script}\"");
+        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        return await RunProcessAsync("powershell.exe", ["-NoProfile", "-STA", "-EncodedCommand", encodedScript]);
     }
 
-    private static async Task<bool> SetFileDropMacOsAsync(string filePath)
+    private static async Task<bool> SetImageMacOsAsync(string filePath)
     {
-        var escapedPath = filePath.Replace("\"", "\\\"");
-        var script = $"set the clipboard to (read (POSIX file \"{escapedPath}\") as «class PNGf»)";
-        return await RunProcessAsync("osascript", $"-e '{script}'");
+        var escapedPath = filePath.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var script = $"set the clipboard to (read (POSIX file \"{escapedPath}\") as picture)";
+        return await RunProcessAsync("osascript", ["-e", script]);
     }
 
-    private static async Task<bool> SetFileDropLinuxAsync(string filePath)
+    private static async Task<bool> SetImageLinuxAsync(string filePath, string mimeType)
     {
-        return await RunProcessAsync("xclip", $"-selection clipboard -t image/png -i \"{filePath}\"");
+        if (await RunProcessAsync("wl-copy", ["--type", mimeType], standardInputFilePath: filePath, logFailures: false))
+        {
+            return true;
+        }
+
+        return await RunProcessAsync("xclip", ["-selection", "clipboard", "-t", mimeType, "-i", filePath]);
     }
 
-    private static async Task<bool> RunProcessAsync(string fileName, string arguments)
+    private static string? ResolveMimeType(string filePath, string? mimeType)
+    {
+        if (!string.IsNullOrWhiteSpace(mimeType) &&
+            mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return NormalizeMimeType(mimeType);
+        }
+
+        var extension = Path.GetExtension(filePath).ToLowerInvariant();
+        return extension switch
+        {
+            ".png" => "image/png",
+            ".jpg" => "image/jpeg",
+            ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            ".webp" => "image/webp",
+            ".tif" => "image/tiff",
+            ".tiff" => "image/tiff",
+            _ => null
+        };
+    }
+
+    private static string NormalizeMimeType(string mimeType)
+    {
+        var normalized = mimeType.Trim().ToLowerInvariant();
+        return normalized == "image/jpg" ? "image/jpeg" : normalized;
+    }
+
+    private static async Task<bool> RunProcessAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? standardInputFilePath = null,
+        bool logFailures = true)
     {
         try
         {
@@ -58,20 +124,50 @@ public sealed class ClipboardService
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = fileName,
-                    Arguments = arguments,
                     CreateNoWindow = true,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    RedirectStandardInput = standardInputFilePath is not null,
                 }
             };
+
+            foreach (var argument in arguments)
+            {
+                process.StartInfo.ArgumentList.Add(argument);
+            }
+
             process.Start();
+
+            if (standardInputFilePath is not null)
+            {
+                await using var inputFile = File.OpenRead(standardInputFilePath);
+                await inputFile.CopyToAsync(process.StandardInput.BaseStream);
+                await process.StandardInput.FlushAsync();
+                process.StandardInput.Close();
+            }
+
             await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            return process.ExitCode == 0;
+            if (process.ExitCode == 0)
+            {
+                return true;
+            }
+
+            if (!logFailures)
+            {
+                return false;
+            }
+
+            var stderr = await process.StandardError.ReadToEndAsync();
+            Log.Warn(() => $"[Clipboard] Command failed ({fileName}, exit {process.ExitCode}): {stderr.Trim()}");
+            return false;
         }
         catch (Exception ex)
         {
-            Log.Error(() => $"[Clipboard] Set failed ({fileName}): {ex.Message}");
+            if (logFailures)
+            {
+                Log.Error(() => $"[Clipboard] Set failed ({fileName}): {ex.Message}");
+            }
             return false;
         }
     }

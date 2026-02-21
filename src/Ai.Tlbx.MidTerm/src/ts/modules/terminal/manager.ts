@@ -544,7 +544,7 @@ export function setupTerminalEvents(
     if (isNativeImagePasteShortcut(e)) {
       if (canUseAsyncClipboard()) {
         void handleNativeImagePaste(sessionId).then((result) => {
-          if (result !== 'image') {
+          if (result === 'none') {
             sendInput(sessionId, '\x1bv');
           }
         });
