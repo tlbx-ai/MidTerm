@@ -366,5 +366,10 @@
   "share.failedToGenerate": "Не удалось сгенерировать информацию для обмена",
   "share.noEmailClient": "Почтовый клиент не обнаружен.",
   "share.copiedToClipboard": "Информация о подключении скопирована в буфер обмена!",
-  "share.visitTrustPage": "Посетите страницу доверия для обмена доступом"
+  "share.visitTrustPage": "Посетите страницу доверия для обмена доступом",
+
+  "dialog.confirm": "Подтвердить",
+  "dialog.info": "Информация",
+  "dialog.ok": "ОК",
+  "dialog.cancel": "Отмена"
 }

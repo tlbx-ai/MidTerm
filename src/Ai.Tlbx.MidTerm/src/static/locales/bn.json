@@ -366,5 +366,10 @@
   "share.failedToGenerate": "শেয়ার তথ্য তৈরি করতে ব্যর্থ",
   "share.noEmailClient": "কোনো ইমেল ক্লায়েন্ট সনাক্ত হয়নি।",
   "share.copiedToClipboard": "সংযোগ তথ্য ক্লিপবোর্ডে কপি হয়েছে!",
-  "share.visitTrustPage": "অ্যাক্সেস শেয়ার করতে ট্রাস্ট পেজে যান"
+  "share.visitTrustPage": "অ্যাক্সেস শেয়ার করতে ট্রাস্ট পেজে যান",
+
+  "dialog.confirm": "নিশ্চিত করুন",
+  "dialog.info": "তথ্য",
+  "dialog.ok": "ঠিক আছে",
+  "dialog.cancel": "বাতিল"
 }

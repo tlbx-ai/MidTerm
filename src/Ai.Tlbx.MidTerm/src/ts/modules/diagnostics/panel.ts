@@ -11,6 +11,7 @@ import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
 import { enableGitStatusOverlay, disableGitStatusOverlay } from './gitStatusOverlay';
 import { t } from '../i18n';
+import { showConfirm } from '../../utils/dialog';
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -138,7 +139,11 @@ function bindRestartButton(): void {
   if (!btn) return;
 
   btn.addEventListener('click', async () => {
-    const confirmed = confirm(t('settings.diagnostics.restartConfirm'));
+    const confirmed = await showConfirm(t('settings.diagnostics.restartConfirm'), {
+      title: t('settings.diagnostics.restartServer'),
+      confirmLabel: t('settings.diagnostics.restartServer'),
+      danger: true,
+    });
     if (!confirmed) return;
 
     btn.disabled = true;

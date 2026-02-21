@@ -366,5 +366,10 @@
   "share.failedToGenerate": "शेयर जानकारी जनरेट करने में विफल",
   "share.noEmailClient": "कोई ईमेल क्लाइंट नहीं मिला।",
   "share.copiedToClipboard": "कनेक्शन जानकारी क्लिपबोर्ड पर कॉपी हो गई!",
-  "share.visitTrustPage": "एक्सेस शेयर करने के लिए ट्रस्ट पेज पर जाएँ"
+  "share.visitTrustPage": "एक्सेस शेयर करने के लिए ट्रस्ट पेज पर जाएँ",
+
+  "dialog.confirm": "पुष्टि करें",
+  "dialog.info": "जानकारी",
+  "dialog.ok": "ठीक है",
+  "dialog.cancel": "रद्द करें"
 }

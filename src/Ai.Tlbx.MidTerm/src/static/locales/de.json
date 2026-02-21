@@ -366,5 +366,10 @@
   "share.failedToGenerate": "Freigabeinformationen konnten nicht generiert werden",
   "share.noEmailClient": "Kein E-Mail-Client erkannt.",
   "share.copiedToClipboard": "Verbindungsinformationen wurden in die Zwischenablage kopiert!",
-  "share.visitTrustPage": "Besuchen Sie die Trust-Seite, um den Zugriff zu teilen"
+  "share.visitTrustPage": "Besuchen Sie die Trust-Seite, um den Zugriff zu teilen",
+
+  "dialog.confirm": "Bestätigen",
+  "dialog.info": "Info",
+  "dialog.ok": "OK",
+  "dialog.cancel": "Abbrechen"
 }

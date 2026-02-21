@@ -3802,6 +3802,27 @@ html, body {
     gap: 12px;
 }
 
+/* Dialog utility (confirm/alert replacement) */
+.dialog-content {
+    max-width: 420px;
+    width: 90%;
+    animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.dialog-content .modal-header h3 {
+    margin: 0;
+    font-size: var(--fs-xl);
+    color: var(--text-primary);
+}
+
+.dialog-message {
+    margin: 0;
+    font-size: var(--fs-lg);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    white-space: pre-line;
+}
+
 /* Update Log Modal */
 .update-log-modal {
     width: 80vw;

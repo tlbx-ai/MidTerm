@@ -366,5 +366,10 @@
   "share.failedToGenerate": "Échec de la génération des informations de partage",
   "share.noEmailClient": "Aucun client de messagerie détecté.",
   "share.copiedToClipboard": "Les informations de connexion ont été copiées dans le presse-papiers !",
-  "share.visitTrustPage": "Visitez la page de confiance pour partager l'accès"
+  "share.visitTrustPage": "Visitez la page de confiance pour partager l'accès",
+
+  "dialog.confirm": "Confirmer",
+  "dialog.info": "Info",
+  "dialog.ok": "OK",
+  "dialog.cancel": "Annuler"
 }

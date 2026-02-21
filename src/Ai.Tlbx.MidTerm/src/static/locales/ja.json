@@ -366,5 +366,10 @@
   "share.failedToGenerate": "共有情報の生成に失敗しました",
   "share.noEmailClient": "メールクライアントが検出されませんでした。",
   "share.copiedToClipboard": "接続情報がクリップボードにコピーされました！",
-  "share.visitTrustPage": "アクセスを共有するにはトラストページにアクセスしてください"
+  "share.visitTrustPage": "アクセスを共有するにはトラストページにアクセスしてください",
+
+  "dialog.confirm": "確認",
+  "dialog.info": "情報",
+  "dialog.ok": "OK",
+  "dialog.cancel": "キャンセル"
 }

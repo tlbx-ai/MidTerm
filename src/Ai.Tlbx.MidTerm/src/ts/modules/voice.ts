@@ -12,6 +12,7 @@ import { processToolRequest } from './voiceTools';
 import { $voiceServerPassword } from '../stores';
 import type { VoiceToolName } from '../types';
 import type { VoiceHealthResponse, VoiceProvider } from '../types';
+import { showAlert } from '../utils/dialog';
 
 const log = createLogger('voice');
 const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
@@ -625,7 +626,7 @@ async function testVoiceServerConnection(): Promise<void> {
     results.push(`Try visiting: ${healthUrl}`);
   }
 
-  alert(results.join('\n'));
+  showAlert(results.join('\n'), { title: 'Voice Diagnostics' });
 }
 
 /**

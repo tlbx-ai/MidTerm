@@ -366,5 +366,10 @@
   "share.failedToGenerate": "Error al generar la información para compartir",
   "share.noEmailClient": "No se detectó cliente de correo.",
   "share.copiedToClipboard": "¡La información de conexión se ha copiado al portapapeles!",
-  "share.visitTrustPage": "Visite la página de confianza para compartir el acceso"
+  "share.visitTrustPage": "Visite la página de confianza para compartir el acceso",
+
+  "dialog.confirm": "Confirmar",
+  "dialog.info": "Información",
+  "dialog.ok": "Aceptar",
+  "dialog.cancel": "Cancelar"
 }

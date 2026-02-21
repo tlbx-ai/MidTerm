@@ -404,5 +404,10 @@
   "error.passwordsNoMatch": "Passwords do not match",
   "error.passwordTooShort": "Password must be at least 4 characters",
   "error.passwordChangeFailed": "Failed to change password",
-  "error.connectionError": "Connection error"
+  "error.connectionError": "Connection error",
+
+  "dialog.confirm": "Confirm",
+  "dialog.info": "Info",
+  "dialog.ok": "OK",
+  "dialog.cancel": "Cancel"
 }

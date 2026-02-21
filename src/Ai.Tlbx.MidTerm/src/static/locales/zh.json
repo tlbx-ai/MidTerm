@@ -369,5 +369,10 @@
   "share.failedToGenerate": "无法生成共享信息",
   "share.noEmailClient": "未检测到邮件客户端。",
   "share.copiedToClipboard": "连接信息已复制到剪贴板！",
-  "share.visitTrustPage": "访问信任页面以共享访问权限"
+  "share.visitTrustPage": "访问信任页面以共享访问权限",
+
+  "dialog.confirm": "确认",
+  "dialog.info": "信息",
+  "dialog.ok": "确定",
+  "dialog.cancel": "取消"
 }
