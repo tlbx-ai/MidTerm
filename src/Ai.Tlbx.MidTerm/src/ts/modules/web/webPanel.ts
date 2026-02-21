@@ -8,10 +8,9 @@ import { $webPreviewUrl, $activeSessionId } from '../../stores';
 import { reloadWebPreview, setWebPreviewTarget } from './webApi';
 import { pasteToTerminal } from '../terminal';
 import { createLogger } from '../logging';
+import { getActiveUrl, setActiveMode, setActiveUrl } from './webSessionState';
 
 const log = createLogger('webPanel');
-const URL_STORAGE_KEY = 'mt-web-preview-url';
-
 let urlInput: HTMLInputElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
 
@@ -39,10 +38,9 @@ export function initWebPanel(): void {
 }
 
 export function restoreLastUrl(): void {
-  const saved = localStorage.getItem(URL_STORAGE_KEY);
-  if (saved && urlInput) {
-    urlInput.value = saved;
-  }
+  const saved = getActiveUrl();
+  if (saved && urlInput) urlInput.value = saved;
+  if (!saved && urlInput) urlInput.value = '';
 }
 
 function normalizeUrl(raw: string): string {
@@ -65,8 +63,9 @@ async function handleGo(): Promise<void> {
   log.info(() => `Setting web preview target: ${url}`);
   const result = await setWebPreviewTarget(url);
   if (result?.active) {
+    setActiveMode('docked');
+    setActiveUrl(url);
     $webPreviewUrl.set(url);
-    localStorage.setItem(URL_STORAGE_KEY, url);
     loadPreview();
   } else {
     log.warn(() => 'Failed to set web preview target');

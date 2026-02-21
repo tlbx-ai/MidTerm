@@ -10,9 +10,10 @@ import { $webPreviewDocked, $isMainBrowser } from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { restoreLastUrl, showIframe, unloadIframe, releaseCaptureStream } from './webPanel';
-import { cleanupDetach } from './webDetach';
+import { cleanupDetachForSessionSwitch, isDetachedOpenForActiveSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
+import { getActiveMode, setActiveMode } from './webSessionState';
 
 const log = createLogger('webDock');
 
@@ -65,14 +66,16 @@ export function updateAllDockMargins(): void {
 }
 
 export function toggleWebPreviewDock(): void {
-  if ($webPreviewDocked.get()) {
+  const mode = getActiveMode();
+  if (mode === 'docked') {
     closeWebPreviewDock();
   } else {
     openWebPreviewDock();
   }
 }
 
-function openWebPreviewDock(): void {
+export function openWebPreviewDock(): void {
+  setActiveMode('docked');
   $webPreviewDocked.set(true);
   setActionButtonActive('web', true);
 
@@ -102,13 +105,18 @@ function openWebPreviewDock(): void {
 }
 
 export function closeWebPreviewDock(): void {
+  const detachedActive = isDetachedOpenForActiveSession();
+  if (!detachedActive) {
+    setActiveMode('hidden');
+  }
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
 
   // Unload iframe to stop all network activity
   unloadIframe();
-  cleanupDetach();
-  clearWebPreviewTarget();
+  if (!detachedActive) {
+    clearWebPreviewTarget();
+  }
   releaseCaptureStream();
 
   const dockPanel = document.getElementById('web-preview-dock');
@@ -123,6 +131,40 @@ export function closeWebPreviewDock(): void {
   handleDockLayoutChange();
 
   log.info(() => 'Web preview dock closed');
+}
+
+export function hideWebPreviewDockForDetach(): void {
+  $webPreviewDocked.set(false);
+  setActionButtonActive('web', true);
+  unloadIframe();
+
+  const dockPanel = document.getElementById('web-preview-dock');
+  if (dockPanel) {
+    dockPanel.classList.add('hidden');
+    dockPanel.style.width = '';
+  }
+
+  adjustInnerDockPositions();
+  updateAllDockMargins();
+  handleDockLayoutChange();
+}
+
+export function applyWebPreviewHiddenState(): void {
+  $webPreviewDocked.set(false);
+  setActionButtonActive('web', false);
+  unloadIframe();
+  clearWebPreviewTarget();
+  cleanupDetachForSessionSwitch();
+
+  const dockPanel = document.getElementById('web-preview-dock');
+  if (dockPanel) {
+    dockPanel.classList.add('hidden');
+    dockPanel.style.width = '';
+  }
+
+  adjustInnerDockPositions();
+  updateAllDockMargins();
+  handleDockLayoutChange();
 }
 
 export function setupWebPreviewDockResize(): void {
