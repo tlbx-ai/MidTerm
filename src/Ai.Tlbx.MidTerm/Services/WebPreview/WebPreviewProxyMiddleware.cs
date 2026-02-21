@@ -1,7 +1,10 @@
 using System.IO.Compression;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Services;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
@@ -35,7 +38,6 @@ public sealed partial class WebPreviewProxyMiddleware
               try{var h=new URL(u);
                 if(h.host===location.host&&!h.pathname.startsWith(P+"/"))return h.protocol+"//"+ h.host+P+h.pathname+h.search+h.hash;
                 if(h.host!==location.host){
-                  if(u.startsWith("ws")){var hu=u.replace(/^ws/,"http");return E+encodeURIComponent(hu);}
                   return E+encodeURIComponent(u);
                 }
               }catch(e){}
@@ -61,6 +63,26 @@ public sealed partial class WebPreviewProxyMiddleware
           // Patch window.open
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
+          // Patch WebSocket constructor
+          var OWS=window.WebSocket;
+          if(OWS){window.WebSocket=function(u,p){var ru=r(u);return p!==undefined?new OWS(ru,p):new OWS(ru);};window.WebSocket.prototype=OWS.prototype;}
+          // Patch EventSource constructor
+          var OES=window.EventSource;
+          if(OES){window.EventSource=function(u,c){return new OES(r(u),c);};window.EventSource.prototype=OES.prototype;}
+          // Bridge document.cookie to server-side cookie jar used by proxy.
+          var C=P+"/_cookies",cc="";
+          function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
+          rc();
+          try{
+            var d=Object.getOwnPropertyDescriptor(Document.prototype,"cookie")||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,"cookie");
+            if(d&&d.configurable){
+              Object.defineProperty(document,"cookie",{configurable:true,get:function(){return cc;},set:function(v){
+                if(typeof v!=="string")return;
+                var n=v.split(";")[0]||"";if(n){var i=n.indexOf("="),k=i>0?n.slice(0,i).trim():"";if(k){var p=cc?cc.split(/;\s*/):[];var nx=[];for(var z=0;z<p.length;z++){if(!p[z].startsWith(k+"="))nx.push(p[z]);}nx.push(n.trim());cc=nx.join("; ");}}
+                fetch(C,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({raw:v})}).then(rc).catch(function(){});
+              }});
+            }
+          }catch(e){}
           // Patch Audio constructor (new Audio('/path/to/file.mp3'))
           var OA=window.Audio;
           if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
@@ -143,7 +165,19 @@ public sealed partial class WebPreviewProxyMiddleware
             var remainingPath = remaining.Value ?? "";
             if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
             {
-                await ProxyExternalAsync(context);
+                if (context.WebSockets.IsWebSocketRequest)
+                {
+                    await ProxyExternalWebSocketAsync(context);
+                }
+                else
+                {
+                    await ProxyExternalAsync(context);
+                }
+                return;
+            }
+            if (remainingPath.Equals("/_cookies", StringComparison.Ordinal))
+            {
+                await HandleCookieBridgeAsync(context);
                 return;
             }
 
@@ -232,6 +266,14 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var originalMethod = new HttpMethod(context.Request.Method);
         var currentMethod = originalMethod;
+        byte[]? requestBodyBuffer = null;
+        var requestHasBody = context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding");
+        if (requestHasBody && originalMethod != HttpMethod.Get && originalMethod != HttpMethod.Head)
+        {
+            await using var bodyCopy = new MemoryStream();
+            await context.Request.Body.CopyToAsync(bodyCopy, context.RequestAborted);
+            requestBodyBuffer = bodyCopy.ToArray();
+        }
 
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
@@ -269,15 +311,18 @@ public sealed partial class WebPreviewProxyMiddleware
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
 
-            // Forward request body on initial request and 307/308 redirects (which preserve method)
-            if (redirect == 0 && currentMethod != HttpMethod.Get
-                && (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")))
+            // Forward request body on initial request and on 307/308 redirects (method preserved).
+            if (requestBodyBuffer is not null && currentMethod != HttpMethod.Get && currentMethod != HttpMethod.Head)
             {
-                requestMessage.Content = new StreamContent(context.Request.Body);
+                requestMessage.Content = new ByteArrayContent(requestBodyBuffer);
                 if (context.Request.ContentType is not null)
                 {
                     requestMessage.Content.Headers.ContentType =
                         System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+                }
+                if (context.Request.ContentLength is > 0)
+                {
+                    requestMessage.Content.Headers.ContentLength = requestBodyBuffer.Length;
                 }
             }
 
@@ -512,6 +557,85 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
+    private async Task ProxyExternalWebSocketAsync(HttpContext context)
+    {
+        var externalUrl = context.Request.Query["u"].FirstOrDefault();
+        if (string.IsNullOrEmpty(externalUrl) || !Uri.TryCreate(externalUrl, UriKind.Absolute, out var extUri))
+        {
+            context.Response.StatusCode = 400;
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync("Missing or invalid 'u' parameter.");
+            return;
+        }
+
+        if (extUri.Scheme is not ("ws" or "wss" or "http" or "https"))
+        {
+            context.Response.StatusCode = 400;
+            return;
+        }
+
+        var wsScheme = extUri.Scheme switch
+        {
+            "https" => "wss",
+            "http" => "ws",
+            _ => extUri.Scheme
+        };
+
+        var upstreamUri = new UriBuilder(extUri) { Scheme = wsScheme }.Uri;
+        var upstreamOriginScheme = wsScheme == "wss" ? "https" : "http";
+        var upstreamOrigin = $"{upstreamOriginScheme}://{upstreamUri.Authority}";
+        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin);
+    }
+
+    private async Task HandleCookieBridgeAsync(HttpContext context)
+    {
+        if (context.Request.Method == HttpMethods.Get)
+        {
+            var response = _service.GetCookies();
+            context.Response.ContentType = "application/json";
+            await JsonSerializer.SerializeAsync(
+                context.Response.Body,
+                response,
+                AppJsonContext.Default.WebPreviewCookiesResponse,
+                context.RequestAborted);
+            return;
+        }
+
+        if (context.Request.Method == HttpMethods.Post)
+        {
+            WebPreviewCookieSetRequest? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync(
+                    context.Request.Body,
+                    AppJsonContext.Default.WebPreviewCookieSetRequest,
+                    context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            if (request is null || !_service.SetCookieFromRaw(request.Raw))
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            var response = _service.GetCookies();
+            context.Response.ContentType = "application/json";
+            await JsonSerializer.SerializeAsync(
+                context.Response.Body,
+                response,
+                AppJsonContext.Default.WebPreviewCookiesResponse,
+                context.RequestAborted);
+            return;
+        }
+
+        context.Response.StatusCode = 405;
+    }
+
     private static async Task<string> DecompressTextAsync(
         HttpResponseMessage response, CancellationToken cancellationToken)
     {
@@ -537,13 +661,15 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         var upstreamUrl = BuildUpstreamWsUrl(targetUri, path, context.Request.QueryString.Value);
         var upstreamUri = new Uri(upstreamUrl);
+        var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
+        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin);
+    }
 
+    private async Task ProxyWebSocketToUpstreamAsync(HttpContext context, Uri upstreamUri, string upstreamOrigin)
+    {
         using var upstream = new ClientWebSocket();
         // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
         _service.ConfigureWebSocket(upstream, upstreamUri);
-
-        // Build upstream origin for header rewriting
-        var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
 
         // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)

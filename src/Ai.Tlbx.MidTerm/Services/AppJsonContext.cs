@@ -89,6 +89,10 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(StopScriptRequest))]
 [JsonSerializable(typeof(WebPreviewTargetRequest))]
 [JsonSerializable(typeof(WebPreviewTargetResponse))]
+[JsonSerializable(typeof(WebPreviewCookieSetRequest))]
+[JsonSerializable(typeof(WebPreviewCookiesResponse))]
+[JsonSerializable(typeof(WebPreviewCookieInfo))]
+[JsonSerializable(typeof(WebPreviewReloadRequest))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

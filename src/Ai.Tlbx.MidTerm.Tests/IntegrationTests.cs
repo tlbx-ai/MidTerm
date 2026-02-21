@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Net.Http.Json;
 using System.Text;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Services;
@@ -12,6 +13,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Models.WebPreview;
 namespace Ai.Tlbx.MidTerm.Tests;
 
 public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
@@ -84,6 +86,68 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         Assert.NotNull(state);
         Assert.NotNull(state.Sessions);
         Assert.NotNull(state.Sessions.Sessions);
+    }
+
+    [Fact]
+    public async Task WebPreview_CookieBridge_SetGetDelete_Works()
+    {
+        var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
+        {
+            Url = "https://example.com"
+        }, AppJsonContext.Default.WebPreviewTargetRequest);
+        targetRes.EnsureSuccessStatusCode();
+
+        var setRes = await _client.PostAsJsonAsync("/api/webpreview/cookies", new WebPreviewCookieSetRequest
+        {
+            Raw = "theme=dark; Path=/"
+        }, AppJsonContext.Default.WebPreviewCookieSetRequest);
+        setRes.EnsureSuccessStatusCode();
+
+        var getRes = await _client.GetAsync("/api/webpreview/cookies");
+        getRes.EnsureSuccessStatusCode();
+        var cookies = await getRes.Content.ReadFromJsonAsync(
+            AppJsonContext.Default.WebPreviewCookiesResponse);
+        Assert.NotNull(cookies);
+        Assert.Contains("theme=dark", cookies.Header, StringComparison.Ordinal);
+
+        var delRes = await _client.DeleteAsync("/api/webpreview/cookies?name=theme");
+        delRes.EnsureSuccessStatusCode();
+
+        var afterDeleteRes = await _client.GetAsync("/api/webpreview/cookies");
+        afterDeleteRes.EnsureSuccessStatusCode();
+        var afterDelete = await afterDeleteRes.Content.ReadFromJsonAsync(
+            AppJsonContext.Default.WebPreviewCookiesResponse);
+        Assert.NotNull(afterDelete);
+        Assert.DoesNotContain("theme=dark", afterDelete.Header, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WebPreview_HardReload_ClearsCookieJar()
+    {
+        var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
+        {
+            Url = "https://example.com"
+        }, AppJsonContext.Default.WebPreviewTargetRequest);
+        targetRes.EnsureSuccessStatusCode();
+
+        var setRes = await _client.PostAsJsonAsync("/api/webpreview/cookies", new WebPreviewCookieSetRequest
+        {
+            Raw = "session=abc123; Path=/"
+        }, AppJsonContext.Default.WebPreviewCookieSetRequest);
+        setRes.EnsureSuccessStatusCode();
+
+        var reloadRes = await _client.PostAsJsonAsync("/api/webpreview/reload", new WebPreviewReloadRequest
+        {
+            Mode = "hard"
+        }, AppJsonContext.Default.WebPreviewReloadRequest);
+        reloadRes.EnsureSuccessStatusCode();
+
+        var getRes = await _client.GetAsync("/api/webpreview/cookies");
+        getRes.EnsureSuccessStatusCode();
+        var cookies = await getRes.Content.ReadFromJsonAsync(
+            AppJsonContext.Default.WebPreviewCookiesResponse);
+        Assert.NotNull(cookies);
+        Assert.True(string.IsNullOrEmpty(cookies.Header));
     }
 
     private async Task<WebSocket> ConnectWebSocketAsync(string path)

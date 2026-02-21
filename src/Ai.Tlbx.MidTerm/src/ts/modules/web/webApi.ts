@@ -40,3 +40,16 @@ export async function clearWebPreviewTarget(): Promise<void> {
     // ignore
   }
 }
+
+export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> {
+  try {
+    const res = await fetch('/api/webpreview/reload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

@@ -36,5 +36,42 @@ public static class WebPreviewEndpoints
             webPreviewService.ClearTarget();
             return Results.Ok();
         });
+
+        app.MapGet("/api/webpreview/cookies", () =>
+        {
+            var response = webPreviewService.GetCookies();
+            return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
+        });
+
+        app.MapPost("/api/webpreview/cookies", (WebPreviewCookieSetRequest request) =>
+        {
+            if (!webPreviewService.SetCookieFromRaw(request.Raw))
+            {
+                return Results.BadRequest("Invalid cookie format.");
+            }
+
+            var response = webPreviewService.GetCookies();
+            return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
+        });
+
+        app.MapDelete("/api/webpreview/cookies", (string name, string? path, string? domain) =>
+        {
+            if (!webPreviewService.DeleteCookie(name, path, domain))
+            {
+                return Results.BadRequest("Failed to delete cookie.");
+            }
+
+            var response = webPreviewService.GetCookies();
+            return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
+        });
+
+        app.MapPost("/api/webpreview/reload", (WebPreviewReloadRequest request) =>
+        {
+            if (request.Mode.Equals("hard", StringComparison.OrdinalIgnoreCase))
+            {
+                webPreviewService.HardReload();
+            }
+            return Results.Ok();
+        });
     }
 }

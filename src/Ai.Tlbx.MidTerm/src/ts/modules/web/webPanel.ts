@@ -5,7 +5,7 @@
  */
 
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
-import { setWebPreviewTarget } from './webApi';
+import { reloadWebPreview, setWebPreviewTarget } from './webApi';
 import { pasteToTerminal } from '../terminal';
 import { createLogger } from '../logging';
 
@@ -30,7 +30,11 @@ export function initWebPanel(): void {
       handleGo();
     }
   });
-  refreshBtn?.addEventListener('click', handleRefresh);
+  refreshBtn?.addEventListener('click', (e: MouseEvent) => {
+    // Shift/Ctrl/Alt-click performs a hard reload (clears preview runtime state).
+    const hard = e.shiftKey || e.ctrlKey || e.altKey;
+    void handleRefresh(hard ? 'hard' : 'soft');
+  });
   screenshotBtn?.addEventListener('click', handleScreenshot);
 }
 
@@ -75,7 +79,12 @@ export function loadPreview(): void {
   iframe.src = '/webpreview/' + '?' + Date.now();
 }
 
-function handleRefresh(): void {
+async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
+  if (mode === 'hard') {
+    await clearWebPreviewBrowserStateAsync();
+  }
+
+  await reloadWebPreview(mode);
   loadPreview();
 }
 
@@ -246,4 +255,28 @@ async function captureIframeScreenshot(): Promise<Blob | null> {
   ctx.drawImage(captureVideo, sx, sy, sw, sh, 0, 0, sw, sh);
 
   return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
+async function clearWebPreviewBrowserStateAsync(): Promise<void> {
+  if ('serviceWorker' in navigator) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(
+        registrations.filter((r) => r.scope.includes('/webpreview')).map((r) => r.unregister()),
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  if ('caches' in window) {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.filter((k) => k.toLowerCase().includes('webpreview')).map((k) => caches.delete(k)),
+      );
+    } catch {
+      // ignore
+    }
+  }
 }
