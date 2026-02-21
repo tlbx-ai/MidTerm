@@ -33,6 +33,10 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           function r(u){
             if(typeof u!=="string")return u;
+            if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
+            if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
+              try{return r(new URL(u,location.href).toString());}catch(e){}
+            }
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
