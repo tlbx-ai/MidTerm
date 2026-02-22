@@ -253,7 +253,7 @@ public class Program
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService);
+        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
         var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
         EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, tmuxLayoutBridge);
 

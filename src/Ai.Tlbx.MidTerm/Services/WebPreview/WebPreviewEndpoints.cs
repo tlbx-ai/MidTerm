@@ -36,7 +36,7 @@ public static partial class WebPreviewEndpoints
         - CLAUDE.md (this file) is safe to commit — helps teammates' AI agents
         """;
 
-    public static void MapWebPreviewEndpoints(WebApplication app, WebPreviewService webPreviewService)
+    public static void MapWebPreviewEndpoints(WebApplication app, WebPreviewService webPreviewService, TtyHostSessionManager sessionManager)
     {
         app.MapGet("/api/webpreview/target", () =>
         {
@@ -107,8 +107,7 @@ public static partial class WebPreviewEndpoints
         });
 
         app.MapPost("/api/webpreview/snapshot", async (
-            WebPreviewSnapshotRequest request,
-            TtyHostSessionManager sessionManager) =>
+            WebPreviewSnapshotRequest request) =>
         {
             var session = sessionManager.GetSession(request.SessionId);
             if (session is null)
