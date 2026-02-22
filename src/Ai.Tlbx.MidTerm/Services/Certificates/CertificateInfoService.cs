@@ -83,6 +83,16 @@ public sealed class CertificateInfoService
         return Encoding.UTF8.GetBytes(pem);
     }
 
+    public byte[]? ExportDerBytes()
+    {
+        if (_certificate is null)
+        {
+            return null;
+        }
+
+        return _certificate.Export(X509ContentType.Cert);
+    }
+
     public byte[]? GenerateMobileConfig(string hostname)
     {
         if (_certificate is null)

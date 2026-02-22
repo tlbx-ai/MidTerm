@@ -281,6 +281,17 @@ public static class EndpointSetup
             return Results.File(pemBytes, "application/x-pem-file", "midterm.pem");
         });
 
+        app.MapGet("/api/certificate/download/crt", () =>
+        {
+            var certService = app.Services.GetRequiredService<CertificateInfoService>();
+            var derBytes = certService.ExportDerBytes();
+            if (derBytes is null)
+            {
+                return Results.NotFound("Certificate not available");
+            }
+            return Results.File(derBytes, "application/x-x509-ca-cert", "midterm.crt");
+        });
+
         app.MapGet("/api/certificate/download/mobileconfig", (HttpContext context) =>
         {
             var certService = app.Services.GetRequiredService<CertificateInfoService>();
