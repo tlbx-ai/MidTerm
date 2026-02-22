@@ -37,6 +37,8 @@
   "topbar.fullscreen": "Vollbild",
   "topbar.sendCtrlC": "Ctrl+C senden",
   "topbar.closeTerminal": "Terminal schließen",
+  "topbar.showTouchBar": "Touchleiste anzeigen",
+  "topbar.hideTouchBar": "Touchleiste ausblenden",
   "terminal.search": "Suchen...",
   "terminal.searchPrevious": "Vorheriges (Shift+Enter)",
   "terminal.searchNext": "Nächstes (Enter)",

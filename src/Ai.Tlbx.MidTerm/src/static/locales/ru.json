@@ -37,6 +37,8 @@
   "topbar.fullscreen": "Полноэкранный режим",
   "topbar.sendCtrlC": "Отправить Ctrl+C",
   "topbar.closeTerminal": "Закрыть терминал",
+  "topbar.showTouchBar": "Показать панель касания",
+  "topbar.hideTouchBar": "Скрыть панель касания",
   "terminal.search": "Поиск...",
   "terminal.searchPrevious": "Предыдущий (Shift+Enter)",
   "terminal.searchNext": "Следующий (Enter)",

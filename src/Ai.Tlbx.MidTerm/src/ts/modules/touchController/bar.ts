@@ -18,17 +18,7 @@ import { rescaleAllTerminals } from '../terminal/scaling';
 
 let controllerElement: HTMLElement | null = null;
 let isInitialized = false;
-
-/**
- * Enable VirtualKeyboard API for env(keyboard-inset-height) support
- */
-function setupVirtualKeyboard(): void {
-  if ('virtualKeyboard' in navigator) {
-    (
-      navigator as Navigator & { virtualKeyboard: { overlaysContent: boolean } }
-    ).virtualKeyboard.overlaysContent = true;
-  }
-}
+let userDismissed = false;
 
 /**
  * Initialize the touch controller bar
@@ -41,7 +31,6 @@ export function initTouchController(): void {
     return;
   }
 
-  setupVirtualKeyboard();
   initModifiers(controllerElement);
   initEvents(controllerElement);
   initPopups();
@@ -102,6 +91,7 @@ export function hideTouchController(): void {
  * Update visibility based on current device state
  */
 export function updateVisibility(): void {
+  if (userDismissed) return;
   if (shouldShowTouchController()) {
     showTouchController();
   } else {
@@ -109,9 +99,32 @@ export function updateVisibility(): void {
   }
 }
 
+/**
+ * User-initiated dismiss of the touch bar
+ */
+export function dismissTouchController(): void {
+  userDismissed = true;
+  hideTouchController();
+  const showBtn = document.getElementById('btn-show-touchbar');
+  if (showBtn) showBtn.classList.remove('hidden');
+}
+
+/**
+ * Restore touch bar after user dismiss
+ */
+export function restoreTouchController(): void {
+  userDismissed = false;
+  updateVisibility();
+  const showBtn = document.getElementById('btn-show-touchbar');
+  if (showBtn) showBtn.classList.add('hidden');
+}
+
 function handlePointerChange(hasPrecisePointer: boolean): void {
   if (hasPrecisePointer) {
+    userDismissed = false;
     hideTouchController();
+    const showBtn = document.getElementById('btn-show-touchbar');
+    if (showBtn) showBtn.classList.add('hidden');
   } else {
     updateVisibility();
   }

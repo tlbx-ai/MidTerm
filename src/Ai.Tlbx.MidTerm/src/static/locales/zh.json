@@ -39,6 +39,8 @@
   "topbar.fullscreen": "全屏",
   "topbar.sendCtrlC": "发送 Ctrl+C",
   "topbar.closeTerminal": "关闭终端",
+  "topbar.showTouchBar": "显示触摸栏",
+  "topbar.hideTouchBar": "隐藏触摸栏",
   "terminal.search": "搜索...",
   "terminal.searchPrevious": "上一个（Shift+Enter）",
   "terminal.searchNext": "下一个（Enter）",

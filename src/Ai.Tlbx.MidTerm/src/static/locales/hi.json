@@ -37,6 +37,8 @@
   "topbar.fullscreen": "फुलस्क्रीन",
   "topbar.sendCtrlC": "Ctrl+C भेजें",
   "topbar.closeTerminal": "टर्मिनल बंद करें",
+  "topbar.showTouchBar": "टच बार दिखाएं",
+  "topbar.hideTouchBar": "टच बार छुपाएं",
   "terminal.search": "खोजें...",
   "terminal.searchPrevious": "पिछला (Shift+Enter)",
   "terminal.searchNext": "अगला (Enter)",

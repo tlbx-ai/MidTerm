@@ -37,6 +37,8 @@
   "topbar.fullscreen": "Pantalla completa",
   "topbar.sendCtrlC": "Enviar Ctrl+C",
   "topbar.closeTerminal": "Cerrar terminal",
+  "topbar.showTouchBar": "Mostrar barra táctil",
+  "topbar.hideTouchBar": "Ocultar barra táctil",
   "terminal.search": "Buscar...",
   "terminal.searchPrevious": "Anterior (Shift+Enter)",
   "terminal.searchNext": "Siguiente (Enter)",

@@ -37,6 +37,8 @@
   "topbar.fullscreen": "Tela cheia",
   "topbar.sendCtrlC": "Enviar Ctrl+C",
   "topbar.closeTerminal": "Fechar terminal",
+  "topbar.showTouchBar": "Mostrar barra de toque",
+  "topbar.hideTouchBar": "Ocultar barra de toque",
   "terminal.search": "Buscar...",
   "terminal.searchPrevious": "Anterior (Shift+Enter)",
   "terminal.searchNext": "Próximo (Enter)",

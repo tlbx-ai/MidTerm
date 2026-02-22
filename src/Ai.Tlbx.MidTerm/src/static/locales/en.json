@@ -46,6 +46,8 @@
   "topbar.fullscreen": "Fullscreen",
   "topbar.sendCtrlC": "Send Ctrl+C",
   "topbar.closeTerminal": "Close terminal",
+  "topbar.showTouchBar": "Show touch bar",
+  "topbar.hideTouchBar": "Hide touch bar",
 
   "terminal.search": "Search...",
   "terminal.searchPrevious": "Previous (Shift+Enter)",

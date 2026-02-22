@@ -37,6 +37,8 @@
   "topbar.fullscreen": "ফুলস্ক্রিন",
   "topbar.sendCtrlC": "Ctrl+C পাঠান",
   "topbar.closeTerminal": "টার্মিনাল বন্ধ করুন",
+  "topbar.showTouchBar": "টাচ বার দেখান",
+  "topbar.hideTouchBar": "টাচ বার লুকান",
   "terminal.search": "অনুসন্ধান...",
   "terminal.searchPrevious": "পূর্ববর্তী (Shift+Enter)",
   "terminal.searchNext": "পরবর্তী (Enter)",

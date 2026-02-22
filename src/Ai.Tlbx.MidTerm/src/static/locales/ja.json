@@ -37,6 +37,8 @@
   "topbar.fullscreen": "フルスクリーン",
   "topbar.sendCtrlC": "Ctrl+Cを送信",
   "topbar.closeTerminal": "ターミナルを閉じる",
+  "topbar.showTouchBar": "タッチバーを表示",
+  "topbar.hideTouchBar": "タッチバーを非表示",
   "terminal.search": "検索...",
   "terminal.searchPrevious": "前へ (Shift+Enter)",
   "terminal.searchNext": "次へ (Enter)",

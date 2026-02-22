@@ -80,7 +80,11 @@ import {
 } from './modules/history';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { buildReplayCommand } from './modules/sidebar/processDisplay';
-import { initTouchController } from './modules/touchController';
+import {
+  initTouchController,
+  dismissTouchController,
+  restoreTouchController,
+} from './modules/touchController';
 import { initFileViewer } from './modules/fileViewer';
 import { initManagerBar } from './modules/managerBar';
 import {
@@ -868,6 +872,9 @@ function bindEvents(): void {
   bindClick('btn-new-session', createSession);
   bindClick('btn-new-session-mobile', createSession);
   bindClick('btn-create-terminal', createSession);
+
+  bindClick('btn-dismiss-touchbar', dismissTouchController);
+  bindClick('btn-show-touchbar', restoreTouchController);
 
   bindClick('btn-hamburger', toggleSidebar);
   bindClick('btn-collapse-sidebar', collapseSidebar);

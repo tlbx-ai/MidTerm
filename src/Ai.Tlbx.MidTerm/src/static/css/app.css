@@ -5325,6 +5325,21 @@ html, body {
     color: var(--bg-primary);
 }
 
+.touch-dismiss {
+    font-family: 'midFont';
+    font-size: var(--fs-md);
+    padding: 8px;
+    min-width: 36px;
+    background: transparent;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-left: 4px;
+}
+
+.touch-dismiss:active {
+    color: var(--text-primary);
+}
+
 /* Press feedback */
 .touch-key.pressing {
     transform: scale(0.9);

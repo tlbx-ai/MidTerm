@@ -813,13 +813,19 @@ export function setupVisualViewport(): void {
 
     document.documentElement.style.setProperty('--visual-vh', vh + 'px');
 
-    const mobileHeader = document.querySelector('.mobile-header') as HTMLElement | null;
+    const mobileTopbar = document.querySelector('.mobile-topbar') as HTMLElement | null;
     let headerHeight = 0;
-    if (mobileHeader && window.getComputedStyle(mobileHeader).display !== 'none') {
-      headerHeight = mobileHeader.offsetHeight;
+    if (mobileTopbar && window.getComputedStyle(mobileTopbar).display !== 'none') {
+      headerHeight = mobileTopbar.offsetHeight;
     }
 
-    const availableHeight = Math.floor((vh - headerHeight) * 0.99);
+    const touchController = document.getElementById('touch-controller');
+    let touchBarHeight = 0;
+    if (touchController && touchController.classList.contains('visible')) {
+      touchBarHeight = touchController.offsetHeight;
+    }
+
+    const availableHeight = Math.floor((vh - headerHeight - touchBarHeight) * 0.99);
     terminalsArea.style.height = availableHeight + 'px';
 
     // Rescale terminals after viewport height change
