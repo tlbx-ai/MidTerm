@@ -70,9 +70,12 @@ jobs:
           cp version.json staging/
 
           # Ad-hoc codesign for macOS (must happen before checksums)
+          # --options runtime enables hardened runtime, required by macOS 26+ to survive
+          # the runtime code-signing monitor. The entitlements grant allow-unsigned-executable-memory
+          # which .NET Native AOT needs for its generated executable pages on Apple Silicon.
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
-            codesign -s - staging/mt
-            codesign -s - staging/mthost
+            codesign --force --options runtime --entitlements src/entitlements.plist -s - staging/mt
+            codesign --force --options runtime --entitlements src/entitlements.plist -s - staging/mthost
           fi
 
           cd staging
