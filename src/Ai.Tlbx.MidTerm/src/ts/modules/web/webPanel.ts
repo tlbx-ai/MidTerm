@@ -117,73 +117,59 @@ export function hideDetachedPlaceholder(): void {
 }
 
 /**
- * Persistent capture stream — kept alive after the first permission grant
- * so subsequent screenshots don't show the permission dialog again.
+ * Inject html2canvas into the iframe's document on first call; reuse on subsequent calls.
+ * html2canvas is loaded lazily from /js/html2canvas.min.js — only fetched when a screenshot
+ * is actually requested, not on every page load.
  */
-let captureStream: MediaStream | null = null;
-let captureVideo: HTMLVideoElement | null = null;
-
-/**
- * Release the persistent capture stream (called when dock closes).
- */
-export function releaseCaptureStream(): void {
-  if (captureStream) {
-    captureStream.getTracks().forEach((t) => t.stop());
-    captureStream = null;
-  }
-  if (captureVideo) {
-    captureVideo.pause();
-    captureVideo.srcObject = null;
-    captureVideo = null;
-  }
-}
-
-/**
- * Ensure a capture stream is available, requesting permission on first call.
- */
-async function ensureCaptureStream(): Promise<boolean> {
-  // Check if existing stream is still active
-  if (captureStream) {
-    const track = captureStream.getVideoTracks()[0];
-    if (track && track.readyState === 'live') return true;
-    // Stream ended (user revoked, tab changed, etc.) — clean up
-    releaseCaptureStream();
-  }
-
-  try {
-    captureStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: 'browser' },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      preferCurrentTab: true,
-    } as any);
-  } catch {
-    // User cancelled the permission dialog
-    return false;
-  }
-
-  // Listen for track ending (user clicks "Stop sharing" in browser chrome)
-  const track = captureStream.getVideoTracks()[0];
-  if (track) {
-    track.addEventListener('ended', releaseCaptureStream);
-  }
-
-  // Create and start the persistent video element (hidden, never added to DOM)
-  captureVideo = document.createElement('video');
-  captureVideo.srcObject = captureStream;
-  captureVideo.muted = true;
-  await captureVideo.play();
-
-  // Wait for first frame
-  await new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+async function ensureHtml2Canvas(iframeWin: Window): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((iframeWin as any).html2canvas) return;
+  return new Promise((resolve, reject) => {
+    const script = iframeWin.document.createElement('script');
+    script.src = '/js/html2canvas.min.js';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load html2canvas'));
+    iframeWin.document.head.appendChild(script);
   });
-
-  return true;
 }
 
 /**
- * Capture a screenshot of the web preview iframe using the Screen Capture API,
- * upload it to the active session, and paste the file path into the terminal.
+ * Capture a screenshot of the web preview iframe using html2canvas.
+ * Runs entirely inside the iframe's own window context so getComputedStyle
+ * and other DOM APIs resolve correctly against the proxied document.
+ * No permission dialog, no screen-sharing indicator.
+ */
+async function captureIframeScreenshot(): Promise<Blob | null> {
+  if (!iframe || iframe.src === 'about:blank') return null;
+  const iframeWin = iframe.contentWindow;
+  const iframeDoc = iframe.contentDocument;
+  if (!iframeWin || !iframeDoc) return null;
+
+  await ensureHtml2Canvas(iframeWin);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const canvas: HTMLCanvasElement = await (iframeWin as any).html2canvas(
+    iframeDoc.documentElement,
+    {
+      useCORS: false, // not needed — all resources are same-origin via the proxy
+      allowTaint: false,
+      scale: window.devicePixelRatio || 1,
+      width: iframe.clientWidth,
+      height: iframe.clientHeight,
+      scrollX: -iframeDoc.documentElement.scrollLeft,
+      scrollY: -iframeDoc.documentElement.scrollTop,
+      windowWidth: iframe.clientWidth,
+      windowHeight: iframe.clientHeight,
+      logging: false,
+      imageTimeout: 15000,
+    },
+  );
+
+  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
+/**
+ * Capture a screenshot of the web preview iframe and paste the file path into the terminal.
  */
 async function handleScreenshot(): Promise<void> {
   if (!iframe || iframe.src === 'about:blank') return;
@@ -219,41 +205,6 @@ async function handleScreenshot(): Promise<void> {
   } catch (err) {
     log.warn(() => `Screenshot upload error: ${err}`);
   }
-}
-
-/**
- * Grab a frame from the persistent capture stream, cropped to the iframe area.
- * First call triggers the permission dialog; subsequent calls are instant.
- */
-async function captureIframeScreenshot(): Promise<Blob | null> {
-  if (!iframe) return null;
-
-  const rect = iframe.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return null;
-
-  if (!(await ensureCaptureStream()) || !captureVideo || !captureStream) return null;
-
-  // Calculate scale between captured resolution and CSS pixels
-  const track = captureStream.getVideoTracks()[0]!;
-  const settings = track.getSettings();
-  const captureW = settings.width || captureVideo.videoWidth;
-  const captureH = settings.height || captureVideo.videoHeight;
-  const scaleX = captureW / window.innerWidth;
-  const scaleY = captureH / window.innerHeight;
-
-  // Crop to iframe area
-  const sx = Math.round(rect.left * scaleX);
-  const sy = Math.round(rect.top * scaleY);
-  const sw = Math.round(rect.width * scaleX);
-  const sh = Math.round(rect.height * scaleY);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = sw;
-  canvas.height = sh;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(captureVideo, sx, sy, sw, sh, 0, 0, sw, sh);
-
-  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 
 async function clearWebPreviewBrowserStateAsync(): Promise<void> {

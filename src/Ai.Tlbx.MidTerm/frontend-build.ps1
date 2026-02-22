@@ -442,6 +442,19 @@ if (Test-Path $jsSource) {
     }
 }
 
+# html2canvas vendor library — lazy-loaded by web preview screenshot feature
+$h2cSrc = "node_modules/html2canvas/dist/html2canvas.min.js"
+if (Test-Path $h2cSrc) {
+    $dstPath = Join-Path $WwwRoot "js/html2canvas.min.js"
+    $result = Process-TextFile -Source $h2cSrc -Destination $dstPath -Compress $Publish
+    if ($Publish) {
+        $totalSaved += $result.Saved
+        Write-Host "  html2canvas.min.js -> html2canvas.min.js.br ($($result.Reduction)% reduction)" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  html2canvas.min.js" -ForegroundColor DarkGray
+    }
+}
+
 # ===========================================
 # PHASE 6: Compress generated JS (publish only)
 # ===========================================
