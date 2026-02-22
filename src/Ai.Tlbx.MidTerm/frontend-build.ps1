@@ -20,8 +20,7 @@
 param(
     [switch]$Publish,        # Enable Brotli compression for publish builds
     [switch]$DevRelease,     # Include source maps in publish (for dev/prerelease builds)
-    [string]$Version = "dev", # Version to inject into BUILD_VERSION
-    [switch]$SkipCodegen     # Skip OpenAPI codegen (use committed api.generated.ts/openapi.json)
+    [string]$Version = "dev" # Version to inject into BUILD_VERSION
 )
 
 $ErrorActionPreference = "Stop"
@@ -125,61 +124,28 @@ $GeneratedTypes = Join-Path $TsSource "api.generated.ts"
 
 Write-Host "Generating API types from OpenAPI spec..." -ForegroundColor Cyan
 
-if ($SkipCodegen) {
-    # CI fast path: skip dotnet build, use committed openapi.json
-    # Drift check: regenerate types and fail if committed api.generated.ts is out of sync
-    if (-not (Test-Path $OpenApiSpec)) {
-        Write-Error "OpenAPI spec not found at $OpenApiSpec — cannot run drift check"
-        exit 1
-    }
-    if (-not (Test-Path $GeneratedTypes)) {
-        Write-Error "api.generated.ts not found — cannot run drift check"
-        exit 1
-    }
-
-    $tempGenerated = [System.IO.Path]::GetTempFileName() + ".ts"
-    try {
-        Write-Host "  Checking api.generated.ts is up-to-date..." -ForegroundColor DarkGray
-        & npx openapi-typescript $OpenApiSpec -o $tempGenerated
-        if ($LASTEXITCODE -ne 0) { Write-Error "openapi-typescript failed"; exit $LASTEXITCODE }
-        & npx prettier --write $tempGenerated 2>&1 | Out-Null
-
-        $committed = Get-Content $GeneratedTypes -Raw
-        $fresh     = Get-Content $tempGenerated  -Raw
-        if ($committed -ne $fresh) {
-            Write-Error "api.generated.ts is stale. Run ./frontend-build.ps1 locally and commit the updated file."
-            exit 1
-        }
-        Write-Host "  api.generated.ts is up-to-date" -ForegroundColor DarkGray
-    }
-    finally {
-        Remove-Item $tempGenerated -ErrorAction SilentlyContinue
-    }
+# Build OpenAPI project to regenerate spec
+Write-Host "  Building OpenAPI project..." -ForegroundColor DarkGray
+$buildOutput = & dotnet build $OpenApiProject --verbosity quiet 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host $buildOutput -ForegroundColor Red
+    Write-Error "OpenAPI project build failed"
+    exit $LASTEXITCODE
 }
-else {
-    # Full path: rebuild dotnet OpenAPI project, regenerate types
-    Write-Host "  Building OpenAPI project..." -ForegroundColor DarkGray
-    $buildOutput = & dotnet build $OpenApiProject --verbosity quiet 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host $buildOutput -ForegroundColor Red
-        Write-Error "OpenAPI project build failed"
-        exit $LASTEXITCODE
-    }
 
-    if (-not (Test-Path $OpenApiSpec)) {
-        Write-Error "OpenAPI spec not generated at $OpenApiSpec"
-        exit 1
-    }
-
-    Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
-    & npx openapi-typescript $OpenApiSpec -o $GeneratedTypes
-    if ($LASTEXITCODE -ne 0) { Write-Error "openapi-typescript failed"; exit $LASTEXITCODE }
-
-    & npx prettier --write $GeneratedTypes 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Error "prettier formatting failed"; exit $LASTEXITCODE }
-
-    Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
+if (-not (Test-Path $OpenApiSpec)) {
+    Write-Error "OpenAPI spec not generated at $OpenApiSpec"
+    exit 1
 }
+
+Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
+& npx openapi-typescript $OpenApiSpec -o $GeneratedTypes
+if ($LASTEXITCODE -ne 0) { Write-Error "openapi-typescript failed"; exit $LASTEXITCODE }
+
+& npx prettier --write $GeneratedTypes 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Error "prettier formatting failed"; exit $LASTEXITCODE }
+
+Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
 
 # ===========================================
 # PHASE 1+2: TypeScript type-check + ESLint (parallel)

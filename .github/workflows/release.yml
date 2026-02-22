@@ -45,9 +45,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+
+      - name: Cache node_modules
+        id: npm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
 
       - name: Install npm packages
+        if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci --include=dev
 
       - name: Build frontend
@@ -55,7 +62,7 @@ jobs:
         run: |
           $version = (Get-Content version.json | ConvertFrom-Json).web
           $isDev = "${{ github.ref_name }}".Contains("-dev")
-          $buildArgs = @{ Publish = $true; Version = $version; SkipCodegen = $true }
+          $buildArgs = @{ Publish = $true; Version = $version }
           if ($isDev) { $buildArgs.DevRelease = $true }
           ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
 
