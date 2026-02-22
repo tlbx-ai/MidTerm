@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create draft release
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -31,7 +31,6 @@ jobs:
           PRERELEASE=""
           [[ "${{ github.ref_name }}" == *"-dev"* ]] && PRERELEASE="--prerelease"
           gh release create ${{ github.ref_name }} \
-            --draft \
             $PRERELEASE \
             --title "$TITLE" \
             --notes "## What's Changed
@@ -202,14 +201,3 @@ jobs:
         if: startsWith(matrix.rid, 'osx-') && always()
         run: security delete-keychain "$KEYCHAIN_PATH"
 
-  # ── All platforms done — publish the draft ───────────────────────────────
-  finalize:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit ${{ github.ref_name }} --draft=false --repo ${{ github.repository }}
