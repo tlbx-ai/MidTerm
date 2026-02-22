@@ -154,6 +154,13 @@
   "settings.diagnostics.frontendLogging": "ফ্রন্টএন্ড লগিং",
   "settings.diagnostics.frontendLoggingHint": "ফ্রন্টএন্ড লগিং নিয়ন্ত্রণ করতে ব্রাউজার কনসোল (<kbd>F12</kbd>) ব্যবহার করুন। ত্রুটি ও সতর্কতা সর্বদা দেখায়। তথ্য ও বিস্তারিত আউটপুট মডিউল-ভিত্তিক।",
   "settings.diagnostics.loggingPersistHint": "সেটিংস পেজ রিলোডের পরেও localStorage-এ থাকে।",
+  "settings.diagnostics.server": "সার্ভার",
+  "settings.diagnostics.restartServer": "সার্ভার পুনরায় চালু করুন",
+  "settings.diagnostics.restartServerDesc": "সার্ভার প্রক্রিয়া পুনরায় চালু করুন। সব ক্লায়েন্ট সাময়িকভাবে সংযোগ বিচ্ছিন্ন হবে।",
+  "settings.diagnostics.restartConfirm": "আপনি কি নিশ্চিত যে সার্ভার পুনরায় চালু করতে চান? সব সংযুক্ত ক্লায়েন্ট সাময়িকভাবে সংযোগ বিচ্ছিন্ন হবে।",
+  "settings.diagnostics.restartingServer": "সার্ভার পুনরায় চালু হচ্ছে...",
+  "settings.diagnostics.restartFailed": "সার্ভার হয়তো পুনরায় চালু হয়নি। পেজ রিফ্রেশ করে দেখুন।",
+  "settings.diagnostics.retryConnection": "রিফ্রেশ",
   "modal.changelog": "পরিবর্তন তালিকা",
   "modal.changePassword": "পাসওয়ার্ড পরিবর্তন",
   "modal.setPassword": "পাসওয়ার্ড সেট করুন",
@@ -340,6 +347,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "যান",
   "webPreview.refresh": "রিফ্রেশ",
+  "webPreview.screenshot": "টার্মিনালে স্ক্রিনশট",
   "webPreview.detach": "উইন্ডোতে খুলুন",
   "webPreview.dockBack": "ফিরে আনুন",
   "webPreview.detachedPlaceholder": "প্রিভিউ আলাদা উইন্ডোতে খোলা আছে",
@@ -358,5 +366,10 @@
   "share.failedToGenerate": "শেয়ার তথ্য তৈরি করতে ব্যর্থ",
   "share.noEmailClient": "কোনো ইমেল ক্লায়েন্ট সনাক্ত হয়নি।",
   "share.copiedToClipboard": "সংযোগ তথ্য ক্লিপবোর্ডে কপি হয়েছে!",
-  "share.visitTrustPage": "অ্যাক্সেস শেয়ার করতে ট্রাস্ট পেজে যান"
+  "share.visitTrustPage": "অ্যাক্সেস শেয়ার করতে ট্রাস্ট পেজে যান",
+
+  "dialog.confirm": "নিশ্চিত করুন",
+  "dialog.info": "তথ্য",
+  "dialog.ok": "ঠিক আছে",
+  "dialog.cancel": "বাতিল"
 }

@@ -542,15 +542,12 @@ export function setupTerminalEvents(
     // Alt+V: native clipboard image paste for terminal apps (Codex CLI, etc.)
     // Uploads image to server, sets OS clipboard, injects \x1bv into PTY.
     if (isNativeImagePasteShortcut(e)) {
-      if (canUseAsyncClipboard()) {
-        void handleNativeImagePaste(sessionId).then((result) => {
-          if (result !== 'image') {
-            sendInput(sessionId, '\x1bv');
-          }
-        });
-        return false;
-      }
-      return true;
+      void handleNativeImagePaste(sessionId).then((result) => {
+        if (result === 'none') {
+          sendInput(sessionId, '\x1bv');
+        }
+      });
+      return false;
     }
 
     // Unified paste aliases: Ctrl+V, Cmd+V, Ctrl+Shift+V.

@@ -395,6 +395,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         {
             Log.Error(() => $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process {connectPid}");
             KillProcess(connectPid);
+            TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
             await client.DisposeAsync().ConfigureAwait(false);
             return null;
         }
@@ -404,6 +405,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         {
             Log.Error(() => $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process {connectPid}");
             KillProcess(connectPid);
+            TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
             await client.DisposeAsync().ConfigureAwait(false);
             return null;
         }
@@ -568,6 +570,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
+        TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
 
         OnSessionClosed?.Invoke(sessionId);
         OnStateChanged?.Invoke(sessionId);

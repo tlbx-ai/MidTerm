@@ -172,6 +172,13 @@
   "settings.diagnostics.frontendLogging": "Frontend Logging",
   "settings.diagnostics.frontendLoggingHint": "Use the browser console (<kbd>F12</kbd>) to control frontend logging. Errors and warnings always appear. Info and verbose output is per-module.",
   "settings.diagnostics.loggingPersistHint": "Settings persist in localStorage across page reloads.",
+  "settings.diagnostics.server": "Server",
+  "settings.diagnostics.restartServer": "Restart Server",
+  "settings.diagnostics.restartServerDesc": "Restart the server process. All clients will temporarily disconnect.",
+  "settings.diagnostics.restartConfirm": "Are you sure you want to restart the server? All connected clients will be temporarily disconnected.",
+  "settings.diagnostics.restartingServer": "Server is restarting...",
+  "settings.diagnostics.restartFailed": "Server may not have restarted. Try refreshing the page.",
+  "settings.diagnostics.retryConnection": "Refresh",
 
   "settings.options.cursorBar": "Bar",
   "settings.options.cursorBlock": "Block",
@@ -317,6 +324,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Go",
   "webPreview.refresh": "Refresh",
+  "webPreview.screenshot": "Screenshot to terminal",
   "webPreview.detach": "Pop out to window",
   "webPreview.dockBack": "Dock back",
   "webPreview.detachedPlaceholder": "Preview is open in a separate window",
@@ -396,5 +404,10 @@
   "error.passwordsNoMatch": "Passwords do not match",
   "error.passwordTooShort": "Password must be at least 4 characters",
   "error.passwordChangeFailed": "Failed to change password",
-  "error.connectionError": "Connection error"
+  "error.connectionError": "Connection error",
+
+  "dialog.confirm": "Confirm",
+  "dialog.info": "Info",
+  "dialog.ok": "OK",
+  "dialog.cancel": "Cancel"
 }

@@ -8,6 +8,7 @@
 import { createLogger } from '../logging';
 import { t } from '../i18n';
 import { getSharePacket, type SharePacketInfo } from '../../api/client';
+import { showAlert } from '../../utils/dialog';
 
 const log = createLogger('shareAccess');
 
@@ -61,8 +62,7 @@ function tryOpenMailto(url: string): boolean {
 }
 
 function showFallbackMessage(message: string): void {
-  // Simple alert for errors
-  alert(message);
+  showAlert(message);
 }
 
 function showCopyFallback(subject: string, body: string, trustPageUrl: string): void {
@@ -72,7 +72,7 @@ function showCopyFallback(subject: string, body: string, trustPageUrl: string): 
   navigator.clipboard
     .writeText(copyText)
     .then(() => {
-      alert(
+      showAlert(
         t('share.noEmailClient') +
           '\n\n' +
           t('share.copiedToClipboard') +
@@ -84,7 +84,9 @@ function showCopyFallback(subject: string, body: string, trustPageUrl: string): 
     })
     .catch(() => {
       // Clipboard failed, show the trust page URL at least
-      alert(t('share.noEmailClient') + '\n\n' + t('share.visitTrustPage') + ':\n' + trustPageUrl);
+      showAlert(
+        t('share.noEmailClient') + '\n\n' + t('share.visitTrustPage') + ':\n' + trustPageUrl,
+      );
     });
 }
 

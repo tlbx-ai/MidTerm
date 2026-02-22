@@ -154,6 +154,13 @@
   "settings.diagnostics.frontendLogging": "Registro del Frontend",
   "settings.diagnostics.frontendLoggingHint": "Usa la consola del navegador (<kbd>F12</kbd>) para controlar el registro del frontend. Los errores y advertencias siempre aparecen. La salida de información y detallada es por módulo.",
   "settings.diagnostics.loggingPersistHint": "La configuración persiste en localStorage a través de recargas de página.",
+  "settings.diagnostics.server": "Servidor",
+  "settings.diagnostics.restartServer": "Reiniciar Servidor",
+  "settings.diagnostics.restartServerDesc": "Reiniciar el proceso del servidor. Todos los clientes se desconectarán temporalmente.",
+  "settings.diagnostics.restartConfirm": "¿Está seguro de que desea reiniciar el servidor? Todos los clientes conectados se desconectarán temporalmente.",
+  "settings.diagnostics.restartingServer": "El servidor se está reiniciando...",
+  "settings.diagnostics.restartFailed": "Es posible que el servidor no se haya reiniciado. Intente actualizar la página.",
+  "settings.diagnostics.retryConnection": "Actualizar",
   "modal.changelog": "Registro de Cambios",
   "modal.changePassword": "Cambiar Contraseña",
   "modal.setPassword": "Establecer Contraseña",
@@ -340,6 +347,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Ir",
   "webPreview.refresh": "Actualizar",
+  "webPreview.screenshot": "Captura al terminal",
   "webPreview.detach": "Abrir en ventana",
   "webPreview.dockBack": "Acoplar",
   "webPreview.detachedPlaceholder": "La vista previa está en una ventana separada",
@@ -358,5 +366,10 @@
   "share.failedToGenerate": "Error al generar la información para compartir",
   "share.noEmailClient": "No se detectó cliente de correo.",
   "share.copiedToClipboard": "¡La información de conexión se ha copiado al portapapeles!",
-  "share.visitTrustPage": "Visite la página de confianza para compartir el acceso"
+  "share.visitTrustPage": "Visite la página de confianza para compartir el acceso",
+
+  "dialog.confirm": "Confirmar",
+  "dialog.info": "Información",
+  "dialog.ok": "Aceptar",
+  "dialog.cancel": "Cancelar"
 }

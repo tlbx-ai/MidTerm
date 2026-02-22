@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "midterm": "file:",
+    "html2canvas": "^1.4.1",
     "nanostores": "^1.1.0",
     "openapi-fetch": "^0.17.0",
     "xterm-link-provider": "^2.0.0"

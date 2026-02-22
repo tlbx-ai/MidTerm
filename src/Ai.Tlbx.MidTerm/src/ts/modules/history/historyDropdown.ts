@@ -10,6 +10,7 @@ import { icon } from '../../constants';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
+import { showConfirm } from '../../utils/dialog';
 
 const log = createLogger('history-dropdown');
 
@@ -189,9 +190,8 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
     e.stopPropagation();
     if (!entry.id) return;
     if (entry.isStarred) {
-      if (!confirm(t('history.deleteStarred'))) {
-        return;
-      }
+      const ok = await showConfirm(t('history.deleteStarred'));
+      if (!ok) return;
     }
     await removeHistoryEntry(entry.id);
     await loadHistory();

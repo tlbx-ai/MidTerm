@@ -42,7 +42,7 @@ jobs:
           cache: 'npm'
 
       - name: Install npm packages
-        run: npm ci
+        run: npm ci --include=dev
 
       # Build frontend ONCE here - dotnet publish will skip via SkipFrontendBuild
       # Dev releases (-dev tag) include source maps for debugging; stable releases exclude them
@@ -69,10 +69,15 @@ jobs:
           cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
           cp version.json staging/
 
-          # Ad-hoc codesign for macOS (must happen before checksums)
+          # Ad-hoc codesign for macOS (must happen before checksums).
+          # Plain ad-hoc (-s -) intentionally — no --options runtime.
+          # On macOS 26+, hardened runtime without a real Apple Developer ID causes taskgated
+          # to reject the binary definitively on every launch with no caching path.
+          # Plain ad-hoc fails too, but launchd KeepAlive bounces through it until the OS
+          # caches the binary hash. --options runtime breaks that recovery path entirely.
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
-            codesign -s - staging/mt
-            codesign -s - staging/mthost
+            codesign --force -s - staging/mt
+            codesign --force -s - staging/mthost
           fi
 
           cd staging

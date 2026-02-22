@@ -23,7 +23,13 @@
   };
 
   // Refresh button
-  document.getElementById('refresh-btn').addEventListener('click', function () {
+  document.getElementById('refresh-btn').addEventListener('click', function (e) {
+    var mode = (e.shiftKey || e.ctrlKey || e.altKey) ? 'hard' : 'soft';
+    fetch('/api/webpreview/reload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: mode })
+    }).catch(function () {});
     frame.src = '/webpreview/?' + Date.now();
   });
 

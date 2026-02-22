@@ -1,7 +1,10 @@
 using System.IO.Compression;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Services;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
@@ -17,15 +20,19 @@ public sealed partial class WebPreviewProxyMiddleware
     // Patches: fetch, XHR, element .src/.href setters, setAttribute, window.open.
     private const string UrlRewriteScript = """
         <script>(function(){
+          if(window.__mtProxy)return;window.__mtProxy=1;
           var P="/webpreview",E=P+"/_ext?u=";
           function r(u){
             if(typeof u!=="string")return u;
+            if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
+            if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
+              try{return r(new URL(u,location.href).toString());}catch(e){}
+            }
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
                 if(h.host===location.host&&!h.pathname.startsWith(P+"/"))return h.protocol+"//"+ h.host+P+h.pathname+h.search+h.hash;
                 if(h.host!==location.host){
-                  if(u.startsWith("ws")){var hu=u.replace(/^ws/,"http");return E+encodeURIComponent(hu);}
                   return E+encodeURIComponent(u);
                 }
               }catch(e){}
@@ -51,6 +58,34 @@ public sealed partial class WebPreviewProxyMiddleware
           // Patch window.open
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
+          // Patch WebSocket constructor
+          var OWS=window.WebSocket;
+          if(OWS&&window.Proxy){
+            try{
+              window.WebSocket=new Proxy(OWS,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
+            }catch(e){}
+          }
+          // Patch EventSource constructor
+          var OES=window.EventSource;
+          if(OES&&window.Proxy){
+            try{
+              window.EventSource=new Proxy(OES,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
+            }catch(e){}
+          }
+          // Bridge document.cookie to server-side cookie jar used by proxy.
+          var C=P+"/_cookies",cc="";
+          function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
+          rc();
+          try{
+            var d=Object.getOwnPropertyDescriptor(Document.prototype,"cookie")||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,"cookie");
+            if(d&&d.configurable){
+              Object.defineProperty(document,"cookie",{configurable:true,get:function(){return cc;},set:function(v){
+                if(typeof v!=="string")return;
+                var n=v.split(";")[0]||"";if(n){var i=n.indexOf("="),k=i>0?n.slice(0,i).trim():"";if(k){var p=cc?cc.split(/;\s*/):[];var nx=[];for(var z=0;z<p.length;z++){if(!p[z].startsWith(k+"="))nx.push(p[z]);}nx.push(n.trim());cc=nx.join("; ");}}
+                fetch(C,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({raw:v})}).then(rc).catch(function(){});
+              }});
+            }
+          }catch(e){}
           // Patch Audio constructor (new Audio('/path/to/file.mp3'))
           var OA=window.Audio;
           if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
@@ -133,7 +168,19 @@ public sealed partial class WebPreviewProxyMiddleware
             var remainingPath = remaining.Value ?? "";
             if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
             {
-                await ProxyExternalAsync(context);
+                if (context.WebSockets.IsWebSocketRequest)
+                {
+                    await ProxyExternalWebSocketAsync(context);
+                }
+                else
+                {
+                    await ProxyExternalAsync(context);
+                }
+                return;
+            }
+            if (remainingPath.Equals("/_cookies", StringComparison.Ordinal))
+            {
+                await HandleCookieBridgeAsync(context);
                 return;
             }
 
@@ -214,6 +261,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
     {
         var currentUrl = BuildUpstreamUrl(targetUri, path, context.Request.QueryString.Value);
+        var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
 
         // Follow redirects internally (up to 10 hops) so the iframe stays at /webpreview/
         const int maxRedirects = 10;
@@ -221,6 +269,14 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var originalMethod = new HttpMethod(context.Request.Method);
         var currentMethod = originalMethod;
+        byte[]? requestBodyBuffer = null;
+        var requestHasBody = context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding");
+        if (requestHasBody && originalMethod != HttpMethod.Get && originalMethod != HttpMethod.Head)
+        {
+            await using var bodyCopy = new MemoryStream();
+            await context.Request.Body.CopyToAsync(bodyCopy, context.RequestAborted);
+            requestBodyBuffer = bodyCopy.ToArray();
+        }
 
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
@@ -232,6 +288,23 @@ public sealed partial class WebPreviewProxyMiddleware
                 if (BlockedRequestHeaders.Contains(header.Key))
                     continue;
 
+                // Rewrite Origin/Referer to match upstream — frameworks validate these
+                if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
+                {
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin);
+                    continue;
+                }
+                if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
+                {
+                    var refValue = header.Value.ToString();
+                    if (Uri.TryCreate(refValue, UriKind.Absolute, out var refUri))
+                    {
+                        refValue = upstreamOrigin + refUri.PathAndQuery.Replace("/webpreview/", "/").Replace("/webpreview", "/");
+                    }
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, refValue);
+                    continue;
+                }
+
                 requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
             }
 
@@ -241,15 +314,18 @@ public sealed partial class WebPreviewProxyMiddleware
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
             requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
 
-            // Forward request body on initial request and 307/308 redirects (which preserve method)
-            if (redirect == 0 && currentMethod != HttpMethod.Get
-                && (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")))
+            // Forward request body on initial request and on 307/308 redirects (method preserved).
+            if (requestBodyBuffer is not null && currentMethod != HttpMethod.Get && currentMethod != HttpMethod.Head)
             {
-                requestMessage.Content = new StreamContent(context.Request.Body);
+                requestMessage.Content = new ByteArrayContent(requestBodyBuffer);
                 if (context.Request.ContentType is not null)
                 {
                     requestMessage.Content.Headers.ContentType =
                         System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+                }
+                if (context.Request.ContentLength is > 0)
+                {
+                    requestMessage.Content.Headers.ContentLength = requestBodyBuffer.Length;
                 }
             }
 
@@ -367,6 +443,14 @@ public sealed partial class WebPreviewProxyMiddleware
         html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetHost));
         html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetHost));
 
+        // Remove any existing <base> tags to avoid duplicates — we inject our own
+        html = ExistingBaseTagRegex().Replace(html, "");
+
+        // Strip upstream CSP and X-Frame-Options meta tags — after proxying, 'self' in those
+        // directives would resolve to MidTerm's origin instead of the upstream site's origin,
+        // causing the proxied page to block framing of external resources.
+        html = UpstreamSecurityMetaTagRegex().Replace(html, "");
+
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
         html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">" + UrlRewriteScript, 1);
@@ -411,41 +495,105 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
-        using var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), extUri);
+        var currentUrl = extUri.ToString();
+        var originalMethod = new HttpMethod(context.Request.Method);
+        var currentMethod = originalMethod;
 
-        // Forward all headers except blocked ones
-        foreach (var header in context.Request.Headers)
+        // Buffer request body for redirect replay (same as main proxy)
+        byte[]? requestBodyBuffer = null;
+        var requestHasBody = context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding");
+        if (requestHasBody && originalMethod != HttpMethod.Get && originalMethod != HttpMethod.Head)
         {
-            if (BlockedRequestHeaders.Contains(header.Key))
-                continue;
-            requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            await using var bodyCopy = new MemoryStream();
+            await context.Request.Body.CopyToAsync(bodyCopy, context.RequestAborted);
+            requestBodyBuffer = bodyCopy.ToArray();
         }
 
-        // Forward request body for POST/PUT/PATCH
-        if (context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding"))
+        const int maxRedirects = 10;
+        HttpResponseMessage? upstreamResponse = null;
+
+        for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
-            requestMessage.Content = new StreamContent(context.Request.Body);
-            if (context.Request.ContentType is not null)
+            var requestMessage = new HttpRequestMessage(currentMethod, currentUrl);
+            var requestUri = new Uri(currentUrl);
+            var upstreamOrigin = $"{requestUri.Scheme}://{requestUri.Authority}";
+
+            // Forward all headers except blocked ones
+            foreach (var header in context.Request.Headers)
             {
-                requestMessage.Content.Headers.ContentType =
-                    System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+                if (BlockedRequestHeaders.Contains(header.Key))
+                    continue;
+
+                // Rewrite Origin/Referer to match external target — consent flows validate these
+                if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
+                {
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin);
+                    continue;
+                }
+                if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
+                {
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin + requestUri.PathAndQuery);
+                    continue;
+                }
+
+                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
             }
+
+            // Forward request body on initial request and on 307/308 redirects
+            if (requestBodyBuffer is not null && currentMethod != HttpMethod.Get && currentMethod != HttpMethod.Head)
+            {
+                requestMessage.Content = new ByteArrayContent(requestBodyBuffer);
+                if (context.Request.ContentType is not null)
+                {
+                    requestMessage.Content.Headers.ContentType =
+                        System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+                }
+            }
+
+            try
+            {
+                upstreamResponse?.Dispose();
+                upstreamResponse = await _service.HttpClient.SendAsync(
+                    requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+            }
+            catch (HttpRequestException)
+            {
+                requestMessage.Dispose();
+                context.Response.StatusCode = 502;
+                return;
+            }
+            catch (TaskCanceledException)
+            {
+                requestMessage.Dispose();
+                context.Response.StatusCode = 504;
+                return;
+            }
+
+            // Follow redirects internally
+            var statusCode = (int)upstreamResponse.StatusCode;
+            if (statusCode is >= 301 and <= 308)
+            {
+                var location = upstreamResponse.Headers.Location?.ToString()
+                    ?? upstreamResponse.Content.Headers.ContentLocation?.ToString();
+                if (location is not null)
+                {
+                    if (Uri.TryCreate(new Uri(currentUrl), location, out var resolved))
+                    {
+                        currentUrl = resolved.ToString();
+                        currentMethod = statusCode is 307 or 308 ? originalMethod : HttpMethod.Get;
+                        requestMessage.Dispose();
+                        continue;
+                    }
+                }
+            }
+
+            requestMessage.Dispose();
+            break;
         }
 
-        HttpResponseMessage upstreamResponse;
-        try
-        {
-            upstreamResponse = await _service.HttpClient.SendAsync(
-                requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
-        }
-        catch (HttpRequestException)
+        if (upstreamResponse is null)
         {
             context.Response.StatusCode = 502;
-            return;
-        }
-        catch (TaskCanceledException)
-        {
-            context.Response.StatusCode = 504;
             return;
         }
 
@@ -456,6 +604,9 @@ public sealed partial class WebPreviewProxyMiddleware
             foreach (var header in upstreamResponse.Headers)
             {
                 if (HopByHopHeaders.Contains(header.Key) || StrippedResponseHeaders.Contains(header.Key))
+                    continue;
+                // Strip Location headers — we followed redirects internally
+                if (header.Key.Equals("Location", StringComparison.OrdinalIgnoreCase))
                     continue;
                 context.Response.Headers[header.Key] = header.Value.ToArray();
             }
@@ -468,9 +619,13 @@ public sealed partial class WebPreviewProxyMiddleware
             }
 
             var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
-            if (contentType is "text/css")
+            if (contentType is "text/html")
             {
-                // Rewrite url() in external CSS too
+                // External HTML responses (e.g. consent pages) need URL rewriting too
+                await ProxyHtmlResponseAsync(context, upstreamResponse);
+            }
+            else if (contentType is "text/css")
+            {
                 await ProxyCssResponseAsync(context, upstreamResponse);
             }
             else
@@ -479,6 +634,85 @@ public sealed partial class WebPreviewProxyMiddleware
                 await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
             }
         }
+    }
+
+    private async Task ProxyExternalWebSocketAsync(HttpContext context)
+    {
+        var externalUrl = context.Request.Query["u"].FirstOrDefault();
+        if (string.IsNullOrEmpty(externalUrl) || !Uri.TryCreate(externalUrl, UriKind.Absolute, out var extUri))
+        {
+            context.Response.StatusCode = 400;
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync("Missing or invalid 'u' parameter.");
+            return;
+        }
+
+        if (extUri.Scheme is not ("ws" or "wss" or "http" or "https"))
+        {
+            context.Response.StatusCode = 400;
+            return;
+        }
+
+        var wsScheme = extUri.Scheme switch
+        {
+            "https" => "wss",
+            "http" => "ws",
+            _ => extUri.Scheme
+        };
+
+        var upstreamUri = new UriBuilder(extUri) { Scheme = wsScheme }.Uri;
+        var upstreamOriginScheme = wsScheme == "wss" ? "https" : "http";
+        var upstreamOrigin = $"{upstreamOriginScheme}://{upstreamUri.Authority}";
+        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin);
+    }
+
+    private async Task HandleCookieBridgeAsync(HttpContext context)
+    {
+        if (context.Request.Method == HttpMethods.Get)
+        {
+            var response = _service.GetCookies();
+            context.Response.ContentType = "application/json";
+            await JsonSerializer.SerializeAsync(
+                context.Response.Body,
+                response,
+                AppJsonContext.Default.WebPreviewCookiesResponse,
+                context.RequestAborted);
+            return;
+        }
+
+        if (context.Request.Method == HttpMethods.Post)
+        {
+            WebPreviewCookieSetRequest? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync(
+                    context.Request.Body,
+                    AppJsonContext.Default.WebPreviewCookieSetRequest,
+                    context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            if (request is null || !_service.SetCookieFromRaw(request.Raw))
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            var response = _service.GetCookies();
+            context.Response.ContentType = "application/json";
+            await JsonSerializer.SerializeAsync(
+                context.Response.Body,
+                response,
+                AppJsonContext.Default.WebPreviewCookiesResponse,
+                context.RequestAborted);
+            return;
+        }
+
+        context.Response.StatusCode = 405;
     }
 
     private static async Task<string> DecompressTextAsync(
@@ -506,7 +740,12 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         var upstreamUrl = BuildUpstreamWsUrl(targetUri, path, context.Request.QueryString.Value);
         var upstreamUri = new Uri(upstreamUrl);
+        var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
+        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin);
+    }
 
+    private async Task ProxyWebSocketToUpstreamAsync(HttpContext context, Uri upstreamUri, string upstreamOrigin)
+    {
         using var upstream = new ClientWebSocket();
         // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
         _service.ConfigureWebSocket(upstream, upstreamUri);
@@ -520,9 +759,26 @@ public sealed partial class WebPreviewProxyMiddleware
             if (header.Key.StartsWith("Sec-WebSocket-", StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            var value = header.Value.ToString();
+
+            // Rewrite Origin/Referer to match upstream host — Blazor/SignalR validates
+            // these against its own host and rejects connections from foreign origins
+            if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
+            {
+                value = upstreamOrigin;
+            }
+            else if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
+            {
+                // Rewrite referer: replace MidTerm host+/webpreview/ with upstream host
+                if (Uri.TryCreate(value, UriKind.Absolute, out var refUri))
+                {
+                    value = upstreamOrigin + refUri.PathAndQuery.Replace("/webpreview/", "/").Replace("/webpreview", "/");
+                }
+            }
+
             try
             {
-                upstream.Options.SetRequestHeader(header.Key, header.Value.ToString());
+                upstream.Options.SetRequestHeader(header.Key, value);
             }
             catch (ArgumentException)
             {
@@ -654,6 +910,16 @@ public sealed partial class WebPreviewProxyMiddleware
 
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]
     private static partial Regex HeadTagRegex();
+
+    // Matches existing <base ...> tags (self-closing or not) to remove before injecting ours
+    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex ExistingBaseTagRegex();
+
+    // Matches <meta http-equiv="content-security-policy" ...> and <meta http-equiv="x-frame-options" ...>
+    // Upstream CSP/XFO meta tags must be stripped: after proxying, 'self' resolves to MidTerm's origin,
+    // which would block framing of the upstream site's own resources.
+    [GeneratedRegex(@"<meta\s[^>]*http-equiv\s*=\s*[""']\s*(?:content-security-policy|x-frame-options)\s*[""'][^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex UpstreamSecurityMetaTagRegex();
 
     // Matches src="/...", href="/...", action="/...", poster="/..." with word boundaries
     // to avoid matching data-src, data-href, metadata, etc.

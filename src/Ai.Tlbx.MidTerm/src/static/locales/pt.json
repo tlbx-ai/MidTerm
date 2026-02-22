@@ -154,6 +154,13 @@
   "settings.diagnostics.frontendLogging": "Log do Frontend",
   "settings.diagnostics.frontendLoggingHint": "Use o console do navegador (<kbd>F12</kbd>) para controlar o log do frontend. Erros e avisos sempre aparecem. Saída de informações e detalhada é por módulo.",
   "settings.diagnostics.loggingPersistHint": "Configurações persistem em localStorage entre recarregamentos de página.",
+  "settings.diagnostics.server": "Servidor",
+  "settings.diagnostics.restartServer": "Reiniciar Servidor",
+  "settings.diagnostics.restartServerDesc": "Reiniciar o processo do servidor. Todos os clientes serão desconectados temporariamente.",
+  "settings.diagnostics.restartConfirm": "Tem certeza de que deseja reiniciar o servidor? Todos os clientes conectados serão desconectados temporariamente.",
+  "settings.diagnostics.restartingServer": "O servidor está reiniciando...",
+  "settings.diagnostics.restartFailed": "O servidor pode não ter reiniciado. Tente atualizar a página.",
+  "settings.diagnostics.retryConnection": "Atualizar",
   "modal.changelog": "Histórico de Alterações",
   "modal.changePassword": "Alterar Senha",
   "modal.setPassword": "Definir Senha",
@@ -340,6 +347,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Ir",
   "webPreview.refresh": "Atualizar",
+  "webPreview.screenshot": "Captura para o terminal",
   "webPreview.detach": "Abrir em janela",
   "webPreview.dockBack": "Acoplar",
   "webPreview.detachedPlaceholder": "A pré-visualização está em uma janela separada",
@@ -358,5 +366,10 @@
   "share.failedToGenerate": "Falha ao gerar informações de compartilhamento",
   "share.noEmailClient": "Nenhum cliente de e-mail detectado.",
   "share.copiedToClipboard": "As informações de conexão foram copiadas para a área de transferência!",
-  "share.visitTrustPage": "Visite a página de confiança para compartilhar o acesso"
+  "share.visitTrustPage": "Visite a página de confiança para compartilhar o acesso",
+
+  "dialog.confirm": "Confirmar",
+  "dialog.info": "Informação",
+  "dialog.ok": "OK",
+  "dialog.cancel": "Cancelar"
 }

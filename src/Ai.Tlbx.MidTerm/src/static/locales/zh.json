@@ -157,6 +157,13 @@
   "settings.diagnostics.frontendLogging": "前端日志",
   "settings.diagnostics.frontendLoggingHint": "使用浏览器控制台（<kbd>F12</kbd>）控制前端日志。错误和警告始终显示。信息和详细输出按模块显示。",
   "settings.diagnostics.loggingPersistHint": "设置在 localStorage 中保存，跨页面重载持久化。",
+  "settings.diagnostics.server": "服务器",
+  "settings.diagnostics.restartServer": "重启服务器",
+  "settings.diagnostics.restartServerDesc": "重启服务器进程。所有客户端将临时断开连接。",
+  "settings.diagnostics.restartConfirm": "确定要重启服务器吗？所有已连接的客户端将临时断开连接。",
+  "settings.diagnostics.restartingServer": "服务器正在重启...",
+  "settings.diagnostics.restartFailed": "服务器可能未成功重启。请尝试刷新页面。",
+  "settings.diagnostics.retryConnection": "刷新",
   "modal.changelog": "更新日志",
   "modal.changePassword": "更改密码",
   "modal.setPassword": "设置密码",
@@ -343,6 +350,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "前往",
   "webPreview.refresh": "刷新",
+  "webPreview.screenshot": "截图到终端",
   "webPreview.detach": "弹出到窗口",
   "webPreview.dockBack": "停靠回来",
   "webPreview.detachedPlaceholder": "预览已在单独窗口中打开",
@@ -361,5 +369,10 @@
   "share.failedToGenerate": "无法生成共享信息",
   "share.noEmailClient": "未检测到邮件客户端。",
   "share.copiedToClipboard": "连接信息已复制到剪贴板！",
-  "share.visitTrustPage": "访问信任页面以共享访问权限"
+  "share.visitTrustPage": "访问信任页面以共享访问权限",
+
+  "dialog.confirm": "确认",
+  "dialog.info": "信息",
+  "dialog.ok": "确定",
+  "dialog.cancel": "取消"
 }

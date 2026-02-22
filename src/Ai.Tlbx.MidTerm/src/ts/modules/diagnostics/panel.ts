@@ -4,18 +4,21 @@
  * Displays file paths, reload settings button, and latency measurements.
  */
 
-import { getPaths, reloadSettings } from '../../api/client';
+import { getPaths, reloadSettings, restartServer } from '../../api/client';
 import { measureLatency, onOutputRtt } from '../comms';
 import { $activeSessionId, getSession } from '../../stores';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
 import { enableGitStatusOverlay, disableGitStatusOverlay } from './gitStatusOverlay';
+import { t } from '../i18n';
+import { showConfirm } from '../../utils/dialog';
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
 export function initDiagnosticsPanel(): void {
   loadPaths();
   bindReloadSettingsButton();
+  bindRestartButton();
   bindOverlayToggle();
   bindGitOverlayToggle();
 }
@@ -129,6 +132,65 @@ function bindReloadSettingsButton(): void {
       btn.classList.remove('spinning');
     }
   });
+}
+
+function bindRestartButton(): void {
+  const btn = document.getElementById('btn-restart-server') as HTMLButtonElement | null;
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const confirmed = await showConfirm(t('settings.diagnostics.restartConfirm'), {
+      title: t('settings.diagnostics.restartServer'),
+      confirmLabel: t('settings.diagnostics.restartServer'),
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    btn.disabled = true;
+
+    try {
+      await restartServer();
+    } catch {
+      // Server may have already shut down before responding — that's expected
+    }
+
+    showRestartOverlay();
+  });
+}
+
+function showRestartOverlay(): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'restart-overlay';
+  overlay.innerHTML = `
+    <div class="spinner"></div>
+    <div>${t('settings.diagnostics.restartingServer')}</div>
+  `;
+  document.body.appendChild(overlay);
+
+  let attempts = 0;
+  const maxAttempts = 30; // 30 × 2s = 60s timeout
+
+  const poll = setInterval(async () => {
+    attempts++;
+    try {
+      const resp = await fetch('/api/health', { cache: 'no-store' });
+      if (resp.ok) {
+        clearInterval(poll);
+        window.location.reload();
+        return;
+      }
+    } catch {
+      // Server still down — keep polling
+    }
+
+    if (attempts >= maxAttempts) {
+      clearInterval(poll);
+      overlay.innerHTML = `
+        <div>${t('settings.diagnostics.restartFailed')}</div>
+        <button class="btn-primary" onclick="window.location.reload()">${t('settings.diagnostics.retryConnection')}</button>
+      `;
+    }
+  }, 2000);
 }
 
 function bindGitOverlayToggle(): void {

@@ -13,6 +13,7 @@ import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import { isSessionInLayout, undockSession } from '../layout/layoutStore';
 import { formatRuntimeDisplay } from './processDisplay';
+import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
 // =============================================================================
 // Callback Types
@@ -335,6 +336,12 @@ function createSessionItem(
     actions.appendChild(closeBtn);
   }
 
+  // Heat indicator canvas (left strip, shows byte activity as thermal color)
+  const heatCanvas = document.createElement('canvas');
+  heatCanvas.className = 'heat-canvas';
+  registerHeatCanvas(sessionId, heatCanvas);
+  item.prepend(heatCanvas);
+
   item.appendChild(info);
 
   // Mobile menu button (toggles action bar visibility)
@@ -378,6 +385,7 @@ export function renderSessionList(): void {
   existingItems.forEach((item) => {
     const itemId = (item as HTMLElement).dataset.sessionId;
     if (itemId && !newIds.has(itemId)) {
+      unregisterHeatCanvas(itemId);
       item.remove();
     }
   });

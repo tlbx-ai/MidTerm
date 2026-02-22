@@ -690,6 +690,15 @@
                                     </div>
                                 </div>
 
+                                <!-- Server -->
+                                <div class="settings-section">
+                                    <h3 data-i18n="settings.diagnostics.server">Server</h3>
+                                    <div class="setting-row">
+                                        <label data-i18n="settings.diagnostics.restartServerDesc">Restart the server process. All clients will temporarily disconnect.</label>
+                                        <button id="btn-restart-server" class="btn-danger" data-i18n="settings.diagnostics.restartServer">Restart Server</button>
+                                    </div>
+                                </div>
+
                                 <!-- Frontend Logging -->
                                 <div class="settings-section">
                                     <h3 data-i18n="settings.diagnostics.frontendLogging">Frontend Logging</h3>
@@ -773,6 +782,7 @@
                 <div class="web-preview-dock-header">
                     <span class="web-preview-dock-title" data-i18n="webPreview.title">Web Preview</span>
                     <div class="web-preview-dock-actions">
+                        <button class="btn-icon" id="web-preview-screenshot" data-i18n-title="webPreview.screenshot" title="Screenshot to terminal">&#x1f4f7;</button>
                         <button class="btn-icon" id="web-preview-refresh" data-i18n-title="webPreview.refresh" title="Refresh">&#x21bb;</button>
                         <button class="btn-icon" id="web-preview-detach" data-i18n-title="webPreview.detach" title="Pop out">&#x2197;</button>
                         <button class="btn-icon" id="web-preview-close" title="Close">&times;</button>
@@ -783,7 +793,7 @@
                     <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
                 </div>
                 <div class="web-preview-dock-body">
-                    <iframe id="web-preview-iframe" src="about:blank"></iframe>
+                    <iframe id="web-preview-iframe" src="about:blank" allow="camera *; microphone *; geolocation *; fullscreen *; autoplay *; clipboard-read *; clipboard-write *; display-capture *"></iframe>
                 </div>
                 <div class="web-preview-detached-placeholder hidden" id="web-preview-detached-msg">
                     <span data-i18n="webPreview.detachedPlaceholder">Preview is open in a separate window</span>

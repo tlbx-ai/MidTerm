@@ -17,6 +17,7 @@ import {
   sendInput,
   sendActiveSessionHint,
   claimMainBrowser,
+  setSessionBytesCallback,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -50,6 +51,8 @@ import {
   initializeSidebarUpdater,
   initSessionDrag,
   initTrafficIndicator,
+  initHeatIndicator,
+  recordBytes,
 } from './modules/sidebar';
 import { initI18n } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
@@ -183,6 +186,8 @@ async function init(): Promise<void> {
   await initI18n();
   initMainBrowserButton();
   initTrafficIndicator();
+  setSessionBytesCallback(recordBytes);
+  initHeatIndicator();
   initBadges();
   initFileViewer();
   restoreSidebarState();
@@ -651,12 +656,17 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
   });
 
   if (id) {
-    // Link session to bookmark so future renames propagate
-    setSession({ ...session, _bookmarkId: id });
+    const currentSession = getSession(sessionId);
+    if (currentSession) {
+      setSession({ ...currentSession, _bookmarkId: id });
+    }
 
-    // Apply session name as bookmark label (overwrites existing label on re-pin)
-    if (session.name) {
-      await patchHistoryEntry(id, { label: session.name }).catch(() => {});
+    const labelSource = currentSession ?? session;
+    const trimmedName = (labelSource.name || '').trim();
+    if (trimmedName && trimmedName !== labelSource.shellType) {
+      await patchHistoryEntry(id, { label: trimmedName }).catch((e) => {
+        log.warn(() => `Failed to persist bookmark label for ${id}: ${e}`);
+      });
     }
 
     refreshHistory();

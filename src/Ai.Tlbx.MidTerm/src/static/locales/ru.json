@@ -154,6 +154,13 @@
   "settings.diagnostics.frontendLogging": "Журналирование Frontend",
   "settings.diagnostics.frontendLoggingHint": "Используйте консоль браузера (<kbd>F12</kbd>) для управления журналированием frontend. Ошибки и предупреждения всегда отображаются. Информационный и подробный вывод настраивается по модулям.",
   "settings.diagnostics.loggingPersistHint": "Настройки сохраняются в localStorage между перезагрузками страницы.",
+  "settings.diagnostics.server": "Сервер",
+  "settings.diagnostics.restartServer": "Перезапустить сервер",
+  "settings.diagnostics.restartServerDesc": "Перезапустить процесс сервера. Все клиенты будут временно отключены.",
+  "settings.diagnostics.restartConfirm": "Вы уверены, что хотите перезапустить сервер? Все подключённые клиенты будут временно отключены.",
+  "settings.diagnostics.restartingServer": "Сервер перезапускается...",
+  "settings.diagnostics.restartFailed": "Сервер, возможно, не перезапустился. Попробуйте обновить страницу.",
+  "settings.diagnostics.retryConnection": "Обновить",
   "modal.changelog": "Список изменений",
   "modal.changePassword": "Изменить пароль",
   "modal.setPassword": "Установить пароль",
@@ -340,6 +347,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Перейти",
   "webPreview.refresh": "Обновить",
+  "webPreview.screenshot": "Скриншот в терминал",
   "webPreview.detach": "Открыть в окне",
   "webPreview.dockBack": "Закрепить",
   "webPreview.detachedPlaceholder": "Превью открыто в отдельном окне",
@@ -358,5 +366,10 @@
   "share.failedToGenerate": "Не удалось сгенерировать информацию для обмена",
   "share.noEmailClient": "Почтовый клиент не обнаружен.",
   "share.copiedToClipboard": "Информация о подключении скопирована в буфер обмена!",
-  "share.visitTrustPage": "Посетите страницу доверия для обмена доступом"
+  "share.visitTrustPage": "Посетите страницу доверия для обмена доступом",
+
+  "dialog.confirm": "Подтвердить",
+  "dialog.info": "Информация",
+  "dialog.ok": "ОК",
+  "dialog.cancel": "Отмена"
 }

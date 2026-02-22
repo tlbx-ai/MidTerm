@@ -64,6 +64,18 @@ import {
 
 const log = createLogger('mux');
 
+// Per-session byte activity callback (used by heat indicator)
+type SessionBytesCallback = (sessionId: string, bytes: number) => void;
+let _sessionBytesCallback: SessionBytesCallback | null = null;
+
+/**
+ * Register a callback to be notified whenever output bytes arrive for a session.
+ * Used by the sidebar heat indicator to track per-session activity.
+ */
+export function setSessionBytesCallback(cb: SessionBytesCallback): void {
+  _sessionBytesCallback = cb;
+}
+
 // \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
 // Followed by 0x68 ('h') = enable, 0x6c ('l') = disable
 function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
@@ -275,6 +287,7 @@ function yieldToMain(): Promise<void> {
 }
 
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
+  _sessionBytesCallback?.(sessionId, payload.length);
   const pendingCount = outputQueue.length - queueIndex;
   if (pendingCount >= MAX_QUEUE_SIZE) {
     const droppedItem = outputQueue[queueIndex];

@@ -154,6 +154,13 @@
   "settings.diagnostics.frontendLogging": "Journalisation Frontend",
   "settings.diagnostics.frontendLoggingHint": "Utilisez la console du navigateur (<kbd>F12</kbd>) pour contrôler la journalisation frontend. Les erreurs et avertissements apparaissent toujours. La sortie d'informations et détaillée est par module.",
   "settings.diagnostics.loggingPersistHint": "Les paramètres persistent dans localStorage lors des rechargements de page.",
+  "settings.diagnostics.server": "Serveur",
+  "settings.diagnostics.restartServer": "Redémarrer le serveur",
+  "settings.diagnostics.restartServerDesc": "Redémarrer le processus serveur. Tous les clients seront temporairement déconnectés.",
+  "settings.diagnostics.restartConfirm": "Êtes-vous sûr de vouloir redémarrer le serveur ? Tous les clients connectés seront temporairement déconnectés.",
+  "settings.diagnostics.restartingServer": "Le serveur redémarre...",
+  "settings.diagnostics.restartFailed": "Le serveur n'a peut-être pas redémarré. Essayez d'actualiser la page.",
+  "settings.diagnostics.retryConnection": "Actualiser",
   "modal.changelog": "Journal des Modifications",
   "modal.changePassword": "Changer le Mot de Passe",
   "modal.setPassword": "Définir le Mot de Passe",
@@ -340,6 +347,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Aller",
   "webPreview.refresh": "Actualiser",
+  "webPreview.screenshot": "Capture vers le terminal",
   "webPreview.detach": "Ouvrir dans une fenêtre",
   "webPreview.dockBack": "Réancrer",
   "webPreview.detachedPlaceholder": "L'aperçu est ouvert dans une fenêtre séparée",
@@ -358,5 +366,10 @@
   "share.failedToGenerate": "Échec de la génération des informations de partage",
   "share.noEmailClient": "Aucun client de messagerie détecté.",
   "share.copiedToClipboard": "Les informations de connexion ont été copiées dans le presse-papiers !",
-  "share.visitTrustPage": "Visitez la page de confiance pour partager l'accès"
+  "share.visitTrustPage": "Visitez la page de confiance pour partager l'accès",
+
+  "dialog.confirm": "Confirmer",
+  "dialog.info": "Info",
+  "dialog.ok": "OK",
+  "dialog.cancel": "Annuler"
 }

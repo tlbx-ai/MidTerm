@@ -154,6 +154,13 @@
   "settings.diagnostics.frontendLogging": "フロントエンドログ",
   "settings.diagnostics.frontendLoggingHint": "ブラウザコンソール（<kbd>F12</kbd>）でフロントエンドログを制御します。エラーと警告は常に表示されます。情報と詳細出力はモジュール単位です。",
   "settings.diagnostics.loggingPersistHint": "設定はページリロード後もlocalStorageに保持されます。",
+  "settings.diagnostics.server": "サーバー",
+  "settings.diagnostics.restartServer": "サーバーを再起動",
+  "settings.diagnostics.restartServerDesc": "サーバープロセスを再起動します。すべてのクライアントが一時的に切断されます。",
+  "settings.diagnostics.restartConfirm": "サーバーを再起動してもよろしいですか？接続中のすべてのクライアントが一時的に切断されます。",
+  "settings.diagnostics.restartingServer": "サーバーを再起動中...",
+  "settings.diagnostics.restartFailed": "サーバーが再起動されなかった可能性があります。ページを更新してみてください。",
+  "settings.diagnostics.retryConnection": "更新",
   "modal.changelog": "変更履歴",
   "modal.changePassword": "パスワード変更",
   "modal.setPassword": "パスワード設定",
@@ -340,6 +347,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "移動",
   "webPreview.refresh": "更新",
+  "webPreview.screenshot": "ターミナルにスクリーンショット",
   "webPreview.detach": "ウィンドウで開く",
   "webPreview.dockBack": "ドッキング",
   "webPreview.detachedPlaceholder": "プレビューは別ウィンドウで開いています",
@@ -358,5 +366,10 @@
   "share.failedToGenerate": "共有情報の生成に失敗しました",
   "share.noEmailClient": "メールクライアントが検出されませんでした。",
   "share.copiedToClipboard": "接続情報がクリップボードにコピーされました！",
-  "share.visitTrustPage": "アクセスを共有するにはトラストページにアクセスしてください"
+  "share.visitTrustPage": "アクセスを共有するにはトラストページにアクセスしてください",
+
+  "dialog.confirm": "確認",
+  "dialog.info": "情報",
+  "dialog.ok": "OK",
+  "dialog.cancel": "キャンセル"
 }

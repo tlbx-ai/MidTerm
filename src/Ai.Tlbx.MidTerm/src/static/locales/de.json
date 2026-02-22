@@ -154,6 +154,13 @@
   "settings.diagnostics.frontendLogging": "Frontend-Protokollierung",
   "settings.diagnostics.frontendLoggingHint": "Verwenden Sie die Browser-Konsole (<kbd>F12</kbd>), um die Frontend-Protokollierung zu steuern. Fehler und Warnungen werden immer angezeigt. Info- und ausführliche Ausgaben sind pro Modul.",
   "settings.diagnostics.loggingPersistHint": "Einstellungen bleiben in localStorage über Seitenneuladungen hinweg erhalten.",
+  "settings.diagnostics.server": "Server",
+  "settings.diagnostics.restartServer": "Server neu starten",
+  "settings.diagnostics.restartServerDesc": "Serverprozess neu starten. Alle Clients werden vorübergehend getrennt.",
+  "settings.diagnostics.restartConfirm": "Sind Sie sicher, dass Sie den Server neu starten möchten? Alle verbundenen Clients werden vorübergehend getrennt.",
+  "settings.diagnostics.restartingServer": "Server wird neu gestartet...",
+  "settings.diagnostics.restartFailed": "Der Server wurde möglicherweise nicht neu gestartet. Versuchen Sie, die Seite zu aktualisieren.",
+  "settings.diagnostics.retryConnection": "Aktualisieren",
   "modal.changelog": "Änderungsprotokoll",
   "modal.changePassword": "Passwort ändern",
   "modal.setPassword": "Passwort setzen",
@@ -340,6 +347,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Los",
   "webPreview.refresh": "Aktualisieren",
+  "webPreview.screenshot": "Screenshot zum Terminal",
   "webPreview.detach": "In Fenster öffnen",
   "webPreview.dockBack": "Andocken",
   "webPreview.detachedPlaceholder": "Vorschau ist in einem separaten Fenster geöffnet",
@@ -358,5 +366,10 @@
   "share.failedToGenerate": "Freigabeinformationen konnten nicht generiert werden",
   "share.noEmailClient": "Kein E-Mail-Client erkannt.",
   "share.copiedToClipboard": "Verbindungsinformationen wurden in die Zwischenablage kopiert!",
-  "share.visitTrustPage": "Besuchen Sie die Trust-Seite, um den Zugriff zu teilen"
+  "share.visitTrustPage": "Besuchen Sie die Trust-Seite, um den Zugriff zu teilen",
+
+  "dialog.confirm": "Bestätigen",
+  "dialog.info": "Info",
+  "dialog.ok": "OK",
+  "dialog.cancel": "Abbrechen"
 }

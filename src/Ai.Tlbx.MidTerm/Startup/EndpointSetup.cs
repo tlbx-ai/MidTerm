@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -516,6 +517,80 @@ public static class EndpointSetup
             {
                 return Results.Problem($"Failed to read log: {ex.Message}");
             }
+        });
+
+        // POST /api/restart - restart the server process
+        app.MapPost("/api/restart", () =>
+        {
+            Log.Info(() => "Server restart requested via API");
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1500);
+
+                if (!settingsService.IsRunningAsService)
+                {
+                    // User mode: no service manager to respawn, so launch a replacement process
+                    try
+                    {
+                        var exePath = Environment.ProcessPath;
+                        if (!string.IsNullOrEmpty(exePath))
+                        {
+                            var cliArgs = Environment.GetCommandLineArgs();
+                            // Skip first element (exe path itself)
+                            var args = cliArgs.Length > 1
+                                ? string.Join(" ", cliArgs.Skip(1))
+                                : "";
+
+                            var psi = new ProcessStartInfo
+                            {
+                                FileName = exePath,
+                                Arguments = args,
+                                WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
+                                CreateNoWindow = true,
+                            };
+
+                            if (OperatingSystem.IsWindows())
+                            {
+                                // Windows: UseShellExecute creates an independent process
+                                psi.UseShellExecute = true;
+                                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                            }
+                            else
+                            {
+                                // macOS/Linux: detach from parent
+                                psi.UseShellExecute = false;
+                                psi.RedirectStandardInput = true;
+                            }
+
+                            var proc = Process.Start(psi);
+                            if (proc is not null && !OperatingSystem.IsWindows())
+                            {
+                                // Close redirected stdin so child doesn't hang
+                                try { proc.StandardInput.Close(); } catch { }
+                            }
+
+                            Log.Info(() => $"Replacement process spawned (PID {proc?.Id})");
+                        }
+                        else
+                        {
+                            Log.Error(() => "Cannot restart: unable to determine binary path");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(() => $"Failed to spawn replacement process: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Log.Info(() => "Service mode: exiting for service manager to respawn");
+                }
+
+                Environment.Exit(0);
+            });
+
+            return Results.Ok("Server is restarting...");
         });
 
         app.MapGet("/api/networks", () =>

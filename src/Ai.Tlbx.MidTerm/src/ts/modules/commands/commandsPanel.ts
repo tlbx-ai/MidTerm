@@ -6,6 +6,7 @@
 
 import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
+import { showConfirm } from '../../utils/dialog';
 import type { ScriptDefinition } from './commandsApi';
 import {
   fetchScripts,
@@ -213,7 +214,8 @@ function bindEvents(state: CommandsPanelState): void {
     btn.addEventListener('click', async () => {
       const filename = (btn as HTMLElement).dataset.filename;
       if (!filename) return;
-      if (!confirm(t('commands.deleteConfirm'))) return;
+      const ok = await showConfirm(t('commands.deleteConfirm'));
+      if (!ok) return;
       await deleteScript(filename, sessionId);
       await refreshCommandsPanel(sessionId);
     });

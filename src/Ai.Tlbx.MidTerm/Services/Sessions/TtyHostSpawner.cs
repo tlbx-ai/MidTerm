@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
 #if WINDOWS
@@ -22,12 +24,23 @@ public static class TtyHostSpawner
     private static readonly object _verifyLock = new();
     private static string? _cachedVersion;
     private static bool _versionChecked;
+    private const string MacOsLaunchAgentLabelPrefix = "ai.tlbx.midterm.mthost.";
+    private static readonly Regex MacOsPidRegex = new(@"\bpid = (?<pid>\d+)\b", RegexOptions.Compiled);
 
     /// <summary>
     /// Gets the expected full path to mthost for this mt installation.
     /// Used to filter discovered processes to only those from this installation.
     /// </summary>
     public static string ExpectedTtyHostPath => TtyHostPath;
+
+    public static void CleanupMacOsGuiLaunchAgent(string sessionId)
+    {
+#if !WINDOWS
+        CleanupMacOsGuiLaunchAgentCore(sessionId);
+#else
+        _ = sessionId;
+#endif
+    }
 
     public static string? GetTtyHostVersion()
     {
@@ -199,7 +212,7 @@ public static class TtyHostSpawner
 #if WINDOWS
         return SpawnWindows(args, runAsUser, out processId);
 #else
-        return SpawnUnix(args, runAsUser, out processId);
+        return SpawnUnix(sessionId, args, runAsUser, out processId);
 #endif
 #pragma warning restore CA1416
     }
@@ -243,12 +256,46 @@ public static class TtyHostSpawner
     [DllImport("libc", EntryPoint = "setpgid")]
     private static extern int setpgid(int pid, int pgid);
 
-    private static bool SpawnUnix(string args, string? runAsUser, out int processId)
+    private static void CleanupMacOsGuiLaunchAgentCore(string sessionId)
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        try
+        {
+            var uid = geteuid();
+            if (uid == 0)
+            {
+                return;
+            }
+
+            var label = GetMacOsLaunchAgentLabel(sessionId);
+            _ = RunProcessSync("launchctl", ["bootout", $"gui/{uid}/{label}"], out _, out _, logFailures: false);
+
+            var tempDir = GetMacOsLaunchAgentTempDirectory();
+            File.Delete(Path.Combine(tempDir, $"{label}.plist"));
+            File.Delete(Path.Combine(tempDir, $"{label}.stdout.log"));
+            File.Delete(Path.Combine(tempDir, $"{label}.stderr.log"));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"TtyHostSpawner: Failed to cleanup macOS launch agent for session {sessionId}: {ex.Message}");
+        }
+    }
+
+    private static bool SpawnUnix(string sessionId, string args, string? runAsUser, out int processId)
     {
         processId = 0;
 
         try
         {
+            if (OperatingSystem.IsMacOS() && TrySpawnMacOsViaLaunchAgent(sessionId, args, out processId))
+            {
+                return true;
+            }
+
             ProcessStartInfo psi;
 
             // If running as root and runAsUser is configured, use sudo -u to drop privileges
@@ -319,6 +366,249 @@ public static class TtyHostSpawner
         catch (Exception ex)
         {
             Log.Error(() => $"TtyHostSpawner: Failed to spawn: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TrySpawnMacOsViaLaunchAgent(string sessionId, string args, out int processId)
+    {
+        processId = 0;
+
+        var uid = geteuid();
+        if (uid == 0)
+        {
+            // Root-owned mt on macOS should use existing sudo-based spawn path.
+            return false;
+        }
+
+        var label = GetMacOsLaunchAgentLabel(sessionId);
+        var tempDir = GetMacOsLaunchAgentTempDirectory();
+        Directory.CreateDirectory(tempDir);
+
+        var plistPath = Path.Combine(tempDir, $"{label}.plist");
+        var stdoutPath = Path.Combine(tempDir, $"{label}.stdout.log");
+        var stderrPath = Path.Combine(tempDir, $"{label}.stderr.log");
+
+        var programArguments = new List<string>(ParseUnixArgs(args));
+        programArguments.Insert(0, TtyHostPath);
+
+        var plistContent = BuildMacOsLaunchAgentPlist(label, programArguments, stdoutPath, stderrPath);
+        File.WriteAllText(plistPath, plistContent, Encoding.UTF8);
+
+        _ = RunProcessSync("launchctl", ["bootout", $"gui/{uid}/{label}"], out _, out _, logFailures: false);
+
+        if (!RunProcessSync("launchctl", ["bootstrap", $"gui/{uid}", plistPath], out _, out var bootstrapErr, logFailures: false))
+        {
+            if (!string.IsNullOrWhiteSpace(bootstrapErr))
+            {
+                Log.Warn(() => $"TtyHostSpawner: macOS GUI bootstrap unavailable for session {sessionId}: {bootstrapErr.Trim()}");
+            }
+            return false;
+        }
+
+        var startedPid = TryGetMacOsLaunchAgentPid(uid, label, timeoutMs: 2000);
+        if (startedPid.HasValue)
+        {
+            processId = startedPid.Value;
+            var launchedPid = processId;
+            Log.Info(() => $"TtyHostSpawner: Spawned mthost via macOS GUI LaunchAgent (session {sessionId}, PID {launchedPid})");
+        }
+        else
+        {
+            Log.Info(() => $"TtyHostSpawner: Spawned mthost via macOS GUI LaunchAgent (session {sessionId}, PID pending)");
+        }
+
+        return true;
+    }
+
+    private static int? TryGetMacOsLaunchAgentPid(uint uid, string label, int timeoutMs)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (RunProcessSync("launchctl", ["print", $"gui/{uid}/{label}"], out var stdout, out _, logFailures: false))
+            {
+                var match = MacOsPidRegex.Match(stdout);
+                if (match.Success &&
+                    int.TryParse(match.Groups["pid"].Value, out var pid) &&
+                    pid > 0)
+                {
+                    return pid;
+                }
+            }
+
+            Thread.Sleep(100);
+        }
+
+        return null;
+    }
+
+    private static string GetMacOsLaunchAgentLabel(string sessionId)
+    {
+        return $"{MacOsLaunchAgentLabelPrefix}{sessionId}";
+    }
+
+    private static string GetMacOsLaunchAgentTempDirectory()
+    {
+        return Path.Combine(Path.GetTempPath(), "midterm-launchagents");
+    }
+
+    private static string BuildMacOsLaunchAgentPlist(
+        string label,
+        IReadOnlyList<string> programArguments,
+        string stdoutPath,
+        string stderrPath)
+    {
+        var argsBuilder = new StringBuilder();
+        foreach (var argument in programArguments)
+        {
+            argsBuilder.Append("        <string>");
+            argsBuilder.Append(EscapeXml(argument));
+            argsBuilder.AppendLine("</string>");
+        }
+
+        var pathVar = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(pathVar))
+        {
+            pathVar = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        }
+
+        return $$"""
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{EscapeXml(label)}}</string>
+    <key>ProgramArguments</key>
+    <array>
+{{argsBuilder}}    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>AbandonProcessGroup</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{EscapeXml(stdoutPath)}}</string>
+    <key>StandardErrorPath</key>
+    <string>{{EscapeXml(stderrPath)}}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{EscapeXml(pathVar)}}</string>
+    </dict>
+</dict>
+</plist>
+""";
+    }
+
+    private static IReadOnlyList<string> ParseUnixArgs(string args)
+    {
+        var parts = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        foreach (var c in args)
+        {
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c) && !inQuotes)
+            {
+                if (current.Length > 0)
+                {
+                    parts.Add(current.ToString());
+                    current.Clear();
+                }
+                continue;
+            }
+
+            current.Append(c);
+        }
+
+        if (current.Length > 0)
+        {
+            parts.Add(current.ToString());
+        }
+
+        return parts;
+    }
+
+    private static string EscapeXml(string value)
+    {
+        return value
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal)
+            .Replace("'", "&apos;", StringComparison.Ordinal);
+    }
+
+    private static bool RunProcessSync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        out string stdout,
+        out string stderr,
+        bool logFailures = true)
+    {
+        stdout = string.Empty;
+        stderr = string.Empty;
+
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                }
+            };
+
+            foreach (var argument in arguments)
+            {
+                process.StartInfo.ArgumentList.Add(argument);
+            }
+
+            process.Start();
+
+            if (!process.WaitForExit(5000))
+            {
+                try { process.Kill(); } catch { }
+                if (logFailures)
+                {
+                    Log.Warn(() => $"TtyHostSpawner: Command timed out ({fileName})");
+                }
+                return false;
+            }
+
+            stdout = process.StandardOutput.ReadToEnd();
+            stderr = process.StandardError.ReadToEnd();
+
+            if (process.ExitCode == 0)
+            {
+                return true;
+            }
+
+            if (logFailures)
+            {
+                var stderrTrimmed = stderr.Trim();
+                Log.Warn(() => $"TtyHostSpawner: Command failed ({fileName}, exit {process.ExitCode}): {stderrTrimmed}");
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            if (logFailures)
+            {
+                Log.Warn(() => $"TtyHostSpawner: Command failed ({fileName}): {ex.Message}");
+            }
             return false;
         }
     }

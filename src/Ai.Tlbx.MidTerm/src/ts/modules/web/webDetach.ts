@@ -5,15 +5,17 @@
  * and docking it back. Uses BroadcastChannel for communication.
  */
 
-import { $webPreviewDetached, $webPreviewUrl } from '../../stores';
-import { showDetachedPlaceholder, hideDetachedPlaceholder, loadPreview } from './webPanel';
+import { $activeSessionId, $webPreviewDetached, $webPreviewUrl } from '../../stores';
+import { hideDetachedPlaceholder, loadPreview } from './webPanel';
 import { createLogger } from '../logging';
+import { getActiveMode, getActiveUrl, setActiveMode } from './webSessionState';
 
 const log = createLogger('webDetach');
 const CHANNEL_NAME = 'midterm-web-preview';
 
 let popup: Window | null = null;
 let channel: BroadcastChannel | null = null;
+let detachedOwnerSessionId: string | null = null;
 
 export function initDetach(): void {
   channel = new BroadcastChannel(CHANNEL_NAME);
@@ -31,12 +33,15 @@ function handleMessage(e: MessageEvent): void {
 }
 
 export function detachPreview(): void {
+  const activeSessionId = $activeSessionId.get();
+  if (!activeSessionId) return;
+
   if (popup && !popup.closed) {
     popup.focus();
     return;
   }
 
-  const url = $webPreviewUrl.get();
+  const url = getActiveUrl() ?? $webPreviewUrl.get();
   const popupUrl = '/web-preview-popup.html' + (url ? `?url=${encodeURIComponent(url)}` : '');
 
   popup = window.open(
@@ -46,28 +51,72 @@ export function detachPreview(): void {
   );
 
   if (popup) {
+    detachedOwnerSessionId = activeSessionId;
+    setActiveMode('detached');
     $webPreviewDetached.set(true);
-    showDetachedPlaceholder();
+    const dockPanel = document.getElementById('web-preview-dock');
+    if (dockPanel) {
+      dockPanel.classList.add('hidden');
+      dockPanel.style.width = '';
+    }
     log.info(() => 'Web preview detached to popup');
   }
 }
 
 export function dockBack(): void {
+  const activeSessionId = $activeSessionId.get();
+  if (activeSessionId && detachedOwnerSessionId && activeSessionId !== detachedOwnerSessionId) {
+    closeDetachedPopup();
+    return;
+  }
+
   if (popup && !popup.closed) {
     popup.close();
   }
   popup = null;
+  detachedOwnerSessionId = null;
+  setActiveMode('docked');
   $webPreviewDetached.set(false);
   hideDetachedPlaceholder();
+  const dockPanel = document.getElementById('web-preview-dock');
+  if (dockPanel) {
+    dockPanel.classList.remove('hidden');
+  }
   loadPreview();
   log.info(() => 'Web preview docked back');
 }
 
 export function cleanupDetach(): void {
+  closeDetachedPopup();
+  channel?.close();
+  channel = null;
+}
+
+export function cleanupDetachForSessionSwitch(): void {
+  closeDetachedPopup();
+}
+
+export function closeDetachedIfOwnedBy(sessionId: string | null): void {
+  if (!sessionId || detachedOwnerSessionId !== sessionId) return;
+  closeDetachedPopup();
+}
+
+export function isDetachedOpenForActiveSession(): boolean {
+  const activeSessionId = $activeSessionId.get();
+  return (
+    !!activeSessionId &&
+    detachedOwnerSessionId === activeSessionId &&
+    !!popup &&
+    !popup.closed &&
+    getActiveMode() === 'detached'
+  );
+}
+
+function closeDetachedPopup(): void {
   if (popup && !popup.closed) {
     popup.close();
   }
   popup = null;
-  channel?.close();
-  channel = null;
+  detachedOwnerSessionId = null;
+  $webPreviewDetached.set(false);
 }
