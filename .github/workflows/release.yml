@@ -134,10 +134,10 @@ jobs:
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
-          xcrun stapler staple staging/mt
-          xcrun stapler staple staging/mthost
-          spctl --assess --type exec --verbose staging/mt
-          spctl --assess --type exec --verbose staging/mthost
+          # Stapling is not supported for standalone Mach-O binaries distributed
+          # in tarballs — only .app/.pkg/.dmg support embedded tickets.
+          # Gatekeeper performs an online notarization check on first launch
+          # (quarantine bit is set on any browser download), so this is fine.
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
