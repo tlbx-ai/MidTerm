@@ -35,6 +35,9 @@ export function initWebPanel(): void {
     void handleRefresh(hard ? 'hard' : 'soft');
   });
   screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
+  document
+    .getElementById('web-preview-snapshot')
+    ?.addEventListener('click', () => void handleSnapshot());
   document.getElementById('web-preview-dom-html')?.addEventListener('click', handleDomHtml);
   document.getElementById('web-preview-dom-text')?.addEventListener('click', handleDomText);
 }
@@ -116,6 +119,44 @@ export function hideDetachedPlaceholder(): void {
   const placeholder = document.getElementById('web-preview-detached-msg');
   if (placeholder) placeholder.classList.add('hidden');
   showIframe();
+}
+
+/**
+ * Save a DOM snapshot of the web preview to the active session's cwd.
+ * Sends the live rendered HTML + CSS hrefs to the server, which writes them
+ * to <cwd>/.midterm/snapshot_YYYYMMDD_HHMMSS/ and pastes the path into the terminal.
+ */
+async function handleSnapshot(): Promise<void> {
+  if (!iframe || iframe.src === 'about:blank') return;
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+
+  const iframeDoc = iframe.contentDocument;
+  if (!iframeDoc) return;
+
+  const html = iframeDoc.documentElement.outerHTML;
+  const cssUrls = Array.from(
+    iframeDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]'),
+  ).map((el) => el.href);
+
+  try {
+    const resp = await fetch('/api/webpreview/snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, html, cssUrls }),
+    });
+    if (!resp.ok) {
+      log.warn(() => `Snapshot failed: ${resp.status}`);
+      return;
+    }
+    const result = await resp.json();
+    if (result.snapshotPath) {
+      pasteToTerminal(sessionId, result.snapshotPath, true);
+      log.info(() => `Snapshot saved: ${result.snapshotPath}`);
+    }
+  } catch (err) {
+    log.warn(() => `Snapshot error: ${err}`);
+  }
 }
 
 /**

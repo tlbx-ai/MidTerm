@@ -353,6 +353,7 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Ir",
   "webPreview.refresh": "Atualizar",
+  "webPreview.snapshot": "Salvar snapshot do DOM no sistema de arquivos",
   "webPreview.domHtml": "Copiar HTML para o terminal",
   "webPreview.domText": "Copiar texto para o terminal",
   "webPreview.screenshot": "Captura para o terminal (Ctrl+clique para baixar)",
