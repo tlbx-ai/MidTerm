@@ -11,7 +11,66 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+
+  # ── Create the draft release immediately so it exists before builds finish ──
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE=$(git tag -l --format='%(contents:subject)' ${{ github.ref_name }})
+          NOTES=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
+          PRERELEASE=""
+          [[ "${{ github.ref_name }}" == *"-dev"* ]] && PRERELEASE="--prerelease"
+          gh release create ${{ github.ref_name }} \
+            --draft \
+            $PRERELEASE \
+            --title "$TITLE" \
+            --notes "## What's Changed
+          ${NOTES}"
+
+  # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install npm packages
+        run: npm ci --include=dev
+
+      - name: Build frontend
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.json | ConvertFrom-Json).web
+          $isDev = "${{ github.ref_name }}".Contains("-dev")
+          $buildArgs = @{ Publish = $true; Version = $version }
+          if ($isDev) { $buildArgs.DevRelease = $true }
+          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
+          retention-days: 1
+
+  # ── Build each platform, sign, and upload directly to the draft release ──
   build:
+    needs: [prepare, frontend]
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -36,26 +95,12 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - name: Download frontend
+        uses: actions/download-artifact@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          name: frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Install npm packages
-        run: npm ci --include=dev
-
-      # Build frontend ONCE here - dotnet publish will skip via SkipFrontendBuild
-      # Dev releases (-dev tag) include source maps for debugging; stable releases exclude them
-      - name: Build frontend
-        shell: pwsh
-        run: |
-          $version = (Get-Content version.json | ConvertFrom-Json).web
-          $isDev = "${{ github.ref_name }}".Contains("-dev")
-          $buildArgs = @{ Publish = $true; Version = $version }
-          if ($isDev) { $buildArgs.DevRelease = $true }
-          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
-
-      # Build binaries with SkipFrontendBuild to avoid double frontend build
       - name: Build mt + mthost
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
@@ -69,32 +114,27 @@ jobs:
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
           KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
-
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
           echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security import "$RUNNER_TEMP/cert.p12" \
             -k "$KEYCHAIN_PATH" \
             -P "$APPLE_CERTIFICATE_P12_PASSWORD" \
             -T /usr/bin/codesign
           rm "$RUNNER_TEMP/cert.p12"
-
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Persist keychain password for subsequent steps
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Stage artifacts
         shell: bash
         run: |
-          mkdir -p staging
-          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/
-          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
-          cp version.json staging/
+          mkdir -p staging/${{ matrix.rid }}
+          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp version.json staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -102,17 +142,17 @@ jobs:
               --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
               --options runtime \
               --timestamp \
-              staging/mt
+              staging/${{ matrix.rid }}/mt
             codesign --force \
               --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
               --options runtime \
               --timestamp \
-              staging/mthost
-            codesign --verify --strict staging/mt
-            codesign --verify --strict staging/mthost
+              staging/${{ matrix.rid }}/mthost
+            codesign --verify --strict staging/${{ matrix.rid }}/mt
+            codesign --verify --strict staging/${{ matrix.rid }}/mthost
           fi
 
-          cd staging
+          cd staging/${{ matrix.rid }}
           if command -v sha256sum &> /dev/null; then
             sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
           else
@@ -128,88 +168,48 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          zip -j "$RUNNER_TEMP/notarize.zip" staging/mt staging/mthost
+          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
-          # Stapling is not supported for standalone Mach-O binaries distributed
-          # in tarballs — only .app/.pkg/.dmg support embedded tickets.
-          # Gatekeeper performs an online notarization check on first launch
-          # (quarantine bit is set on any browser download), so this is fine.
+          # Stapling not supported for standalone Mach-O binaries in tarballs;
+          # Gatekeeper checks notarization online via quarantine bit on download.
+
+      - name: Sign version.json
+        shell: pwsh
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+        run: ./scripts/sign-release.ps1 -ArtifactsPath staging
+
+      - name: Package and upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd staging
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            ARCHIVE="mt-${{ matrix.rid }}.zip"
+            zip -j "$ARCHIVE" ${{ matrix.rid }}/*
+          else
+            ARCHIVE="mt-${{ matrix.rid }}.tar.gz"
+            tar -czf "$ARCHIVE" -C ${{ matrix.rid }} .
+          fi
+          gh release upload ${{ github.ref_name }} "$ARCHIVE"
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
         run: security delete-keychain "$KEYCHAIN_PATH"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.rid }}
-          path: staging/
-
-  release:
+  # ── All platforms done — publish the draft ───────────────────────────────
+  finalize:
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Sign release artifacts
+      - name: Publish release
         env:
-          SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
-        run: pwsh ./scripts/sign-release.ps1 -ArtifactsPath artifacts
-
-      - name: Package
-        run: |
-          cd artifacts
-          zip -j mt-win-x64.zip win-x64/*
-          tar -czvf mt-osx-arm64.tar.gz -C osx-arm64 .
-          tar -czvf mt-osx-x64.tar.gz -C osx-x64 .
-          tar -czvf mt-linux-x64.tar.gz -C linux-x64 .
-
-          echo "# SHA256 Checksums" > checksums.txt
-          for rid in win-x64 osx-arm64 osx-x64 linux-x64; do
-            echo "## $rid" >> checksums.txt
-            cat $rid/SHA256SUMS.txt >> checksums.txt
-          done
-          cat checksums.txt
-
-      - name: Get release notes
-        id: notes
-        run: |
-          TAG_BODY=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          echo "$TAG_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Detect prerelease
-        id: prerelease
-        run: |
-          if [[ "${{ github.ref_name }}" == *"-dev"* ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
-          body: |
-            ## What's Changed
-            ${{ steps.notes.outputs.body }}
-          files: |
-            artifacts/mt-osx-arm64.tar.gz
-            artifacts/mt-osx-x64.tar.gz
-            artifacts/mt-win-x64.zip
-            artifacts/mt-linux-x64.tar.gz
-            artifacts/checksums.txt
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit ${{ github.ref_name }} --draft=false --repo ${{ github.repository }}
