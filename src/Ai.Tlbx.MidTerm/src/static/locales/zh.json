@@ -352,6 +352,8 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "前往",
   "webPreview.refresh": "刷新",
+  "webPreview.domHtml": "复制页面HTML到终端",
+  "webPreview.domText": "复制页面文本到终端",
   "webPreview.screenshot": "截图到终端",
   "webPreview.detach": "弹出到窗口",
   "webPreview.dockBack": "停靠回来",

@@ -349,6 +349,8 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "जाएँ",
   "webPreview.refresh": "रीफ़्रेश",
+  "webPreview.domHtml": "पेज HTML टर्मिनल में कॉपी करें",
+  "webPreview.domText": "पेज टेक्स्ट टर्मिनल में कॉपी करें",
   "webPreview.screenshot": "टर्मिनल पर स्क्रीनशॉट",
   "webPreview.detach": "विंडो में खोलें",
   "webPreview.dockBack": "वापस जोड़ें",

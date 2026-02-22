@@ -349,6 +349,8 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Ir",
   "webPreview.refresh": "Actualizar",
+  "webPreview.domHtml": "Copiar HTML al terminal",
+  "webPreview.domText": "Copiar texto al terminal",
   "webPreview.screenshot": "Captura al terminal",
   "webPreview.detach": "Abrir en ventana",
   "webPreview.dockBack": "Acoplar",

@@ -349,6 +349,8 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "移動",
   "webPreview.refresh": "更新",
+  "webPreview.domHtml": "ページHTMLをターミナルにコピー",
+  "webPreview.domText": "ページテキストをターミナルにコピー",
   "webPreview.screenshot": "ターミナルにスクリーンショット",
   "webPreview.detach": "ウィンドウで開く",
   "webPreview.dockBack": "ドッキング",
