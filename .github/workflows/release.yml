@@ -55,7 +55,7 @@ jobs:
         run: |
           $version = (Get-Content version.json | ConvertFrom-Json).web
           $isDev = "${{ github.ref_name }}".Contains("-dev")
-          $buildArgs = @{ Publish = $true; Version = $version }
+          $buildArgs = @{ Publish = $true; Version = $version; SkipCodegen = $true }
           if ($isDev) { $buildArgs.DevRelease = $true }
           ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
 

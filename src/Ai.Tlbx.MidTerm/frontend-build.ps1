@@ -20,7 +20,8 @@
 param(
     [switch]$Publish,        # Enable Brotli compression for publish builds
     [switch]$DevRelease,     # Include source maps in publish (for dev/prerelease builds)
-    [string]$Version = "dev" # Version to inject into BUILD_VERSION
+    [string]$Version = "dev", # Version to inject into BUILD_VERSION
+    [switch]$SkipCodegen     # Skip OpenAPI codegen (use committed api.generated.ts/openapi.json)
 )
 
 $ErrorActionPreference = "Stop"
@@ -118,67 +119,88 @@ if ($Publish) {
 # ===========================================
 # PHASE 0.5: Generate API types from OpenAPI spec
 # ===========================================
-Write-Host "Generating API types from OpenAPI spec..." -ForegroundColor Cyan
-
 $OpenApiProject = Join-Path $PSScriptRoot "..\Ai.Tlbx.MidTerm.OpenApi\Ai.Tlbx.MidTerm.OpenApi.csproj"
 $OpenApiSpec = Join-Path $PSScriptRoot "openapi\openapi.json"
 $GeneratedTypes = Join-Path $TsSource "api.generated.ts"
 
-# Build OpenAPI project to regenerate spec
-Write-Host "  Building OpenAPI project..." -ForegroundColor DarkGray
-$buildOutput = & dotnet build $OpenApiProject --verbosity quiet 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host $buildOutput -ForegroundColor Red
-    Write-Error "OpenAPI project build failed"
-    exit $LASTEXITCODE
+if ($SkipCodegen) {
+    Write-Host "Skipping API codegen (using committed api.generated.ts)" -ForegroundColor Cyan
+    if (-not (Test-Path $GeneratedTypes)) {
+        Write-Error "SkipCodegen specified but $GeneratedTypes does not exist"
+        exit 1
+    }
 }
+else {
+    Write-Host "Generating API types from OpenAPI spec..." -ForegroundColor Cyan
 
-# Verify spec was generated
-if (-not (Test-Path $OpenApiSpec)) {
-    Write-Error "OpenAPI spec not generated at $OpenApiSpec"
-    exit 1
+    # Build OpenAPI project to regenerate spec
+    Write-Host "  Building OpenAPI project..." -ForegroundColor DarkGray
+    $buildOutput = & dotnet build $OpenApiProject --verbosity quiet 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $buildOutput -ForegroundColor Red
+        Write-Error "OpenAPI project build failed"
+        exit $LASTEXITCODE
+    }
+
+    # Verify spec was generated
+    if (-not (Test-Path $OpenApiSpec)) {
+        Write-Error "OpenAPI spec not generated at $OpenApiSpec"
+        exit 1
+    }
+
+    # Generate TypeScript types
+    Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
+    & npx openapi-typescript $OpenApiSpec -o $GeneratedTypes
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "openapi-typescript failed"
+        exit $LASTEXITCODE
+    }
+
+    # Format with prettier
+    Write-Host "  Formatting generated types..." -ForegroundColor DarkGray
+    & npx prettier --write $GeneratedTypes 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "prettier formatting failed"
+        exit $LASTEXITCODE
+    }
+
+    Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
 }
-
-# Generate TypeScript types
-Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
-& npx openapi-typescript $OpenApiSpec -o $GeneratedTypes
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "openapi-typescript failed"
-    exit $LASTEXITCODE
-}
-
-# Format with prettier
-Write-Host "  Formatting generated types..." -ForegroundColor DarkGray
-& npx prettier --write $GeneratedTypes 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "prettier formatting failed"
-    exit $LASTEXITCODE
-}
-
-Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
 
 # ===========================================
-# PHASE 1: TypeScript type-check
+# PHASE 1+2: TypeScript type-check + ESLint (parallel)
 # ===========================================
-Write-Host "Type-checking TypeScript..." -ForegroundColor Cyan
+Write-Host "Type-checking and linting (parallel)..." -ForegroundColor Cyan
 
-# Use --pretty false for MSBuild-compatible error format
-# Format: file(line,col): error CODE: message
-# This allows VS Error List to pick up TypeScript errors
 $tscPath = Join-Path $PSScriptRoot "../../node_modules/typescript/lib/tsc.js"
 $tsconfigPath = Join-Path $PSScriptRoot "tsconfig.json"
-& node $tscPath --noEmit --pretty false --project $tsconfigPath
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
 
-# ===========================================
-# PHASE 2: ESLint (includes Prettier via plugin)
-# ===========================================
-Write-Host "Linting with ESLint..." -ForegroundColor Cyan
-& npx eslint $TsSource
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+# Run tsc and ESLint concurrently; collect output so errors are printed cleanly
+$tscJob = Start-Job -ScriptBlock {
+    param($tscPath, $tsconfigPath)
+    $out = & node $tscPath --noEmit --pretty false --project $tsconfigPath 2>&1
+    [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+} -ArgumentList $tscPath, $tsconfigPath
+
+$eslintJob = Start-Job -ScriptBlock {
+    param($TsSource)
+    $out = & npx eslint $TsSource 2>&1
+    [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+} -ArgumentList $TsSource
+
+$tscResult   = $tscJob   | Wait-Job | Receive-Job
+$eslintResult = $eslintJob | Wait-Job | Receive-Job
+
+if ($tscResult.Output)   { Write-Host ($tscResult.Output   | Out-String).TrimEnd() }
+if ($eslintResult.Output) { Write-Host ($eslintResult.Output | Out-String).TrimEnd() }
+
+if ($tscResult.ExitCode -ne 0) {
+    Write-Error "TypeScript type check failed"
+    exit $tscResult.ExitCode
+}
+if ($eslintResult.ExitCode -ne 0) {
+    Write-Error "ESLint failed"
+    exit $eslintResult.ExitCode
 }
 
 # ===========================================
