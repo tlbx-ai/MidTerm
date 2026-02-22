@@ -35,6 +35,8 @@ interface TouchScrollState {
   velocity: number;
   lastMoveTime: number;
   momentumRaf: number | null;
+  scrollAccumulator: number;
+  cellHeight: number;
   handlers: {
     touchstart: (e: TouchEvent) => void;
     touchmove: (e: TouchEvent) => void;
@@ -81,6 +83,8 @@ export function initTouchScrolling(
     velocity: 0,
     lastMoveTime: 0,
     momentumRaf: null,
+    scrollAccumulator: 0,
+    cellHeight: 0,
     handlers: {
       touchstart: (e) => handleTouchStart(sessionId, e),
       touchmove: (e) => handleTouchMove(sessionId, e),
@@ -138,6 +142,8 @@ function handleTouchStart(sessionId: string, e: TouchEvent): void {
   s.startTime = Date.now();
   s.velocity = 0;
   s.lastMoveTime = Date.now();
+  s.scrollAccumulator = 0;
+  s.cellHeight = s.terminal.rows > 0 ? s.viewport.clientHeight / s.terminal.rows : 0;
 
   s.longPressTimer = window.setTimeout(() => {
     enterSelectionMode(s, touch.clientX, touch.clientY);
@@ -250,8 +256,13 @@ function enterSelectionMode(s: TouchScrollState, clientX: number, clientY: numbe
 }
 
 function scrollViewport(s: TouchScrollState, deltaY: number): void {
-  const max = s.viewport.scrollHeight - s.viewport.clientHeight;
-  s.viewport.scrollTop = Math.max(0, Math.min(max, s.viewport.scrollTop + deltaY));
+  if (s.cellHeight <= 0) return;
+  s.scrollAccumulator += deltaY / s.cellHeight;
+  const lines = Math.trunc(s.scrollAccumulator);
+  if (lines !== 0) {
+    s.terminal.scrollLines(lines);
+    s.scrollAccumulator -= lines;
+  }
 }
 
 function startMomentum(s: TouchScrollState): void {
