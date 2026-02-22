@@ -351,7 +351,7 @@
   "webPreview.refresh": "রিফ্রেশ",
   "webPreview.domHtml": "পেজের HTML টার্মিনালে কপি করুন",
   "webPreview.domText": "পেজের টেক্সট টার্মিনালে কপি করুন",
-  "webPreview.screenshot": "টার্মিনালে স্ক্রিনশট",
+  "webPreview.screenshot": "টার্মিনালে স্ক্রিনশট (Ctrl+ক্লিক করে ডাউনলোড করুন)",
   "webPreview.detach": "উইন্ডোতে খুলুন",
   "webPreview.dockBack": "ফিরে আনুন",
   "webPreview.detachedPlaceholder": "প্রিভিউ আলাদা উইন্ডোতে খোলা আছে",

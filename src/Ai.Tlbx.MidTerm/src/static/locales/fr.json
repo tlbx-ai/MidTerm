@@ -351,7 +351,7 @@
   "webPreview.refresh": "Actualiser",
   "webPreview.domHtml": "Copier le HTML vers le terminal",
   "webPreview.domText": "Copier le texte vers le terminal",
-  "webPreview.screenshot": "Capture vers le terminal",
+  "webPreview.screenshot": "Capture vers le terminal (Ctrl+clic pour télécharger)",
   "webPreview.detach": "Ouvrir dans une fenêtre",
   "webPreview.dockBack": "Réancrer",
   "webPreview.detachedPlaceholder": "L'aperçu est ouvert dans une fenêtre séparée",

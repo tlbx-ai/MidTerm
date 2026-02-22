@@ -34,7 +34,7 @@ export function initWebPanel(): void {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
     void handleRefresh(hard ? 'hard' : 'soft');
   });
-  screenshotBtn?.addEventListener('click', () => void handleScreenshot());
+  screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
   document.getElementById('web-preview-dom-html')?.addEventListener('click', handleDomHtml);
   document.getElementById('web-preview-dom-text')?.addEventListener('click', handleDomText);
 }
@@ -215,10 +215,29 @@ async function captureIframeScreenshot(): Promise<Blob | null> {
 }
 
 /**
- * Capture a screenshot of the web preview iframe and paste the file path into the terminal.
+ * Capture a screenshot of the web preview iframe.
+ * Ctrl+click downloads the PNG directly to the browser; plain click uploads and pastes the
+ * file path into the active terminal session.
  */
-async function handleScreenshot(): Promise<void> {
+async function handleScreenshot(download = false): Promise<void> {
   if (!iframe || iframe.src === 'about:blank') return;
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `screenshot_${ts}.png`;
+
+  const blob = await captureIframeScreenshot();
+  if (!blob) return;
+
+  if (download) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    log.info(() => 'Screenshot downloaded');
+    return;
+  }
 
   const sessionId = $activeSessionId.get();
   if (!sessionId) {
@@ -226,11 +245,7 @@ async function handleScreenshot(): Promise<void> {
     return;
   }
 
-  const blob = await captureIframeScreenshot();
-  if (!blob) return;
-
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = new File([blob], `screenshot_${ts}.png`, { type: 'image/png' });
+  const file = new File([blob], filename, { type: 'image/png' });
   const formData = new FormData();
   formData.append('file', file);
 

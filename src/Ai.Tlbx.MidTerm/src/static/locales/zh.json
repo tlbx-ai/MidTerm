@@ -354,7 +354,7 @@
   "webPreview.refresh": "刷新",
   "webPreview.domHtml": "复制页面HTML到终端",
   "webPreview.domText": "复制页面文本到终端",
-  "webPreview.screenshot": "截图到终端",
+  "webPreview.screenshot": "截图到终端（Ctrl+点击可下载）",
   "webPreview.detach": "弹出到窗口",
   "webPreview.dockBack": "停靠回来",
   "webPreview.detachedPlaceholder": "预览已在单独窗口中打开",

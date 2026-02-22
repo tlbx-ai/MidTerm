@@ -351,7 +351,7 @@
   "webPreview.refresh": "Aktualisieren",
   "webPreview.domHtml": "Seiten-HTML ans Terminal kopieren",
   "webPreview.domText": "Seitentext ans Terminal kopieren",
-  "webPreview.screenshot": "Screenshot zum Terminal",
+  "webPreview.screenshot": "Screenshot zum Terminal (Strg+Klick zum Herunterladen)",
   "webPreview.detach": "In Fenster öffnen",
   "webPreview.dockBack": "Andocken",
   "webPreview.detachedPlaceholder": "Vorschau ist in einem separaten Fenster geöffnet",

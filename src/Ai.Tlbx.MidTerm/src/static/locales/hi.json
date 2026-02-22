@@ -351,7 +351,7 @@
   "webPreview.refresh": "रीफ़्रेश",
   "webPreview.domHtml": "पेज HTML टर्मिनल में कॉपी करें",
   "webPreview.domText": "पेज टेक्स्ट टर्मिनल में कॉपी करें",
-  "webPreview.screenshot": "टर्मिनल पर स्क्रीनशॉट",
+  "webPreview.screenshot": "टर्मिनल पर स्क्रीनशॉट (Ctrl+क्लिक से डाउनलोड करें)",
   "webPreview.detach": "विंडो में खोलें",
   "webPreview.dockBack": "वापस जोड़ें",
   "webPreview.detachedPlaceholder": "प्रीव्यू अलग विंडो में खुला है",

@@ -328,7 +328,7 @@
   "webPreview.refresh": "Refresh",
   "webPreview.domHtml": "Copy page HTML to terminal",
   "webPreview.domText": "Copy page text to terminal",
-  "webPreview.screenshot": "Screenshot to terminal",
+  "webPreview.screenshot": "Screenshot to terminal (Ctrl+click to download)",
   "webPreview.detach": "Pop out to window",
   "webPreview.dockBack": "Dock back",
   "webPreview.detachedPlaceholder": "Preview is open in a separate window",

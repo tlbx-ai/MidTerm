@@ -351,7 +351,7 @@
   "webPreview.refresh": "更新",
   "webPreview.domHtml": "ページHTMLをターミナルにコピー",
   "webPreview.domText": "ページテキストをターミナルにコピー",
-  "webPreview.screenshot": "ターミナルにスクリーンショット",
+  "webPreview.screenshot": "ターミナルにスクリーンショット（Ctrl+クリックでダウンロード）",
   "webPreview.detach": "ウィンドウで開く",
   "webPreview.dockBack": "ドッキング",
   "webPreview.detachedPlaceholder": "プレビューは別ウィンドウで開いています",
