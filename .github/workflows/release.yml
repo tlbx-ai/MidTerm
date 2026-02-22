@@ -61,6 +61,33 @@ jobs:
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
+      - name: Import Apple Developer ID certificate
+        if: startsWith(matrix.rid, 'osx-')
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Persist keychain password for subsequent steps
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
       - name: Stage artifacts
         shell: bash
         run: |
@@ -69,15 +96,20 @@ jobs:
           cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
           cp version.json staging/
 
-          # Ad-hoc codesign for macOS (must happen before checksums).
-          # Plain ad-hoc (-s -) intentionally — no --options runtime.
-          # On macOS 26+, hardened runtime without a real Apple Developer ID causes taskgated
-          # to reject the binary definitively on every launch with no caching path.
-          # Plain ad-hoc fails too, but launchd KeepAlive bounces through it until the OS
-          # caches the binary hash. --options runtime breaks that recovery path entirely.
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
-            codesign --force -s - staging/mt
-            codesign --force -s - staging/mthost
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/mt
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/mthost
+            codesign --verify --strict staging/mt
+            codesign --verify --strict staging/mthost
           fi
 
           cd staging
@@ -88,6 +120,28 @@ jobs:
           fi
           echo "=== ${{ matrix.rid }} ==="
           cat SHA256SUMS.txt
+
+      - name: Notarize
+        if: startsWith(matrix.rid, 'osx-')
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          zip -j "$RUNNER_TEMP/notarize.zip" staging/mt staging/mthost
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple staging/mt
+          xcrun stapler staple staging/mthost
+          spctl --assess --type exec --verbose staging/mt
+          spctl --assess --type exec --verbose staging/mthost
+
+      - name: Clean up keychain
+        if: startsWith(matrix.rid, 'osx-') && always()
+        run: security delete-keychain "$KEYCHAIN_PATH"
 
       - uses: actions/upload-artifact@v4
         with:
