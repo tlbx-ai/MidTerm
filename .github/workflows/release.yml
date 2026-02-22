@@ -193,6 +193,7 @@ jobs:
             Compress-Archive -Path "staging/$rid/*" -DestinationPath $archive -CompressionLevel SmallestSize
           } else {
             $archive = "staging/mt-$rid.tar.gz"
+            $env:GZIP = "-9"
             tar -czf $archive -C "staging/$rid" .
           }
           gh release upload "${{ github.ref_name }}" $archive
