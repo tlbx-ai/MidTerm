@@ -217,7 +217,7 @@ public sealed partial class UpdateService : IDisposable
 
             _latestUpdate = new UpdateInfo
             {
-                Available = true,
+                Available = asset is not null,
                 CurrentVersion = _currentVersion,
                 LatestVersion = latestVersion,
                 ReleaseUrl = release.HtmlUrl ?? $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{release.TagName}",
