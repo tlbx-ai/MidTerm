@@ -1,6 +1,7 @@
 {
-  "web": "7.3.60-dev",
+  "web": "7.4.0-dev",
   "pty": "7.3.60-dev",
   "protocol": 1,
-  "minCompatiblePty": "2.0.0"
+  "minCompatiblePty": "2.0.0",
+  "webOnly": true
 }
