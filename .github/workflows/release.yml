@@ -184,19 +184,19 @@ jobs:
         run: ./scripts/sign-release.ps1 -ArtifactsPath staging
 
       - name: Package and upload to release
-        shell: bash
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd staging
-          if [[ "${{ matrix.rid }}" == win-* ]]; then
-            ARCHIVE="mt-${{ matrix.rid }}.zip"
-            zip -j "$ARCHIVE" ${{ matrix.rid }}/*
-          else
-            ARCHIVE="mt-${{ matrix.rid }}.tar.gz"
-            tar -czf "$ARCHIVE" -C ${{ matrix.rid }} .
-          fi
-          gh release upload ${{ github.ref_name }} "$ARCHIVE"
+          $rid = "${{ matrix.rid }}"
+          if ($rid -like "win-*") {
+            $archive = "staging/mt-$rid.zip"
+            Compress-Archive -Path "staging/$rid/*" -DestinationPath $archive
+          } else {
+            $archive = "staging/mt-$rid.tar.gz"
+            tar -czf $archive -C "staging/$rid" .
+          }
+          gh release upload "${{ github.ref_name }}" $archive
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
