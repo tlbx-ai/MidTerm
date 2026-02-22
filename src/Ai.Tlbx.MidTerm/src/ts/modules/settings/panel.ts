@@ -12,7 +12,9 @@ import { fetchSettings, unbindSettingsAutoSave } from './persistence';
 import { initSettingsTabs } from './tabs';
 import { stopLatencyMeasurement } from '../diagnostics';
 import { createLogger } from '../logging';
-import { getHealth, getSharePacket } from '../../api/client';
+import { getHealth, getSharePacket, regenerateCertificate } from '../../api/client';
+import { showConfirm } from '../../utils/dialog';
+import { t } from '../i18n';
 
 const log = createLogger('settings');
 
@@ -56,6 +58,7 @@ export function openSettings(): void {
   fetchSettings();
   fetchSystemStatus();
   fetchCertificateInfo();
+  bindRegenerateCertButton();
 }
 
 /**
@@ -254,4 +257,66 @@ export function fetchCertificateInfo(): void {
       if (fingerprintEl) fingerprintEl.textContent = 'Error loading';
       if (validityEl) validityEl.textContent = '-';
     });
+}
+
+let regenerateCertBound = false;
+
+function bindRegenerateCertButton(): void {
+  const btn = document.getElementById('btn-regenerate-cert') as HTMLButtonElement | null;
+  if (!btn || regenerateCertBound) return;
+  regenerateCertBound = true;
+
+  btn.addEventListener('click', async () => {
+    const confirmed = await showConfirm(t('settings.security.regenerateConfirm'), {
+      title: t('settings.security.regenerateCertificate'),
+      confirmLabel: t('settings.security.regenerate'),
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    btn.disabled = true;
+
+    try {
+      await regenerateCertificate();
+    } catch {
+      // Server may shut down before responding
+    }
+
+    showRestartOverlay();
+  });
+}
+
+function showRestartOverlay(): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'restart-overlay';
+  overlay.innerHTML = `
+    <div class="spinner"></div>
+    <div>${t('settings.diagnostics.restartingServer')}</div>
+  `;
+  document.body.appendChild(overlay);
+
+  let attempts = 0;
+  const maxAttempts = 30;
+
+  const poll = setInterval(async () => {
+    attempts++;
+    try {
+      const resp = await fetch('/api/health', { cache: 'no-store' });
+      if (resp.ok) {
+        clearInterval(poll);
+        window.location.reload();
+        return;
+      }
+    } catch {
+      // Server still down
+    }
+
+    if (attempts >= maxAttempts) {
+      clearInterval(poll);
+      overlay.innerHTML = `
+        <div>${t('settings.diagnostics.restartFailed')}</div>
+        <button class="btn-primary" onclick="window.location.reload()">${t('settings.diagnostics.retryConnection')}</button>
+      `;
+    }
+  }, 2000);
 }

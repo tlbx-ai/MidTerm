@@ -148,6 +148,10 @@
   "settings.security.trustOtherDevices": "Trust on Other Devices",
   "settings.security.openTrustPage": "Open Trust Page",
   "settings.security.fingerprintHint": "When connecting from a new device, click the padlock icon in your browser and compare the SHA-256 fingerprint with this one. Matching fingerprints confirm you're connecting to the real server.",
+  "settings.security.regenerateCertificate": "Regenerate Certificate",
+  "settings.security.regenerate": "Regenerate",
+  "settings.security.regenerateHint": "Delete and recreate the HTTPS certificate. MidTerm will restart and browsers will need to re-trust the new certificate.",
+  "settings.security.regenerateConfirm": "This will delete the current HTTPS certificate, generate a new one, and restart the server. All connected browsers will need to re-trust the new certificate. Continue?",
 
   "settings.ide.title": "IDE Mode",
   "settings.ide.overview": "Overview",
