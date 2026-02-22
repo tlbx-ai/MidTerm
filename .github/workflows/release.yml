@@ -190,7 +190,7 @@ jobs:
           $rid = "${{ matrix.rid }}"
           if ($rid -like "win-*") {
             $archive = "staging/mt-$rid.zip"
-            Compress-Archive -Path "staging/$rid/*" -DestinationPath $archive -CompressionLevel SmallestSize
+            7z a -tzip -mx=9 $archive "./staging/$rid/*" | Out-Null
           } else {
             $archive = "staging/mt-$rid.tar.gz"
             $env:GZIP = "-9"
