@@ -400,6 +400,13 @@ export async function handleNativeImagePaste(sessionId: string): Promise<Clipboa
     return 'unavailable';
   }
 
+  if (
+    typeof navigator.clipboard === 'undefined' ||
+    typeof navigator.clipboard.read !== 'function'
+  ) {
+    return 'unavailable';
+  }
+
   try {
     const items = await navigator.clipboard.read();
     for (const item of items) {
@@ -421,7 +428,8 @@ export async function handleNativeImagePaste(sessionId: string): Promise<Clipboa
       }
     }
   } catch {
-    // clipboard.read() not supported or failed
+    // clipboard.read() failed (permission denied / blocked / unsupported)
+    return 'unavailable';
   }
 
   return 'none';
