@@ -159,6 +159,10 @@ export async function getSharePacket() {
   return client.GET('/api/certificate/share-packet');
 }
 
+export async function regenerateCertificate(): Promise<Response> {
+  return fetch('/api/certificate/regenerate', { method: 'POST' });
+}
+
 // --- Updates ---
 
 export async function checkUpdate() {

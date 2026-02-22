@@ -75,6 +75,7 @@ function handleTouchStart(event: TouchEvent): void {
   const button = target.closest<HTMLButtonElement>('.touch-key');
 
   if (button) {
+    if (button.classList.contains('touch-dismiss')) return;
     event.preventDefault();
     button.classList.add('pressing');
     triggerHaptic();
@@ -113,7 +114,7 @@ function handleTouchEnd(event: TouchEvent): void {
     return;
   }
 
-  if (!button) return;
+  if (!button || button.classList.contains('touch-dismiss')) return;
 
   event.preventDefault();
   processButtonAction(button);
@@ -123,7 +124,7 @@ function handleClick(event: MouseEvent): void {
   const target = event.target as HTMLElement;
   const button = target.closest<HTMLButtonElement>('.touch-key');
 
-  if (!button) return;
+  if (!button || button.classList.contains('touch-dismiss')) return;
 
   processButtonAction(button);
 }

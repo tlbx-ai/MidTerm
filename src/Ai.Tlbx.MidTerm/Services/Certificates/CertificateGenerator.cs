@@ -42,8 +42,15 @@ public static class CertificateGenerator
         }
 
         request.CertificateExtensions.Add(
+            new X509BasicConstraintsExtension(
+                certificateAuthority: true,
+                hasPathLengthConstraint: true,
+                pathLengthConstraint: 0,
+                critical: true));
+
+        request.CertificateExtensions.Add(
             new X509KeyUsageExtension(
-                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.KeyCertSign,
                 critical: true));
 
         request.CertificateExtensions.Add(

@@ -2266,7 +2266,7 @@ html, body {
     border-radius: 4px;
     border: none;
     cursor: pointer;
-    z-index: 10;
+    z-index: 25;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -5323,6 +5323,21 @@ html, body {
 .touch-cat.active {
     background: var(--accent-blue);
     color: var(--bg-primary);
+}
+
+.touch-dismiss {
+    font-family: 'midFont';
+    font-size: var(--fs-md);
+    padding: 8px;
+    min-width: 36px;
+    background: transparent;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-left: 4px;
+}
+
+.touch-dismiss:active {
+    color: var(--text-primary);
 }
 
 /* Press feedback */

@@ -34,7 +34,12 @@ export function initWebPanel(): void {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
     void handleRefresh(hard ? 'hard' : 'soft');
   });
-  screenshotBtn?.addEventListener('click', handleScreenshot);
+  screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
+  document
+    .getElementById('web-preview-snapshot')
+    ?.addEventListener('click', () => void handleSnapshot());
+  document.getElementById('web-preview-dom-html')?.addEventListener('click', handleDomHtml);
+  document.getElementById('web-preview-dom-text')?.addEventListener('click', handleDomText);
 }
 
 export function restoreLastUrl(): void {
@@ -117,18 +122,100 @@ export function hideDetachedPlaceholder(): void {
 }
 
 /**
+ * Save a DOM snapshot of the web preview to the active session's cwd.
+ * Sends the live rendered HTML + CSS hrefs to the server, which writes them
+ * to <cwd>/.midterm/snapshot_YYYYMMDD_HHMMSS/ and pastes the path into the terminal.
+ */
+async function handleSnapshot(): Promise<void> {
+  if (!iframe || iframe.src === 'about:blank') return;
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+
+  const iframeDoc = iframe.contentDocument;
+  if (!iframeDoc) return;
+
+  const html = iframeDoc.documentElement.outerHTML;
+  const cssUrls = Array.from(
+    iframeDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]'),
+  ).map((el) => el.href);
+
+  try {
+    const resp = await fetch('/api/webpreview/snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, html, cssUrls }),
+    });
+    if (!resp.ok) {
+      log.warn(() => `Snapshot failed: ${resp.status}`);
+      return;
+    }
+    const result = await resp.json();
+    if (result.snapshotPath) {
+      pasteToTerminal(sessionId, result.snapshotPath, true);
+      log.info(() => `Snapshot saved: ${result.snapshotPath}`);
+    }
+  } catch (err) {
+    log.warn(() => `Snapshot error: ${err}`);
+  }
+}
+
+/**
+ * Paste the iframe's full HTML source into the active terminal session.
+ */
+function handleDomHtml(): void {
+  if (!iframe || iframe.src === 'about:blank') return;
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+  const html = iframe.contentDocument?.documentElement.outerHTML ?? '';
+  if (!html) return;
+  pasteToTerminal(sessionId, html, false);
+  log.info(() => 'DOM outerHTML pasted to terminal');
+}
+
+/**
+ * Paste the iframe's visible text content into the active terminal session.
+ */
+function handleDomText(): void {
+  if (!iframe || iframe.src === 'about:blank') return;
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+  const text = iframe.contentDocument?.documentElement.innerText ?? '';
+  if (!text) return;
+  pasteToTerminal(sessionId, text, false);
+  log.info(() => 'DOM innerText pasted to terminal');
+}
+
+/**
  * Inject html2canvas into the iframe's document on first call; reuse on subsequent calls.
- * html2canvas is loaded lazily from /js/html2canvas.min.js — only fetched when a screenshot
- * is actually requested, not on every page load.
+ *
+ * We fetch the script in the parent window context (not the iframe's), then inject it via
+ * a blob: URL. This bypasses the iframe's URL-rewriting patches: the proxy injects a script
+ * into every proxied page that overrides HTMLScriptElement.prototype.src and rewrites
+ * root-relative paths like /js/... to /webpreview/js/..., causing the upstream dev server
+ * to be asked for html2canvas (which it doesn't have). blob: URLs are explicitly excluded
+ * from that rewriter, so they reach the browser's native script loader unchanged.
  */
 async function ensureHtml2Canvas(iframeWin: Window): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if ((iframeWin as any).html2canvas) return;
+
+  // Fetch from parent window — not subject to the iframe's URL-rewriting patches.
+  const response = await fetch('/js/html2canvas.min.js');
+  const text = await response.text();
+  const blob = new Blob([text], { type: 'text/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+
   return new Promise((resolve, reject) => {
     const script = iframeWin.document.createElement('script');
-    script.src = '/js/html2canvas.min.js';
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load html2canvas'));
+    script.src = blobUrl; // blob: URLs bypass the iframe's src-setter rewrite patch
+    script.onload = () => {
+      URL.revokeObjectURL(blobUrl);
+      resolve();
+    };
+    script.onerror = () => {
+      URL.revokeObjectURL(blobUrl);
+      reject(new Error('Failed to load html2canvas'));
+    };
     iframeWin.document.head.appendChild(script);
   });
 }
@@ -169,10 +256,29 @@ async function captureIframeScreenshot(): Promise<Blob | null> {
 }
 
 /**
- * Capture a screenshot of the web preview iframe and paste the file path into the terminal.
+ * Capture a screenshot of the web preview iframe.
+ * Ctrl+click downloads the PNG directly to the browser; plain click uploads and pastes the
+ * file path into the active terminal session.
  */
-async function handleScreenshot(): Promise<void> {
+async function handleScreenshot(download = false): Promise<void> {
   if (!iframe || iframe.src === 'about:blank') return;
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `screenshot_${ts}.png`;
+
+  const blob = await captureIframeScreenshot();
+  if (!blob) return;
+
+  if (download) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    log.info(() => 'Screenshot downloaded');
+    return;
+  }
 
   const sessionId = $activeSessionId.get();
   if (!sessionId) {
@@ -180,11 +286,7 @@ async function handleScreenshot(): Promise<void> {
     return;
   }
 
-  const blob = await captureIframeScreenshot();
-  if (!blob) return;
-
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = new File([blob], `screenshot_${ts}.png`, { type: 'image/png' });
+  const file = new File([blob], filename, { type: 'image/png' });
   const formData = new FormData();
   formData.append('file', file);
 

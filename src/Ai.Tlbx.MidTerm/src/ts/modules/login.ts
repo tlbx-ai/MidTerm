@@ -9,7 +9,7 @@ import { t, initI18n } from './i18n';
 
 const CERT_HIDDEN_KEY = 'mt-cert-info-hidden';
 
-export function initLoginPage(): void {
+export async function initLoginPage(): Promise<void> {
   const form = document.getElementById('login-form') as HTMLFormElement | null;
   const passwordInput = document.getElementById('password') as HTMLInputElement | null;
   const errorDiv = document.getElementById('error-message');
@@ -17,8 +17,8 @@ export function initLoginPage(): void {
 
   if (!form || !passwordInput || !errorDiv || !loginBtn) return;
 
-  // Initialize i18n for login page
-  initI18n();
+  // Initialize i18n for login page (await so translations are applied before binding events)
+  await initI18n();
 
   // Load version and insider info
   loadVersionAndPaths();

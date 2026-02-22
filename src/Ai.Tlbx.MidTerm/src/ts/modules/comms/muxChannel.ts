@@ -287,7 +287,6 @@ function yieldToMain(): Promise<void> {
 }
 
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
-  _sessionBytesCallback?.(sessionId, payload.length);
   const pendingCount = outputQueue.length - queueIndex;
   if (pendingCount >= MAX_QUEUE_SIZE) {
     const droppedItem = outputQueue[queueIndex];
@@ -576,6 +575,7 @@ export function connectMuxWebSocket(): void {
 
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
       measureOutputRtt(sessionId);
+      _sessionBytesCallback?.(sessionId, payload.length);
       // Queue ALL output frames to guarantee strict ordering
       // .slice() here is needed — WS may recycle the ArrayBuffer
       if (payload.length >= 4) {

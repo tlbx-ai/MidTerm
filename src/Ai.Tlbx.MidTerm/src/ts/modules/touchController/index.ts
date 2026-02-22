@@ -11,6 +11,8 @@ export {
   showTouchController,
   hideTouchController,
   updateVisibility,
+  dismissTouchController,
+  restoreTouchController,
 } from './bar';
 
 export type { ModifierKey } from './modifiers';

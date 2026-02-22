@@ -797,35 +797,28 @@ export function setupResizeObserver(): void {
 
 /**
  * Set up visual viewport handling for mobile keyboard appearance.
- * Updates viewport height CSS variable when visual viewport changes.
+ * Constrains the html element height to the visual viewport so the entire
+ * flex layout (topbar, terminals, touch controller) fits above the keyboard.
  */
 export function setupVisualViewport(): void {
-  if (!window.visualViewport || !dom.terminalsArea) return;
+  if (!window.visualViewport) return;
 
-  const visualViewport = window.visualViewport;
-  const terminalsArea = dom.terminalsArea;
+  const vv = window.visualViewport;
   let lastHeight = 0;
 
-  const updateViewportHeight = () => {
-    const vh = visualViewport.height;
+  const update = () => {
+    const vh = vv.height;
     if (Math.abs(vh - lastHeight) < 1) return;
     lastHeight = vh;
 
-    document.documentElement.style.setProperty('--visual-vh', vh + 'px');
+    const root = document.documentElement;
+    root.style.setProperty('--visual-vh', vh + 'px');
+    root.style.height = vh + 'px';
 
-    const mobileHeader = document.querySelector('.mobile-header') as HTMLElement | null;
-    let headerHeight = 0;
-    if (mobileHeader && window.getComputedStyle(mobileHeader).display !== 'none') {
-      headerHeight = mobileHeader.offsetHeight;
-    }
-
-    const availableHeight = Math.floor((vh - headerHeight) * 0.99);
-    terminalsArea.style.height = availableHeight + 'px';
-
-    // Rescale terminals after viewport height change
     rescaleAllTerminals();
   };
 
-  visualViewport.addEventListener('resize', updateViewportHeight);
-  updateViewportHeight();
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll', update);
+  update();
 }
