@@ -17,6 +17,7 @@ import {
   sendInput,
   sendActiveSessionHint,
   claimMainBrowser,
+  setSessionBytesCallback,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -50,6 +51,8 @@ import {
   initializeSidebarUpdater,
   initSessionDrag,
   initTrafficIndicator,
+  initHeatIndicator,
+  recordBytes,
 } from './modules/sidebar';
 import { initI18n } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
@@ -183,6 +186,8 @@ async function init(): Promise<void> {
   await initI18n();
   initMainBrowserButton();
   initTrafficIndicator();
+  setSessionBytesCallback(recordBytes);
+  initHeatIndicator();
   initBadges();
   initFileViewer();
   restoreSidebarState();

@@ -391,13 +391,22 @@ html, body {
 .session-item {
     display: flex;
     align-items: center;
-    padding: 8px 8px 8px 10px;
+    padding: 8px 8px 8px 4px;
     cursor: grab;
     border-left: 2px solid transparent;
     gap: 0;
     position: relative;
     font-family: var(--font-ui-emoji);
     transition: transform 0.2s ease-in-out, background-color 0.15s ease-in-out, opacity 0.2s;
+}
+
+.heat-canvas {
+    width: 4px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    margin-right: 6px;
+    opacity: 0.9;
 }
 
 .session-item:active {
