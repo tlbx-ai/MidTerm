@@ -5,21 +5,27 @@
  * Default: single-finger drag scrolls the terminal viewport.
  * Long-press (500ms): switches to xterm text selection mode.
  * Quick tap: focuses terminal / sends mouse click for TUI interaction.
+ * Horizontal swipe: sends Ctrl+A (start) / Ctrl+E (end of line).
  *
- * Uses a transparent overlay to intercept touches before xterm.js,
- * while still allowing events to bubble to parent gesture handlers.
+ * Uses a transparent overlay (z-index: 20, above xterm internals) with
+ * stopPropagation to fully isolate from xterm.js v6's document-level
+ * gesture system, which otherwise converts touch scroll into cursor keys.
  */
 
 import type { Terminal } from '@xterm/xterm';
 import { isTouchDevice, hasPrecisePointer } from '../touchController/detection';
+import { sendInput } from '../comms/muxChannel';
 
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD = 10;
 const TAP_MAX_DURATION = 300;
 const MOMENTUM_FRICTION = 0.95;
 const MOMENTUM_MIN_VELOCITY = 0.5;
+const SWIPE_THRESHOLD = 80;
+const SWIPE_MAX_VERTICAL = 40;
+const SWIPE_MAX_TIME = 300;
 
-type TouchMode = 'idle' | 'pending' | 'scrolling' | 'selecting';
+type TouchMode = 'idle' | 'pending' | 'scrolling' | 'selecting' | 'horizontal';
 
 interface TouchScrollState {
   overlay: HTMLDivElement;
@@ -63,7 +69,7 @@ export function initTouchScrolling(
   overlay.style.cssText = `
     position: absolute;
     inset: 0;
-    z-index: 1;
+    z-index: 20;
     touch-action: none;
     background: transparent;
   `;
@@ -131,6 +137,10 @@ function handleTouchStart(sessionId: string, e: TouchEvent): void {
   // Only handle single-finger touches; multi-touch goes to gesture system
   if (e.touches.length !== 1) return;
 
+  // Stop propagation to prevent xterm.js v6's document-level gesture system
+  // from intercepting this touch and converting scroll into cursor key sequences
+  e.stopPropagation();
+
   const touch = e.touches[0]!;
 
   cancelMomentum(s);
@@ -143,7 +153,14 @@ function handleTouchStart(sessionId: string, e: TouchEvent): void {
   s.velocity = 0;
   s.lastMoveTime = Date.now();
   s.scrollAccumulator = 0;
-  s.cellHeight = s.terminal.rows > 0 ? s.viewport.clientHeight / s.terminal.rows : 0;
+
+  // Account for CSS transform scaling (terminal may be scaled down to fit viewport)
+  const xterm = s.overlay.parentElement?.querySelector('.xterm') as HTMLElement | null;
+  const transform = xterm?.style.transform ?? '';
+  const scaleMatch = transform.match(/scale\(([^)]+)\)/);
+  const scale = scaleMatch?.[1] ? parseFloat(scaleMatch[1]) : 1;
+  const naturalCellHeight = s.terminal.rows > 0 ? s.viewport.clientHeight / s.terminal.rows : 0;
+  s.cellHeight = naturalCellHeight * scale;
 
   s.longPressTimer = window.setTimeout(() => {
     enterSelectionMode(s, touch.clientX, touch.clientY);
@@ -153,6 +170,8 @@ function handleTouchStart(sessionId: string, e: TouchEvent): void {
 function handleTouchMove(sessionId: string, e: TouchEvent): void {
   const s = states.get(sessionId);
   if (!s || e.touches.length !== 1) return;
+
+  e.stopPropagation();
 
   const touch = e.touches[0]!;
   const dx = touch.clientX - s.startX;
@@ -168,9 +187,9 @@ function handleTouchMove(sessionId: string, e: TouchEvent): void {
       s.mode = 'scrolling';
       e.preventDefault();
     } else if (absDx > MOVE_THRESHOLD && absDx > absDy * 1.5) {
-      // Horizontal movement dominant — stay pending, let gesture system handle swipe
+      // Horizontal movement dominant — track for swipe detection
       cancelLongPress(s);
-      s.mode = 'idle';
+      s.mode = 'horizontal';
       return;
     }
   }
@@ -195,6 +214,8 @@ function handleTouchEnd(sessionId: string, e: TouchEvent): void {
   const s = states.get(sessionId);
   if (!s) return;
 
+  e.stopPropagation();
+
   const mode = s.mode;
   cancelLongPress(s);
 
@@ -214,13 +235,31 @@ function handleTouchEnd(sessionId: string, e: TouchEvent): void {
     e.preventDefault();
     startMomentum(s);
     s.mode = 'idle';
+  } else if (mode === 'horizontal') {
+    // Check for horizontal swipe (Ctrl+A / Ctrl+E)
+    const touch = e.changedTouches[0];
+    if (touch) {
+      const dx = touch.clientX - s.startX;
+      const dy = touch.clientY - s.startY;
+      const dt = Date.now() - s.startTime;
+      if (
+        Math.abs(dx) >= SWIPE_THRESHOLD &&
+        Math.abs(dy) <= SWIPE_MAX_VERTICAL &&
+        dt <= SWIPE_MAX_TIME
+      ) {
+        e.preventDefault();
+        sendInput(sessionId, dx > 0 ? '\x05' : '\x01');
+      }
+    }
+    s.mode = 'idle';
   }
   // 'selecting' mode is handled by the document touchend listener
 }
 
-function handleTouchCancel(sessionId: string, _e: TouchEvent): void {
+function handleTouchCancel(sessionId: string, e: TouchEvent): void {
   const s = states.get(sessionId);
   if (!s) return;
+  e.stopPropagation();
   cancelLongPress(s);
   s.mode = 'idle';
 }
@@ -245,14 +284,17 @@ function enterSelectionMode(s: TouchScrollState, clientX: number, clientY: numbe
   });
   s.screen.dispatchEvent(mousedown);
 
-  // Re-enable overlay when the selection gesture ends
-  const onDocumentTouchEnd = (): void => {
+  // Re-enable overlay when the selection gesture ends (touchend or touchcancel)
+  const restoreOverlay = (): void => {
     s.overlay.style.pointerEvents = '';
     s.mode = 'idle';
+    document.removeEventListener('touchend', restoreOverlay, { capture: true });
+    document.removeEventListener('touchcancel', restoreOverlay, { capture: true });
     s.documentTouchEnd = null;
   };
-  s.documentTouchEnd = onDocumentTouchEnd;
-  document.addEventListener('touchend', onDocumentTouchEnd, { once: true, capture: true });
+  s.documentTouchEnd = restoreOverlay;
+  document.addEventListener('touchend', restoreOverlay, { once: true, capture: true });
+  document.addEventListener('touchcancel', restoreOverlay, { once: true, capture: true });
 }
 
 function scrollViewport(s: TouchScrollState, deltaY: number): void {
@@ -300,6 +342,7 @@ function cancelMomentum(s: TouchScrollState): void {
 function removeDocumentListener(s: TouchScrollState): void {
   if (s.documentTouchEnd) {
     document.removeEventListener('touchend', s.documentTouchEnd, { capture: true });
+    document.removeEventListener('touchcancel', s.documentTouchEnd, { capture: true });
     s.documentTouchEnd = null;
   }
 }

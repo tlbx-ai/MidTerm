@@ -2266,7 +2266,7 @@ html, body {
     border-radius: 4px;
     border: none;
     cursor: pointer;
-    z-index: 10;
+    z-index: 25;
     display: flex;
     align-items: center;
     gap: 4px;
