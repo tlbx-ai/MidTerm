@@ -7,7 +7,7 @@
 import { escapeHtml } from '../utils';
 import { t, initI18n } from './i18n';
 
-export function initTrustPage(): void {
+export async function initTrustPage(): Promise<void> {
   // Platform detection
   const ua = navigator.userAgent.toLowerCase();
   const isIOS =
@@ -21,8 +21,8 @@ export function initTrustPage(): void {
 
   if (!detectedPlatformEl) return;
 
-  // Initialize i18n for trust page
-  initI18n();
+  // Initialize i18n for trust page (await so translations apply before building DOM content)
+  await initI18n();
 
   // Show detected platform text and badge
   if (isIOS) {
