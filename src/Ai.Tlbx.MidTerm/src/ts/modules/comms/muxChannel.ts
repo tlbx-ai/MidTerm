@@ -575,6 +575,19 @@ export function connectMuxWebSocket(): void {
 
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
       measureOutputRtt(sessionId);
+      // DEBUG: log output frames to diagnose false heat on session switch
+      if (payload.length > 4 && payload.length < 200) {
+        const dataBytes = payload.slice(4); // skip cols/rows header
+        const hex = Array.from(dataBytes.slice(0, 32))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join(' ');
+        // eslint-disable-next-line no-control-regex
+        const text = new TextDecoder().decode(dataBytes.slice(0, 32)).replace(/[\x00-\x1f]/g, '.');
+        log.info(
+          () =>
+            `[OUT] session=${sessionId} total=${payload.length} data=${dataBytes.length}B compressed=${type === MUX_TYPE_COMPRESSED_OUTPUT} hex=[${hex}] text=[${text}]`,
+        );
+      }
       _sessionBytesCallback?.(sessionId, payload.length);
       // Queue ALL output frames to guarantee strict ordering
       // .slice() here is needed — WS may recycle the ArrayBuffer
@@ -648,6 +661,13 @@ function sendFrame(frame: Uint8Array): void {
  * Buffers input when WebSocket is disconnected for replay on reconnect.
  */
 export function sendInput(sessionId: string, data: string): void {
+  // DEBUG: log input to detect focus reporting escape sequences
+  if (data.length <= 10) {
+    const hex = Array.from(new TextEncoder().encode(data))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(' ');
+    log.info(() => `[INPUT] session=${sessionId} len=${data.length} hex=[${hex}]`);
+  }
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
     // Buffer input during disconnection (prevents lost keystrokes during reconnect)
     if (pendingInputQueue.length < MAX_PENDING_INPUT) {

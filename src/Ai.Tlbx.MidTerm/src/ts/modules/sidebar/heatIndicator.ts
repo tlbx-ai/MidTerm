@@ -246,7 +246,14 @@ export function unregisterHeatCanvas(sessionId: string): void {
 export function recordBytes(sessionId: string, bytes: number): void {
   const s = sessions.get(sessionId);
   if (!s) return;
-  if (s.ignoreUntilMs > performance.now()) return;
+  const now = performance.now();
+  if (s.ignoreUntilMs > now) {
+    log.info(() => `[SUPPRESSED] session=${sessionId} bytes=${bytes}`);
+    return;
+  }
+  if (bytes > 0) {
+    log.info(() => `[HEAT] session=${sessionId} bytes=${bytes} heat=${s.heat.toFixed(3)}`);
+  }
   s.byteAccum += bytes;
 }
 
