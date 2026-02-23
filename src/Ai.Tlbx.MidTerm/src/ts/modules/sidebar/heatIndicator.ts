@@ -18,8 +18,8 @@ const log = createLogger('heat');
 // Config
 // =============================================================================
 
-/** Peak rate decays slowly — forgets burst peaks over several minutes */
-const PEAK_DECAY_PER_FRAME = 0.9998;
+/** Peak rate half-life in seconds (~57s, matching original 0.9998/frame at 60fps) */
+const PEAK_HALF_LIFE_SEC = 57;
 
 /** Minimum peak to avoid division by near-zero */
 const MIN_PEAK = 200; // bytes/sec
@@ -79,7 +79,6 @@ interface SessionHeat {
 
 const sessions = new Map<string, SessionHeat>();
 let rafId = 0;
-let lastFrameMs = 0;
 
 // =============================================================================
 // Color math
@@ -167,12 +166,6 @@ function triExpDecay(seconds: number): number {
 function drawFrame(nowMs: number): void {
   rafId = requestAnimationFrame(drawFrame);
 
-  const dt = nowMs - lastFrameMs;
-  lastFrameMs = nowMs;
-
-  const frames = Math.min(dt / 16.67, 4);
-  const peakDecay = Math.pow(PEAK_DECAY_PER_FRAME, frames);
-
   sessions.forEach((s) => {
     // Periodically recalculate byte rate and update heat
     const elapsed = nowMs - s.lastTickMs;
@@ -181,11 +174,10 @@ function drawFrame(nowMs: number): void {
       s.byteAccum = 0;
       s.lastTickMs = nowMs;
 
-      // Self-calibrate: peak tracks the max rate, decays slowly over time
-      s.peakRate = Math.max(
-        MIN_PEAK,
-        Math.max(rate, s.peakRate * Math.pow(peakDecay, elapsed / 16.67)),
-      );
+      // Self-calibrate: peak tracks the max rate, decays by timestamp (works in background tabs)
+      const elapsedSec = elapsed / 1000;
+      const peakDecay = Math.pow(0.5, elapsedSec / PEAK_HALF_LIFE_SEC);
+      s.peakRate = Math.max(MIN_PEAK, Math.max(rate, s.peakRate * peakDecay));
 
       // Add heat proportional to current rate vs peak
       if (rate > 0) {
@@ -259,15 +251,15 @@ export function recordBytes(sessionId: string, bytes: number): void {
 }
 
 /**
- * Suppress heat recording for a session for a short duration.
- * Used when switching active sessions — the server flushes its background
- * buffer which would falsely heat up an idle session.
+ * Suppress heat recording for ALL sessions for a short duration.
+ * Used when switching active sessions — the server flushes background
+ * buffers which would falsely heat up idle sessions.
  */
-export function suppressHeat(sessionId: string, durationMs: number): void {
-  const s = sessions.get(sessionId);
-  if (s) {
-    s.ignoreUntilMs = performance.now() + durationMs;
-  }
+export function suppressAllHeat(durationMs: number): void {
+  const until = performance.now() + durationMs;
+  sessions.forEach((s) => {
+    s.ignoreUntilMs = until;
+  });
 }
 
 /**
@@ -275,7 +267,6 @@ export function suppressHeat(sessionId: string, durationMs: number): void {
  */
 export function initHeatIndicator(): void {
   if (rafId) return;
-  lastFrameMs = performance.now();
   rafId = requestAnimationFrame(drawFrame);
 }
 

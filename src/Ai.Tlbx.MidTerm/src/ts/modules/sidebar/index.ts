@@ -13,4 +13,4 @@ export * from './voiceSection';
 export * from './sidebarUpdater';
 export * from './sessionDrag';
 export { initTrafficIndicator } from './trafficIndicator';
-export { initHeatIndicator, recordBytes, suppressHeat } from './heatIndicator';
+export { initHeatIndicator, recordBytes, suppressAllHeat } from './heatIndicator';

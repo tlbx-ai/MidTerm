@@ -53,7 +53,7 @@ import {
   initTrafficIndicator,
   initHeatIndicator,
   recordBytes,
-  suppressHeat,
+  suppressAllHeat,
 } from './modules/sidebar';
 import { initI18n } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
@@ -448,7 +448,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   // If session is in layout, focus it there instead of switching to standalone
   if (isSessionInLayout(sessionId)) {
     focusLayoutSession(sessionId);
-    suppressHeat(sessionId, 500);
+    suppressAllHeat(500);
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
     createTerminalForSession(sessionId, sessionInfo);
@@ -469,7 +469,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   });
 
   $activeSessionId.set(sessionId);
-  suppressHeat(sessionId, 500);
+  suppressAllHeat(500);
   sendActiveSessionHint(sessionId);
 
   const sessionInfo = getSession(sessionId);
