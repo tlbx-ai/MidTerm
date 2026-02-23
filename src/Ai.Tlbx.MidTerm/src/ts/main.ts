@@ -18,6 +18,7 @@ import {
   sendActiveSessionHint,
   claimMainBrowser,
   setSessionBytesCallback,
+  setSuppressHeatCallback,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -193,6 +194,7 @@ async function init(): Promise<void> {
   initMainBrowserButton();
   initTrafficIndicator();
   setSessionBytesCallback(recordBytes);
+  setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();
   initFileViewer();
@@ -447,8 +449,8 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 
   // If session is in layout, focus it there instead of switching to standalone
   if (isSessionInLayout(sessionId)) {
-    focusLayoutSession(sessionId);
     suppressAllHeat(500);
+    focusLayoutSession(sessionId);
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
     createTerminalForSession(sessionId, sessionInfo);

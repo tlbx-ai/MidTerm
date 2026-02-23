@@ -8,6 +8,10 @@
  * Uses a single rAF loop for all sessions. Self-calibrating peak rate
  * ensures meaningful contrast even between sessions with different
  * baseline traffic levels.
+ *
+ * Performance: self-pausing rAF (stops when all idle), pre-computed
+ * decay + color LUTs, dirty-tracking to skip redundant draws,
+ * document.hidden awareness.
  */
 
 import { createLogger } from '../logging';
@@ -62,29 +66,27 @@ const GRADIENT: [number, number, number, number][] = [
 ];
 
 // =============================================================================
-// State
+// Pre-computed lookup tables
 // =============================================================================
 
-interface SessionHeat {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
-  heat: number; // 0–1 current visual heat level
-  peakRate: number; // self-calibrating max observed bytes/sec
-  byteAccum: number; // bytes accumulated since last rate tick
-  lastTickMs: number; // timestamp of last rate calculation
-  lastActiveMs: number; // when last rate tick detected activity
-  heatWhenInactive: number; // heat snapshot at deactivation (decay anchor)
-  ignoreUntilMs: number; // suppress bytes until this timestamp (avoids false heat on session switch)
+const DECAY_LUT_SIZE = 1000;
+const DECAY_LUT_STEP = 0.1; // seconds per entry (covers 0–100s)
+const decayLUT = new Float32Array(DECAY_LUT_SIZE);
+
+const COLOR_LUT_SIZE = 101;
+const colorLUT: [number, number, number][] = new Array(COLOR_LUT_SIZE);
+
+function buildDecayLUT(): void {
+  for (let i = 0; i < DECAY_LUT_SIZE; i++) {
+    const t = i * DECAY_LUT_STEP;
+    decayLUT[i] =
+      DECAY_FAST_W * Math.exp(-t / DECAY_FAST_TAU) +
+      DECAY_MID_W * Math.exp(-t / DECAY_MID_TAU) +
+      DECAY_SLOW_W * Math.exp(-t / DECAY_SLOW_TAU);
+  }
 }
 
-const sessions = new Map<string, SessionHeat>();
-let rafId = 0;
-
-// =============================================================================
-// Color math
-// =============================================================================
-
-function lerpColor(t: number): [number, number, number] {
+function lerpColorRaw(t: number): [number, number, number] {
   const stops = GRADIENT;
   if (t <= stops[0]![0]) return [stops[0]![1], stops[0]![2], stops[0]![3]];
   const last = stops[stops.length - 1]!;
@@ -105,6 +107,44 @@ function lerpColor(t: number): [number, number, number] {
   return [10, 14, 26];
 }
 
+function buildColorLUT(): void {
+  for (let i = 0; i < COLOR_LUT_SIZE; i++) {
+    colorLUT[i] = lerpColorRaw(i / (COLOR_LUT_SIZE - 1));
+  }
+}
+
+buildDecayLUT();
+buildColorLUT();
+
+// =============================================================================
+// State
+// =============================================================================
+
+interface SessionHeat {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  heat: number; // 0–1 current visual heat level
+  lastDrawnHeat: number; // heat value last rendered (dirty tracking)
+  peakRate: number; // self-calibrating max observed bytes/sec
+  byteAccum: number; // bytes accumulated since last rate tick
+  lastTickMs: number; // timestamp of last rate calculation
+  lastActiveMs: number; // when last rate tick detected activity
+  heatWhenInactive: number; // heat snapshot at deactivation (decay anchor)
+  ignoreUntilMs: number; // suppress bytes until this timestamp (avoids false heat on session switch)
+}
+
+const sessions = new Map<string, SessionHeat>();
+let rafId = 0;
+
+// =============================================================================
+// Color lookup
+// =============================================================================
+
+function lerpColor(t: number): [number, number, number] {
+  const index = Math.min(COLOR_LUT_SIZE - 1, Math.max(0, Math.round(t * (COLOR_LUT_SIZE - 1))));
+  return colorLUT[index]!;
+}
+
 // =============================================================================
 // Canvas drawing
 // =============================================================================
@@ -112,9 +152,18 @@ function lerpColor(t: number): [number, number, number] {
 function drawCanvas(s: SessionHeat): void {
   const { ctx, heat } = s;
 
-  ctx.clearRect(0, 0, CANVAS_CSS_W, CANVAS_CSS_H);
+  if (heat < DRAW_THRESHOLD) {
+    if (s.lastDrawnHeat >= DRAW_THRESHOLD) {
+      ctx.clearRect(0, 0, CANVAS_CSS_W, CANVAS_CSS_H);
+      s.lastDrawnHeat = heat;
+    }
+    return;
+  }
 
-  if (heat < DRAW_THRESHOLD) return;
+  if (Math.abs(heat - s.lastDrawnHeat) < 0.005) return;
+
+  s.lastDrawnHeat = heat;
+  ctx.clearRect(0, 0, CANVAS_CSS_W, CANVAS_CSS_H);
 
   const [r, g, b] = lerpColor(heat);
   const alpha = Math.min(1.0, heat * 2);
@@ -148,15 +197,12 @@ function drawCanvas(s: SessionHeat): void {
 }
 
 // =============================================================================
-// Decay curve
+// Decay curve (LUT-backed)
 // =============================================================================
 
 function triExpDecay(seconds: number): number {
-  return (
-    DECAY_FAST_W * Math.exp(-seconds / DECAY_FAST_TAU) +
-    DECAY_MID_W * Math.exp(-seconds / DECAY_MID_TAU) +
-    DECAY_SLOW_W * Math.exp(-seconds / DECAY_SLOW_TAU)
-  );
+  const index = Math.min(DECAY_LUT_SIZE - 1, Math.max(0, Math.round(seconds / DECAY_LUT_STEP)));
+  return decayLUT[index]!;
 }
 
 // =============================================================================
@@ -164,7 +210,7 @@ function triExpDecay(seconds: number): number {
 // =============================================================================
 
 function drawFrame(nowMs: number): void {
-  rafId = requestAnimationFrame(drawFrame);
+  let anyActive = false;
 
   sessions.forEach((s) => {
     // Periodically recalculate byte rate and update heat
@@ -195,8 +241,26 @@ function drawFrame(nowMs: number): void {
       s.heat = s.heatWhenInactive * triExpDecay(inactiveSec);
     }
 
-    drawCanvas(s);
+    if (!document.hidden) {
+      drawCanvas(s);
+    }
+
+    if (s.heat >= DRAW_THRESHOLD) {
+      anyActive = true;
+    }
   });
+
+  if (anyActive) {
+    rafId = requestAnimationFrame(drawFrame);
+  } else {
+    rafId = 0;
+  }
+}
+
+function ensureLoopRunning(): void {
+  if (!rafId && sessions.size > 0) {
+    rafId = requestAnimationFrame(drawFrame);
+  }
 }
 
 // =============================================================================
@@ -219,14 +283,16 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
   canvas.height = Math.round(CANVAS_CSS_H * dpr);
   ctx.scale(dpr, dpr);
 
+  const now = performance.now();
   sessions.set(sessionId, {
     canvas,
     ctx,
     heat: 0,
+    lastDrawnHeat: 0,
     peakRate: MIN_PEAK,
     byteAccum: 0,
-    lastTickMs: performance.now(),
-    lastActiveMs: 0,
+    lastTickMs: now,
+    lastActiveMs: now,
     heatWhenInactive: 0,
     ignoreUntilMs: 0,
   });
@@ -246,15 +312,9 @@ export function unregisterHeatCanvas(sessionId: string): void {
 export function recordBytes(sessionId: string, bytes: number): void {
   const s = sessions.get(sessionId);
   if (!s) return;
-  const now = performance.now();
-  if (s.ignoreUntilMs > now) {
-    log.info(() => `[SUPPRESSED] session=${sessionId} bytes=${bytes}`);
-    return;
-  }
-  if (bytes > 0) {
-    log.info(() => `[HEAT] session=${sessionId} bytes=${bytes} heat=${s.heat.toFixed(3)}`);
-  }
+  if (s.ignoreUntilMs > performance.now()) return;
   s.byteAccum += bytes;
+  ensureLoopRunning();
 }
 
 /**
@@ -266,6 +326,7 @@ export function suppressAllHeat(durationMs: number): void {
   const until = performance.now() + durationMs;
   sessions.forEach((s) => {
     s.ignoreUntilMs = until;
+    s.byteAccum = 0;
   });
 }
 
