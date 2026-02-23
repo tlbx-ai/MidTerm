@@ -74,6 +74,7 @@ interface SessionHeat {
   lastTickMs: number; // timestamp of last rate calculation
   lastActiveMs: number; // when last rate tick detected activity
   heatWhenInactive: number; // heat snapshot at deactivation (decay anchor)
+  ignoreUntilMs: number; // suppress bytes until this timestamp (avoids false heat on session switch)
 }
 
 const sessions = new Map<string, SessionHeat>();
@@ -117,24 +118,32 @@ function drawCanvas(s: SessionHeat): void {
   if (heat < DRAW_THRESHOLD) return;
 
   const [r, g, b] = lerpColor(heat);
-  // Alpha fades in as heat rises (0 → fully transparent at heat=0, opaque at heat=0.5+)
   const alpha = Math.min(1.0, heat * 2);
 
-  const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_CSS_H);
-  gradient.addColorStop(0, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-  gradient.addColorStop(0.55, `rgba(${r},${g},${b},${(alpha * 0.65).toFixed(3)})`);
-  gradient.addColorStop(1.0, `rgba(${r},${g},${b},${(alpha * 0.15).toFixed(3)})`);
+  // Height scales with heat (sqrt so it stays visible longer during cooldown)
+  const heightFrac = Math.sqrt(heat);
+  const visibleH = Math.max(4, heightFrac * CANVAS_CSS_H);
+  const offsetY = (CANVAS_CSS_H - visibleH) / 2;
+
+  // Gradient from center outward — brightest in the middle, fading to both edges
+  const gradient = ctx.createLinearGradient(0, offsetY, 0, offsetY + visibleH);
+  const edgeAlpha = (alpha * 0.15).toFixed(3);
+  const coreAlpha = alpha.toFixed(3);
+  gradient.addColorStop(0, `rgba(${r},${g},${b},${edgeAlpha})`);
+  gradient.addColorStop(0.35, `rgba(${r},${g},${b},${coreAlpha})`);
+  gradient.addColorStop(0.65, `rgba(${r},${g},${b},${coreAlpha})`);
+  gradient.addColorStop(1.0, `rgba(${r},${g},${b},${edgeAlpha})`);
 
   ctx.fillStyle = gradient;
 
-  // Draw pill shape using arc
-  const radius = CANVAS_CSS_W / 2;
+  // Draw pill shape at calculated position
+  const radius = Math.min(CANVAS_CSS_W / 2, visibleH / 2);
   ctx.beginPath();
-  ctx.moveTo(radius, 0);
-  ctx.arcTo(CANVAS_CSS_W, 0, CANVAS_CSS_W, CANVAS_CSS_H, radius);
-  ctx.arcTo(CANVAS_CSS_W, CANVAS_CSS_H, 0, CANVAS_CSS_H, radius);
-  ctx.arcTo(0, CANVAS_CSS_H, 0, 0, radius);
-  ctx.arcTo(0, 0, CANVAS_CSS_W, 0, radius);
+  ctx.moveTo(radius, offsetY);
+  ctx.arcTo(CANVAS_CSS_W, offsetY, CANVAS_CSS_W, offsetY + visibleH, radius);
+  ctx.arcTo(CANVAS_CSS_W, offsetY + visibleH, 0, offsetY + visibleH, radius);
+  ctx.arcTo(0, offsetY + visibleH, 0, offsetY, radius);
+  ctx.arcTo(0, offsetY, CANVAS_CSS_W, offsetY, radius);
   ctx.closePath();
   ctx.fill();
 }
@@ -227,6 +236,7 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
     lastTickMs: performance.now(),
     lastActiveMs: 0,
     heatWhenInactive: 0,
+    ignoreUntilMs: 0,
   });
 }
 
@@ -243,8 +253,20 @@ export function unregisterHeatCanvas(sessionId: string): void {
  */
 export function recordBytes(sessionId: string, bytes: number): void {
   const s = sessions.get(sessionId);
+  if (!s) return;
+  if (s.ignoreUntilMs > performance.now()) return;
+  s.byteAccum += bytes;
+}
+
+/**
+ * Suppress heat recording for a session for a short duration.
+ * Used when switching active sessions — the server flushes its background
+ * buffer which would falsely heat up an idle session.
+ */
+export function suppressHeat(sessionId: string, durationMs: number): void {
+  const s = sessions.get(sessionId);
   if (s) {
-    s.byteAccum += bytes;
+    s.ignoreUntilMs = performance.now() + durationMs;
   }
 }
 
