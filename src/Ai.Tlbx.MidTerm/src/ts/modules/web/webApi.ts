@@ -9,6 +9,7 @@ export interface WebPreviewTargetResponse {
   active: boolean;
 }
 
+/** Set the reverse proxy target URL for the web preview. */
 export async function setWebPreviewTarget(url: string): Promise<WebPreviewTargetResponse | null> {
   try {
     const res = await fetch('/api/webpreview/target', {
@@ -23,6 +24,7 @@ export async function setWebPreviewTarget(url: string): Promise<WebPreviewTarget
   }
 }
 
+/** Get the current reverse proxy target URL and active status. */
 export async function getWebPreviewTarget(): Promise<WebPreviewTargetResponse | null> {
   try {
     const res = await fetch('/api/webpreview/target');
@@ -33,6 +35,7 @@ export async function getWebPreviewTarget(): Promise<WebPreviewTargetResponse | 
   }
 }
 
+/** Clear the reverse proxy target, stopping the web preview proxy. */
 export async function clearWebPreviewTarget(): Promise<void> {
   try {
     await fetch('/api/webpreview/target', { method: 'DELETE' });
@@ -41,6 +44,7 @@ export async function clearWebPreviewTarget(): Promise<void> {
   }
 }
 
+/** Trigger a soft or hard reload of the web preview on the server. */
 export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> {
   try {
     const res = await fetch('/api/webpreview/reload', {

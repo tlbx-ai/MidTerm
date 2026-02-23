@@ -65,6 +65,7 @@ export function updateAllDockMargins(): void {
     .forEach((p) => (p.style.marginRight = total > 0 ? total + 'px' : ''));
 }
 
+/** Toggle the web preview dock panel open or closed based on current state. */
 export function toggleWebPreviewDock(): void {
   const mode = getActiveMode();
   if (mode === 'docked') {
@@ -74,6 +75,7 @@ export function toggleWebPreviewDock(): void {
   }
 }
 
+/** Open the web preview dock panel, restore saved width, and show the iframe. */
 export function openWebPreviewDock(): void {
   setActiveMode('docked');
   $webPreviewDocked.set(true);
@@ -104,6 +106,7 @@ export function openWebPreviewDock(): void {
   log.info(() => 'Web preview dock opened');
 }
 
+/** Close the web preview dock panel and unload the iframe. */
 export function closeWebPreviewDock(): void {
   const detachedActive = isDetachedOpenForActiveSession();
   if (!detachedActive) {
@@ -131,6 +134,7 @@ export function closeWebPreviewDock(): void {
   log.info(() => 'Web preview dock closed');
 }
 
+/** Hide the dock panel when detaching to a popup window, keeping the action button active. */
 export function hideWebPreviewDockForDetach(): void {
   $webPreviewDocked.set(false);
   setActionButtonActive('web', true);
@@ -147,6 +151,7 @@ export function hideWebPreviewDockForDetach(): void {
   handleDockLayoutChange();
 }
 
+/** Fully hide the web preview: close dock, unload iframe, clear target, and clean up detach state. */
 export function applyWebPreviewHiddenState(): void {
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
@@ -165,6 +170,7 @@ export function applyWebPreviewHiddenState(): void {
   handleDockLayoutChange();
 }
 
+/** Set up mouse and touch drag handlers for resizing the web preview dock panel. */
 export function setupWebPreviewDockResize(): void {
   const dockPanel = document.getElementById('web-preview-dock');
   const grip = dockPanel?.querySelector('.web-preview-dock-resize-grip') as HTMLElement;

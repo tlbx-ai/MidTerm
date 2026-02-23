@@ -17,6 +17,7 @@ let popup: Window | null = null;
 let channel: BroadcastChannel | null = null;
 let detachedOwnerSessionId: string | null = null;
 
+/** Initialize the detach system: create BroadcastChannel and wire up detach/dock-back buttons. */
 export function initDetach(): void {
   channel = new BroadcastChannel(CHANNEL_NAME);
   channel.onmessage = handleMessage;
@@ -32,6 +33,7 @@ function handleMessage(e: MessageEvent): void {
   }
 }
 
+/** Open the web preview in a chromeless popup window and hide the dock panel. */
 export function detachPreview(): void {
   const activeSessionId = $activeSessionId.get();
   if (!activeSessionId) return;
@@ -63,6 +65,7 @@ export function detachPreview(): void {
   }
 }
 
+/** Close the detached popup and restore the web preview back into the dock panel. */
 export function dockBack(): void {
   const activeSessionId = $activeSessionId.get();
   if (activeSessionId && detachedOwnerSessionId && activeSessionId !== detachedOwnerSessionId) {
@@ -86,21 +89,25 @@ export function dockBack(): void {
   log.info(() => 'Web preview docked back');
 }
 
+/** Close the detached popup and release the BroadcastChannel. */
 export function cleanupDetach(): void {
   closeDetachedPopup();
   channel?.close();
   channel = null;
 }
 
+/** Close the detached popup when switching sessions without releasing the channel. */
 export function cleanupDetachForSessionSwitch(): void {
   closeDetachedPopup();
 }
 
+/** Close the detached popup if it was opened by the given session. */
 export function closeDetachedIfOwnedBy(sessionId: string | null): void {
   if (!sessionId || detachedOwnerSessionId !== sessionId) return;
   closeDetachedPopup();
 }
 
+/** Check whether a detached popup is currently open for the active session. */
 export function isDetachedOpenForActiveSession(): boolean {
   const activeSessionId = $activeSessionId.get();
   return (

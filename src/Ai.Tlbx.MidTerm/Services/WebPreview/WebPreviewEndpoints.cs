@@ -38,70 +38,83 @@ public static partial class WebPreviewEndpoints
 
     public static void MapWebPreviewEndpoints(WebApplication app, WebPreviewService webPreviewService, TtyHostSessionManager sessionManager)
     {
+        MapTargetEndpoints(app, webPreviewService);
+        MapCookieEndpoints(app, webPreviewService);
+        MapActionEndpoints(app, webPreviewService, sessionManager);
+    }
+
+    private static void MapTargetEndpoints(WebApplication app, WebPreviewService service)
+    {
         app.MapGet("/api/webpreview/target", () =>
         {
             var response = new WebPreviewTargetResponse
             {
-                Url = webPreviewService.TargetUrl,
-                Active = webPreviewService.IsActive
+                Url = service.TargetUrl,
+                Active = service.IsActive
             };
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
         app.MapPut("/api/webpreview/target", (WebPreviewTargetRequest request) =>
         {
-            if (!webPreviewService.SetTarget(request.Url))
+            if (!service.SetTarget(request.Url))
             {
                 return Results.BadRequest("Invalid URL. Must be http:// or https:// and cannot point to this server.");
             }
 
             var response = new WebPreviewTargetResponse
             {
-                Url = webPreviewService.TargetUrl,
-                Active = webPreviewService.IsActive
+                Url = service.TargetUrl,
+                Active = service.IsActive
             };
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
         app.MapDelete("/api/webpreview/target", () =>
         {
-            webPreviewService.ClearTarget();
+            service.ClearTarget();
             return Results.Ok();
         });
+    }
 
+    private static void MapCookieEndpoints(WebApplication app, WebPreviewService service)
+    {
         app.MapGet("/api/webpreview/cookies", () =>
         {
-            var response = webPreviewService.GetCookies();
+            var response = service.GetCookies();
             return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
         });
 
         app.MapPost("/api/webpreview/cookies", (WebPreviewCookieSetRequest request) =>
         {
-            if (!webPreviewService.SetCookieFromRaw(request.Raw))
+            if (!service.SetCookieFromRaw(request.Raw))
             {
                 return Results.BadRequest("Invalid cookie format.");
             }
 
-            var response = webPreviewService.GetCookies();
+            var response = service.GetCookies();
             return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
         });
 
         app.MapDelete("/api/webpreview/cookies", (string name, string? path, string? domain) =>
         {
-            if (!webPreviewService.DeleteCookie(name, path, domain))
+            if (!service.DeleteCookie(name, path, domain))
             {
                 return Results.BadRequest("Failed to delete cookie.");
             }
 
-            var response = webPreviewService.GetCookies();
+            var response = service.GetCookies();
             return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
         });
+    }
 
+    private static void MapActionEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
+    {
         app.MapPost("/api/webpreview/reload", (WebPreviewReloadRequest request) =>
         {
             if (request.Mode.Equals("hard", StringComparison.OrdinalIgnoreCase))
             {
-                webPreviewService.HardReload();
+                service.HardReload();
             }
             return Results.Ok();
         });
@@ -137,28 +150,25 @@ public static partial class WebPreviewEndpoints
                 string upstreamUrl;
                 if (proxyPath.StartsWith("/webpreview/_ext", StringComparison.Ordinal))
                 {
-                    // External CSS routed through the proxy: /webpreview/_ext?u=ENCODED
                     var qIdx = proxyPath.IndexOf("?u=", StringComparison.Ordinal);
                     if (qIdx < 0) continue;
                     var encoded = proxyPath[(qIdx + 3)..];
                     try { upstreamUrl = Uri.UnescapeDataString(encoded); }
                     catch { continue; }
                 }
-                else if (webPreviewService.TargetUri is not null)
+                else if (service.TargetUri is not null)
                 {
-                    upstreamUrl = BuildUpstreamUrl(webPreviewService.TargetUri, proxyPath);
+                    upstreamUrl = BuildUpstreamUrl(service.TargetUri, proxyPath);
                 }
                 else
                 {
                     continue;
                 }
 
-                // Derive a safe filename from the path component
                 var rawName = proxyPath.Split('?')[0].Split('/').LastOrDefault() ?? "style";
                 var baseName = Path.GetFileNameWithoutExtension(rawName);
                 var fileName = SanitizeFileName(baseName) + ".css";
 
-                // Avoid filename collisions
                 var finalFileName = fileName;
                 var counter = 1;
                 while (File.Exists(Path.Combine(cssDir, finalFileName)))
@@ -169,13 +179,11 @@ public static partial class WebPreviewEndpoints
 
                 try
                 {
-                    var cssContent = await webPreviewService.HttpClient.GetStringAsync(upstreamUrl);
+                    var cssContent = await service.HttpClient.GetStringAsync(upstreamUrl);
                     await File.WriteAllTextAsync(Path.Combine(cssDir, finalFileName), cssContent);
 
-                    // Replace absolute browser URL
                     html = html.Replace(cssUrl, $"css/{finalFileName}", StringComparison.Ordinal);
 
-                    // Replace root-relative proxy path (without query string), both quote styles
                     var pathNoQuery = proxyPath.Split('?')[0];
                     html = html.Replace($"\"{pathNoQuery}\"", $"\"css/{finalFileName}\"", StringComparison.Ordinal);
                     html = html.Replace($"'{pathNoQuery}'", $"'css/{finalFileName}'", StringComparison.Ordinal);
@@ -186,15 +194,12 @@ public static partial class WebPreviewEndpoints
                 }
             }
 
-            // Save index.html
             await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
 
-            // Create .gitignore once
             var gitignorePath = Path.Combine(midtermDir, ".gitignore");
             if (!File.Exists(gitignorePath))
                 await File.WriteAllTextAsync(gitignorePath, "snapshot_*/\n");
 
-            // Create CLAUDE.md once
             var claudeMdPath = Path.Combine(midtermDir, "CLAUDE.md");
             if (!File.Exists(claudeMdPath))
                 await File.WriteAllTextAsync(claudeMdPath, ClaudeMdContent);
