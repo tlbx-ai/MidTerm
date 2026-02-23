@@ -7,4 +7,5 @@ public sealed class CreateHistoryRequest
     public string? CommandLine { get; init; }
     public required string WorkingDirectory { get; init; }
     public bool IsStarred { get; init; }
+    public string? Label { get; init; }
 }

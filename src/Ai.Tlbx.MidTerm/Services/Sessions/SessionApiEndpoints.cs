@@ -102,6 +102,15 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
+        app.MapPut("/api/sessions/{id}/bookmark", (string id, SetBookmarkRequest request) =>
+        {
+            if (!sessionManager.SetBookmarkId(id, request.BookmarkId))
+            {
+                return Results.NotFound();
+            }
+            return Results.Ok();
+        });
+
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
         {
             if (sessionManager.GetSession(id) is null)

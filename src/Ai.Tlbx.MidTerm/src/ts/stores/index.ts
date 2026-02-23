@@ -277,9 +277,7 @@ export function setSessions(sessionList: Session[]): void {
       }
     }
 
-    const existing = $sessions.get()[id];
     const entry: Session = { ...session, name, _order: session.order ?? i };
-    if (existing?._bookmarkId) entry._bookmarkId = existing._bookmarkId;
     sessionsMap[id] = entry;
   });
   $sessions.set(sessionsMap);

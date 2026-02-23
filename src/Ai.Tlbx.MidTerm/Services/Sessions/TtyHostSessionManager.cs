@@ -32,6 +32,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, byte> _tmuxCommandStarted = new();
     private readonly ConcurrentDictionary<string, byte> _hiddenSessions = new();
     private readonly ConcurrentDictionary<string, string> _tmuxParentSessions = new();
+    private readonly ConcurrentDictionary<string, string> _bookmarkLinks = new();
     private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
@@ -538,7 +539,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 ForegroundName = s.ForegroundName,
                 ForegroundCommandLine = s.ForegroundCommandLine,
                 Order = _sessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
-                ParentSessionId = _tmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null
+                ParentSessionId = _tmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
+                BookmarkId = _bookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null
             }).OrderBy(s => s.Order).ToList()
         };
     }
@@ -556,6 +558,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _tmuxCommandStarted.TryRemove(sessionId, out _);
         _hiddenSessions.TryRemove(sessionId, out _);
         _tmuxParentSessions.TryRemove(sessionId, out _);
+        _bookmarkLinks.TryRemove(sessionId, out _);
 
         // Orphan children whose parent is being closed
         foreach (var kvp in _tmuxParentSessions)
@@ -658,6 +661,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             NotifyStateChange();
             return true;
         }
+    }
+
+    public bool SetBookmarkId(string sessionId, string bookmarkId)
+    {
+        if (!_sessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        _bookmarkLinks[sessionId] = bookmarkId;
+        NotifyStateChange();
+        return true;
     }
 
     public bool ReorderSessions(IList<string> sessionIds)

@@ -43,6 +43,10 @@ public static class SessionEndpointDefinitions
             .Produces<FileUploadResponse>(StatusCodes.Status200OK, "application/json")
             .DisableAntiforgery();
 
+        app.MapPut("/api/sessions/{id}/bookmark", (string id, SetBookmarkRequest request, ISessionHandler handler) =>
+            handler.SetBookmark(id, request))
+            .Produces(StatusCodes.Status200OK);
+
         return app;
     }
 }

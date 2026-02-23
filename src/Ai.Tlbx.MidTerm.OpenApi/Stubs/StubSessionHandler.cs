@@ -31,4 +31,7 @@ public class StubSessionHandler : ISessionHandler
 
     public Task<IResult> UploadFileAsync(string id, IFormFile file) =>
         Task.FromResult<IResult>(Results.Json(new FileUploadResponse { Path = "/tmp/file" }));
+
+    public IResult SetBookmark(string id, SetBookmarkRequest request) =>
+        Results.Ok();
 }

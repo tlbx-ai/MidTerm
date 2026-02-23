@@ -73,9 +73,9 @@ public sealed class HistoryService
         }
     }
 
-    public string? RecordEntry(string shellType, string executable, string? commandLine, string workingDirectory)
+    public string? RecordEntry(string shellType, string executable, string? commandLine, string workingDirectory, string? label = null)
     {
-        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}");
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -105,6 +105,10 @@ public sealed class HistoryService
             if (existing is not null)
             {
                 existing.LastUsed = DateTime.UtcNow;
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    existing.Label = label;
+                }
             }
             else
             {
@@ -116,6 +120,7 @@ public sealed class HistoryService
                     CommandLine = commandLine,
                     WorkingDirectory = workingDirectory,
                     IsStarred = false,
+                    Label = string.IsNullOrWhiteSpace(label) ? null : label,
                     LastUsed = DateTime.UtcNow
                 };
                 _history.Entries.Add(entry);
