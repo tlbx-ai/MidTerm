@@ -24,8 +24,8 @@ const PEAK_DECAY_PER_FRAME = 0.9998;
 /** Minimum peak to avoid division by near-zero */
 const MIN_PEAK = 200; // bytes/sec
 
-/** Rate calculation interval in ms */
-const RATE_INTERVAL_MS = 500;
+/** Rate calculation interval in ms (fast for snappy heat-up, cooldown is slow via tri-exp) */
+const RATE_INTERVAL_MS = 100;
 
 /**
  * Tri-exponential cooldown curve.
@@ -181,7 +181,7 @@ function drawFrame(nowMs: number): void {
       // Add heat proportional to current rate vs peak
       if (rate > 0) {
         const normalized = Math.min(1.0, rate / s.peakRate);
-        s.heat = Math.min(1.0, s.heat + normalized * 0.5);
+        s.heat = Math.min(1.0, s.heat + normalized * 0.8);
         s.lastActiveMs = nowMs;
         s.heatWhenInactive = s.heat;
       }
