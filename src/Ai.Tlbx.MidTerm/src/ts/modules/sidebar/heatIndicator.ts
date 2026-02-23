@@ -18,9 +18,6 @@ const log = createLogger('heat');
 // Config
 // =============================================================================
 
-/** Exponential decay per frame (~60fps): heat halves in ~0.7 seconds */
-const COOLDOWN_PER_FRAME = 0.935;
-
 /** Peak rate decays slowly — forgets burst peaks over several minutes */
 const PEAK_DECAY_PER_FRAME = 0.9998;
 
@@ -28,7 +25,23 @@ const PEAK_DECAY_PER_FRAME = 0.9998;
 const MIN_PEAK = 200; // bytes/sec
 
 /** Rate calculation interval in ms */
-const RATE_INTERVAL_MS = 100;
+const RATE_INTERVAL_MS = 500;
+
+/**
+ * Tri-exponential cooldown curve.
+ * Designed for monitoring 10+ AI agent sessions at a glance:
+ *   - First third drops in 5-20s (recently went idle)
+ *   - Middle third drops over 2-3 min (idle for a while)
+ *   - Last third fades over ~15 min (long inactive)
+ *
+ * h(t) = W1·e^(-t/TAU1) + W2·e^(-t/TAU2) + W3·e^(-t/TAU3)
+ */
+const DECAY_FAST_W = 0.35;
+const DECAY_FAST_TAU = 7; // seconds
+const DECAY_MID_W = 0.35;
+const DECAY_MID_TAU = 120; // seconds
+const DECAY_SLOW_W = 0.3;
+const DECAY_SLOW_TAU = 400; // seconds
 
 /** Min heat value below which we skip drawing (avoids canvas ops when idle) */
 const DRAW_THRESHOLD = 0.01;
@@ -59,6 +72,8 @@ interface SessionHeat {
   peakRate: number; // self-calibrating max observed bytes/sec
   byteAccum: number; // bytes accumulated since last rate tick
   lastTickMs: number; // timestamp of last rate calculation
+  lastActiveMs: number; // when last rate tick detected activity
+  heatWhenInactive: number; // heat snapshot at deactivation (decay anchor)
 }
 
 const sessions = new Map<string, SessionHeat>();
@@ -125,6 +140,18 @@ function drawCanvas(s: SessionHeat): void {
 }
 
 // =============================================================================
+// Decay curve
+// =============================================================================
+
+function triExpDecay(seconds: number): number {
+  return (
+    DECAY_FAST_W * Math.exp(-seconds / DECAY_FAST_TAU) +
+    DECAY_MID_W * Math.exp(-seconds / DECAY_MID_TAU) +
+    DECAY_SLOW_W * Math.exp(-seconds / DECAY_SLOW_TAU)
+  );
+}
+
+// =============================================================================
 // Animation loop
 // =============================================================================
 
@@ -134,9 +161,7 @@ function drawFrame(nowMs: number): void {
   const dt = nowMs - lastFrameMs;
   lastFrameMs = nowMs;
 
-  // Normalize decay for variable frame rates, cap at 4 frames to avoid jumps
   const frames = Math.min(dt / 16.67, 4);
-  const cooldown = Math.pow(COOLDOWN_PER_FRAME, frames);
   const peakDecay = Math.pow(PEAK_DECAY_PER_FRAME, frames);
 
   sessions.forEach((s) => {
@@ -157,11 +182,17 @@ function drawFrame(nowMs: number): void {
       if (rate > 0) {
         const normalized = Math.min(1.0, rate / s.peakRate);
         s.heat = Math.min(1.0, s.heat + normalized * 0.5);
+        s.lastActiveMs = nowMs;
+        s.heatWhenInactive = s.heat;
       }
     }
 
-    // Exponential cooldown
-    s.heat *= cooldown;
+    // Tri-exponential cooldown (grace period of one rate interval before decay starts)
+    const inactiveMs = nowMs - s.lastActiveMs;
+    if (inactiveMs > RATE_INTERVAL_MS) {
+      const inactiveSec = (inactiveMs - RATE_INTERVAL_MS) / 1000;
+      s.heat = s.heatWhenInactive * triExpDecay(inactiveSec);
+    }
 
     drawCanvas(s);
   });
@@ -194,6 +225,8 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
     peakRate: MIN_PEAK,
     byteAccum: 0,
     lastTickMs: performance.now(),
+    lastActiveMs: 0,
+    heatWhenInactive: 0,
   });
 }
 
