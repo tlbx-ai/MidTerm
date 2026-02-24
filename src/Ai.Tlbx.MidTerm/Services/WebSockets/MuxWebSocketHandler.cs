@@ -53,6 +53,7 @@ public sealed class MuxWebSocketHandler
             client.SuspendFlush();
             await SendInitFrameAsync(client, clientId);
             await SendInitialBuffersAsync(client);
+            await client.TrySendAsync(MuxProtocol.CreateSyncCompleteFrame());
             client.ResumeFlush();
             await ProcessMessagesAsync(ws, clientId, client);
         }

@@ -25,6 +25,7 @@ import {
   MUX_TYPE_FOREGROUND_CHANGE,
   MUX_TYPE_DATA_LOSS,
   MUX_TYPE_PONG,
+  MUX_TYPE_SYNC_COMPLETE,
   WS_CLOSE_SERVER_SHUTDOWN,
 } from '../../constants';
 import type { ForegroundChangePayload } from '../../types';
@@ -82,6 +83,8 @@ let _suppressHeatCallback: SuppressHeatCallback | null = null;
 export function setSuppressHeatCallback(cb: SuppressHeatCallback): void {
   _suppressHeatCallback = cb;
 }
+
+let syncCompleteTimeout: number | null = null;
 
 // \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
 // Followed by 0x68 ('h') = enable, 0x6c ('l') = disable
@@ -476,11 +479,15 @@ export function connectMuxWebSocket(): void {
   ws.onopen = () => {
     muxReconnect.reset();
 
-    // Suppress bell notifications during initial buffer replay
+    // Suppress bell and heat until server sends SyncComplete (10s safety timeout)
     setBellNotificationsSuppressed(true);
-    setTimeout(() => {
+    _suppressHeatCallback?.(Number.MAX_SAFE_INTEGER);
+    if (syncCompleteTimeout !== null) clearTimeout(syncCompleteTimeout);
+    syncCompleteTimeout = window.setTimeout(() => {
+      _suppressHeatCallback?.(0);
       setBellNotificationsSuppressed(false);
-    }, 1000);
+      syncCompleteTimeout = null;
+    }, 10000);
 
     // Detect reconnect: we've connected before AND have terminals to refresh
     const isReconnect = $muxHasConnected.get() && sessionTerminals.size > 0;
@@ -517,7 +524,6 @@ export function connectMuxWebSocket(): void {
     // Send active session hint so server knows which session to prioritize
     const activeId = $activeSessionId.get();
     if (activeId) {
-      _suppressHeatCallback?.(1500);
       sendActiveSessionHint(activeId);
     }
 
@@ -564,6 +570,16 @@ export function connectMuxWebSocket(): void {
           );
         }
       }
+      return;
+    }
+
+    if (type === MUX_TYPE_SYNC_COMPLETE) {
+      if (syncCompleteTimeout !== null) {
+        clearTimeout(syncCompleteTimeout);
+        syncCompleteTimeout = null;
+      }
+      _suppressHeatCallback?.(0);
+      setBellNotificationsSuppressed(false);
       return;
     }
 

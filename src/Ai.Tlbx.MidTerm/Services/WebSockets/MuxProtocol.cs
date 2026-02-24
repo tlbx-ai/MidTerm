@@ -41,6 +41,7 @@ public static class MuxProtocol
     public const byte TypeForegroundChange = 0x0A; // Server -> Client: foreground process changed
     public const byte TypeDataLoss = 0x0B; // Server -> Client: background session dropped data, resync recommended
     public const byte TypePong = 0x0C; // Server -> Client: latency measurement pong
+    public const byte TypeSyncComplete = 0x0D; // Server -> Client: initial buffer replay finished
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
@@ -312,6 +313,13 @@ public static class MuxProtocol
         frame[0] = TypeDataLoss;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
         BinaryPrimitives.WriteInt32LittleEndian(frame.AsSpan(HeaderSize, 4), droppedBytes);
+        return frame;
+    }
+
+    public static byte[] CreateSyncCompleteFrame()
+    {
+        var frame = new byte[HeaderSize];
+        frame[0] = TypeSyncComplete;
         return frame;
     }
 

@@ -134,10 +134,12 @@ interface SessionHeat {
   lastActiveMs: number; // when last rate tick detected activity
   heatWhenInactive: number; // heat snapshot at deactivation (decay anchor)
   ignoreUntilMs: number; // suppress bytes until this timestamp (avoids false heat on session switch)
+  lastQuantizedHeat: number; // last quantized heat level for reduced-motion mode
 }
 
 const sessions = new Map<string, SessionHeat>();
 let rafId = 0;
+let reducedMotion = false;
 
 // =============================================================================
 // Color lookup
@@ -227,13 +229,15 @@ function drawFrame(nowMs: number): void {
     // Periodically recalculate byte rate and update heat
     const elapsed = nowMs - s.lastTickMs;
     if (elapsed >= RATE_INTERVAL_MS) {
-      const rate = (s.byteAccum / elapsed) * 1000; // bytes/sec
+      // Cap rate window to prevent dilution during rAF freezes (background tabs)
+      const rateWindow = Math.min(elapsed, 2000);
+      const rate = (s.byteAccum / rateWindow) * 1000; // bytes/sec
       s.byteAccum = 0;
       s.lastTickMs = nowMs;
 
-      // Self-calibrate: peak tracks the max rate, decays by timestamp (works in background tabs)
-      const elapsedSec = elapsed / 1000;
-      const peakDecay = Math.pow(0.5, elapsedSec / PEAK_HALF_LIFE_SEC);
+      // Self-calibrate: peak tracks the max rate, decays with capped elapsed to prevent collapse
+      const peakElapsedSec = Math.min(elapsed / 1000, 2);
+      const peakDecay = Math.pow(0.5, peakElapsedSec / PEAK_HALF_LIFE_SEC);
       s.peakRate = Math.max(MIN_PEAK, Math.max(rate, s.peakRate * peakDecay));
 
       // Add heat proportional to current rate vs peak
@@ -254,7 +258,19 @@ function drawFrame(nowMs: number): void {
     }
 
     if (!document.hidden) {
-      drawCanvas(s);
+      if (reducedMotion) {
+        // Quantize to 4 steps instead of smooth animation
+        const q = s.heat < 0.165 ? 0 : s.heat < 0.495 ? 0.33 : s.heat < 0.83 ? 0.66 : 1.0;
+        if (q !== s.lastQuantizedHeat) {
+          s.lastQuantizedHeat = q;
+          const saved = s.heat;
+          s.heat = q;
+          drawCanvas(s);
+          s.heat = saved;
+        }
+      } else {
+        drawCanvas(s);
+      }
     }
 
     if (s.heat >= DRAW_THRESHOLD) {
@@ -307,6 +323,7 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
     lastActiveMs: now,
     heatWhenInactive: 0,
     ignoreUntilMs: 0,
+    lastQuantizedHeat: 0,
   });
 }
 
@@ -348,6 +365,12 @@ export function suppressAllHeat(durationMs: number): void {
  * Start the shared animation loop for all heat indicators.
  */
 export function initHeatIndicator(): void {
+  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  reducedMotion = mq.matches;
+  mq.addEventListener('change', (e) => {
+    reducedMotion = e.matches;
+  });
+
   if (rafId) return;
   rafId = requestAnimationFrame(drawFrame);
 }
