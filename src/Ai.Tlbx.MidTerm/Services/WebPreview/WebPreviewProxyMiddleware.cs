@@ -26,7 +26,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(typeof u!=="string")return u;
             if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
             if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
-              try{return r(new URL(u,location.href).toString());}catch(e){}
+              try{return r(new URL(u,document.baseURI).toString());}catch(e){}
             }
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
@@ -285,7 +285,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return msg;
         }
 
-        var (upstreamResponse, errorCode) = await SendUpstreamAsync(
+        var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
             context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
 
         if (upstreamResponse is null)
@@ -308,11 +308,11 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             context.Response.StatusCode = (int)upstreamResponse.StatusCode;
             CopyResponseHeaders(upstreamResponse, context.Response);
-            await DispatchResponseBodyAsync(context, upstreamResponse);
+            await DispatchResponseBodyAsync(context, upstreamResponse, finalUrl);
         }
     }
 
-    private async Task ProxyHtmlResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
+    private async Task ProxyHtmlResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
 
@@ -337,15 +337,31 @@ public sealed partial class WebPreviewProxyMiddleware
         // causing the proxied page to block framing of external resources.
         html = UpstreamSecurityMetaTagRegex().Replace(html, "");
 
+        // Compute base href from the final upstream URL's directory path.
+        // This preserves correct relative URL resolution when the upstream redirected
+        // (e.g., / → /wiki/Main_Page means relative URLs resolve against /wiki/).
+        var baseHref = ComputeBaseHref(finalUrl);
+
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
-        html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">" + UrlRewriteScript, 1);
+        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">" + UrlRewriteScript, 1);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html, context.RequestAborted);
+    }
+
+    private static string ComputeBaseHref(string? finalUrl)
+    {
+        if (finalUrl is null || !Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri))
+            return "/webpreview/";
+
+        var path = finalUri.AbsolutePath;
+        var lastSlash = path.LastIndexOf('/');
+        var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
+        return "/webpreview" + directory;
     }
 
     private async Task ProxyCssResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
@@ -403,7 +419,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return msg;
         }
 
-        var (upstreamResponse, errorCode) = await SendUpstreamAsync(
+        var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
             context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
 
         if (upstreamResponse is null)
@@ -416,7 +432,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             context.Response.StatusCode = (int)upstreamResponse.StatusCode;
             CopyResponseHeaders(upstreamResponse, context.Response);
-            await DispatchResponseBodyAsync(context, upstreamResponse);
+            await DispatchResponseBodyAsync(context, upstreamResponse, finalUrl);
         }
     }
 
@@ -487,7 +503,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
-    private async Task<(HttpResponseMessage? Response, int ErrorCode)> SendUpstreamAsync(
+    private async Task<(HttpResponseMessage? Response, int ErrorCode, string? FinalUrl)> SendUpstreamAsync(
         HttpContext context,
         HttpMethod originalMethod,
         string startUrl,
@@ -512,12 +528,12 @@ public sealed partial class WebPreviewProxyMiddleware
             catch (HttpRequestException)
             {
                 requestMessage.Dispose();
-                return (null, 502);
+                return (null, 502, null);
             }
             catch (TaskCanceledException)
             {
                 requestMessage.Dispose();
-                return (null, 504);
+                return (null, 504, null);
             }
 
             var statusCode = (int)upstreamResponse.StatusCode;
@@ -540,16 +556,16 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return upstreamResponse is not null
-            ? (upstreamResponse, 0)
-            : (null, 502);
+            ? (upstreamResponse, 0, currentUrl)
+            : (null, 502, null);
     }
 
-    private async Task DispatchResponseBodyAsync(HttpContext context, HttpResponseMessage upstreamResponse)
+    private async Task DispatchResponseBodyAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
         if (contentType is "text/html")
         {
-            await ProxyHtmlResponseAsync(context, upstreamResponse);
+            await ProxyHtmlResponseAsync(context, upstreamResponse, finalUrl);
         }
         else if (contentType is "text/css")
         {
