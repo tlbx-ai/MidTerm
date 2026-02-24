@@ -6,13 +6,14 @@
  */
 
 import type { Settings, UpdateInfo } from '../../types';
-import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
+import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { $currentSettings, $updateInfo, $settingsWsConnected } from '../../stores';
 import { applyReceivedSettings } from '../settings/persistence';
 import { handleUpdateInfo } from '../updating/checker';
 
 const log = createLogger('settings-ws');
+const settingsReconnect = new ReconnectController();
 
 /** Message wrapper from server */
 interface SettingsWsMessage {
@@ -22,7 +23,6 @@ interface SettingsWsMessage {
 }
 
 let settingsWs: WebSocket | null = null;
-let settingsReconnectTimer: number | undefined;
 
 /**
  * Connect to the settings WebSocket for real-time settings sync.
@@ -37,6 +37,7 @@ export function connectSettingsWebSocket(): void {
   settingsWs = ws;
 
   ws.onopen = () => {
+    settingsReconnect.reset();
     $settingsWsConnected.set(true);
     log.info(() => 'Settings WebSocket connected');
   };
@@ -54,7 +55,7 @@ export function connectSettingsWebSocket(): void {
   ws.onclose = () => {
     $settingsWsConnected.set(false);
     log.info(() => 'Settings WebSocket disconnected');
-    scheduleSettingsReconnect();
+    settingsReconnect.schedule(connectSettingsWebSocket);
   };
 
   ws.onerror = (e) => {
@@ -70,16 +71,6 @@ function handleMessage(message: SettingsWsMessage): void {
     $updateInfo.set(message.update);
     handleUpdateInfo(message.update);
   }
-}
-
-function scheduleSettingsReconnect(): void {
-  scheduleReconnect(
-    connectSettingsWebSocket,
-    (timer) => {
-      settingsReconnectTimer = timer;
-    },
-    settingsReconnectTimer,
-  );
 }
 
 export function isSettingsWsConnected(): boolean {
