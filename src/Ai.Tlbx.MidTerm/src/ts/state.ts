@@ -14,14 +14,8 @@ import type { TerminalState, DOMElements } from './types';
 /** State WebSocket connection */
 export let stateWs: WebSocket | null = null;
 
-/** State WebSocket reconnect timer */
-export let stateReconnectTimer: number | undefined;
-
 /** Mux WebSocket connection */
 export let muxWs: WebSocket | null = null;
-
-/** Mux WebSocket reconnect timer */
-export let muxReconnectTimer: number | undefined;
 
 /** Server's mux protocol version (received in init frame) */
 export let serverProtocolVersion: number | null = null;
@@ -110,16 +104,8 @@ export function setStateWs(ws: WebSocket | null): void {
   stateWs = ws;
 }
 
-export function setStateReconnectTimer(timer: number | undefined): void {
-  stateReconnectTimer = timer;
-}
-
 export function setMuxWs(ws: WebSocket | null): void {
   muxWs = ws;
-}
-
-export function setMuxReconnectTimer(timer: number | undefined): void {
-  muxReconnectTimer = timer;
 }
 
 export function setServerProtocolVersion(version: number | null): void {
