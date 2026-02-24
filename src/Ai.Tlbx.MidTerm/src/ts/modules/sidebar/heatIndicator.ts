@@ -28,6 +28,9 @@ const PEAK_HALF_LIFE_SEC = 57;
 /** Minimum peak to avoid division by near-zero */
 const MIN_PEAK = 200; // bytes/sec
 
+/** Minimum rate (bytes/sec) to register as activity — filters focus event noise */
+const MIN_RATE = 100;
+
 /** Rate calculation interval in ms (fast for snappy heat-up, cooldown is slow via tri-exp) */
 const RATE_INTERVAL_MS = 100;
 
@@ -226,7 +229,8 @@ function drawFrame(nowMs: number): void {
       s.peakRate = Math.max(MIN_PEAK, Math.max(rate, s.peakRate * peakDecay));
 
       // Add heat proportional to current rate vs peak
-      if (rate > 0) {
+      // MIN_RATE filters out noise from focus events, shell keep-alives, and tiny prompt redraws
+      if (rate >= MIN_RATE) {
         const normalized = Math.min(1.0, rate / s.peakRate);
         s.heat = Math.min(1.0, s.heat + normalized * 0.8);
         s.lastActiveMs = nowMs;
@@ -323,10 +327,12 @@ export function recordBytes(sessionId: string, bytes: number): void {
  * buffers which would falsely heat up idle sessions.
  */
 export function suppressAllHeat(durationMs: number): void {
-  const until = performance.now() + durationMs;
+  const now = performance.now();
+  const until = now + durationMs;
   sessions.forEach((s) => {
     s.ignoreUntilMs = until;
     s.byteAccum = 0;
+    s.lastTickMs = now;
   });
 }
 

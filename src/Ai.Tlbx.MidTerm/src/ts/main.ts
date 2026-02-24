@@ -449,7 +449,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 
   // If session is in layout, focus it there instead of switching to standalone
   if (isSessionInLayout(sessionId)) {
-    suppressAllHeat(500);
+    suppressAllHeat(1500);
     focusLayoutSession(sessionId);
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
@@ -471,7 +471,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   });
 
   $activeSessionId.set(sessionId);
-  suppressAllHeat(500);
+  suppressAllHeat(1500);
   sendActiveSessionHint(sessionId);
 
   const sessionInfo = getSession(sessionId);
