@@ -186,6 +186,7 @@ public static class AuthEndpoints
                path.StartsWith("/css/") ||
                path.StartsWith("/js/") ||
                path.StartsWith("/fonts/") ||
+               path.StartsWith("/locales/") ||
                path.EndsWith(".ico") ||
                path.EndsWith(".png") ||
                path.EndsWith(".webmanifest") ||
