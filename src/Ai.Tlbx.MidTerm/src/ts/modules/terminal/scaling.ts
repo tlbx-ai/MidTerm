@@ -802,23 +802,36 @@ export function setupResizeObserver(): void {
 
 /**
  * Set up visual viewport handling for mobile keyboard appearance.
- * Constrains the html element height to the visual viewport so the entire
+ * Constrains the .terminal-page height to the visual viewport so the entire
  * flex layout (topbar, terminals, touch controller) fits above the keyboard.
+ * Also toggles a 'keyboard-visible' class on body to hide UI chrome.
  */
 export function setupVisualViewport(): void {
   if (!window.visualViewport) return;
 
   const vv = window.visualViewport;
   let lastHeight = 0;
+  const fullHeight = window.innerHeight;
+  const KEYBOARD_THRESHOLD = 0.75;
+  const appEl = document.querySelector<HTMLElement>('.terminal-page');
 
   const update = () => {
     const vh = vv.height;
     if (Math.abs(vh - lastHeight) < 1) return;
     lastHeight = vh;
 
-    const root = document.documentElement;
-    root.style.setProperty('--visual-vh', vh + 'px');
-    root.style.height = vh + 'px';
+    if (appEl) {
+      appEl.style.height = vh + 'px';
+    }
+
+    if (vv.offsetTop !== 0) {
+      window.scrollTo(0, 0);
+    }
+
+    const kbVisible = vh < fullHeight * KEYBOARD_THRESHOLD;
+    if (kbVisible !== document.body.classList.contains('keyboard-visible')) {
+      document.body.classList.toggle('keyboard-visible', kbVisible);
+    }
 
     rescaleAllTerminals();
   };

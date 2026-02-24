@@ -5454,6 +5454,26 @@ html, body {
     font-size: var(--fs-base);
 }
 
+/* ==========================================================================
+   Keyboard Visible Mode (mobile on-screen keyboard active)
+   ========================================================================== */
+
+body.keyboard-visible .mobile-topbar {
+    display: none;
+}
+
+body.keyboard-visible .touch-controller {
+    display: none !important;
+}
+
+body.keyboard-visible .manager-bar {
+    display: none;
+}
+
+body.keyboard-visible .terminals-area {
+    padding-bottom: 0;
+}
+
 /* Accessibility: Focus states for keyboard navigation */
 .session-item:focus-visible,
 .topbar-btn:focus-visible,
