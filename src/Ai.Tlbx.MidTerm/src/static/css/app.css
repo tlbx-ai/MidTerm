@@ -1568,6 +1568,10 @@ html, body {
    Mobile Responsive Styles
    ============================================================================ */
 @media (max-width: 768px) {
+    .terminal-page {
+        --mobile-safe-top: clamp(0px, env(safe-area-inset-top, 0px), 16px);
+    }
+
     /* Hide sidebar collapse feature on mobile */
     .sidebar-collapse-btn {
         display: none !important;
@@ -1622,7 +1626,7 @@ html, body {
         left: 0;
         width: 280px;
         z-index: 1000;
-        padding-top: env(safe-area-inset-top, 0);
+        padding-top: var(--mobile-safe-top);
         transform: translateX(-100%);
         visibility: hidden;
         transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -1660,7 +1664,7 @@ html, body {
         display: flex;
         align-items: center;
         padding: 4px 8px;
-        padding-top: calc(4px + env(safe-area-inset-top, 0));
+        padding-top: calc(4px + var(--mobile-safe-top));
         padding-left: calc(8px + env(safe-area-inset-left, 0));
         padding-right: calc(8px + env(safe-area-inset-right, 0));
         background-color: var(--bg-sidebar);
@@ -2127,7 +2131,7 @@ html, body {
 @media (max-width: 480px) {
     .mobile-topbar {
         padding: 3px 6px;
-        padding-top: calc(3px + env(safe-area-inset-top, 0));
+        padding-top: calc(3px + var(--mobile-safe-top));
         gap: 3px;
     }
 
@@ -6627,7 +6631,7 @@ body.ide-mode-off .session-tab-bar {
 /* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
 @media (max-width: 768px) {
     .session-tab-bar {
-        display: none;
+        display: none !important;
     }
 
     .manager-bar {

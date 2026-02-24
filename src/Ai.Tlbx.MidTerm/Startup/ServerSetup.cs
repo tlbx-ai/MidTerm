@@ -198,7 +198,13 @@ public static class ServerSetup
                     ctx.Context.Response.Headers.Pragma = "no-cache";
 #else
                     ctx.Context.Response.Headers.ETag = AssetVersionETag;
-                    ctx.Context.Response.Headers.CacheControl = "public, max-age=86400";
+                    var isEntryPointAsset = path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase);
+                    ctx.Context.Response.Headers.CacheControl = isEntryPointAsset
+                        ? "public, max-age=0, must-revalidate"
+                        : "public, max-age=86400";
 #endif
                 }
             }

@@ -97,10 +97,13 @@ public sealed class CompressedStaticFilesMiddleware
         context.Response.ContentType = contentType;
         context.Response.Headers.ETag = _versionETag;
 
-        // HTML: always revalidate (version check must work promptly on update)
-        // Everything else: cache 24h (assets are immutable within a binary version)
-        var isHtml = extension.Equals(".html", StringComparison.OrdinalIgnoreCase);
-        context.Response.Headers.CacheControl = isHtml
+        // Revalidate entry-point assets on every navigation so UI updates are visible
+        // immediately after an app update, even in PWA mode.
+        var shouldRevalidate = extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".css", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".js", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".webmanifest", StringComparison.OrdinalIgnoreCase);
+        context.Response.Headers.CacheControl = shouldRevalidate
             ? "public, max-age=0, must-revalidate"
             : "public, max-age=86400";
 
