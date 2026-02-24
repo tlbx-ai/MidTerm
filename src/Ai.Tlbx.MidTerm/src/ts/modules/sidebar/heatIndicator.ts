@@ -204,8 +204,16 @@ function drawCanvas(s: SessionHeat): void {
 // =============================================================================
 
 function triExpDecay(seconds: number): number {
-  const index = Math.min(DECAY_LUT_SIZE - 1, Math.max(0, Math.round(seconds / DECAY_LUT_STEP)));
-  return decayLUT[index]!;
+  const index = Math.round(seconds / DECAY_LUT_STEP);
+  if (index < DECAY_LUT_SIZE) {
+    return decayLUT[Math.max(0, index)]!;
+  }
+  // Beyond LUT range (>100s): compute directly — rare, only long-idle sessions
+  return (
+    DECAY_FAST_W * Math.exp(-seconds / DECAY_FAST_TAU) +
+    DECAY_MID_W * Math.exp(-seconds / DECAY_MID_TAU) +
+    DECAY_SLOW_W * Math.exp(-seconds / DECAY_SLOW_TAU)
+  );
 }
 
 // =============================================================================
