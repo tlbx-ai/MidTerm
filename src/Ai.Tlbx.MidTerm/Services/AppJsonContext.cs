@@ -13,17 +13,29 @@ using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 namespace Ai.Tlbx.MidTerm.Services;
 
+// --- Bootstrap & System ---
 [JsonSerializable(typeof(BootstrapResponse))]
 [JsonSerializable(typeof(BootstrapLoginResponse))]
 [JsonSerializable(typeof(FeatureFlags))]
-[JsonSerializable(typeof(WsCommand))]
-[JsonSerializable(typeof(WsCommandPayload))]
-[JsonSerializable(typeof(WsCommandResponse))]
-[JsonSerializable(typeof(WsSessionCreatedData))]
 [JsonSerializable(typeof(SystemResponse))]
+[JsonSerializable(typeof(SystemHealth))]
 [JsonSerializable(typeof(TtyHostInfo))]
-[JsonSerializable(typeof(HistoryPatchRequest))]
+[JsonSerializable(typeof(PathsResponse))]
+[JsonSerializable(typeof(List<NetworkInterfaceDto>))]
+[JsonSerializable(typeof(ShellInfoDto))]
+[JsonSerializable(typeof(List<ShellInfoDto>))]
+[JsonSerializable(typeof(UserInfo))]
+[JsonSerializable(typeof(List<UserInfo>))]
 [JsonSerializable(typeof(ProblemDetails))]
+
+// --- Auth ---
+[JsonSerializable(typeof(LoginRequest))]
+[JsonSerializable(typeof(ChangePasswordRequest))]
+[JsonSerializable(typeof(AuthResponse))]
+[JsonSerializable(typeof(AuthStatusResponse))]
+[JsonSerializable(typeof(SecurityStatus))]
+
+// --- Sessions ---
 [JsonSerializable(typeof(SessionListDto))]
 [JsonSerializable(typeof(SessionInfoDto))]
 [JsonSerializable(typeof(CreateSessionRequest))]
@@ -31,41 +43,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]
 [JsonSerializable(typeof(FileUploadResponse))]
-[JsonSerializable(typeof(List<NetworkInterfaceDto>))]
-[JsonSerializable(typeof(ShellInfoDto))]
-[JsonSerializable(typeof(List<ShellInfoDto>))]
-[JsonSerializable(typeof(MidTermSettings))]
-[JsonSerializable(typeof(MidTermSettingsPublic))]
-[JsonSerializable(typeof(UpdateInfo))]
-[JsonSerializable(typeof(LocalUpdateInfo))]
-[JsonSerializable(typeof(UpdateType))]
-[JsonSerializable(typeof(UpdateResult))]
-[JsonSerializable(typeof(VersionManifest))]
-[JsonSerializable(typeof(StateUpdate))]
-[JsonSerializable(typeof(SystemHealth))]
-[JsonSerializable(typeof(UserInfo))]
-[JsonSerializable(typeof(List<UserInfo>))]
-[JsonSerializable(typeof(LoginRequest))]
-[JsonSerializable(typeof(ChangePasswordRequest))]
-[JsonSerializable(typeof(AuthResponse))]
-[JsonSerializable(typeof(AuthStatusResponse))]
-[JsonSerializable(typeof(CertificateInfoResponse))]
-[JsonSerializable(typeof(CertificateDownloadInfo))]
-[JsonSerializable(typeof(SecurityStatus))]
-[JsonSerializable(typeof(SharePacketInfo))]
-[JsonSerializable(typeof(NetworkEndpointInfo))]
-[JsonSerializable(typeof(NetworkEndpointInfo[]))]
-[JsonSerializable(typeof(CursorStyleSetting))]
-[JsonSerializable(typeof(ThemeSetting))]
-[JsonSerializable(typeof(BellStyleSetting))]
-[JsonSerializable(typeof(ClipboardShortcutsSetting))]
-[JsonSerializable(typeof(ScrollbarStyleSetting))]
-[JsonSerializable(typeof(LanguageSetting))]
-[JsonSerializable(typeof(SettingsWsMessage))]
-[JsonSerializable(typeof(LaunchEntry))]
-[JsonSerializable(typeof(List<LaunchEntry>))]
-[JsonSerializable(typeof(CreateHistoryRequest))]
-[JsonSerializable(typeof(SetBookmarkRequest))]
+
+// --- Files ---
 [JsonSerializable(typeof(FileCheckRequest))]
 [JsonSerializable(typeof(FileCheckResponse))]
 [JsonSerializable(typeof(FileRegisterRequest))]
@@ -74,13 +53,18 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(DirectoryListResponse))]
 [JsonSerializable(typeof(DirectoryEntry))]
 [JsonSerializable(typeof(Dictionary<string, FilePathInfo>))]
-[JsonSerializable(typeof(PathsResponse))]
-[JsonSerializable(typeof(ManagerBarButton))]
-[JsonSerializable(typeof(List<ManagerBarButton>))]
-[JsonSerializable(typeof(MainBrowserStatusMessage))]
 [JsonSerializable(typeof(FileTreeResponse))]
 [JsonSerializable(typeof(FileTreeEntry))]
 [JsonSerializable(typeof(FileTreeEntry[]))]
+
+// --- History ---
+[JsonSerializable(typeof(HistoryPatchRequest))]
+[JsonSerializable(typeof(LaunchEntry))]
+[JsonSerializable(typeof(List<LaunchEntry>))]
+[JsonSerializable(typeof(CreateHistoryRequest))]
+[JsonSerializable(typeof(SetBookmarkRequest))]
+
+// --- Commands ---
 [JsonSerializable(typeof(ScriptDefinition))]
 [JsonSerializable(typeof(ScriptListResponse))]
 [JsonSerializable(typeof(CreateScriptRequest))]
@@ -88,6 +72,27 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(RunScriptRequest))]
 [JsonSerializable(typeof(RunScriptResponse))]
 [JsonSerializable(typeof(StopScriptRequest))]
+
+// --- Certificates ---
+[JsonSerializable(typeof(CertificateInfoResponse))]
+[JsonSerializable(typeof(CertificateDownloadInfo))]
+[JsonSerializable(typeof(SharePacketInfo))]
+[JsonSerializable(typeof(NetworkEndpointInfo))]
+[JsonSerializable(typeof(NetworkEndpointInfo[]))]
+
+// --- Settings ---
+[JsonSerializable(typeof(MidTermSettings))]
+[JsonSerializable(typeof(MidTermSettingsPublic))]
+[JsonSerializable(typeof(CursorStyleSetting))]
+[JsonSerializable(typeof(ThemeSetting))]
+[JsonSerializable(typeof(BellStyleSetting))]
+[JsonSerializable(typeof(ClipboardShortcutsSetting))]
+[JsonSerializable(typeof(ScrollbarStyleSetting))]
+[JsonSerializable(typeof(LanguageSetting))]
+[JsonSerializable(typeof(ManagerBarButton))]
+[JsonSerializable(typeof(List<ManagerBarButton>))]
+
+// --- WebPreview ---
 [JsonSerializable(typeof(WebPreviewTargetRequest))]
 [JsonSerializable(typeof(WebPreviewTargetResponse))]
 [JsonSerializable(typeof(WebPreviewCookieSetRequest))]
@@ -96,6 +101,23 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(WebPreviewReloadRequest))]
 [JsonSerializable(typeof(WebPreviewSnapshotRequest))]
 [JsonSerializable(typeof(WebPreviewSnapshotResponse))]
+
+// --- Updates ---
+[JsonSerializable(typeof(UpdateInfo))]
+[JsonSerializable(typeof(LocalUpdateInfo))]
+[JsonSerializable(typeof(UpdateType))]
+[JsonSerializable(typeof(UpdateResult))]
+[JsonSerializable(typeof(VersionManifest))]
+
+// --- WebSocket Protocol ---
+[JsonSerializable(typeof(WsCommand))]
+[JsonSerializable(typeof(WsCommandPayload))]
+[JsonSerializable(typeof(WsCommandResponse))]
+[JsonSerializable(typeof(WsSessionCreatedData))]
+[JsonSerializable(typeof(StateUpdate))]
+[JsonSerializable(typeof(SettingsWsMessage))]
+[JsonSerializable(typeof(MainBrowserStatusMessage))]
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

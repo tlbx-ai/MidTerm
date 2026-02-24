@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Services.Security;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -34,7 +35,7 @@ public static partial class UserValidationService
             return true;
         }
 
-        var users = UserEnumerationService.GetSystemUsers();
+        var users = SystemUserProvider.GetSystemUsers();
         return users.Any(u => string.Equals(u.Username, username, StringComparison.Ordinal));
     }
 

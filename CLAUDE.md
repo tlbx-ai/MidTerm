@@ -183,10 +183,10 @@ docs/                                Documentation and marketing assets
 | **Sessions/** | `TtyHostSessionManager`, `TtyHostClient`, `TtyHostSpawner`, `TtyHostMuxConnectionManager`, `SessionApiEndpoints` | Terminal session lifecycle, spawning mthost processes |
 | **WebSockets/** | `MuxWebSocketHandler`, `StateWebSocketHandler`, `SettingsWebSocketHandler`, `MuxClient`, `MuxProtocol` | Binary mux protocol, JSON state sync, settings broadcast |
 | **Secrets/** | `ISecretStorage`, `WindowsSecretStorage`, `MacOsSecretStorage`, `UnixFileSecretStorage`, `SecretStorageFactory`, `SecretKeys`, `SecretsJsonContext` | Platform-specific secure storage (DPAPI, Keychain, file) |
-| **Certificates/** | `CertificateGenerator`, `CertificateInfoService`, `CertificateCleanupService` | HTTPS cert generation, trust info |
+| **Certificates/** | `CertificateGenerator`, `CertificateInfoService`, `CertificateCleanupService`, `CertificateService` | HTTPS cert generation, regeneration, trust info |
 | **Updates/** | `UpdateService`, `UpdateVerification`, `UpdateScriptGenerator`, `GitHubReleaseContext`, `VersionManifestContext` | GitHub release check, script generation, signature verification |
 | **StaticFiles/** | `CompressedStaticFilesMiddleware`, `EmbeddedWebRootFileProvider`, `EmbeddedFileInfo`, `EnumerableDirectoryContents` | Serve Brotli-compressed embedded assets |
-| **Security/** | `SecurityStatusService`, `UserValidationService`, `UserEnumerationService` | Security posture checks, RunAsUser validation |
+| **Security/** | `SecurityStatusService`, `UserValidationService`, `SystemUserProvider` | Security posture checks, RunAsUser validation, OS user enumeration |
 | **Tmux/** | `TmuxCommandDispatcher`, `TmuxCommandParser`, `TmuxFormatter`, `TmuxPaneMapper`, `TmuxTargetResolver`, `TmuxLayoutBridge`, `TmuxScriptWriter`, `TmuxKeyTranslator`, `TmuxLog`, `TmuxEndpoints` | Tmux shim compatibility layer for AI tools |
 | **Git/** | `GitService`, `GitEndpoints` | Git integration for IDE mode |
 | **WebPreview/** | `WebPreviewService`, `WebPreviewProxyMiddleware`, `WebPreviewEndpoints` | Reverse proxy for previewing local dev servers in iframe, server-side cookie jar, DOM snapshot, screenshot |
@@ -199,7 +199,7 @@ docs/                                Documentation and marketing assets
 | **Authentication** | `AuthService`, `AuthEndpoints` | Password hashing (PBKDF2), session tokens, login/logout |
 | **History** | `HistoryService`, `HistoryEndpoints` | Command launch history |
 | **Commands** | `CommandService`, `CommandEndpoints` | Saved command scripts |
-| **Files** | `FileEndpoints`, `FileRadarAllowlistService` | File uploads, path validation for FileRadar |
+| **Files** | `FileEndpoints`, `FileService`, `SessionPathAllowlistService` | File operations, tree search, path validation |
 | **Logging** | `LogEndpoints` | Log streaming WebSocket, log file access |
 | **System** | `SingleInstanceGuard`, `ShutdownService`, `TempCleanupService` | Instance locking, graceful shutdown, temp file cleanup |
 | **Tray** | `SystemTrayService`, `TrayHelperService` | Windows/macOS system tray integration |
@@ -743,6 +743,18 @@ This architecture exists because hardcoded versions caused update failures where
 - Platform checks: `OperatingSystem.IsWindows()`, `.IsLinux()`, `.IsMacOS()`
 - All JSON serialization must use source-generated `AppJsonContext` for AOT safety
 - **After plan executions or large implementation tasks finish**, always offer to build and publish a dev patch release
+
+## Code Discoverability
+
+New code must be intuitively discoverable — an AI agent (or new contributor) should be able to find any feature by following naming conventions and folder structure alone, without grep.
+
+**Principles:**
+- **File names = contents.** A class named `FooEndpoints` contains only HTTP endpoint registration. Business logic belongs in `FooService`. Middleware belongs in files named `*Middleware`.
+- **Namespaces = folders.** A file in `Services/Tmux/` must use `namespace ...Services.Tmux`, not `Services`.
+- **No jargon in names.** Use names that describe the domain concept (`SessionPathAllowlistService`), not internal project nicknames (`FileRadarAllowlistService`).
+- **Endpoint files are thin.** They map HTTP routes to service calls. No file I/O, no process spawning, no algorithms. If an endpoint handler exceeds ~20 lines, the logic likely belongs in a service.
+- **Don't duplicate — extract.** If the same logic appears in two places, extract it to a named service or helper. Duplicated code is undiscoverable by definition (you find one copy and miss the other).
+- **One concern per file.** A file doing auth middleware AND endpoint registration is two files. A 900-line "middleware" doing HTTP proxy, WebSocket proxy, URL rewriting, and cookie management is four files.
 
 ## Marketing Video Workflow
 

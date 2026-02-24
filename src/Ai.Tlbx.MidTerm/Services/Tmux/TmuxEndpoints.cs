@@ -1,7 +1,6 @@
-using Ai.Tlbx.MidTerm.Services.Tmux;
-
 using Ai.Tlbx.MidTerm.Services.Sessions;
-namespace Ai.Tlbx.MidTerm.Services;
+
+namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
 /// <summary>
 /// REST endpoints for the tmux compatibility layer and direct session I/O.

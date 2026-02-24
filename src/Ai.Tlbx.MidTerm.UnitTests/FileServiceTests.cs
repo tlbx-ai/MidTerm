@@ -3,11 +3,11 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public class FileEndpointsTests : IDisposable
+public class FileServiceTests : IDisposable
 {
     private readonly string _tempDir;
 
-    public FileEndpointsTests()
+    public FileServiceTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
@@ -37,7 +37,7 @@ public class FileEndpointsTests : IDisposable
     [InlineData("  ")]
     public void ValidatePath_RejectsEmptyOrWhitespace(string path)
     {
-        var result = FileEndpoints.ValidatePath(path, out var errorResult);
+        var result = FileService.ValidatePath(path, out var errorResult);
 
         Assert.False(result);
         Assert.NotNull(errorResult);
@@ -46,7 +46,7 @@ public class FileEndpointsTests : IDisposable
     [Fact]
     public void ValidatePath_RejectsTraversal()
     {
-        var result = FileEndpoints.ValidatePath(@"C:\foo\..\bar", out var errorResult);
+        var result = FileService.ValidatePath(@"C:\foo\..\bar", out var errorResult);
 
         Assert.False(result);
         Assert.NotNull(errorResult);
@@ -55,7 +55,7 @@ public class FileEndpointsTests : IDisposable
     [Fact]
     public void ValidatePath_RejectsRelativePath()
     {
-        var result = FileEndpoints.ValidatePath("src/main.ts", out var errorResult);
+        var result = FileService.ValidatePath("src/main.ts", out var errorResult);
 
         Assert.False(result);
         Assert.NotNull(errorResult);
@@ -65,7 +65,7 @@ public class FileEndpointsTests : IDisposable
     public void ValidatePath_AcceptsAbsolutePath()
     {
         var absolutePath = Path.Combine(Path.GetTempPath(), "file.txt");
-        var result = FileEndpoints.ValidatePath(absolutePath, out var errorResult);
+        var result = FileService.ValidatePath(absolutePath, out var errorResult);
 
         Assert.True(result);
         Assert.Null(errorResult);
@@ -82,13 +82,13 @@ public class FileEndpointsTests : IDisposable
         var child = Path.Combine(parent, "sub", "file.txt");
         Directory.CreateDirectory(Path.Combine(parent, "sub"));
 
-        Assert.True(FileEndpoints.IsWithinDirectory(child, parent));
+        Assert.True(FileService.IsWithinDirectory(child, parent));
     }
 
     [Fact]
     public void IsWithinDirectory_SamePathReturnsTrue()
     {
-        Assert.True(FileEndpoints.IsWithinDirectory(_tempDir, _tempDir));
+        Assert.True(FileService.IsWithinDirectory(_tempDir, _tempDir));
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class FileEndpointsTests : IDisposable
         var dir1 = Path.Combine(_tempDir, "dir1");
         var dir2 = Path.Combine(_tempDir, "dir2");
 
-        Assert.False(FileEndpoints.IsWithinDirectory(dir2, dir1));
+        Assert.False(FileService.IsWithinDirectory(dir2, dir1));
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public class FileEndpointsTests : IDisposable
         var dir = Path.Combine(_tempDir, "Users");
         var attack = Path.Combine(_tempDir, "Users2", "file.txt");
 
-        Assert.False(FileEndpoints.IsWithinDirectory(attack, dir));
+        Assert.False(FileService.IsWithinDirectory(attack, dir));
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class FileEndpointsTests : IDisposable
         var dir = _tempDir + Path.DirectorySeparatorChar;
         var child = Path.Combine(_tempDir, "file.txt");
 
-        Assert.True(FileEndpoints.IsWithinDirectory(child, dir));
+        Assert.True(FileService.IsWithinDirectory(child, dir));
     }
 
     // =======================================================================
@@ -125,7 +125,7 @@ public class FileEndpointsTests : IDisposable
     [Fact]
     public void GetSlashVariants_ForwardSlashes_BothVariants()
     {
-        var variants = FileEndpoints.GetSlashVariants("src/main.ts").ToList();
+        var variants = FileService.GetSlashVariants("src/main.ts").ToList();
 
         Assert.Contains("src/main.ts", variants);
         Assert.Contains(@"src\main.ts", variants);
@@ -135,7 +135,7 @@ public class FileEndpointsTests : IDisposable
     [Fact]
     public void GetSlashVariants_Backslashes_BothVariants()
     {
-        var variants = FileEndpoints.GetSlashVariants(@"src\main.ts").ToList();
+        var variants = FileService.GetSlashVariants(@"src\main.ts").ToList();
 
         Assert.Contains(@"src\main.ts", variants);
         Assert.Contains("src/main.ts", variants);
@@ -145,7 +145,7 @@ public class FileEndpointsTests : IDisposable
     [Fact]
     public void GetSlashVariants_NoSlashes_OriginalOnly()
     {
-        var variants = FileEndpoints.GetSlashVariants("file.txt").ToList();
+        var variants = FileService.GetSlashVariants("file.txt").ToList();
 
         Assert.Single(variants);
         Assert.Equal("file.txt", variants[0]);
@@ -173,7 +173,7 @@ public class FileEndpointsTests : IDisposable
     {
         CreateFile("readme.md");
 
-        var result = FileEndpoints.SearchTree(_tempDir, "readme.md", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "readme.md", maxDepth: 5);
 
         Assert.NotNull(result);
         Assert.EndsWith("readme.md", result);
@@ -184,7 +184,7 @@ public class FileEndpointsTests : IDisposable
     {
         CreateFile("src", "main.ts");
 
-        var result = FileEndpoints.SearchTree(_tempDir, "src/main.ts", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "src/main.ts", maxDepth: 5);
 
         Assert.NotNull(result);
         Assert.EndsWith("main.ts", result);
@@ -196,7 +196,7 @@ public class FileEndpointsTests : IDisposable
         CreateDir("src", "components");
         CreateFile("src", "components", "placeholder.txt");
 
-        var result = FileEndpoints.SearchTree(_tempDir, "components", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "components", maxDepth: 5);
 
         Assert.NotNull(result);
         Assert.Contains("components", result);
@@ -207,7 +207,7 @@ public class FileEndpointsTests : IDisposable
     {
         CreateFile("node_modules", "pkg", "index.js");
 
-        var result = FileEndpoints.SearchTree(_tempDir, "index.js", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "index.js", maxDepth: 5);
 
         Assert.Null(result);
     }
@@ -217,7 +217,7 @@ public class FileEndpointsTests : IDisposable
     {
         CreateFile(".git", "config");
 
-        var result = FileEndpoints.SearchTree(_tempDir, "config", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "config", maxDepth: 5);
 
         Assert.Null(result);
     }
@@ -228,7 +228,7 @@ public class FileEndpointsTests : IDisposable
         // Create file at depth 6 (6 subdirectories deep)
         CreateFile("a", "b", "c", "d", "e", "f", "deep.txt");
 
-        var result = FileEndpoints.SearchTree(_tempDir, "deep.txt", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "deep.txt", maxDepth: 5);
 
         Assert.Null(result);
     }
@@ -238,7 +238,7 @@ public class FileEndpointsTests : IDisposable
     {
         CreateFile("README.md");
 
-        var result = FileEndpoints.SearchTree(_tempDir, "readme.md", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "readme.md", maxDepth: 5);
 
         Assert.NotNull(result);
     }
@@ -246,7 +246,7 @@ public class FileEndpointsTests : IDisposable
     [Fact]
     public void SearchTree_ReturnsNullForNonexistent()
     {
-        var result = FileEndpoints.SearchTree(_tempDir, "nope.txt", maxDepth: 5);
+        var result = FileService.SearchTree(_tempDir, "nope.txt", maxDepth: 5);
 
         Assert.Null(result);
     }

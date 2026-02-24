@@ -55,12 +55,12 @@ Binary size: 15-25MB depending on platform. Startup: instant. Memory: stable aft
 | AuthService | Authentication (see Security Architecture) |
 | SettingsService | Settings persistence |
 | UpdateService | GitHub release check, version comparison |
-| FileRadarAllowlistService | File path detection security (max 1000 paths/session) |
+| SessionPathAllowlistService | Session file path allowlist security (max 1000 paths/session) |
 | HistoryService | Command execution history (50 entries/shell) |
 | SecurityStatusService | Security status reporting |
 | CertificateGenerator/InfoService | HTTPS certificate lifecycle |
 | SystemTrayService | Windows system tray integration |
-| UserEnumerationService | Windows RunAsUser feature |
+| SystemUserProvider | OS-level user enumeration (Windows/macOS/Linux) |
 | ISecretStorage | Cross-platform secret storage (platform-specific implementations) |
 | ICertificateProtector | Platform-specific private key protection (DPAPI, AES-256) |
 | SharedOutputBuffer | Zero-copy buffer sharing via reference counting |
@@ -787,7 +787,7 @@ const { data, response } = await createSession({ cols: 120, rows: 30, shell: 'pw
 | Session management | `src/Ai.Tlbx.MidTerm/Services/Sessions/TtyHostSessionManager.cs` |
 | AOT JSON | `src/Ai.Tlbx.MidTerm/Services/AppJsonContext.cs` |
 | Settings WebSocket | `src/Ai.Tlbx.MidTerm/Services/WebSockets/SettingsWebSocketHandler.cs` |
-| File Radar | `src/Ai.Tlbx.MidTerm/Services/FileRadarAllowlistService.cs` |
+| Session Path Allowlist | `src/Ai.Tlbx.MidTerm/Services/SessionPathAllowlistService.cs` |
 | History | `src/Ai.Tlbx.MidTerm/Services/HistoryService.cs` |
 | PTY (Windows) | `src/Ai.Tlbx.MidTerm.TtyHost/Pty/ConPty/` |
 | PTY (Unix) | `src/Ai.Tlbx.MidTerm.TtyHost/Pty/UnixPty.cs` |

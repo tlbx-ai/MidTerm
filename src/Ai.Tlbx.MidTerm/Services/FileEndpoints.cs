@@ -1,24 +1,17 @@
-using Ai.Tlbx.MidTerm.Models;
-using Microsoft.AspNetCore.StaticFiles;
-
-using Ai.Tlbx.MidTerm.Services.Sessions;
-using Ai.Tlbx.MidTerm.Models.Auth;
-using Ai.Tlbx.MidTerm.Models.Certificates;
 using Ai.Tlbx.MidTerm.Models.Files;
-using Ai.Tlbx.MidTerm.Models.History;
-using Ai.Tlbx.MidTerm.Models.Sessions;
-using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Services.Sessions;
+
 namespace Ai.Tlbx.MidTerm.Services;
 
 public static class FileEndpoints
 {
-    private static readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
-
     public static void MapFileEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
-        FileRadarAllowlistService allowlistService)
+        SessionPathAllowlistService allowlistService)
     {
+        var fileService = new FileService(sessionManager, allowlistService);
+
         app.MapPost("/api/files/register", (FileRegisterRequest request) =>
         {
             if (string.IsNullOrEmpty(request.SessionId))
@@ -26,30 +19,30 @@ public static class FileEndpoints
                 return Results.BadRequest("sessionId is required");
             }
 
-            if (sessionManager.GetSession(request.SessionId) is null)
+            if (!fileService.IsSessionValid(request.SessionId))
             {
                 return Results.BadRequest("Invalid session");
             }
 
-            allowlistService.RegisterPaths(request.SessionId, request.Paths);
+            fileService.RegisterPaths(request.SessionId, request.Paths);
             return Results.Ok();
         });
 
         app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
         {
             var results = new Dictionary<string, FilePathInfo>();
-            var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
+            var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
 
             foreach (var path in request.Paths)
             {
                 if (!string.IsNullOrEmpty(sessionId) &&
-                    !IsPathAccessible(sessionId, path, workingDir, allowlistService))
+                    !fileService.IsPathAccessible(sessionId, path, workingDir))
                 {
                     results[path] = new FilePathInfo { Exists = false };
                     continue;
                 }
 
-                results[path] = GetFileInfo(path);
+                results[path] = FileService.GetFileInfo(path);
             }
 
             return Results.Json(
@@ -59,14 +52,14 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/list", async (string path, string? sessionId) =>
         {
-            if (!ValidatePath(path, out var errorResult))
+            if (!FileService.ValidatePath(path, out var errorResult))
             {
                 return errorResult!;
             }
 
-            var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
+            var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
             if (!string.IsNullOrEmpty(sessionId) &&
-                !IsPathAccessible(sessionId, path, workingDir, allowlistService))
+                !fileService.IsPathAccessible(sessionId, path, workingDir))
             {
                 return Results.StatusCode(403);
             }
@@ -108,7 +101,7 @@ public static class FileEndpoints
                             IsDirectory = false,
                             Size = fileInfo.Length,
                             Modified = fileInfo.LastWriteTimeUtc,
-                            MimeType = GetMimeType(fileInfo.Name)
+                            MimeType = FileService.GetMimeType(fileInfo.Name)
                         });
                     }
                     catch { }
@@ -135,17 +128,14 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/view", async (string path, string? sessionId) =>
         {
-            return await ServeFileAsync(path, inline: true, sessionId, sessionManager, allowlistService);
+            return await ServeFileAsync(path, inline: true, sessionId, fileService);
         });
 
         app.MapGet("/api/files/download", async (string path, string? sessionId) =>
         {
-            return await ServeFileAsync(path, inline: false, sessionId, sessionManager, allowlistService);
+            return await ServeFileAsync(path, inline: false, sessionId, fileService);
         });
 
-        // Resolve relative path against session's working directory
-        // deep=false (default): exact path only (fast, for hover)
-        // deep=true: also search CWD tree (slower, for click)
         app.MapGet("/api/files/resolve", async (string sessionId, string path, bool deep = false) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path) || path.Contains(".."))
@@ -160,28 +150,25 @@ public static class FileEndpoints
                 return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
             }
 
-            // Strategy 1: Try exact path relative to CWD (always)
-            // Try original path first, then with normalized slashes (WSL/AI tools may use wrong style)
-            foreach (var tryPath in GetSlashVariants(path))
+            foreach (var tryPath in FileService.GetSlashVariants(path))
             {
                 var exactPath = Path.GetFullPath(Path.Combine(cwd, tryPath));
-                if (IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
+                if (FileService.IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
                 {
-                    allowlistService.RegisterPath(sessionId, exactPath);
-                    return Results.Json(BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
+                    fileService.RegisterPath(sessionId, exactPath);
+                    return Results.Json(FileService.BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
                 }
             }
 
-            // Strategy 2: Search CWD tree (only on click, when deep=true)
             if (deep)
             {
-                foreach (var tryPath in GetSlashVariants(path))
+                foreach (var tryPath in FileService.GetSlashVariants(path))
                 {
-                    var found = SearchTree(cwd, tryPath, maxDepth: 5);
-                    if (found is not null && IsWithinDirectory(found, cwd))
+                    var found = FileService.SearchTree(cwd, tryPath, maxDepth: 5);
+                    if (found is not null && FileService.IsWithinDirectory(found, cwd))
                     {
-                        allowlistService.RegisterPath(sessionId, found);
-                        return Results.Json(BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
+                        fileService.RegisterPath(sessionId, found);
+                        return Results.Json(FileService.BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
                     }
                 }
             }
@@ -204,8 +191,8 @@ public static class FileEndpoints
 
             if (!string.IsNullOrEmpty(sessionId))
             {
-                var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
-                if (!string.IsNullOrEmpty(workingDir) && !IsWithinDirectory(fullPath, workingDir))
+                var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
+                if (!string.IsNullOrEmpty(workingDir) && !FileService.IsWithinDirectory(fullPath, workingDir))
                 {
                     return Results.StatusCode(403);
                 }
@@ -253,7 +240,6 @@ public static class FileEndpoints
             }
             catch
             {
-                // Not a git repo or git not available
             }
 
             var entries = new List<FileTreeEntry>();
@@ -279,7 +265,7 @@ public static class FileEndpoints
                     }
                     else
                     {
-                        if (_skipDirectories.Contains(dirName)) continue;
+                        if (FileService.SkipDirectories.Contains(dirName)) continue;
                     }
 
                     entries.Add(new FileTreeEntry
@@ -309,7 +295,7 @@ public static class FileEndpoints
                             FullPath = file,
                             IsDirectory = false,
                             Size = fileInfo.Length,
-                            MimeType = GetMimeType(fileName)
+                            MimeType = FileService.GetMimeType(fileName)
                         });
                     }
                     catch { }
@@ -336,172 +322,20 @@ public static class FileEndpoints
         });
     }
 
-    internal static IEnumerable<string> GetSlashVariants(string path)
-    {
-        yield return path;
-
-        // Try opposite slash style (WSL/AI tools may use wrong slashes)
-        if (path.Contains('/'))
-        {
-            var windowsPath = path.Replace('/', '\\');
-            if (windowsPath != path)
-            {
-                yield return windowsPath;
-            }
-        }
-        else if (path.Contains('\\'))
-        {
-            var unixPath = path.Replace('\\', '/');
-            if (unixPath != path)
-            {
-                yield return unixPath;
-            }
-        }
-    }
-
-    private static readonly HashSet<string> _skipDirectories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "node_modules", ".git", "bin", "obj", "__pycache__", ".next",
-        ".nuget", "packages", ".vs", ".idea", ".cache", ".npm", ".yarn", "vendor"
-    };
-
-    internal static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
-    {
-        var hasDirectory = searchPattern.Contains('/') || searchPattern.Contains('\\');
-        var normalizedPattern = searchPattern.Replace('\\', '/');
-
-        try
-        {
-            var queue = new Queue<(string Dir, int Depth)>();
-            queue.Enqueue((rootDir, 0));
-
-            while (queue.Count > 0)
-            {
-                var (currentDir, depth) = queue.Dequeue();
-
-                foreach (var file in Directory.EnumerateFiles(currentDir))
-                {
-                    var relativePath = Path.GetRelativePath(rootDir, file).Replace('\\', '/');
-
-                    if (hasDirectory)
-                    {
-                        if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
-                            relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return file;
-                        }
-                    }
-                    else
-                    {
-                        if (Path.GetFileName(file).Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return file;
-                        }
-                    }
-                }
-
-                if (depth >= maxDepth) continue;
-
-                foreach (var subDir in Directory.EnumerateDirectories(currentDir))
-                {
-                    var dirName = Path.GetFileName(subDir);
-                    if (_skipDirectories.Contains(dirName)) continue;
-
-                    var relativePath = Path.GetRelativePath(rootDir, subDir).Replace('\\', '/');
-
-                    if (hasDirectory)
-                    {
-                        if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
-                            relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return subDir;
-                        }
-                    }
-                    else
-                    {
-                        if (dirName.Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return subDir;
-                        }
-                    }
-
-                    queue.Enqueue((subDir, depth + 1));
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return null;
-    }
-
-    internal static bool IsWithinDirectory(string path, string directory)
-    {
-        var normalizedPath = Path.GetFullPath(path);
-        var normalizedDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalizedPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-               normalizedPath.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static FileResolveResponse BuildResolveResponse(string resolvedPath)
-    {
-        var response = new FileResolveResponse { ResolvedPath = resolvedPath };
-
-        if (Directory.Exists(resolvedPath))
-        {
-            var dirInfo = new DirectoryInfo(resolvedPath);
-            response.Exists = true;
-            response.IsDirectory = true;
-            response.Modified = dirInfo.LastWriteTimeUtc;
-        }
-        else if (File.Exists(resolvedPath))
-        {
-            var fileInfo = new FileInfo(resolvedPath);
-            response.Exists = true;
-            response.IsDirectory = false;
-            response.Size = fileInfo.Length;
-            response.Modified = fileInfo.LastWriteTimeUtc;
-            response.MimeType = GetMimeType(fileInfo.Name);
-            response.IsText = CheckIsText(resolvedPath, fileInfo.Length);
-        }
-
-        return response;
-    }
-
-    private static async Task<string?> GetSessionWorkingDirectoryAsync(TtyHostSessionManager sessionManager, string? sessionId)
-    {
-        if (string.IsNullOrEmpty(sessionId)) return null;
-        var session = sessionManager.GetSession(sessionId);
-        if (session?.CurrentDirectory is not null) return session.CurrentDirectory;
-        var fresh = await sessionManager.GetSessionFreshAsync(sessionId);
-        return fresh?.CurrentDirectory;
-    }
-
-    private static bool IsPathAccessible(
-        string sessionId,
-        string path,
-        string? workingDirectory,
-        FileRadarAllowlistService allowlistService)
-    {
-        return allowlistService.IsPathAllowed(sessionId, path, workingDirectory);
-    }
-
     private static async Task<IResult> ServeFileAsync(
         string path,
         bool inline,
         string? sessionId,
-        TtyHostSessionManager sessionManager,
-        FileRadarAllowlistService allowlistService)
+        FileService fileService)
     {
-        if (!ValidatePath(path, out var errorResult))
+        if (!FileService.ValidatePath(path, out var errorResult))
         {
             return errorResult!;
         }
 
-        var workingDir = await GetSessionWorkingDirectoryAsync(sessionManager, sessionId);
+        var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
         if (!string.IsNullOrEmpty(sessionId) &&
-            !IsPathAccessible(sessionId, path, workingDir, allowlistService))
+            !fileService.IsPathAccessible(sessionId, path, workingDir))
         {
             return Results.StatusCode(403);
         }
@@ -516,7 +350,7 @@ public static class FileEndpoints
         try
         {
             var fileInfo = new FileInfo(fullPath);
-            var mimeType = GetMimeType(fileInfo.Name);
+            var mimeType = FileService.GetMimeType(fileInfo.Name);
             var fileName = fileInfo.Name;
 
             var stream = new FileStream(
@@ -539,109 +373,5 @@ public static class FileEndpoints
         {
             return Results.Problem(ex.Message);
         }
-    }
-
-    internal static bool ValidatePath(string path, out IResult? errorResult)
-    {
-        errorResult = null;
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            errorResult = Results.BadRequest("Path is required");
-            return false;
-        }
-
-        if (path.Contains(".."))
-        {
-            errorResult = Results.BadRequest("Path traversal not allowed");
-            return false;
-        }
-
-        if (!Path.IsPathRooted(path))
-        {
-            errorResult = Results.BadRequest("Absolute path required");
-            return false;
-        }
-
-        return true;
-    }
-
-    private static FilePathInfo GetFileInfo(string path)
-    {
-        var info = new FilePathInfo { Exists = false };
-
-        if (string.IsNullOrWhiteSpace(path) || path.Contains(".."))
-        {
-            return info;
-        }
-
-        try
-        {
-            var fullPath = Path.GetFullPath(path);
-
-            if (Directory.Exists(fullPath))
-            {
-                var dirInfo = new DirectoryInfo(fullPath);
-                info.Exists = true;
-                info.IsDirectory = true;
-                info.Modified = dirInfo.LastWriteTimeUtc;
-            }
-            else if (File.Exists(fullPath))
-            {
-                var fileInfo = new FileInfo(fullPath);
-                info.Exists = true;
-                info.IsDirectory = false;
-                info.Size = fileInfo.Length;
-                info.Modified = fileInfo.LastWriteTimeUtc;
-                info.MimeType = GetMimeType(fileInfo.Name);
-                info.IsText = CheckIsText(fullPath, fileInfo.Length);
-            }
-        }
-        catch
-        {
-        }
-
-        return info;
-    }
-
-    private static bool? CheckIsText(string filePath, long fileSize)
-    {
-        if (fileSize == 0)
-        {
-            return true;
-        }
-
-        try
-        {
-            var sampleSize = (int)Math.Min(8192, fileSize);
-            var buffer = new byte[sampleSize];
-
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            var bytesRead = fs.Read(buffer, 0, sampleSize);
-
-            for (var i = 0; i < bytesRead; i++)
-            {
-                if (buffer[i] == 0)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string GetMimeType(string fileName)
-    {
-        if (_contentTypeProvider.TryGetContentType(fileName, out var contentType))
-        {
-            return contentType;
-        }
-
-        return "application/octet-stream";
     }
 }

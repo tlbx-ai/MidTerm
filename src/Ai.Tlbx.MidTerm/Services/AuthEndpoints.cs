@@ -1,13 +1,6 @@
-using System.Net;
-using Ai.Tlbx.MidTerm.Models;
+using Ai.Tlbx.MidTerm.Models.Auth;
 using Ai.Tlbx.MidTerm.Settings;
 
-using Ai.Tlbx.MidTerm.Models.Auth;
-using Ai.Tlbx.MidTerm.Models.Certificates;
-using Ai.Tlbx.MidTerm.Models.Files;
-using Ai.Tlbx.MidTerm.Models.History;
-using Ai.Tlbx.MidTerm.Models.Sessions;
-using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Services;
 
 public static class AuthEndpoints
@@ -16,60 +9,10 @@ public static class AuthEndpoints
     {
         HttpOnly = true,
         SameSite = SameSiteMode.Strict,
-        Secure = true,  // Always HTTPS
+        Secure = true,
         Path = "/",
-        MaxAge = TimeSpan.FromDays(3)  // Sliding window - fresh token issued on each request
+        MaxAge = TimeSpan.FromDays(3)
     };
-
-    public static void ConfigureAuthMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
-    {
-        app.Use(async (context, next) =>
-        {
-            var authSettings = settingsService.Load();
-            var path = context.Request.Path.Value ?? "";
-
-            if (!authSettings.AuthenticationEnabled || string.IsNullOrEmpty(authSettings.PasswordHash))
-            {
-                await next();
-                return;
-            }
-
-            if (IsPublicPath(path))
-            {
-                await next();
-                return;
-            }
-
-            if (path == "/api/shutdown" && IsLoopback(context))
-            {
-                await next();
-                return;
-            }
-
-            var token = context.Request.Cookies[AuthService.SessionCookieName];
-            if (token is not null && authService.ValidateSessionToken(token))
-            {
-                // Issue fresh token on each request for sliding window expiry
-                // This ensures active users always have a recent token, while
-                // stolen tokens expire after 3 days of attacker non-use
-                if (!context.WebSockets.IsWebSocketRequest)
-                {
-                    var freshToken = authService.CreateSessionToken();
-                    context.Response.Cookies.Append(AuthService.SessionCookieName, freshToken, GetSessionCookieOptions());
-                }
-                await next();
-                return;
-            }
-
-            if (path.StartsWith("/api/") || path.StartsWith("/ws/"))
-            {
-                context.Response.StatusCode = 401;
-                return;
-            }
-
-            context.Response.Redirect("/login.html");
-        });
-    }
 
     public static void MapAuthEndpoints(WebApplication app, SettingsService settingsService, AuthService authService)
     {
@@ -171,32 +114,4 @@ public static class AuthEndpoints
         });
     }
 
-    private static bool IsPublicPath(string path)
-    {
-        return path == "/login" ||
-               path == "/login.html" ||
-               path == "/trust" ||
-               path == "/trust.html" ||
-               path == "/api/health" ||
-               path == "/api/version" ||
-               path == "/api/paths" ||
-               path == "/api/security/status" ||
-               path.StartsWith("/api/certificate/") ||
-               path.StartsWith("/api/auth/") ||
-               path.StartsWith("/css/") ||
-               path.StartsWith("/js/") ||
-               path.StartsWith("/fonts/") ||
-               path.StartsWith("/locales/") ||
-               path.EndsWith(".ico") ||
-               path.EndsWith(".png") ||
-               path.EndsWith(".webmanifest") ||
-               path.EndsWith(".woff") ||
-               path.EndsWith(".woff2");
-    }
-
-    private static bool IsLoopback(HttpContext context)
-    {
-        var remoteIp = context.Connection.RemoteIpAddress;
-        return remoteIp is not null && IPAddress.IsLoopback(remoteIp);
-    }
 }
