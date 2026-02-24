@@ -6,11 +6,11 @@
  * The web preview dock sits as the outermost (rightmost) panel.
  */
 
-import { $webPreviewDocked, $isMainBrowser } from '../../stores';
+import { $activeSessionId, $webPreviewDocked, $isMainBrowser } from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { restoreLastUrl, showIframe, unloadIframe } from './webPanel';
-import { cleanupDetachForSessionSwitch, isDetachedOpenForActiveSession } from './webDetach';
+import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
 import { getActiveMode, setActiveMode } from './webSessionState';
@@ -108,7 +108,8 @@ export function openWebPreviewDock(): void {
 
 /** Close the web preview dock panel and unload the iframe. */
 export function closeWebPreviewDock(): void {
-  const detachedActive = isDetachedOpenForActiveSession();
+  const activeId = $activeSessionId.get();
+  const detachedActive = isDetachedOpenForSession(activeId);
   if (!detachedActive) {
     setActiveMode('hidden');
   }
@@ -157,7 +158,6 @@ export function applyWebPreviewHiddenState(): void {
   setActionButtonActive('web', false);
   unloadIframe();
   clearWebPreviewTarget();
-  cleanupDetachForSessionSwitch();
 
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {

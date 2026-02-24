@@ -2,34 +2,34 @@
  * Web Preview Detach
  *
  * Handles detaching the web preview to a chromeless popup window
- * and docking it back. Uses BroadcastChannel for communication.
+ * and docking it back. Uses per-session BroadcastChannels for communication.
+ * Multiple sessions can each have their own detached popup simultaneously.
  */
 
 import { $activeSessionId, $webPreviewDetached, $webPreviewUrl } from '../../stores';
 import { hideDetachedPlaceholder, loadPreview } from './webPanel';
 import { createLogger } from '../logging';
-import { getActiveMode, getActiveUrl, setActiveMode } from './webSessionState';
+import { getActiveUrl, setActiveMode, setSessionMode } from './webSessionState';
 
 const log = createLogger('webDetach');
-const CHANNEL_NAME = 'midterm-web-preview';
 
-let popup: Window | null = null;
-let channel: BroadcastChannel | null = null;
-let detachedOwnerSessionId: string | null = null;
+const popups = new Map<string, Window>();
+const channels = new Map<string, BroadcastChannel>();
 
-/** Initialize the detach system: create BroadcastChannel and wire up detach/dock-back buttons. */
+function channelName(sessionId: string): string {
+  return `midterm-web-preview-${sessionId}`;
+}
+
+/** Initialize the detach system: wire up detach/dock-back buttons. */
 export function initDetach(): void {
-  channel = new BroadcastChannel(CHANNEL_NAME);
-  channel.onmessage = handleMessage;
-
   document.getElementById('web-preview-detach')?.addEventListener('click', detachPreview);
-  document.getElementById('web-preview-dock-back')?.addEventListener('click', dockBack);
+  document.getElementById('web-preview-dock-back')?.addEventListener('click', () => dockBack());
 }
 
 function handleMessage(e: MessageEvent): void {
-  const { type } = e.data;
+  const { type, sessionId } = e.data;
   if (type === 'dock-back' || type === 'popup-closed') {
-    dockBack();
+    dockBack(sessionId ?? undefined);
   }
 }
 
@@ -38,22 +38,31 @@ export function detachPreview(): void {
   const activeSessionId = $activeSessionId.get();
   if (!activeSessionId) return;
 
-  if (popup && !popup.closed) {
-    popup.focus();
+  const existing = popups.get(activeSessionId);
+  if (existing && !existing.closed) {
+    existing.focus();
     return;
   }
 
   const url = getActiveUrl() ?? $webPreviewUrl.get();
-  const popupUrl = '/web-preview-popup.html' + (url ? `?url=${encodeURIComponent(url)}` : '');
+  const popupUrl =
+    '/web-preview-popup.html' +
+    `?session=${encodeURIComponent(activeSessionId)}` +
+    (url ? `&url=${encodeURIComponent(url)}` : '');
 
-  popup = window.open(
+  const popup = window.open(
     popupUrl,
-    'midterm-web-preview',
+    `midterm-web-preview-${activeSessionId}`,
     'popup,width=1280,height=900,menubar=no,toolbar=no,location=no,status=no',
   );
 
   if (popup) {
-    detachedOwnerSessionId = activeSessionId;
+    popups.set(activeSessionId, popup);
+
+    const ch = new BroadcastChannel(channelName(activeSessionId));
+    ch.onmessage = handleMessage;
+    channels.set(activeSessionId, ch);
+
     setActiveMode('detached');
     $webPreviewDetached.set(true);
     const dockPanel = document.getElementById('web-preview-dock');
@@ -61,69 +70,61 @@ export function detachPreview(): void {
       dockPanel.classList.add('hidden');
       dockPanel.style.width = '';
     }
-    log.info(() => 'Web preview detached to popup');
+    log.info(() => `Web preview detached to popup for session ${activeSessionId}`);
   }
 }
 
 /** Close the detached popup and restore the web preview back into the dock panel. */
-export function dockBack(): void {
+export function dockBack(sessionId?: string): void {
+  const targetId = sessionId ?? $activeSessionId.get();
+  if (!targetId) return;
+
+  closePopupForSession(targetId);
+  setSessionMode(targetId, 'docked');
+
   const activeSessionId = $activeSessionId.get();
-  if (activeSessionId && detachedOwnerSessionId && activeSessionId !== detachedOwnerSessionId) {
-    closeDetachedPopup();
-    return;
+  if (targetId === activeSessionId) {
+    $webPreviewDetached.set(false);
+    hideDetachedPlaceholder();
+    const dockPanel = document.getElementById('web-preview-dock');
+    if (dockPanel) {
+      dockPanel.classList.remove('hidden');
+    }
+    loadPreview();
+    log.info(() => 'Web preview docked back');
   }
-
-  if (popup && !popup.closed) {
-    popup.close();
-  }
-  popup = null;
-  detachedOwnerSessionId = null;
-  setActiveMode('docked');
-  $webPreviewDetached.set(false);
-  hideDetachedPlaceholder();
-  const dockPanel = document.getElementById('web-preview-dock');
-  if (dockPanel) {
-    dockPanel.classList.remove('hidden');
-  }
-  loadPreview();
-  log.info(() => 'Web preview docked back');
 }
 
-/** Close the detached popup and release the BroadcastChannel. */
+/** Close the detached popup and release all BroadcastChannels (page unload). */
 export function cleanupDetach(): void {
-  closeDetachedPopup();
-  channel?.close();
-  channel = null;
-}
-
-/** Close the detached popup when switching sessions without releasing the channel. */
-export function cleanupDetachForSessionSwitch(): void {
-  closeDetachedPopup();
+  for (const [id] of popups) {
+    closePopupForSession(id);
+  }
 }
 
 /** Close the detached popup if it was opened by the given session. */
 export function closeDetachedIfOwnedBy(sessionId: string | null): void {
-  if (!sessionId || detachedOwnerSessionId !== sessionId) return;
-  closeDetachedPopup();
+  if (!sessionId) return;
+  closePopupForSession(sessionId);
 }
 
-/** Check whether a detached popup is currently open for the active session. */
-export function isDetachedOpenForActiveSession(): boolean {
-  const activeSessionId = $activeSessionId.get();
-  return (
-    !!activeSessionId &&
-    detachedOwnerSessionId === activeSessionId &&
-    !!popup &&
-    !popup.closed &&
-    getActiveMode() === 'detached'
-  );
+/** Check whether a detached popup is currently open for a specific session. */
+export function isDetachedOpenForSession(sessionId: string | null): boolean {
+  if (!sessionId) return false;
+  const popup = popups.get(sessionId);
+  return !!popup && !popup.closed;
 }
 
-function closeDetachedPopup(): void {
+function closePopupForSession(sessionId: string): void {
+  const popup = popups.get(sessionId);
   if (popup && !popup.closed) {
     popup.close();
   }
-  popup = null;
-  detachedOwnerSessionId = null;
-  $webPreviewDetached.set(false);
+  popups.delete(sessionId);
+
+  const ch = channels.get(sessionId);
+  if (ch) {
+    ch.close();
+    channels.delete(sessionId);
+  }
 }

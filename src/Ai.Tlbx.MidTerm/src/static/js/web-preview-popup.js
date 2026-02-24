@@ -1,11 +1,12 @@
 (function () {
-  var CHANNEL_NAME = 'midterm-web-preview';
-  var channel = new BroadcastChannel(CHANNEL_NAME);
+  var params = new URLSearchParams(window.location.search);
+  var sessionId = params.get('session') || '';
+  var channelName = sessionId ? 'midterm-web-preview-' + sessionId : 'midterm-web-preview';
+  var channel = new BroadcastChannel(channelName);
   var frame = document.getElementById('preview-frame');
   var urlDisplay = document.getElementById('url-display');
 
   // Get URL from query parameter
-  var params = new URLSearchParams(window.location.search);
   var initialUrl = params.get('url');
   if (initialUrl) {
     urlDisplay.textContent = initialUrl;
@@ -35,12 +36,12 @@
 
   // Dock back button
   document.getElementById('dock-back-btn').addEventListener('click', function () {
-    channel.postMessage({ type: 'dock-back' });
+    channel.postMessage({ type: 'dock-back', sessionId: sessionId });
     window.close();
   });
 
   // Notify parent on close
   window.addEventListener('beforeunload', function () {
-    channel.postMessage({ type: 'popup-closed' });
+    channel.postMessage({ type: 'popup-closed', sessionId: sessionId });
   });
 })();
