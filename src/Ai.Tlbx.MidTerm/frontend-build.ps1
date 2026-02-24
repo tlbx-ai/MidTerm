@@ -171,7 +171,11 @@ $eslintJob = Start-Job -ScriptBlock {
 $tscResult   = $tscJob   | Wait-Job | Receive-Job
 $eslintResult = $eslintJob | Wait-Job | Receive-Job
 
-if ($tscResult.Output)   { Write-Host ($tscResult.Output   | Out-String).TrimEnd() }
+if ($tscResult.Output) {
+    Write-Host "::group::TypeScript type-check output"
+    Write-Host ($tscResult.Output | Out-String).TrimEnd()
+    Write-Host "::endgroup::"
+}
 if ($eslintResult.Output) { Write-Host ($eslintResult.Output | Out-String).TrimEnd() }
 
 if ($tscResult.ExitCode -ne 0) {
@@ -223,6 +227,7 @@ Write-Host "  terminal.min.js ($([math]::Round($jsSize/1KB, 1)) KB)" -Foreground
 #   - favicon.ico:     15 KB ->   8 KB (49% reduction, 7 KB saved)
 
 Write-Host "Copying static assets..." -ForegroundColor Cyan
+Write-Host "::group::Copying static assets"
 
 # Binary files that benefit from Brotli compression (publish only)
 # These get both the original (debug) and .br version (publish)
@@ -263,10 +268,12 @@ foreach ($spec in $nonCompressibleBinaries) {
         Write-Host "  $relPath" -ForegroundColor DarkGray
     }
 }
+Write-Host "::endgroup::"
 
 # Compress select binary files for publish (see notes above for rationale)
 if ($Publish) {
     Write-Host "Compressing select binary assets..." -ForegroundColor Cyan
+    Write-Host "::group::Compressing binary assets"
     foreach ($file in $compressibleBinaries) {
         $srcPath = Join-Path $WwwRoot $file.Dst
         $dstPath = "$srcPath.br"
@@ -287,6 +294,7 @@ if ($Publish) {
         # Remove original for publish (only .br embedded)
         Remove-Item $srcPath -Force
     }
+    Write-Host "::endgroup::"
 }
 
 # ===========================================
@@ -335,6 +343,7 @@ function Process-TextFile {
 
 if ($Publish) {
     Write-Host "Compressing text assets with Brotli..." -ForegroundColor Cyan
+    Write-Host "::group::Compressing text assets"
 }
 
 # Root-level text files (HTML, manifest, etc.) -> wwwroot/
@@ -457,11 +466,16 @@ if (Test-Path $h2cSrc) {
     }
 }
 
+if ($Publish) {
+    Write-Host "::endgroup::"
+}
+
 # ===========================================
 # PHASE 6: Compress generated JS (publish only)
 # ===========================================
 if ($Publish) {
     Write-Host "Compressing generated JavaScript..." -ForegroundColor Cyan
+    Write-Host "::group::Compressing generated JavaScript"
 
     @($OutFile, "$OutFile.map") | Where-Object { Test-Path $_ } | ForEach-Object {
         $src = $_
@@ -498,6 +512,7 @@ if ($Publish) {
     # Remove uncompressed JS files for publish (only .br embedded)
     Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
     Remove-Item "$OutFile.map" -Force -ErrorAction SilentlyContinue
+    Write-Host "::endgroup::"
 
     Write-Host "  Total saved: $([math]::Round($totalSaved/1KB, 1)) KB" -ForegroundColor Green
 }

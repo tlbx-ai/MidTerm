@@ -9,6 +9,11 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  GIT_CONFIG_COUNT: '2'
+  GIT_CONFIG_KEY_0: 'advice.detachedHead'
+  GIT_CONFIG_VALUE_0: 'false'
+  GIT_CONFIG_KEY_1: 'init.defaultBranch'
+  GIT_CONFIG_VALUE_1: 'main'
 
 jobs:
 
@@ -20,7 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          fetch-tags: false
+
+      - name: Fetch tag annotation
+        run: git fetch origin tag ${{ github.ref_name }} --no-tags
 
       - name: Create release
         env:
@@ -55,7 +64,7 @@ jobs:
 
       - name: Install npm packages
         if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm ci --include=dev
+        run: npm ci --include=dev --no-audit --no-fund
 
       - name: Build frontend
         shell: pwsh
@@ -200,8 +209,7 @@ jobs:
             7z a -tzip -mx=9 $archive "./staging/$rid/*" | Out-Null
           } else {
             $archive = "staging/mt-$rid.tar.gz"
-            $env:GZIP = "-9"
-            tar -czf $archive -C "staging/$rid" .
+            tar -cf - -C "staging/$rid" . | gzip -9 > $archive
           }
           gh release upload "${{ github.ref_name }}" $archive
 
