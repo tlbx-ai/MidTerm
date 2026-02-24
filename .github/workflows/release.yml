@@ -29,7 +29,7 @@ jobs:
           fetch-tags: false
 
       - name: Fetch tag annotation
-        run: git fetch origin tag ${{ github.ref_name }} --no-tags
+        run: git fetch origin tag ${{ github.ref_name }} --no-tags --force
 
       - name: Create release
         env:
