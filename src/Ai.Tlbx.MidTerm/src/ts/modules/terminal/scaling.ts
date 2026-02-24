@@ -89,6 +89,7 @@ function logResizeDiagnostics(
     }
   }
 
+  // eslint-disable-next-line no-console
   console.log(
     `[RESIZE DIAG] ${operation}\n` +
       `  Session: "${session?.name ?? sessionId}" (${session?.terminalTitle ?? 'no title'})\n` +
@@ -274,7 +275,7 @@ export function fitSessionToScreen(sessionId: string): void {
 
   // Wait for terminal to be opened before fitting
   if (!state.opened) {
-    (fontsReadyPromise ?? Promise.resolve()).then(() => {
+    void (fontsReadyPromise ?? Promise.resolve()).then(() => {
       fitSessionToScreen(sessionId);
     });
     return;
@@ -369,7 +370,7 @@ export function fitSessionToScreen(sessionId: string): void {
   logResizeDiagnostics(
     'manual-resize',
     sessionId,
-    dom.terminalsArea!,
+    dom.terminalsArea,
     fontSize,
     cellWidth,
     cellHeight,
@@ -451,7 +452,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
     state.container.classList.remove('scaled');
-    const overlay = state.container.querySelector('.scaled-overlay');
+    const overlay = state.container.querySelector('.scaled-overlay') as HTMLElement | null;
     if (overlay) overlay.remove();
   }
 }
@@ -573,7 +574,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
  * Scales down terminals that are larger than the available space.
  */
 export function applyTerminalScaling(_sessionId: string, state: TerminalState): void {
-  requestAnimationFrame(() => applyTerminalScalingSync(state));
+  requestAnimationFrame(() => {
+    applyTerminalScalingSync(state);
+  });
 }
 
 /**
@@ -756,7 +759,9 @@ function periodicResizeCheck(): void {
       } catch {
         // terminal may be disposed
       }
-      requestAnimationFrame(() => applyTerminalScalingSync(state));
+      requestAnimationFrame(() => {
+        applyTerminalScalingSync(state);
+      });
       resizedAny = true;
     }
   });

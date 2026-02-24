@@ -177,11 +177,11 @@ initThemeFromCookie();
 document.addEventListener('DOMContentLoaded', () => {
   const path = window.location.pathname;
   if (path === '/login' || path === '/login.html') {
-    initLoginPage();
+    void initLoginPage();
   } else if (path === '/trust' || path === '/trust.html') {
-    initTrustPage();
+    void initTrustPage();
   } else {
-    init();
+    void init();
   }
 });
 
@@ -207,13 +207,15 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
-  initHistoryDropdown(spawnFromHistory);
+  initHistoryDropdown((entry) => {
+    void spawnFromHistory(entry);
+  });
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
 
   // Initialize calibration terminal after fonts are ready for accurate measurements
-  fontPromise.then(() => initCalibrationTerminal());
+  void fontPromise.then(() => initCalibrationTerminal());
 
   registerCallbacks();
   connectStateWebSocket();
@@ -244,7 +246,7 @@ async function init(): Promise<void> {
   let gitWsConnected = false;
   $currentSettings.subscribe((settings) => {
     if (!settings) return;
-    const ideEnabled = settings.ideMode !== false;
+    const ideEnabled = settings.ideMode;
     setIdeModeEnabled(ideEnabled);
     if (ideEnabled && !gitWsConnected) {
       connectGitWebSocket();
@@ -260,7 +262,7 @@ async function init(): Promise<void> {
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
-  fetchBootstrap();
+  void fetchBootstrap();
   requestNotificationPermission();
   initDiagnosticsPanel();
 
@@ -290,7 +292,9 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
-    onPinToHistory: pinSessionToHistory,
+    onPinToHistory: (sessionId: string) => {
+      void pinSessionToHistory(sessionId);
+    },
     onCloseSidebar: closeSidebar,
   });
 }
@@ -430,7 +434,9 @@ function selectSessionWithRetry(sessionId: string, attempt = 0): void {
 
   // Retry if not found yet
   if (attempt < maxAttempts) {
-    setTimeout(() => selectSessionWithRetry(sessionId, attempt + 1), retryDelay);
+    setTimeout(() => {
+      selectSessionWithRetry(sessionId, attempt + 1);
+    }, retryDelay);
   } else {
     // Give up after max attempts - select anyway, terminal will work once WS update arrives
     log.warn(
@@ -713,17 +719,17 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
       // Link session to bookmark and apply label (deferred until session is in store)
       const applyBookmark = (): void => {
-        const session = getSession(data.id!);
+        const session = getSession(data.id);
         if (!session) {
           setTimeout(applyBookmark, 100);
           return;
         }
         setSession({ ...session, bookmarkId: entry.id });
         if (entry.id) {
-          setSessionBookmark(data.id!, entry.id).catch(() => {});
+          setSessionBookmark(data.id, entry.id).catch(() => {});
         }
         if (entry.label) {
-          renameSession(data.id!, entry.label);
+          renameSession(data.id, entry.label);
         }
       };
       applyBookmark();
@@ -731,7 +737,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);
         setTimeout(() => {
-          sendInput(data.id!, replayCmd + '\r');
+          sendInput(data.id, replayCmd + '\r');
         }, 100);
       }
     })
@@ -855,11 +861,12 @@ function initPwaInstall(): void {
     row.classList.remove('hidden');
   });
 
-  btn.addEventListener('click', async () => {
+  btn.addEventListener('click', () => {
     if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    deferredPrompt = null;
-    row.classList.add('hidden');
+    void deferredPrompt.prompt().then(() => {
+      deferredPrompt = null;
+      row.classList.add('hidden');
+    });
   });
 
   window.addEventListener('appinstalled', () => {
@@ -873,9 +880,15 @@ function initPwaInstall(): void {
 // =============================================================================
 
 function bindEvents(): void {
-  bindClick('btn-new-session', createSession);
-  bindClick('btn-new-session-mobile', createSession);
-  bindClick('btn-create-terminal', createSession);
+  bindClick('btn-new-session', () => {
+    void createSession();
+  });
+  bindClick('btn-new-session-mobile', () => {
+    void createSession();
+  });
+  bindClick('btn-create-terminal', () => {
+    void createSession();
+  });
 
   bindClick('btn-dismiss-touchbar', dismissTouchController);
   bindClick('btn-show-touchbar', restoreTouchController);
@@ -910,7 +923,7 @@ function bindEvents(): void {
   if (document.fullscreenEnabled) {
     bindClick('btn-fullscreen-mobile', () => {
       if (document.fullscreenElement) {
-        document.exitFullscreen();
+        void document.exitFullscreen();
       } else {
         document.documentElement.requestFullscreen().catch(() => {});
       }
@@ -934,7 +947,9 @@ function bindEvents(): void {
   bindClick('btn-check-updates', checkForUpdates);
   bindClick('btn-apply-update', applyUpdate);
   bindClick('btn-show-changelog', showChangelog);
-  bindClick('btn-view-update-log', showUpdateLog);
+  bindClick('btn-view-update-log', () => {
+    void showUpdateLog();
+  });
   bindClick('btn-close-changelog', closeChangelog);
   bindClick('update-changelog-link', showChangelog);
   bindClick('update-dismiss-btn', dismissUpdateNotification);
@@ -951,7 +966,7 @@ function bindEvents(): void {
   document.addEventListener('keydown', (e) => {
     if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 't') {
       e.preventDefault();
-      createSession();
+      void createSession();
     }
   });
 }

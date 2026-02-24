@@ -129,7 +129,7 @@ async function refreshSessionList(): Promise<void> {
     handleStateUpdate(sessions);
     log.info(() => `Refreshed session list: ${sessions.length} sessions`);
   } catch (e) {
-    log.warn(() => `Failed to refresh session list: ${e}`);
+    log.warn(() => `Failed to refresh session list: ${String(e)}`);
   }
 }
 
@@ -309,7 +309,7 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
     }
   }
   outputQueue.push({ sessionId, payload, compressed });
-  processOutputQueue();
+  void processOutputQueue();
 }
 
 async function processOutputQueue(): Promise<void> {
@@ -399,7 +399,7 @@ async function processOneFrame(item: OutputFrameItem): Promise<void> {
       frames.push(bufferedPayload);
     }
   } catch (e) {
-    log.error(() => `Failed to process frame: ${e}`);
+    log.error(() => `Failed to process frame: ${String(e)}`);
   }
 }
 
@@ -478,7 +478,9 @@ export function connectMuxWebSocket(): void {
 
     // Suppress bell notifications during initial buffer replay
     setBellNotificationsSuppressed(true);
-    setTimeout(() => setBellNotificationsSuppressed(false), 1000);
+    setTimeout(() => {
+      setBellNotificationsSuppressed(false);
+    }, 1000);
 
     // Detect reconnect: we've connected before AND have terminals to refresh
     const isReconnect = $muxHasConnected.get() && sessionTerminals.size > 0;
@@ -488,7 +490,7 @@ export function connectMuxWebSocket(): void {
 
     // On reconnect, check if server version changed (update applied) and reload
     if (isReconnect) {
-      checkVersionAndReload();
+      void checkVersionAndReload();
       log.info(() => `Reconnected - refreshing ${sessionTerminals.size} terminals`);
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
@@ -506,7 +508,7 @@ export function connectMuxWebSocket(): void {
       // If state WS is connected, fetch fresh session list to ensure consistency
       // (state WS may have missed updates while mux was disconnected)
       if ($stateWsConnected.get()) {
-        refreshSessionList();
+        void refreshSessionList();
       }
     } else {
       log.info(() => 'Connected (first connection)');
@@ -600,7 +602,7 @@ export function connectMuxWebSocket(): void {
         const changePayload = JSON.parse(jsonStr) as ForegroundChangePayload;
         handleForegroundChange(sessionId, changePayload);
       } catch (e) {
-        log.error(() => `Failed to parse foreground change: ${e}`);
+        log.error(() => `Failed to parse foreground change: ${String(e)}`);
       }
     } else if (type === MUX_TYPE_PONG) {
       if (payload.length >= 9 && pongCallback) {
@@ -643,7 +645,7 @@ export function connectMuxWebSocket(): void {
   };
 
   ws.onerror = (e) => {
-    log.error(() => `WebSocket error: ${e}`);
+    log.error(() => `WebSocket error: ${e.type}`);
   };
 }
 

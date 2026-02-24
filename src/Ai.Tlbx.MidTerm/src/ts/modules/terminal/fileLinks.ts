@@ -67,7 +67,7 @@ const log = createLogger('fileLinks');
 function isFileRadarEnabled(): boolean {
   const settings = $currentSettings.get();
   if (settings === null) return true;
-  return settings.fileRadar === true;
+  return settings.fileRadar;
 }
 
 /** Minimum frame size in bytes to bother scanning (skip tiny cursor moves) */
@@ -136,7 +136,9 @@ function showFileNotFoundToast(path: string): void {
 
   setTimeout(() => {
     toast.classList.add('hiding');
-    setTimeout(() => toast.remove(), 300);
+    setTimeout(() => {
+      toast.remove();
+    }, 300);
   }, 3000);
 }
 
@@ -264,7 +266,7 @@ function performScan(sessionId: string, text: string): void {
  * Fire-and-forget - we don't block on this request.
  */
 function registerPathsWithBackend(sessionId: string, paths: string[]): void {
-  import('../../api/client').then(({ registerFilePaths }) => {
+  void import('../../api/client').then(({ registerFilePaths }) => {
     registerFilePaths(sessionId, paths).catch((e) => {
       log.warn(() => `Failed to register paths: ${e}`);
     });
@@ -308,7 +310,7 @@ async function checkPathExists(path: string): Promise<FilePathInfo | null> {
     existenceCache.set(path, { info, expires: Date.now() + EXISTENCE_CACHE_TTL });
     return info;
   } catch (e) {
-    log.error(() => `Failed to check path existence: ${e}`);
+    log.error(() => `Failed to check path existence: ${String(e)}`);
     return null;
   }
 }
@@ -364,7 +366,7 @@ async function resolveRelativePath(
     if (e instanceof Error && e.name === 'AbortError') {
       return null;
     }
-    log.error(() => `Failed to resolve relative path: ${e}`);
+    log.error(() => `Failed to resolve relative path: ${String(e)}`);
     return null;
   }
 }
@@ -427,7 +429,7 @@ async function handlePathClick(path: string): Promise<void> {
 
   const info = await checkPathExists(path);
   if (info?.exists) {
-    openFile(path, info);
+    void openFile(path, info);
     return;
   }
 
@@ -447,7 +449,7 @@ async function handlePathClick(path: string): Promise<void> {
         modified: resolved.modified ?? null,
         isText: resolved.isText ?? false,
       };
-      openFile(resolved.resolvedPath, resolvedInfo);
+      void openFile(resolved.resolvedPath, resolvedInfo);
       return;
     }
   }
@@ -476,7 +478,7 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
       modified: resolved.modified ?? null,
       isText: resolved.isText ?? false,
     };
-    openFile(resolved.resolvedPath, info);
+    void openFile(resolved.resolvedPath, info);
   } else {
     showFileNotFoundToast(relativePath);
   }
@@ -504,7 +506,7 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
       modified: null,
       isText: false,
     };
-    openFile(resolved.resolvedPath, info);
+    void openFile(resolved.resolvedPath, info);
   } else {
     showFileNotFoundToast(folderPath);
   }
@@ -533,8 +535,8 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
     new LinkProvider(
       term,
       FOLDER_PATH_PATTERN,
-      async (_event, folderPath) => {
-        await handleFolderPathClick(folderPath);
+      (_event, folderPath) => {
+        void handleFolderPathClick(folderPath);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -555,8 +557,8 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
     new LinkProvider(
       term,
       KNOWN_FILE_PATTERN,
-      async (_event, relativePath) => {
-        await handleRelativePathClick(relativePath);
+      (_event, relativePath) => {
+        void handleRelativePathClick(relativePath);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -577,8 +579,8 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
     new LinkProvider(
       term,
       RELATIVE_PATH_PATTERN,
-      async (_event, relativePath) => {
-        await handleRelativePathClick(relativePath);
+      (_event, relativePath) => {
+        void handleRelativePathClick(relativePath);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -596,15 +598,15 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
   // 4. Windows absolute paths (e.g., C:\Users\file.txt)
   terminal.registerLinkProvider(
-    new LinkProvider(term, WIN_PATH_PATTERN, async (_event, path) => {
-      await handlePathClick(path);
+    new LinkProvider(term, WIN_PATH_PATTERN, (_event, path) => {
+      void handlePathClick(path);
     }),
   );
 
   // 5. Unix absolute paths — most specific, highest priority
   terminal.registerLinkProvider(
-    new LinkProvider(term, UNIX_PATH_PATTERN, async (_event, path) => {
-      await handlePathClick(path);
+    new LinkProvider(term, UNIX_PATH_PATTERN, (_event, path) => {
+      void handlePathClick(path);
     }),
   );
 

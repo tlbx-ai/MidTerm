@@ -6,6 +6,9 @@
 
 import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
+import { createLogger } from '../logging';
+
+const log = createLogger('updating');
 
 const GITHUB_RELEASES_BASE = 'https://api.github.com/repos/tlbx-ai/MidTerm/releases';
 const PER_PAGE = 30;
@@ -130,7 +133,7 @@ function fetchReleases(isInitial: boolean): void {
           t('changelog.viewOnGithub') +
           '</a></p>';
       }
-      console.error('Changelog error:', e);
+      log.error(() => `Changelog error: ${String(e)}`);
     });
 }
 

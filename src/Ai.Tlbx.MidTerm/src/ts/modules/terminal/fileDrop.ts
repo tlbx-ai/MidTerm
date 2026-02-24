@@ -9,6 +9,9 @@ import { $activeSessionId } from '../../stores';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
 import { t } from '../i18n';
+import { createLogger } from '../logging';
+
+const log = createLogger('fileDrop');
 
 // =============================================================================
 // Constants
@@ -115,12 +118,16 @@ function showDropToast(message: string, sticky = false): void {
   if (sticky) {
     toast.addEventListener('click', () => {
       toast.classList.add('hiding');
-      setTimeout(() => toast.remove(), 300);
+      setTimeout(() => {
+        toast.remove();
+      }, 300);
     });
   } else {
     setTimeout(() => {
       toast.classList.add('hiding');
-      setTimeout(() => toast.remove(), 300);
+      setTimeout(() => {
+        toast.remove();
+      }, 300);
     }, 3000);
   }
 }
@@ -162,7 +169,9 @@ function showHttpsRequiredToast(): void {
   close.addEventListener('click', (e) => {
     e.stopPropagation();
     toast.classList.add('hiding');
-    setTimeout(() => toast.remove(), 300);
+    setTimeout(() => {
+      toast.remove();
+    }, 300);
   });
 
   toast.appendChild(icon);
@@ -174,8 +183,12 @@ function showHttpsRequiredToast(): void {
 async function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      resolve(reader.result as string);
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('FileReader failed'));
+    };
     reader.readAsText(file);
   });
 }
@@ -289,7 +302,7 @@ async function handleFileDrop(files: FileList): Promise<void> {
       const sanitized = sanitizePasteContent(content);
       pasteToTerminal(activeId, sanitized, false);
     } catch (err) {
-      console.error(`[FileDrop] Failed to read file: ${file.name}`, err);
+      log.error(() => `Failed to read file: ${file.name}`);
       showDropToast(`${t('fileDrop.failedToRead')}: ${file.name}`);
     }
   }
@@ -330,7 +343,7 @@ export function setupFileDrop(container: HTMLElement): void {
   });
 
   // Handle drop - only process actual file drops, not session docking
-  container.addEventListener('drop', async (e) => {
+  container.addEventListener('drop', (e) => {
     // Session docking is handled by sessionDrag.ts global handler
     if (isSessionDragActive()) return;
 
@@ -340,7 +353,7 @@ export function setupFileDrop(container: HTMLElement): void {
 
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
-      await handleFileDrop(files);
+      void handleFileDrop(files);
     }
   });
 }

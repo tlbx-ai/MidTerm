@@ -159,7 +159,7 @@ export function applyUpdate(): void {
           btn.disabled = false;
           btn.textContent = t('sidebar.updateRestart');
         }
-        console.error('Update failed');
+        log.error(() => 'Update failed');
       }
     })
     .catch((e) => {
@@ -167,7 +167,7 @@ export function applyUpdate(): void {
         btn.disabled = false;
         btn.textContent = t('sidebar.updateRestart');
       }
-      console.error('Update error:', e);
+      log.error(() => `Update error: ${String(e)}`);
     });
 }
 
@@ -234,7 +234,7 @@ export function checkForUpdates(e?: MouseEvent): void {
         btn.textContent = t('settings.general.checkForUpdates');
       }
       renderUpdateCards(null, t('update.failed'));
-      console.error('Update check error:', e);
+      log.error(() => `Update check error: ${String(e)}`);
     });
 }
 
@@ -353,7 +353,7 @@ export function applyLocalUpdate(): void {
           btn.disabled = false;
           btn.textContent = 'Apply';
         }
-        console.error('Local update failed');
+        log.error(() => 'Local update failed');
       }
     })
     .catch((e) => {
@@ -364,7 +364,7 @@ export function applyLocalUpdate(): void {
         btn.disabled = false;
         btn.textContent = 'Apply';
       }
-      console.error('Local update error:', e);
+      log.error(() => `Local update error: ${String(e)}`);
     });
 }
 
@@ -425,7 +425,9 @@ export function checkUpdateResult(): void {
         log.verbose(() => `Failed to clear update result: ${e}`);
       });
     })
-    .catch((e) => log.warn(() => `Failed to check update result: ${e}`));
+    .catch((e) => {
+      log.warn(() => `Failed to check update result: ${e}`);
+    });
 }
 
 /**
@@ -455,7 +457,9 @@ export function renderUpdateResult(): void {
     <button class="btn-secondary btn-view-log">${t('update.viewUpdateLog')}</button>
   `;
 
-  container.querySelector('.btn-view-log')?.addEventListener('click', showUpdateLog);
+  container.querySelector('.btn-view-log')?.addEventListener('click', () => {
+    void showUpdateLog();
+  });
 }
 
 /**
@@ -490,12 +494,14 @@ export async function showUpdateLog(): Promise<void> {
       logContent.textContent = t('update.noLogFound');
     }
   } catch (e) {
-    logContent.textContent = `Failed to load log: ${e}`;
+    logContent.textContent = `Failed to load log: ${String(e)}`;
   }
 
-  modal.querySelector('.modal-close')?.addEventListener('click', () => modal.remove());
+  modal.querySelector('.modal-close')?.addEventListener('click', () => {
+    modal.remove();
+  });
   modal.querySelector('.btn-copy-log')?.addEventListener('click', () => {
-    navigator.clipboard.writeText(logContent.textContent || '');
+    void navigator.clipboard.writeText(logContent.textContent || '');
     const btn = modal.querySelector('.btn-copy-log') as HTMLButtonElement;
     const originalText = btn.textContent;
     btn.textContent = 'Copied!';

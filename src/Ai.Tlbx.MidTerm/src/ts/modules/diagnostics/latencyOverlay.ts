@@ -54,7 +54,7 @@ export function enableLatencyOverlay(): void {
   startPingLoop();
   unsubscribeSession = $activeSessionId.subscribe(() => {
     attachToActiveSession();
-    runPingAndScrollback();
+    void runPingAndScrollback();
   });
 }
 
@@ -147,8 +147,10 @@ function attachToActiveSession(): void {
 
 function startPingLoop(): void {
   stopPingLoop();
-  runPingAndScrollback();
-  pingInterval = setInterval(runPingAndScrollback, 3000);
+  void runPingAndScrollback();
+  pingInterval = setInterval(() => {
+    void runPingAndScrollback();
+  }, 3000);
 }
 
 function stopPingLoop(): void {

@@ -86,7 +86,7 @@ function openGitDock(sessionId: string): void {
   if (body) {
     body.innerHTML = '';
     subscribeToSession(sessionId);
-    renderGitPanelInto(body, sessionId);
+    void renderGitPanelInto(body, sessionId);
   }
 
   adjustInnerDockPositions();
@@ -102,7 +102,7 @@ function openGitDock(sessionId: string): void {
     if (dockBody) {
       dockBody.innerHTML = '';
       subscribeToSession(newId);
-      renderGitPanelInto(dockBody, newId);
+      void renderGitPanelInto(dockBody, newId);
     }
   });
 
@@ -174,7 +174,9 @@ export function setupGitDockResize(): void {
     beginResize(e.clientX);
     e.preventDefault();
   });
-  document.addEventListener('mousemove', (e: MouseEvent) => updateResize(e.clientX));
+  document.addEventListener('mousemove', (e: MouseEvent) => {
+    updateResize(e.clientX);
+  });
   document.addEventListener('mouseup', endResize);
 
   grip.addEventListener(

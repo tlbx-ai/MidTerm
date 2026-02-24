@@ -57,7 +57,7 @@ export function renderPreview(
 
   if (isTextFile(ext, mime) || !mime) {
     container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
-    fetchAndRenderText(container, viewUrl, entry.name, ext);
+    void fetchAndRenderText(container, viewUrl, entry.name, ext);
     return;
   }
 
@@ -93,7 +93,7 @@ async function fetchAndRenderText(
       container.innerHTML = `<pre class="file-viewer-text">${highlighted}</pre>`;
     }
   } catch (e) {
-    log.error(() => `Failed to load preview: ${e}`);
+    log.error(() => `Failed to load preview: ${String(e)}`);
     container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')}</div>`;
   }
 }

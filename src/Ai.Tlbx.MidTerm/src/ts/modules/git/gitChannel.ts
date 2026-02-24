@@ -85,7 +85,7 @@ export function connectGitWebSocket(): void {
         statusCallback?.(msg.sessionId, msg.status);
       }
     } catch (e) {
-      log.error(() => `Failed to parse git WS message: ${e}`);
+      log.error(() => `Failed to parse git WS message: ${String(e)}`);
     }
   };
 
@@ -121,9 +121,9 @@ function scheduleFallback(sessionId: string): void {
   const timer = window.setTimeout(() => {
     pendingFallbacks.delete(sessionId);
     emitDiag('fallback', `REST fallback for ${sessionId.substring(0, 8)}`);
-    fetchGitStatus(sessionId).then((status) => {
+    void fetchGitStatus(sessionId).then((status) => {
       if (status) {
-        emitDiag('fallback-ok', `${status.branch}`);
+        emitDiag('fallback-ok', status.branch);
         statusCallback?.(sessionId, status);
       } else {
         emitDiag('fallback-err', `no status for ${sessionId.substring(0, 8)}`);

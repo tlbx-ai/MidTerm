@@ -7,6 +7,9 @@
 import { getAuthStatus, logout as apiLogout } from '../../api/client';
 import { $authStatus } from '../../stores';
 import { t } from '../i18n';
+import { createLogger } from '../logging';
+
+const log = createLogger('auth');
 
 /**
  * Check authentication status from server
@@ -29,7 +32,7 @@ export async function checkAuthStatus(): Promise<void> {
     updateSecurityWarning();
     updatePasswordStatus();
   } catch (e) {
-    console.error('Auth status error:', e);
+    log.error(() => `Auth status error: ${String(e)}`);
   }
 }
 

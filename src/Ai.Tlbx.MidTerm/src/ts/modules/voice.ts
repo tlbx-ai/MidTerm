@@ -37,7 +37,9 @@ export async function checkVoiceServerHealth(): Promise<boolean> {
     const url = `${VOICE_SERVER_URL}/api/health`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 2000);
 
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
@@ -133,7 +135,7 @@ export async function populateMicDropdown(): Promise<void> {
       log.info(() => `Microphone dropdown populated with ${mics.length} devices`);
     }
   } catch (error) {
-    log.error(() => `Failed to get microphones: ${error}`);
+    log.error(() => `Failed to get microphones: ${String(error)}`);
   }
 }
 
@@ -193,7 +195,7 @@ export async function populateMicDropdownPassive(): Promise<void> {
     }
     log.info(() => `Microphone dropdown populated passively with ${audioInputs.length} devices`);
   } catch (error) {
-    log.warn(() => `Failed to enumerate devices passively: ${error}`);
+    log.warn(() => `Failed to enumerate devices passively: ${String(error)}`);
     micSelect.innerHTML = '<option value="">Select microphone...</option>';
   }
 }
@@ -228,7 +230,7 @@ async function requestMicrophonePermission(): Promise<boolean> {
     setVoiceStatus('Ready');
     return true;
   } catch (error) {
-    log.error(() => `Microphone permission error: ${error}`);
+    log.error(() => `Microphone permission error: ${String(error)}`);
     setVoiceStatus('Mic permission denied');
     return false;
   }
@@ -359,7 +361,7 @@ export async function startVoiceSession(): Promise<void> {
       setVoiceStatus('Connection error');
     };
   } catch (error) {
-    log.error(() => `[SESSION] Failed to start: ${error}`);
+    log.error(() => `[SESSION] Failed to start: ${String(error)}`);
     setVoiceStatus('Connection failed');
   }
 }
@@ -454,7 +456,7 @@ function handleVoiceMessage(msg: VoiceMessage): void {
     case 'clear_audio':
       // Server requests audio queue clear - stop any pending playback
       if (window.stopAudioPlayback) {
-        window.stopAudioPlayback();
+        void window.stopAudioPlayback();
       }
       break;
     case 'error':
@@ -463,7 +465,7 @@ function handleVoiceMessage(msg: VoiceMessage): void {
       break;
     case 'tool_request':
       if (msg.requestId && msg.tool) {
-        handleToolRequest(
+        void handleToolRequest(
           msg.requestId,
           msg.tool,
           msg.args ?? {},
@@ -574,7 +576,9 @@ async function testVoiceServerConnection(): Promise<void> {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 5000);
 
     const response = await fetch(healthUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
@@ -626,7 +630,7 @@ async function testVoiceServerConnection(): Promise<void> {
     results.push(`Try visiting: ${healthUrl}`);
   }
 
-  showAlert(results.join('\n'), { title: 'Voice Diagnostics' });
+  void showAlert(results.join('\n'), { title: 'Voice Diagnostics' });
 }
 
 /**
@@ -641,13 +645,15 @@ export function bindVoiceEvents(): void {
   log.info(() => `[INIT] Binding voice events: toggleBtn=${!!toggleBtn}`);
 
   if (toggleBtn) {
-    toggleBtn.addEventListener('click', async () => {
-      log.info(() => `[UI] Toggle button clicked (isSessionActive=${isSessionActive})`);
-      if (isSessionActive) {
-        await stopVoiceSession();
-      } else {
-        await startVoiceSession();
-      }
+    toggleBtn.addEventListener('click', () => {
+      void (async () => {
+        log.info(() => `[UI] Toggle button clicked (isSessionActive=${isSessionActive})`);
+        if (isSessionActive) {
+          await stopVoiceSession();
+        } else {
+          await startVoiceSession();
+        }
+      })();
     });
   }
 
@@ -655,14 +661,16 @@ export function bindVoiceEvents(): void {
   const syncBtn = document.getElementById('btn-voice-sync');
   if (syncBtn) {
     syncBtn.addEventListener('click', () => {
-      testVoiceServerConnection();
+      void testVoiceServerConnection();
     });
   }
 
   // Chat toggle button
   const chatBtn = document.getElementById('btn-voice-chat');
   if (chatBtn) {
-    chatBtn.addEventListener('click', () => toggleChatPanel());
+    chatBtn.addEventListener('click', () => {
+      toggleChatPanel();
+    });
   }
 
   // Voice selection change
@@ -680,17 +688,19 @@ export function bindVoiceEvents(): void {
 
   // Microphone dropdown focus - request permission if empty
   if (micSelect) {
-    micSelect.addEventListener('focus', async () => {
-      const hasDevices =
-        micSelect.options.length > 1 ||
-        (micSelect.options.length === 1 && micSelect.options[0]?.value !== '');
-      if (!hasDevices) {
-        log.info(() => '[UI] Mic dropdown focused with no devices, requesting permission');
-        const success = await requestMicrophonePermission();
-        if (success) {
-          await populateMicDropdown();
+    micSelect.addEventListener('focus', () => {
+      void (async () => {
+        const hasDevices =
+          micSelect.options.length > 1 ||
+          (micSelect.options.length === 1 && micSelect.options[0]?.value !== '');
+        if (!hasDevices) {
+          log.info(() => '[UI] Mic dropdown focused with no devices, requesting permission');
+          const success = await requestMicrophonePermission();
+          if (success) {
+            await populateMicDropdown();
+          }
         }
-      }
+      })();
     });
 
     // Microphone selection change (stored for next recording)

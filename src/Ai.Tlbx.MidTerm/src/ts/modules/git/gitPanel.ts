@@ -309,7 +309,7 @@ function bindPanelEvents(state: GitPanelState): void {
 
       if (isUntracked) return;
 
-      openDiffOverlay(sessionId, path, isStaged);
+      void openDiffOverlay(sessionId, path, isStaged);
     });
   });
 }

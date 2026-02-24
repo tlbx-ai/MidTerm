@@ -52,7 +52,10 @@ import {
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
 
+import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
+
+const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 import { handleOsc7Cwd } from '../process';
 
@@ -262,13 +265,13 @@ export function createTerminalForSession(
 
   // Wait for fonts to be ready before opening terminal
   // This ensures xterm.js measures the correct font for canvas rendering
-  (fontsReadyPromise ?? Promise.resolve()).then(() => {
+  void (fontsReadyPromise ?? Promise.resolve()).then(() => {
     if (!sessionTerminals.has(sessionId)) return; // Session was deleted
 
     try {
       terminal.open(container);
     } catch (e) {
-      console.error(`Terminal ${sessionId} failed to open:`, e);
+      log.error(() => `Terminal ${sessionId} failed to open: ${String(e)}`);
       container.innerHTML =
         '<div class="terminal-error">Terminal failed to initialize. <button onclick="location.reload()">Reload</button></div>';
       container.classList.remove('hidden');
@@ -605,7 +608,7 @@ export function setupTerminalEvents(
   const contextMenuHandler = (e: MouseEvent) => {
     if (isTouchSelecting(sessionId)) return;
     const settings = $currentSettings.get();
-    if (!settings || settings.rightClickPaste !== false) {
+    if (!settings || settings.rightClickPaste) {
       e.preventDefault();
       void handleClipboardPaste(sessionId);
     }
@@ -663,7 +666,9 @@ export function destroyTerminalForSession(sessionId: string): void {
 
   // Clean up xterm event disposables
   if (state.disposables) {
-    state.disposables.forEach((d) => d.dispose());
+    state.disposables.forEach((d) => {
+      d.dispose();
+    });
   }
 
   // Clean up early data handler if terminal was destroyed before setupTerminalEvents ran
@@ -813,7 +818,7 @@ export function pasteToTerminal(
   } else {
     // Non-BPM: chunk with delays to prevent PTY overflow
     if (content.length > NON_BPM_CHUNK_SIZE) {
-      sendChunkedWithDelay(sessionId, content).then(() => {
+      void sendChunkedWithDelay(sessionId, content).then(() => {
         if (showIndicator) {
           hidePasteIndicatorDelayed(startTime);
         }

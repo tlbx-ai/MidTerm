@@ -119,7 +119,7 @@ export function closeWebPreviewDock(): void {
   // Unload iframe to stop all network activity
   unloadIframe();
   if (!detachedActive) {
-    clearWebPreviewTarget();
+    void clearWebPreviewTarget();
   }
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {
@@ -157,7 +157,7 @@ export function applyWebPreviewHiddenState(): void {
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
   unloadIframe();
-  clearWebPreviewTarget();
+  void clearWebPreviewTarget();
 
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {
@@ -212,7 +212,9 @@ export function setupWebPreviewDockResize(): void {
     beginResize(e.clientX);
     e.preventDefault();
   });
-  document.addEventListener('mousemove', (e: MouseEvent) => updateResize(e.clientX));
+  document.addEventListener('mousemove', (e: MouseEvent) => {
+    updateResize(e.clientX);
+  });
   document.addEventListener('mouseup', endResize);
 
   grip.addEventListener(

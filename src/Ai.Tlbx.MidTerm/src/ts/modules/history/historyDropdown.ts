@@ -25,14 +25,14 @@ let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
 export function initHistoryDropdown(spawnCallback: (entry: LaunchEntry) => void): void {
   onSpawnSession = spawnCallback;
   createDropdownElement();
-  loadHistory();
+  void loadHistory();
 }
 
 /**
  * Refresh history from backend.
  */
 export function refreshHistory(): void {
-  loadHistory();
+  void loadHistory();
 }
 
 /**
@@ -52,7 +52,7 @@ export function toggleHistoryDropdown(): void {
 export function openHistoryDropdown(): void {
   if (!dropdownEl) return;
 
-  loadHistory().then(() => {
+  void loadHistory().then(() => {
     renderDropdownContent();
     dropdownEl?.classList.add('visible');
     isOpen = true;
@@ -78,7 +78,7 @@ async function loadHistory(): Promise<void> {
   try {
     cachedEntries = await fetchHistory();
   } catch (e) {
-    log.warn(() => `Failed to load history: ${e}`);
+    log.warn(() => `Failed to load history: ${String(e)}`);
     cachedEntries = [];
   }
 }
@@ -152,14 +152,16 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
   starBtn.title = entry.isStarred ? t('history.unstar') : t('history.star');
   starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
-  starBtn.addEventListener('click', async (e) => {
+  starBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!entry.id) return;
     starBtn.disabled = true;
     starBtn.classList.add('loading');
-    await toggleStar(entry.id);
-    await loadHistory();
-    renderDropdownContent();
+    void (async () => {
+      await toggleStar(entry.id);
+      await loadHistory();
+      renderDropdownContent();
+    })();
   });
   item.appendChild(starBtn);
 
@@ -186,16 +188,18 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   deleteBtn.className = 'history-item-delete';
   deleteBtn.title = t('history.remove');
   deleteBtn.innerHTML = icon('close');
-  deleteBtn.addEventListener('click', async (e) => {
+  deleteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!entry.id) return;
-    if (entry.isStarred) {
-      const ok = await showConfirm(t('history.deleteStarred'));
-      if (!ok) return;
-    }
-    await removeHistoryEntry(entry.id);
-    await loadHistory();
-    renderDropdownContent();
+    void (async () => {
+      if (entry.isStarred) {
+        const ok = await showConfirm(t('history.deleteStarred'));
+        if (!ok) return;
+      }
+      await removeHistoryEntry(entry.id);
+      await loadHistory();
+      renderDropdownContent();
+    })();
   });
   item.appendChild(deleteBtn);
 

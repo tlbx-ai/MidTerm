@@ -21,37 +21,10 @@ export async function initLoginPage(): Promise<void> {
   await initI18n();
 
   // Load version and insider info
-  loadVersionAndPaths();
+  void loadVersionAndPaths();
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const password = passwordInput.value;
-    if (!password) {
-      showError(errorDiv, t('auth.passwordRequired'));
-      return;
-    }
-
-    loginBtn.disabled = true;
-    loginBtn.textContent = t('auth.loggingIn');
-    errorDiv.classList.add('hidden');
-
-    try {
-      const { data, response } = await login(password);
-
-      if (response.ok && data?.success) {
-        window.location.href = '/';
-      } else {
-        showError(errorDiv, data?.error ?? t('auth.loginFailed'));
-        passwordInput.value = '';
-        passwordInput.focus();
-      }
-    } catch {
-      showError(errorDiv, t('auth.connectionError'));
-    } finally {
-      loginBtn.disabled = false;
-      loginBtn.textContent = t('auth.login');
-    }
+  form.addEventListener('submit', (e) => {
+    void handleLoginSubmit(e, passwordInput, errorDiv, loginBtn);
   });
 
   // Certificate TOFU display
@@ -60,13 +33,49 @@ export async function initLoginPage(): Promise<void> {
 
   if (certInfoDiv && certHideBtn) {
     if (localStorage.getItem(CERT_HIDDEN_KEY) !== 'true') {
-      loadCertificateInfo(certInfoDiv);
+      void loadCertificateInfo(certInfoDiv);
     }
 
     certHideBtn.addEventListener('click', () => {
       localStorage.setItem(CERT_HIDDEN_KEY, 'true');
       certInfoDiv.classList.add('hidden');
     });
+  }
+}
+
+async function handleLoginSubmit(
+  e: Event,
+  passwordInput: HTMLInputElement,
+  errorDiv: HTMLElement,
+  loginBtn: HTMLButtonElement,
+): Promise<void> {
+  e.preventDefault();
+
+  const password = passwordInput.value;
+  if (!password) {
+    showError(errorDiv, t('auth.passwordRequired'));
+    return;
+  }
+
+  loginBtn.disabled = true;
+  loginBtn.textContent = t('auth.loggingIn');
+  errorDiv.classList.add('hidden');
+
+  try {
+    const { data, response } = await login(password);
+
+    if (response.ok && data?.success) {
+      window.location.href = '/';
+    } else {
+      showError(errorDiv, data?.error ?? t('auth.loginFailed'));
+      passwordInput.value = '';
+      passwordInput.focus();
+    }
+  } catch {
+    showError(errorDiv, t('auth.connectionError'));
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = t('auth.login');
   }
 }
 

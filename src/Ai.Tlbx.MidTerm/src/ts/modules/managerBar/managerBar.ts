@@ -9,6 +9,9 @@ import { $currentSettings, $activeSessionId } from '../../stores';
 import { sendInput } from '../comms';
 import { updateSettings } from '../../api/client';
 import { t } from '../i18n';
+import { createLogger } from '../logging';
+
+const log = createLogger('managerBar');
 
 interface ManagerButton {
   id: string;
@@ -85,7 +88,9 @@ function clickButton(id: string): void {
   const activeId = $activeSessionId.get();
   if (activeId) {
     sendInput(activeId, btn.text);
-    setTimeout(() => sendInput(activeId, '\r'), 100);
+    setTimeout(() => {
+      sendInput(activeId, '\r');
+    }, 100);
   }
 }
 
@@ -213,10 +218,12 @@ function saveButtons(buttons: ManagerButton[]): void {
   >[0])
     .then(({ response }) => {
       if (!response.ok) {
-        console.error('Failed to save manager bar buttons:', response.status);
+        log.error(() => `Failed to save manager bar buttons: ${response.status}`);
       }
     })
-    .catch((e) => console.error('Failed to save manager bar buttons:', e));
+    .catch((e) => {
+      log.error(() => `Failed to save manager bar buttons: ${String(e)}`);
+    });
 }
 
 function escapeHtml(str: string): string {

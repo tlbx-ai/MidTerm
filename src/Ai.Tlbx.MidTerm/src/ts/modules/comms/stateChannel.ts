@@ -186,7 +186,7 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onerror = (e) => {
-    log.error(() => `WebSocket error: ${e}`);
+    log.error(() => `WebSocket error: ${e.type}`);
   };
 }
 
@@ -367,7 +367,7 @@ export async function sendCommand<T = unknown>(
     } catch (e) {
       clearTimeout(timeout);
       pendingCommands.delete(id);
-      reject(e);
+      reject(new Error(e instanceof Error ? e.message : String(e)));
     }
   });
 }

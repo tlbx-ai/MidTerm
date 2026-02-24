@@ -97,7 +97,7 @@ function expandNamedKeys(text: string): string {
     const lower = keyName.toLowerCase().trim();
 
     if (NAMED_KEYS[lower] !== undefined) {
-      return NAMED_KEYS[lower]!;
+      return NAMED_KEYS[lower];
     }
 
     const ctrlMatch = lower.match(/^ctrl\+([a-z])$/);
@@ -139,7 +139,7 @@ function sleep(ms: number): Promise<void> {
 /**
  * Handle state_of_things tool - get comprehensive state of all terminals.
  */
-async function handleStateOfThings(): Promise<StateOfThingsResult> {
+function handleStateOfThings(): StateOfThingsResult {
   const sessions = $sessionList.get();
   const activeId = $activeSessionId.get();
   const updateInfo = $updateInfo.get();
@@ -200,7 +200,7 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
 /**
  * Handle read_scrollback tool - read lines from terminal scrollback.
  */
-async function handleReadScrollback(args: ReadScrollbackArgs): Promise<ReadScrollbackResult> {
+function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
   const { sessionId, start = 'bottom', lines = 40 } = args;
 
   const termState = sessionTerminals.get(sessionId);
@@ -288,7 +288,7 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
           results.push({ index: i, success: false });
       }
     } catch (err) {
-      log.error(() => `Operation ${i} failed: ${err}`);
+      log.error(() => `Operation ${i} failed: ${String(err)}`);
       results.push({ index: i, success: false });
     }
   }
@@ -424,7 +424,7 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
 
     switch (request.tool) {
       case 'state_of_things':
-        result = await handleStateOfThings();
+        result = handleStateOfThings();
         break;
 
       case 'make_input':
@@ -432,7 +432,7 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
         break;
 
       case 'read_scrollback':
-        result = await handleReadScrollback(request.args as unknown as ReadScrollbackArgs);
+        result = handleReadScrollback(request.args as unknown as ReadScrollbackArgs);
         break;
 
       case 'interactive_read':
@@ -456,7 +456,7 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
           type: 'tool_response',
           requestId: request.requestId,
           result: null,
-          error: `Unknown tool: ${request.tool}`,
+          error: `Unknown tool: ${String(request.tool)}`,
         };
     }
 

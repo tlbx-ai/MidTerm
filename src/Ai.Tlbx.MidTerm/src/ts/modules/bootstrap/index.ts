@@ -125,7 +125,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
 
     // Check voice server availability (only relevant if voice chat is enabled)
     if (data.features?.voiceChat) {
-      checkVoiceServerHealth().then((available) => {
+      void checkVoiceServerHealth().then((available) => {
         setVoiceSectionVisible(available);
       });
     }
@@ -139,7 +139,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     log.info(() => 'Bootstrap complete');
     return data;
   } catch (e) {
-    log.error(() => `Bootstrap failed: ${e}`);
+    log.error(() => `Bootstrap failed: ${String(e)}`);
     return null;
   }
 }
@@ -275,7 +275,7 @@ function renderReinstallHint(platform: string): void {
 
   container.querySelector('.btn-copy-cmd')?.addEventListener('click', (e) => {
     const btn = e.target as HTMLButtonElement;
-    navigator.clipboard.writeText(cmd);
+    void navigator.clipboard.writeText(cmd);
     btn.textContent = 'Copied!';
     setTimeout(() => {
       btn.textContent = 'Copy';

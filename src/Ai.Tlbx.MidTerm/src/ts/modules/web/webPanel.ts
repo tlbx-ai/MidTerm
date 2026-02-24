@@ -23,11 +23,13 @@ export function initWebPanel(): void {
   const refreshBtn = document.getElementById('web-preview-refresh');
   const screenshotBtn = document.getElementById('web-preview-screenshot');
 
-  goBtn?.addEventListener('click', handleGo);
+  goBtn?.addEventListener('click', () => {
+    void handleGo();
+  });
   urlInput?.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleGo();
+      void handleGo();
     }
   });
   refreshBtn?.addEventListener('click', (e: MouseEvent) => {
@@ -163,7 +165,7 @@ async function handleSnapshot(): Promise<void> {
       log.info(() => `Snapshot saved: ${result.snapshotPath}`);
     }
   } catch (err) {
-    log.warn(() => `Snapshot error: ${err}`);
+    log.warn(() => `Snapshot error: ${String(err)}`);
   }
 }
 
@@ -260,7 +262,9 @@ async function captureIframeScreenshot(): Promise<Blob | null> {
     },
   );
 
-  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/png');
+  });
 }
 
 /**
@@ -313,7 +317,7 @@ async function handleScreenshot(download = false): Promise<void> {
       log.info(() => 'Screenshot pasted to terminal');
     }
   } catch (err) {
-    log.warn(() => `Screenshot upload error: ${err}`);
+    log.warn(() => `Screenshot upload error: ${String(err)}`);
   }
 }
 

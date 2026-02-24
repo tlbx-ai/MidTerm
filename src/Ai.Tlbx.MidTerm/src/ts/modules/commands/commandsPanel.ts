@@ -152,32 +152,34 @@ function bindEvents(state: CommandsPanelState): void {
   const { container, sessionId, scripts } = state;
 
   container.querySelectorAll('.command-run-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const filename = (btn as HTMLElement).dataset.filename;
       if (!filename) return;
 
-      const result = await runScript(sessionId, filename);
-      if (result) {
-        setRunningScript(filename, result.hiddenSessionId);
-        const script = scripts.find((s) => s.filename === filename);
-        showOutputOverlay(result.hiddenSessionId, script?.name ?? filename);
-        renderPanel(state);
-      }
+      void runScript(sessionId, filename).then((result) => {
+        if (result) {
+          setRunningScript(filename, result.hiddenSessionId);
+          const script = scripts.find((s) => s.filename === filename);
+          showOutputOverlay(result.hiddenSessionId, script?.name ?? filename);
+          renderPanel(state);
+        }
+      });
     });
   });
 
   container.querySelectorAll('.command-stop-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const filename = (btn as HTMLElement).dataset.filename;
       if (!filename) return;
 
       const hiddenId = getRunningSessionId(filename);
       if (!hiddenId) return;
 
-      await stopScript(hiddenId);
-      closeOverlay(hiddenId);
-      clearRunningScript(filename);
-      renderPanel(state);
+      void stopScript(hiddenId).then(() => {
+        closeOverlay(hiddenId);
+        clearRunningScript(filename);
+        renderPanel(state);
+      });
     });
   });
 
@@ -196,10 +198,12 @@ function bindEvents(state: CommandsPanelState): void {
         createCommandForm(
           slot,
           script,
-          async (data: ScriptFormData) => {
-            await updateScript(filename, sessionId, data.content);
-            state.editingFilename = null;
-            await refreshCommandsPanel(sessionId);
+          (data: ScriptFormData) => {
+            void (async () => {
+              await updateScript(filename, sessionId, data.content);
+              state.editingFilename = null;
+              await refreshCommandsPanel(sessionId);
+            })();
           },
           () => {
             state.editingFilename = null;
@@ -211,13 +215,15 @@ function bindEvents(state: CommandsPanelState): void {
   });
 
   container.querySelectorAll('.command-delete-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const filename = (btn as HTMLElement).dataset.filename;
       if (!filename) return;
-      const ok = await showConfirm(t('commands.deleteConfirm'));
-      if (!ok) return;
-      await deleteScript(filename, sessionId);
-      await refreshCommandsPanel(sessionId);
+      void (async () => {
+        const ok = await showConfirm(t('commands.deleteConfirm'));
+        if (!ok) return;
+        await deleteScript(filename, sessionId);
+        await refreshCommandsPanel(sessionId);
+      })();
     });
   });
 
@@ -230,10 +236,12 @@ function bindEvents(state: CommandsPanelState): void {
       createCommandForm(
         slot,
         undefined,
-        async (data: ScriptFormData) => {
-          await createScript(sessionId, data.name, data.extension, data.content);
-          state.showForm = false;
-          await refreshCommandsPanel(sessionId);
+        (data: ScriptFormData) => {
+          void (async () => {
+            await createScript(sessionId, data.name, data.extension, data.content);
+            state.showForm = false;
+            await refreshCommandsPanel(sessionId);
+          })();
         },
         () => {
           state.showForm = false;

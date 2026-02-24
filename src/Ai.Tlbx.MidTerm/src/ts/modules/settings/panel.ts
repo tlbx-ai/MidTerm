@@ -55,7 +55,7 @@ export function openSettings(): void {
   if (dom.settingsView) dom.settingsView.classList.remove('hidden');
 
   initSettingsTabs();
-  fetchSettings();
+  void fetchSettings();
   fetchSystemStatus();
   fetchCertificateInfo();
   bindRegenerateCertButton();
@@ -225,7 +225,9 @@ export function checkSystemHealth(): void {
         $windowsBuildNumber.set(health.windowsBuildNumber);
       }
     })
-    .catch((e) => log.warn(() => `Failed to check system health: ${e}`));
+    .catch((e) => {
+      log.warn(() => `Failed to check system health: ${e}`);
+    });
 }
 
 /**
@@ -266,23 +268,25 @@ function bindRegenerateCertButton(): void {
   if (!btn || regenerateCertBound) return;
   regenerateCertBound = true;
 
-  btn.addEventListener('click', async () => {
-    const confirmed = await showConfirm(t('settings.security.regenerateConfirm'), {
-      title: t('settings.security.regenerateCertificate'),
-      confirmLabel: t('settings.security.regenerate'),
-      danger: true,
-    });
-    if (!confirmed) return;
+  btn.addEventListener('click', () => {
+    void (async () => {
+      const confirmed = await showConfirm(t('settings.security.regenerateConfirm'), {
+        title: t('settings.security.regenerateCertificate'),
+        confirmLabel: t('settings.security.regenerate'),
+        danger: true,
+      });
+      if (!confirmed) return;
 
-    btn.disabled = true;
+      btn.disabled = true;
 
-    try {
-      await regenerateCertificate();
-    } catch {
-      // Server may shut down before responding
-    }
+      try {
+        await regenerateCertificate();
+      } catch {
+        // Server may shut down before responding
+      }
 
-    showRestartOverlay();
+      showRestartOverlay();
+    })();
   });
 }
 
