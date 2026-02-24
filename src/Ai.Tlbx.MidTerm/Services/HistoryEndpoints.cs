@@ -24,7 +24,8 @@ public static class HistoryEndpoints
                 request.ShellType,
                 request.Executable,
                 request.CommandLine,
-                request.WorkingDirectory);
+                request.WorkingDirectory,
+                request.Label);
 
             if (id is null)
             {

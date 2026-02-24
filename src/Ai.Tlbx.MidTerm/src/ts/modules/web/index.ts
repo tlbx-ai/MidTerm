@@ -6,7 +6,7 @@
  */
 
 import { setWebClickHandler } from '../sessionTabs';
-import { $activeSessionId, $webPreviewUrl, $sessionList } from '../../stores';
+import { $activeSessionId, $webPreviewDetached, $webPreviewUrl, $sessionList } from '../../stores';
 import {
   toggleWebPreviewDock,
   closeWebPreviewDock,
@@ -16,9 +16,9 @@ import {
   hideWebPreviewDockForDetach,
 } from './webDock';
 import { initWebPanel, loadPreview, restoreLastUrl } from './webPanel';
-import { closeDetachedIfOwnedBy, initDetach } from './webDetach';
+import { closeDetachedIfOwnedBy, initDetach, isDetachedOpenForSession } from './webDetach';
 import { setWebPreviewTarget } from './webApi';
-import { getSessionState, removeSessionState, setSessionMode } from './webSessionState';
+import { getSessionState, removeSessionState } from './webSessionState';
 
 export function initWebPreview(): void {
   setWebClickHandler(() => {
@@ -31,20 +31,10 @@ export function initWebPreview(): void {
   document.getElementById('web-preview-close')?.addEventListener('click', closeWebPreviewDock);
   setupWebPreviewDockResize();
 
-  let previousActiveSessionId: string | null = null;
   let syncToken = 0;
   let knownSessionIds = new Set<string>();
 
   $activeSessionId.subscribe((sessionId) => {
-    if (previousActiveSessionId && previousActiveSessionId !== sessionId) {
-      closeDetachedIfOwnedBy(previousActiveSessionId);
-      const prevState = getSessionState(previousActiveSessionId);
-      if (prevState?.mode === 'detached') {
-        setSessionMode(previousActiveSessionId, 'hidden');
-      }
-    }
-
-    previousActiveSessionId = sessionId;
     void syncActiveSessionPreview(++syncToken, sessionId);
   });
 
@@ -62,6 +52,7 @@ export function initWebPreview(): void {
   async function syncActiveSessionPreview(token: number, sessionId: string | null): Promise<void> {
     const state = getSessionState(sessionId);
     if (!sessionId || !state || !state.url || state.mode === 'hidden') {
+      $webPreviewDetached.set(isDetachedOpenForSession(sessionId));
       applyWebPreviewHiddenState();
       return;
     }
@@ -69,16 +60,19 @@ export function initWebPreview(): void {
     const result = await setWebPreviewTarget(state.url);
     if (token !== syncToken) return;
     if (!result?.active) {
+      $webPreviewDetached.set(isDetachedOpenForSession(sessionId));
       applyWebPreviewHiddenState();
       return;
     }
 
     $webPreviewUrl.set(state.url);
     if (state.mode === 'docked') {
+      $webPreviewDetached.set(false);
       openWebPreviewDock();
       restoreLastUrl();
       loadPreview();
     } else {
+      $webPreviewDetached.set(true);
       hideWebPreviewDockForDetach();
     }
   }

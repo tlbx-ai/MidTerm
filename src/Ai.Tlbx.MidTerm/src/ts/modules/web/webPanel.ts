@@ -14,6 +14,7 @@ const log = createLogger('webPanel');
 let urlInput: HTMLInputElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
 
+/** Initialize the web preview panel: wire up URL input, buttons, and keyboard shortcuts. */
 export function initWebPanel(): void {
   urlInput = document.getElementById('web-preview-url-input') as HTMLInputElement;
   iframe = document.getElementById('web-preview-iframe') as HTMLIFrameElement;
@@ -42,6 +43,7 @@ export function initWebPanel(): void {
   document.getElementById('web-preview-dom-text')?.addEventListener('click', handleDomText);
 }
 
+/** Restore the last-used URL for the active session into the URL input bar. */
 export function restoreLastUrl(): void {
   const saved = getActiveUrl();
   if (saved && urlInput) urlInput.value = saved;
@@ -77,6 +79,7 @@ async function handleGo(): Promise<void> {
   }
 }
 
+/** Reload the web preview iframe with a cache-busting query parameter. */
 export function loadPreview(): void {
   if (!iframe) return;
   // Force reload by setting src with a cache-busting fragment
@@ -92,16 +95,19 @@ async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
   loadPreview();
 }
 
+/** Show the web preview iframe and hide the detached placeholder message. */
 export function showIframe(): void {
   if (iframe) iframe.classList.remove('hidden');
   const placeholder = document.getElementById('web-preview-detached-msg');
   if (placeholder) placeholder.classList.add('hidden');
 }
 
+/** Hide the web preview iframe. */
 export function hideIframe(): void {
   if (iframe) iframe.classList.add('hidden');
 }
 
+/** Unload the iframe by navigating to about:blank and hiding it. */
 export function unloadIframe(): void {
   if (iframe) {
     iframe.src = 'about:blank';
@@ -109,12 +115,14 @@ export function unloadIframe(): void {
   }
 }
 
+/** Show the "detached" placeholder message and hide the iframe. */
 export function showDetachedPlaceholder(): void {
   hideIframe();
   const placeholder = document.getElementById('web-preview-detached-msg');
   if (placeholder) placeholder.classList.remove('hidden');
 }
 
+/** Hide the "detached" placeholder message and show the iframe. */
 export function hideDetachedPlaceholder(): void {
   const placeholder = document.getElementById('web-preview-detached-msg');
   if (placeholder) placeholder.classList.add('hidden');

@@ -21,3 +21,27 @@ export function scheduleReconnect(
   const timer = window.setTimeout(connect, RECONNECT_DELAY);
   setTimer(timer);
 }
+
+/**
+ * Encapsulates reconnection state for a single WebSocket connection.
+ */
+export class ReconnectController {
+  private _timer: number | undefined;
+
+  schedule(connect: () => void): void {
+    scheduleReconnect(
+      connect,
+      (t) => {
+        this._timer = t;
+      },
+      this._timer,
+    );
+  }
+
+  reset(): void {
+    if (this._timer !== undefined) {
+      clearTimeout(this._timer);
+      this._timer = undefined;
+    }
+  }
+}

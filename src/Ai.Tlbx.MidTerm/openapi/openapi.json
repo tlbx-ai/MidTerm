@@ -314,6 +314,38 @@
         }
       }
     },
+    "/api/sessions/{id}/bookmark": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetBookmarkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/history": {
       "get": {
         "tags": [
@@ -1451,6 +1483,12 @@
           },
           "isStarred": {
             "type": "boolean"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2295,7 +2333,8 @@
           "foregroundName",
           "foregroundCommandLine",
           "order",
-          "parentSessionId"
+          "parentSessionId",
+          "bookmarkId"
         ],
         "type": "object",
         "properties": {
@@ -2380,6 +2419,12 @@
               "null",
               "string"
             ]
+          },
+          "bookmarkId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2394,6 +2439,17 @@
             "items": {
               "$ref": "#/components/schemas/SessionInfoDto"
             }
+          }
+        }
+      },
+      "SetBookmarkRequest": {
+        "required": [
+          "bookmarkId"
+        ],
+        "type": "object",
+        "properties": {
+          "bookmarkId": {
+            "type": "string"
           }
         }
       },

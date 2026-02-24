@@ -188,6 +188,20 @@ async function readFileAsText(file: File): Promise<string> {
  *
  * BPM markers are re-added by pasteToTerminal() after sanitization.
  */
+export function sanitizeCopyContent(text: string): string {
+  const lines = text.split('\n');
+  const trimmed = lines.map((line) => line.trimEnd());
+  const minIndent = trimmed.reduce((min, line) => {
+    if (line.length === 0) return min;
+    const indent = line.match(/^(\s*)/)?.[0].length ?? 0;
+    return Math.min(min, indent);
+  }, Infinity);
+  if (minIndent > 0 && minIndent < Infinity) {
+    return trimmed.map((line) => (line.length > 0 ? line.slice(minIndent) : line)).join('\n');
+  }
+  return trimmed.join('\n');
+}
+
 export function sanitizePasteContent(text: string): string {
   return (
     text

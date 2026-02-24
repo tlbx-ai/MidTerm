@@ -9,8 +9,6 @@ import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition } from '../.
 import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
 import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
 import { createTerminalForSession } from '../terminal/manager';
-import { sendActiveSessionHint } from '../comms';
-
 /**
  * Ensure a terminal exists for a session.
  */
@@ -372,8 +370,6 @@ export function focusLayoutSession(sessionId: string): void {
     $focusedSessionId.set(sessionId);
     // Also update activeSessionId for sidebar highlighting
     $activeSessionId.set(sessionId);
-    // Notify server so this session gets priority output delivery
-    sendActiveSessionHint(sessionId);
   }
 }
 

@@ -105,7 +105,8 @@ When adding new functionality beyond styling changes, consider adding integratio
 │  ├─ WebSocket handlers (/ws/mux, /ws/state)                 │
 │  ├─ SessionManager (terminal lifecycle)                     │
 │  ├─ AuthService (password auth, session cookies)            │
-│  └─ UpdateService (GitHub release check)                    │
+│  ├─ UpdateService (GitHub release check)                    │
+│  └─ WebPreview reverse proxy (/webpreview/*)                │
 └─────────────────────────────────────────────────────────────┘
            │
            │ Spawns mthost per terminal (all platforms)
@@ -133,6 +134,7 @@ src/                                 C# solution and projects
 │   │   ├── StaticFiles/             Brotli-compressed embedded asset serving
 │   │   ├── Tmux/                    Tmux shim compatibility layer for AI tools
 │   │   ├── Updates/                 GitHub release check, script generation, verification
+│   │   ├── WebPreview/              Reverse proxy for local dev server preview in iframe
 │   │   ├── WebSockets/              Mux binary protocol, state sync, settings broadcast
 │   │   ├── AuthService.cs           Password hashing, session tokens
 │   │   ├── AppJsonContext.cs        Central AOT-safe JSON serialization
@@ -146,13 +148,14 @@ src/                                 C# solution and projects
 │   │   ├── Sessions/                Session create, resize, rename, state DTOs
 │   │   ├── System/                  Bootstrap, health, paths, network, user DTOs
 │   │   ├── Update/                  Update info, version manifest DTOs
+│   │   ├── WebPreview/              Web preview target, cookie, snapshot DTOs
 │   │   └── ...                      (~4 flat files: WS commands, settings messages, flags)
 │   ├── Settings/                    Settings model, persistence, enums
 │   ├── Startup/                     CLI parsing, cert setup, endpoint registration
 │   ├── src/ts/                      TypeScript source (compiled by esbuild)
-│   │   ├── modules/                 Feature modules (24 modules with barrel exports)
+│   │   ├── modules/                 Feature modules (25 modules with barrel exports)
 │   │   ├── stores/                  Reactive state (nanostores)
-│   │   ├── utils/                   DOM helpers, cookies, WebSocket
+│   │   ├── utils/                   DOM helpers, cookies, WebSocket, dialog
 │   │   └── api/                     OpenAPI generated client and types
 │   └── wwwroot/                     GENERATED (gitignored) - built by frontend-build.ps1
 ├── Ai.Tlbx.MidTerm.Api/             OpenAPI spec generation (handler interfaces)
@@ -186,6 +189,7 @@ docs/                                Documentation and marketing assets
 | **Security/** | `SecurityStatusService`, `UserValidationService`, `UserEnumerationService` | Security posture checks, RunAsUser validation |
 | **Tmux/** | `TmuxCommandDispatcher`, `TmuxCommandParser`, `TmuxFormatter`, `TmuxPaneMapper`, `TmuxTargetResolver`, `TmuxLayoutBridge`, `TmuxScriptWriter`, `TmuxKeyTranslator`, `TmuxLog`, `TmuxEndpoints` | Tmux shim compatibility layer for AI tools |
 | **Git/** | `GitService`, `GitEndpoints` | Git integration for IDE mode |
+| **WebPreview/** | `WebPreviewService`, `WebPreviewProxyMiddleware`, `WebPreviewEndpoints` | Reverse proxy for previewing local dev servers in iframe, server-side cookie jar, DOM snapshot, screenshot |
 | **CertificateProtection/** | `ICertificateProtector`, `WindowsDpapiProtector`, `EncryptedFileProtector`, `CertificateProtectorFactory` | Platform-specific certificate key protection |
 
 **Flat files** (remain in `Services/` root, namespace `Ai.Tlbx.MidTerm.Services`):
@@ -199,7 +203,7 @@ docs/                                Documentation and marketing assets
 | **Logging** | `LogEndpoints` | Log streaming WebSocket, log file access |
 | **System** | `SingleInstanceGuard`, `ShutdownService`, `TempCleanupService` | Instance locking, graceful shutdown, temp file cleanup |
 | **Tray** | `SystemTrayService`, `TrayHelperService` | Windows/macOS system tray integration |
-| **Other** | `ClipboardService`, `MainBrowserService`, `AppJsonContext` | Clipboard, multi-client coordination, central JSON context |
+| **Other** | `ClipboardService`, `MainBrowserService`, `AppJsonContext` | Image clipboard (macOS launch agent, Windows STA, Linux wl-copy/xclip), multi-client coordination, central JSON context |
 
 ## Settings Model Pattern
 
@@ -217,6 +221,8 @@ Two settings classes exist for security reasons:
 3. Update `FromSettings()` to copy internal → public
 4. Update `ApplyTo()` to copy public → internal (with validation if needed)
 5. Add to `AppJsonContext` if it's a new type
+
+**Notable settings:** `DevMode` (bool, default false) — enables developer features (voice sync, fast update checks). Present in both `MidTermSettings` and `MidTermSettingsPublic`.
 
 ## AOT JSON Serialization
 
@@ -264,13 +270,14 @@ The `src/ts/modules/` folder uses feature-based organization. Each module is sel
 | `commands/` | Saved command scripts: form, panel, dock, API, output viewer |
 | `settings/` | Settings panel UI, tabs, persistence |
 | `sessionTabs/` | IDE mode tab bar: Terminal, Files, Git, Commands per session |
-| `sidebar/` | Session list, collapse/expand, drag reorder, network section |
+| `sidebar/` | Session list, collapse/expand, drag reorder, network section, heat indicator |
 | `terminal/` | xterm.js lifecycle, scaling, search, file drop, file links |
 | `theming/` | Theme application and persistence |
 | `touchController/` | Mobile touch bar, gestures, favorites |
 | `updating/` | Update checking, changelog display, apply |
 | `layout/` | Multi-pane terminal layout: dock, undock, swap, persist to localStorage |
 | `managerBar/` | Customizable quick-action buttons below terminal area |
+| `web/` | Web preview: dock/detach/popup, reverse proxy URL bar, screenshot (html2canvas), DOM snapshot to filesystem, per-session URL state |
 | `voice.ts`, `voiceTools.ts` | Voice input/output |
 | `login.ts`, `trust.ts`, `tabTitle.ts` | Standalone page handlers |
 
@@ -327,6 +334,7 @@ GET  /api/shells                  Available shells
 GET  /api/networks                Network interfaces with IPv4
 GET  /api/paths                   Settings/secrets/cert/log directories
 GET  /api/users                   System user enumeration
+POST /api/restart                     Restart server process
 
 # Settings
 GET  /api/settings                Current public settings
@@ -353,6 +361,8 @@ GET  /api/certificate/info        Certificate details
 GET  /api/certificate/download/pem  Download PEM
 GET  /api/certificate/download/mobileconfig  iOS/macOS profile
 GET  /api/certificate/share-packet  Share packet with network endpoints
+GET  /api/certificate/download/crt    Download DER certificate (Android)
+POST /api/certificate/regenerate      Regenerate HTTPS certificate (restarts server)
 
 # Updates
 GET  /api/update/check            Check for updates
@@ -363,6 +373,16 @@ GET  /api/update/log              Tail update log
 # Tmux Compatibility
 POST /api/tmux                    Tmux command dispatcher (null-delimited args)
 POST /api/tmux/layout             Update layout state
+
+# Web Preview
+GET  /api/webpreview/target           Get proxy target {url, active}
+PUT  /api/webpreview/target           Set proxy target {url}
+DELETE /api/webpreview/target         Clear proxy target
+GET  /api/webpreview/cookies          List server-side cookie jar
+POST /api/webpreview/cookies          Set cookie from raw header {raw}
+DELETE /api/webpreview/cookies        Delete cookie {name, path?, domain?}
+POST /api/webpreview/reload           Reload target {mode}
+POST /api/webpreview/snapshot         Save DOM snapshot to session cwd
 ```
 
 ## WebSocket Endpoints
@@ -422,6 +442,19 @@ MidTerm includes a tmux shim that allows AI coding tools (Claude Code, etc.) to 
 - AI tools that detect tmux can use split panes, send-keys, etc.
 - 12 service files under `Services/Tmux/`, dispatched via `POST /api/tmux`
 - Command categories: Session, IO, Pane, Window, Config, Misc
+
+## Web Preview
+
+MidTerm includes a reverse proxy for previewing local dev servers (or any website) inside an iframe panel.
+
+- `WebPreviewProxyMiddleware` intercepts `/webpreview/*`, proxies to the configured target URL
+- Server-side `CookieContainer` bridged to browser via injected JS (patches `document.cookie`, `fetch`, `XHR`, `WebSocket`, `setAttribute`, etc.)
+- HTML responses get URL-rewriting: root-relative and absolute URLs rewritten to go through the proxy
+- External resources proxied via `/webpreview/_ext?u=ENCODED` to bypass CORS
+- WebSocket proxying for SignalR/Blazor compatibility (sub-protocol forwarding, cookie forwarding)
+- DOM snapshots saved to `<cwd>/.midterm/snapshot_*/` with CSS files downloaded locally
+- Screenshots via html2canvas (bundled to `/js/html2canvas.min.js`)
+- Per-session state: each terminal tracks its own URL and dock/detach mode via `webSessionState.ts`
 
 ## Code Style (C#)
 
@@ -502,6 +535,9 @@ The frontend uses [nanostores](https://github.com/nanostores/nanostores) (~1KB) 
 - `$dockedFilePath` (atom) - Current docked file path
 - `$commandsPanelDocked` (atom) - Commands panel docked state
 - `$gitPanelDocked` (atom) - Git panel docked state
+- `$webPreviewDocked` (atom) - Web preview panel docked state
+- `$webPreviewUrl` (atom) - Current web preview URL
+- `$webPreviewDetached` (atom) - Web preview detached to popup window
 - UI flags: `$settingsOpen`, `$sidebarOpen`, `$sidebarCollapsed`
 
 **Ephemeral state (`state.ts`)** - Non-reactive infrastructure:

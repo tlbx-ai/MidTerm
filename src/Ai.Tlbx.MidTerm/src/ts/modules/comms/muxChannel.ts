@@ -33,7 +33,7 @@ import { scanOutputForPaths } from '../terminal/fileLinks';
 import {
   parseOutputFrame,
   parseCompressedOutputFrame,
-  scheduleReconnect,
+  ReconnectController,
   checkVersionAndReload,
   createWsUrl,
   closeWebSocket,
@@ -43,12 +43,10 @@ import { getSessions } from '../../api/client';
 import { applyTerminalScaling } from '../terminal/scaling';
 import {
   muxWs,
-  muxReconnectTimer,
   sessionTerminals,
   pendingOutputFrames,
   sessionsNeedingResync,
   setMuxWs,
-  setMuxReconnectTimer,
   setServerProtocolVersion,
   setBellNotificationsSuppressed,
   addWsRxBytes,
@@ -63,6 +61,7 @@ import {
 } from '../../stores';
 
 const log = createLogger('mux');
+const muxReconnect = new ReconnectController();
 
 // Per-session byte activity callback (used by heat indicator)
 type SessionBytesCallback = (sessionId: string, bytes: number) => void;
@@ -74,6 +73,14 @@ let _sessionBytesCallback: SessionBytesCallback | null = null;
  */
 export function setSessionBytesCallback(cb: SessionBytesCallback): void {
   _sessionBytesCallback = cb;
+}
+
+// Heat suppression callback (avoids circular sidebar↔comms dependency)
+type SuppressHeatCallback = (durationMs: number) => void;
+let _suppressHeatCallback: SuppressHeatCallback | null = null;
+
+export function setSuppressHeatCallback(cb: SuppressHeatCallback): void {
+  _suppressHeatCallback = cb;
 }
 
 // \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
@@ -467,6 +474,8 @@ export function connectMuxWebSocket(): void {
   setMuxWs(ws);
 
   ws.onopen = () => {
+    muxReconnect.reset();
+
     // Suppress bell notifications during initial buffer replay
     setBellNotificationsSuppressed(true);
     setTimeout(() => setBellNotificationsSuppressed(false), 1000);
@@ -506,6 +515,7 @@ export function connectMuxWebSocket(): void {
     // Send active session hint so server knows which session to prioritize
     const activeId = $activeSessionId.get();
     if (activeId) {
+      _suppressHeatCallback?.(1500);
       sendActiveSessionHint(activeId);
     }
 
@@ -575,7 +585,10 @@ export function connectMuxWebSocket(): void {
 
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
       measureOutputRtt(sessionId);
-      _sessionBytesCallback?.(sessionId, payload.length);
+      // Pass only terminal data bytes (exclude cols/rows header overhead)
+      const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 8 : 4;
+      const termDataBytes = Math.max(0, payload.length - hdrBytes);
+      _sessionBytesCallback?.(sessionId, termDataBytes);
       // Queue ALL output frames to guarantee strict ordering
       // .slice() here is needed — WS may recycle the ArrayBuffer
       if (payload.length >= 4) {
@@ -657,6 +670,7 @@ export function sendInput(sessionId: string, data: string): void {
   }
 
   if (sessionId !== lastHintedSessionId) {
+    _suppressHeatCallback?.(1500);
     sendActiveSessionHint(sessionId);
     lastHintedSessionId = sessionId;
   }
@@ -756,7 +770,7 @@ export function decodeSessionId(buffer: Uint8Array, offset: number): string {
  * Schedule mux WebSocket reconnection.
  */
 export function scheduleMuxReconnect(): void {
-  scheduleReconnect(connectMuxWebSocket, setMuxReconnectTimer, muxReconnectTimer);
+  muxReconnect.schedule(connectMuxWebSocket);
 }
 
 /**

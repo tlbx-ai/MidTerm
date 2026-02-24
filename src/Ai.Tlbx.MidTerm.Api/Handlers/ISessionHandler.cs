@@ -19,4 +19,5 @@ public interface ISessionHandler
     Task<IResult> ResizeSessionAsync(string id, ResizeRequest request);
     Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto);
     Task<IResult> UploadFileAsync(string id, IFormFile file);
+    IResult SetBookmark(string id, SetBookmarkRequest request);
 }

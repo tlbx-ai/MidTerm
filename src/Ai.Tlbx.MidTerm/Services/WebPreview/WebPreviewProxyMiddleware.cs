@@ -26,7 +26,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(typeof u!=="string")return u;
             if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
             if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
-              try{return r(new URL(u,location.href).toString());}catch(e){}
+              try{return r(new URL(u,document.baseURI).toString());}catch(e){}
             }
             if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return P+u;
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
@@ -263,12 +263,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var currentUrl = BuildUpstreamUrl(targetUri, path, context.Request.QueryString.Value);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
 
-        // Follow redirects internally (up to 10 hops) so the iframe stays at /webpreview/
-        const int maxRedirects = 10;
-        HttpResponseMessage? upstreamResponse = null;
-
         var originalMethod = new HttpMethod(context.Request.Method);
-        var currentMethod = originalMethod;
         byte[]? requestBodyBuffer = null;
         var requestHasBody = context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding");
         if (requestHasBody && originalMethod != HttpMethod.Get && originalMethod != HttpMethod.Head)
@@ -278,155 +273,46 @@ public sealed partial class WebPreviewProxyMiddleware
             requestBodyBuffer = bodyCopy.ToArray();
         }
 
-        for (var redirect = 0; redirect <= maxRedirects; redirect++)
+        HttpRequestMessage BuildRequest(HttpMethod method, string url)
         {
-            var requestMessage = new HttpRequestMessage(currentMethod, currentUrl);
-
-            // Forward all request headers except blocked ones (blocklist approach)
-            foreach (var header in context.Request.Headers)
-            {
-                if (BlockedRequestHeaders.Contains(header.Key))
-                    continue;
-
-                // Rewrite Origin/Referer to match upstream — frameworks validate these
-                if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
-                {
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin);
-                    continue;
-                }
-                if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
-                {
-                    var refValue = header.Value.ToString();
-                    if (Uri.TryCreate(refValue, UriKind.Absolute, out var refUri))
-                    {
-                        refValue = upstreamOrigin + refUri.PathAndQuery.Replace("/webpreview/", "/").Replace("/webpreview", "/");
-                    }
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, refValue);
-                    continue;
-                }
-
-                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
-            }
-
-            // Add forwarded headers
-            requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-For",
+            var msg = new HttpRequestMessage(method, url);
+            ForwardRequestHeaders(context.Request, msg, upstreamOrigin);
+            msg.Headers.TryAddWithoutValidation("X-Forwarded-For",
                 context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1");
-            requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
-            requestMessage.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
-
-            // Forward request body on initial request and on 307/308 redirects (method preserved).
-            if (requestBodyBuffer is not null && currentMethod != HttpMethod.Get && currentMethod != HttpMethod.Head)
-            {
-                requestMessage.Content = new ByteArrayContent(requestBodyBuffer);
-                if (context.Request.ContentType is not null)
-                {
-                    requestMessage.Content.Headers.ContentType =
-                        System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
-                }
-                if (context.Request.ContentLength is > 0)
-                {
-                    requestMessage.Content.Headers.ContentLength = requestBodyBuffer.Length;
-                }
-            }
-
-            try
-            {
-                upstreamResponse?.Dispose();
-                upstreamResponse = await _service.HttpClient.SendAsync(
-                    requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
-            }
-            catch (HttpRequestException)
-            {
-                requestMessage.Dispose();
-                context.Response.StatusCode = 502;
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Failed to connect to upstream server.");
-                return;
-            }
-            catch (TaskCanceledException)
-            {
-                requestMessage.Dispose();
-                context.Response.StatusCode = 504;
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Upstream server timed out.");
-                return;
-            }
-
-            // Follow redirects internally instead of passing to browser
-            var statusCode = (int)upstreamResponse.StatusCode;
-            if (statusCode is >= 301 and <= 308)
-            {
-                var location = upstreamResponse.Headers.Location?.ToString()
-                    ?? upstreamResponse.Content.Headers.ContentLocation?.ToString();
-                if (location is not null)
-                {
-                    // Resolve relative redirects against current URL
-                    if (Uri.TryCreate(new Uri(currentUrl), location, out var resolved))
-                    {
-                        currentUrl = resolved.ToString();
-                        // 307/308 preserve method; 301/302/303 switch to GET
-                        currentMethod = statusCode is 307 or 308 ? originalMethod : HttpMethod.Get;
-                        requestMessage.Dispose();
-                        continue;
-                    }
-                }
-            }
-
-            // Not a redirect — break out and send response
-            requestMessage.Dispose();
-            break;
+            msg.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
+            msg.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
+            AttachRequestBody(msg, method, requestBodyBuffer, context.Request.ContentType, context.Request.ContentLength);
+            return msg;
         }
+
+        var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
+            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
 
         if (upstreamResponse is null)
         {
-            context.Response.StatusCode = 502;
+            context.Response.StatusCode = errorCode;
+            if (errorCode == 502)
+            {
+                context.Response.ContentType = "text/plain";
+                await context.Response.WriteAsync("Failed to connect to upstream server.");
+            }
+            else if (errorCode == 504)
+            {
+                context.Response.ContentType = "text/plain";
+                await context.Response.WriteAsync("Upstream server timed out.");
+            }
             return;
         }
 
         using (upstreamResponse)
         {
             context.Response.StatusCode = (int)upstreamResponse.StatusCode;
-
-            // Copy response headers, stripping problematic ones
-            foreach (var header in upstreamResponse.Headers)
-            {
-                if (HopByHopHeaders.Contains(header.Key) || StrippedResponseHeaders.Contains(header.Key))
-                    continue;
-
-                // Strip Location headers — we followed redirects internally
-                if (header.Key.Equals("Location", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                context.Response.Headers[header.Key] = header.Value.ToArray();
-            }
-
-            foreach (var header in upstreamResponse.Content.Headers)
-            {
-                if (StrippedResponseHeaders.Contains(header.Key))
-                    continue;
-                context.Response.Headers[header.Key] = header.Value.ToArray();
-            }
-
-            // Rewrite text responses that may contain root-relative URLs
-            var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
-            if (contentType is "text/html")
-            {
-                await ProxyHtmlResponseAsync(context, upstreamResponse);
-            }
-            else if (contentType is "text/css")
-            {
-                await ProxyCssResponseAsync(context, upstreamResponse);
-            }
-            else
-            {
-                // Stream binary/other responses directly
-                await using var stream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
-                await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
-            }
+            CopyResponseHeaders(upstreamResponse, context.Response);
+            await DispatchResponseBodyAsync(context, upstreamResponse, finalUrl);
         }
     }
 
-    private async Task ProxyHtmlResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
+    private async Task ProxyHtmlResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
 
@@ -451,15 +337,31 @@ public sealed partial class WebPreviewProxyMiddleware
         // causing the proxied page to block framing of external resources.
         html = UpstreamSecurityMetaTagRegex().Replace(html, "");
 
+        // Compute base href from the final upstream URL's directory path.
+        // This preserves correct relative URL resolution when the upstream redirected
+        // (e.g., / → /wiki/Main_Page means relative URLs resolve against /wiki/).
+        var baseHref = ComputeBaseHref(finalUrl);
+
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
-        html = HeadTagRegex().Replace(html, "$0<base href=\"/webpreview/\">" + UrlRewriteScript, 1);
+        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">" + UrlRewriteScript, 1);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html, context.RequestAborted);
+    }
+
+    private static string ComputeBaseHref(string? finalUrl)
+    {
+        if (finalUrl is null || !Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri))
+            return "/webpreview/";
+
+        var path = finalUri.AbsolutePath;
+        var lastSlash = path.LastIndexOf('/');
+        var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
+        return "/webpreview" + directory;
     }
 
     private async Task ProxyCssResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
@@ -497,9 +399,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var currentUrl = extUri.ToString();
         var originalMethod = new HttpMethod(context.Request.Method);
-        var currentMethod = originalMethod;
 
-        // Buffer request body for redirect replay (same as main proxy)
         byte[]? requestBodyBuffer = null;
         var requestHasBody = context.Request.ContentLength > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding");
         if (requestHasBody && originalMethod != HttpMethod.Get && originalMethod != HttpMethod.Head)
@@ -509,81 +409,145 @@ public sealed partial class WebPreviewProxyMiddleware
             requestBodyBuffer = bodyCopy.ToArray();
         }
 
+        HttpRequestMessage BuildRequest(HttpMethod method, string url)
+        {
+            var requestUri = new Uri(url);
+            var upstreamOrigin = $"{requestUri.Scheme}://{requestUri.Authority}";
+            var msg = new HttpRequestMessage(method, url);
+            ForwardRequestHeaders(context.Request, msg, upstreamOrigin);
+            AttachRequestBody(msg, method, requestBodyBuffer, context.Request.ContentType, null);
+            return msg;
+        }
+
+        var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
+            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
+
+        if (upstreamResponse is null)
+        {
+            context.Response.StatusCode = errorCode;
+            return;
+        }
+
+        using (upstreamResponse)
+        {
+            context.Response.StatusCode = (int)upstreamResponse.StatusCode;
+            CopyResponseHeaders(upstreamResponse, context.Response);
+            await DispatchResponseBodyAsync(context, upstreamResponse, finalUrl);
+        }
+    }
+
+    private static void ForwardRequestHeaders(
+        HttpRequest source, HttpRequestMessage target, string upstreamOrigin)
+    {
+        foreach (var header in source.Headers)
+        {
+            if (BlockedRequestHeaders.Contains(header.Key))
+                continue;
+
+            if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
+            {
+                target.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin);
+                continue;
+            }
+            if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
+            {
+                var refValue = header.Value.ToString();
+                if (Uri.TryCreate(refValue, UriKind.Absolute, out var refUri))
+                {
+                    refValue = upstreamOrigin + refUri.PathAndQuery
+                        .Replace("/webpreview/", "/").Replace("/webpreview", "/");
+                }
+                target.Headers.TryAddWithoutValidation(header.Key, refValue);
+                continue;
+            }
+
+            target.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+        }
+    }
+
+    private static void AttachRequestBody(
+        HttpRequestMessage request, HttpMethod method,
+        byte[]? bodyBuffer, string? contentType, long? contentLength)
+    {
+        if (bodyBuffer is null || method == HttpMethod.Get || method == HttpMethod.Head)
+            return;
+
+        request.Content = new ByteArrayContent(bodyBuffer);
+        if (contentType is not null)
+        {
+            request.Content.Headers.ContentType =
+                System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentType);
+        }
+        if (contentLength is > 0)
+        {
+            request.Content.Headers.ContentLength = bodyBuffer.Length;
+        }
+    }
+
+    private static void CopyResponseHeaders(HttpResponseMessage upstream, HttpResponse downstream)
+    {
+        foreach (var header in upstream.Headers)
+        {
+            if (HopByHopHeaders.Contains(header.Key) || StrippedResponseHeaders.Contains(header.Key))
+                continue;
+            if (header.Key.Equals("Location", StringComparison.OrdinalIgnoreCase))
+                continue;
+            downstream.Headers[header.Key] = header.Value.ToArray();
+        }
+
+        foreach (var header in upstream.Content.Headers)
+        {
+            if (StrippedResponseHeaders.Contains(header.Key))
+                continue;
+            downstream.Headers[header.Key] = header.Value.ToArray();
+        }
+    }
+
+    private async Task<(HttpResponseMessage? Response, int ErrorCode, string? FinalUrl)> SendUpstreamAsync(
+        HttpContext context,
+        HttpMethod originalMethod,
+        string startUrl,
+        Func<HttpMethod, string, HttpRequestMessage> buildRequest,
+        CancellationToken cancellationToken)
+    {
         const int maxRedirects = 10;
+        var currentUrl = startUrl;
+        var currentMethod = originalMethod;
         HttpResponseMessage? upstreamResponse = null;
 
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
-            var requestMessage = new HttpRequestMessage(currentMethod, currentUrl);
-            var requestUri = new Uri(currentUrl);
-            var upstreamOrigin = $"{requestUri.Scheme}://{requestUri.Authority}";
-
-            // Forward all headers except blocked ones
-            foreach (var header in context.Request.Headers)
-            {
-                if (BlockedRequestHeaders.Contains(header.Key))
-                    continue;
-
-                // Rewrite Origin/Referer to match external target — consent flows validate these
-                if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
-                {
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin);
-                    continue;
-                }
-                if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
-                {
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, upstreamOrigin + requestUri.PathAndQuery);
-                    continue;
-                }
-
-                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
-            }
-
-            // Forward request body on initial request and on 307/308 redirects
-            if (requestBodyBuffer is not null && currentMethod != HttpMethod.Get && currentMethod != HttpMethod.Head)
-            {
-                requestMessage.Content = new ByteArrayContent(requestBodyBuffer);
-                if (context.Request.ContentType is not null)
-                {
-                    requestMessage.Content.Headers.ContentType =
-                        System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
-                }
-            }
+            var requestMessage = buildRequest(currentMethod, currentUrl);
 
             try
             {
                 upstreamResponse?.Dispose();
                 upstreamResponse = await _service.HttpClient.SendAsync(
-                    requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+                    requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             }
             catch (HttpRequestException)
             {
                 requestMessage.Dispose();
-                context.Response.StatusCode = 502;
-                return;
+                return (null, 502, null);
             }
             catch (TaskCanceledException)
             {
                 requestMessage.Dispose();
-                context.Response.StatusCode = 504;
-                return;
+                return (null, 504, null);
             }
 
-            // Follow redirects internally
             var statusCode = (int)upstreamResponse.StatusCode;
             if (statusCode is >= 301 and <= 308)
             {
                 var location = upstreamResponse.Headers.Location?.ToString()
                     ?? upstreamResponse.Content.Headers.ContentLocation?.ToString();
-                if (location is not null)
+                if (location is not null
+                    && Uri.TryCreate(new Uri(currentUrl), location, out var resolved))
                 {
-                    if (Uri.TryCreate(new Uri(currentUrl), location, out var resolved))
-                    {
-                        currentUrl = resolved.ToString();
-                        currentMethod = statusCode is 307 or 308 ? originalMethod : HttpMethod.Get;
-                        requestMessage.Dispose();
-                        continue;
-                    }
+                    currentUrl = resolved.ToString();
+                    currentMethod = statusCode is 307 or 308 ? originalMethod : HttpMethod.Get;
+                    requestMessage.Dispose();
+                    continue;
                 }
             }
 
@@ -591,48 +555,26 @@ public sealed partial class WebPreviewProxyMiddleware
             break;
         }
 
-        if (upstreamResponse is null)
+        return upstreamResponse is not null
+            ? (upstreamResponse, 0, currentUrl)
+            : (null, 502, null);
+    }
+
+    private async Task DispatchResponseBodyAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
+    {
+        var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
+        if (contentType is "text/html")
         {
-            context.Response.StatusCode = 502;
-            return;
+            await ProxyHtmlResponseAsync(context, upstreamResponse, finalUrl);
         }
-
-        using (upstreamResponse)
+        else if (contentType is "text/css")
         {
-            context.Response.StatusCode = (int)upstreamResponse.StatusCode;
-
-            foreach (var header in upstreamResponse.Headers)
-            {
-                if (HopByHopHeaders.Contains(header.Key) || StrippedResponseHeaders.Contains(header.Key))
-                    continue;
-                // Strip Location headers — we followed redirects internally
-                if (header.Key.Equals("Location", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                context.Response.Headers[header.Key] = header.Value.ToArray();
-            }
-
-            foreach (var header in upstreamResponse.Content.Headers)
-            {
-                if (StrippedResponseHeaders.Contains(header.Key))
-                    continue;
-                context.Response.Headers[header.Key] = header.Value.ToArray();
-            }
-
-            var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
-            if (contentType is "text/html")
-            {
-                // External HTML responses (e.g. consent pages) need URL rewriting too
-                await ProxyHtmlResponseAsync(context, upstreamResponse);
-            }
-            else if (contentType is "text/css")
-            {
-                await ProxyCssResponseAsync(context, upstreamResponse);
-            }
-            else
-            {
-                await using var stream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
-                await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
-            }
+            await ProxyCssResponseAsync(context, upstreamResponse);
+        }
+        else
+        {
+            await using var stream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
+            await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
     }
 

@@ -403,6 +403,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/{id}/bookmark': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['SetBookmarkRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/history': {
     parameters: {
       query?: never;
@@ -1699,6 +1738,7 @@ export interface components {
       commandLine?: null | string;
       workingDirectory: string;
       isStarred: boolean;
+      label?: null | string;
     };
     CreateSessionRequest: {
       /** Format: int32 */
@@ -1930,9 +1970,13 @@ export interface components {
       /** Format: int32 */
       order: number;
       parentSessionId: null | string;
+      bookmarkId: null | string;
     };
     SessionListDto: {
       sessions: components['schemas']['SessionInfoDto'][];
+    };
+    SetBookmarkRequest: {
+      bookmarkId: string;
     };
     SharePacketInfo: {
       certificate: components['schemas']['CertificateDownloadInfo'];

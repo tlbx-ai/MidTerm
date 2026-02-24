@@ -31,6 +31,7 @@ import {
   handleClipboardPaste,
   handleNativeImagePaste,
   sanitizePasteContent,
+  sanitizeCopyContent,
 } from './fileDrop';
 import { isBracketedPasteEnabled, sendCommand, sendInput, requestBufferRefresh } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
@@ -502,7 +503,7 @@ export function setupTerminalEvents(
   disposables.push(
     terminal.onSelectionChange(() => {
       if ($currentSettings.get()?.copyOnSelect && terminal.hasSelection()) {
-        navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
+        navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
       }
     }),
   );
@@ -520,6 +521,9 @@ export function setupTerminalEvents(
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.type !== 'keydown') return true;
 
+    // F12: let browser handle it (open DevTools)
+    if (e.key === 'F12') return false;
+
     // Ctrl+Enter: Send LF (\n) instead of CR (\r) for TUI apps that use it for line breaks
     if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === 'Enter') {
       sendInput(sessionId, '\n');
@@ -531,7 +535,7 @@ export function setupTerminalEvents(
     // Copy shortcut remains style-specific to preserve existing terminal behavior.
     if (isCopyShortcut(e, style)) {
       if (terminal.hasSelection()) {
-        navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
+        navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
         terminal.clearSelection();
         return false;
       }

@@ -384,6 +384,7 @@ public static class EndpointSetup
                 return Results.Problem($"Failed to regenerate certificate: {ex.Message}");
             }
 
+            // Fire-and-forget: return response first, then exit after delay
             _ = Task.Run(async () =>
             {
                 await Task.Delay(1500);
@@ -519,7 +520,7 @@ public static class EndpointSetup
                     try { Directory.Delete(extractedDir, recursive: true); } catch { }
                 }
 
-                // Exit — launchd respawns launcher.sh, which applies the staged update
+                // Fire-and-forget: return response first, then exit after delay
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(1000);
@@ -536,6 +537,7 @@ public static class EndpointSetup
                 updateType,
                 deleteSourceAfter);
 
+            // Fire-and-forget: return response first, then exit after delay
             _ = Task.Run(async () =>
             {
                 try
@@ -632,6 +634,7 @@ public static class EndpointSetup
         {
             Log.Info(() => "Server restart requested via API");
 
+            // Fire-and-forget: return response first, then exit after delay
             _ = Task.Run(async () =>
             {
                 await Task.Delay(1500);

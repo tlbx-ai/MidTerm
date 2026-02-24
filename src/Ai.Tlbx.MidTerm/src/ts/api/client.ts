@@ -95,6 +95,13 @@ export async function renameSession(id: string, name: string, auto = false) {
   });
 }
 
+export async function setSessionBookmark(id: string, bookmarkId: string) {
+  return client.PUT('/api/sessions/{id}/bookmark', {
+    params: { path: { id } },
+    body: { bookmarkId },
+  });
+}
+
 // --- Settings ---
 
 export async function getSettings() {

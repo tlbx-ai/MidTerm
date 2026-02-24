@@ -18,6 +18,7 @@ import {
   sendActiveSessionHint,
   claimMainBrowser,
   setSessionBytesCallback,
+  setSuppressHeatCallback,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -53,6 +54,7 @@ import {
   initTrafficIndicator,
   initHeatIndicator,
   recordBytes,
+  suppressAllHeat,
 } from './modules/sidebar';
 import { initI18n } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
@@ -147,6 +149,7 @@ import {
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
   patchHistoryEntry,
+  setSessionBookmark,
 } from './api/client';
 
 // Create logger for main module
@@ -191,6 +194,7 @@ async function init(): Promise<void> {
   initMainBrowserButton();
   initTrafficIndicator();
   setSessionBytesCallback(recordBytes);
+  setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();
   initFileViewer();
@@ -379,6 +383,7 @@ async function createSession(): Promise<void> {
     manuallyNamed: false,
     order: Date.now(),
     parentSessionId: null,
+    bookmarkId: null,
   };
   setSession(tempSession);
   pendingSessions.add(tempId);
@@ -444,6 +449,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 
   // If session is in layout, focus it there instead of switching to standalone
   if (isSessionInLayout(sessionId)) {
+    suppressAllHeat(1500);
     focusLayoutSession(sessionId);
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
@@ -465,6 +471,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   });
 
   $activeSessionId.set(sessionId);
+  suppressAllHeat(1500);
   sendActiveSessionHint(sessionId);
 
   const sessionInfo = getSession(sessionId);
@@ -554,8 +561,8 @@ function renameSession(sessionId: string, newName: string | null): void {
 
   apiRenameSession(sessionId, nameToSend)
     .then(() => {
-      if (session._bookmarkId) {
-        patchHistoryEntry(session._bookmarkId, { label: nameToSend || '' }).catch(() => {});
+      if (session.bookmarkId) {
+        patchHistoryEntry(session.bookmarkId, { label: nameToSend || '' }).catch(() => {});
       }
     })
     .catch((e) => {
@@ -651,27 +658,21 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
     return;
   }
 
+  const trimmedName = (session.name || '').trim();
+  const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
+
   const id = await createHistoryEntry({
     shellType: session.shellType,
     executable: fgInfo.name,
     commandLine: fgInfo.commandLine,
     workingDirectory: fgInfo.cwd ?? '',
     isStarred: true,
+    label,
   });
 
   if (id) {
-    const currentSession = getSession(sessionId);
-    if (currentSession) {
-      setSession({ ...currentSession, _bookmarkId: id });
-    }
-
-    const labelSource = currentSession ?? session;
-    const trimmedName = (labelSource.name || '').trim();
-    if (trimmedName && trimmedName !== labelSource.shellType) {
-      await patchHistoryEntry(id, { label: trimmedName }).catch((e) => {
-        log.warn(() => `Failed to persist bookmark label for ${id}: ${e}`);
-      });
-    }
+    setSession({ ...(getSession(sessionId) ?? session), bookmarkId: id });
+    setSessionBookmark(sessionId, id).catch(() => {});
 
     refreshHistory();
     log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
@@ -717,7 +718,10 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
           setTimeout(applyBookmark, 100);
           return;
         }
-        setSession({ ...session, _bookmarkId: entry.id });
+        setSession({ ...session, bookmarkId: entry.id });
+        if (entry.id) {
+          setSessionBookmark(data.id!, entry.id).catch(() => {});
+        }
         if (entry.label) {
           renameSession(data.id!, entry.label);
         }

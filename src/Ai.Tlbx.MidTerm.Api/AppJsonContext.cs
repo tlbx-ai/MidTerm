@@ -76,6 +76,7 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(List<LaunchEntry>))]
 [JsonSerializable(typeof(CreateHistoryRequest))]
+[JsonSerializable(typeof(SetBookmarkRequest))]
 [JsonSerializable(typeof(FileCheckRequest))]
 [JsonSerializable(typeof(FileCheckResponse))]
 [JsonSerializable(typeof(FileRegisterRequest))]
