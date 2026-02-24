@@ -82,10 +82,10 @@ export async function openDiffOverlay(
   overlay.className = 'git-diff-overlay';
 
   const saved = loadOverlayRect();
-  const x = saved?.x ?? Math.max(50, window.innerWidth - 700);
+  const w = saved?.w ?? Math.min(640, window.innerWidth - 20);
+  const h = saved?.h ?? Math.min(480, window.innerHeight - 20);
+  const x = saved?.x ?? Math.max(10, window.innerWidth - w - 60);
   const y = saved?.y ?? 60;
-  const w = saved?.w ?? 640;
-  const h = saved?.h ?? 480;
 
   overlay.style.left = `${x}px`;
   overlay.style.top = `${y}px`;

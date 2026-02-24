@@ -2008,33 +2008,21 @@ html, body {
         bottom: calc(8px + env(safe-area-inset-bottom, 0));
     }
 
-    /* File viewer dock - hide on mobile (no room for side-by-side) */
-    #file-viewer-dock-btn {
-        display: none;
+    /* Dock panels - full-screen overlay on mobile */
+    .file-viewer-dock,
+    .commands-dock,
+    .git-dock,
+    .web-preview-dock {
+        position: fixed;
+        inset: 0;
+        width: 100% !important;
+        z-index: 200;
+        border-left: none;
+        top: 0;
     }
 
-    .file-viewer-dock {
-        display: none !important;
-    }
-
-    .terminal-page.file-viewer-docked .session-tab-panels {
-        margin-right: 0;
-    }
-
-    /* Commands dock - hide on mobile */
-    .commands-dock {
-        display: none !important;
-    }
-
-    .terminal-page.commands-docked .session-tab-panels {
-        margin-right: 0;
-    }
-
-    /* Git dock - hide on mobile */
-    .git-dock {
-        display: none !important;
-    }
-
+    .terminal-page.file-viewer-docked .session-tab-panels,
+    .terminal-page.commands-docked .session-tab-panels,
     .terminal-page.git-docked .session-tab-panels {
         margin-right: 0;
     }
@@ -3650,6 +3638,23 @@ html, body {
 
 .error-message.hidden {
     display: none;
+}
+
+@media (max-width: 400px) {
+    .login-card {
+        padding: 32px 24px 28px;
+    }
+
+    .login-logo-wrapper {
+        width: 100px;
+        height: 100px;
+        margin-bottom: 16px;
+    }
+
+    .login-logo {
+        width: 80px;
+        height: 80px;
+    }
 }
 
 /* Certificate Info (TOFU) */
@@ -5297,8 +5302,8 @@ html, body {
 /* Small screen adjustments */
 @media (max-width: 400px) {
     .touch-key {
-        min-width: 38px;
-        min-height: 38px;
+        min-width: 42px;
+        min-height: 42px;
         padding: 6px 8px;
         font-size: var(--fs-sm);
     }
@@ -6229,11 +6234,7 @@ html, body {
     background: var(--bg-elevated);
 }
 
-@media (max-width: 768px) {
-    .web-preview-dock {
-        display: none !important;
-    }
-}
+/* web-preview-dock mobile override handled in main 768px block */
 
 /* =============================================
    Middle Manager Bar
@@ -6255,6 +6256,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
 }
 
 .manager-btn {
@@ -6358,6 +6360,8 @@ html, body {
     padding: 0 8px;
     height: var(--bar-height);
     user-select: none;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .session-tab {
@@ -6374,6 +6378,7 @@ html, body {
     height: 100%;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .session-tab:hover {
@@ -6493,6 +6498,7 @@ body.ide-mode-off .session-tab-bar {
     width: 280px;
     flex-shrink: 0;
     overflow-y: auto;
+    overflow-x: auto;
     border-right: 1px solid var(--border-color);
     background: var(--bg-sidebar);
 }
@@ -6961,8 +6967,10 @@ body.ide-mode-off .session-tab-bar {
     flex-direction: column;
     resize: both;
     overflow: hidden;
-    min-width: 320px;
+    min-width: 280px;
     min-height: 200px;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
 }
 
 .git-diff-overlay-header {
@@ -7310,8 +7318,10 @@ body.ide-mode-off .session-tab-bar {
     flex-direction: column;
     resize: both;
     overflow: hidden;
-    min-width: 300px;
+    min-width: 280px;
     min-height: 200px;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
 }
 
 .command-overlay-header {

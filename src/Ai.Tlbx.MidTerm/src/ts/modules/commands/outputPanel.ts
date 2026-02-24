@@ -57,10 +57,10 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
   overlay.className = 'command-overlay';
 
   const saved = loadOverlayRect();
-  const x = saved?.x ?? Math.max(50, window.innerWidth - 650);
+  const w = saved?.w ?? Math.min(600, window.innerWidth - 20);
+  const h = saved?.h ?? Math.min(400, window.innerHeight - 20);
+  const x = saved?.x ?? Math.max(10, window.innerWidth - w - 50);
   const y = saved?.y ?? 80;
-  const w = saved?.w ?? 600;
-  const h = saved?.h ?? 400;
 
   overlay.style.left = `${x}px`;
   overlay.style.top = `${y}px`;

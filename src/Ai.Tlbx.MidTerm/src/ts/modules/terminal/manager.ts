@@ -641,7 +641,7 @@ export function setupTerminalEvents(
   };
 
   container.addEventListener('mousemove', mouseMoveHandler);
-  container.addEventListener('mouseleave', mouseLeaveHandler);
+  container.addEventListener('pointerleave', mouseLeaveHandler);
 
   // Store handler references for cleanup
   const state = sessionTerminals.get(sessionId);
@@ -687,7 +687,7 @@ export function destroyTerminalForSession(sessionId: string): void {
     state.container.removeEventListener('mousemove', state.mouseMoveHandler);
   }
   if (state.mouseLeaveHandler) {
-    state.container.removeEventListener('mouseleave', state.mouseLeaveHandler);
+    state.container.removeEventListener('pointerleave', state.mouseLeaveHandler);
   }
 
   // Clean up search addon state
