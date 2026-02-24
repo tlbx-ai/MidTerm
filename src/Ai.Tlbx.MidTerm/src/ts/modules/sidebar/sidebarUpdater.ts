@@ -92,19 +92,30 @@ function detectChangeType(sessions: Record<string, Session>): ChangeType {
  * Preserves hover states, event listeners, and focus.
  */
 function updateSessionItemContent(sessionId: string, session: Session): void {
-  const item = document.querySelector(`[data-session-id="${sessionId}"]`);
+  const item = document.querySelector(`[data-session-id="${sessionId}"]`) as HTMLElement | null;
   if (!item) return;
 
+  const displayInfo = getSessionDisplayInfo(session);
+  const wasProcessAsTitle = item.dataset.processAsTitle === '1';
+  const isProcessAsTitle = !!displayInfo.useProcessAsTitle;
+
+  // Mode changed (renamed ↔ unnamed): force full re-render
+  if (wasProcessAsTitle !== isProcessAsTitle) {
+    renderSessionList();
+    return;
+  }
+
+  // Process-as-title mode: title row is managed by updateSessionProcessInfo
+  if (isProcessAsTitle) return;
+
+  // Named session: update title and subtitle text
   const titleEl = item.querySelector('.session-title');
   const subtitleEl = item.querySelector('.session-subtitle');
-  const displayInfo = getSessionDisplayInfo(session);
 
-  // Update title text only (not element)
   if (titleEl && titleEl.textContent !== displayInfo.primary) {
     titleEl.textContent = displayInfo.primary;
   }
 
-  // Handle subtitle: add, remove, or update
   if (displayInfo.secondary) {
     item.classList.add('two-line');
     if (subtitleEl) {
@@ -112,7 +123,6 @@ function updateSessionItemContent(sessionId: string, session: Session): void {
         subtitleEl.textContent = displayInfo.secondary;
       }
     } else {
-      // Need to add subtitle inside the title row (same as createSessionItem)
       const newSubtitle = document.createElement('span');
       newSubtitle.className = 'session-subtitle truncate';
       newSubtitle.textContent = displayInfo.secondary;

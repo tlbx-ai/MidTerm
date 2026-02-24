@@ -585,6 +585,12 @@ html, body {
     white-space: nowrap;
 }
 
+/* Unnamed sessions: process indicator promoted to title row */
+.session-foreground.process-title {
+    font-size: var(--fs-lg);
+    color: var(--text-primary);
+}
+
 .session-racing-log {
     font-size: var(--fs-xs);
     color: var(--accent-orange);
