@@ -207,17 +207,8 @@ export const DEFAULT_SETTINGS = {
 // WebSocket Configuration
 // =============================================================================
 
-/** Initial reconnect delay in milliseconds */
-export const RECONNECT_INITIAL_DELAY = 1000;
-
-/** Maximum reconnect delay in milliseconds */
-export const RECONNECT_MAX_DELAY = 30000;
-
-/** Backoff multiplier */
-export const RECONNECT_BACKOFF_FACTOR = 2;
-
-/** Jitter range (0.25 = ±25% randomization) */
-export const RECONNECT_JITTER = 0.25;
+/** Fixed reconnect delay in milliseconds */
+export const RECONNECT_DELAY = 3000;
 
 // =============================================================================
 // Terminal Rendering Constants

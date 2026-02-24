@@ -5,14 +5,14 @@
  */
 
 import { createLogger } from '../logging';
-import { ReconnectController, createWsUrl } from '../../utils';
+import { createWsUrl } from '../../utils';
 import { fetchGitStatus } from './gitApi';
 import type { GitWsMessage, GitStatusResponse } from './types';
 
 const log = createLogger('gitChannel');
-const gitReconnect = new ReconnectController();
 
 let ws: WebSocket | null = null;
+let reconnectTimer: number | null = null;
 const subscribedSessions = new Set<string>();
 let statusCallback: ((sessionId: string, status: GitStatusResponse) => void) | null = null;
 
@@ -67,7 +67,6 @@ export function connectGitWebSocket(): void {
   ws = new WebSocket(createWsUrl('/ws/git'));
 
   ws.onopen = () => {
-    gitReconnect.reset();
     log.info(() => 'Git WebSocket connected');
     emitDiag('ws-open', 'connected');
     for (const sessionId of subscribedSessions) {
@@ -98,10 +97,18 @@ export function connectGitWebSocket(): void {
     log.info(() => 'Git WebSocket closed');
     emitDiag('ws-close', 'disconnected');
     ws = null;
-    if (subscribedSessions.size > 0) {
-      gitReconnect.schedule(connectGitWebSocket);
-    }
+    scheduleReconnect();
   };
+}
+
+function scheduleReconnect(): void {
+  if (reconnectTimer !== null) return;
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    if (subscribedSessions.size > 0) {
+      connectGitWebSocket();
+    }
+  }, 3000);
 }
 
 function sendSubscribe(sessionId: string): void {
@@ -146,7 +153,10 @@ export function triggerGitFallback(sessionId: string): void {
 }
 
 export function disconnectGitWebSocket(): void {
-  gitReconnect.cancel();
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   for (const timer of pendingFallbacks.values()) {
     clearTimeout(timer);
   }

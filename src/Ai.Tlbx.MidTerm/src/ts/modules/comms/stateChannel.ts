@@ -14,7 +14,7 @@ import type {
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
-import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
+import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
@@ -26,13 +26,14 @@ import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
 
 const log = createLogger('state');
-const stateReconnect = new ReconnectController();
 import {
   stateWs,
+  stateReconnectTimer,
   sessionTerminals,
   newlyCreatedSessions,
   hiddenSessionIds,
   setStateWs,
+  setStateReconnectTimer,
 } from '../../state';
 
 const COMMAND_TIMEOUT_MS = 30000;
@@ -95,7 +96,6 @@ export function connectStateWebSocket(): void {
   setStateWs(ws);
 
   ws.onopen = () => {
-    stateReconnect.reset();
     $stateWsConnected.set(true);
   };
 
@@ -182,7 +182,7 @@ export function connectStateWebSocket(): void {
       pendingCommands.delete(id);
     });
 
-    stateReconnect.schedule(connectStateWebSocket);
+    scheduleStateReconnect();
   };
 
   ws.onerror = (e) => {
@@ -302,7 +302,7 @@ export function handleUpdateInfo(update: UpdateInfo | null): void {
  * Schedule state WebSocket reconnection.
  */
 export function scheduleStateReconnect(): void {
-  stateReconnect.schedule(connectStateWebSocket);
+  scheduleReconnect(connectStateWebSocket, setStateReconnectTimer, stateReconnectTimer);
 }
 
 // =============================================================================
