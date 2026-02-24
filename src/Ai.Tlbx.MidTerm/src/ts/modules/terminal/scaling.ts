@@ -811,24 +811,30 @@ export function setupVisualViewport(): void {
 
   const vv = window.visualViewport;
   let lastHeight = 0;
-  const fullHeight = window.innerHeight;
-  const KEYBOARD_THRESHOLD = 0.75;
+  let baselineHeight = Math.max(window.innerHeight, vv.height);
+  const KEYBOARD_RATIO_THRESHOLD = 0.88;
+  const KEYBOARD_PIXEL_THRESHOLD = 120;
   const appEl = document.querySelector<HTMLElement>('.terminal-page');
 
   const update = () => {
     const vh = vv.height;
+    if (vh > baselineHeight) {
+      baselineHeight = vh;
+    }
     if (Math.abs(vh - lastHeight) < 1) return;
     lastHeight = vh;
 
     if (appEl) {
-      appEl.style.height = vh + 'px';
+      appEl.style.height = `${vh}px`;
     }
 
     if (vv.offsetTop !== 0) {
       window.scrollTo(0, 0);
     }
 
-    const kbVisible = vh < fullHeight * KEYBOARD_THRESHOLD;
+    const heightDrop = baselineHeight - vh;
+    const kbVisible =
+      vh < baselineHeight * KEYBOARD_RATIO_THRESHOLD && heightDrop >= KEYBOARD_PIXEL_THRESHOLD;
     if (kbVisible !== document.body.classList.contains('keyboard-visible')) {
       document.body.classList.toggle('keyboard-visible', kbVisible);
     }

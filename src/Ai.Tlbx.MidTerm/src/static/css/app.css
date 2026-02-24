@@ -1659,27 +1659,27 @@ html, body {
     .mobile-topbar {
         display: flex;
         align-items: center;
-        padding: 8px 12px;
-        padding-top: calc(8px + env(safe-area-inset-top, 0));
-        padding-left: calc(12px + env(safe-area-inset-left, 0));
-        padding-right: calc(12px + env(safe-area-inset-right, 0));
+        padding: 4px 8px;
+        padding-top: calc(4px + env(safe-area-inset-top, 0));
+        padding-left: calc(8px + env(safe-area-inset-left, 0));
+        padding-right: calc(8px + env(safe-area-inset-right, 0));
         background-color: var(--bg-sidebar);
         border-bottom: 1px solid var(--border-color);
-        gap: 8px;
+        gap: 6px;
         flex-shrink: 0;
-        min-height: 52px;
+        min-height: 44px;
     }
 
     /* Topbar buttons - minimum 44px touch target */
     .topbar-btn {
-        min-width: 44px;
-        min-height: 44px;
-        width: 44px;
-        height: 44px;
+        min-width: 40px;
+        min-height: 40px;
+        width: 40px;
+        height: 40px;
         border: none;
         background: transparent;
         color: var(--text-primary);
-        font-size: var(--fs-3xl);
+        font-size: var(--fs-2xl);
         cursor: pointer;
         border-radius: 8px;
         display: flex;
@@ -1697,19 +1697,19 @@ html, body {
 
     /* Hamburger button */
     .topbar-hamburger {
-        font-size: var(--fs-3xl);
+        font-size: var(--fs-2xl);
     }
 
     /* Title in center */
     .topbar-title {
         flex: 1;
-        font-size: var(--fs-xl);
+        font-size: var(--fs-lg);
         font-weight: 500;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         color: var(--text-primary);
-        text-align: center;
+        text-align: left;
         padding: 0 4px;
     }
 
@@ -1717,14 +1717,90 @@ html, body {
     .topbar-actions {
         display: flex;
         align-items: center;
-        gap: 2px;
+        gap: 0;
         flex-shrink: 0;
+        position: relative;
+    }
+
+    .topbar-menu-toggle {
+        color: var(--text-secondary);
+    }
+
+    .topbar-menu-toggle[aria-expanded="true"] {
+        color: var(--text-primary);
+        background-color: var(--btn-secondary);
+    }
+
+    .mobile-actions-dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: min(280px, calc(100vw - 16px - env(safe-area-inset-left, 0) - env(safe-area-inset-right, 0)));
+        max-height: min(64vh, 420px);
+        padding: 6px;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        background: var(--bg-sidebar);
+        box-shadow: 0 8px 24px var(--shadow-color);
+        overflow-y: auto;
+        z-index: 1004;
+    }
+
+    .mobile-actions-item {
+        width: 100%;
+        min-width: 0;
+        min-height: 38px;
+        height: auto;
+        border-radius: 8px;
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 8px 10px;
+        color: var(--text-primary);
+        font-size: var(--fs-md);
+    }
+
+    .mobile-actions-item .icon {
+        font-size: var(--fs-lg);
+        color: var(--text-secondary);
+    }
+
+    .mobile-actions-symbol {
+        width: 20px;
+        color: var(--text-secondary);
+        text-align: center;
+        font-size: var(--fs-base);
+        flex-shrink: 0;
+    }
+
+    .mobile-actions-label {
+        min-width: 0;
+        text-align: left;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .mobile-actions-item.active,
+    .mobile-actions-item.sidebar-active {
+        background-color: var(--btn-secondary);
+    }
+
+    .topbar-touchbar.hidden {
+        display: none;
     }
 
     /* Action buttons - slightly smaller visual but same touch target */
     .topbar-action {
-        font-size: var(--fs-xl);
+        font-size: var(--fs-lg);
         color: var(--text-secondary);
+    }
+
+    .mobile-actions-item.topbar-action {
+        color: var(--text-primary);
     }
 
     .topbar-action:active {
@@ -1762,20 +1838,31 @@ html, body {
         color: var(--text-on-accent);
     }
 
-    /* Add button - primary accent */
-    .topbar-add {
-        background-color: var(--btn-primary);
-        color: var(--bg-primary);
-        font-size: var(--fs-3xl);
+    .mobile-actions-item.topbar-ctrlc,
+    .mobile-actions-item.topbar-fullscreen {
+        font-family: inherit;
+        font-size: var(--fs-md);
         font-weight: 500;
     }
 
-    .topbar-add:active {
-        background-color: var(--btn-primary-hover);
+    .mobile-actions-item.topbar-ctrlc .icon {
+        color: var(--accent-orange);
+    }
+
+    .mobile-actions-item.topbar-fullscreen .icon {
+        color: var(--accent-green);
+    }
+
+    .mobile-actions-item.topbar-close .icon {
+        color: var(--accent-red);
     }
 
     /* Hide topbar actions when no terminal is active */
     .topbar-actions.no-terminal .topbar-action {
+        display: none;
+    }
+
+    body.ide-mode-off .topbar-ide-action {
         display: none;
     }
 
@@ -2039,28 +2126,30 @@ html, body {
    ============================================================================ */
 @media (max-width: 480px) {
     .mobile-topbar {
-        padding: 6px 8px;
-        padding-top: calc(6px + env(safe-area-inset-top, 0));
-        gap: 4px;
+        padding: 3px 6px;
+        padding-top: calc(3px + env(safe-area-inset-top, 0));
+        gap: 3px;
     }
 
     .topbar-btn {
-        min-width: 40px;
-        min-height: 40px;
-        width: 40px;
-        height: 40px;
+        min-width: 38px;
+        min-height: 38px;
+        width: 38px;
+        height: 38px;
     }
 
     .topbar-title {
-        font-size: var(--fs-lg);
+        font-size: var(--fs-md);
     }
 
-    .topbar-action {
-        font-size: var(--fs-lg);
+    .mobile-actions-dropdown {
+        width: min(260px, calc(100vw - 12px));
     }
 
-    .topbar-add {
-        font-size: var(--fs-3xl);
+    .mobile-actions-item {
+        min-height: 36px;
+        font-size: var(--fs-sm);
+        padding: 7px 9px;
     }
 
     /* Sidebar narrower on very small screens */
@@ -6535,19 +6624,37 @@ body.ide-mode-off .session-tab-bar {
     background: var(--bg-primary);
 }
 
-/* Mobile: hide non-terminal tabs */
+/* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
 @media (max-width: 768px) {
     .session-tab-bar {
-        padding: 0 4px;
-    }
-
-    .session-tab {
-        padding: 6px 10px;
-        font-size: var(--fs-md);
-    }
-
-    .session-cwd {
         display: none;
+    }
+
+    .manager-bar {
+        padding: 3px 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .manager-bar-buttons {
+        gap: 4px;
+        flex-wrap: nowrap;
+        min-width: max-content;
+    }
+
+    .manager-btn {
+        padding: 2px 8px;
+        font-size: var(--fs-sm);
+        max-width: 42vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .manager-bar-add {
+        padding: 2px 8px;
+        font-size: var(--fs-sm);
+        flex-shrink: 0;
     }
 
     .file-browser-tree {

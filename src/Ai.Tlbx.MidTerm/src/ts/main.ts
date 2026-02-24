@@ -105,6 +105,7 @@ import {
   destroySessionWrapper,
   setIdeModeEnabled,
   reparentTerminalContainer,
+  switchTab,
 } from './modules/sessionTabs';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import {
@@ -447,6 +448,8 @@ function selectSessionWithRetry(sessionId: string, attempt = 0): void {
 }
 
 function selectSession(sessionId: string, options?: { closeSettingsPanel?: boolean }): void {
+  closeMobileActionsMenu();
+
   // Only close settings if explicitly requested (e.g., user clicked a session)
   // Auto-selection from state updates should NOT close settings
   if (options?.closeSettingsPanel !== false) {
@@ -875,6 +878,95 @@ function initPwaInstall(): void {
   });
 }
 
+function getActiveSessionTabBar(): HTMLDivElement | null {
+  const activeSessionId = $activeSessionId.get();
+  if (!activeSessionId || !dom.terminalsArea) return null;
+
+  const wrappers = dom.terminalsArea.querySelectorAll<HTMLDivElement>('.session-wrapper');
+  for (const wrapper of wrappers) {
+    if (wrapper.dataset.sessionId === activeSessionId) {
+      return wrapper.querySelector<HTMLDivElement>('.session-tab-bar');
+    }
+  }
+  return null;
+}
+
+function clickActiveSessionTabBarControl(selector: string): void {
+  const tabBar = getActiveSessionTabBar();
+  if (!tabBar) return;
+  const control = tabBar.querySelector<HTMLButtonElement>(selector);
+  control?.click();
+}
+
+function syncMobileTabActionState(): void {
+  const tabBar = getActiveSessionTabBar();
+  const activeTab = tabBar?.querySelector('.session-tab.active')?.getAttribute('data-tab');
+  const terminalBtn = document.getElementById('btn-mobile-tab-terminal');
+  const filesBtn = document.getElementById('btn-mobile-tab-files');
+
+  terminalBtn?.classList.toggle('active', activeTab === 'terminal');
+  filesBtn?.classList.toggle('active', activeTab === 'files');
+}
+
+function closeMobileActionsMenu(): void {
+  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
+  const dropdown = document.getElementById('mobile-actions-dropdown');
+  if (!toggleBtn || !dropdown) return;
+
+  dropdown.setAttribute('hidden', '');
+  toggleBtn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleMobileActionsMenu(): void {
+  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
+  const dropdown = document.getElementById('mobile-actions-dropdown');
+  if (!toggleBtn || !dropdown) return;
+
+  const isOpen = !dropdown.hasAttribute('hidden');
+  if (isOpen) {
+    closeMobileActionsMenu();
+    return;
+  }
+
+  syncMobileTabActionState();
+  dropdown.removeAttribute('hidden');
+  toggleBtn.setAttribute('aria-expanded', 'true');
+}
+
+function bindMobileActionsMenu(): void {
+  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
+  const dropdown = document.getElementById('mobile-actions-dropdown');
+  const actions = document.getElementById('topbar-actions');
+  if (!toggleBtn || !dropdown || !actions) return;
+
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMobileActionsMenu();
+  });
+
+  dropdown.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) {
+      closeMobileActionsMenu();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const target = e.target as Node | null;
+    if (target && !actions.contains(target)) {
+      closeMobileActionsMenu();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeMobileActionsMenu();
+    }
+  });
+
+  window.addEventListener('resize', closeMobileActionsMenu);
+}
+
 // =============================================================================
 // Event Binding
 // =============================================================================
@@ -896,6 +988,7 @@ function bindEvents(): void {
   bindClick('btn-hamburger', toggleSidebar);
   bindClick('btn-collapse-sidebar', collapseSidebar);
   bindClick('btn-expand-sidebar', expandSidebar);
+  bindMobileActionsMenu();
 
   if (dom.sidebarOverlay) {
     dom.sidebarOverlay.addEventListener('click', closeSidebar);
@@ -916,6 +1009,29 @@ function bindEvents(): void {
   bindClick('btn-close-mobile', () => {
     const activeId = $activeSessionId.get();
     if (activeId) deleteSession(activeId);
+  });
+  bindClick('btn-mobile-tab-terminal', () => {
+    const activeId = $activeSessionId.get();
+    if (activeId) {
+      switchTab(activeId, 'terminal');
+      syncMobileTabActionState();
+    }
+  });
+  bindClick('btn-mobile-tab-files', () => {
+    const activeId = $activeSessionId.get();
+    if (activeId) {
+      switchTab(activeId, 'files');
+      syncMobileTabActionState();
+    }
+  });
+  bindClick('btn-mobile-web', () => {
+    clickActiveSessionTabBarControl('[data-action="web"]');
+  });
+  bindClick('btn-mobile-commands', () => {
+    clickActiveSessionTabBarControl('[data-action="commands"]');
+  });
+  bindClick('btn-mobile-git', () => {
+    clickActiveSessionTabBarControl('[data-action="git"]');
   });
 
   // Fullscreen toggle (mobile) - hide button if API not supported
