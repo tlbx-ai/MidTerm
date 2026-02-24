@@ -8,7 +8,9 @@ public static class AuthEndpoints
     private static CookieOptions GetSessionCookieOptions() => new()
     {
         HttpOnly = true,
-        SameSite = SameSiteMode.Strict,
+        // Lax keeps CSRF protection for subresource requests while allowing
+        // top-level navigations from installed PWAs/home-screen launches.
+        SameSite = SameSiteMode.Lax,
         Secure = true,
         Path = "/",
         MaxAge = TimeSpan.FromDays(3)
@@ -56,7 +58,7 @@ public static class AuthEndpoints
 
         app.MapPost("/api/auth/logout", (HttpContext ctx) =>
         {
-            ctx.Response.Cookies.Delete(AuthService.SessionCookieName);
+            ctx.Response.Cookies.Delete(AuthService.SessionCookieName, GetSessionCookieOptions());
             return Results.Ok();
         });
 

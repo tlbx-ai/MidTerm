@@ -56,7 +56,9 @@ public static class AuthMiddleware
     private static CookieOptions GetSessionCookieOptions() => new()
     {
         HttpOnly = true,
-        SameSite = SameSiteMode.Strict,
+        // Lax keeps CSRF protection for subresource requests while allowing
+        // top-level navigations from installed PWAs/home-screen launches.
+        SameSite = SameSiteMode.Lax,
         Secure = true,
         Path = "/",
         MaxAge = TimeSpan.FromDays(3)
