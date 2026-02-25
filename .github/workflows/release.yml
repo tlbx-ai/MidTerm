@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      is_dev: ${{ contains(github.ref_name, '-dev') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,7 +83,7 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
           retention-days: 1
 
-  # ── Build each platform, sign, and upload directly to the draft release ──
+  # ── Build macOS + Linux, sign, and upload directly to the draft release ────
   build:
     needs: [prepare, frontend]
     permissions:
@@ -95,9 +97,6 @@ jobs:
           - os: macos-14
             rid: osx-x64
             ext: ''
-          - os: windows-latest
-            rid: win-x64
-            ext: '.exe'
           - os: ubuntu-latest
             rid: linux-x64
             ext: ''
@@ -192,8 +191,6 @@ jobs:
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
-          # Stapling not supported for standalone Mach-O binaries in tarballs;
-          # Gatekeeper checks notarization online via quarantine bit on download.
 
       - name: Sign version.json
         shell: pwsh
@@ -207,15 +204,71 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $rid = "${{ matrix.rid }}"
-          if ($rid -like "win-*") {
-            $archive = "staging/mt-$rid.zip"
-            7z a -tzip -mx=9 $archive "./staging/$rid/*" | Out-Null
-          } else {
-            $archive = "staging/mt-$rid.tar.gz"
-            tar -cf - -C "staging/$rid" . | gzip -9 > $archive
-          }
+          $archive = "staging/mt-$rid.tar.gz"
+          tar -cf - -C "staging/$rid" . | gzip -9 > $archive
           gh release upload "${{ github.ref_name }}" $archive
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
         run: security delete-keychain "$KEYCHAIN_PATH"
+
+  # ── Build Windows: hosted runner for dev, self-hosted with signing for stable ─
+  build-windows:
+    needs: [prepare, frontend]
+    permissions:
+      contents: write
+    runs-on: ${{ needs.prepare.outputs.is_dev == 'true' && 'windows-latest' || fromJSON('["self-hosted","windows","signing"]') }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
+
+      - name: Build mt + mthost
+        run: |
+          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          mkdir -p staging/win-x64
+          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
+          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
+          cp version.json staging/win-x64/
+
+      - name: Sign Windows binaries (Certum Authenticode)
+        if: needs.prepare.outputs.is_dev != 'true'
+        shell: pwsh
+        run: ./scripts/sign-windows-binaries.ps1 -StagingPath staging/win-x64
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd staging/win-x64
+          sha256sum mt.exe mthost.exe > SHA256SUMS.txt
+          echo "=== win-x64 ==="
+          cat SHA256SUMS.txt
+
+      - name: Sign version.json
+        shell: pwsh
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+        run: ./scripts/sign-release.ps1 -ArtifactsPath staging
+
+      - name: Package and upload to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $archive = "staging/mt-win-x64.zip"
+          7z a -tzip -mx=9 $archive "./staging/win-x64/*" | Out-Null
+          gh release upload "${{ github.ref_name }}" $archive
