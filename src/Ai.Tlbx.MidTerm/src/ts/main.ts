@@ -1064,7 +1064,11 @@ function bindEvents(): void {
   bindClick('btn-paste-mobile', () => {
     const activeId = $activeSessionId.get();
     if (!activeId) return;
-    void handleClipboardPaste(activeId).finally(() => {
+    const foreground = getForegroundInfo(activeId);
+    void handleClipboardPaste(activeId, {
+      foregroundName: foreground.name,
+      foregroundCommandLine: foreground.commandLine,
+    }).finally(() => {
       focusActiveTerminal();
     });
   });

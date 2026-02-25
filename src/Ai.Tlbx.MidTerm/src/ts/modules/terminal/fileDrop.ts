@@ -8,6 +8,7 @@
 import { $activeSessionId } from '../../stores';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
+import { resolveImagePasteMode } from './imagePasteMode';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 
@@ -87,6 +88,16 @@ const REJECTED_EXTENSIONS = new Set([
 ]);
 
 export type ClipboardPasteResult = 'image' | 'text' | 'none' | 'unavailable';
+
+export interface ClipboardPasteContext {
+  foregroundName?: string | null;
+  foregroundCommandLine?: string | null;
+}
+
+interface ClipboardImageData {
+  blob: Blob;
+  type: string;
+}
 
 // =============================================================================
 // Helper Functions
@@ -255,12 +266,98 @@ async function uploadFile(sessionId: string, file: File): Promise<string | null>
       return null;
     }
 
-    const result = await response.json();
-    return result.path;
+    const result: unknown = await response.json();
+    if (typeof result === 'object' && result !== null && 'path' in result) {
+      const maybePath = (result as { path: unknown }).path;
+      return typeof maybePath === 'string' ? maybePath : null;
+    }
+    return null;
   } catch (_error) {
     showDropToast(t('fileDrop.uploadFailedNetwork'));
     return null;
   }
+}
+
+function buildClipboardImageFile(imageData: ClipboardImageData): File {
+  const ext = imageData.type === 'image/png' ? '.png' : '.jpg';
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  return new File([imageData.blob], `clipboard_${ts}${ext}`, { type: imageData.type });
+}
+
+async function readClipboardImageData(): Promise<ClipboardImageData | null> {
+  if (
+    typeof navigator.clipboard === 'undefined' ||
+    typeof navigator.clipboard.read !== 'function'
+  ) {
+    return null;
+  }
+
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find((t) => t.startsWith('image/'));
+      if (!imageType) continue;
+      const blob = await item.getType(imageType);
+      return { blob, type: imageType };
+    }
+  } catch {
+    // clipboard.read() failed (permission denied / blocked / unsupported)
+  }
+
+  return null;
+}
+
+async function pasteClipboardText(sessionId: string): Promise<ClipboardPasteResult> {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) {
+      const sanitized = sanitizePasteContent(text);
+      pasteToTerminal(sessionId, sanitized);
+      return 'text';
+    }
+  } catch {
+    // clipboard.readText() failed (permission denied / blocked / unsupported)
+  }
+
+  return 'none';
+}
+
+async function pasteClipboardImageAsPath(
+  sessionId: string,
+  imageData: ClipboardImageData,
+): Promise<ClipboardPasteResult> {
+  const file = buildClipboardImageFile(imageData);
+  const path = await uploadFile(sessionId, file);
+  if (!path) {
+    return 'unavailable';
+  }
+
+  pasteToTerminal(sessionId, sanitizePasteContent(path), true);
+  return 'image';
+}
+
+async function sendNativeClipboardImage(
+  sessionId: string,
+  imageData: ClipboardImageData,
+): Promise<ClipboardPasteResult> {
+  const file = buildClipboardImageFile(imageData);
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const resp = await fetch(`/api/sessions/${sessionId}/paste-clipboard-image`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (resp.ok) {
+      return 'image';
+    }
+    showDropToast(`${t('fileDrop.clipboardFailed')}: ${resp.status}`);
+  } catch {
+    // network error
+  }
+
+  return 'unavailable';
 }
 
 /**
@@ -301,7 +398,7 @@ async function handleFileDrop(files: FileList): Promise<void> {
       const content = await readFileAsText(file);
       const sanitized = sanitizePasteContent(content);
       pasteToTerminal(activeId, sanitized, false);
-    } catch (err) {
+    } catch (_err) {
       log.error(() => `Failed to read file: ${file.name}`);
       showDropToast(`${t('fileDrop.failedToRead')}: ${file.name}`);
     }
@@ -359,14 +456,15 @@ export function setupFileDrop(container: HTMLElement): void {
 }
 
 /**
- * Handle clipboard paste - checks for images first, falls back to text
- * Used by the keyboard handler in manager.ts (only on secure contexts)
- * On non-secure contexts (HTTP remote), this function won't work due to
- * browser Clipboard API restrictions - paste is handled via native events instead.
+ * Handle clipboard paste with automatic image strategy:
+ * - native clipboard injection for known CLI agents (Codex/Claude/Gemini/etc.)
+ * - path paste fallback for all apps
+ * - text paste fallback when clipboard has no image
  */
-export async function handleClipboardPaste(sessionId: string): Promise<ClipboardPasteResult> {
-  // Clipboard API requires secure context (HTTPS or localhost)
-  // On HTTP remote connections, show warning and bail out
+export async function handleClipboardPaste(
+  sessionId: string,
+  context: ClipboardPasteContext = {},
+): Promise<ClipboardPasteResult> {
   if (!window.isSecureContext) {
     showHttpsRequiredToast();
     return 'unavailable';
@@ -379,39 +477,31 @@ export async function handleClipboardPaste(sessionId: string): Promise<Clipboard
     return 'unavailable';
   }
 
-  // Try to read clipboard items (images)
-  try {
-    const items = await navigator.clipboard.read();
-    for (const item of items) {
-      const imageType = item.types.find((t) => t.startsWith('image/'));
-      if (imageType) {
-        const blob = await item.getType(imageType);
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const file = new File([blob], `clipboard_${timestamp}.jpg`, { type: imageType });
-        const path = await uploadFile(sessionId, file);
-        if (path) {
-          pasteToTerminal(sessionId, sanitizePasteContent(path), true);
-          return 'image';
-        }
-      }
+  const imageData = await readClipboardImageData();
+  if (imageData) {
+    const mode = resolveImagePasteMode({
+      name: context.foregroundName ?? null,
+      commandLine: context.foregroundCommandLine ?? null,
+    });
+
+    if (mode === 'native') {
+      const nativeResult = await sendNativeClipboardImage(sessionId, imageData);
+      if (nativeResult === 'image') return nativeResult;
+      const pathResult = await pasteClipboardImageAsPath(sessionId, imageData);
+      if (pathResult === 'image') return pathResult;
+      return nativeResult === 'unavailable' || pathResult === 'unavailable'
+        ? 'unavailable'
+        : 'none';
     }
-  } catch {
-    // clipboard.read() not supported or failed, fall through to text paste
+
+    const pathResult = await pasteClipboardImageAsPath(sessionId, imageData);
+    if (pathResult === 'image') return pathResult;
+    const nativeResult = await sendNativeClipboardImage(sessionId, imageData);
+    if (nativeResult === 'image') return nativeResult;
+    return pathResult === 'unavailable' || nativeResult === 'unavailable' ? 'unavailable' : 'none';
   }
 
-  // No image found or image handling failed, paste text
-  try {
-    const text = await navigator.clipboard.readText();
-    if (text) {
-      const sanitized = sanitizePasteContent(text);
-      pasteToTerminal(sessionId, sanitized);
-      return 'text';
-    }
-  } catch {
-    // Text paste failed
-  }
-
-  return 'none';
+  return pasteClipboardText(sessionId);
 }
 
 /**
@@ -434,30 +524,7 @@ export async function handleNativeImagePaste(sessionId: string): Promise<Clipboa
     return 'unavailable';
   }
 
-  try {
-    const items = await navigator.clipboard.read();
-    for (const item of items) {
-      const imageType = item.types.find((t) => t.startsWith('image/'));
-      if (imageType) {
-        const blob = await item.getType(imageType);
-        const ext = imageType === 'image/png' ? '.png' : '.jpg';
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const file = new File([blob], `clipboard_${ts}${ext}`, { type: imageType });
-        const formData = new FormData();
-        formData.append('file', file);
-        const resp = await fetch(`/api/sessions/${sessionId}/paste-clipboard-image`, {
-          method: 'POST',
-          body: formData,
-        });
-        if (resp.ok) return 'image';
-        showDropToast(`${t('fileDrop.clipboardFailed')}: ${resp.status}`);
-        return 'unavailable';
-      }
-    }
-  } catch {
-    // clipboard.read() failed (permission denied / blocked / unsupported)
-    return 'unavailable';
-  }
-
-  return 'none';
+  const imageData = await readClipboardImageData();
+  if (!imageData) return 'none';
+  return sendNativeClipboardImage(sessionId, imageData);
 }
