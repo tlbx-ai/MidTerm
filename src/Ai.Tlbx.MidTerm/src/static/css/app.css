@@ -5557,20 +5557,79 @@ html, body {
    Keyboard Visible Mode (mobile on-screen keyboard active)
    ========================================================================== */
 
-body.keyboard-visible .mobile-topbar {
-    display: none;
-}
+@media (max-width: 768px) {
+    /* Keep critical controls reachable while keyboard is open, but compact them. */
+    body.keyboard-visible .mobile-topbar {
+        display: flex;
+        padding: 2px 6px;
+        padding-top: calc(2px + var(--mobile-safe-top));
+        gap: 4px;
+        min-height: 38px;
+    }
 
-body.keyboard-visible .touch-controller {
-    display: none !important;
-}
+    body.keyboard-visible .topbar-btn {
+        min-width: 34px;
+        min-height: 34px;
+        width: 34px;
+        height: 34px;
+    }
 
-body.keyboard-visible .manager-bar {
-    display: none;
-}
+    body.keyboard-visible .topbar-title {
+        font-size: var(--fs-md);
+    }
 
-body.keyboard-visible .terminals-area {
-    padding-bottom: 0;
+    body.keyboard-visible .mobile-actions-dropdown {
+        max-height: min(52vh, 320px);
+    }
+
+    body.keyboard-visible .touch-controller {
+        display: flex !important;
+        padding: 4px 6px;
+        padding-left: calc(6px + env(safe-area-inset-left, 0px));
+        padding-right: calc(6px + env(safe-area-inset-right, 0px));
+        padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+        gap: 4px;
+    }
+
+    body.keyboard-visible .touch-bar-main {
+        gap: 4px;
+    }
+
+    body.keyboard-visible .touch-group {
+        gap: 3px;
+    }
+
+    body.keyboard-visible .touch-key {
+        min-width: 34px;
+        min-height: 34px;
+        padding: 5px 6px;
+        font-size: var(--fs-sm);
+    }
+
+    body.keyboard-visible .manager-bar {
+        display: flex;
+        gap: 4px;
+        padding: 2px 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    body.keyboard-visible .manager-bar-buttons {
+        gap: 4px;
+        flex-wrap: nowrap;
+        min-width: max-content;
+    }
+
+    body.keyboard-visible .manager-btn,
+    body.keyboard-visible .manager-bar-add {
+        padding: 2px 8px;
+        font-size: var(--fs-sm);
+    }
+
+    body.keyboard-visible .terminals-area {
+        padding-bottom: 0;
+    }
 }
 
 /* Accessibility: Focus states for keyboard navigation */
