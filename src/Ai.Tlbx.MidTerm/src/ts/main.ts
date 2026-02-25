@@ -967,7 +967,7 @@ function bindMobileActionsMenu(): void {
     }
   });
 
-  window.addEventListener('resize', closeMobileActionsMenu);
+  window.addEventListener('orientationchange', closeMobileActionsMenu);
 }
 
 // =============================================================================
