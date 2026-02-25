@@ -85,6 +85,67 @@ export function setSuppressHeatCallback(cb: SuppressHeatCallback): void {
 }
 
 let syncCompleteTimeout: number | null = null;
+const REPLAY_HEAT_QUIET_MS = 750;
+const RESYNC_HEAT_SUPPRESS_MS = 3000;
+const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
+const BUFFER_REPLAY_MAX_MS = 12000;
+
+interface ReplaySuppressionState {
+  quietUntilMs: number;
+  hardUntilMs: number;
+}
+
+const replaySuppressedSessions = new Map<string, ReplaySuppressionState>();
+
+function beginReplayHeatSuppression(sessionId: string, maxDurationMs = BUFFER_REPLAY_MAX_MS): void {
+  const now = Date.now();
+  replaySuppressedSessions.set(sessionId, {
+    quietUntilMs: now + REPLAY_HEAT_QUIET_MS,
+    hardUntilMs: now + maxDurationMs,
+  });
+}
+
+function beginReplayHeatSuppressionForAllSessions(): void {
+  sessionTerminals.forEach((_, sessionId) => {
+    beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
+  });
+}
+
+function isSgrResetFrame(type: number, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_OUTPUT) return false;
+  return (
+    payload.length === 8 &&
+    payload[4] === 0x1b &&
+    payload[5] === 0x5b &&
+    payload[6] === 0x30 &&
+    payload[7] === 0x6d
+  );
+}
+
+function shouldRecordHeat(
+  sessionId: string,
+  bytes: number,
+  type: number,
+  payload: Uint8Array,
+): boolean {
+  if (bytes <= 0) return false;
+  if (isSgrResetFrame(type, payload)) return false;
+
+  const now = Date.now();
+  const suppression = replaySuppressedSessions.get(sessionId);
+  if (suppression !== undefined) {
+    if (now <= suppression.quietUntilMs && now <= suppression.hardUntilMs) {
+      replaySuppressedSessions.set(sessionId, {
+        quietUntilMs: Math.min(now + REPLAY_HEAT_QUIET_MS, suppression.hardUntilMs),
+        hardUntilMs: suppression.hardUntilMs,
+      });
+      return false;
+    }
+    replaySuppressedSessions.delete(sessionId);
+  }
+
+  return true;
+}
 
 // \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
 // Followed by 0x68 ('h') = enable, 0x6c ('l') = disable
@@ -501,6 +562,7 @@ export function connectMuxWebSocket(): void {
       log.info(() => `Reconnected - refreshing ${sessionTerminals.size} terminals`);
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
+      replaySuppressedSessions.clear();
       outputQueue.length = 0;
       sessionTerminals.forEach((state) => {
         if (state.opened) {
@@ -589,6 +651,8 @@ export function connectMuxWebSocket(): void {
     if (type === MUX_TYPE_RESYNC) {
       // Server is resyncing due to dropped frames - clear all terminals
       log.info(() => 'Resync: clearing terminals for buffer refresh');
+      _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
+      beginReplayHeatSuppressionForAllSessions();
       sessionTerminals.forEach((state) => {
         if (state.opened) {
           state.terminal.clear();
@@ -606,7 +670,9 @@ export function connectMuxWebSocket(): void {
       // Pass only terminal data bytes (exclude cols/rows header overhead)
       const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 8 : 4;
       const termDataBytes = Math.max(0, payload.length - hdrBytes);
-      _sessionBytesCallback?.(sessionId, termDataBytes);
+      if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
+        _sessionBytesCallback?.(sessionId, termDataBytes);
+      }
       // Queue ALL output frames to guarantee strict ordering
       // .slice() here is needed — WS may recycle the ArrayBuffer
       if (payload.length >= 4) {
@@ -649,6 +715,7 @@ export function connectMuxWebSocket(): void {
   ws.onclose = (event) => {
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
+    replaySuppressedSessions.clear();
 
     // Log close reason
     if (event.code === WS_CLOSE_SERVER_SHUTDOWN) {
@@ -739,6 +806,8 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
  * Request buffer refresh for a session via WebSocket.
  */
 export function requestBufferRefresh(sessionId: string): void {
+  beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
+  _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
   const frame = new Uint8Array(MUX_HEADER_SIZE);
@@ -752,6 +821,10 @@ export function requestBufferRefresh(sessionId: string): void {
  */
 export function sendActiveSessionHint(sessionId: string | null): void {
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+
+  if (sessionId) {
+    beginReplayHeatSuppression(sessionId, ACTIVE_HINT_REPLAY_MAX_MS);
+  }
 
   const frame = new Uint8Array(MUX_HEADER_SIZE);
   frame[0] = MUX_TYPE_ACTIVE_HINT;

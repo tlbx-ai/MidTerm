@@ -58,7 +58,7 @@ import {
 import {
   restoreLayoutFromStorage,
   dockSession,
-  focusLayoutSession,
+  isSessionInLayout,
   swapLayoutSessions,
 } from '../layout/layoutStore';
 
@@ -143,7 +143,10 @@ export function connectStateWebSocket(): void {
           activeParent === data.sessionId ||
           (activeParent !== null && activeParent === focusParent);
         if (isRelated) {
-          focusLayoutSession(data.sessionId);
+          if (isSessionInLayout(data.sessionId)) {
+            // Route through main select path to apply heat suppression and mux hinting.
+            selectSession(data.sessionId, { closeSettingsPanel: false });
+          }
         }
         return;
       }
