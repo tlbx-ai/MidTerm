@@ -842,7 +842,16 @@ public sealed partial class WebPreviewProxyMiddleware
 
     internal static string BuildUpstreamPath(Uri target, string path)
     {
-        var targetBase = target.AbsolutePath.TrimEnd('/');
+        var targetPath = target.AbsolutePath;
+        if (string.IsNullOrEmpty(targetPath))
+        {
+            targetPath = "/";
+        }
+
+        var targetHasTrailingSlash = targetPath.Length > 1
+            && targetPath.EndsWith("/", StringComparison.Ordinal);
+
+        var targetBase = targetPath.TrimEnd('/');
         if (targetBase == "/")
         {
             targetBase = "";
@@ -856,7 +865,12 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (normalizedPath == "/")
         {
-            return string.IsNullOrEmpty(targetBase) ? "/" : targetBase;
+            if (string.IsNullOrEmpty(targetBase))
+            {
+                return "/";
+            }
+
+            return targetHasTrailingSlash ? targetBase + "/" : targetBase;
         }
 
         if (string.IsNullOrEmpty(targetBase))

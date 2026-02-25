@@ -44,4 +44,14 @@ public class WebPreviewProxyMiddlewareTests
 
         Assert.Equal("/css/app.css", result);
     }
+
+    [Fact]
+    public void BuildUpstreamPath_TargetWithTrailingSlashAndRootPath_PreservesTrailingSlash()
+    {
+        var target = new Uri("https://example.com/dashboard/");
+
+        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/");
+
+        Assert.Equal("/dashboard/", result);
+    }
 }
