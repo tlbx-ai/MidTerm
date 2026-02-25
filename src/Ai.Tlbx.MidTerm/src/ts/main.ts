@@ -36,6 +36,7 @@ import {
   setupGlobalFocusReclaim,
   calculateOptimalDimensions,
   getEffectiveTerminalFontSize,
+  handleClipboardPaste,
 } from './modules/terminal';
 import {
   getSessionDisplayName,
@@ -1053,6 +1054,13 @@ function bindEvents(): void {
   bindClick('btn-ctrlc-mobile', () => {
     const activeId = $activeSessionId.get();
     if (activeId) sendInput(activeId, '\x03');
+  });
+  bindClick('btn-paste-mobile', () => {
+    const activeId = $activeSessionId.get();
+    if (!activeId) return;
+    void handleClipboardPaste(activeId).finally(() => {
+      focusActiveTerminal();
+    });
   });
   bindClick('btn-rename-mobile', () => {
     const activeId = $activeSessionId.get();
