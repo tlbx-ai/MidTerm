@@ -145,6 +145,22 @@ function updateActiveStates(activeId: string | null): void {
     const itemId = (item as HTMLElement).dataset.sessionId;
     item.classList.toggle('active', itemId === activeId);
   });
+
+  if (!activeId) return;
+
+  const sessionList = document.getElementById('session-list');
+  if (!sessionList) return;
+
+  const activeItem = sessionList.querySelector<HTMLElement>(
+    `.session-item[data-session-id="${activeId}"]`,
+  );
+  if (!activeItem) return;
+
+  activeItem.scrollIntoView({
+    behavior: 'auto',
+    block: 'nearest',
+    inline: 'nearest',
+  });
 }
 
 // =============================================================================
