@@ -754,8 +754,30 @@ public static class TtyHostSpawner
 
     [SupportedOSPlatform("windows")]
     internal static async Task<(int ExitCode, string Stdout, string Stderr)> RunCommandAsUserAsync(
-        string fileName, IReadOnlyList<string> args, string workingDir, string? runAsUser, CancellationToken ct)
+        string fileName,
+        IReadOnlyList<string> args,
+        string workingDir,
+        string? runAsUser,
+        CancellationToken ct,
+        uint? preferredSessionId = null)
     {
+        if (preferredSessionId.HasValue)
+        {
+            if (WTSQueryUserToken(preferredSessionId.Value, out var preferredToken))
+            {
+                try
+                {
+                    return await RunCommandWithTokenAsync(fileName, args, workingDir, preferredToken, ct);
+                }
+                finally
+                {
+                    CloseHandle(preferredToken);
+                }
+            }
+
+            Log.Warn(() => $"TtyHostSpawner: Failed to get user token for preferred session {preferredSessionId.Value} (error: {Marshal.GetLastWin32Error()})");
+        }
+
         if (!TryGetUserToken(runAsUser, out var userToken, out _))
         {
             return (-1, "", "Failed to get user token for impersonation");

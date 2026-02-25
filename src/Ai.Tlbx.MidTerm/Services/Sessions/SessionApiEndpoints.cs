@@ -113,7 +113,8 @@ public static partial class SessionApiEndpoints
 
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
         {
-            if (sessionManager.GetSession(id) is null)
+            var session = sessionManager.GetSession(id);
+            if (session is null)
             {
                 return Results.NotFound();
             }
@@ -127,7 +128,8 @@ public static partial class SessionApiEndpoints
 
             if (IsImageUpload(file, targetPath))
             {
-                await clipboardService.SetImageAsync(targetPath, file.ContentType);
+                var preferredProcessId = session.HostPid > 0 ? session.HostPid : session.Pid;
+                await clipboardService.SetImageAsync(targetPath, file.ContentType, preferredProcessId);
             }
 
             // To make Johannes happy
@@ -144,7 +146,8 @@ public static partial class SessionApiEndpoints
 
         app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file) =>
         {
-            if (sessionManager.GetSession(id) is null)
+            var session = sessionManager.GetSession(id);
+            if (session is null)
             {
                 return Results.NotFound();
             }
@@ -156,7 +159,8 @@ public static partial class SessionApiEndpoints
 
             var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
 
-            var success = await clipboardService.SetImageAsync(targetPath, file.ContentType);
+            var preferredProcessId = session.HostPid > 0 ? session.HostPid : session.Pid;
+            var success = await clipboardService.SetImageAsync(targetPath, file.ContentType, preferredProcessId);
             if (!success)
             {
                 return Results.Problem("Failed to set clipboard");
