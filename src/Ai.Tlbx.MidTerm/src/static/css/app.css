@@ -591,6 +591,10 @@ html, body {
     color: var(--text-primary);
 }
 
+.process-title .fg-cwd {
+    max-width: none;
+}
+
 .session-racing-log {
     font-size: var(--fs-xs);
     color: var(--accent-orange);
