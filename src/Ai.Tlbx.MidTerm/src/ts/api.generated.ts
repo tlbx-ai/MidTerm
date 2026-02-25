@@ -597,6 +597,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/history/reorder': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['HistoryReorderRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/files/register': {
     parameters: {
       query?: never;
@@ -1809,6 +1846,9 @@ export interface components {
       isStarred?: null | boolean;
       label?: null | string;
     };
+    HistoryReorderRequest: {
+      orderedIds: string[];
+    };
     /** Format: binary */
     IFormFile: string;
     /** @enum {unknown} */
@@ -1823,6 +1863,8 @@ export interface components {
       label: null | string;
       /** Format: date-time */
       lastUsed: string;
+      /** Format: int32 */
+      order: number;
     };
     LocalUpdateInfo: {
       available: boolean;

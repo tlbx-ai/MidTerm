@@ -2,10 +2,16 @@
  * History Dropdown Module
  *
  * UI component for displaying and interacting with command history.
- * Uses backend API for persistence.
+ * Uses backend API for persistence. Pinned entries support drag-and-drop reordering.
  */
 
-import { fetchHistory, toggleStar, removeHistoryEntry, type LaunchEntry } from './historyApi';
+import {
+  fetchHistory,
+  toggleStar,
+  removeHistoryEntry,
+  reorderHistory,
+  type LaunchEntry,
+} from './historyApi';
 import { icon } from '../../constants';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
@@ -18,6 +24,19 @@ let dropdownEl: HTMLElement | null = null;
 let isOpen = false;
 let cachedEntries: LaunchEntry[] = [];
 let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
+
+// Drag state
+let draggedId: string | null = null;
+let draggedElement: HTMLElement | null = null;
+let dropPosition: 'above' | 'below' | null = null;
+const activeIndicators = new Set<HTMLElement>();
+
+// Touch drag state
+const TOUCH_DRAG_DELAY_MS = 200;
+let touchDragTimer: ReturnType<typeof setTimeout> | null = null;
+let touchGhost: HTMLElement | null = null;
+let touchStartY = 0;
+let touchActive = false;
 
 /**
  * Initialize the history dropdown.
@@ -126,9 +145,14 @@ function renderDropdownContent(): void {
     pinnedHeader.textContent = '\u2b50 ' + t('history.pinned');
     content.appendChild(pinnedHeader);
 
+    const pinnedContainer = document.createElement('div');
+    pinnedContainer.className = 'history-pinned-list';
     pinnedEntries.forEach((entry) => {
-      content.appendChild(createHistoryItem(entry));
+      pinnedContainer.appendChild(createHistoryItem(entry, true));
     });
+    content.appendChild(pinnedContainer);
+
+    initDragHandlers(pinnedContainer);
   }
 
   if (recentEntries.length > 0) {
@@ -138,15 +162,24 @@ function renderDropdownContent(): void {
     content.appendChild(recentHeader);
 
     recentEntries.forEach((entry) => {
-      content.appendChild(createHistoryItem(entry));
+      content.appendChild(createHistoryItem(entry, false));
     });
   }
 }
 
-function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
+function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElement {
   const item = document.createElement('div');
   item.className = 'history-item';
   item.dataset.id = entry.id;
+
+  if (isPinned) {
+    item.draggable = true;
+
+    const grip = document.createElement('span');
+    grip.className = 'history-item-grip';
+    grip.textContent = '\u2807';
+    item.appendChild(grip);
+  }
 
   const starBtn = document.createElement('button');
   starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
@@ -205,7 +238,11 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
 
   item.addEventListener('click', (e) => {
     const target = e.target as Element;
-    if (target.closest('.history-item-delete') || target.closest('.history-item-star')) {
+    if (
+      target.closest('.history-item-delete') ||
+      target.closest('.history-item-star') ||
+      target.closest('.history-item-grip')
+    ) {
       return;
     }
     if (onSpawnSession) {
@@ -217,10 +254,6 @@ function createHistoryItem(entry: LaunchEntry): HTMLDivElement {
   return item;
 }
 
-/**
- * Create foreground indicator element matching sidebar style.
- * Layout: ...directory> process...
- */
 function createForegroundIndicator(
   cwd: string,
   commandLine: string | null,
@@ -248,6 +281,244 @@ function createForegroundIndicator(
   container.appendChild(processSpan);
 
   return container;
+}
+
+// ---------------------------------------------------------------------------
+// Drag-and-drop reordering for pinned entries
+// ---------------------------------------------------------------------------
+
+function initDragHandlers(container: HTMLElement): void {
+  container.addEventListener('dragstart', onDragStart);
+  container.addEventListener('dragend', onDragEnd);
+  container.addEventListener('dragover', onDragOver);
+  container.addEventListener('dragleave', onDragLeave);
+  container.addEventListener('drop', onDrop);
+
+  container.addEventListener('touchstart', onTouchStart, { passive: false });
+  container.addEventListener('touchmove', onTouchMove, { passive: false });
+  container.addEventListener('touchend', onTouchEnd);
+  container.addEventListener('touchcancel', onTouchEnd);
+}
+
+function onDragStart(e: DragEvent): void {
+  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  if (!item) return;
+
+  draggedId = item.dataset.id ?? null;
+  draggedElement = item;
+  item.classList.add('dragging');
+
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedId ?? '');
+  }
+}
+
+function onDragEnd(_e: DragEvent): void {
+  if (draggedElement) draggedElement.classList.remove('dragging');
+  clearAllIndicators();
+  draggedId = null;
+  draggedElement = null;
+  dropPosition = null;
+}
+
+function onDragOver(e: DragEvent): void {
+  e.preventDefault();
+  if (!draggedId) return;
+
+  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  if (!item || item === draggedElement) {
+    clearAllIndicators();
+    return;
+  }
+
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+  const rect = item.getBoundingClientRect();
+  const isAbove = e.clientY < rect.top + rect.height / 2;
+
+  clearAllIndicators();
+  item.classList.add('drag-over');
+  activeIndicators.add(item);
+  if (isAbove) {
+    item.classList.add('drag-over-above');
+    dropPosition = 'above';
+  } else {
+    item.classList.add('drag-over-below');
+    dropPosition = 'below';
+  }
+}
+
+function onDragLeave(e: DragEvent): void {
+  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  if (!item) return;
+  const related = e.relatedTarget as HTMLElement;
+  if (!related || !item.contains(related)) {
+    item.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
+    activeIndicators.delete(item);
+  }
+}
+
+function onDrop(e: DragEvent): void {
+  e.preventDefault();
+  if (!draggedId) return;
+
+  const targetItem = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  if (!targetItem || targetItem === draggedElement) return;
+
+  const targetId = targetItem.dataset.id;
+  if (!targetId) return;
+
+  applyReorder(draggedId, targetId, dropPosition);
+  clearAllIndicators();
+}
+
+// Touch handlers (mirrors sessionDrag.ts pattern)
+
+function onTouchStart(e: TouchEvent): void {
+  const touch = e.touches[0];
+  if (!touch) return;
+
+  const grip = (touch.target as HTMLElement).closest('.history-item-grip');
+  if (!grip) return;
+
+  const item = grip.closest('.history-item') as HTMLElement;
+  if (!item) return;
+
+  touchStartY = touch.clientY;
+
+  touchDragTimer = setTimeout(() => {
+    draggedId = item.dataset.id ?? null;
+    draggedElement = item;
+    touchActive = true;
+    item.classList.add('dragging');
+
+    touchGhost = item.cloneNode(true) as HTMLElement;
+    touchGhost.style.position = 'fixed';
+    touchGhost.style.left = '0';
+    touchGhost.style.top = `${touch.clientY - item.offsetHeight / 2}px`;
+    touchGhost.style.width = item.offsetWidth + 'px';
+    touchGhost.style.opacity = '0.85';
+    touchGhost.style.pointerEvents = 'none';
+    touchGhost.style.zIndex = '9999';
+    touchGhost.classList.remove('dragging');
+    document.body.appendChild(touchGhost);
+  }, TOUCH_DRAG_DELAY_MS);
+}
+
+function onTouchMove(e: TouchEvent): void {
+  const touch = e.touches[0];
+  if (!touch) return;
+
+  if (!touchActive) {
+    if (Math.abs(touch.clientY - touchStartY) > 10) cancelTouchDrag();
+    return;
+  }
+
+  e.preventDefault();
+  if (touchGhost) {
+    touchGhost.style.top = `${touch.clientY - (draggedElement?.offsetHeight ?? 30) / 2}px`;
+  }
+
+  if (touchGhost) touchGhost.style.display = 'none';
+  const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
+  if (touchGhost) touchGhost.style.display = '';
+  if (!el) return;
+
+  const item = el.closest('.history-item') as HTMLElement;
+  clearAllIndicators();
+
+  if (item && item !== draggedElement) {
+    const rect = item.getBoundingClientRect();
+    const isAbove = touch.clientY < rect.top + rect.height / 2;
+    item.classList.add('drag-over');
+    activeIndicators.add(item);
+    if (isAbove) {
+      item.classList.add('drag-over-above');
+      dropPosition = 'above';
+    } else {
+      item.classList.add('drag-over-below');
+      dropPosition = 'below';
+    }
+  }
+}
+
+function onTouchEnd(e: TouchEvent): void {
+  cancelTouchDrag();
+
+  if (!touchActive || !draggedId) {
+    touchActive = false;
+    return;
+  }
+
+  const touch = e.changedTouches[0];
+  if (touch) {
+    if (touchGhost) touchGhost.style.display = 'none';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
+    if (touchGhost) touchGhost.style.display = '';
+    const targetItem = el?.closest('.history-item') as HTMLElement | null;
+
+    if (targetItem && targetItem !== draggedElement) {
+      const targetId = targetItem.dataset.id;
+      if (targetId) applyReorder(draggedId, targetId, dropPosition);
+    }
+  }
+
+  if (draggedElement) draggedElement.classList.remove('dragging');
+  if (touchGhost) {
+    touchGhost.remove();
+    touchGhost = null;
+  }
+  clearAllIndicators();
+  draggedId = null;
+  draggedElement = null;
+  dropPosition = null;
+  touchActive = false;
+}
+
+function cancelTouchDrag(): void {
+  if (touchDragTimer) {
+    clearTimeout(touchDragTimer);
+    touchDragTimer = null;
+  }
+}
+
+function clearAllIndicators(): void {
+  activeIndicators.forEach((item) => {
+    item.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
+  });
+  activeIndicators.clear();
+}
+
+function applyReorder(fromId: string, toId: string, position: 'above' | 'below' | null): void {
+  const pinned = cachedEntries.filter((e) => e.isStarred);
+  const fromIndex = pinned.findIndex((e) => e.id === fromId);
+  let toIndex = pinned.findIndex((e) => e.id === toId);
+
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+
+  if (position === 'below') {
+    toIndex = fromIndex < toIndex ? toIndex : toIndex + 1;
+  } else {
+    toIndex = fromIndex > toIndex ? toIndex : toIndex - 1;
+  }
+  toIndex = Math.max(0, Math.min(pinned.length - 1, toIndex));
+
+  const moved = pinned.splice(fromIndex, 1)[0];
+  if (!moved) return;
+  pinned.splice(toIndex, 0, moved);
+
+  const orderedIds = pinned.map((e) => e.id);
+
+  // Update cached entries in-place to reflect new order
+  const nonPinned = cachedEntries.filter((e) => !e.isStarred);
+  cachedEntries = [...pinned, ...nonPinned];
+
+  renderDropdownContent();
+
+  void reorderHistory(orderedIds).catch((err) => {
+    log.warn(() => `Failed to persist history reorder: ${String(err)}`);
+  });
 }
 
 function handleOutsideClick(e: MouseEvent): void {

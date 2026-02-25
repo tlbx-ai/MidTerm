@@ -24,6 +24,7 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(SystemResponse))]
 [JsonSerializable(typeof(TtyHostInfo))]
 [JsonSerializable(typeof(HistoryPatchRequest))]
+[JsonSerializable(typeof(HistoryReorderRequest))]
 [JsonSerializable(typeof(LogSeverity))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(SessionListDto))]

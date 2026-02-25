@@ -676,7 +676,7 @@ html, body {
 .history-item {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 3px 8px;
     cursor: pointer;
     transition: background 0.1s;
 }
@@ -685,20 +685,60 @@ html, body {
     background: var(--btn-secondary);
 }
 
+.history-item.dragging {
+    opacity: 0.4;
+}
+
+.history-item.drag-over-above {
+    box-shadow: 0 -2px 0 0 var(--accent-blue);
+}
+
+.history-item.drag-over-below {
+    box-shadow: 0 2px 0 0 var(--accent-blue);
+}
+
+.history-item-grip {
+    width: 14px;
+    flex-shrink: 0;
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: var(--fs-lg);
+    opacity: 0;
+    transition: opacity 0.1s;
+    user-select: none;
+    line-height: 1;
+}
+
+.history-item:hover .history-item-grip {
+    opacity: 0.6;
+}
+
+.history-item-grip:hover {
+    opacity: 1 !important;
+}
+
 .history-item-info {
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 4px 8px;
+    gap: 0 6px;
+    overflow: hidden;
 }
 
 .history-item-label {
-    width: 100%;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     font-weight: 600;
     color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+    max-width: 50%;
+}
+
+.history-item-info .session-foreground {
+    font-size: var(--fs-xs);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -706,13 +746,13 @@ html, body {
 
 .history-item-text {
     flex: 1;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     color: var(--text-primary);
 }
 
 .history-item-delete {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -721,9 +761,10 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--fs-md);
+    font-size: var(--fs-xs);
     opacity: 0;
     transition: opacity 0.1s, color 0.1s;
+    flex-shrink: 0;
 }
 
 .history-item:hover .history-item-delete {
@@ -735,8 +776,8 @@ html, body {
 }
 
 .history-item-star {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -745,9 +786,9 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--fs-lg);
+    font-size: var(--fs-md);
     flex-shrink: 0;
-    margin-right: 4px;
+    margin-right: 2px;
     transition: color 0.1s;
 }
 
@@ -766,7 +807,7 @@ html, body {
 }
 
 .history-section-header {
-    padding: 6px 12px;
+    padding: 4px 8px;
     font-size: var(--fs-xs);
     font-weight: 600;
     color: var(--text-muted);

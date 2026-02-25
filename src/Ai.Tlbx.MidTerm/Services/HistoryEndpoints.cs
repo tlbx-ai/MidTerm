@@ -90,5 +90,11 @@ public static class HistoryEndpoints
             return Results.NotFound();
         });
 
+        app.MapPost("/api/history/reorder", (HistoryReorderRequest request) =>
+        {
+            historyService.ReorderStarred(request.OrderedIds);
+            return Results.Ok();
+        });
+
     }
 }

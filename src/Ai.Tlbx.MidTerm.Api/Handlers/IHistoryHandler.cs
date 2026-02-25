@@ -18,4 +18,5 @@ public interface IHistoryHandler
     IResult PatchHistoryEntry(string id, HistoryPatchRequest request);
     IResult ToggleStar(string id);
     IResult DeleteHistoryEntry(string id);
+    IResult ReorderHistory(HistoryReorderRequest request);
 }

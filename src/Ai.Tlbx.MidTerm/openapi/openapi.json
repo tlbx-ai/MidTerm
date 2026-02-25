@@ -483,6 +483,28 @@
         }
       }
     },
+    "/api/history/reorder": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/files/register": {
       "post": {
         "tags": [
@@ -1781,6 +1803,20 @@
           }
         }
       },
+      "HistoryReorderRequest": {
+        "required": [
+          "orderedIds"
+        ],
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "IFormFile": {
         "type": "string",
         "format": "binary"
@@ -1809,7 +1845,8 @@
           "workingDirectory",
           "isStarred",
           "label",
-          "lastUsed"
+          "lastUsed",
+          "order"
         ],
         "type": "object",
         "properties": {
@@ -1843,6 +1880,10 @@
           "lastUsed": {
             "type": "string",
             "format": "date-time"
+          },
+          "order": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
