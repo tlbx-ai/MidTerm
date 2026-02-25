@@ -6,7 +6,7 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { MOBILE_BREAKPOINT, TERMINAL_FONT_STACK } from '../../constants';
+import { TERMINAL_FONT_STACK } from '../../constants';
 import { getEffectiveXtermTheme } from '../theming/themes';
 import {
   sessionTerminals,
@@ -54,6 +54,7 @@ import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './c
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
+import { getEffectiveTerminalFontSize } from './fontSize';
 
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -171,9 +172,8 @@ function updateSessionNameAuto(sessionId: string, name: string): void {
 export function getTerminalOptions(): ITerminalOptions {
   const currentSettings = $currentSettings.get();
   const windowsBuildNumber = $windowsBuildNumber.get();
-  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
   const baseFontSize = currentSettings?.fontSize ?? 14;
-  const fontSize = isMobile ? Math.max(baseFontSize - 2, 10) : baseFontSize;
+  const fontSize = getEffectiveTerminalFontSize(baseFontSize);
   const fontFamily = currentSettings?.fontFamily ?? 'Cascadia Code';
   const scrollback = currentSettings?.scrollbackLines ?? 10000;
   const contrast = currentSettings?.minimumContrastRatio ?? 1;

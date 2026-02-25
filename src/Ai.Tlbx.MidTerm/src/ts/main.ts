@@ -35,6 +35,7 @@ import {
   focusActiveTerminal,
   setupGlobalFocusReclaim,
   calculateOptimalDimensions,
+  getEffectiveTerminalFontSize,
 } from './modules/terminal';
 import {
   getSessionDisplayName,
@@ -361,7 +362,7 @@ async function createSession(): Promise<void> {
   const tempId = 'pending-' + crypto.randomUUID();
 
   if (dom.terminalsArea) {
-    const fontSize = settings?.fontSize ?? 14;
+    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
     const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
@@ -697,7 +698,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
   let rows = settings?.defaultRows ?? 30;
 
   if (dom.terminalsArea) {
-    const fontSize = settings?.fontSize ?? 14;
+    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
     const logId = 'history-' + crypto.randomUUID().slice(0, 8);
     const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
