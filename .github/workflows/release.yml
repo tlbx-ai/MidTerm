@@ -233,17 +233,18 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
       - name: Build mt + mthost
+        shell: pwsh
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Stage artifacts
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p staging/win-x64
-          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
-          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
-          cp version.json staging/win-x64/
+          New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
+          Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
+          Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
+          Copy-Item version.json staging/win-x64/
 
       - name: Sign Windows binaries (Certum Authenticode)
         if: needs.prepare.outputs.is_dev != 'true'
@@ -251,12 +252,15 @@ jobs:
         run: ./scripts/sign-windows-binaries.ps1 -StagingPath staging/win-x64
 
       - name: Generate SHA256SUMS
-        shell: bash
+        shell: pwsh
         run: |
-          cd staging/win-x64
-          sha256sum mt.exe mthost.exe > SHA256SUMS.txt
-          echo "=== win-x64 ==="
-          cat SHA256SUMS.txt
+          $hashes = Get-ChildItem staging/win-x64/mt.exe, staging/win-x64/mthost.exe | ForEach-Object {
+            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $hashes | Set-Content staging/win-x64/SHA256SUMS.txt
+          Write-Host "=== win-x64 ==="
+          Get-Content staging/win-x64/SHA256SUMS.txt
 
       - name: Sign version.json
         shell: pwsh
