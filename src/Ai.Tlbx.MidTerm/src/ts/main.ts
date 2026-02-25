@@ -37,6 +37,8 @@ import {
   calculateOptimalDimensions,
   getEffectiveTerminalFontSize,
   handleClipboardPaste,
+  initMobilePiP,
+  recordMobilePiPBytes,
 } from './modules/terminal';
 import {
   getSessionDisplayName,
@@ -197,7 +199,10 @@ async function init(): Promise<void> {
   await initI18n();
   initMainBrowserButton();
   initTrafficIndicator();
-  setSessionBytesCallback(recordBytes);
+  setSessionBytesCallback((sessionId, bytes) => {
+    recordBytes(sessionId, bytes);
+    recordMobilePiPBytes(sessionId, bytes);
+  });
   setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();
@@ -239,6 +244,7 @@ async function init(): Promise<void> {
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
+  initMobilePiP();
   initManagerBar();
   initSessionTabs();
   initFileBrowser();
