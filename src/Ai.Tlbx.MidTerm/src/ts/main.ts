@@ -939,6 +939,9 @@ function bindMobileActionsMenu(): void {
   const actions = document.getElementById('topbar-actions');
   if (!toggleBtn || !dropdown || !actions) return;
 
+  // Ensure deterministic closed state on startup/hot reload.
+  closeMobileActionsMenu();
+
   toggleBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleMobileActionsMenu();

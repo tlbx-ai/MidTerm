@@ -1739,7 +1739,7 @@ html, body {
         position: absolute;
         top: calc(100% + 6px);
         right: 0;
-        display: flex;
+        display: none;
         flex-direction: column;
         gap: 2px;
         width: min(280px, calc(100vw - 16px - env(safe-area-inset-left, 0) - env(safe-area-inset-right, 0)));
@@ -1751,6 +1751,14 @@ html, body {
         box-shadow: 0 8px 24px var(--shadow-color);
         overflow-y: auto;
         z-index: 1004;
+    }
+
+    .mobile-actions-dropdown:not([hidden]) {
+        display: flex;
+    }
+
+    .mobile-actions-dropdown[hidden] {
+        display: none !important;
     }
 
     .mobile-actions-item {

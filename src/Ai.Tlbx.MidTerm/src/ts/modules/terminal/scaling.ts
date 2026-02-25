@@ -828,6 +828,13 @@ export function setupVisualViewport(): void {
       appEl.style.height = `${vh}px`;
     }
 
+    // Lock root/body to visual viewport height to prevent dragging hidden
+    // off-screen space (common when soft keyboard is open in mobile PWAs).
+    document.documentElement.style.height = `${vh}px`;
+    document.documentElement.style.maxHeight = `${vh}px`;
+    document.body.style.height = `${vh}px`;
+    document.body.style.maxHeight = `${vh}px`;
+
     if (vv.offsetTop !== 0) {
       window.scrollTo(0, 0);
     }
