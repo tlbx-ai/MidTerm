@@ -590,14 +590,17 @@ function startInlineRename(sessionId: string): void {
   const item = dom.sessionList?.querySelector(`[data-session-id="${sessionId}"]`);
   if (!item) return;
 
-  const titleSpan = item.querySelector('.session-title') as HTMLElement | null;
-  if (!titleSpan) return;
+  const renameAnchor =
+    (item.querySelector('.session-title') as HTMLElement | null) ||
+    (item.querySelector('.process-title') as HTMLElement | null) ||
+    (item.querySelector('.session-title-row') as HTMLElement | null);
+  if (!renameAnchor) return;
 
   const session = getSession(sessionId);
   const currentName = session ? session.name || session.shellType : '';
 
-  // Position overlay input on top of the title span
-  const rect = titleSpan.getBoundingClientRect();
+  // Position overlay input on top of the title content.
+  const rect = renameAnchor.getBoundingClientRect();
 
   const input = document.createElement('input');
   input.type = 'text';
