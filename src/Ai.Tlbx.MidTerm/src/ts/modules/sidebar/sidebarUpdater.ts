@@ -16,6 +16,7 @@ import {
   applyPinButtonState,
 } from './sessionList';
 import { isSessionInLayout } from '../layout/layoutStore';
+import { unregisterHeatCanvas } from './heatIndicator';
 
 const log = createLogger('sidebarUpdater');
 
@@ -103,6 +104,8 @@ function updateSessionItemContent(sessionId: string, session: Session): void {
 
   // Mode changed (renamed ↔ unnamed): force full re-render
   if (wasProcessAsTitle !== isProcessAsTitle) {
+    unregisterHeatCanvas(sessionId);
+    item.remove();
     renderSessionList();
     return;
   }
