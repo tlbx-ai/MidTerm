@@ -95,7 +95,7 @@ jobs:
           - os: macos-14
             rid: osx-x64
             ext: ''
-          - os: windows-latest
+          - os: [self-hosted, Windows, X64]
             rid: win-x64
             ext: '.exe'
           - os: ubuntu-latest
@@ -167,6 +167,65 @@ jobs:
             codesign --verify --strict staging/${{ matrix.rid }}/mthost
           fi
 
+      - name: Sign Windows binaries
+        if: startsWith(matrix.rid, 'win-')
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_SHA1: ${{ secrets.WINDOWS_CODESIGN_CERT_SHA1 }}
+          WINDOWS_CODESIGN_TIMESTAMP_URL: ${{ secrets.WINDOWS_CODESIGN_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_SHA1))
+          {
+            throw "Missing secret WINDOWS_CODESIGN_CERT_SHA1"
+          }
+
+          $timestampUrl = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_TIMESTAMP_URL))
+          {
+            'http://time.certum.pl'
+          }
+          else
+          {
+            $env:WINDOWS_CODESIGN_TIMESTAMP_URL
+          }
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $signtool)
+          {
+            throw "signtool.exe not found in Windows SDK"
+          }
+
+          $thumbprint = ($env:WINDOWS_CODESIGN_CERT_SHA1 -replace '\s', '').ToUpperInvariant()
+          $files = @(
+            "staging/${{ matrix.rid }}/mt.exe",
+            "staging/${{ matrix.rid }}/mthost.exe"
+          )
+
+          foreach ($file in $files)
+          {
+            if (-not (Test-Path $file))
+            {
+              throw "File not found: $file"
+            }
+
+            & $signtool.FullName sign `
+              /sha1 $thumbprint `
+              /fd SHA256 `
+              /tr $timestampUrl `
+              /td SHA256 `
+              /v `
+              $file
+            if ($LASTEXITCODE -ne 0) { throw "SignTool sign failed for $file" }
+
+            & $signtool.FullName verify /pa /v $file
+            if ($LASTEXITCODE -ne 0) { throw "SignTool verify failed for $file" }
+          }
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
           cd staging/${{ matrix.rid }}
           if command -v sha256sum &> /dev/null; then
             sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
@@ -216,4 +275,3 @@ jobs:
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
         run: security delete-keychain "$KEYCHAIN_PATH"
-
