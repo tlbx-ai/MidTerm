@@ -4,7 +4,9 @@ using System.Reflection;
 using System.Security;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
+using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Updates;
@@ -651,6 +653,143 @@ public sealed partial class UpdateService : IDisposable
             catch
             {
             }
+        }
+    }
+
+    public async Task<(bool Success, string Message)> ApplyUpdateAsync(SettingsService settingsService, string? source)
+    {
+        string? extractedDir;
+        UpdateType updateType;
+        var deleteSourceAfter = true;
+
+        if (source == "local")
+        {
+            extractedDir = GetLocalUpdatePath();
+            if (string.IsNullOrEmpty(extractedDir))
+            {
+                return (false, "No local update available");
+            }
+
+            updateType = LatestUpdate?.LocalUpdate?.Type ?? UpdateType.Full;
+            deleteSourceAfter = false;
+        }
+        else
+        {
+            var update = LatestUpdate;
+            if (update is null || !update.Available)
+            {
+                return (false, "No update available");
+            }
+
+            extractedDir = await DownloadUpdateAsync();
+            if (string.IsNullOrEmpty(extractedDir))
+            {
+                return (false, "Failed to download update");
+            }
+
+            updateType = update.Type;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            var stagingDir = Path.Combine(settingsService.SettingsDirectory, "update-staging");
+            Directory.CreateDirectory(stagingDir);
+
+            var mtSrc = Path.Combine(extractedDir, "mt");
+            if (File.Exists(mtSrc))
+            {
+                File.Copy(mtSrc, Path.Combine(stagingDir, "mt"), overwrite: true);
+            }
+
+            if (updateType != UpdateType.WebOnly)
+            {
+                var mthostSrc = Path.Combine(extractedDir, "mthost");
+                if (File.Exists(mthostSrc))
+                {
+                    File.Copy(mthostSrc, Path.Combine(stagingDir, "mthost"), overwrite: true);
+                }
+            }
+
+            var vjSrc = Path.Combine(extractedDir, "version.json");
+            if (File.Exists(vjSrc))
+            {
+                File.Copy(vjSrc, Path.Combine(stagingDir, "version.json"), overwrite: true);
+            }
+
+            if (deleteSourceAfter)
+            {
+                try { Directory.Delete(extractedDir, recursive: true); } catch { }
+            }
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1000);
+                Environment.Exit(0);
+            });
+
+            return (true, "Update staged. Server will restart shortly.");
+        }
+
+        var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
+            extractedDir,
+            GetCurrentBinaryPath(),
+            settingsService.SettingsDirectory,
+            updateType,
+            deleteSourceAfter);
+
+        // Delay then execute update script
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(3000);
+                UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(() => $"Update execution failed: {ex.Message}");
+            }
+        });
+
+        return (true, "Update started. Server will restart shortly.");
+    }
+
+    public static UpdateResult? ReadUpdateResult(string settingsDirectory, bool clear = false)
+    {
+        var resultPath = Path.Combine(settingsDirectory, "update-result.json");
+        if (!File.Exists(resultPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(resultPath);
+            var result = JsonSerializer.Deserialize<UpdateResult>(json, AppJsonContext.Default.UpdateResult);
+            if (result is not null)
+            {
+                result.Found = true;
+                if (clear)
+                {
+                    try { File.Delete(resultPath); } catch { }
+                }
+                return result;
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    public static void ClearUpdateResult(string settingsDirectory)
+    {
+        var resultPath = Path.Combine(settingsDirectory, "update-result.json");
+        if (File.Exists(resultPath))
+        {
+            try { File.Delete(resultPath); } catch { }
         }
     }
 

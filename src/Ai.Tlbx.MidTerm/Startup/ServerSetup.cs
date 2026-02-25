@@ -11,12 +11,16 @@ using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.StaticFiles;
 using Ai.Tlbx.MidTerm.Services.Certificates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Microsoft.AspNetCore.ResponseCompression;
+
 namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class ServerSetup
 {
     public static X509Certificate2? LoadedCertificate { get; private set; }
     public static bool IsFallbackCertificate { get; private set; }
+
+    private static readonly string AssetVersionETag = ComputeVersionETag();
 
     public static WebApplicationBuilder CreateBuilder(string[] args, Action<string, bool>? writeEventLog = null)
     {
@@ -113,6 +117,12 @@ public static class ServerSetup
             return new WebPreviewService(port);
         });
 
+        builder.Services.AddResponseCompression(options =>
+        {
+            options.EnableForHttps = true;
+            options.MimeTypes = ["application/json", "text/plain"];
+        });
+
         return builder;
     }
 
@@ -182,9 +192,20 @@ public static class ServerSetup
                 }
                 else
                 {
+#if DEBUG
                     ctx.Context.Response.Headers.Remove("ETag");
                     ctx.Context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
                     ctx.Context.Response.Headers.Pragma = "no-cache";
+#else
+                    ctx.Context.Response.Headers.ETag = AssetVersionETag;
+                    var isEntryPointAsset = path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase);
+                    ctx.Context.Response.Headers.CacheControl = isEntryPointAsset
+                        ? "public, max-age=0, must-revalidate"
+                        : "public, max-age=86400";
+#endif
                 }
             }
         });
@@ -193,6 +214,8 @@ public static class ServerSetup
 
     public static void ConfigureMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
     {
+        app.UseResponseCompression();
+
         // HSTS middleware - always enabled (HTTPS only)
         app.Use(async (context, next) =>
         {
@@ -201,11 +224,14 @@ public static class ServerSetup
         });
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
-        AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
+        AuthMiddleware.ConfigureAuthMiddleware(app, settingsService, authService);
 
         // WebSockets must be enabled before the web preview proxy middleware so that
         // context.WebSockets.IsWebSocketRequest is true for proxied WebSocket upgrades
-        app.UseWebSockets();
+        app.UseWebSockets(new WebSocketOptions
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(30)
+        });
 
         // Web preview reverse proxy — after auth, before security headers (short-circuits for /webpreview/*)
         app.UseMiddleware<WebPreviewProxyMiddleware>();
@@ -234,5 +260,14 @@ public static class ServerSetup
         });
 
         ConfigureStaticFiles(app);
+    }
+
+    private static string ComputeVersionETag()
+    {
+        var version = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+        var plusIndex = version.IndexOf('+');
+        if (plusIndex > 0) version = version[..plusIndex];
+        return $"\"{version}\"";
     }
 }

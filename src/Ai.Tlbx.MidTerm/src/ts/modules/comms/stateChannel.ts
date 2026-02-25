@@ -14,7 +14,7 @@ import type {
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
-import { scheduleReconnect, createWsUrl, closeWebSocket } from '../../utils';
+import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
@@ -26,14 +26,13 @@ import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
 
 const log = createLogger('state');
+const stateReconnect = new ReconnectController();
 import {
   stateWs,
-  stateReconnectTimer,
   sessionTerminals,
   newlyCreatedSessions,
   hiddenSessionIds,
   setStateWs,
-  setStateReconnectTimer,
 } from '../../state';
 
 const COMMAND_TIMEOUT_MS = 30000;
@@ -59,7 +58,7 @@ import {
 import {
   restoreLayoutFromStorage,
   dockSession,
-  focusLayoutSession,
+  isSessionInLayout,
   swapLayoutSessions,
 } from '../layout/layoutStore';
 
@@ -96,6 +95,7 @@ export function connectStateWebSocket(): void {
   setStateWs(ws);
 
   ws.onopen = () => {
+    stateReconnect.reset();
     $stateWsConnected.set(true);
   };
 
@@ -143,7 +143,10 @@ export function connectStateWebSocket(): void {
           activeParent === data.sessionId ||
           (activeParent !== null && activeParent === focusParent);
         if (isRelated) {
-          focusLayoutSession(data.sessionId);
+          if (isSessionInLayout(data.sessionId)) {
+            // Route through main select path to apply heat suppression and mux hinting.
+            selectSession(data.sessionId, { closeSettingsPanel: false });
+          }
         }
         return;
       }
@@ -186,7 +189,7 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onerror = (e) => {
-    log.error(() => `WebSocket error: ${e}`);
+    log.error(() => `WebSocket error: ${e.type}`);
   };
 }
 
@@ -302,7 +305,7 @@ export function handleUpdateInfo(update: UpdateInfo | null): void {
  * Schedule state WebSocket reconnection.
  */
 export function scheduleStateReconnect(): void {
-  scheduleReconnect(connectStateWebSocket, setStateReconnectTimer, stateReconnectTimer);
+  stateReconnect.schedule(connectStateWebSocket);
 }
 
 // =============================================================================
@@ -367,7 +370,7 @@ export async function sendCommand<T = unknown>(
     } catch (e) {
       clearTimeout(timeout);
       pendingCommands.delete(id);
-      reject(e);
+      reject(new Error(e instanceof Error ? e.message : String(e)));
     }
   });
 }

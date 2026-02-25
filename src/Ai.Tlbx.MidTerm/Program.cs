@@ -157,7 +157,7 @@ public class Program
         var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService);
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
         var historyService = new HistoryService(settingsService);
-        var fileRadarAllowlistService = new FileRadarAllowlistService();
+        var sessionPathAllowlistService = new SessionPathAllowlistService();
         var gitWatcher = new GitWatcherService();
         GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
         var commandService = new CommandService();
@@ -215,7 +215,7 @@ public class Program
 
         sessionManager.OnSessionClosed += sessionId =>
         {
-            fileRadarAllowlistService.ClearSession(sessionId);
+            sessionPathAllowlistService.ClearSession(sessionId);
             gitWatcher.UnregisterSession(sessionId);
         };
 
@@ -249,7 +249,7 @@ public class Program
         }
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
-        FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
+        FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();

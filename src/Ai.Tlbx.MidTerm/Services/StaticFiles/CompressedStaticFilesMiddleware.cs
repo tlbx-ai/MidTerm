@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Reflection;
 using Microsoft.Extensions.FileProviders;
 
 namespace Ai.Tlbx.MidTerm.Services.StaticFiles;
@@ -7,6 +8,7 @@ public sealed class CompressedStaticFilesMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly IFileProvider _fileProvider;
+    private readonly string _versionETag;
 
     private static readonly Dictionary<string, string> CompressibleExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -27,6 +29,12 @@ public sealed class CompressedStaticFilesMiddleware
     {
         _next = next;
         _fileProvider = fileProvider;
+
+        var version = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+        var plusIndex = version.IndexOf('+');
+        if (plusIndex > 0) version = version[..plusIndex];
+        _versionETag = $"\"{version}\"";
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -74,12 +82,30 @@ public sealed class CompressedStaticFilesMiddleware
             return;
         }
 
+        // ETag-based 304 Not Modified
+        var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
+        if (!string.IsNullOrEmpty(ifNoneMatch) && ifNoneMatch.Contains(_versionETag))
+        {
+            context.Response.StatusCode = StatusCodes.Status304NotModified;
+            context.Response.Headers.ETag = _versionETag;
+            return;
+        }
+
         var acceptEncoding = context.Request.Headers.AcceptEncoding.ToString();
         var clientSupportsBrotli = acceptEncoding.Contains("br", StringComparison.OrdinalIgnoreCase);
 
         context.Response.ContentType = contentType;
-        context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
-        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.ETag = _versionETag;
+
+        // Revalidate entry-point assets on every navigation so UI updates are visible
+        // immediately after an app update, even in PWA mode.
+        var shouldRevalidate = extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".css", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".js", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".webmanifest", StringComparison.OrdinalIgnoreCase);
+        context.Response.Headers.CacheControl = shouldRevalidate
+            ? "public, max-age=0, must-revalidate"
+            : "public, max-age=86400";
 
         await using var fileStream = fileInfo.CreateReadStream();
 

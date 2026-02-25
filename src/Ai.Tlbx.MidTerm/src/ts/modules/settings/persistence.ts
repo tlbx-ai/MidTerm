@@ -35,6 +35,9 @@ import {
 import { setLocale } from '../i18n';
 import type { LanguageSetting } from '../../api/types';
 import { renderUpdatePanel } from '../updating/checker';
+import { createLogger } from '../logging';
+
+const log = createLogger('settings');
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
@@ -142,7 +145,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-font-size', settings.fontSize ?? 14);
   setElementValue('setting-font-family', settings.fontFamily ?? 'Cascadia Code');
   setElementValue('setting-cursor-style', settings.cursorStyle ?? 'bar');
-  setElementChecked('setting-cursor-blink', settings.cursorBlink !== false);
+  setElementChecked('setting-cursor-blink', settings.cursorBlink);
   setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle ?? 'outline');
   setElementValue('setting-theme', settings.theme ?? 'dark');
   setElementValue('setting-terminal-color-scheme', settings.terminalColorScheme ?? 'auto');
@@ -150,19 +153,19 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-contrast', String(settings.minimumContrastRatio ?? 1));
   setElementValue('setting-scrollback', settings.scrollbackLines ?? 10000);
   setElementValue('setting-bell-style', settings.bellStyle ?? 'notification');
-  setElementChecked('setting-copy-on-select', settings.copyOnSelect === true);
-  setElementChecked('setting-right-click-paste', settings.rightClickPaste !== false);
+  setElementChecked('setting-copy-on-select', settings.copyOnSelect);
+  setElementChecked('setting-right-click-paste', settings.rightClickPaste);
   setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts ?? 'auto');
-  setElementChecked('setting-smooth-scrolling', settings.smoothScrolling === true);
+  setElementChecked('setting-smooth-scrolling', settings.smoothScrolling);
   setElementValue('setting-scrollbar-style', settings.scrollbarStyle ?? 'off');
-  setElementChecked('setting-webgl', settings.useWebGL !== false);
-  setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
-  setElementChecked('setting-file-radar', settings.fileRadar !== false);
-  setElementChecked('setting-manager-bar', settings.managerBarEnabled !== false);
-  setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility !== false);
-  setElementChecked('setting-ide-mode', settings.ideMode !== false);
-  setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate !== false);
-  setElementChecked('setting-show-update-notification', settings.showUpdateNotification !== false);
+  setElementChecked('setting-webgl', settings.useWebGL);
+  setElementChecked('setting-scrollback-protection', settings.scrollbackProtection);
+  setElementChecked('setting-file-radar', settings.fileRadar);
+  setElementChecked('setting-manager-bar', settings.managerBarEnabled);
+  setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility);
+  setElementChecked('setting-ide-mode', settings.ideMode);
+  setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate);
+  setElementChecked('setting-show-update-notification', settings.showUpdateNotification);
   setElementValue('setting-update-channel', settings.updateChannel ?? 'stable');
   setElementValue('setting-language', settings.language ?? 'auto');
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
@@ -175,7 +178,7 @@ export async function fetchSettings(): Promise<void> {
   try {
     const { data: settingsData, response } = await getSettings();
     if (!settingsData || !response.ok) {
-      console.error('Error fetching settings:', response.status);
+      log.error(() => `Error fetching settings: ${response.status}`);
       return;
     }
 
@@ -205,7 +208,7 @@ export async function fetchSettings(): Promise<void> {
     applySettingsToTerminals();
     bindSettingsAutoSave();
   } catch (e) {
-    console.error('Error fetching settings:', e);
+    log.error(() => `Error fetching settings: ${String(e)}`);
   }
 }
 
@@ -255,7 +258,7 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
 
   const languageValue = settings.language ?? 'auto';
   setCookie('mm-language', languageValue);
-  setLocale(languageValue);
+  void setLocale(languageValue);
 
   applySettingsToTerminals();
   updateTabTitle();
@@ -349,13 +352,13 @@ export function saveAllSettings(): void {
         applyCssTheme(themeName);
         applySettingsToTerminals();
         updateTabTitle();
-        setLocale(languageValue);
+        void setLocale(languageValue);
       } else {
-        console.error('Settings save failed:', response.status, error);
+        log.error(() => `Settings save failed: ${response.status} ${String(error)}`);
       }
     })
     .catch((e) => {
-      console.error('Error saving settings:', e);
+      log.error(() => `Error saving settings: ${String(e)}`);
     });
 }
 

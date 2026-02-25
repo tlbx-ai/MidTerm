@@ -461,8 +461,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         {
             if (_sessionCache.TryGetValue(sessionId, out var existing))
             {
-                info.TerminalTitle = existing.TerminalTitle;
-                info.ManuallyNamed = existing.ManuallyNamed;
+                MergeCachedFields(info, existing);
             }
             _sessionCache[sessionId] = info;
         }
@@ -907,8 +906,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 {
                     if (_sessionCache.TryGetValue(sessionId, out var existing))
                     {
-                        info.TerminalTitle = existing.TerminalTitle;
-                        info.ManuallyNamed = existing.ManuallyNamed;
+                        MergeCachedFields(info, existing);
                     }
                     _sessionCache[sessionId] = info;
                 }
@@ -935,6 +933,45 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         catch (Exception ex)
         {
             Log.Exception(ex, $"TtyHostSessionManager.HandleClientStateChanged({sessionId})");
+        }
+    }
+
+    private static void MergeCachedFields(SessionInfo refreshed, SessionInfo existing)
+    {
+        // These fields are mt-owned metadata, not provided by mthost GetInfo.
+        refreshed.TerminalTitle = existing.TerminalTitle;
+        refreshed.ManuallyNamed = existing.ManuallyNamed;
+
+        // Preserve user rename if a sparse refresh omits name.
+        if (string.IsNullOrWhiteSpace(refreshed.Name) &&
+            existing.ManuallyNamed &&
+            !string.IsNullOrWhiteSpace(existing.Name))
+        {
+            refreshed.Name = existing.Name;
+        }
+
+        // Preserve process/cwd metadata if refreshed snapshot is sparse.
+        if (string.IsNullOrWhiteSpace(refreshed.CurrentDirectory) &&
+            !string.IsNullOrWhiteSpace(existing.CurrentDirectory))
+        {
+            refreshed.CurrentDirectory = existing.CurrentDirectory;
+        }
+
+        if (refreshed.ForegroundPid is null && existing.ForegroundPid is not null)
+        {
+            refreshed.ForegroundPid = existing.ForegroundPid;
+        }
+
+        if (string.IsNullOrWhiteSpace(refreshed.ForegroundName) &&
+            !string.IsNullOrWhiteSpace(existing.ForegroundName))
+        {
+            refreshed.ForegroundName = existing.ForegroundName;
+        }
+
+        if (string.IsNullOrWhiteSpace(refreshed.ForegroundCommandLine) &&
+            !string.IsNullOrWhiteSpace(existing.ForegroundCommandLine))
+        {
+            refreshed.ForegroundCommandLine = existing.ForegroundCommandLine;
         }
     }
 

@@ -30,7 +30,7 @@ export function initFileBrowser(): void {
     if (cwd && cwd !== sessionCwds.get(sessionId)) {
       sessionCwds.set(sessionId, cwd);
       if (initializedSessions.has(sessionId)) {
-        setTreeRoot(sessionId, cwd);
+        void setTreeRoot(sessionId, cwd);
       }
     }
   });
@@ -56,7 +56,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
 
   const cwd = sessionCwds.get(sessionId);
   if (cwd) {
-    setTreeRoot(sessionId, cwd);
+    void setTreeRoot(sessionId, cwd);
   }
 }
 

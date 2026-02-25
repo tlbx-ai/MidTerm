@@ -18,7 +18,7 @@ export function initShareAccessButton(): void {
   if (el) {
     el.addEventListener('click', () => {
       log.info(() => 'Share Access button clicked');
-      openShareEmail();
+      void openShareEmail();
     });
   }
 }
@@ -50,7 +50,7 @@ async function openShareEmail(): Promise<void> {
       }
     }, 1000);
   } catch (e) {
-    log.error(() => `Failed to open share email: ${e}`);
+    log.error(() => `Failed to open share email: ${String(e)}`);
     showFallbackMessage(t('share.failedToGenerate'));
   }
 }
@@ -62,17 +62,17 @@ function tryOpenMailto(url: string): boolean {
 }
 
 function showFallbackMessage(message: string): void {
-  showAlert(message);
+  void showAlert(message);
 }
 
 function showCopyFallback(subject: string, body: string, trustPageUrl: string): void {
   const copyText = `${subject}\n\n${body}`;
 
   // Try to copy to clipboard
-  navigator.clipboard
+  void navigator.clipboard
     .writeText(copyText)
     .then(() => {
-      showAlert(
+      void showAlert(
         t('share.noEmailClient') +
           '\n\n' +
           t('share.copiedToClipboard') +
@@ -84,7 +84,7 @@ function showCopyFallback(subject: string, body: string, trustPageUrl: string): 
     })
     .catch(() => {
       // Clipboard failed, show the trust page URL at least
-      showAlert(
+      void showAlert(
         t('share.noEmailClient') + '\n\n' + t('share.visitTrustPage') + ':\n' + trustPageUrl,
       );
     });

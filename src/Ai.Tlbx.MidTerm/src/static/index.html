@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>MidTerm</title>
 
     <!-- Favicons -->
@@ -19,8 +19,8 @@
     <link rel="preload" href="fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="fonts/Terminus.woff2" as="font" type="font/woff2" crossorigin />
 
-    <link rel="stylesheet" href="css/app.css" />
-    <link rel="stylesheet" href="css/xterm.css" />
+    <link rel="stylesheet" href="css/app.css?v=20260224a" />
+    <link rel="stylesheet" href="css/xterm.css?v=20260224a" />
 </head>
 <body>
     <div id="security-warning" class="security-warning hidden">
@@ -160,12 +160,51 @@
                 <button class="topbar-btn topbar-hamburger" id="btn-hamburger" data-i18n-title="topbar.sessions" title="Sessions"><span class="icon">&#xe919;</span></button>
                 <div class="topbar-title" id="mobile-title">MidTerm</div>
                 <div class="topbar-actions no-terminal" id="topbar-actions">
-                    <button class="topbar-btn topbar-action topbar-touchbar hidden" id="btn-show-touchbar" data-i18n-title="topbar.showTouchBar" title="Show touch bar"><span class="icon">&#xe993;</span></button>
-                    <button class="topbar-btn topbar-action topbar-fullscreen" id="btn-fullscreen-mobile" data-i18n-title="topbar.fullscreen" title="Fullscreen"><span class="icon">&#xe90c;</span></button>
-                    <button class="topbar-btn topbar-action topbar-ctrlc" id="btn-ctrlc-mobile" data-i18n-title="topbar.sendCtrlC" title="Send Ctrl+C"><span class="icon">&#xe9b5;</span></button>
-                    <button class="topbar-btn topbar-action" id="btn-rename-mobile" data-i18n-title="sidebar.rename" title="Rename"><span class="icon">&#xe91f;</span></button>
-                    <button class="topbar-btn topbar-action topbar-close" id="btn-close-mobile" data-i18n-title="topbar.closeTerminal" title="Close terminal"><span class="icon">&#xe909;</span></button>
-                    <button class="topbar-btn topbar-add" id="btn-new-session-mobile" data-i18n-title="sidebar.newTerminal" title="New Terminal"><span class="icon">&#xea81;</span></button>
+                    <button class="topbar-btn topbar-menu-toggle" id="btn-mobile-actions-menu" data-i18n-title="session.actions" title="Actions" aria-haspopup="true" aria-expanded="false"><span class="icon">&#x22EE;</span></button>
+                    <div class="mobile-actions-dropdown" id="mobile-actions-dropdown" hidden>
+                        <button class="mobile-actions-item topbar-btn" id="btn-new-session-mobile" data-i18n-title="sidebar.newTerminal" title="New Terminal">
+                            <span class="icon">&#xea81;</span>
+                            <span class="mobile-actions-label" data-i18n="sidebar.newTerminal">New Terminal</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-touchbar hidden" id="btn-show-touchbar" data-i18n-title="topbar.showTouchBar" title="Show touch bar">
+                            <span class="icon">&#xe993;</span>
+                            <span class="mobile-actions-label" data-i18n="topbar.showTouchBar">Show touch bar</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-fullscreen" id="btn-fullscreen-mobile" data-i18n-title="topbar.fullscreen" title="Fullscreen">
+                            <span class="icon">&#xe90c;</span>
+                            <span class="mobile-actions-label" data-i18n="topbar.fullscreen">Fullscreen</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ctrlc" id="btn-ctrlc-mobile" data-i18n-title="topbar.sendCtrlC" title="Send Ctrl+C">
+                            <span class="icon">&#xe9b5;</span>
+                            <span class="mobile-actions-label" data-i18n="topbar.sendCtrlC">Send Ctrl+C</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action" id="btn-rename-mobile" data-i18n-title="sidebar.rename" title="Rename">
+                            <span class="icon">&#xe91f;</span>
+                            <span class="mobile-actions-label" data-i18n="sidebar.rename">Rename</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-close" id="btn-close-mobile" data-i18n-title="topbar.closeTerminal" title="Close terminal">
+                            <span class="icon">&#xe909;</span>
+                            <span class="mobile-actions-label" data-i18n="topbar.closeTerminal">Close terminal</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-tab-terminal" data-i18n-title="session.terminal" title="Terminal">
+                            <span class="mobile-actions-label" data-i18n="session.terminal">Terminal</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-tab-files" data-i18n-title="modal.file" title="File">
+                            <span class="mobile-actions-label" data-i18n="modal.file">File</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-web" data-i18n-title="sessionTabs.web" title="Web Preview">
+                            <span class="mobile-actions-symbol">&#x1f310;</span>
+                            <span class="mobile-actions-label" data-i18n="sessionTabs.web">Web Preview</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-commands" data-i18n-title="sessionTabs.commands" title="Commands">
+                            <span class="mobile-actions-symbol">&#x26A1;</span>
+                            <span class="mobile-actions-label" data-i18n="sessionTabs.commands">Commands</span>
+                        </button>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-git" data-i18n-title="sessionTabs.git" title="Git">
+                            <span class="mobile-actions-symbol">&#x2387;</span>
+                            <span class="mobile-actions-label" data-i18n="sessionTabs.git">Git</span>
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -929,7 +968,7 @@
     </div>
 
 
-    <script src="js/webAudioAccess.js"></script>
-    <script src="js/terminal.min.js"></script>
+    <script src="js/webAudioAccess.js?v=20260224a"></script>
+    <script src="js/terminal.min.js?v=20260224a"></script>
 </body>
 </html>

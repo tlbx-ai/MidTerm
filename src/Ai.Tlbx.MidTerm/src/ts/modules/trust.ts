@@ -63,35 +63,40 @@ export async function initTrustPage(): Promise<void> {
   // Copy fingerprint
   const copyBtn = document.getElementById('copy-fingerprint');
   if (copyBtn) {
-    copyBtn.addEventListener('click', async () => {
+    copyBtn.addEventListener('click', () => {
       const fpEl = document.getElementById('fingerprint');
       if (!fpEl) return;
       const fp = fpEl.textContent ?? '';
-      try {
-        await navigator.clipboard.writeText(fp);
-        copyBtn.textContent = t('trust.copied');
-        setTimeout(() => (copyBtn.textContent = t('trust.copy')), 2000);
-      } catch {
-        // Fallback for older browsers
-        const textarea = document.createElement('textarea');
-        textarea.value = fp;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
+      void navigator.clipboard
+        .writeText(fp)
+        .then(() => {
+          copyBtn.textContent = t('trust.copied');
+          setTimeout(() => (copyBtn.textContent = t('trust.copy')), 2000);
+        })
+        .catch(() => {
+          const textarea = document.createElement('textarea');
+          textarea.value = fp;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        });
     });
   }
 
   // Load certificate info
-  loadCertificateInfo();
+  void loadCertificateInfo();
 }
 
 function showDesktopTab(os: string): void {
-  document.querySelectorAll('.os-tab').forEach((t) => t.classList.remove('active'));
+  document.querySelectorAll('.os-tab').forEach((t) => {
+    t.classList.remove('active');
+  });
   document.querySelector(`.os-tab[data-os="${os}"]`)?.classList.add('active');
 
-  document.querySelectorAll('.os-instructions').forEach((el) => el.classList.add('hidden'));
+  document.querySelectorAll('.os-instructions').forEach((el) => {
+    el.classList.add('hidden');
+  });
   document.getElementById(`${os}-instructions`)?.classList.remove('hidden');
 }
 

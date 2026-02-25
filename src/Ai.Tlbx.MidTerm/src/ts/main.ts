@@ -105,6 +105,7 @@ import {
   destroySessionWrapper,
   setIdeModeEnabled,
   reparentTerminalContainer,
+  switchTab,
 } from './modules/sessionTabs';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import {
@@ -177,11 +178,11 @@ initThemeFromCookie();
 document.addEventListener('DOMContentLoaded', () => {
   const path = window.location.pathname;
   if (path === '/login' || path === '/login.html') {
-    initLoginPage();
+    void initLoginPage();
   } else if (path === '/trust' || path === '/trust.html') {
-    initTrustPage();
+    void initTrustPage();
   } else {
-    init();
+    void init();
   }
 });
 
@@ -207,13 +208,15 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
-  initHistoryDropdown(spawnFromHistory);
+  initHistoryDropdown((entry) => {
+    void spawnFromHistory(entry);
+  });
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
 
   // Initialize calibration terminal after fonts are ready for accurate measurements
-  fontPromise.then(() => initCalibrationTerminal());
+  void fontPromise.then(() => initCalibrationTerminal());
 
   registerCallbacks();
   connectStateWebSocket();
@@ -244,7 +247,7 @@ async function init(): Promise<void> {
   let gitWsConnected = false;
   $currentSettings.subscribe((settings) => {
     if (!settings) return;
-    const ideEnabled = settings.ideMode !== false;
+    const ideEnabled = settings.ideMode;
     setIdeModeEnabled(ideEnabled);
     if (ideEnabled && !gitWsConnected) {
       connectGitWebSocket();
@@ -260,7 +263,7 @@ async function init(): Promise<void> {
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
-  fetchBootstrap();
+  void fetchBootstrap();
   requestNotificationPermission();
   initDiagnosticsPanel();
 
@@ -290,7 +293,9 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
-    onPinToHistory: pinSessionToHistory,
+    onPinToHistory: (sessionId: string) => {
+      void pinSessionToHistory(sessionId);
+    },
     onCloseSidebar: closeSidebar,
   });
 }
@@ -430,7 +435,9 @@ function selectSessionWithRetry(sessionId: string, attempt = 0): void {
 
   // Retry if not found yet
   if (attempt < maxAttempts) {
-    setTimeout(() => selectSessionWithRetry(sessionId, attempt + 1), retryDelay);
+    setTimeout(() => {
+      selectSessionWithRetry(sessionId, attempt + 1);
+    }, retryDelay);
   } else {
     // Give up after max attempts - select anyway, terminal will work once WS update arrives
     log.warn(
@@ -441,6 +448,8 @@ function selectSessionWithRetry(sessionId: string, attempt = 0): void {
 }
 
 function selectSession(sessionId: string, options?: { closeSettingsPanel?: boolean }): void {
+  closeMobileActionsMenu();
+
   // Only close settings if explicitly requested (e.g., user clicked a session)
   // Auto-selection from state updates should NOT close settings
   if (options?.closeSettingsPanel !== false) {
@@ -581,14 +590,17 @@ function startInlineRename(sessionId: string): void {
   const item = dom.sessionList?.querySelector(`[data-session-id="${sessionId}"]`);
   if (!item) return;
 
-  const titleSpan = item.querySelector('.session-title') as HTMLElement | null;
-  if (!titleSpan) return;
+  const renameAnchor =
+    (item.querySelector('.session-title') as HTMLElement | null) ||
+    (item.querySelector('.process-title') as HTMLElement | null) ||
+    (item.querySelector('.session-title-row') as HTMLElement | null);
+  if (!renameAnchor) return;
 
   const session = getSession(sessionId);
   const currentName = session ? session.name || session.shellType : '';
 
-  // Position overlay input on top of the title span
-  const rect = titleSpan.getBoundingClientRect();
+  // Position overlay input on top of the title content.
+  const rect = renameAnchor.getBoundingClientRect();
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -713,17 +725,17 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
       // Link session to bookmark and apply label (deferred until session is in store)
       const applyBookmark = (): void => {
-        const session = getSession(data.id!);
+        const session = getSession(data.id);
         if (!session) {
           setTimeout(applyBookmark, 100);
           return;
         }
         setSession({ ...session, bookmarkId: entry.id });
         if (entry.id) {
-          setSessionBookmark(data.id!, entry.id).catch(() => {});
+          setSessionBookmark(data.id, entry.id).catch(() => {});
         }
         if (entry.label) {
-          renameSession(data.id!, entry.label);
+          renameSession(data.id, entry.label);
         }
       };
       applyBookmark();
@@ -731,7 +743,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);
         setTimeout(() => {
-          sendInput(data.id!, replayCmd + '\r');
+          sendInput(data.id, replayCmd + '\r');
         }, 100);
       }
     })
@@ -855,11 +867,12 @@ function initPwaInstall(): void {
     row.classList.remove('hidden');
   });
 
-  btn.addEventListener('click', async () => {
+  btn.addEventListener('click', () => {
     if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    deferredPrompt = null;
-    row.classList.add('hidden');
+    void deferredPrompt.prompt().then(() => {
+      deferredPrompt = null;
+      row.classList.add('hidden');
+    });
   });
 
   window.addEventListener('appinstalled', () => {
@@ -868,14 +881,112 @@ function initPwaInstall(): void {
   });
 }
 
+function getActiveSessionTabBar(): HTMLDivElement | null {
+  const activeSessionId = $activeSessionId.get();
+  if (!activeSessionId || !dom.terminalsArea) return null;
+
+  const wrappers = dom.terminalsArea.querySelectorAll<HTMLDivElement>('.session-wrapper');
+  for (const wrapper of wrappers) {
+    if (wrapper.dataset.sessionId === activeSessionId) {
+      return wrapper.querySelector<HTMLDivElement>('.session-tab-bar');
+    }
+  }
+  return null;
+}
+
+function clickActiveSessionTabBarControl(selector: string): void {
+  const tabBar = getActiveSessionTabBar();
+  if (!tabBar) return;
+  const control = tabBar.querySelector<HTMLButtonElement>(selector);
+  control?.click();
+}
+
+function syncMobileTabActionState(): void {
+  const tabBar = getActiveSessionTabBar();
+  const activeTab = tabBar?.querySelector('.session-tab.active')?.getAttribute('data-tab');
+  const terminalBtn = document.getElementById('btn-mobile-tab-terminal');
+  const filesBtn = document.getElementById('btn-mobile-tab-files');
+
+  terminalBtn?.classList.toggle('active', activeTab === 'terminal');
+  filesBtn?.classList.toggle('active', activeTab === 'files');
+}
+
+function closeMobileActionsMenu(): void {
+  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
+  const dropdown = document.getElementById('mobile-actions-dropdown');
+  if (!toggleBtn || !dropdown) return;
+
+  dropdown.setAttribute('hidden', '');
+  toggleBtn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleMobileActionsMenu(): void {
+  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
+  const dropdown = document.getElementById('mobile-actions-dropdown');
+  if (!toggleBtn || !dropdown) return;
+
+  const isOpen = !dropdown.hasAttribute('hidden');
+  if (isOpen) {
+    closeMobileActionsMenu();
+    return;
+  }
+
+  syncMobileTabActionState();
+  dropdown.removeAttribute('hidden');
+  toggleBtn.setAttribute('aria-expanded', 'true');
+}
+
+function bindMobileActionsMenu(): void {
+  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
+  const dropdown = document.getElementById('mobile-actions-dropdown');
+  const actions = document.getElementById('topbar-actions');
+  if (!toggleBtn || !dropdown || !actions) return;
+
+  // Ensure deterministic closed state on startup/hot reload.
+  closeMobileActionsMenu();
+
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMobileActionsMenu();
+  });
+
+  dropdown.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) {
+      closeMobileActionsMenu();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const target = e.target as Node | null;
+    if (target && !actions.contains(target)) {
+      closeMobileActionsMenu();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeMobileActionsMenu();
+    }
+  });
+
+  window.addEventListener('orientationchange', closeMobileActionsMenu);
+}
+
 // =============================================================================
 // Event Binding
 // =============================================================================
 
 function bindEvents(): void {
-  bindClick('btn-new-session', createSession);
-  bindClick('btn-new-session-mobile', createSession);
-  bindClick('btn-create-terminal', createSession);
+  bindClick('btn-new-session', () => {
+    void createSession();
+  });
+  bindClick('btn-new-session-mobile', () => {
+    void createSession();
+  });
+  bindClick('btn-create-terminal', () => {
+    void createSession();
+  });
 
   bindClick('btn-dismiss-touchbar', dismissTouchController);
   bindClick('btn-show-touchbar', restoreTouchController);
@@ -883,6 +994,7 @@ function bindEvents(): void {
   bindClick('btn-hamburger', toggleSidebar);
   bindClick('btn-collapse-sidebar', collapseSidebar);
   bindClick('btn-expand-sidebar', expandSidebar);
+  bindMobileActionsMenu();
 
   if (dom.sidebarOverlay) {
     dom.sidebarOverlay.addEventListener('click', closeSidebar);
@@ -904,13 +1016,36 @@ function bindEvents(): void {
     const activeId = $activeSessionId.get();
     if (activeId) deleteSession(activeId);
   });
+  bindClick('btn-mobile-tab-terminal', () => {
+    const activeId = $activeSessionId.get();
+    if (activeId) {
+      switchTab(activeId, 'terminal');
+      syncMobileTabActionState();
+    }
+  });
+  bindClick('btn-mobile-tab-files', () => {
+    const activeId = $activeSessionId.get();
+    if (activeId) {
+      switchTab(activeId, 'files');
+      syncMobileTabActionState();
+    }
+  });
+  bindClick('btn-mobile-web', () => {
+    clickActiveSessionTabBarControl('[data-action="web"]');
+  });
+  bindClick('btn-mobile-commands', () => {
+    clickActiveSessionTabBarControl('[data-action="commands"]');
+  });
+  bindClick('btn-mobile-git', () => {
+    clickActiveSessionTabBarControl('[data-action="git"]');
+  });
 
   // Fullscreen toggle (mobile) - hide button if API not supported
   const fullscreenBtn = document.getElementById('btn-fullscreen-mobile');
   if (document.fullscreenEnabled) {
     bindClick('btn-fullscreen-mobile', () => {
       if (document.fullscreenElement) {
-        document.exitFullscreen();
+        void document.exitFullscreen();
       } else {
         document.documentElement.requestFullscreen().catch(() => {});
       }
@@ -934,7 +1069,9 @@ function bindEvents(): void {
   bindClick('btn-check-updates', checkForUpdates);
   bindClick('btn-apply-update', applyUpdate);
   bindClick('btn-show-changelog', showChangelog);
-  bindClick('btn-view-update-log', showUpdateLog);
+  bindClick('btn-view-update-log', () => {
+    void showUpdateLog();
+  });
   bindClick('btn-close-changelog', closeChangelog);
   bindClick('update-changelog-link', showChangelog);
   bindClick('update-dismiss-btn', dismissUpdateNotification);
@@ -951,7 +1088,7 @@ function bindEvents(): void {
   document.addEventListener('keydown', (e) => {
     if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 't') {
       e.preventDefault();
-      createSession();
+      void createSession();
     }
   });
 }

@@ -126,14 +126,14 @@ function createTreeNode(state: TreeState, entry: FileTreeEntry, depth: number): 
     node.appendChild(size);
   }
 
-  node.addEventListener('click', async () => {
+  node.addEventListener('click', () => {
     if (entry.isDirectory) {
-      await toggleExpand(state, entry);
+      void toggleExpand(state, entry);
     } else {
       state.selectedPath = entry.fullPath;
-      state.container
-        .querySelectorAll('.tree-node.selected')
-        .forEach((n) => n.classList.remove('selected'));
+      state.container.querySelectorAll('.tree-node.selected').forEach((n) => {
+        n.classList.remove('selected');
+      });
       node.classList.add('selected');
       state.onFileSelect(entry);
     }

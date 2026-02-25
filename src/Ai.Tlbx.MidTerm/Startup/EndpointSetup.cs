@@ -1,7 +1,4 @@
 using System.Diagnostics;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
-using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -62,8 +59,8 @@ public static class EndpointSetup
                 (conHostVersion is not null && manifest.MinCompatiblePty is not null &&
                  UpdateService.CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
 
-            var networks = GetNetworkInterfaces();
-            var users = UserEnumerationService.GetSystemUsers();
+            var networks = NetworkInterfaceFilter.GetNetworkInterfaces();
+            var users = SystemUserProvider.GetSystemUsers();
 
             var shells = shellRegistry.GetPlatformShells().Select(s => new ShellInfoDto
             {
@@ -73,7 +70,7 @@ public static class EndpointSetup
                 SupportsOsc7 = s.SupportsOsc7
             }).ToList();
 
-            var updateResult = ReadAndClearUpdateResult(settingsService.SettingsDirectory);
+            var updateResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory, clear: true);
             var isDevMode = UpdateService.IsDevEnvironment || settings.DevMode;
             var displayVersion = isDevMode ? $"{version} [LOCAL]" : version;
 
@@ -119,66 +116,6 @@ public static class EndpointSetup
         });
     }
 
-    private static List<NetworkInterfaceDto> GetNetworkInterfaces()
-    {
-        static bool IsPhysicalOrVpn(string name)
-        {
-            if (name.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("VPN", StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            if (name.Contains("VMware", StringComparison.OrdinalIgnoreCase) ||
-                name.StartsWith("vEthernet", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("VirtualBox", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            return true;
-        }
-
-        return NetworkInterface.GetAllNetworkInterfaces()
-            .Where(ni => ni.OperationalStatus == OperationalStatus.Up
-                         && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback
-                         && IsPhysicalOrVpn(ni.Name))
-            .SelectMany(ni => ni.GetIPProperties().UnicastAddresses
-                .Where(addr => addr.Address.AddressFamily == AddressFamily.InterNetwork)
-                .Select(addr => new NetworkInterfaceDto
-                {
-                    Name = ni.Name,
-                    Ip = addr.Address.ToString()
-                }))
-            .Prepend(new NetworkInterfaceDto { Name = "Localhost", Ip = "localhost" })
-            .ToList();
-    }
-
-    private static UpdateResult? ReadAndClearUpdateResult(string settingsDirectory)
-    {
-        // Update result is written to settings directory (not install directory!)
-        // Windows: C:\ProgramData\MidTerm\update-result.json
-        // Unix: /usr/local/etc/midterm/update-result.json or ~/.midterm/update-result.json
-        var resultPath = Path.Combine(settingsDirectory, "update-result.json");
-        if (!File.Exists(resultPath))
-        {
-            return null;
-        }
-
-        try
-        {
-            var json = File.ReadAllText(resultPath);
-            var result = System.Text.Json.JsonSerializer.Deserialize<UpdateResult>(json, AppJsonContext.Default.UpdateResult);
-            if (result is not null)
-            {
-                result.Found = true;
-                try { File.Delete(resultPath); } catch { }
-                return result;
-            }
-        }
-        catch
-        {
-        }
-
-        return null;
-    }
 
     public static void MapSystemEndpoints(
         WebApplication app,
@@ -313,22 +250,14 @@ public static class EndpointSetup
 
             var hostPort = context.Request.Host.Port ?? 2000;
 
-            var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
-                .Where(ni => ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
-                             && ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
-                .Where(ni => ni.Name.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) ||
-                             ni.Name.Contains("VPN", StringComparison.OrdinalIgnoreCase) ||
-                             (!ni.Name.Contains("VMware", StringComparison.OrdinalIgnoreCase) &&
-                              !ni.Name.StartsWith("vEthernet", StringComparison.OrdinalIgnoreCase) &&
-                              !ni.Name.Contains("VirtualBox", StringComparison.OrdinalIgnoreCase) &&
-                              !ni.Name.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase)))
-                .SelectMany(ni => ni.GetIPProperties().UnicastAddresses
-                    .Where(addr => addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    .Select(addr => new NetworkEndpointInfo
-                    {
-                        Name = ni.Name,
-                        Url = $"https://{addr.Address}:{hostPort}"
-                    }))
+            var networkList = NetworkInterfaceFilter.GetNetworkInterfaces();
+            var interfaces = networkList
+                .Where(n => n.Ip != "localhost")
+                .Select(n => new NetworkEndpointInfo
+                {
+                    Name = n.Name,
+                    Url = $"https://{n.Ip}:{hostPort}"
+                })
                 .ToArray();
             var firstIp = interfaces.FirstOrDefault()?.Url.Split("://")[1].Split(":")[0] ?? "localhost";
 
@@ -345,38 +274,9 @@ public static class EndpointSetup
 
         app.MapPost("/api/certificate/regenerate", () =>
         {
-            var settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
-            var certPath = Path.Combine(settingsDir, "midterm.pem");
-            const string keyId = "midterm";
-
             try
             {
-                var isServiceInstall = settingsService.Load().IsServiceInstall || settingsService.IsRunningAsService;
-                var protector = CertificateProtectorFactory.Create(settingsDir, isServiceInstall);
-
-                try { protector.DeletePrivateKey(keyId); } catch { }
-                if (File.Exists(certPath)) File.Delete(certPath);
-
-                var dnsNames = CertificateGenerator.GetDnsNames();
-                var ipAddresses = CertificateGenerator.GetLocalIPAddresses();
-                var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
-
-                CertificateGenerator.ExportPublicCertToPem(cert, certPath);
-
-                var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
-                                      ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
-                                      ?? throw new InvalidOperationException("Failed to export private key");
-                protector.StorePrivateKey(privateKeyBytes, keyId);
-                System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
-
-                var settings = settingsService.Load();
-                settings.CertificatePath = certPath;
-                settings.CertificatePassword = null;
-                settings.KeyProtection = Settings.KeyProtectionMethod.OsProtected;
-                settings.CertificateThumbprint = cert.Thumbprint;
-                settingsService.Save(settings);
-
-                Log.Info(() => $"Certificate regenerated, Thumbprint={cert.Thumbprint[..8]}...");
+                CertificateService.RegenerateCertificate(settingsService);
             }
             catch (Exception ex)
             {
@@ -384,7 +284,6 @@ public static class EndpointSetup
                 return Results.Problem($"Failed to regenerate certificate: {ex.Message}");
             }
 
-            // Fire-and-forget: return response first, then exit after delay
             _ = Task.Run(async () =>
             {
                 await Task.Delay(1500);
@@ -452,153 +351,26 @@ public static class EndpointSetup
 
         app.MapPost("/api/update/apply", async (string? source) =>
         {
-            string? extractedDir;
-            UpdateType updateType;
-
-            bool deleteSourceAfter = true;
-
-            if (source == "local")
+            var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source);
+            if (!success)
             {
-                extractedDir = updateService.GetLocalUpdatePath();
-                if (string.IsNullOrEmpty(extractedDir))
-                {
-                    return Results.BadRequest("No local update available");
-                }
-
-                var update = updateService.LatestUpdate;
-                updateType = update?.LocalUpdate?.Type ?? UpdateType.Full;
-                deleteSourceAfter = false;
-            }
-            else
-            {
-                var update = updateService.LatestUpdate;
-                if (update is null || !update.Available)
-                {
-                    return Results.BadRequest("No update available");
-                }
-
-                extractedDir = await updateService.DownloadUpdateAsync();
-                if (string.IsNullOrEmpty(extractedDir))
-                {
-                    return Results.Problem("Failed to download update");
-                }
-
-                updateType = update.Type;
+                return source == "local" || message.Contains("No update")
+                    ? Results.BadRequest(message)
+                    : Results.Problem(message);
             }
 
-            if (OperatingSystem.IsMacOS())
-            {
-                // macOS: stage new binaries for the launcher script to apply on next respawn.
-                // The launcher.sh (installed by install.sh) runs BEFORE mt on every launchd
-                // respawn, applying staged files when mt is NOT running. No races possible.
-                var stagingDir = Path.Combine(settingsService.SettingsDirectory, "update-staging");
-                Directory.CreateDirectory(stagingDir);
-
-                var mtSrc = Path.Combine(extractedDir, "mt");
-                if (File.Exists(mtSrc))
-                {
-                    File.Copy(mtSrc, Path.Combine(stagingDir, "mt"), overwrite: true);
-                }
-
-                if (updateType != UpdateType.WebOnly)
-                {
-                    var mthostSrc = Path.Combine(extractedDir, "mthost");
-                    if (File.Exists(mthostSrc))
-                    {
-                        File.Copy(mthostSrc, Path.Combine(stagingDir, "mthost"), overwrite: true);
-                    }
-                }
-
-                var vjSrc = Path.Combine(extractedDir, "version.json");
-                if (File.Exists(vjSrc))
-                {
-                    File.Copy(vjSrc, Path.Combine(stagingDir, "version.json"), overwrite: true);
-                }
-
-                if (deleteSourceAfter)
-                {
-                    try { Directory.Delete(extractedDir, recursive: true); } catch { }
-                }
-
-                // Fire-and-forget: return response first, then exit after delay
-                _ = Task.Run(async () =>
-                {
-                    await Task.Delay(1000);
-                    Environment.Exit(0);
-                });
-
-                return Results.Ok("Update staged. Server will restart shortly.");
-            }
-
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
-                extractedDir,
-                UpdateService.GetCurrentBinaryPath(),
-                settingsService.SettingsDirectory,
-                updateType,
-                deleteSourceAfter);
-
-            // Fire-and-forget: return response first, then exit after delay
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(3000);
-                    UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
-                    Environment.Exit(0);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(() => $"Update execution failed: {ex.Message}");
-                }
-            });
-
-            return Results.Ok("Update started. Server will restart shortly.");
+            return Results.Ok(message);
         });
 
-        // GET /api/update/result?clear=true - get update result and optionally clear it
         app.MapGet("/api/update/result", (bool clear = false) =>
         {
-            // Update result is in settings directory, not install directory
-            var resultPath = Path.Combine(settingsService.SettingsDirectory, "update-result.json");
-            if (!File.Exists(resultPath))
-            {
-                return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
-            }
-
-            try
-            {
-                var json = File.ReadAllText(resultPath);
-                var result = System.Text.Json.JsonSerializer.Deserialize<UpdateResult>(json, AppJsonContext.Default.UpdateResult);
-                if (result is not null)
-                {
-                    result.Found = true;
-
-                    // Clear the result file if requested
-                    if (clear)
-                    {
-                        try { File.Delete(resultPath); } catch { }
-                    }
-
-                    return Results.Json(result, AppJsonContext.Default.UpdateResult);
-                }
-            }
-            catch
-            {
-            }
-
-            return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
+            var result = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory, clear);
+            return Results.Json(result ?? new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
         });
 
-        // Legacy DELETE endpoint kept for backward compatibility
         app.MapDelete("/api/update/result", () =>
         {
-            // Update result is in settings directory, not install directory
-            var resultPath = Path.Combine(settingsService.SettingsDirectory, "update-result.json");
-            if (File.Exists(resultPath))
-            {
-                try { File.Delete(resultPath); } catch { }
-            }
-
+            UpdateService.ClearUpdateResult(settingsService.SettingsDirectory);
             return Results.Ok();
         });
 
@@ -706,34 +478,7 @@ public static class EndpointSetup
 
         app.MapGet("/api/networks", () =>
         {
-            static bool IsPhysicalOrVpn(string name)
-            {
-                if (name.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("VPN", StringComparison.OrdinalIgnoreCase))
-                    return true;
-
-                if (name.Contains("VMware", StringComparison.OrdinalIgnoreCase) ||
-                    name.StartsWith("vEthernet", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("VirtualBox", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase))
-                    return false;
-
-                return true;
-            }
-
-            var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
-                .Where(ni => ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
-                             && ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback
-                             && IsPhysicalOrVpn(ni.Name))
-                .SelectMany(ni => ni.GetIPProperties().UnicastAddresses
-                    .Where(addr => addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    .Select(addr => new NetworkInterfaceDto
-                    {
-                        Name = ni.Name,
-                        Ip = addr.Address.ToString()
-                    }))
-                .Prepend(new NetworkInterfaceDto { Name = "Localhost", Ip = "localhost" })
-                .ToList();
+            var interfaces = NetworkInterfaceFilter.GetNetworkInterfaces();
             return Results.Json(interfaces, AppJsonContext.Default.ListNetworkInterfaceDto);
         });
 
@@ -806,7 +551,7 @@ public static class EndpointSetup
 
         app.MapGet("/api/users", () =>
         {
-            var users = UserEnumerationService.GetSystemUsers();
+            var users = SystemUserProvider.GetSystemUsers();
             return Results.Json(users, AppJsonContext.Default.ListUserInfo);
         });
     }

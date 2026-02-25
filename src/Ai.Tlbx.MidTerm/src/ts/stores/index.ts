@@ -247,6 +247,7 @@ export function setSession(session: Session): void {
  */
 export function removeSession(sessionId: string): void {
   const sessions = { ...$sessions.get() };
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
   delete sessions[sessionId];
   $sessions.set(sessions);
 }
@@ -302,6 +303,7 @@ export function setProcessState(sessionId: string, state: ProcessState): void {
  */
 export function removeProcessState(sessionId: string): void {
   const states = { ...$processStates.get() };
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
   delete states[sessionId];
   $processStates.set(states);
 }

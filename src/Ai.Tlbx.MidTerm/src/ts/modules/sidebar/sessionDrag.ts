@@ -23,6 +23,13 @@ let dropIndicatorPosition: 'above' | 'below' | null = null;
 let dragImageElement: HTMLElement | null = null;
 let layoutShownForDrag = false;
 
+// Touch drag state
+const TOUCH_DRAG_DELAY_MS = 200;
+let touchDragTimer: ReturnType<typeof setTimeout> | null = null;
+let touchGhost: HTMLElement | null = null;
+let touchStartY = 0;
+let touchActive = false;
+
 /**
  * Check if a session drag is currently in progress.
  * Used by fileDrop to avoid showing file upload indicator during session docking.
@@ -46,6 +53,12 @@ export function initSessionDrag(): void {
   sessionList.addEventListener('dragover', handleDragOver);
   sessionList.addEventListener('dragleave', handleDragLeave);
   sessionList.addEventListener('drop', handleDrop);
+
+  // Touch-based drag for iOS/Android (HTML5 DnD has no touch support)
+  sessionList.addEventListener('touchstart', handleTouchStart, { passive: false });
+  sessionList.addEventListener('touchmove', handleTouchMove, { passive: false });
+  sessionList.addEventListener('touchend', handleTouchEnd);
+  sessionList.addEventListener('touchcancel', handleTouchEnd);
 
   // Global listeners for dock-to-layout (terminals area)
   document.addEventListener('dragover', handleGlobalDragOver);
@@ -210,6 +223,139 @@ function handleDrop(e: DragEvent): void {
     .map((s) => s.id)
     .filter((id): id is string => !!id);
   persistSessionOrder(newOrder);
+}
+
+function handleTouchStart(e: TouchEvent): void {
+  const touch = e.touches[0];
+  if (!touch) return;
+
+  const target = touch.target as HTMLElement;
+  const sessionItem = target.closest('.session-item') as HTMLElement;
+  if (!sessionItem) return;
+
+  touchStartY = touch.clientY;
+
+  touchDragTimer = setTimeout(() => {
+    draggedSessionId = sessionItem.dataset.sessionId ?? null;
+    draggedElement = sessionItem;
+    touchActive = true;
+    sessionItem.classList.add('dragging');
+
+    touchGhost = sessionItem.cloneNode(true) as HTMLElement;
+    touchGhost.style.position = 'fixed';
+    touchGhost.style.left = '0';
+    touchGhost.style.top = `${touch.clientY - sessionItem.offsetHeight / 2}px`;
+    touchGhost.style.width = sessionItem.offsetWidth + 'px';
+    touchGhost.style.opacity = '0.85';
+    touchGhost.style.pointerEvents = 'none';
+    touchGhost.style.zIndex = '9999';
+    touchGhost.style.transform = 'scale(0.95)';
+    touchGhost.classList.remove('dragging');
+    document.body.appendChild(touchGhost);
+  }, TOUCH_DRAG_DELAY_MS);
+}
+
+function handleTouchMove(e: TouchEvent): void {
+  const touch = e.touches[0];
+  if (!touch) return;
+
+  if (!touchActive) {
+    if (Math.abs(touch.clientY - touchStartY) > 10) {
+      cancelTouchDrag();
+    }
+    return;
+  }
+
+  e.preventDefault();
+
+  if (touchGhost) {
+    touchGhost.style.top = `${touch.clientY - (draggedElement?.offsetHeight ?? 40) / 2}px`;
+  }
+
+  if (touchGhost) touchGhost.style.display = 'none';
+  const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
+  if (touchGhost) touchGhost.style.display = '';
+  if (!el) return;
+
+  const sessionItem = el.closest('.session-item') as HTMLElement;
+  clearAllDropIndicators();
+
+  if (sessionItem && sessionItem !== draggedElement) {
+    const rect = sessionItem.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const isAbove = touch.clientY < midY;
+
+    sessionItem.classList.add('drag-over');
+    activeIndicators.add(sessionItem);
+    if (isAbove) {
+      sessionItem.classList.add('drag-over-above');
+      dropIndicatorPosition = 'above';
+    } else {
+      sessionItem.classList.add('drag-over-below');
+      dropIndicatorPosition = 'below';
+    }
+  }
+}
+
+function handleTouchEnd(e: TouchEvent): void {
+  cancelTouchDrag();
+
+  if (!touchActive || !draggedSessionId) {
+    touchActive = false;
+    return;
+  }
+
+  const touch = e.changedTouches[0];
+  if (touch) {
+    if (touchGhost) touchGhost.style.display = 'none';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
+    if (touchGhost) touchGhost.style.display = '';
+    const targetItem = el?.closest('.session-item') as HTMLElement | null;
+
+    if (targetItem && targetItem !== draggedElement) {
+      const targetSessionId = targetItem.dataset.sessionId;
+      if (targetSessionId) {
+        const sessions = $sessionList.get();
+        const fromIndex = sessions.findIndex((s) => s.id === draggedSessionId);
+        let toIndex = sessions.findIndex((s) => s.id === targetSessionId);
+
+        if (fromIndex !== -1 && toIndex !== -1) {
+          if (dropIndicatorPosition === 'below') {
+            toIndex = fromIndex < toIndex ? toIndex : toIndex + 1;
+          } else {
+            toIndex = fromIndex > toIndex ? toIndex : toIndex - 1;
+          }
+          toIndex = Math.max(0, Math.min(sessions.length - 1, toIndex));
+
+          reorderSessions(fromIndex, toIndex);
+
+          const newOrder = $sessionList
+            .get()
+            .map((s) => s.id)
+            .filter((id): id is string => !!id);
+          persistSessionOrder(newOrder);
+        }
+      }
+    }
+  }
+
+  if (draggedElement) draggedElement.classList.remove('dragging');
+  if (touchGhost) {
+    touchGhost.remove();
+    touchGhost = null;
+  }
+  clearAllDropIndicators();
+  draggedSessionId = null;
+  draggedElement = null;
+  dropIndicatorPosition = null;
+  touchActive = false;
+}
+
+function cancelTouchDrag(): void {
+  if (touchDragTimer) {
+    clearTimeout(touchDragTimer);
+    touchDragTimer = null;
+  }
 }
 
 function clearAllDropIndicators(): void {

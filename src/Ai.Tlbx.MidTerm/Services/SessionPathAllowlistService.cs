@@ -7,7 +7,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// that have been seen in a session's terminal output or are within the session's
 /// working directory.
 /// </summary>
-public sealed class FileRadarAllowlistService
+public sealed class SessionPathAllowlistService
 {
     private const int MaxPathsPerSession = 1000;
 

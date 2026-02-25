@@ -9,6 +9,11 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  GIT_CONFIG_COUNT: '2'
+  GIT_CONFIG_KEY_0: 'advice.detachedHead'
+  GIT_CONFIG_VALUE_0: 'false'
+  GIT_CONFIG_KEY_1: 'init.defaultBranch'
+  GIT_CONFIG_VALUE_1: 'main'
 
 jobs:
 
@@ -20,7 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          fetch-tags: false
+
+      - name: Fetch tag annotation
+        run: git fetch origin tag ${{ github.ref_name }} --no-tags --force
 
       - name: Create release
         env:
@@ -55,7 +64,7 @@ jobs:
 
       - name: Install npm packages
         if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm ci --include=dev
+        run: npm ci --include=dev --no-audit --no-fund
 
       - name: Build frontend
         shell: pwsh
@@ -86,7 +95,7 @@ jobs:
           - os: macos-14
             rid: osx-x64
             ext: ''
-          - os: windows-latest
+          - os: [self-hosted, Windows, X64]
             rid: win-x64
             ext: '.exe'
           - os: ubuntu-latest
@@ -158,6 +167,65 @@ jobs:
             codesign --verify --strict staging/${{ matrix.rid }}/mthost
           fi
 
+      - name: Sign Windows binaries
+        if: startsWith(matrix.rid, 'win-')
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_SHA1: ${{ secrets.WINDOWS_CODESIGN_CERT_SHA1 }}
+          WINDOWS_CODESIGN_TIMESTAMP_URL: ${{ secrets.WINDOWS_CODESIGN_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_SHA1))
+          {
+            throw "Missing secret WINDOWS_CODESIGN_CERT_SHA1"
+          }
+
+          $timestampUrl = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_TIMESTAMP_URL))
+          {
+            'http://time.certum.pl'
+          }
+          else
+          {
+            $env:WINDOWS_CODESIGN_TIMESTAMP_URL
+          }
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $signtool)
+          {
+            throw "signtool.exe not found in Windows SDK"
+          }
+
+          $thumbprint = ($env:WINDOWS_CODESIGN_CERT_SHA1 -replace '\s', '').ToUpperInvariant()
+          $files = @(
+            "staging/${{ matrix.rid }}/mt.exe",
+            "staging/${{ matrix.rid }}/mthost.exe"
+          )
+
+          foreach ($file in $files)
+          {
+            if (-not (Test-Path $file))
+            {
+              throw "File not found: $file"
+            }
+
+            & $signtool.FullName sign `
+              /sha1 $thumbprint `
+              /fd SHA256 `
+              /tr $timestampUrl `
+              /td SHA256 `
+              /v `
+              $file
+            if ($LASTEXITCODE -ne 0) { throw "SignTool sign failed for $file" }
+
+            & $signtool.FullName verify /pa /v $file
+            if ($LASTEXITCODE -ne 0) { throw "SignTool verify failed for $file" }
+          }
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
           cd staging/${{ matrix.rid }}
           if command -v sha256sum &> /dev/null; then
             sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
@@ -200,12 +268,10 @@ jobs:
             7z a -tzip -mx=9 $archive "./staging/$rid/*" | Out-Null
           } else {
             $archive = "staging/mt-$rid.tar.gz"
-            $env:GZIP = "-9"
-            tar -czf $archive -C "staging/$rid" .
+            tar -cf - -C "staging/$rid" . | gzip -9 > $archive
           }
           gh release upload "${{ github.ref_name }}" $archive
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
         run: security delete-keychain "$KEYCHAIN_PATH"
-

@@ -88,7 +88,7 @@ function openCommandsDock(sessionId: string): void {
   const body = dockPanel.querySelector('.commands-dock-body') as HTMLElement;
   if (body) {
     body.innerHTML = '';
-    renderCommandsPanelInto(body, sessionId);
+    void renderCommandsPanelInto(body, sessionId);
   }
 
   adjustInnerDockPositions();
@@ -103,7 +103,7 @@ function openCommandsDock(sessionId: string): void {
       ?.querySelector('.commands-dock-body') as HTMLElement;
     if (dockBody) {
       dockBody.innerHTML = '';
-      renderCommandsPanelInto(dockBody, newId);
+      void renderCommandsPanelInto(dockBody, newId);
     }
   });
 
@@ -174,7 +174,9 @@ export function setupDockResize(): void {
     beginResize(e.clientX);
     e.preventDefault();
   });
-  document.addEventListener('mousemove', (e: MouseEvent) => updateResize(e.clientX));
+  document.addEventListener('mousemove', (e: MouseEvent) => {
+    updateResize(e.clientX);
+  });
   document.addEventListener('mouseup', endResize);
 
   grip.addEventListener(

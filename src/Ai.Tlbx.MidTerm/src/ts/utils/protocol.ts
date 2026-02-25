@@ -5,6 +5,9 @@
  */
 
 import { MAX_FRAME_DIMENSION } from '../constants';
+import { createLogger } from '../modules/logging';
+
+const log = createLogger('mux');
 
 /** Parsed output frame from server */
 export interface OutputFrame {
@@ -43,7 +46,7 @@ export async function parseCompressedOutputFrame(payload: Uint8Array): Promise<O
     const data = await decompressGzip(compressedData);
     return { cols, rows, data, valid };
   } catch (e) {
-    console.error('Decompression failed:', e);
+    log.error(() => `Decompression failed: ${String(e)}`);
     return { cols, rows, data: new Uint8Array(0), valid: false };
   }
 }

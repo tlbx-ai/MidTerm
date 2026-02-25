@@ -89,6 +89,7 @@ function logResizeDiagnostics(
     }
   }
 
+  // eslint-disable-next-line no-console
   console.log(
     `[RESIZE DIAG] ${operation}\n` +
       `  Session: "${session?.name ?? sessionId}" (${session?.terminalTitle ?? 'no title'})\n` +
@@ -274,7 +275,7 @@ export function fitSessionToScreen(sessionId: string): void {
 
   // Wait for terminal to be opened before fitting
   if (!state.opened) {
-    (fontsReadyPromise ?? Promise.resolve()).then(() => {
+    void (fontsReadyPromise ?? Promise.resolve()).then(() => {
       fitSessionToScreen(sessionId);
     });
     return;
@@ -369,7 +370,7 @@ export function fitSessionToScreen(sessionId: string): void {
   logResizeDiagnostics(
     'manual-resize',
     sessionId,
-    dom.terminalsArea!,
+    dom.terminalsArea,
     fontSize,
     cellWidth,
     cellHeight,
@@ -451,7 +452,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
     state.container.classList.remove('scaled');
-    const overlay = state.container.querySelector('.scaled-overlay');
+    const overlay = state.container.querySelector('.scaled-overlay') as HTMLElement | null;
     if (overlay) overlay.remove();
   }
 }
@@ -573,7 +574,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
  * Scales down terminals that are larger than the available space.
  */
 export function applyTerminalScaling(_sessionId: string, state: TerminalState): void {
-  requestAnimationFrame(() => applyTerminalScalingSync(state));
+  requestAnimationFrame(() => {
+    applyTerminalScalingSync(state);
+  });
 }
 
 /**
@@ -756,7 +759,9 @@ function periodicResizeCheck(): void {
       } catch {
         // terminal may be disposed
       }
-      requestAnimationFrame(() => applyTerminalScalingSync(state));
+      requestAnimationFrame(() => {
+        applyTerminalScalingSync(state);
+      });
       resizedAny = true;
     }
   });
@@ -797,23 +802,49 @@ export function setupResizeObserver(): void {
 
 /**
  * Set up visual viewport handling for mobile keyboard appearance.
- * Constrains the html element height to the visual viewport so the entire
+ * Constrains the .terminal-page height to the visual viewport so the entire
  * flex layout (topbar, terminals, touch controller) fits above the keyboard.
+ * Also toggles a 'keyboard-visible' class on body to hide UI chrome.
  */
 export function setupVisualViewport(): void {
   if (!window.visualViewport) return;
 
   const vv = window.visualViewport;
   let lastHeight = 0;
+  let baselineHeight = Math.max(window.innerHeight, vv.height);
+  const KEYBOARD_RATIO_THRESHOLD = 0.88;
+  const KEYBOARD_PIXEL_THRESHOLD = 120;
+  const appEl = document.querySelector<HTMLElement>('.terminal-page');
 
   const update = () => {
     const vh = vv.height;
+    if (vh > baselineHeight) {
+      baselineHeight = vh;
+    }
     if (Math.abs(vh - lastHeight) < 1) return;
     lastHeight = vh;
 
-    const root = document.documentElement;
-    root.style.setProperty('--visual-vh', vh + 'px');
-    root.style.height = vh + 'px';
+    if (appEl) {
+      appEl.style.height = `${vh}px`;
+    }
+
+    // Lock root/body to visual viewport height to prevent dragging hidden
+    // off-screen space (common when soft keyboard is open in mobile PWAs).
+    document.documentElement.style.height = `${vh}px`;
+    document.documentElement.style.maxHeight = `${vh}px`;
+    document.body.style.height = `${vh}px`;
+    document.body.style.maxHeight = `${vh}px`;
+
+    if (vv.offsetTop !== 0) {
+      window.scrollTo(0, 0);
+    }
+
+    const heightDrop = baselineHeight - vh;
+    const kbVisible =
+      vh < baselineHeight * KEYBOARD_RATIO_THRESHOLD && heightDrop >= KEYBOARD_PIXEL_THRESHOLD;
+    if (kbVisible !== document.body.classList.contains('keyboard-visible')) {
+      document.body.classList.toggle('keyboard-visible', kbVisible);
+    }
 
     rescaleAllTerminals();
   };

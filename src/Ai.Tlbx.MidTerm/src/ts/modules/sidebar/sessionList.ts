@@ -94,20 +94,67 @@ function createForegroundIndicator(
 }
 
 /**
+ * Render cwd + process as the title row content for unnamed sessions
+ */
+function renderProcessTitle(
+  titleRow: HTMLElement,
+  fgInfo: { cwd?: string | null; name?: string | null; commandLine?: string | null },
+  sessionId: string,
+): void {
+  if (fgInfo.name && fgInfo.name !== 'shell') {
+    const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
+    fgIndicator.classList.add('process-title');
+    titleRow.appendChild(fgIndicator);
+  } else if (fgInfo.cwd) {
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'session-foreground process-title';
+    const cwdInner = document.createElement('span');
+    cwdInner.className = 'fg-cwd';
+    cwdInner.textContent = fgInfo.cwd;
+    cwdSpan.appendChild(cwdInner);
+    cwdSpan.title = fgInfo.cwd;
+    titleRow.appendChild(cwdSpan);
+  } else {
+    // Fallback: show shell type while process info is not yet available
+    const sessions = $sessionList.get();
+    const session = sessions.find((s) => s.id === sessionId);
+    const fallback = session?.shellType || t('session.terminal');
+    const title = document.createElement('span');
+    title.className = 'session-title truncate';
+    title.textContent = fallback;
+    titleRow.appendChild(title);
+  }
+}
+
+/**
  * Update process info display for a specific session
  */
 function updateSessionProcessInfo(sessionId: string): void {
-  const processInfoEl = document.querySelector(
-    `.session-process-info[data-session-id="${sessionId}"]`,
+  const sessionItem = document.querySelector(
+    `.session-item[data-session-id="${sessionId}"]`,
   ) as HTMLElement | null;
+  if (!sessionItem) return;
 
+  const fgInfo = getForegroundInfo(sessionId);
+
+  // Unnamed sessions: update the title row directly
+  if (sessionItem.dataset.processAsTitle === '1') {
+    const titleRow = sessionItem.querySelector('.session-title-row') as HTMLElement | null;
+    if (!titleRow) return;
+    // Preserve layout badge, clear everything else
+    const layoutBadge = titleRow.querySelector('.layout-badge');
+    titleRow.innerHTML = '';
+    renderProcessTitle(titleRow, fgInfo, sessionId);
+    if (layoutBadge) titleRow.appendChild(layoutBadge);
+    return;
+  }
+
+  // Named sessions: update the process info row
+  const processInfoEl = sessionItem.querySelector('.session-process-info') as HTMLElement | null;
   if (!processInfoEl) return;
 
-  // Clear existing content
   processInfoEl.innerHTML = '';
 
-  // Foreground process indicator (skip when shell is idle — that's obvious)
-  const fgInfo = getForegroundInfo(sessionId);
   if (fgInfo.name && fgInfo.name !== 'shell') {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
@@ -160,6 +207,7 @@ function showMobileBackdrop(): void {
 interface SessionDisplayInfo {
   primary: string;
   secondary: string | null;
+  useProcessAsTitle?: boolean;
 }
 
 /**
@@ -170,7 +218,8 @@ export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
   if (session.name) {
     return { primary: session.name, secondary: termTitle };
   }
-  return { primary: termTitle, secondary: null };
+  // Unnamed sessions: use cwd + process as primary (shown inline in process row style)
+  return { primary: termTitle, secondary: null, useProcessAsTitle: true };
 }
 
 /**
@@ -233,47 +282,56 @@ function createSessionItem(
   const titleRow = document.createElement('div');
   titleRow.className = 'session-title-row';
 
-  const title = document.createElement('span');
-  title.className = 'session-title truncate';
-  title.textContent = displayInfo.primary;
-  titleRow.appendChild(title);
-
   // Layout badge (shown when session is in layout)
   const layoutBadge = document.createElement('span');
   layoutBadge.className = 'layout-badge';
   layoutBadge.textContent = t('session.split');
   layoutBadge.title = t('session.splitTooltip');
-  titleRow.appendChild(layoutBadge);
 
-  if (displayInfo.secondary) {
-    item.classList.add('two-line');
-    const subtitle = document.createElement('span');
-    subtitle.className = 'session-subtitle truncate';
-    subtitle.textContent = displayInfo.secondary;
-    titleRow.appendChild(subtitle);
+  if (displayInfo.useProcessAsTitle) {
+    // Unnamed sessions: show cwd + process as the title row
+    item.dataset.processAsTitle = '1';
+    const fgInfo = getForegroundInfo(sessionId);
+    renderProcessTitle(titleRow, fgInfo, sessionId);
+    titleRow.appendChild(layoutBadge);
+  } else {
+    const title = document.createElement('span');
+    title.className = 'session-title truncate';
+    title.textContent = displayInfo.primary;
+    titleRow.appendChild(title);
+    titleRow.appendChild(layoutBadge);
+
+    if (displayInfo.secondary) {
+      item.classList.add('two-line');
+      const subtitle = document.createElement('span');
+      subtitle.className = 'session-subtitle truncate';
+      subtitle.textContent = displayInfo.secondary;
+      titleRow.appendChild(subtitle);
+    }
   }
 
   info.appendChild(titleRow);
 
-  // Process indicator container
+  // Process indicator container (used for named sessions, empty for unnamed)
   const processInfo = document.createElement('div');
   processInfo.className = 'session-process-info';
   processInfo.dataset.sessionId = sessionId;
 
-  // Foreground process indicator (skip idle shell)
-  const fgInfo = getForegroundInfo(sessionId);
-  if (fgInfo.name && fgInfo.name !== 'shell') {
-    const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
-    processInfo.appendChild(fgIndicator);
-  } else if (fgInfo.cwd) {
-    const cwdSpan = document.createElement('span');
-    cwdSpan.className = 'session-foreground';
-    const cwdInner = document.createElement('span');
-    cwdInner.className = 'fg-cwd';
-    cwdInner.textContent = fgInfo.cwd;
-    cwdSpan.appendChild(cwdInner);
-    cwdSpan.title = fgInfo.cwd;
-    processInfo.appendChild(cwdSpan);
+  if (!displayInfo.useProcessAsTitle) {
+    const fgInfo = getForegroundInfo(sessionId);
+    if (fgInfo.name && fgInfo.name !== 'shell') {
+      const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
+      processInfo.appendChild(fgIndicator);
+    } else if (fgInfo.cwd) {
+      const cwdSpan = document.createElement('span');
+      cwdSpan.className = 'session-foreground';
+      const cwdInner = document.createElement('span');
+      cwdInner.className = 'fg-cwd';
+      cwdInner.textContent = fgInfo.cwd;
+      cwdSpan.appendChild(cwdInner);
+      cwdSpan.title = fgInfo.cwd;
+      processInfo.appendChild(cwdSpan);
+    }
   }
 
   // Always add processInfo container so updateSessionProcessInfo can find it later

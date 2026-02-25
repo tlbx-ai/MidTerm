@@ -5,14 +5,14 @@
  */
 
 import { createLogger } from '../logging';
-import { createWsUrl } from '../../utils';
+import { ReconnectController, createWsUrl } from '../../utils';
 import { fetchGitStatus } from './gitApi';
 import type { GitWsMessage, GitStatusResponse } from './types';
 
 const log = createLogger('gitChannel');
+const gitReconnect = new ReconnectController();
 
 let ws: WebSocket | null = null;
-let reconnectTimer: number | null = null;
 const subscribedSessions = new Set<string>();
 let statusCallback: ((sessionId: string, status: GitStatusResponse) => void) | null = null;
 
@@ -67,6 +67,7 @@ export function connectGitWebSocket(): void {
   ws = new WebSocket(createWsUrl('/ws/git'));
 
   ws.onopen = () => {
+    gitReconnect.reset();
     log.info(() => 'Git WebSocket connected');
     emitDiag('ws-open', 'connected');
     for (const sessionId of subscribedSessions) {
@@ -84,7 +85,7 @@ export function connectGitWebSocket(): void {
         statusCallback?.(msg.sessionId, msg.status);
       }
     } catch (e) {
-      log.error(() => `Failed to parse git WS message: ${e}`);
+      log.error(() => `Failed to parse git WS message: ${String(e)}`);
     }
   };
 
@@ -97,18 +98,10 @@ export function connectGitWebSocket(): void {
     log.info(() => 'Git WebSocket closed');
     emitDiag('ws-close', 'disconnected');
     ws = null;
-    scheduleReconnect();
-  };
-}
-
-function scheduleReconnect(): void {
-  if (reconnectTimer !== null) return;
-  reconnectTimer = window.setTimeout(() => {
-    reconnectTimer = null;
     if (subscribedSessions.size > 0) {
-      connectGitWebSocket();
+      gitReconnect.schedule(connectGitWebSocket);
     }
-  }, 3000);
+  };
 }
 
 function sendSubscribe(sessionId: string): void {
@@ -128,9 +121,9 @@ function scheduleFallback(sessionId: string): void {
   const timer = window.setTimeout(() => {
     pendingFallbacks.delete(sessionId);
     emitDiag('fallback', `REST fallback for ${sessionId.substring(0, 8)}`);
-    fetchGitStatus(sessionId).then((status) => {
+    void fetchGitStatus(sessionId).then((status) => {
       if (status) {
-        emitDiag('fallback-ok', `${status.branch}`);
+        emitDiag('fallback-ok', status.branch);
         statusCallback?.(sessionId, status);
       } else {
         emitDiag('fallback-err', `no status for ${sessionId.substring(0, 8)}`);
@@ -153,10 +146,7 @@ export function triggerGitFallback(sessionId: string): void {
 }
 
 export function disconnectGitWebSocket(): void {
-  if (reconnectTimer !== null) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
+  gitReconnect.cancel();
   for (const timer of pendingFallbacks.values()) {
     clearTimeout(timer);
   }

@@ -68,7 +68,9 @@ export function initFileViewer(): void {
   if (dockPanel) {
     dockPanel.querySelector('#dock-close')?.addEventListener('click', closeDock);
     dockPanel.querySelector('#dock-undock')?.addEventListener('click', undockViewer);
-    dockPanel.querySelector('#dock-refresh')?.addEventListener('click', refreshDock);
+    dockPanel.querySelector('#dock-refresh')?.addEventListener('click', () => {
+      void refreshDock();
+    });
     dockPanel.querySelector('#dock-download')?.addEventListener('click', () => {
       const path = $dockedFilePath.get();
       if (path) downloadFile(path);
@@ -78,7 +80,7 @@ export function initFileViewer(): void {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
       if (document.fullscreenElement) {
-        document.exitFullscreen();
+        void document.exitFullscreen();
       } else {
         closeViewer();
       }
@@ -91,9 +93,9 @@ export function initFileViewer(): void {
 function toggleFullscreen(): void {
   const content = modal?.querySelector('.file-viewer-modal-content') as HTMLElement;
   if (document.fullscreenElement) {
-    document.exitFullscreen();
+    void document.exitFullscreen();
   } else {
-    content?.requestFullscreen();
+    void content?.requestFullscreen();
   }
 }
 
@@ -127,7 +129,7 @@ function dockViewer(): void {
   terminalPage?.classList.add('file-viewer-docked');
 
   // Render the file in dock
-  renderInDock(path);
+  void renderInDock(path);
 
   // Update dock coexistence layout
   adjustInnerDockPositions();
@@ -175,7 +177,7 @@ function undockViewer(): void {
   closeDock();
 
   // Open in modal
-  openFile(path);
+  void openFile(path);
 }
 
 async function refreshDock(): Promise<void> {
@@ -244,7 +246,9 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
     bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   if (downloadBtn) {
-    downloadBtn.onclick = () => downloadFile(path);
+    downloadBtn.onclick = () => {
+      downloadFile(path);
+    };
   }
 
   if (!info) {
@@ -279,7 +283,7 @@ async function checkFilePath(path: string): Promise<FilePathInfo | null> {
     const data = await resp.json();
     return data.results[path] || null;
   } catch (e) {
-    log.error(() => `Failed to check file path: ${e}`);
+    log.error(() => `Failed to check file path: ${String(e)}`);
     return null;
   }
 }
@@ -302,7 +306,7 @@ async function renderDirectory(path: string, container: Element): Promise<void> 
     const data: DirectoryListResponse = await resp.json();
     renderDirectoryListing(data.entries, path, container);
   } catch (e) {
-    log.error(() => `Failed to list directory: ${e}`);
+    log.error(() => `Failed to list directory: ${String(e)}`);
     container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')}</div>`;
   }
 }
@@ -351,7 +355,7 @@ function renderDirectoryListing(
       const action = item.getAttribute('data-action');
       if (action === 'back') {
         const prevPath = navigationHistory.pop();
-        if (prevPath) openFile(prevPath);
+        if (prevPath) void openFile(prevPath);
         return;
       }
 
@@ -361,7 +365,7 @@ function renderDirectoryListing(
         if (isDir && currentPath) {
           navigationHistory.push(currentPath);
         }
-        openFile(itemPath);
+        void openFile(itemPath);
       }
     });
   });
@@ -446,7 +450,7 @@ async function renderTextFile(path: string, container: Element): Promise<void> {
       container.innerHTML = `<pre class="file-viewer-text" style="--gutter-width: ${gutterWidth}ch">${linesHtml}${truncated ? `<div class="code-line">${t('fileViewer.truncated')}</div>` : ''}</pre>`;
     }
   } catch (e) {
-    log.error(() => `Failed to load text file: ${e}`);
+    log.error(() => `Failed to load text file: ${String(e)}`);
     container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
   }
 }

@@ -110,7 +110,7 @@ export async function handlePasswordSubmit(e: Event): Promise<void> {
 
     if (response.ok && data?.success) {
       hidePasswordModal();
-      checkAuthStatus();
+      void checkAuthStatus();
     } else {
       showPasswordError(data?.error ?? t('error.passwordChangeFailed'));
     }
@@ -156,8 +156,12 @@ export function bindAuthEvents(): void {
 
   const passwordForm = document.getElementById('password-form');
   if (passwordForm) {
-    passwordForm.addEventListener('submit', handlePasswordSubmit);
+    passwordForm.addEventListener('submit', (e) => {
+      void handlePasswordSubmit(e);
+    });
   }
 
-  bindClick('btn-logout', logout);
+  bindClick('btn-logout', () => {
+    void logout();
+  });
 }

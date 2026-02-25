@@ -42,6 +42,13 @@ export function initTouchController(): void {
 
   window.addEventListener('resize', handleResize);
 
+  const kbObserver = new MutationObserver(() => {
+    if (document.body.classList.contains('keyboard-visible')) {
+      closePopup();
+    }
+  });
+  kbObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
   isInitialized = true;
 }
 

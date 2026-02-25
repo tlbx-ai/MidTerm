@@ -59,7 +59,7 @@ export function connectSettingsWebSocket(): void {
   };
 
   ws.onerror = (e) => {
-    log.error(() => `Settings WebSocket error: ${e}`);
+    log.error(() => `Settings WebSocket error: ${e.type}`);
   };
 }
 

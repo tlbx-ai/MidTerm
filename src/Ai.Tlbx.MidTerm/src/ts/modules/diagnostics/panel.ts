@@ -12,11 +12,14 @@ import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
 import { enableGitStatusOverlay, disableGitStatusOverlay } from './gitStatusOverlay';
 import { t } from '../i18n';
 import { showConfirm } from '../../utils/dialog';
+import { createLogger } from '../logging';
+
+const log = createLogger('diagnostics');
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
 export function initDiagnosticsPanel(): void {
-  loadPaths();
+  void loadPaths();
   bindReloadSettingsButton();
   bindRestartButton();
   bindOverlayToggle();
@@ -25,8 +28,10 @@ export function initDiagnosticsPanel(): void {
 
 export function startLatencyMeasurement(): void {
   stopLatencyMeasurement();
-  runLatencyPing();
-  latencyInterval = setInterval(runLatencyPing, 2000);
+  void runLatencyPing();
+  latencyInterval = setInterval(() => {
+    void runLatencyPing();
+  }, 2000);
 }
 
 export function stopLatencyMeasurement(): void {
@@ -83,7 +88,7 @@ async function loadPaths(): Promise<void> {
     if (certEl) certEl.textContent = data.certificateFile || '-';
     if (logsEl) logsEl.textContent = data.logDirectory || '-';
   } catch (e) {
-    console.error('Failed to load paths:', e);
+    log.error(() => `Failed to load paths: ${String(e)}`);
   }
 }
 
@@ -119,18 +124,20 @@ function bindReloadSettingsButton(): void {
   const btn = document.getElementById('btn-reload-settings');
   if (!btn) return;
 
-  btn.addEventListener('click', async () => {
-    btn.classList.add('spinning');
-    try {
-      const { response } = await reloadSettings();
-      if (response.ok) {
-        window.location.reload();
+  btn.addEventListener('click', () => {
+    void (async () => {
+      btn.classList.add('spinning');
+      try {
+        const { response } = await reloadSettings();
+        if (response.ok) {
+          window.location.reload();
+        }
+      } catch (e) {
+        log.error(() => `Failed to reload settings: ${String(e)}`);
+      } finally {
+        btn.classList.remove('spinning');
       }
-    } catch (e) {
-      console.error('Failed to reload settings:', e);
-    } finally {
-      btn.classList.remove('spinning');
-    }
+    })();
   });
 }
 
@@ -138,23 +145,25 @@ function bindRestartButton(): void {
   const btn = document.getElementById('btn-restart-server') as HTMLButtonElement | null;
   if (!btn) return;
 
-  btn.addEventListener('click', async () => {
-    const confirmed = await showConfirm(t('settings.diagnostics.restartConfirm'), {
-      title: t('settings.diagnostics.restartServer'),
-      confirmLabel: t('settings.diagnostics.restartServer'),
-      danger: true,
-    });
-    if (!confirmed) return;
+  btn.addEventListener('click', () => {
+    void (async () => {
+      const confirmed = await showConfirm(t('settings.diagnostics.restartConfirm'), {
+        title: t('settings.diagnostics.restartServer'),
+        confirmLabel: t('settings.diagnostics.restartServer'),
+        danger: true,
+      });
+      if (!confirmed) return;
 
-    btn.disabled = true;
+      btn.disabled = true;
 
-    try {
-      await restartServer();
-    } catch {
-      // Server may have already shut down before responding — that's expected
-    }
+      try {
+        await restartServer();
+      } catch {
+        // Server may have already shut down before responding — that's expected
+      }
 
-    showRestartOverlay();
+      showRestartOverlay();
+    })();
   });
 }
 

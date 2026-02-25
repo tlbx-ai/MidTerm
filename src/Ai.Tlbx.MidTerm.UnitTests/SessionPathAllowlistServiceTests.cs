@@ -3,9 +3,9 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public class FileRadarAllowlistServiceTests
+public class SessionPathAllowlistServiceTests
 {
-    private readonly FileRadarAllowlistService _service = new();
+    private readonly SessionPathAllowlistService _service = new();
 
     [Fact]
     public void RegisterPath_ThenIsPathAllowed_ReturnsTrue()
