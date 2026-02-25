@@ -1,111 +1,113 @@
-# Windows Code Signing — SignPath.io
+# Windows Code Signing
 
 ## Status
 
-**Applied 2026-02-18** — Waiting for SignPath Foundation approval (typically days to ~2 weeks).
+**Active** — Using Certum "Open Source Code Signing in the cloud" certificate on a self-hosted GitHub Actions runner for stable releases. Dev releases are unsigned.
 
-Application sent to: oss-support@signpath.org with filled OSSRequestForm-v4-filled.xlsx.
+**Pending backup** — SignPath.io application submitted 2026-02-18 (free for OSS). If approved, would eliminate the manual SimplySign authentication step.
 
-## Why
+## Certificate Details
 
-Native AOT compiled Windows binaries (mt.exe, mthost.exe) trigger antivirus false positives.
-Authenticode code signing reduces this significantly.
+| Field | Value |
+|-------|-------|
+| Provider | Certum (by Asseco) |
+| Product | Open Source Code Signing in the cloud, 365 days |
+| CN | Open Source Developer Johannes Schmidt |
+| Organization | Open Source Developer |
+| Valid until | 2027-02-25 |
+| Key storage | Certum cloud HSM (accessed via SimplySign Desktop) |
+| Timestamp server | `http://time.certum.pl` |
 
-## Chosen Solution: SignPath.io (Free for OSS)
+## How It Works
 
-- Free for open source projects
-- No Azure account needed
-- Provides Authenticode signing via SignPath Foundation certificate
-- Certificate stored on their HSM
-- GitHub Actions integration via `signpath/github-action-submit-signing-request@v2`
-- Origin verification: signing only works from CI builds, not local
+Certum cloud certificates keep the private key on their HSM. Signing requires:
 
-### Alternatives Considered
+1. **SimplySign Desktop** running on the signing machine (provides a virtual smart card / CSP)
+2. **SimplySign mobile app** for 2FA authentication (approx 2-hour session window)
+3. **signtool.exe** uses the certificate via the SimplySign CSP
 
-| Option | Why not |
-|--------|---------|
-| Azure Trusted Signing ($10/mo) | Azure tenant was blocked due to inactivity, instant SmartScreen trust but costs money |
-| EV Code Signing Cert ($300-600/yr) | Expensive, requires hardware token or cloud HSM |
-| SSL.com eSigner ($200-400/yr) | Costs money, reputation must build over time |
+There is no headless/CLI API — each signing session requires mobile app confirmation.
 
-## What Happens After Approval
+## Release Signing Strategy
 
-### 1. SignPath Dashboard Setup
+| Release type | Runner | Signing |
+|-------------|--------|---------|
+| Dev (`-dev` tags) | GitHub-hosted `windows-latest` | None |
+| Stable (main branch) | Self-hosted `[self-hosted, windows, signing]` | Certum Authenticode via SimplySign |
 
-- Install the **SignPath GitHub App** on `tlbx-ai/MidTerm`
-- Create an **Artifact Configuration** (sign `mt.exe` and `mthost.exe`)
-- Create a **Signing Policy** (release-signing)
-- Copy secrets to GitHub repo (`Settings → Secrets → Actions`):
-  - `SIGNPATH_API_TOKEN`
-  - `SIGNPATH_ORG_ID`
-  - Project/policy slugs
+macOS and Linux builds always run on GitHub-hosted runners regardless.
 
-### 2. Modify release.yml
-
-Add signing step **after** Windows build, **before** checksums:
-
-```yaml
-# After building Windows binaries, before checksums:
-
-- name: Upload unsigned artifacts
-  id: upload-unsigned
-  uses: actions/upload-artifact@v4
-  with:
-    name: win-x64-unsigned
-    path: staging/
-
-- name: Sign Windows binaries
-  if: matrix.runtime == 'win-x64'
-  uses: signpath/github-action-submit-signing-request@v2
-  with:
-    api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-    organization-id: '${{ secrets.SIGNPATH_ORG_ID }}'
-    project-slug: 'midterm'
-    signing-policy-slug: 'release-signing'
-    github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
-    wait-for-completion: true
-    output-artifact-directory: staging/
-
-# Then existing sha256sum + sign-release.ps1 run on the now-signed binaries
-```
-
-### 3. Pipeline Order (Critical)
+## Signing Flow (Stable Releases)
 
 ```
-1. dotnet publish → mt.exe, mthost.exe
-2. Copy to staging/
-3. ★ Authenticode sign (SignPath) ★
-4. Compute SHA256 checksums (covers signed binary)
-5. ECDSA sign version.json (existing integrity signing)
-6. Package into ZIP
-7. Upload to GitHub Release
+1. Tag push triggers release.yml
+2. prepare job determines is_dev=false
+3. build-windows job runs on self-hosted runner
+4. dotnet publish builds mt.exe + mthost.exe
+5. sign-windows-binaries.ps1 runs:
+   a. Plays notification sound (5 system beeps + Windows toast)
+   b. Checks/launches SimplySign Desktop
+   c. Retries signtool every 15s for up to 10 minutes
+   d. YOU: authenticate in SimplySign mobile app when you hear the bing
+   e. signtool signs both binaries with SHA256 + timestamp
+   f. Verifies signatures
+6. SHA256SUMS generated (covers signed binaries)
+7. ECDSA signs version.json (existing integrity signing)
+8. Packaged as ZIP, uploaded to GitHub Release
 ```
 
-### 4. Add Attribution to Repo
+## Self-Hosted Runner Setup
 
-Required by SignPath Foundation terms — add to README or homepage:
+### Prerequisites
+- Windows 10/11 machine (your dev machine)
+- .NET 10 SDK
+- SimplySign Desktop (installed + activated)
+- Windows SDK (for signtool.exe)
+- PowerShell 7+
+- 7-Zip (for `7z` command in CI)
 
-> "Windows binaries are code-signed. Free code signing provided by
-> [SignPath.io](https://signpath.io), certificate by
-> [SignPath Foundation](https://signpath.org)."
+### Installation
+1. GitHub repo → Settings → Actions → Runners → "New self-hosted runner"
+2. OS: Windows, Architecture: x64
+3. Labels: `self-hosted`, `windows`, `signing`
+4. Run interactively (not as service) — needed for sound notifications and SimplySign UI
+5. Ensure runner is running before triggering a stable release
 
-### 5. Note: Manual Approval Per Release
+### signtool Location
+The signing script auto-discovers signtool from PATH or Windows SDK:
+`C:\Program Files (x86)\Windows Kits\10\bin\<version>\x64\signtool.exe`
 
-SignPath requires a team member to approve each signing request in their dashboard.
-This adds one manual click per release. Not fully hands-off.
-
-## Verification
-
-After first signed release:
+## Local Testing
 
 ```powershell
-Get-AuthenticodeSignature .\mt.exe
-# Status: Valid
-# SignerCertificate: [SignPath Foundation subject]
+# Build a test binary
+dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true --verbosity minimal
+
+# Ensure SimplySign Desktop is running and authenticated
+
+# Sign
+signtool sign /a /tr http://time.certum.pl /td sha256 /fd sha256 `
+  src\Ai.Tlbx.MidTerm\bin\Release\net10.0\win-x64\publish\mt.exe
+
+# Verify
+Get-AuthenticodeSignature src\Ai.Tlbx.MidTerm\bin\Release\net10.0\win-x64\publish\mt.exe
 ```
 
-## Limitations
+If multiple certificates are installed, use `/sha1 <thumbprint>` instead of `/a`.
 
-- SmartScreen reputation builds over time (not instant like Azure Trusted Signing)
-- AOT binaries may still trigger some heuristic scanners — signing reduces but doesn't eliminate all false positives
-- Signing only works from GitHub Actions (origin verification), not local builds
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `.github/workflows/release.yml` | CI workflow — build-windows job with conditional signing |
+| `scripts/sign-windows-binaries.ps1` | Signing script with notification, retry loop, verification |
+| `scripts/sign-release.ps1` | ECDSA signature for version.json (all platforms) |
+
+## Alternatives Considered
+
+| Option | Status |
+|--------|--------|
+| SignPath.io (free OSS) | Application pending since 2026-02-18. Would eliminate manual step. |
+| Azure Trusted Signing ($10/mo) | Azure tenant blocked due to inactivity |
+| SSL.com eSigner ($200-400/yr) | Costs money, reputation builds over time |
+| Full Certum automation (TOTP hack) | Fragile, 2-hour window, not officially supported |

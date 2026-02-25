@@ -35,6 +35,10 @@ import {
   focusActiveTerminal,
   setupGlobalFocusReclaim,
   calculateOptimalDimensions,
+  getEffectiveTerminalFontSize,
+  handleClipboardPaste,
+  initMobilePiP,
+  recordMobilePiPBytes,
 } from './modules/terminal';
 import {
   getSessionDisplayName,
@@ -77,11 +81,12 @@ import {
   initHistoryDropdown,
   toggleHistoryDropdown,
   createHistoryEntry,
+  fetchHistory,
   refreshHistory,
   type LaunchEntry,
 } from './modules/history';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
-import { buildReplayCommand } from './modules/sidebar/processDisplay';
+import { buildProcessCwdTuple, buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
   initTouchController,
   dismissTouchController,
@@ -194,7 +199,10 @@ async function init(): Promise<void> {
   await initI18n();
   initMainBrowserButton();
   initTrafficIndicator();
-  setSessionBytesCallback(recordBytes);
+  setSessionBytesCallback((sessionId, bytes) => {
+    recordBytes(sessionId, bytes);
+    recordMobilePiPBytes(sessionId, bytes);
+  });
   setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();
@@ -236,6 +244,7 @@ async function init(): Promise<void> {
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
+  initMobilePiP();
   initManagerBar();
   initSessionTabs();
   initFileBrowser();
@@ -361,7 +370,7 @@ async function createSession(): Promise<void> {
   const tempId = 'pending-' + crypto.randomUUID();
 
   if (dom.terminalsArea) {
-    const fontSize = settings?.fontSize ?? 14;
+    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
     const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
@@ -570,9 +579,7 @@ function renameSession(sessionId: string, newName: string | null): void {
 
   apiRenameSession(sessionId, nameToSend)
     .then(() => {
-      if (session.bookmarkId) {
-        patchHistoryEntry(session.bookmarkId, { label: nameToSend || '' }).catch(() => {});
-      }
+      void patchPinnedHistoryLabelIfMatchingTuple(sessionId, nameToSend);
     })
     .catch((e) => {
       // Clear pending and rollback on error
@@ -584,6 +591,42 @@ function renameSession(sessionId: string, newName: string | null): void {
       // Subscription handles renderSessionList and updateMobileTitle via store change
       log.error(() => `Failed to rename session ${sessionId}: ${e}`);
     });
+}
+
+async function patchPinnedHistoryLabelIfMatchingTuple(
+  sessionId: string,
+  nameToSend: string,
+): Promise<void> {
+  const currentSession = getSession(sessionId);
+  const bookmarkId = currentSession?.bookmarkId;
+  if (!bookmarkId) return;
+
+  const fgInfo = getForegroundInfo(sessionId);
+  const currentTuple = buildProcessCwdTuple(fgInfo.name, fgInfo.commandLine, fgInfo.cwd);
+  if (!currentTuple) return;
+
+  let entries: LaunchEntry[];
+  try {
+    entries = await fetchHistory();
+  } catch {
+    return;
+  }
+
+  const linkedEntry = entries.find((e) => e.id === bookmarkId);
+  if (!linkedEntry) return;
+
+  const linkedTuple = buildProcessCwdTuple(
+    linkedEntry.executable,
+    linkedEntry.commandLine ?? null,
+    linkedEntry.workingDirectory,
+  );
+
+  if (!linkedTuple || linkedTuple !== currentTuple) {
+    log.verbose(() => `Skip bookmark label patch for ${sessionId}: tuple moved`);
+    return;
+  }
+
+  patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
 }
 
 function startInlineRename(sessionId: string): void {
@@ -665,13 +708,15 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
   }
 
   const fgInfo = getForegroundInfo(sessionId);
-  if (!fgInfo.name) {
-    log.info(() => `pinSessionToHistory: no foreground process for ${sessionId}`);
+  const tupleKey = buildProcessCwdTuple(fgInfo.name, fgInfo.commandLine, fgInfo.cwd);
+  if (!fgInfo.name || !tupleKey) {
+    log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
     return;
   }
 
   const trimmedName = (session.name || '').trim();
   const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
+  const previousBookmarkId = session.bookmarkId ?? null;
 
   const id = await createHistoryEntry({
     shellType: session.shellType,
@@ -680,14 +725,26 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
     workingDirectory: fgInfo.cwd ?? '',
     isStarred: true,
     label,
+    dedupeKey: tupleKey,
   });
 
   if (id) {
-    setSession({ ...(getSession(sessionId) ?? session), bookmarkId: id });
-    setSessionBookmark(sessionId, id).catch(() => {});
+    const current = getSession(sessionId) ?? session;
+    const bookmarkChanged = current.bookmarkId !== id;
+
+    if (bookmarkChanged) {
+      setSession({ ...current, bookmarkId: id });
+      setSessionBookmark(sessionId, id).catch(() => {});
+    }
 
     refreshHistory();
-    log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
+    if (previousBookmarkId && previousBookmarkId !== id) {
+      log.info(() => `Pinned to history (new tuple): ${fgInfo.name} (id=${id})`);
+    } else if (previousBookmarkId === id) {
+      log.info(() => `Pinned to history (updated existing tuple): ${fgInfo.name} (id=${id})`);
+    } else {
+      log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
+    }
   }
 }
 
@@ -697,7 +754,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
   let rows = settings?.defaultRows ?? 30;
 
   if (dom.terminalsArea) {
-    const fontSize = settings?.fontSize ?? 14;
+    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
     const logId = 'history-' + crypto.randomUUID().slice(0, 8);
     const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
@@ -1003,6 +1060,17 @@ function bindEvents(): void {
   bindClick('btn-ctrlc-mobile', () => {
     const activeId = $activeSessionId.get();
     if (activeId) sendInput(activeId, '\x03');
+  });
+  bindClick('btn-paste-mobile', () => {
+    const activeId = $activeSessionId.get();
+    if (!activeId) return;
+    const foreground = getForegroundInfo(activeId);
+    void handleClipboardPaste(activeId, {
+      foregroundName: foreground.name,
+      foregroundCommandLine: foreground.commandLine,
+    }).finally(() => {
+      focusActiveTerminal();
+    });
   });
   bindClick('btn-rename-mobile', () => {
     const activeId = $activeSessionId.get();

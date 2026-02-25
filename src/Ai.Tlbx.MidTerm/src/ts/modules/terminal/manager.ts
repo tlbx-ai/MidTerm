@@ -6,7 +6,7 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { MOBILE_BREAKPOINT, TERMINAL_FONT_STACK } from '../../constants';
+import { TERMINAL_FONT_STACK } from '../../constants';
 import { getEffectiveXtermTheme } from '../theming/themes';
 import {
   sessionTerminals,
@@ -54,6 +54,8 @@ import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './c
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
+import { getEffectiveTerminalFontSize } from './fontSize';
+import { getForegroundInfo } from '../process';
 
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -171,9 +173,8 @@ function updateSessionNameAuto(sessionId: string, name: string): void {
 export function getTerminalOptions(): ITerminalOptions {
   const currentSettings = $currentSettings.get();
   const windowsBuildNumber = $windowsBuildNumber.get();
-  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
   const baseFontSize = currentSettings?.fontSize ?? 14;
-  const fontSize = isMobile ? Math.max(baseFontSize - 2, 10) : baseFontSize;
+  const fontSize = getEffectiveTerminalFontSize(baseFontSize);
   const fontFamily = currentSettings?.fontFamily ?? 'Cascadia Code';
   const scrollback = currentSettings?.scrollbackLines ?? 10000;
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
@@ -560,7 +561,11 @@ export function setupTerminalEvents(
     // Unified paste aliases: Ctrl+V, Cmd+V, Ctrl+Shift+V.
     if (isPasteShortcut(e)) {
       if (canUseAsyncClipboard()) {
-        void handleClipboardPaste(sessionId);
+        const foreground = getForegroundInfo(sessionId);
+        void handleClipboardPaste(sessionId, {
+          foregroundName: foreground.name,
+          foregroundCommandLine: foreground.commandLine,
+        });
         return false;
       }
       // Clipboard API unavailable (HTTP/untrusted/unsupported):
@@ -610,7 +615,11 @@ export function setupTerminalEvents(
     const settings = $currentSettings.get();
     if (!settings || settings.rightClickPaste) {
       e.preventDefault();
-      void handleClipboardPaste(sessionId);
+      const foreground = getForegroundInfo(sessionId);
+      void handleClipboardPaste(sessionId, {
+        foregroundName: foreground.name,
+        foregroundCommandLine: foreground.commandLine,
+      });
     }
   };
 

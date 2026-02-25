@@ -27,6 +27,7 @@ import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { getSettings, getUsers, getVersion, getHealth, updateSettings } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
+import { getEffectiveTerminalFontSize } from '../terminal/fontSize';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
 import {
   applyTerminalScrollbarStyleClass,
@@ -221,7 +222,7 @@ export function applySettingsToTerminals(): void {
 
   const theme = getEffectiveXtermTheme();
   const fontFamily = `'${settings.fontFamily ?? 'Cascadia Code'}', ${TERMINAL_FONT_STACK}`;
-  const fontSize = settings.fontSize ?? 14;
+  const fontSize = getEffectiveTerminalFontSize(settings.fontSize ?? 14);
   const contrastRatio = settings.minimumContrastRatio ?? 1;
 
   const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);

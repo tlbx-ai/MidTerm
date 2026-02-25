@@ -38,6 +38,10 @@ public static class HistoryEndpointDefinitions
             handler.DeleteHistoryEntry(id))
             .Produces(StatusCodes.Status200OK);
 
+        app.MapPost("/api/history/reorder", (HistoryReorderRequest request, IHistoryHandler handler) =>
+            handler.ReorderHistory(request))
+            .Produces(StatusCodes.Status200OK);
+
         return app;
     }
 }

@@ -8,4 +8,6 @@ export * from './manager';
 export * from './scaling';
 export * from './search';
 export * from './fileDrop';
+export * from './fontSize';
 export { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
+export { initMobilePiP, recordMobilePiPBytes } from './mobilePiP';

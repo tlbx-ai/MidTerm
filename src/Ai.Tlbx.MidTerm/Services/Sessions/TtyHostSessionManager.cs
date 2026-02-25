@@ -674,6 +674,35 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return true;
     }
 
+    public int ClearBookmarksByHistoryId(string bookmarkId)
+    {
+        if (string.IsNullOrWhiteSpace(bookmarkId))
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        foreach (var link in _bookmarkLinks.ToArray())
+        {
+            if (!string.Equals(link.Value, bookmarkId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (_bookmarkLinks.TryRemove(link.Key, out _))
+            {
+                removed++;
+            }
+        }
+
+        if (removed > 0)
+        {
+            NotifyStateChange();
+        }
+
+        return removed;
+    }
+
     public bool ReorderSessions(IList<string> sessionIds)
     {
         // Validate all sessions exist

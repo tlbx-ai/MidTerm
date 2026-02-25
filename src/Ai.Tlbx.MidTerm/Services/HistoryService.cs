@@ -25,6 +25,7 @@ public sealed class HistoryService
         _historyPath = Path.Combine(settingsService.SettingsDirectory, "history.json");
         Log.Info(() => $"HistoryService: path={_historyPath}");
         Load();
+        MigrateStarredOrder();
     }
 
     private void Load()
@@ -73,9 +74,15 @@ public sealed class HistoryService
         }
     }
 
-    public string? RecordEntry(string shellType, string executable, string? commandLine, string workingDirectory, string? label = null)
+    public string? RecordEntry(
+        string shellType,
+        string executable,
+        string? commandLine,
+        string workingDirectory,
+        string? label = null,
+        string? dedupeKey = null)
     {
-        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}");
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -96,7 +103,7 @@ public sealed class HistoryService
         }
         executable = cleanExecutable;
 
-        var id = GenerateId(shellType, executable, commandLine, workingDirectory);
+        var id = GenerateId(shellType, executable, commandLine, workingDirectory, dedupeKey);
         Log.Info(() => $"RecordEntry: recording id={id}");
 
         lock (_lock)
@@ -104,6 +111,10 @@ public sealed class HistoryService
             var existing = _history.Entries.FirstOrDefault(e => e.Id == id);
             if (existing is not null)
             {
+                existing.ShellType = shellType;
+                existing.Executable = executable;
+                existing.CommandLine = commandLine;
+                existing.WorkingDirectory = workingDirectory;
                 existing.LastUsed = DateTime.UtcNow;
                 if (!string.IsNullOrWhiteSpace(label))
                 {
@@ -138,10 +149,42 @@ public sealed class HistoryService
     {
         lock (_lock)
         {
-            return _history.Entries
-                .OrderByDescending(e => e.IsStarred)
-                .ThenByDescending(e => e.LastUsed)
+            var starred = _history.Entries
+                .Where(e => e.IsStarred)
+                .OrderBy(e => e.Order)
                 .ToList();
+
+            var recent = _history.Entries
+                .Where(e => !e.IsStarred)
+                .OrderByDescending(e => e.LastUsed)
+                .ToList();
+
+            return starred.Concat(recent).ToList();
+        }
+    }
+
+    public LaunchEntry? GetEntry(string id)
+    {
+        lock (_lock)
+        {
+            var entry = _history.Entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null)
+            {
+                return null;
+            }
+
+            return new LaunchEntry
+            {
+                Id = entry.Id,
+                ShellType = entry.ShellType,
+                Executable = entry.Executable,
+                CommandLine = entry.CommandLine,
+                WorkingDirectory = entry.WorkingDirectory,
+                IsStarred = entry.IsStarred,
+                Label = entry.Label,
+                LastUsed = entry.LastUsed,
+                Order = entry.Order
+            };
         }
     }
 
@@ -156,6 +199,10 @@ public sealed class HistoryService
             }
 
             entry.IsStarred = !entry.IsStarred;
+            if (entry.IsStarred)
+            {
+                entry.Order = NextStarredOrder();
+            }
             Save();
             return true;
         }
@@ -172,6 +219,10 @@ public sealed class HistoryService
             }
 
             entry.IsStarred = starred;
+            if (starred)
+            {
+                entry.Order = NextStarredOrder();
+            }
             Save();
             return true;
         }
@@ -207,6 +258,48 @@ public sealed class HistoryService
         }
     }
 
+    public bool ReorderStarred(List<string> orderedIds)
+    {
+        lock (_lock)
+        {
+            for (var i = 0; i < orderedIds.Count; i++)
+            {
+                var entry = _history.Entries.FirstOrDefault(e => e.Id == orderedIds[i] && e.IsStarred);
+                if (entry is not null)
+                {
+                    entry.Order = i;
+                }
+            }
+            Save();
+            return true;
+        }
+    }
+
+    private int NextStarredOrder()
+    {
+        var max = _history.Entries.Where(e => e.IsStarred).Select(e => e.Order).DefaultIfEmpty(-1).Max();
+        return max + 1;
+    }
+
+    private void MigrateStarredOrder()
+    {
+        lock (_lock)
+        {
+            var starred = _history.Entries.Where(e => e.IsStarred).ToList();
+            if (starred.Count == 0) return;
+
+            var allZero = starred.All(e => e.Order == 0);
+            if (!allZero || starred.Count <= 1) return;
+
+            for (var i = 0; i < starred.Count; i++)
+            {
+                starred[i].Order = i;
+            }
+            Save();
+            Log.Info(() => $"Migrated {starred.Count} starred history entries with sequential order");
+        }
+    }
+
     private void Prune()
     {
         var starred = _history.Entries.Where(e => e.IsStarred).ToList();
@@ -219,9 +312,22 @@ public sealed class HistoryService
         _history.Entries = starred.Concat(nonStarred).ToList();
     }
 
-    private static string GenerateId(string shellType, string executable, string? commandLine, string workingDirectory)
+    private static string GenerateId(
+        string shellType,
+        string executable,
+        string? commandLine,
+        string workingDirectory,
+        string? dedupeKey = null)
     {
-        var normalized = $"{shellType.ToLowerInvariant()}|{executable.ToLowerInvariant()}|{commandLine ?? ""}|{NormalizePath(workingDirectory)}";
+        string normalized;
+        if (!string.IsNullOrWhiteSpace(dedupeKey))
+        {
+            normalized = $"tuple|{dedupeKey.Trim().ToLowerInvariant()}";
+        }
+        else
+        {
+            normalized = $"{shellType.ToLowerInvariant()}|{executable.ToLowerInvariant()}|{commandLine ?? ""}|{NormalizePath(workingDirectory)}";
+        }
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }

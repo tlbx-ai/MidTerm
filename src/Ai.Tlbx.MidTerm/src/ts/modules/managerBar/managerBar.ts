@@ -87,10 +87,8 @@ function clickButton(id: string): void {
 
   const activeId = $activeSessionId.get();
   if (activeId) {
-    sendInput(activeId, btn.text);
-    setTimeout(() => {
-      sendInput(activeId, '\r');
-    }, 100);
+    const text = btn.text.replace(/[\r\n]+$/, '');
+    sendInput(activeId, `${text}\r`);
   }
 }
 

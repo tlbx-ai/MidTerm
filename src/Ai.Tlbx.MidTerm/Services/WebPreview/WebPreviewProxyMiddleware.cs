@@ -819,12 +819,7 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         var sb = new StringBuilder(256);
         sb.Append(target.Scheme).Append("://").Append(target.Authority);
-        var targetPath = target.AbsolutePath.TrimEnd('/');
-        sb.Append(targetPath);
-        if (!string.IsNullOrEmpty(path))
-        {
-            sb.Append(path);
-        }
+        sb.Append(BuildUpstreamPath(target, path));
         if (!string.IsNullOrEmpty(queryString))
         {
             sb.Append(queryString);
@@ -837,17 +832,59 @@ public sealed partial class WebPreviewProxyMiddleware
         var scheme = target.Scheme == "https" ? "wss" : "ws";
         var sb = new StringBuilder(256);
         sb.Append(scheme).Append("://").Append(target.Authority);
-        var targetPath = target.AbsolutePath.TrimEnd('/');
-        sb.Append(targetPath);
-        if (!string.IsNullOrEmpty(path))
-        {
-            sb.Append(path);
-        }
+        sb.Append(BuildUpstreamPath(target, path));
         if (!string.IsNullOrEmpty(queryString))
         {
             sb.Append(queryString);
         }
         return sb.ToString();
+    }
+
+    internal static string BuildUpstreamPath(Uri target, string path)
+    {
+        var targetPath = target.AbsolutePath;
+        if (string.IsNullOrEmpty(targetPath))
+        {
+            targetPath = "/";
+        }
+
+        var targetHasTrailingSlash = targetPath.Length > 1
+            && targetPath.EndsWith("/", StringComparison.Ordinal);
+
+        var targetBase = targetPath.TrimEnd('/');
+        if (targetBase == "/")
+        {
+            targetBase = "";
+        }
+
+        var normalizedPath = string.IsNullOrEmpty(path) ? "/" : path;
+        if (!normalizedPath.StartsWith('/'))
+        {
+            normalizedPath = "/" + normalizedPath;
+        }
+
+        if (normalizedPath == "/")
+        {
+            if (string.IsNullOrEmpty(targetBase))
+            {
+                return "/";
+            }
+
+            return targetHasTrailingSlash ? targetBase + "/" : targetBase;
+        }
+
+        if (string.IsNullOrEmpty(targetBase))
+        {
+            return normalizedPath;
+        }
+
+        if (normalizedPath.Equals(targetBase, StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.StartsWith(targetBase + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return normalizedPath;
+        }
+
+        return targetBase + normalizedPath;
     }
 
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]

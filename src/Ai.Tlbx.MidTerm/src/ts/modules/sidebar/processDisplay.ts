@@ -96,6 +96,50 @@ export function formatRuntimeDisplay(processName: string, commandLine: string | 
 }
 
 /**
+ * Build a normalized process identity for bookmark tuple decisions.
+ * Uses the display formatter, then takes the leading command token.
+ */
+export function getProcessIdentity(processName: string, commandLine: string | null): string {
+  const display = formatRuntimeDisplay(processName, commandLine).trim();
+  if (!display) {
+    return basename(processName)
+      .replace(/\.exe$/i, '')
+      .toLowerCase();
+  }
+
+  const tokens = tokenizeCommandLine(display);
+  const firstToken = tokens[0] ?? display.split(/\s+/)[0] ?? '';
+  return basename(firstToken)
+    .replace(/\.exe$/i, '')
+    .toLowerCase();
+}
+
+/**
+ * Normalize a cwd for process/cwd tuple comparisons.
+ */
+export function normalizeTuplePath(path: string): string {
+  const withSlashes = path.replace(/\\/g, '/').trim();
+  if (withSlashes === '/') return '/';
+  const trimmed = withSlashes.replace(/\/+$/, '');
+  return trimmed.toLowerCase();
+}
+
+/**
+ * Build tuple key for "same bookmark target" decisions.
+ */
+export function buildProcessCwdTuple(
+  processName: string | null | undefined,
+  commandLine: string | null,
+  cwd: string | null | undefined,
+): string | null {
+  if (!processName || !cwd) return null;
+  const processIdentity = getProcessIdentity(processName, commandLine);
+  const normalizedCwd = normalizeTuplePath(cwd);
+  if (!processIdentity || !normalizedCwd) return null;
+  return `${processIdentity}|${normalizedCwd}`;
+}
+
+/**
  * Strip executable path from command line, keeping just the exe name and arguments.
  * Handles quoted paths and unquoted paths. Strips .exe extension.
  */

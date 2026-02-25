@@ -36,7 +36,7 @@ public sealed class WebPreviewService
 
         url = NormalizeUrl(url);
 
-        if (!Uri.TryCreate(url.TrimEnd('/'), UriKind.Absolute, out var uri))
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
 
         if (uri.Scheme is not ("http" or "https"))

@@ -39,3 +39,12 @@ export async function createHistoryEntry(request: CreateHistoryRequest): Promise
   if (!response.ok || !data) return null;
   return data.id ?? null;
 }
+
+export async function reorderHistory(orderedIds: string[]): Promise<boolean> {
+  const response = await fetch('/api/history/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderedIds }),
+  });
+  return response.ok;
+}

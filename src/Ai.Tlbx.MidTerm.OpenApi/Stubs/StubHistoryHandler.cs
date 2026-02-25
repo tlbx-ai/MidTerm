@@ -28,4 +28,7 @@ public class StubHistoryHandler : IHistoryHandler
 
     public IResult DeleteHistoryEntry(string id) =>
         Results.Ok();
+
+    public IResult ReorderHistory(HistoryReorderRequest request) =>
+        Results.Ok();
 }

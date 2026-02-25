@@ -1,8 +1,11 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -10,11 +13,20 @@ public sealed class ClipboardService
 {
     private const string MacOsClipboardLabelPrefix = "ai.tlbx.midterm.clipboard.set.";
     private static readonly Regex MacOsExitCodeRegex = new(@"\blast exit code = (?<code>-?\d+)\b", RegexOptions.Compiled);
+    private readonly SettingsService _settingsService;
 
     [DllImport("libc", EntryPoint = "geteuid")]
     private static extern uint geteuid();
 
-    public async Task<bool> SetImageAsync(string filePath, string? mimeType = null)
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool ProcessIdToSessionId(uint dwProcessId, out uint pSessionId);
+
+    public ClipboardService(SettingsService settingsService)
+    {
+        _settingsService = settingsService;
+    }
+
+    public async Task<bool> SetImageAsync(string filePath, string? mimeType = null, int? preferredProcessId = null)
     {
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
         {
@@ -29,7 +41,7 @@ public sealed class ClipboardService
 
         if (OperatingSystem.IsWindows())
         {
-            return await SetImageWindowsAsync(filePath);
+            return await SetImageWindowsAsync(filePath, preferredProcessId);
         }
 
         if (OperatingSystem.IsMacOS())
@@ -50,7 +62,8 @@ public sealed class ClipboardService
         return SetImageAsync(filePath);
     }
 
-    private static async Task<bool> SetImageWindowsAsync(string filePath)
+    [SupportedOSPlatform("windows")]
+    private async Task<bool> SetImageWindowsAsync(string filePath, int? preferredProcessId)
     {
         var escapedPath = filePath.Replace("'", "''");
         var script =
@@ -70,7 +83,47 @@ public sealed class ClipboardService
             "}";
 
         var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        return await RunProcessAsync("powershell.exe", ["-NoProfile", "-STA", "-EncodedCommand", encodedScript]);
+        var args = new[] { "-NoProfile", "-STA", "-EncodedCommand", encodedScript };
+
+#if WINDOWS
+        if (_settingsService.IsRunningAsService)
+        {
+            var workingDir = Path.GetDirectoryName(filePath);
+            if (string.IsNullOrWhiteSpace(workingDir) || !Directory.Exists(workingDir))
+            {
+                workingDir = Path.GetTempPath();
+            }
+
+            uint? preferredSessionId = null;
+            if (preferredProcessId is > 0 &&
+                ProcessIdToSessionId((uint)preferredProcessId.Value, out var sessionId))
+            {
+                preferredSessionId = sessionId;
+            }
+
+            var runAsUser = _settingsService.Load().RunAsUser;
+            var result = await TtyHostSpawner.RunCommandAsUserAsync(
+                "powershell.exe",
+                args,
+                workingDir,
+                runAsUser,
+                CancellationToken.None,
+                preferredSessionId);
+
+            if (result.ExitCode == 0)
+            {
+                return true;
+            }
+
+            var failure = string.IsNullOrWhiteSpace(result.Stderr)
+                ? result.Stdout.Trim()
+                : result.Stderr.Trim();
+
+            Log.Warn(() => $"[Clipboard] Service-mode clipboard sync failed (runAsUser={runAsUser ?? "(auto)"}): {failure}");
+        }
+#endif
+
+        return await RunProcessAsync("powershell.exe", args);
     }
 
     private static async Task<bool> SetImageMacOsAsync(string filePath)

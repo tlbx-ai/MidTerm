@@ -59,6 +59,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 // --- History ---
 [JsonSerializable(typeof(HistoryPatchRequest))]
+[JsonSerializable(typeof(HistoryReorderRequest))]
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(List<LaunchEntry>))]
 [JsonSerializable(typeof(CreateHistoryRequest))]

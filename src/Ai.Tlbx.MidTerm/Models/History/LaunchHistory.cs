@@ -12,6 +12,12 @@ public sealed class LaunchEntry
     public bool IsStarred { get; set; }
     public string? Label { get; set; }
     public DateTime LastUsed { get; set; }
+    public int Order { get; set; }
+}
+
+public sealed class HistoryReorderRequest
+{
+    public required List<string> OrderedIds { get; init; }
 }
 
 public sealed class LaunchHistory
@@ -22,6 +28,7 @@ public sealed class LaunchHistory
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(LaunchHistory))]
 [JsonSerializable(typeof(List<LaunchEntry>))]
+[JsonSerializable(typeof(HistoryReorderRequest))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 public partial class HistoryJsonContext : JsonSerializerContext
 {
