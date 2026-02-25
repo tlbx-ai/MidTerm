@@ -73,9 +73,15 @@ public sealed class HistoryService
         }
     }
 
-    public string? RecordEntry(string shellType, string executable, string? commandLine, string workingDirectory, string? label = null)
+    public string? RecordEntry(
+        string shellType,
+        string executable,
+        string? commandLine,
+        string workingDirectory,
+        string? label = null,
+        string? dedupeKey = null)
     {
-        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}");
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -96,7 +102,7 @@ public sealed class HistoryService
         }
         executable = cleanExecutable;
 
-        var id = GenerateId(shellType, executable, commandLine, workingDirectory);
+        var id = GenerateId(shellType, executable, commandLine, workingDirectory, dedupeKey);
         Log.Info(() => $"RecordEntry: recording id={id}");
 
         lock (_lock)
@@ -104,6 +110,10 @@ public sealed class HistoryService
             var existing = _history.Entries.FirstOrDefault(e => e.Id == id);
             if (existing is not null)
             {
+                existing.ShellType = shellType;
+                existing.Executable = executable;
+                existing.CommandLine = commandLine;
+                existing.WorkingDirectory = workingDirectory;
                 existing.LastUsed = DateTime.UtcNow;
                 if (!string.IsNullOrWhiteSpace(label))
                 {
@@ -142,6 +152,30 @@ public sealed class HistoryService
                 .OrderByDescending(e => e.IsStarred)
                 .ThenByDescending(e => e.LastUsed)
                 .ToList();
+        }
+    }
+
+    public LaunchEntry? GetEntry(string id)
+    {
+        lock (_lock)
+        {
+            var entry = _history.Entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null)
+            {
+                return null;
+            }
+
+            return new LaunchEntry
+            {
+                Id = entry.Id,
+                ShellType = entry.ShellType,
+                Executable = entry.Executable,
+                CommandLine = entry.CommandLine,
+                WorkingDirectory = entry.WorkingDirectory,
+                IsStarred = entry.IsStarred,
+                Label = entry.Label,
+                LastUsed = entry.LastUsed
+            };
         }
     }
 
@@ -219,9 +253,22 @@ public sealed class HistoryService
         _history.Entries = starred.Concat(nonStarred).ToList();
     }
 
-    private static string GenerateId(string shellType, string executable, string? commandLine, string workingDirectory)
+    private static string GenerateId(
+        string shellType,
+        string executable,
+        string? commandLine,
+        string workingDirectory,
+        string? dedupeKey = null)
     {
-        var normalized = $"{shellType.ToLowerInvariant()}|{executable.ToLowerInvariant()}|{commandLine ?? ""}|{NormalizePath(workingDirectory)}";
+        string normalized;
+        if (!string.IsNullOrWhiteSpace(dedupeKey))
+        {
+            normalized = $"tuple|{dedupeKey.Trim().ToLowerInvariant()}";
+        }
+        else
+        {
+            normalized = $"{shellType.ToLowerInvariant()}|{executable.ToLowerInvariant()}|{commandLine ?? ""}|{NormalizePath(workingDirectory)}";
+        }
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }

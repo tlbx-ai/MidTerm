@@ -1481,6 +1481,12 @@
           "workingDirectory": {
             "type": "string"
           },
+          "dedupeKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "isStarred": {
             "type": "boolean"
           },

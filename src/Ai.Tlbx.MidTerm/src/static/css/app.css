@@ -841,6 +841,10 @@ html, body {
     font-size: var(--fs-lg);
 }
 
+.session-pin.pinned {
+    color: var(--accent-gold);
+}
+
 .session-pin:hover,
 .session-resize:hover,
 .session-rename:hover {

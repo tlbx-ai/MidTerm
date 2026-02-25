@@ -13,6 +13,7 @@ import {
   updateEmptyState,
   updateMobileTitle,
   getSessionDisplayInfo,
+  applyPinButtonState,
 } from './sessionList';
 import { isSessionInLayout } from '../layout/layoutStore';
 
@@ -74,7 +75,8 @@ function detectChangeType(sessions: Record<string, Session>): ChangeType {
     if (
       session.name !== prev.name ||
       session.terminalTitle !== prev.terminalTitle ||
-      session.shellType !== prev.shellType
+      session.shellType !== prev.shellType ||
+      session.bookmarkId !== prev.bookmarkId
     ) {
       return 'data';
     }
@@ -92,7 +94,7 @@ function detectChangeType(sessions: Record<string, Session>): ChangeType {
  * Preserves hover states, event listeners, and focus.
  */
 function updateSessionItemContent(sessionId: string, session: Session): void {
-  const item = document.querySelector(`[data-session-id="${sessionId}"]`) as HTMLElement | null;
+  const item = document.querySelector<HTMLElement>(`[data-session-id="${sessionId}"]`);
   if (!item) return;
 
   const displayInfo = getSessionDisplayInfo(session);
@@ -103,6 +105,11 @@ function updateSessionItemContent(sessionId: string, session: Session): void {
   if (wasProcessAsTitle !== isProcessAsTitle) {
     renderSessionList();
     return;
+  }
+
+  const pinBtn = item.querySelector<HTMLButtonElement>('.session-pin');
+  if (pinBtn) {
+    applyPinButtonState(pinBtn, !!session.bookmarkId);
   }
 
   // Process-as-title mode: title row is managed by updateSessionProcessInfo
@@ -187,7 +194,8 @@ function applyUpdate(type: ChangeType, sessions: Record<string, Session>): void 
         prev &&
         (session.name !== prev.name ||
           session.terminalTitle !== prev.terminalTitle ||
-          session.shellType !== prev.shellType)
+          session.shellType !== prev.shellType ||
+          session.bookmarkId !== prev.bookmarkId)
       ) {
         updateSessionItemContent(id, session);
       }

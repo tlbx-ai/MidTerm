@@ -127,6 +127,16 @@ function renderProcessTitle(
 }
 
 /**
+ * Render pinned/unpinned state on a sidebar pin button.
+ */
+export function applyPinButtonState(pinBtn: HTMLButtonElement, isPinned: boolean): void {
+  pinBtn.classList.toggle('pinned', isPinned);
+  pinBtn.textContent = isPinned ? '\u2605' : '\u2606';
+  pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+  pinBtn.title = t('session.pinToQuickLaunch');
+}
+
+/**
  * Update process info display for a specific session
  */
 function updateSessionProcessInfo(sessionId: string): void {
@@ -343,8 +353,7 @@ function createSessionItem(
   if (!isPending && sessionId) {
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
-    pinBtn.textContent = '\u2606';
-    pinBtn.title = t('session.pinToQuickLaunch');
+    applyPinButtonState(pinBtn, !!session.bookmarkId);
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();

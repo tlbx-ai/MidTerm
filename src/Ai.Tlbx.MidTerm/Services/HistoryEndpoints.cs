@@ -25,7 +25,8 @@ public static class HistoryEndpoints
                 request.Executable,
                 request.CommandLine,
                 request.WorkingDirectory,
-                request.Label);
+                request.Label,
+                request.DedupeKey);
 
             if (id is null)
             {
@@ -48,6 +49,11 @@ public static class HistoryEndpoints
                 {
                     return Results.NotFound();
                 }
+
+                if (!request.IsStarred.Value)
+                {
+                    sessionManager.ClearBookmarksByHistoryId(id);
+                }
             }
             if (request.Label is not null)
             {
@@ -64,6 +70,11 @@ public static class HistoryEndpoints
         {
             if (historyService.ToggleStar(id))
             {
+                var entry = historyService.GetEntry(id);
+                if (entry is not null && !entry.IsStarred)
+                {
+                    sessionManager.ClearBookmarksByHistoryId(id);
+                }
                 return Results.Ok();
             }
             return Results.NotFound();
@@ -73,6 +84,7 @@ public static class HistoryEndpoints
         {
             if (historyService.RemoveEntry(id))
             {
+                sessionManager.ClearBookmarksByHistoryId(id);
                 return Results.Ok();
             }
             return Results.NotFound();

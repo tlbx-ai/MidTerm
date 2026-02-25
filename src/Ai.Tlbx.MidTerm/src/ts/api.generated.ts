@@ -1737,6 +1737,7 @@ export interface components {
       executable: string;
       commandLine?: null | string;
       workingDirectory: string;
+      dedupeKey?: null | string;
       isStarred: boolean;
       label?: null | string;
     };

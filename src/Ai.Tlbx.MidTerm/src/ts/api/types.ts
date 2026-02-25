@@ -79,7 +79,9 @@ export type DirectoryListResponse = Schemas['DirectoryListResponse'];
 
 // History
 export type LaunchEntry = Schemas['LaunchEntry'];
-export type CreateHistoryRequest = Schemas['CreateHistoryRequest'];
+export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
+  dedupeKey?: string | null;
+};
 export type HistoryPatchRequest = Schemas['HistoryPatchRequest'];
 
 // Shells & Users
