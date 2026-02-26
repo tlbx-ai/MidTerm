@@ -676,7 +676,7 @@ html, body {
 .history-item {
     display: flex;
     align-items: center;
-    padding: 3px 8px;
+    padding: 2px 0;
     cursor: pointer;
     transition: background 0.1s;
 }
@@ -727,7 +727,7 @@ html, body {
 }
 
 .history-item-label {
-    font-size: var(--fs-sm);
+    font-size: var(--fs-lg);
     font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
@@ -804,6 +804,48 @@ html, body {
 .history-item-star:disabled {
     opacity: 0.5;
     cursor: wait;
+}
+
+.history-item-rename {
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-xs);
+    opacity: 0;
+    transition: opacity 0.1s, color 0.1s;
+    flex-shrink: 0;
+}
+
+.history-item:hover .history-item-rename {
+    opacity: 1;
+}
+
+.history-item-rename:hover {
+    color: var(--accent-blue);
+}
+
+.history-rename-input {
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    padding: 2px 4px;
+    border: 1px solid var(--btn-secondary);
+    border-radius: 3px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.history-rename-input:focus {
+    border-color: var(--accent-blue);
 }
 
 .history-section-header {

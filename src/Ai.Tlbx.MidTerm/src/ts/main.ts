@@ -216,9 +216,15 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
-  initHistoryDropdown((entry) => {
-    void spawnFromHistory(entry);
-  });
+  initHistoryDropdown(
+    (entry) => {
+      void spawnFromHistory(entry);
+    },
+    (entryId, newLabel) => {
+      const session = $sessionList.get().find((s) => s.bookmarkId === entryId);
+      if (session) renameSession(session.id, newLabel || null);
+    },
+  );
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);

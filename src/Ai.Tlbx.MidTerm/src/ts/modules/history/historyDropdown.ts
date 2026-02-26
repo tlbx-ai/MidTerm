@@ -7,9 +7,9 @@
 
 import {
   fetchHistory,
-  toggleStar,
   removeHistoryEntry,
   reorderHistory,
+  renameHistoryEntry,
   type LaunchEntry,
 } from './historyApi';
 import { icon } from '../../constants';
@@ -24,6 +24,7 @@ let dropdownEl: HTMLElement | null = null;
 let isOpen = false;
 let cachedEntries: LaunchEntry[] = [];
 let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
+let onRenameEntry: ((entryId: string, newLabel: string) => void) | null = null;
 
 // Drag state
 let draggedId: string | null = null;
@@ -41,8 +42,12 @@ let touchActive = false;
 /**
  * Initialize the history dropdown.
  */
-export function initHistoryDropdown(spawnCallback: (entry: LaunchEntry) => void): void {
+export function initHistoryDropdown(
+  spawnCallback: (entry: LaunchEntry) => void,
+  renameCallback?: (entryId: string, newLabel: string) => void,
+): void {
   onSpawnSession = spawnCallback;
+  onRenameEntry = renameCallback ?? null;
   createDropdownElement();
   void loadHistory();
 }
@@ -174,29 +179,7 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
 
   if (isPinned) {
     item.draggable = true;
-
-    const grip = document.createElement('span');
-    grip.className = 'history-item-grip';
-    grip.textContent = '\u2807';
-    item.appendChild(grip);
   }
-
-  const starBtn = document.createElement('button');
-  starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
-  starBtn.title = entry.isStarred ? t('history.unstar') : t('history.star');
-  starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
-  starBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!entry.id) return;
-    starBtn.disabled = true;
-    starBtn.classList.add('loading');
-    void (async () => {
-      await toggleStar(entry.id);
-      await loadHistory();
-      renderDropdownContent();
-    })();
-  });
-  item.appendChild(starBtn);
 
   const infoDiv = document.createElement('div');
   infoDiv.className = 'history-item-info';
@@ -216,6 +199,16 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
   infoDiv.appendChild(fgIndicator);
 
   item.appendChild(infoDiv);
+
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'history-item-rename';
+  renameBtn.title = t('sidebar.rename');
+  renameBtn.innerHTML = icon('rename');
+  renameBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startHistoryInlineRename(item, entry);
+  });
+  item.appendChild(renameBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'history-item-delete';
@@ -238,11 +231,7 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
 
   item.addEventListener('click', (e) => {
     const target = e.target as Element;
-    if (
-      target.closest('.history-item-delete') ||
-      target.closest('.history-item-star') ||
-      target.closest('.history-item-grip')
-    ) {
+    if (target.closest('.history-item-delete') || target.closest('.history-item-rename')) {
       return;
     }
     if (onSpawnSession) {
@@ -252,6 +241,70 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
   });
 
   return item;
+}
+
+function startHistoryInlineRename(item: HTMLElement, entry: LaunchEntry): void {
+  const infoEl = item.querySelector('.history-item-info') as HTMLElement | null;
+  if (!infoEl) return;
+
+  const currentLabel = entry.label || '';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'history-rename-input';
+  input.value = currentLabel;
+
+  // Replace info content with input
+  const originalContent = infoEl.innerHTML;
+  infoEl.innerHTML = '';
+  infoEl.appendChild(input);
+
+  let committed = false;
+  function finishRename(): void {
+    if (committed) return;
+    committed = true;
+    const newLabel = input.value.trim();
+    infoEl!.innerHTML = originalContent;
+
+    if (newLabel !== currentLabel) {
+      // Update the label in the DOM immediately
+      const newLabelEl = infoEl!.querySelector('.history-item-label') as HTMLElement | null;
+      if (newLabelEl) {
+        newLabelEl.textContent = newLabel || '';
+      } else if (newLabel) {
+        const span = document.createElement('span');
+        span.className = 'history-item-label';
+        span.textContent = newLabel;
+        infoEl!.insertBefore(span, infoEl!.firstChild);
+      }
+
+      entry.label = newLabel || null;
+
+      void renameHistoryEntry(entry.id, newLabel).then(() => {
+        if (onRenameEntry) onRenameEntry(entry.id, newLabel);
+      });
+    }
+  }
+
+  function cancelRename(): void {
+    if (committed) return;
+    committed = true;
+    infoEl!.innerHTML = originalContent;
+  }
+
+  input.addEventListener('blur', finishRename);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelRename();
+    }
+  });
+
+  input.focus();
+  input.select();
 }
 
 function createForegroundIndicator(
