@@ -679,6 +679,7 @@ html, body {
     padding: 2px 6px;
     cursor: pointer;
     transition: background 0.1s;
+    position: relative;
 }
 
 .history-item:hover {
@@ -752,6 +753,25 @@ html, body {
     color: var(--text-primary);
 }
 
+.history-item-actions {
+    position: absolute;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: linear-gradient(to right, transparent, var(--bg-input) 8px, var(--bg-input));
+    padding-left: 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+}
+
+.history-item:hover .history-item-actions {
+    opacity: 1;
+    pointer-events: auto;
+    background: linear-gradient(to right, transparent, var(--btn-secondary) 8px, var(--btn-secondary));
+}
+
 .history-item-delete {
     width: 20px;
     height: 20px;
@@ -764,13 +784,7 @@ html, body {
     align-items: center;
     justify-content: center;
     font-size: var(--fs-xs);
-    opacity: 0;
-    transition: opacity 0.1s, color 0.1s;
-    flex-shrink: 0;
-}
-
-.history-item:hover .history-item-delete {
-    opacity: 1;
+    transition: color 0.1s;
 }
 
 .history-item-delete:hover {
@@ -820,13 +834,7 @@ html, body {
     align-items: center;
     justify-content: center;
     font-size: var(--fs-xs);
-    opacity: 0;
-    transition: opacity 0.1s, color 0.1s;
-    flex-shrink: 0;
-}
-
-.history-item:hover .history-item-rename {
-    opacity: 1;
+    transition: color 0.1s;
 }
 
 .history-item-rename:hover {

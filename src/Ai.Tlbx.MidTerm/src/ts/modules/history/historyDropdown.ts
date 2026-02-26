@@ -200,6 +200,9 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
 
   item.appendChild(infoDiv);
 
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'history-item-actions';
+
   const renameBtn = document.createElement('button');
   renameBtn.className = 'history-item-rename';
   renameBtn.title = t('sidebar.rename');
@@ -208,7 +211,7 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
     e.stopPropagation();
     startHistoryInlineRename(item, entry);
   });
-  item.appendChild(renameBtn);
+  actionsDiv.appendChild(renameBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'history-item-delete';
@@ -227,7 +230,8 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
       renderDropdownContent();
     })();
   });
-  item.appendChild(deleteBtn);
+  actionsDiv.appendChild(deleteBtn);
+  item.appendChild(actionsDiv);
 
   item.addEventListener('click', (e) => {
     const target = e.target as Element;
