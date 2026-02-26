@@ -10,6 +10,18 @@ import { pasteToTerminal } from '../terminal';
 import { createLogger } from '../logging';
 import { getActiveUrl, setActiveMode, setActiveUrl } from './webSessionState';
 
+interface SnapshotResponse {
+  snapshotPath?: string;
+}
+
+interface UploadResponse {
+  path?: string;
+}
+
+interface Html2CanvasWindow extends Window {
+  html2canvas?: (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+}
+
 const log = createLogger('webPanel');
 let urlInput: HTMLInputElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
@@ -26,7 +38,7 @@ export function initWebPanel(): void {
   goBtn?.addEventListener('click', () => {
     void handleGo();
   });
-  urlInput?.addEventListener('keydown', (e: KeyboardEvent) => {
+  urlInput.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       void handleGo();
@@ -85,7 +97,7 @@ async function handleGo(): Promise<void> {
 export function loadPreview(): void {
   if (!iframe) return;
   // Force reload by setting src with a cache-busting fragment
-  iframe.src = '/webpreview/' + '?' + Date.now();
+  iframe.src = `/webpreview/?${Date.now()}`;
 }
 
 async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
@@ -159,7 +171,7 @@ async function handleSnapshot(): Promise<void> {
       log.warn(() => `Snapshot failed: ${resp.status}`);
       return;
     }
-    const result = await resp.json();
+    const result = (await resp.json()) as SnapshotResponse;
     if (result.snapshotPath) {
       pasteToTerminal(sessionId, result.snapshotPath, true);
       log.info(() => `Snapshot saved: ${result.snapshotPath}`);
@@ -205,9 +217,8 @@ function handleDomText(): void {
  * to be asked for html2canvas (which it doesn't have). blob: URLs are explicitly excluded
  * from that rewriter, so they reach the browser's native script loader unchanged.
  */
-async function ensureHtml2Canvas(iframeWin: Window): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if ((iframeWin as any).html2canvas) return;
+async function ensureHtml2Canvas(iframeWin: Html2CanvasWindow): Promise<void> {
+  if (iframeWin.html2canvas) return;
 
   // Fetch from parent window — not subject to the iframe's URL-rewriting patches.
   const response = await fetch('/js/html2canvas.min.js');
@@ -242,25 +253,23 @@ async function captureIframeScreenshot(): Promise<Blob | null> {
   const iframeDoc = iframe.contentDocument;
   if (!iframeWin || !iframeDoc) return null;
 
-  await ensureHtml2Canvas(iframeWin);
+  const typedWin = iframeWin as Html2CanvasWindow;
+  await ensureHtml2Canvas(typedWin);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const canvas: HTMLCanvasElement = await (iframeWin as any).html2canvas(
-    iframeDoc.documentElement,
-    {
-      useCORS: false, // not needed — all resources are same-origin via the proxy
-      allowTaint: false,
-      scale: window.devicePixelRatio || 1,
-      width: iframe.clientWidth,
-      height: iframe.clientHeight,
-      scrollX: -iframeDoc.documentElement.scrollLeft,
-      scrollY: -iframeDoc.documentElement.scrollTop,
-      windowWidth: iframe.clientWidth,
-      windowHeight: iframe.clientHeight,
-      logging: false,
-      imageTimeout: 15000,
-    },
-  );
+  if (!typedWin.html2canvas) return null;
+  const canvas: HTMLCanvasElement = await typedWin.html2canvas(iframeDoc.documentElement, {
+    useCORS: false, // not needed — all resources are same-origin via the proxy
+    allowTaint: false,
+    scale: window.devicePixelRatio || 1,
+    width: iframe.clientWidth,
+    height: iframe.clientHeight,
+    scrollX: -iframeDoc.documentElement.scrollLeft,
+    scrollY: -iframeDoc.documentElement.scrollTop,
+    windowWidth: iframe.clientWidth,
+    windowHeight: iframe.clientHeight,
+    logging: false,
+    imageTimeout: 15000,
+  });
 
   return new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, 'image/png');
@@ -311,7 +320,7 @@ async function handleScreenshot(download = false): Promise<void> {
       log.warn(() => `Screenshot upload failed: ${resp.status}`);
       return;
     }
-    const result = await resp.json();
+    const result = (await resp.json()) as UploadResponse;
     if (result.path) {
       pasteToTerminal(sessionId, result.path, true);
       log.info(() => 'Screenshot pasted to terminal');

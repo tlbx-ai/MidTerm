@@ -46,7 +46,7 @@ export function adjustInnerDockPositions(): void {
   const wpWidth = getWebPreviewDockWidth();
   for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock']) {
     const el = document.getElementById(id);
-    if (el) el.style.right = wpWidth > 0 ? wpWidth + 'px' : '';
+    if (el) el.style.right = wpWidth > 0 ? `${wpWidth}px` : '';
   }
 }
 
@@ -62,7 +62,7 @@ export function updateAllDockMargins(): void {
   }
   document
     .querySelectorAll<HTMLElement>('.session-tab-panels')
-    .forEach((p) => (p.style.marginRight = total > 0 ? total + 'px' : ''));
+    .forEach((p) => (p.style.marginRight = total > 0 ? `${total}px` : ''));
 }
 
 /** Toggle the web preview dock panel open or closed based on current state. */
@@ -91,7 +91,7 @@ export function openWebPreviewDock(): void {
   if (savedWidth) {
     const w = parseInt(savedWidth, 10);
     if (w >= DOCK_MIN_WIDTH && w <= DOCK_MAX_WIDTH) {
-      dockPanel.style.width = w + 'px';
+      dockPanel.style.width = `${w}px`;
     }
   }
 
@@ -173,9 +173,11 @@ export function applyWebPreviewHiddenState(): void {
 /** Set up mouse and touch drag handlers for resizing the web preview dock panel. */
 export function setupWebPreviewDockResize(): void {
   const dockPanel = document.getElementById('web-preview-dock');
-  const grip = dockPanel?.querySelector('.web-preview-dock-resize-grip') as HTMLElement;
-  if (!dockPanel || !grip) return;
+  const gripEl = dockPanel?.querySelector('.web-preview-dock-resize-grip') as HTMLElement | null;
+  if (!dockPanel || !gripEl) return;
 
+  const panel = dockPanel;
+  const grip = gripEl;
   let isResizing = false;
   let startX = 0;
   let startWidth = 0;
@@ -183,7 +185,7 @@ export function setupWebPreviewDockResize(): void {
   function beginResize(clientX: number): void {
     isResizing = true;
     startX = clientX;
-    startWidth = dockPanel!.offsetWidth;
+    startWidth = panel.offsetWidth;
     grip.classList.add('active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
@@ -193,7 +195,7 @@ export function setupWebPreviewDockResize(): void {
     if (!isResizing) return;
     const delta = startX - clientX;
     const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
-    dockPanel!.style.width = newWidth + 'px';
+    panel.style.width = `${newWidth}px`;
     adjustInnerDockPositions();
     updateAllDockMargins();
   }
@@ -204,7 +206,7 @@ export function setupWebPreviewDockResize(): void {
     grip.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    localStorage.setItem(DOCK_WIDTH_KEY, String(dockPanel!.offsetWidth));
+    localStorage.setItem(DOCK_WIDTH_KEY, String(panel.offsetWidth));
     handleDockLayoutChange();
   }
 
@@ -220,8 +222,9 @@ export function setupWebPreviewDockResize(): void {
   grip.addEventListener(
     'touchstart',
     (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      beginResize(e.touches[0]!.clientX);
+      const touch = e.touches[0];
+      if (e.touches.length !== 1 || !touch) return;
+      beginResize(touch.clientX);
       e.preventDefault();
     },
     { passive: false },
@@ -230,8 +233,9 @@ export function setupWebPreviewDockResize(): void {
   document.addEventListener(
     'touchmove',
     (e: TouchEvent) => {
-      if (!isResizing || e.touches.length !== 1) return;
-      updateResize(e.touches[0]!.clientX);
+      const touch = e.touches[0];
+      if (!isResizing || e.touches.length !== 1 || !touch) return;
+      updateResize(touch.clientX);
       e.preventDefault();
     },
     { passive: false },

@@ -61,8 +61,8 @@ export function initTouchScrolling(
 ): void {
   if (!isTouchDevice() || hasPrecisePointer()) return;
 
-  const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
-  const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+  const viewport = container.querySelector<HTMLElement>('.xterm-viewport');
+  const screen = container.querySelector<HTMLElement>('.xterm-screen');
   if (!viewport || !screen) return;
 
   const overlay = document.createElement('div');
@@ -92,10 +92,18 @@ export function initTouchScrolling(
     scrollAccumulator: 0,
     cellHeight: 0,
     handlers: {
-      touchstart: (e) => handleTouchStart(sessionId, e),
-      touchmove: (e) => handleTouchMove(sessionId, e),
-      touchend: (e) => handleTouchEnd(sessionId, e),
-      touchcancel: (e) => handleTouchCancel(sessionId, e),
+      touchstart: (e) => {
+        handleTouchStart(sessionId, e);
+      },
+      touchmove: (e) => {
+        handleTouchMove(sessionId, e);
+      },
+      touchend: (e) => {
+        handleTouchEnd(sessionId, e);
+      },
+      touchcancel: (e) => {
+        handleTouchCancel(sessionId, e);
+      },
     },
     documentTouchEnd: null,
   };
@@ -141,7 +149,8 @@ function handleTouchStart(sessionId: string, e: TouchEvent): void {
   // from intercepting this touch and converting scroll into cursor key sequences
   e.stopPropagation();
 
-  const touch = e.touches[0]!;
+  const touch = e.touches[0];
+  if (!touch) return;
 
   cancelMomentum(s);
 
@@ -173,7 +182,8 @@ function handleTouchMove(sessionId: string, e: TouchEvent): void {
 
   e.stopPropagation();
 
-  const touch = e.touches[0]!;
+  const touch = e.touches[0];
+  if (!touch) return;
   const dx = touch.clientX - s.startX;
   const dy = touch.clientY - s.startY;
 
@@ -269,7 +279,7 @@ function enterSelectionMode(s: TouchScrollState, clientX: number, clientY: numbe
   s.longPressTimer = null;
 
   // Haptic feedback
-  navigator.vibrate?.(30);
+  navigator.vibrate(30);
 
   // Hide overlay so touches reach xterm for selection
   s.overlay.style.pointerEvents = 'none';

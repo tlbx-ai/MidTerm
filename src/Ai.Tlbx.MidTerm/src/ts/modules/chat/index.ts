@@ -98,7 +98,7 @@ function formatJsonContent(content: string): string {
       (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
       (trimmed.startsWith('[') && trimmed.endsWith(']'))
     ) {
-      const parsed = JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
       return JSON.stringify(parsed, null, 2);
     }
   } catch {
@@ -195,7 +195,7 @@ function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): 
       return `Send to terminal:\n${formatted}`;
     }
     case 'interactive_read': {
-      const ops = (args.operations as InteractiveOp[]) || [];
+      const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
       const lines = ops.map((op, i) => {
         if (op.type === 'input') {
           return `${i + 1}. Input: ${formatInputText(op.data || '')}`;
@@ -306,7 +306,11 @@ export function showToolConfirmation(
       resolve(approved);
     };
 
-    acceptBtn.addEventListener('click', () => handleResponse(true));
-    declineBtn.addEventListener('click', () => handleResponse(false));
+    acceptBtn.addEventListener('click', () => {
+      handleResponse(true);
+    });
+    declineBtn.addEventListener('click', () => {
+      handleResponse(false);
+    });
   });
 }

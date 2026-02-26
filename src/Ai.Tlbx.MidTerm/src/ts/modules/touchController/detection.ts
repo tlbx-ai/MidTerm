@@ -69,11 +69,7 @@ export function setupPointerDetection(onChangeCallback: DetectionCallback): void
     }
   };
 
-  if (mediaQueryList.addEventListener) {
-    mediaQueryList.addEventListener('change', handleChange);
-  } else {
-    mediaQueryList.addListener(handleChange);
-  }
+  mediaQueryList.addEventListener('change', handleChange);
 
   onChangeCallback(hasPrecisePointer());
 }
@@ -84,11 +80,7 @@ export function setupPointerDetection(onChangeCallback: DetectionCallback): void
 export function teardownPointerDetection(): void {
   if (mediaQueryList) {
     const handleChange = (): void => {};
-    if (mediaQueryList.removeEventListener) {
-      mediaQueryList.removeEventListener('change', handleChange);
-    } else {
-      mediaQueryList.removeListener(handleChange);
-    }
+    mediaQueryList.removeEventListener('change', handleChange);
     mediaQueryList = null;
   }
   callback = null;

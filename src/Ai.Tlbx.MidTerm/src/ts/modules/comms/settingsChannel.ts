@@ -5,7 +5,7 @@
  * When settings are changed on any client, all connected clients receive the update.
  */
 
-import type { Settings, UpdateInfo } from '../../types';
+import type { MidTermSettingsPublic, UpdateInfo } from '../../types';
 import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { $currentSettings, $updateInfo, $settingsWsConnected } from '../../stores';
@@ -18,7 +18,7 @@ const settingsReconnect = new ReconnectController();
 /** Message wrapper from server */
 interface SettingsWsMessage {
   type: 'settings' | 'update';
-  settings?: Settings;
+  settings?: MidTermSettingsPublic;
   update?: UpdateInfo;
 }
 
@@ -44,7 +44,7 @@ export function connectSettingsWebSocket(): void {
 
   ws.onmessage = (event) => {
     try {
-      const message = JSON.parse(event.data) as SettingsWsMessage;
+      const message = JSON.parse(event.data as string) as SettingsWsMessage;
       handleMessage(message);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);

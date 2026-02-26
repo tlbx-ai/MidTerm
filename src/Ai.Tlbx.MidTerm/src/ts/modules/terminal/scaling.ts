@@ -46,9 +46,15 @@ function getDockPanelWidth(): number {
  * These are the true cell sizes unaffected by CSS layout constraints,
  * avoiding circular measurements when the terminal overflows its container.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getXtermCellDimensions(terminal: any): { cellWidth: number; cellHeight: number } | null {
-  const dims = terminal?._core?._renderService?.dimensions?.css?.cell;
+function getXtermCellDimensions(
+  terminal: TerminalState['terminal'],
+): { cellWidth: number; cellHeight: number } | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const core = terminal as Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  const dims = core._core?._renderService?.dimensions?.css?.cell as
+    | { width: number; height: number }
+    | undefined;
   if (!dims || dims.width < 1 || dims.height < 1) return null;
   return { cellWidth: dims.width, cellHeight: dims.height };
 }
@@ -76,8 +82,8 @@ function logResizeDiagnostics(
   let scaleFactor = 1;
 
   if (state?.opened) {
-    const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
-    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const xterm = state.container.querySelector<HTMLElement>('.xterm');
+    const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
     if (xterm && screen) {
       actualWidth = screen.offsetWidth;
       actualHeight = screen.offsetHeight;
@@ -121,7 +127,7 @@ function measureFromExistingTerminal(
     if (xtermDims) return xtermDims;
 
     // Fallback to DOM measurement
-    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
     const cols = state.terminal.cols;
     const rows = state.terminal.rows;
 
@@ -282,7 +288,7 @@ export function fitSessionToScreen(sessionId: string): void {
   }
 
   // Clear any existing scaling first
-  const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
+  const xterm = state.container.querySelector<HTMLElement>('.xterm');
   if (xterm) {
     xterm.style.transform = '';
     state.container.classList.remove('scaled');
@@ -309,7 +315,7 @@ export function fitSessionToScreen(sessionId: string): void {
   let cellHeight: number | null = xtermCellDims?.cellHeight ?? null;
 
   if (!cellWidth || !cellHeight) {
-    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
     const terminalCols = state.terminal.cols;
     const terminalRows = state.terminal.rows;
     if (screen && terminalCols > 0 && terminalRows > 0) {
@@ -323,7 +329,7 @@ export function fitSessionToScreen(sessionId: string): void {
     requestAnimationFrame(() => {
       try {
         const dims = state.fitAddon.proposeDimensions();
-        if (dims?.cols && dims?.rows) {
+        if (dims && dims.cols && dims.rows) {
           state.fitAddon.fit();
           sendResize(sessionId, state.terminal.cols, state.terminal.rows);
         }
@@ -401,7 +407,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
   let cellHeight: number | null = xtermCellDims?.cellHeight ?? null;
 
   if (!cellWidth || !cellHeight) {
-    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
     const terminalCols = state.terminal.cols;
     const terminalRows = state.terminal.rows;
     if (screen && terminalCols > 0 && terminalRows > 0) {
@@ -447,12 +453,12 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
   }
 
   // Clear any scaling since we just resized to fit
-  const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
+  const xterm = state.container.querySelector<HTMLElement>('.xterm');
   if (xterm) {
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
     state.container.classList.remove('scaled');
-    const overlay = state.container.querySelector('.scaled-overlay') as HTMLElement | null;
+    const overlay = state.container.querySelector<HTMLElement>('.scaled-overlay');
     if (overlay) overlay.remove();
   }
 }
@@ -463,7 +469,7 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
  */
 export function applyTerminalScalingSync(state: TerminalState): void {
   const container = state.container;
-  const xterm = container.querySelector('.xterm') as HTMLElement | null;
+  const xterm = container.querySelector<HTMLElement>('.xterm');
   if (!xterm) return;
 
   const availWidth = container.clientWidth - TERMINAL_PADDING;
@@ -484,7 +490,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   }
 
   // Find or create overlay element
-  let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
+  let overlay = container.querySelector<HTMLElement>('.scaled-overlay');
 
   // Helper: ensure overlay exists with click handler
   const ensureOverlay = (): HTMLElement => {
@@ -495,7 +501,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       if (!$isMainBrowser.get()) return;
       const sessionId = container.id.replace('terminal-', '');
       if (!sessionId) return;
-      const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+      const layoutPane = container.closest<HTMLElement>('.layout-leaf');
       if (layoutPane) {
         fitTerminalToContainer(sessionId, layoutPane);
       } else {
@@ -527,7 +533,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     positionOverlay(el);
 
     const pct = Math.round(scale * 100);
-    const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+    const screen = container.querySelector<HTMLElement>('.xterm-screen');
     let diagHtml = '';
     if (isDevMode() && screen) {
       const cols = state.terminal.cols;
@@ -612,7 +618,7 @@ function autoResizeAllTerminalsInternal(): void {
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
-    const layoutPane = state.container.closest('.layout-leaf') as HTMLElement | null;
+    const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
     if (layoutPane) {
       fitTerminalToContainer(sessionId, layoutPane);
       resizedSessions.add(sessionId);
@@ -705,13 +711,12 @@ export function getLastPeriodicCheckResult(): string {
  */
 function periodicResizeCheck(): void {
   const sessions = $sessions.get();
-  let resizedAny = false;
   const details: string[] = [];
 
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
-    const layoutPane = state.container.closest('.layout-leaf') as HTMLElement | null;
+    const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
     const container = layoutPane ?? dom.terminalsArea;
     if (!container) return;
 
@@ -719,9 +724,6 @@ function periodicResizeCheck(): void {
     const termRows = state.terminal.rows;
     if (termCols <= 0 || termRows <= 0) return;
 
-    // Use xterm.js internal cell dimensions to avoid circular measurements
-    // when the terminal overflows its container (screen.offsetWidth gets
-    // constrained by CSS layout, making floor(availWidth / cellWidth) === cols)
     const xtermDims = getXtermCellDimensions(state.terminal);
     let cellWidth: number;
     let cellHeight: number;
@@ -729,7 +731,7 @@ function periodicResizeCheck(): void {
       cellWidth = xtermDims.cellWidth;
       cellHeight = xtermDims.cellHeight;
     } else {
-      const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+      const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
       if (!screen) return;
       cellWidth = screen.offsetWidth / termCols;
       cellHeight = screen.offsetHeight / termRows;
@@ -762,15 +764,10 @@ function periodicResizeCheck(): void {
       requestAnimationFrame(() => {
         applyTerminalScalingSync(state);
       });
-      resizedAny = true;
     }
   });
 
-  if (resizedAny) {
-    lastPeriodicCheckResult = details.join('; ');
-  } else {
-    lastPeriodicCheckResult = 'no change';
-  }
+  lastPeriodicCheckResult = details.length > 0 ? details.join('; ') : 'no change';
 }
 
 /**

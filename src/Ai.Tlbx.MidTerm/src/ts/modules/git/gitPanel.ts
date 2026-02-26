@@ -112,7 +112,8 @@ function buildFileTree(files: GitFileEntry[]): TreeNode {
     const parts = file.path.split('/');
     let node = root;
     for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i]!;
+      const part = parts[i];
+      if (part === undefined) continue;
       if (!node.children.has(part)) {
         node.children.set(part, {
           name: part,
@@ -121,9 +122,12 @@ function buildFileTree(files: GitFileEntry[]): TreeNode {
           file: null,
         });
       }
-      node = node.children.get(part)!;
+      const child = node.children.get(part);
+      if (!child) continue;
+      node = child;
     }
-    const fileName = parts[parts.length - 1]!;
+    const fileName = parts[parts.length - 1];
+    if (fileName === undefined) continue;
     node.children.set(fileName, {
       name: fileName,
       path: file.path,
@@ -166,8 +170,8 @@ function tallyLoc(files: GitFileEntry[]): { add: number; del: number } {
   let add = 0;
   let del = 0;
   for (const f of files) {
-    add += f.additions ?? 0;
-    del += f.deletions ?? 0;
+    add += f.additions;
+    del += f.deletions;
   }
   return { add, del };
 }

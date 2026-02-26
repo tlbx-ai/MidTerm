@@ -16,16 +16,16 @@ let el: HTMLSpanElement | null = null;
 let lastText = '';
 
 // Circular buffer for SMA
-const txSamples: number[] = new Array(WINDOW_SIZE).fill(0);
-const rxSamples: number[] = new Array(WINDOW_SIZE).fill(0);
+const txSamples: number[] = new Array<number>(WINDOW_SIZE).fill(0);
+const rxSamples: number[] = new Array<number>(WINDOW_SIZE).fill(0);
 let sampleIndex = 0;
 let filledSamples = 0;
 
 function formatRate(bps: number): string {
   if (bps < 1) return '0 B/s';
-  if (bps < 1000) return Math.round(bps) + ' B/s';
-  if (bps < 1000000) return (bps / 1000).toFixed(1) + ' KB/s';
-  return (bps / 1000000).toFixed(2) + ' MB/s';
+  if (bps < 1000) return `${Math.round(bps)} B/s`;
+  if (bps < 1000000) return `${(bps / 1000).toFixed(1)} KB/s`;
+  return `${(bps / 1000000).toFixed(2)} MB/s`;
 }
 
 function tick(): void {
@@ -43,8 +43,8 @@ function tick(): void {
   let txSum = 0,
     rxSum = 0;
   for (let i = 0; i < filledSamples; i++) {
-    txSum += txSamples[i]!;
-    rxSum += rxSamples[i]!;
+    txSum += txSamples[i] ?? 0;
+    rxSum += rxSamples[i] ?? 0;
   }
   const txAvg = txSum / filledSamples;
   const rxAvg = rxSum / filledSamples;
@@ -59,8 +59,9 @@ function tick(): void {
 }
 
 export function initTrafficIndicator(): void {
-  el = document.getElementById('ws-traffic') as HTMLSpanElement;
-  if (!el) return;
+  const wsTraffic = document.getElementById('ws-traffic');
+  if (!wsTraffic) return;
+  el = wsTraffic as HTMLSpanElement;
 
   intervalId = window.setInterval(tick, UPDATE_MS);
 
@@ -79,6 +80,6 @@ export function initTrafficIndicator(): void {
 }
 
 export function destroyTrafficIndicator(): void {
-  if (intervalId) clearInterval(intervalId);
+  if (intervalId !== null) clearInterval(intervalId);
   intervalId = null;
 }

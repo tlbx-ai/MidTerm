@@ -54,7 +54,9 @@ export function createTabBar(
     if (tabId === 'terminal') btn.classList.add('active');
     btn.dataset.tab = tabId;
     btn.textContent = label;
-    btn.addEventListener('click', () => onTabSelect(tabId as SessionTabId));
+    btn.addEventListener('click', () => {
+      onTabSelect(tabId as SessionTabId);
+    });
     bar.appendChild(btn);
   }
 
@@ -131,8 +133,8 @@ export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusRespons
     branchSpan.textContent = '\u2387';
   }
 
-  const additions = status.totalAdditions ?? 0;
-  const deletions = status.totalDeletions ?? 0;
+  const additions = status.totalAdditions;
+  const deletions = status.totalDeletions;
 
   statsSpan.innerHTML =
     `<span class="git-indicator-added">+${additions}</span> ` +

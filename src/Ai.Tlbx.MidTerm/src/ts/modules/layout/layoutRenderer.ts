@@ -88,7 +88,7 @@ export function renderLayout(root: LayoutNode | null): void {
           } else {
             applyTerminalScalingSync(state);
           }
-          if (state.terminal && state.opened) {
+          if (state.opened) {
             state.terminal.focus();
           }
         });
@@ -189,12 +189,13 @@ function moveTerminalsToLayout(): void {
  * Show standalone terminals (when layout is inactive).
  */
 function showStandaloneTerminals(): void {
-  if (!dom.terminalsArea) return;
+  const area = dom.terminalsArea;
+  if (!area) return;
 
   // Move any terminals back to terminals-area from layout panes
   sessionTerminals.forEach((state) => {
-    if (state.container.parentElement !== dom.terminalsArea) {
-      dom.terminalsArea!.appendChild(state.container);
+    if (state.container.parentElement !== area) {
+      area.appendChild(state.container);
     }
   });
 }

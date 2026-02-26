@@ -127,11 +127,18 @@ function reset(): void {
   console.info('[mtlog] reset to defaults');
 }
 
+interface MtlogApi {
+  enable: (concern: string) => void;
+  disable: (concern: string) => void;
+  list: () => void;
+  level: (name: string) => void;
+  reset: () => void;
+}
+
 export function initLogConcerns(): void {
   loadFromStorage();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).mtlog = {
+  (window as unknown as { mtlog: MtlogApi }).mtlog = {
     enable,
     disable,
     list,

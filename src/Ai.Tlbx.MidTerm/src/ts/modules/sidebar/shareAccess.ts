@@ -46,7 +46,7 @@ async function openShareEmail(): Promise<void> {
     setTimeout(() => {
       if (document.hasFocus()) {
         log.info(() => 'Page still has focus - email client may not have opened');
-        showCopyFallback(subject, body, info.trustPageUrl ?? location.href);
+        showCopyFallback(subject, body, info.trustPageUrl || location.href);
       }
     }, 1000);
   } catch (e) {
@@ -91,18 +91,15 @@ function showCopyFallback(subject: string, body: string, trustPageUrl: string): 
 }
 
 function generateEmailBody(info: SharePacketInfo): string {
-  const endpointsList = (info.endpoints ?? []).map((ep) => `• ${ep.name}: ${ep.url}`).join('\n');
+  const endpointsList = info.endpoints.map((ep) => `• ${ep.name}: ${ep.url}`).join('\n');
 
-  const notAfter = info.certificate?.notAfter;
-  const validUntil = notAfter
-    ? new Date(notAfter).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-    : 'Unknown';
+  const validUntil = new Date(info.certificate.notAfter).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 
-  const thumbprint = info.certificate?.fingerprint ?? 'Unknown';
+  const thumbprint = info.certificate.fingerprint;
 
   return `MidTerm Terminal Access
 =======================
@@ -120,7 +117,7 @@ ${endpointsList}
 
 INSTALL CERTIFICATE
 -------------------
-Visit: ${info.trustPageUrl ?? location.href}
+Visit: ${info.trustPageUrl}
 
 This page will detect your device and guide you through installation.
 

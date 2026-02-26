@@ -5,7 +5,7 @@
  * and health check functionality.
  */
 
-import type { HealthResponse } from '../../types';
+import type { SystemHealth } from '../../types';
 import { sessionTerminals, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList, $windowsBuildNumber } from '../../stores';
 import { fetchSettings, unbindSettingsAutoSave } from './persistence';
@@ -89,22 +89,22 @@ export function closeSettings(): void {
  * Format uptime seconds into human-readable string
  */
 export function formatUptime(seconds: number): string {
-  if (seconds < 60) return seconds + 's';
-  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 
   const hours = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
 
-  if (hours < 24) return hours + 'h ' + mins + 'm';
+  if (hours < 24) return `${hours}h ${mins}m`;
 
   const days = Math.floor(hours / 24);
-  return days + 'd ' + (hours % 24) + 'h';
+  return `${days}d ${hours % 24}h`;
 }
 
 /**
  * Update the ttyhost version mismatch warning banner
  */
-export function updateTtyHostWarning(health: HealthResponse): void {
+export function updateTtyHostWarning(health: SystemHealth): void {
   let banner = document.getElementById('ttyhost-warning');
 
   if (!banner) {
@@ -118,12 +118,7 @@ export function updateTtyHostWarning(health: HealthResponse): void {
   }
 
   if (health.ttyHostVersion !== '' && health.ttyHostCompatible === false) {
-    banner.innerHTML =
-      '<strong>Version mismatch:</strong> mmttyhost is ' +
-      health.ttyHostVersion +
-      ', expected ' +
-      health.ttyHostExpected +
-      '. Terminals may not work correctly. Please update mmttyhost.exe or restart the service.';
+    banner.innerHTML = `<strong>Version mismatch:</strong> mmttyhost is ${health.ttyHostVersion ?? ''}, expected ${health.ttyHostExpected ?? ''}. Terminals may not work correctly. Please update mmttyhost.exe or restart the service.`;
     banner.style.display = 'block';
   } else {
     banner.style.display = 'none';
@@ -139,7 +134,7 @@ export function fetchSystemStatus(): void {
 
   getHealth()
     .then(({ data }) => {
-      const health = data as HealthResponse;
+      const health = data as SystemHealth;
       const statusClass = health.healthy ? 'status-healthy' : 'status-error';
       const statusText = health.healthy ? 'Healthy' : 'Unhealthy';
       const uptimeStr = formatUptime(health.uptimeSeconds);
@@ -148,61 +143,45 @@ export function fetchSystemStatus(): void {
       if (health.ttyHostVersion !== '') {
         const versionClass = health.ttyHostCompatible ? '' : 'status-error';
         ttyHostHtml =
-          '<div class="status-detail-row">' +
-          '<span class="detail-label">mmttyhost</span>' +
-          '<span class="detail-value ' +
-          versionClass +
-          '">' +
-          health.ttyHostVersion +
-          (health.ttyHostCompatible ? '' : ' expected ' + health.ttyHostExpected) +
-          '</span>' +
-          '</div>';
+          `<div class="status-detail-row">` +
+          `<span class="detail-label">mmttyhost</span>` +
+          `<span class="detail-value ${versionClass}">` +
+          (health.ttyHostVersion ?? '') +
+          (health.ttyHostCompatible ? '' : ` expected ${health.ttyHostExpected ?? ''}`) +
+          `</span>` +
+          `</div>`;
       }
 
       container.innerHTML =
-        '<div class="status-grid">' +
-        '<div class="status-item">' +
-        '<span class="status-label">Status</span>' +
-        '<span class="status-value ' +
-        statusClass +
-        '">' +
-        statusText +
-        '</span>' +
-        '</div>' +
-        '<div class="status-item">' +
-        '<span class="status-label">Mode</span>' +
-        '<span class="status-value">' +
-        (health.mode || '') +
-        '</span>' +
-        '</div>' +
-        '<div class="status-item">' +
-        '<span class="status-label">Sessions</span>' +
-        '<span class="status-value">' +
-        health.sessionCount +
-        '</span>' +
-        '</div>' +
-        '<div class="status-item">' +
-        '<span class="status-label">Uptime</span>' +
-        '<span class="status-value">' +
-        uptimeStr +
-        '</span>' +
-        '</div>' +
-        '</div>' +
-        '<div class="status-details">' +
-        '<div class="status-detail-row">' +
-        '<span class="detail-label">Platform</span>' +
-        '<span class="detail-value">' +
-        (health.platform || '') +
-        '</span>' +
-        '</div>' +
-        '<div class="status-detail-row">' +
-        '<span class="detail-label">Process ID</span>' +
-        '<span class="detail-value">' +
-        (health.webProcessId || '') +
-        '</span>' +
-        '</div>' +
+        `<div class="status-grid">` +
+        `<div class="status-item">` +
+        `<span class="status-label">Status</span>` +
+        `<span class="status-value ${statusClass}">${statusText}</span>` +
+        `</div>` +
+        `<div class="status-item">` +
+        `<span class="status-label">Mode</span>` +
+        `<span class="status-value">${health.mode || ''}</span>` +
+        `</div>` +
+        `<div class="status-item">` +
+        `<span class="status-label">Sessions</span>` +
+        `<span class="status-value">${String(health.sessionCount)}</span>` +
+        `</div>` +
+        `<div class="status-item">` +
+        `<span class="status-label">Uptime</span>` +
+        `<span class="status-value">${uptimeStr}</span>` +
+        `</div>` +
+        `</div>` +
+        `<div class="status-details">` +
+        `<div class="status-detail-row">` +
+        `<span class="detail-label">Platform</span>` +
+        `<span class="detail-value">${health.platform || ''}</span>` +
+        `</div>` +
+        `<div class="status-detail-row">` +
+        `<span class="detail-label">Process ID</span>` +
+        `<span class="detail-value">${health.webProcessId || ''}</span>` +
+        `</div>` +
         ttyHostHtml +
-        '</div>';
+        `</div>`;
 
       updateTtyHostWarning(health);
     })
@@ -219,14 +198,14 @@ export function fetchSystemStatus(): void {
 export function checkSystemHealth(): void {
   getHealth()
     .then(({ data }) => {
-      const health = data as HealthResponse;
+      const health = data as SystemHealth;
       updateTtyHostWarning(health);
       if (health.windowsBuildNumber != null) {
         $windowsBuildNumber.set(health.windowsBuildNumber);
       }
     })
-    .catch((e) => {
-      log.warn(() => `Failed to check system health: ${e}`);
+    .catch((e: unknown) => {
+      log.warn(() => `Failed to check system health: ${String(e)}`);
     });
 }
 
@@ -242,10 +221,10 @@ export function fetchCertificateInfo(): void {
   getSharePacket()
     .then(({ data, response }) => {
       if (!response.ok || !data) throw new Error('Failed to fetch certificate info');
-      if (fingerprintEl && data.certificate?.fingerprintFormatted) {
+      if (fingerprintEl && data.certificate.fingerprintFormatted) {
         fingerprintEl.textContent = data.certificate.fingerprintFormatted;
       }
-      if (validityEl && data.certificate?.notAfter) {
+      if (validityEl && data.certificate.notAfter) {
         const notAfter = new Date(data.certificate.notAfter);
         const dateOpts: Intl.DateTimeFormatOptions = {
           year: 'numeric',

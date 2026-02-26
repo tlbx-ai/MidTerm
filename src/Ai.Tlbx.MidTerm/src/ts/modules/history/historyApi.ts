@@ -39,7 +39,7 @@ export async function removeHistoryEntry(id: string): Promise<boolean> {
 export async function createHistoryEntry(request: CreateHistoryRequest): Promise<string | null> {
   const { data, response } = await apiCreateHistoryEntry(request);
   if (!response.ok || !data) return null;
-  return data.id ?? null;
+  return data.id;
 }
 
 export async function renameHistoryEntry(id: string, label: string): Promise<boolean> {

@@ -145,16 +145,16 @@ export function applyPinButtonState(pinBtn: HTMLButtonElement, isPinned: boolean
  * Update process info display for a specific session
  */
 function updateSessionProcessInfo(sessionId: string): void {
-  const sessionItem = document.querySelector(
+  const sessionItem = document.querySelector<HTMLElement>(
     `.session-item[data-session-id="${sessionId}"]`,
-  ) as HTMLElement | null;
+  );
   if (!sessionItem) return;
 
   const fgInfo = getForegroundInfo(sessionId);
 
   // Unnamed sessions: update the title row directly
   if (sessionItem.dataset.processAsTitle === '1') {
-    const titleRow = sessionItem.querySelector('.session-title-row') as HTMLElement | null;
+    const titleRow = sessionItem.querySelector<HTMLElement>('.session-title-row');
     if (!titleRow) return;
     // Preserve layout badge, clear everything else
     const layoutBadge = titleRow.querySelector('.layout-badge');
@@ -165,7 +165,7 @@ function updateSessionProcessInfo(sessionId: string): void {
   }
 
   // Named sessions: update the process info row
-  const processInfoEl = sessionItem.querySelector('.session-process-info') as HTMLElement | null;
+  const processInfoEl = sessionItem.querySelector('.session-process-info');
   if (!processInfoEl) return;
 
   processInfoEl.innerHTML = '';
@@ -513,9 +513,7 @@ export function renderSessionList(): void {
   let previousElement: Element | null = null;
   sessions.forEach((session) => {
     const id = session.id;
-    const existingItem = sessionList.querySelector(
-      `[data-session-id="${id}"]`,
-    ) as HTMLElement | null;
+    const existingItem = sessionList.querySelector(`[data-session-id="${id}"]`);
     const isPending = pendingSessions.has(id);
 
     if (existingItem) {
@@ -525,12 +523,13 @@ export function renderSessionList(): void {
       existingItem.classList.toggle('in-layout', isSessionInLayout(id));
       const isChild = isChildSession(id);
       existingItem.classList.toggle('tmux-child', isChild);
+      const htmlItem = existingItem as HTMLElement;
       if (isChild) {
-        existingItem.dataset.parentId = session.parentSessionId ?? '';
+        htmlItem.dataset.parentId = session.parentSessionId ?? '';
       } else {
-        delete existingItem.dataset.parentId;
+        delete htmlItem.dataset.parentId;
       }
-      existingItem.draggable = !isPending && !isChild;
+      htmlItem.draggable = !isPending && !isChild;
 
       // Ensure correct order
       if (previousElement) {

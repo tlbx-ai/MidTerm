@@ -39,10 +39,11 @@ export function initFileBrowser(): void {
 }
 
 function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): void {
-  const treeContainer = panel.querySelector('.file-browser-tree') as HTMLElement;
-  const previewContainer = panel.querySelector('.file-browser-preview') as HTMLElement;
+  const treeContainer = panel.querySelector<HTMLElement>('.file-browser-tree');
+  const previewContainer = panel.querySelector<HTMLElement>('.file-browser-preview');
 
-  if (!treeContainer || !previewContainer) return;
+  if (!treeContainer) return;
+  if (!previewContainer) return;
 
   if (!initializedSessions.has(sessionId)) {
     initializedSessions.add(sessionId);

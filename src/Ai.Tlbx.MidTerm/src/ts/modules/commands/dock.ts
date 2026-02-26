@@ -81,11 +81,11 @@ function openCommandsDock(sessionId: string): void {
   if (savedWidth) {
     const w = parseInt(savedWidth, 10);
     if (w >= DOCK_MIN_WIDTH && w <= DOCK_MAX_WIDTH) {
-      dockPanel.style.width = w + 'px';
+      dockPanel.style.width = `${w}px`;
     }
   }
 
-  const body = dockPanel.querySelector('.commands-dock-body') as HTMLElement;
+  const body = dockPanel.querySelector<HTMLElement>('.commands-dock-body');
   if (body) {
     body.innerHTML = '';
     void renderCommandsPanelInto(body, sessionId);
@@ -100,7 +100,7 @@ function openCommandsDock(sessionId: string): void {
     if (!$commandsPanelDocked.get() || !newId) return;
     const dockBody = document
       .getElementById('commands-dock')
-      ?.querySelector('.commands-dock-body') as HTMLElement;
+      ?.querySelector('.commands-dock-body') as HTMLElement | null;
     if (dockBody) {
       dockBody.innerHTML = '';
       void renderCommandsPanelInto(dockBody, newId);
@@ -135,9 +135,11 @@ export function closeCommandsDock(): void {
 
 export function setupDockResize(): void {
   const dockPanel = document.getElementById('commands-dock');
-  const grip = dockPanel?.querySelector('.commands-dock-resize-grip') as HTMLElement;
-  if (!dockPanel || !grip) return;
+  const gripEl = dockPanel?.querySelector('.commands-dock-resize-grip') as HTMLElement | null;
+  if (!dockPanel || !gripEl) return;
 
+  const panel = dockPanel;
+  const grip = gripEl;
   let isResizing = false;
   let startX = 0;
   let startWidth = 0;
@@ -145,7 +147,7 @@ export function setupDockResize(): void {
   function beginResize(clientX: number): void {
     isResizing = true;
     startX = clientX;
-    startWidth = dockPanel!.offsetWidth;
+    startWidth = panel.offsetWidth;
     grip.classList.add('active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
@@ -155,7 +157,7 @@ export function setupDockResize(): void {
     if (!isResizing) return;
     const delta = startX - clientX;
     const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
-    dockPanel!.style.width = newWidth + 'px';
+    panel.style.width = `${newWidth}px`;
     adjustInnerDockPositions();
     updateAllDockMargins();
   }
@@ -166,7 +168,7 @@ export function setupDockResize(): void {
     grip.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    localStorage.setItem(DOCK_WIDTH_KEY, String(dockPanel!.offsetWidth));
+    localStorage.setItem(DOCK_WIDTH_KEY, String(panel.offsetWidth));
     handleDockLayoutChange();
   }
 
@@ -182,8 +184,9 @@ export function setupDockResize(): void {
   grip.addEventListener(
     'touchstart',
     (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      beginResize(e.touches[0]!.clientX);
+      const touch = e.touches[0];
+      if (e.touches.length !== 1 || !touch) return;
+      beginResize(touch.clientX);
       e.preventDefault();
     },
     { passive: false },
@@ -192,8 +195,9 @@ export function setupDockResize(): void {
   document.addEventListener(
     'touchmove',
     (e: TouchEvent) => {
-      if (!isResizing || e.touches.length !== 1) return;
-      updateResize(e.touches[0]!.clientX);
+      const touch = e.touches[0];
+      if (!isResizing || e.touches.length !== 1 || !touch) return;
+      updateResize(touch.clientX);
       e.preventDefault();
     },
     { passive: false },

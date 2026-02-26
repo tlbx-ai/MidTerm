@@ -45,7 +45,7 @@ export async function checkVoiceServerHealth(): Promise<boolean> {
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      const data: VoiceHealthResponse = await response.json();
+      const data = (await response.json()) as VoiceHealthResponse;
       voiceServerAvailable = data.status === 'ok';
       log.info(() => `Voice server available: v${data.version}`);
 
@@ -160,7 +160,6 @@ function updateSpeedDisplay(): void {
  */
 export async function checkMicrophonePermissionStatus(): Promise<'granted' | 'prompt' | 'denied'> {
   try {
-    if (!navigator.permissions) return 'prompt';
     const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
     return result.state as 'granted' | 'prompt' | 'denied';
   } catch {
@@ -338,7 +337,7 @@ export async function startVoiceSession(): Promise<void> {
       } else if (typeof event.data === 'string') {
         // JSON message
         try {
-          const msg = JSON.parse(event.data);
+          const msg = JSON.parse(event.data) as VoiceMessage;
           handleVoiceMessage(msg);
         } catch {
           log.warn(() => `[WS] Invalid JSON from voice server: ${event.data}`);
@@ -559,7 +558,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]!);
+    const byte = bytes[i];
+    if (byte === undefined) break;
+    binary += String.fromCharCode(byte);
   }
   return btoa(binary);
 }
@@ -584,7 +585,7 @@ async function testVoiceServerConnection(): Promise<void> {
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      const data = await response.json();
+      const data = (await response.json()) as VoiceHealthResponse;
       results.push('✓ Health endpoint: OK');
       results.push(`  Version: ${data.version}`);
 
@@ -593,7 +594,7 @@ async function testVoiceServerConnection(): Promise<void> {
         results.push('Providers:');
         for (const p of data.providers) {
           const status = p.available ? '✓' : '✗';
-          const voiceCount = p.voices?.length ?? 0;
+          const voiceCount = p.voices.length;
           results.push(`  ${status} ${p.name}: ${voiceCount} voices`);
         }
       }
@@ -603,7 +604,6 @@ async function testVoiceServerConnection(): Promise<void> {
         results.push(`Defaults: ${data.defaults.provider}/${data.defaults.voice}`);
       }
 
-      // Populate dropdown with the fetched data
       if (data.providers) {
         voiceProviders = data.providers;
         populateVoiceDropdown();

@@ -29,9 +29,9 @@ const modifierElements: Map<ModifierKey, HTMLButtonElement> = new Map();
 export function initModifiers(container: HTMLElement): void {
   const buttons = container.querySelectorAll<HTMLButtonElement>('[data-modifier]');
   buttons.forEach((btn) => {
-    const mod = btn.dataset.modifier as ModifierKey;
+    const mod = btn.dataset.modifier;
     if (mod) {
-      modifierElements.set(mod, btn);
+      modifierElements.set(mod as ModifierKey, btn);
     }
   });
 }

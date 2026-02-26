@@ -125,7 +125,9 @@ function highlightZone(x: number, y: number, rect: DOMRect): void {
 
     // Remove highlight from all zones
     const zones = overlayElement.querySelectorAll('.dock-zone');
-    zones.forEach((z) => z.classList.remove('highlighted'));
+    zones.forEach((z) => {
+      z.classList.remove('highlighted');
+    });
 
     // Add highlight to current zone
     if (zone) {
@@ -147,7 +149,9 @@ export function hideDockOverlay(): void {
 
   // Remove all highlights
   const zones = overlayElement.querySelectorAll('.dock-zone');
-  zones.forEach((z) => z.classList.remove('highlighted'));
+  zones.forEach((z) => {
+    z.classList.remove('highlighted');
+  });
 }
 
 /**

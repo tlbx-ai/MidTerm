@@ -82,7 +82,7 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
     document.body.appendChild(overlay);
 
     // Focus the confirm button for keyboard accessibility
-    const confirmBtn = overlay.querySelector('[data-role="confirm"]') as HTMLButtonElement | null;
+    const confirmBtn = overlay.querySelector<HTMLButtonElement>('[data-role="confirm"]');
     confirmBtn?.focus();
   });
 }
@@ -141,7 +141,7 @@ export function showAlert(message: string, options?: AlertOptions): Promise<void
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
 
-    const okBtn = overlay.querySelector('[data-role="ok"]') as HTMLButtonElement | null;
+    const okBtn = overlay.querySelector<HTMLButtonElement>('[data-role="ok"]');
     okBtn?.focus();
   });
 }

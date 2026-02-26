@@ -192,9 +192,9 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
   }
 
   const fgIndicator = createForegroundIndicator(
-    entry.workingDirectory ?? '',
-    entry.commandLine ?? null,
-    entry.executable ?? '',
+    entry.workingDirectory,
+    entry.commandLine,
+    entry.executable,
   );
   infoDiv.appendChild(fgIndicator);
 
@@ -248,9 +248,10 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
 }
 
 function startHistoryInlineRename(item: HTMLElement, entry: LaunchEntry): void {
-  const infoEl = item.querySelector('.history-item-info') as HTMLElement | null;
+  const infoEl = item.querySelector('.history-item-info');
   if (!infoEl) return;
 
+  const info = infoEl;
   const currentLabel = entry.label || '';
 
   const input = document.createElement('input');
@@ -258,28 +259,26 @@ function startHistoryInlineRename(item: HTMLElement, entry: LaunchEntry): void {
   input.className = 'history-rename-input';
   input.value = currentLabel;
 
-  // Replace info content with input
-  const originalContent = infoEl.innerHTML;
-  infoEl.innerHTML = '';
-  infoEl.appendChild(input);
+  const originalContent = info.innerHTML;
+  info.innerHTML = '';
+  info.appendChild(input);
 
   let committed = false;
   function finishRename(): void {
     if (committed) return;
     committed = true;
     const newLabel = input.value.trim();
-    infoEl!.innerHTML = originalContent;
+    info.innerHTML = originalContent;
 
     if (newLabel !== currentLabel) {
-      // Update the label in the DOM immediately
-      const newLabelEl = infoEl!.querySelector('.history-item-label') as HTMLElement | null;
+      const newLabelEl = info.querySelector('.history-item-label');
       if (newLabelEl) {
         newLabelEl.textContent = newLabel || '';
       } else if (newLabel) {
         const span = document.createElement('span');
         span.className = 'history-item-label';
         span.textContent = newLabel;
-        infoEl!.insertBefore(span, infoEl!.firstChild);
+        info.insertBefore(span, info.firstChild);
       }
 
       entry.label = newLabel || null;
@@ -293,7 +292,7 @@ function startHistoryInlineRename(item: HTMLElement, entry: LaunchEntry): void {
   function cancelRename(): void {
     if (committed) return;
     committed = true;
-    infoEl!.innerHTML = originalContent;
+    info.innerHTML = originalContent;
   }
 
   input.addEventListener('blur', finishRename);
@@ -358,7 +357,7 @@ function initDragHandlers(container: HTMLElement): void {
 }
 
 function onDragStart(e: DragEvent): void {
-  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const item = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!item) return;
 
   draggedId = item.dataset.id ?? null;
@@ -383,7 +382,7 @@ function onDragOver(e: DragEvent): void {
   e.preventDefault();
   if (!draggedId) return;
 
-  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const item = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!item || item === draggedElement) {
     clearAllIndicators();
     return;
@@ -407,9 +406,9 @@ function onDragOver(e: DragEvent): void {
 }
 
 function onDragLeave(e: DragEvent): void {
-  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const item = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!item) return;
-  const related = e.relatedTarget as HTMLElement;
+  const related = e.relatedTarget as Node | null;
   if (!related || !item.contains(related)) {
     item.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
     activeIndicators.delete(item);
@@ -420,7 +419,7 @@ function onDrop(e: DragEvent): void {
   e.preventDefault();
   if (!draggedId) return;
 
-  const targetItem = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const targetItem = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!targetItem || targetItem === draggedElement) return;
 
   const targetId = targetItem.dataset.id;
@@ -439,7 +438,7 @@ function onTouchStart(e: TouchEvent): void {
   const grip = (touch.target as HTMLElement).closest('.history-item-grip');
   if (!grip) return;
 
-  const item = grip.closest('.history-item') as HTMLElement;
+  const item = grip.closest<HTMLElement>('.history-item');
   if (!item) return;
 
   touchStartY = touch.clientY;
@@ -454,7 +453,7 @@ function onTouchStart(e: TouchEvent): void {
     touchGhost.style.position = 'fixed';
     touchGhost.style.left = '0';
     touchGhost.style.top = `${touch.clientY - item.offsetHeight / 2}px`;
-    touchGhost.style.width = item.offsetWidth + 'px';
+    touchGhost.style.width = `${item.offsetWidth}px`;
     touchGhost.style.opacity = '0.85';
     touchGhost.style.pointerEvents = 'none';
     touchGhost.style.zIndex = '9999';
@@ -482,7 +481,7 @@ function onTouchMove(e: TouchEvent): void {
   if (touchGhost) touchGhost.style.display = '';
   if (!el) return;
 
-  const item = el.closest('.history-item') as HTMLElement;
+  const item = el.closest<HTMLElement>('.history-item');
   clearAllIndicators();
 
   if (item && item !== draggedElement) {
@@ -573,7 +572,7 @@ function applyReorder(fromId: string, toId: string, position: 'above' | 'below' 
 
   renderDropdownContent();
 
-  void reorderHistory(orderedIds).catch((err) => {
+  void reorderHistory(orderedIds).catch((err: unknown) => {
     log.warn(() => `Failed to persist history reorder: ${String(err)}`);
   });
 }

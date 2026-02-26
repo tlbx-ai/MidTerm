@@ -151,7 +151,7 @@ function updateSearchResults(found: boolean): void {
  * Bind search UI event handlers
  */
 export function bindSearchEvents(): void {
-  const searchInput = document.getElementById('search-input') as HTMLInputElement;
+  const searchInput = document.getElementById('search-input') as HTMLInputElement | null;
   const prevBtn = document.getElementById('search-prev');
   const nextBtn = document.getElementById('search-next');
   const closeBtn = document.getElementById('search-close');

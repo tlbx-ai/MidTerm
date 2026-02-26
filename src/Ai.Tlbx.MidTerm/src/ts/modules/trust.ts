@@ -12,6 +12,7 @@ export async function initTrustPage(): Promise<void> {
   const ua = navigator.userAgent.toLowerCase();
   const isIOS =
     /iphone|ipad|ipod/.test(ua) ||
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isAndroid = /android/.test(ua);
   const isMac = /macintosh|mac os x/.test(ua) && !isIOS;
@@ -66,7 +67,7 @@ export async function initTrustPage(): Promise<void> {
     copyBtn.addEventListener('click', () => {
       const fpEl = document.getElementById('fingerprint');
       if (!fpEl) return;
-      const fp = fpEl.textContent ?? '';
+      const fp = fpEl.textContent;
       void navigator.clipboard
         .writeText(fp)
         .then(() => {
@@ -78,6 +79,7 @@ export async function initTrustPage(): Promise<void> {
           textarea.value = fp;
           document.body.appendChild(textarea);
           textarea.select();
+          // eslint-disable-next-line @typescript-eslint/no-deprecated
           document.execCommand('copy');
           document.body.removeChild(textarea);
         });
@@ -119,10 +121,10 @@ async function loadCertificateInfo(): Promise<void> {
 
     // Display fingerprint
     const fpEl = document.getElementById('fingerprint');
-    if (fpEl) fpEl.textContent = info.certificate?.fingerprint ?? '';
+    if (fpEl) fpEl.textContent = info.certificate.fingerprint;
 
     // Display validity
-    const validUntil = info.certificate?.notAfter ? new Date(info.certificate.notAfter) : null;
+    const validUntil = info.certificate.notAfter ? new Date(info.certificate.notAfter) : null;
     const validEl = document.getElementById('cert-valid-until');
     if (validEl && validUntil) {
       validEl.textContent =
@@ -137,10 +139,7 @@ async function loadCertificateInfo(): Promise<void> {
     // Display trusted addresses from certificate SANs
     const endpointsList = document.getElementById('endpoints-list');
     if (endpointsList) {
-      const allAddresses = [
-        ...(info.certificate?.dnsNames ?? []),
-        ...(info.certificate?.ipAddresses ?? []),
-      ];
+      const allAddresses = [...info.certificate.dnsNames, ...info.certificate.ipAddresses];
       if (allAddresses.length > 0) {
         endpointsList.innerHTML = allAddresses
           .map(

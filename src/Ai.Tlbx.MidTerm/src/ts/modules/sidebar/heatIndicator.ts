@@ -77,7 +77,7 @@ const DECAY_LUT_STEP = 0.1; // seconds per entry (covers 0–100s)
 const decayLUT = new Float32Array(DECAY_LUT_SIZE);
 
 const COLOR_LUT_SIZE = 101;
-const colorLUT: [number, number, number][] = new Array(COLOR_LUT_SIZE);
+const colorLUT: [number, number, number][] = new Array<[number, number, number]>(COLOR_LUT_SIZE);
 
 function buildDecayLUT(): void {
   for (let i = 0; i < DECAY_LUT_SIZE; i++) {
@@ -91,14 +91,16 @@ function buildDecayLUT(): void {
 
 function lerpColorRaw(t: number): [number, number, number] {
   const stops = GRADIENT;
-  if (t <= stops[0]![0]) return [stops[0]![1], stops[0]![2], stops[0]![3]];
-  const last = stops[stops.length - 1]!;
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  if (!first || !last) return [10, 14, 26];
+  if (t <= first[0]) return [first[1], first[2], first[3]];
   if (t >= last[0]) return [last[1], last[2], last[3]];
 
   for (let i = 0; i < stops.length - 1; i++) {
-    const a = stops[i]!;
-    const b = stops[i + 1]!;
-    if (t >= a[0] && t <= b[0]) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (a && b && t >= a[0] && t <= b[0]) {
       const f = (t - a[0]) / (b[0] - a[0]);
       return [
         Math.round(a[1] + (b[1] - a[1]) * f),
@@ -147,7 +149,7 @@ let reducedMotion = false;
 
 function lerpColor(t: number): [number, number, number] {
   const index = Math.min(COLOR_LUT_SIZE - 1, Math.max(0, Math.round(t * (COLOR_LUT_SIZE - 1))));
-  return colorLUT[index]!;
+  return colorLUT[index] ?? [10, 14, 26];
 }
 
 // =============================================================================
@@ -208,7 +210,7 @@ function drawCanvas(s: SessionHeat): void {
 function triExpDecay(seconds: number): number {
   const index = Math.round(seconds / DECAY_LUT_STEP);
   if (index < DECAY_LUT_SIZE) {
-    return decayLUT[Math.max(0, index)]!;
+    return decayLUT[Math.max(0, index)] ?? 0;
   }
   // Beyond LUT range (>100s): compute directly — rare, only long-idle sessions
   return (
@@ -225,7 +227,7 @@ function triExpDecay(seconds: number): number {
 function drawFrame(nowMs: number): void {
   let anyActive = false;
 
-  sessions.forEach((s) => {
+  for (const s of sessions.values()) {
     // Periodically recalculate byte rate and update heat
     const elapsed = nowMs - s.lastTickMs;
     if (elapsed >= RATE_INTERVAL_MS) {
@@ -276,7 +278,7 @@ function drawFrame(nowMs: number): void {
     if (s.heat >= DRAW_THRESHOLD) {
       anyActive = true;
     }
-  });
+  }
 
   if (anyActive) {
     rafId = requestAnimationFrame(drawFrame);

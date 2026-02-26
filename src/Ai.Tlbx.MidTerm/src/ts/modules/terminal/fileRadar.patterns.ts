@@ -263,7 +263,9 @@ function parseHostLikePrefix(input: string): string | null {
     return null;
   }
 
-  const tld = labels[labels.length - 1]!.toLowerCase();
+  const lastLabel = labels[labels.length - 1];
+  if (!lastLabel) return null;
+  const tld = lastLabel.toLowerCase();
   if (!/^[a-z]{2,24}$/.test(tld)) return null;
   if (!COMMON_TLDS.has(tld)) return null;
 

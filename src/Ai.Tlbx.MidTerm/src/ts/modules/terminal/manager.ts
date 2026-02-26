@@ -347,7 +347,7 @@ export function createTerminalForSession(
       // Double-rAF: let the resize paint before measuring for scaling
       requestAnimationFrame(() => {
         if ($isMainBrowser.get()) {
-          const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+          const layoutPane = container.closest<HTMLElement>('.layout-leaf');
           if (layoutPane) {
             fitTerminalToContainer(sessionId, layoutPane);
           } else if (!container.classList.contains('hidden')) {
@@ -480,9 +480,7 @@ export function setupTerminalEvents(
       try {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const text = new TextDecoder().decode(bytes);
-        if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(text).catch(() => {});
-        }
+        navigator.clipboard.writeText(text).catch(() => {});
       } catch {
         // invalid base64 or clipboard unavailable
       }
@@ -494,8 +492,8 @@ export function setupTerminalEvents(
   disposables.push(
     terminal.parser.registerOscHandler(7, (data: string) => {
       const match = data.match(/^file:\/\/[^/]*(\/.*)/);
-      if (!match) return false;
-      let path = decodeURIComponent(match[1]!);
+      if (!match?.[1]) return false;
+      let path = decodeURIComponent(match[1]);
       if (/^\/[A-Za-z]:/.test(path)) {
         path = path.substring(1).replace(/\//g, '\\');
       }
@@ -804,7 +802,7 @@ export function pasteToTerminal(
   if (!state) return;
 
   const muxBpm = isBracketedPasteEnabled(sessionId);
-  const xtermBpm = state.terminal.modes?.bracketedPasteMode ?? false;
+  const xtermBpm = state.terminal.modes.bracketedPasteMode;
   const bpmEnabled = muxBpm || xtermBpm;
 
   const content = isFilePath ? '"' + data + '"' : data;
@@ -928,7 +926,7 @@ export function initCalibrationTerminal(): Promise<void> {
     terminal.open(container);
 
     requestAnimationFrame(() => {
-      const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+      const screen = container.querySelector<HTMLElement>('.xterm-screen');
       if (screen && terminal.cols > 0 && terminal.rows > 0) {
         const cellWidth = screen.offsetWidth / terminal.cols;
         const cellHeight = screen.offsetHeight / terminal.rows;

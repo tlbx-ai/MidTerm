@@ -77,10 +77,10 @@ export function connectGitWebSocket(): void {
 
   ws.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data) as GitWsMessage;
+      const msg = JSON.parse(event.data as string) as GitWsMessage;
       if (msg.type === 'status' && msg.status && msg.sessionId) {
         cancelFallback(msg.sessionId);
-        const summary = `${msg.status.branch} +${msg.status.staged?.length ?? 0} ~${msg.status.modified?.length ?? 0} ?${msg.status.untracked?.length ?? 0}`;
+        const summary = `${msg.status.branch} +${msg.status.staged.length} ~${msg.status.modified.length} ?${msg.status.untracked.length}`;
         emitDiag('status', `${msg.sessionId.substring(0, 8)}: ${summary}`);
         statusCallback?.(msg.sessionId, msg.status);
       }

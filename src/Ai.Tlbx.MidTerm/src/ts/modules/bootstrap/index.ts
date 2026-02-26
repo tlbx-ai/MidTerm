@@ -73,15 +73,13 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     shellsList = data.shells;
 
     // Initialize settings
-    if (data.settings) {
-      $currentSettings.set(data.settings);
-      const users = data.users.map((u: UserInfo) => ({
-        username: u.username,
-        displayName: u.username,
-      }));
-      populateUserDropdown(users, data.settings.runAsUser ?? null);
-      populateSettingsForm(data.settings);
-    }
+    $currentSettings.set(data.settings);
+    const users = data.users.map((u: UserInfo) => ({
+      username: u.username,
+      displayName: u.username,
+    }));
+    populateUserDropdown(users, data.settings.runAsUser ?? null);
+    populateSettingsForm(data.settings);
     populateVersionInfo(
       data.version,
       data.ttyHostVersion || null,
@@ -92,12 +90,10 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     bindDevModeToggle();
 
     // Initialize auth status
-    if (data.auth) {
-      $authStatus.set({
-        authenticationEnabled: data.auth.authenticationEnabled,
-        passwordSet: data.auth.passwordSet,
-      });
-    }
+    $authStatus.set({
+      authenticationEnabled: data.auth.authenticationEnabled,
+      passwordSet: data.auth.passwordSet,
+    });
     $serverHostname.set(data.hostname);
     $voiceServerPassword.set(data.voicePassword ?? null);
     updateSecurityWarning();
@@ -110,7 +106,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     renderNetworks(data.networks);
 
     // Populate shell dropdown
-    populateShellDropdown(data.shells, data.settings?.defaultShell ?? '');
+    populateShellDropdown(data.shells, data.settings.defaultShell ?? '');
 
     // Handle update result if present
     if (data.updateResult?.found) {
@@ -130,7 +126,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     setDevMode(data.devMode);
 
     // Check voice server availability (only relevant if voice chat is enabled)
-    if (data.features?.voiceChat) {
+    if (data.features.voiceChat) {
       void checkVoiceServerHealth().then((available) => {
         setVoiceSectionVisible(available);
       });

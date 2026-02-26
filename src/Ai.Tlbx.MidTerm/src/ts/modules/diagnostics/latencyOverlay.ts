@@ -171,7 +171,6 @@ async function runPingAndScrollback(): Promise<void> {
   updateResizeTimerStatus();
 
   const result = await measureLatency(sessionId);
-  if (!metricEls) return;
 
   if (result.serverRtt !== null) {
     setMetric(metricEls.serverRtt, result.serverRtt);
@@ -211,8 +210,8 @@ function updateScalingMetrics(sessionId: string): void {
   if (!state?.terminal || !state.opened) return;
 
   const container = state.container;
-  const xterm = container.querySelector('.xterm') as HTMLElement | null;
-  const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+  const xtermEl = container.querySelector<HTMLElement>('.xterm');
+  const screenEl = container.querySelector<HTMLElement>('.xterm-screen');
 
   const cols = state.terminal.cols;
   const rows = state.terminal.rows;
@@ -230,36 +229,39 @@ function updateScalingMetrics(sessionId: string): void {
 
   // Cell dimensions — show xterm.js internal dims (accurate) vs DOM-derived
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const xtermDims = (state.terminal as any)?._core?._renderService?.dimensions?.css?.cell;
+  const xtermCore = (state.terminal as Record<string, any>)._core as
+    | { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } }
+    | undefined;
+  const xtermDims = xtermCore?._renderService?.dimensions?.css?.cell;
   if (xtermDims) {
     let cellText = `${xtermDims.width.toFixed(2)}×${xtermDims.height.toFixed(2)}`;
-    if (screen && cols > 0 && rows > 0) {
-      const domW = screen.offsetWidth / cols;
+    if (screenEl && cols > 0 && rows > 0) {
+      const domW = screenEl.offsetWidth / cols;
       if (Math.abs(domW - xtermDims.width) > 0.1) {
         cellText += ` (DOM: ${domW.toFixed(2)})`;
       }
     }
     metricEls.cellPx.textContent = cellText;
-  } else if (screen && cols > 0 && rows > 0) {
-    const cellW = screen.offsetWidth / cols;
-    const cellH = screen.offsetHeight / rows;
+  } else if (screenEl && cols > 0 && rows > 0) {
+    const cellW = screenEl.offsetWidth / cols;
+    const cellH = screenEl.offsetHeight / rows;
     metricEls.cellPx.textContent = `${cellW.toFixed(2)}×${cellH.toFixed(2)}`;
   }
 
   // Xterm actual rendered size
-  if (xterm) {
-    metricEls.xtermPx.textContent = `${xterm.offsetWidth}×${xterm.offsetHeight}`;
+  if (xtermEl) {
+    metricEls.xtermPx.textContent = `${xtermEl.offsetWidth}×${xtermEl.offsetHeight}`;
   }
 
   // Scale factor
-  if (xterm) {
+  if (xtermEl) {
     const availW = containerW - TERMINAL_PADDING;
     const availH = containerH - TERMINAL_PADDING;
-    const scaleX = availW / xterm.offsetWidth;
-    const scaleY = availH / xterm.offsetHeight;
+    const scaleX = availW / xtermEl.offsetWidth;
+    const scaleY = availH / xtermEl.offsetHeight;
     const scale = Math.min(scaleX, scaleY, 1);
     const isScaled = container.classList.contains('scaled');
-    const transform = xterm.style.transform;
+    const transform = xtermEl.style.transform;
     metricEls.scale.textContent = `${scale.toFixed(4)} ${isScaled ? '(SCALED)' : '(1:1)'}`;
     if (transform) {
       metricEls.scale.title = transform;
@@ -275,7 +277,9 @@ function updateCursorState(sessionId: string): void {
 
   // DECTCEM cursor visibility — read directly from xterm.js internal state
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const core = (state.terminal as any)._core;
+  const core = (state.terminal as Record<string, any>)._core as
+    | { coreService?: { decPrivateModes?: { cursorHidden?: boolean } } }
+    | undefined;
   const cursorHidden = core?.coreService?.decPrivateModes?.cursorHidden ?? false;
   metricEls.cursorVisible.textContent = cursorHidden ? 'HIDDEN' : 'visible';
   applyColor(metricEls.cursorVisible, cursorHidden ? 'bad' : 'good');

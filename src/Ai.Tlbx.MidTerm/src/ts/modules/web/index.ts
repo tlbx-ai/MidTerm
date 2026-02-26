@@ -39,7 +39,7 @@ export function initWebPreview(): void {
   });
 
   $sessionList.subscribe((sessions) => {
-    const ids = new Set(sessions.map((s) => s.id).filter(Boolean) as string[]);
+    const ids = new Set(sessions.map((s) => s.id).filter(Boolean));
     for (const oldId of knownSessionIds) {
       if (!ids.has(oldId)) {
         closeDetachedIfOwnedBy(oldId);

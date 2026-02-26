@@ -265,7 +265,9 @@ function appendScanText(sessionId: string, text: string): void {
   }
 
   if (state.bytes > MAX_PENDING_SCAN_BYTES && state.chunks.length === 1) {
-    const trimmed = state.chunks[0]!.slice(-MAX_PENDING_SCAN_BYTES);
+    const chunk = state.chunks[0];
+    if (!chunk) return;
+    const trimmed = chunk.slice(-MAX_PENDING_SCAN_BYTES);
     state.chunks[0] = trimmed;
     state.bytes = trimmed.length;
   }
@@ -458,8 +460,8 @@ async function checkPathExists(path: string): Promise<FilePathInfo | null> {
       return null;
     }
 
-    const data: FileCheckResponse = await resp.json();
-    const info = data.results?.[path] || null;
+    const data = (await resp.json()) as FileCheckResponse;
+    const info = data.results[path] || null;
 
     setTimedCacheEntry(
       existenceCache,
@@ -529,7 +531,7 @@ async function resolveRelativePath(
       return notFound;
     }
 
-    const data: FileResolveResponse = await resp.json();
+    const data = (await resp.json()) as FileResolveResponse;
     setTimedCacheEntry(resolveCache, cacheKey, data, RESOLVE_CACHE_TTL, MAX_RESOLVE_CACHE_ENTRIES);
     return data;
   } catch (e) {
@@ -576,7 +578,6 @@ function throttledResolveRelativePath(
     if (abort.signal.aborted) return;
 
     const result = await resolveRelativePath(sessionId, normalizedPath, false, abort.signal);
-    if (abort.signal.aborted) return;
 
     callback(result?.exists ? normalizedMatchText : undefined);
 
@@ -625,7 +626,7 @@ async function handlePathClick(path: string): Promise<void> {
       registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
       const resolvedInfo: FilePathInfo = {
         exists: true,
-        isDirectory: resolved.isDirectory ?? false,
+        isDirectory: resolved.isDirectory,
         size: resolved.size ?? null,
         mimeType: resolved.mimeType ?? '',
         modified: resolved.modified ?? null,
@@ -660,7 +661,7 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
 
     const info: FilePathInfo = {
       exists: true,
-      isDirectory: resolved.isDirectory ?? false,
+      isDirectory: resolved.isDirectory,
       size: resolved.size ?? null,
       mimeType: resolved.mimeType ?? '',
       modified: resolved.modified ?? null,
@@ -721,13 +722,10 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
 
-  // xterm-link-provider expects old 'xterm' types, cast for @xterm/xterm compat
-  const term = terminal as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-  // 1. Folder paths - least specific (e.g., docs/, src\components\)
+  // 1. Folder paths — least specific (e.g., docs/, src\components\)
   terminal.registerLinkProvider(
     new LinkProvider(
-      term,
+      terminal,
       FOLDER_PATH_PATTERN,
       (_event, folderPath) => {
         void handleFolderPathClick(folderPath);
@@ -764,7 +762,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 2. Known extensionless files (e.g., Dockerfile, .gitignore, LICENSE)
   terminal.registerLinkProvider(
     new LinkProvider(
-      term,
+      terminal,
       KNOWN_FILE_PATTERN,
       (_event, relativePath) => {
         void handleRelativePathClick(relativePath);
@@ -792,7 +790,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 3. Relative paths with extensions (e.g., src/main.ts, foo.jpg)
   terminal.registerLinkProvider(
     new LinkProvider(
-      term,
+      terminal,
       RELATIVE_PATH_PATTERN,
       (_event, relativePath) => {
         void handleRelativePathClick(relativePath);
@@ -824,7 +822,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 4. Quoted absolute paths (e.g., "C:\Program Files\Git\bin\bash.exe")
   terminal.registerLinkProvider(
     new LinkProvider(
-      term,
+      terminal,
       QUOTED_ABSOLUTE_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);
@@ -840,7 +838,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 5. Windows UNC absolute paths (e.g., \\server\share\file.txt)
   terminal.registerLinkProvider(
     new LinkProvider(
-      term,
+      terminal,
       UNC_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);
@@ -856,7 +854,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 6. Windows absolute paths (e.g., C:\Users\file.txt)
   terminal.registerLinkProvider(
     new LinkProvider(
-      term,
+      terminal,
       WIN_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);
@@ -869,10 +867,10 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
     ),
   );
 
-  // 7. Unix absolute paths - most specific, highest priority
+  // 7. Unix absolute paths — most specific, highest priority
   terminal.registerLinkProvider(
     new LinkProvider(
-      term,
+      terminal,
       UNIX_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);

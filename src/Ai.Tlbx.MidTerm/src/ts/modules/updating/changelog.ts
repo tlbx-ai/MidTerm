@@ -67,7 +67,7 @@ export function disableChangelogAfterUpdate(): void {
   ) as HTMLInputElement | null;
   if (checkbox) checkbox.checked = false;
 
-  updateSettings(updated).catch((e) => {
+  updateSettings(updated).catch((e: unknown) => {
     log.error(() => `Failed to save showChangelogAfterUpdate: ${String(e)}`);
   });
 
@@ -91,7 +91,7 @@ function fetchReleases(isInitial: boolean): void {
     .then((releases: GitHubRelease[]) => {
       isLoading = false;
 
-      if (!releases || !Array.isArray(releases)) {
+      if (!Array.isArray(releases)) {
         if (isInitial) {
           body.innerHTML = `<p>${t('changelog.noReleases')}</p>`;
         }
@@ -151,7 +151,7 @@ function fetchReleases(isInitial: boolean): void {
         body.appendChild(loadMoreBtn);
       }
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       isLoading = false;
       if (isInitial) {
         body.innerHTML =
