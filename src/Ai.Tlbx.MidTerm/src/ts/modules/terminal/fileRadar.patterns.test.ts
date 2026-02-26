@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   UNIX_PATH_PATTERN,
   WIN_PATH_PATTERN,
+  UNC_PATH_PATTERN,
+  QUOTED_ABSOLUTE_PATH_PATTERN,
   UNIX_PATH_PATTERN_GLOBAL,
   WIN_PATH_PATTERN_GLOBAL,
   RELATIVE_PATH_PATTERN,
@@ -51,10 +53,10 @@ describe('UNIX_PATH_PATTERN', () => {
     }
   });
 
-  it('matches /bin but isValidPath rejects bare Unix dirs', () => {
+  it('matches /bin and now treats it as a valid absolute folder', () => {
     const match = '/bin'.match(UNIX_PATH_PATTERN);
     expect(match).not.toBeNull();
-    expect(isValidPath('/bin')).toBe(false);
+    expect(isValidPath('/bin')).toBe(true);
   });
 });
 
@@ -66,39 +68,49 @@ describe('WIN_PATH_PATTERN', () => {
   it.each([
     ['Error CS1234: C:\\Users\\dev\\src\\Program.cs(42,10)', 'C:\\Users\\dev\\src\\Program.cs'],
     ['Copying C:/tools/cmake/bin/cmake.exe', 'C:/tools/cmake/bin/cmake.exe'],
-    [
-      'APPDATA=C:\\Users\\johan\\AppData\\Roaming',
-      'C:\\Users\\johan\\AppData\\Roaming',
-    ],
-    [
-      'at Foo.Bar() in D:\\repos\\MyProject\\Foo.cs:line 15',
-      'D:\\repos\\MyProject\\Foo.cs',
-    ],
+    ['APPDATA=C:\\Users\\johan\\AppData\\Roaming', 'C:\\Users\\johan\\AppData\\Roaming'],
+    ['at Foo.Bar() in D:\\repos\\MyProject\\Foo.cs:line 15', 'D:\\repos\\MyProject\\Foo.cs'],
     [
       'nuget restore "E:\\packages\\Newtonsoft.Json.13.0.3"',
       'E:\\packages\\Newtonsoft.Json.13.0.3',
     ],
     ['Published to C:\\publish\\win-x64\\mt.exe', 'C:\\publish\\win-x64\\mt.exe'],
-    [
-      '> esbuild C:\\code\\frontend\\src\\main.ts --bundle',
-      'C:\\code\\frontend\\src\\main.ts',
-    ],
+    ['> esbuild C:\\code\\frontend\\src\\main.ts --bundle', 'C:\\code\\frontend\\src\\main.ts'],
     [
       'MSBuild: Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.csproj',
       'Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.csproj',
     ],
-    [
-      'Certificate: C:\\Users\\user\\.midterm\\cert.pfx',
-      'C:\\Users\\user\\.midterm\\cert.pfx',
-    ],
-    [
-      'Loading C:\\ProgramData\\MidTerm\\settings.json',
-      'C:\\ProgramData\\MidTerm\\settings.json',
-    ],
+    ['Certificate: C:\\Users\\user\\.midterm\\cert.pfx', 'C:\\Users\\user\\.midterm\\cert.pfx'],
+    ['Loading C:\\ProgramData\\MidTerm\\settings.json', 'C:\\ProgramData\\MidTerm\\settings.json'],
   ])('matches Windows path in: %s', (input, expected) => {
     const match = input.match(WIN_PATH_PATTERN);
     expect(match).not.toBeNull();
     expect(match![1]).toBe(expected);
+  });
+});
+
+describe('UNC_PATH_PATTERN', () => {
+  it('matches Windows UNC file path', () => {
+    const input = 'Opening \\\\server\\share\\folder\\file.txt';
+    const match = input.match(UNC_PATH_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe('\\\\server\\share\\folder\\file.txt');
+  });
+});
+
+describe('QUOTED_ABSOLUTE_PATH_PATTERN', () => {
+  it('matches quoted Windows absolute path with spaces', () => {
+    const input = 'Launching "C:\\Program Files\\Git\\bin\\bash.exe"';
+    const match = input.match(QUOTED_ABSOLUTE_PATH_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe('C:\\Program Files\\Git\\bin\\bash.exe');
+  });
+
+  it('matches quoted Unix absolute path with spaces', () => {
+    const input = "cat '/home/user/My Project/file.txt'";
+    const match = input.match(QUOTED_ABSOLUTE_PATH_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe('/home/user/My Project/file.txt');
   });
 });
 
@@ -118,10 +130,7 @@ describe('RELATIVE_PATH_PATTERN', () => {
     ['tests/unit/auth.spec.ts passed', 'tests/unit/auth.spec.ts'],
     ['Reading config/webpack.config.js', 'config/webpack.config.js'],
     ['data.csv written to disk', 'data.csv'],
-    [
-      'node_modules/@angular/core/index.ts',
-      'node_modules/@angular/core/index.ts',
-    ],
+    ['node_modules/@angular/core/index.ts', 'node_modules/@angular/core/index.ts'],
   ])('matches relative path in: %s', (input, expected) => {
     const match = input.match(RELATIVE_PATH_PATTERN);
     expect(match).not.toBeNull();
@@ -228,9 +237,6 @@ describe('isValidPath', () => {
       ['/', 'single slash'],
       ['a', 'single character'],
       ['../../../etc/passwd', 'traversal attack'],
-      ['/bin', 'bare Unix dir'],
-      ['/usr', 'bare Unix dir'],
-      ['/etc', 'bare Unix dir'],
     ])('%s — %s', (input) => {
       expect(isValidPath(input)).toBe(false);
     });
@@ -239,6 +245,7 @@ describe('isValidPath', () => {
   describe('accepts valid paths', () => {
     it.each([
       ['ab', 'minimal 2-char path'],
+      ['/bin', 'Unix absolute folder'],
       ['/home/user/file.txt', 'Unix absolute with file'],
       ['C:\\file.txt', 'Windows absolute'],
     ])('%s — %s', (input) => {
@@ -292,7 +299,8 @@ describe('shouldRejectRelativeMatch', () => {
 
 describe('isFragmentOfAbsolutePath', () => {
   it('detects relative match that is actually a fragment of Q:\\ path', () => {
-    const input = 'Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.UnitTests\\Ai.Tlbx.MidTerm.UnitTests.csproj';
+    const input =
+      'Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.UnitTests\\Ai.Tlbx.MidTerm.UnitTests.csproj';
     const m = input.match(RELATIVE_PATH_PATTERN);
     expect(m).not.toBeNull();
     // The relative pattern matches from "repos\\" onward (after "Q:")
@@ -417,18 +425,12 @@ describe('Real-world terminal output', () => {
     expect(paths).toContain('src/ts/modules/terminal/fileLinks.ts');
   });
 
-  it('Node.js stack trace — global pattern blocked by :linenum suffix', () => {
-    // UNIX_PATH_PATTERN_GLOBAL requires whitespace/quote/paren boundary after path.
-    // The :42:10 suffix prevents the global pattern from matching the absolute path.
-    // However, RELATIVE_PATH_PATTERN matches the path without leading /
+  it('Node.js stack trace — global pattern now captures absolute path before :line:col', () => {
     const paths = extractPaths(
       'at Object.<anonymous> (/home/user/project/node_modules/@xterm/xterm/lib/index.js:42:10)',
     );
-    // The absolute path with leading / is NOT found (global pattern boundary issue)
-    expect(paths).not.toContain(
-      '/home/user/project/node_modules/@xterm/xterm/lib/index.js',
-    );
-    // But relative pattern captures the path without leading /
+    expect(paths).toContain('/home/user/project/node_modules/@xterm/xterm/lib/index.js');
+    // Relative-path extraction still catches index.js variants too.
     const hasRelativePath = paths.some((p) => p.includes('index.js'));
     expect(hasRelativePath).toBe(true);
   });
@@ -456,9 +458,7 @@ describe('Real-world terminal output', () => {
   });
 
   it('Java compile command with multiple paths', () => {
-    const paths = extractPaths(
-      'javac -cp lib/gson-2.10.1.jar src/Main.java',
-    );
+    const paths = extractPaths('javac -cp lib/gson-2.10.1.jar src/Main.java');
     // At least one of these should be detected
     const hasJar = paths.some((p) => p.includes('gson'));
     const hasJava = paths.some((p) => p.includes('Main.java'));
@@ -507,10 +507,8 @@ describe('URLs — current filter behavior', () => {
     expect(shouldRejectFolderMatch('ftp://files/')).toBe(true);
   });
 
-  it('shouldRejectFolderMatch does NOT catch scheme-less URL fragments', () => {
-    // When FOLDER_PATH_PATTERN extracts "example.com/" from a URL,
-    // shouldRejectFolderMatch doesn't see the original scheme
-    expect(shouldRejectFolderMatch('example.com/')).toBe(false);
+  it('shouldRejectFolderMatch catches scheme-less URL fragments', () => {
+    expect(shouldRejectFolderMatch('example.com/')).toBe(true);
   });
 
   it('isLikelyFalsePositive catches single-segment TLD domains', () => {
@@ -519,10 +517,9 @@ describe('URLs — current filter behavior', () => {
     expect(isLikelyFalsePositive('github.io')).toBe(true);
   });
 
-  it('isLikelyFalsePositive does NOT catch multi-segment domains', () => {
-    // "docs.microsoft.com" has two dots — TLD check only catches "word.tld"
-    expect(isLikelyFalsePositive('docs.microsoft.com')).toBe(false);
-    expect(isLikelyFalsePositive('api.example.com')).toBe(false);
+  it('isLikelyFalsePositive catches multi-segment domains', () => {
+    expect(isLikelyFalsePositive('docs.microsoft.com')).toBe(true);
+    expect(isLikelyFalsePositive('api.example.com')).toBe(true);
   });
 
   it('RELATIVE_PATH_PATTERN extracts fragments from URLs with file extensions', () => {
@@ -603,9 +600,7 @@ describe('dotnet test output — true positives', () => {
       '✓ src/Ai.Tlbx.MidTerm/src/ts/modules/terminal/fileRadar.patterns.test.ts (117 tests) 22ms';
     const m = input.match(RELATIVE_PATH_PATTERN);
     expect(m).not.toBeNull();
-    expect(m![1]).toBe(
-      'src/Ai.Tlbx.MidTerm/src/ts/modules/terminal/fileRadar.patterns.test.ts',
-    );
+    expect(m![1]).toBe('src/Ai.Tlbx.MidTerm/src/ts/modules/terminal/fileRadar.patterns.test.ts');
   });
 
   it('dotnet build output line — project arrow notation', () => {
@@ -619,12 +614,8 @@ describe('dotnet test output — true positives', () => {
   });
 
   it('build output — js asset paths', () => {
-    expect('js/audio-processor.js'.match(RELATIVE_PATH_PATTERN)![1]).toBe(
-      'js/audio-processor.js',
-    );
-    expect('js/webAudioAccess.js'.match(RELATIVE_PATH_PATTERN)![1]).toBe(
-      'js/webAudioAccess.js',
-    );
+    expect('js/audio-processor.js'.match(RELATIVE_PATH_PATTERN)![1]).toBe('js/audio-processor.js');
+    expect('js/webAudioAccess.js'.match(RELATIVE_PATH_PATTERN)![1]).toBe('js/webAudioAccess.js');
   });
 
   it('prose mention — bare .cs filename', () => {
@@ -648,9 +639,7 @@ describe('dotnet test output — false positives now filtered', () => {
       'Passed Ai.Tlbx.MidTerm.UnitTests.FileEndpointsTests.ValidatePath_RejectsRelativePath [< 1 ms]';
     const m = input.match(RELATIVE_PATH_PATTERN);
     expect(m).not.toBeNull();
-    expect(m![1]).toBe(
-      'Ai.Tlbx.MidTerm.UnitTests.FileEndpointsTests.ValidatePa',
-    );
+    expect(m![1]).toBe('Ai.Tlbx.MidTerm.UnitTests.FileEndpointsTests.ValidatePath');
     // 5 dots, no path separator → FQN heuristic catches it
     expect(isLikelyFalsePositive(m![1])).toBe(true);
     expect(shouldRejectRelativeMatch(m![1])).toBe(true);
