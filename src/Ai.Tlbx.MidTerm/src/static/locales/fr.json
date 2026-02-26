@@ -315,6 +315,7 @@
   "changelog.failed": "Échec du chargement du journal des modifications.",
   "changelog.viewOnGithub": "Voir sur GitHub",
   "changelog.noNotes": "Pas de notes de version.",
+  "changelog.dontShowAgain": "Ne plus afficher après les mises à jour",
   "session.terminal": "Terminal",
   "session.split": "DIVISÉ",
   "session.splitTooltip": "La session est dans un layout divisé",

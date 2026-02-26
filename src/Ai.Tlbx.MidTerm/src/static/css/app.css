@@ -3547,6 +3547,26 @@ html, body {
     cursor: not-allowed;
 }
 
+.changelog-dont-show {
+    padding: 12px 24px;
+    border-top: 1px solid var(--border-color);
+    text-align: right;
+}
+
+.changelog-dont-show .btn-link {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: var(--fs-sm);
+    padding: 0;
+}
+
+.changelog-dont-show .btn-link:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
 /* System Status Section */
 .system-status-section .status-loading {
     color: var(--text-secondary);

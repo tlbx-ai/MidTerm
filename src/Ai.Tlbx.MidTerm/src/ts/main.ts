@@ -72,6 +72,7 @@ import {
   checkForUpdates,
   showChangelog,
   closeChangelog,
+  disableChangelogAfterUpdate,
   showUpdateLog,
   dismissUpdateNotification,
   bindFooterUpdateLink,
@@ -1142,12 +1143,13 @@ function bindEvents(): void {
   bindClick('update-btn', applyUpdate);
   bindClick('btn-check-updates', checkForUpdates);
   bindClick('btn-apply-update', applyUpdate);
-  bindClick('btn-show-changelog', showChangelog);
+  bindClick('btn-show-changelog', () => showChangelog());
   bindClick('btn-view-update-log', () => {
     void showUpdateLog();
   });
   bindClick('btn-close-changelog', closeChangelog);
-  bindClick('update-changelog-link', showChangelog);
+  bindClick('btn-changelog-dont-show', disableChangelogAfterUpdate);
+  bindClick('update-changelog-link', () => showChangelog());
   bindClick('update-dismiss-btn', dismissUpdateNotification);
   bindFooterUpdateLink();
 

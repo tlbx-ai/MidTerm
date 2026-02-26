@@ -318,6 +318,7 @@
   "changelog.failed": "无法加载更新日志。",
   "changelog.viewOnGithub": "在 GitHub 上查看",
   "changelog.noNotes": "没有版本说明。",
+  "changelog.dontShowAgain": "更新后不再显示",
   "session.terminal": "终端",
   "session.split": "分屏",
   "session.splitTooltip": "会话处于分屏布局",

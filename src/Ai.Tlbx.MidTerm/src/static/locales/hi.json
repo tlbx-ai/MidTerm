@@ -315,6 +315,7 @@
   "changelog.failed": "परिवर्तन लॉग लोड करने में विफल।",
   "changelog.viewOnGithub": "GitHub पर देखें",
   "changelog.noNotes": "कोई रिलीज़ नोट नहीं।",
+  "changelog.dontShowAgain": "अपडेट के बाद न दिखाएं",
   "session.terminal": "टर्मिनल",
   "session.split": "विभाजित",
   "session.splitTooltip": "सत्र विभाजित लेआउट में है",

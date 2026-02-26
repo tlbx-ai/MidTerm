@@ -235,7 +235,7 @@ function handleUpdateResult(result: UpdateResult, version: string): void {
   log.info(() => `Update result: ${status} - ${result.message || 'no error'}`);
 
   if (result.success && consumePendingChangelogFlag(version)) {
-    showChangelog();
+    showChangelog(true);
   }
 }
 

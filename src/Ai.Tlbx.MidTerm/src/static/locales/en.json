@@ -283,6 +283,7 @@
   "changelog.failed": "Failed to load changelog.",
   "changelog.viewOnGithub": "View on GitHub",
   "changelog.noNotes": "No release notes.",
+  "changelog.dontShowAgain": "Don't show after updates",
 
   "session.terminal": "Terminal",
   "session.split": "SPLIT",

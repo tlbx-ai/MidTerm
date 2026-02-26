@@ -315,6 +315,7 @@
   "changelog.failed": "Не удалось загрузить журнал изменений.",
   "changelog.viewOnGithub": "Посмотреть на GitHub",
   "changelog.noNotes": "Нет примечаний к релизу.",
+  "changelog.dontShowAgain": "Не показывать после обновлений",
   "session.terminal": "Терминал",
   "session.split": "РАЗДЕЛЁН",
   "session.splitTooltip": "Сессия находится в разделённом макете",

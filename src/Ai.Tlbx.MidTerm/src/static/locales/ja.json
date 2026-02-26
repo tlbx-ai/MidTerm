@@ -315,6 +315,7 @@
   "changelog.failed": "変更履歴の読み込みに失敗しました。",
   "changelog.viewOnGithub": "GitHubで表示",
   "changelog.noNotes": "リリースノートはありません。",
+  "changelog.dontShowAgain": "更新後に表示しない",
   "session.terminal": "ターミナル",
   "session.split": "分割",
   "session.splitTooltip": "セッションは分割レイアウトです",

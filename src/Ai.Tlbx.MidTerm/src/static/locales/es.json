@@ -315,6 +315,7 @@
   "changelog.failed": "Error al cargar el registro de cambios.",
   "changelog.viewOnGithub": "Ver en GitHub",
   "changelog.noNotes": "Sin notas de versión.",
+  "changelog.dontShowAgain": "No mostrar después de actualizaciones",
   "session.terminal": "Terminal",
   "session.split": "DIVIDIDO",
   "session.splitTooltip": "La sesión está en un diseño dividido",

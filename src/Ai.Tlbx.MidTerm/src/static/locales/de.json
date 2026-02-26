@@ -315,6 +315,7 @@
   "changelog.failed": "Änderungsprotokoll konnte nicht geladen werden.",
   "changelog.viewOnGithub": "Auf GitHub ansehen",
   "changelog.noNotes": "Keine Release-Notizen.",
+  "changelog.dontShowAgain": "Nach Updates nicht mehr anzeigen",
   "session.terminal": "Terminal",
   "session.split": "GETEILT",
   "session.splitTooltip": "Sitzung ist in einem geteilten Layout",

@@ -315,6 +315,7 @@
   "changelog.failed": "পরিবর্তন লগ লোড করতে ব্যর্থ।",
   "changelog.viewOnGithub": "GitHub-এ দেখুন",
   "changelog.noNotes": "কোনো রিলিজ নোট নেই।",
+  "changelog.dontShowAgain": "আপডেটের পরে দেখাবেন না",
   "session.terminal": "টার্মিনাল",
   "session.split": "বিভক্ত",
   "session.splitTooltip": "সেশনটি বিভক্ত লেআউটে আছে",
