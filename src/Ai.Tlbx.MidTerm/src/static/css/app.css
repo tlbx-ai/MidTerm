@@ -6674,6 +6674,8 @@ html, body {
     white-space: nowrap;
     max-width: 300px;
     padding: 0 8px;
+    user-select: text;
+    cursor: text;
 }
 
 .ide-bar-actions {
