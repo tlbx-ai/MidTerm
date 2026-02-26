@@ -78,13 +78,12 @@ export const QUOTED_ABSOLUTE_PATH_PATTERN_GLOBAL = new RegExp(
  * Supports both / and \ path separators.
  */
 export const RELATIVE_PATH_PATTERN =
-  /(?:^|[\s"'`(\[{<])((?:\.\.?[/\\])?(?:[\w.@-]+[/\\])*[\w.@-]+\.[a-zA-Z][a-zA-Z0-9]{0,14})/;
+  /(?:^|[\s"'`([{<])((?:\.\.?[/\\])?(?:[\w.@-]+[/\\])*[\w.@-]+\.[a-zA-Z][a-zA-Z0-9]{0,14})/;
 
 /**
  * Folder path pattern - matches paths ending with / or \
  */
-export const FOLDER_PATH_PATTERN =
-  /(?:^|[\s"'`(\[{<])((?:\.\.?[/\\])?(?:[\w.@-]+[/\\])+)/;
+export const FOLDER_PATH_PATTERN = /(?:^|[\s"'`([{<])((?:\.\.?[/\\])?(?:[\w.@-]+[/\\])+)/;
 
 /**
  * Well-known files without extensions.
