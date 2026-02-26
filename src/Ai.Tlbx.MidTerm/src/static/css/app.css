@@ -3143,6 +3143,22 @@ html, body {
     letter-spacing: 0.05em;
 }
 
+.signed-badge {
+    color: #fff;
+    background: var(--accent-green);
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: var(--fs-base);
+    letter-spacing: 0.05em;
+}
+
+.unsigned-badge {
+    color: var(--text-secondary);
+    padding: 2px 10px;
+    font-size: var(--fs-base);
+}
+
 .update-actions-inline {
     display: flex;
     gap: 8px;

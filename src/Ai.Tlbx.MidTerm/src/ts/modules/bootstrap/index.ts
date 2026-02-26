@@ -82,7 +82,13 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
       populateUserDropdown(users, data.settings.runAsUser ?? null);
       populateSettingsForm(data.settings);
     }
-    populateVersionInfo(data.version, data.ttyHostVersion || null, JS_BUILD_VERSION, data.devMode);
+    populateVersionInfo(
+      data.version,
+      data.ttyHostVersion || null,
+      JS_BUILD_VERSION,
+      data.devMode,
+      data.codeSigned,
+    );
     bindDevModeToggle();
 
     // Initialize auth status

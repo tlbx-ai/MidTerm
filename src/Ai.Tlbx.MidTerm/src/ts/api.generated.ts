@@ -1742,6 +1742,7 @@ export interface components {
       features: components['schemas']['FeatureFlags'];
       voicePassword: null | string;
       gitVersion: null | string;
+      codeSigned: boolean;
     };
     CertificateDownloadInfo: {
       fingerprint: string;

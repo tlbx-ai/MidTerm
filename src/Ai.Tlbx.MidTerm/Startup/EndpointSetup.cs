@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -25,11 +26,57 @@ public static class EndpointSetup
 {
     private static string? _cachedGitVersion;
     private static bool _gitVersionChecked;
+    private static bool _codeSigned;
+    private static bool _codeSigningChecked;
 
     public static async Task DetectGitAsync()
     {
         _cachedGitVersion = await GitCommandRunner.GetGitVersionAsync();
         _gitVersionChecked = true;
+    }
+
+    public static void DetectCodeSigning()
+    {
+        _codeSigned = CheckCodeSigning();
+        _codeSigningChecked = true;
+    }
+
+    private static bool CheckCodeSigning()
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+                return false;
+
+            if (OperatingSystem.IsWindows())
+            {
+#pragma warning disable SYSLIB0057
+                using var cert = X509Certificate2.CreateFromSignedFile(exePath);
+#pragma warning restore SYSLIB0057
+                return cert is not null;
+            }
+
+            if (OperatingSystem.IsMacOS())
+            {
+                var psi = new ProcessStartInfo("codesign", $"--verify --strict \"{exePath}\"")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit(5000);
+                return proc?.ExitCode == 0;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static void MapBootstrapEndpoints(
@@ -96,7 +143,8 @@ public static class EndpointSetup
                 DevMode = isDevMode,
                 Features = features,
                 VoicePassword = isDevMode ? settings.VoiceServerPassword : null,
-                GitVersion = _gitVersionChecked ? _cachedGitVersion : null
+                GitVersion = _gitVersionChecked ? _cachedGitVersion : null,
+                CodeSigned = _codeSigningChecked && _codeSigned
             };
 
             return Results.Json(response, AppJsonContext.Default.BootstrapResponse);

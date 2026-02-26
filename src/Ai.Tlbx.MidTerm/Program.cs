@@ -237,6 +237,7 @@ public class Program
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 
         _ = EndpointSetup.DetectGitAsync();
+        EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);

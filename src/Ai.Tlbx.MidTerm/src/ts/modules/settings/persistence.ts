@@ -33,7 +33,7 @@ import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
 } from '../terminal/scrollbarStyle';
-import { setLocale } from '../i18n';
+import { setLocale, t } from '../i18n';
 import type { LanguageSetting } from '../../api/types';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
@@ -83,6 +83,7 @@ export function populateVersionInfo(
   hostVersion: string | null,
   frontendVersion: string,
   devMode?: boolean,
+  codeSigned?: boolean,
 ): void {
   // Strip git hash suffix but preserve [LOCAL] indicator
   const formatVersion = (v: string) => 'v' + v.replace(/[+-][a-f0-9]+$/i, '');
@@ -110,6 +111,17 @@ export function populateVersionInfo(
       envEl.textContent = 'DEV';
     } else {
       envRow.style.display = 'none';
+    }
+  }
+
+  const sigEl = document.getElementById('code-signing-value');
+  if (sigEl) {
+    if (codeSigned) {
+      sigEl.textContent = t('settings.general.signed');
+      sigEl.className = 'version-value signed-badge';
+    } else {
+      sigEl.textContent = t('settings.general.unsigned');
+      sigEl.className = 'version-value unsigned-badge';
     }
   }
 }
