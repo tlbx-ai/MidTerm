@@ -349,6 +349,7 @@
   "managerBar.edit": "সম্পাদনা",
   "managerBar.remove": "সরান",
   "managerBar.labelHint": "লেবেল…",
+  "sessionTabs.files": "ফাইলসমূহ",
   "sessionTabs.commands": "কমান্ড",
   "sessionTabs.git": "Git",
   "sessionTabs.web": "ওয়েব প্রিভিউ",

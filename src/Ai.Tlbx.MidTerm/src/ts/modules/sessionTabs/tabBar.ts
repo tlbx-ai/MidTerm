@@ -16,7 +16,7 @@ export type IdeBarActionId = 'git' | 'commands' | 'web';
 function getTabLabels(): Record<SessionTabId, string> {
   return {
     terminal: t('session.terminal'),
-    files: t('modal.file'),
+    files: t('sessionTabs.files'),
   };
 }
 

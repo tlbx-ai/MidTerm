@@ -326,6 +326,7 @@
   "managerBar.remove": "Remove",
   "managerBar.labelHint": "label…",
 
+  "sessionTabs.files": "Files",
   "sessionTabs.commands": "Commands",
   "sessionTabs.git": "Git",
   "sessionTabs.web": "Web Preview",

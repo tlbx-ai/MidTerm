@@ -349,6 +349,7 @@
   "managerBar.edit": "Редактировать",
   "managerBar.remove": "Удалить",
   "managerBar.labelHint": "метка…",
+  "sessionTabs.files": "Файлы",
   "sessionTabs.commands": "Команды",
   "sessionTabs.git": "Git",
   "sessionTabs.web": "Веб-превью",

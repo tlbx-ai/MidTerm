@@ -352,6 +352,7 @@
   "managerBar.edit": "编辑",
   "managerBar.remove": "移除",
   "managerBar.labelHint": "标签…",
+  "sessionTabs.files": "文件",
   "sessionTabs.commands": "命令",
   "sessionTabs.git": "Git",
   "sessionTabs.web": "网页预览",

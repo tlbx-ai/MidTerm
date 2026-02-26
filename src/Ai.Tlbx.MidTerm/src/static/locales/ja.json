@@ -349,6 +349,7 @@
   "managerBar.edit": "編集",
   "managerBar.remove": "削除",
   "managerBar.labelHint": "ラベル…",
+  "sessionTabs.files": "ファイル",
   "sessionTabs.commands": "コマンド",
   "sessionTabs.git": "Git",
   "sessionTabs.web": "Webプレビュー",
