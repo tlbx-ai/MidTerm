@@ -547,10 +547,15 @@ export function setupTerminalEvents(
       return true;
     }
 
-    // Alt+V: native clipboard image paste for terminal apps (Codex CLI, etc.)
-    // Uploads image to server, sets OS clipboard, injects \x1bv into PTY.
+    // Alt+V: clipboard image paste (process-aware).
+    // Native apps (Codex): sets OS clipboard + injects \x1bv.
+    // Path apps (Claude, unknown): uploads image + pastes file path.
     if (isNativeImagePasteShortcut(e)) {
-      void handleNativeImagePaste(sessionId).then((result) => {
+      const foreground = getForegroundInfo(sessionId);
+      void handleNativeImagePaste(sessionId, {
+        foregroundName: foreground.name,
+        foregroundCommandLine: foreground.commandLine,
+      }).then((result) => {
         if (result === 'none') {
           sendInput(sessionId, '\x1bv');
         }

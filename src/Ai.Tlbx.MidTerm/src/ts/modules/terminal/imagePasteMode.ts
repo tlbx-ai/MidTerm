@@ -13,7 +13,7 @@ export interface ImagePasteForegroundInfo {
   commandLine: string | null;
 }
 
-const NATIVE_IMAGE_APPS = ['codex', 'claude', 'gemini', 'aider', 'qwen'];
+const NATIVE_IMAGE_APPS = ['codex', 'gemini', 'aider', 'qwen'];
 
 function normalize(value: string | null | undefined): string {
   return (value ?? '').toLowerCase();
