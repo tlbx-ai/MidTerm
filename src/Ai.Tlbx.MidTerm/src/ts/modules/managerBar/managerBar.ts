@@ -22,17 +22,25 @@ interface ManagerButton {
 let barEl: HTMLElement | null = null;
 let buttonsEl: HTMLElement | null = null;
 let addBtn: HTMLElement | null = null;
+let mobileDropdown: HTMLElement | null = null;
+
+export function sendCommand(sessionId: string, text: string): void {
+  sendInput(sessionId, text);
+  setTimeout(() => sendInput(sessionId, '\r'), 200);
+}
 
 export function initManagerBar(): void {
   barEl = document.getElementById('manager-bar');
   buttonsEl = document.getElementById('manager-bar-buttons');
   addBtn = document.getElementById('manager-bar-add');
+  mobileDropdown = document.getElementById('mobile-actions-dropdown');
   if (!barEl || !buttonsEl || !addBtn) return;
 
   $currentSettings.subscribe((settings) => {
     if (!settings) return;
     renderButtons(settings.managerBarButtons ?? []);
     barEl!.classList.toggle('hidden', !settings.managerBarEnabled);
+    renderMobileButtons(settings.managerBarEnabled ? (settings.managerBarButtons ?? []) : []);
   });
 
   buttonsEl.addEventListener('click', (e) => {
@@ -60,6 +68,28 @@ export function initManagerBar(): void {
   });
 
   addBtn.addEventListener('click', startInlineAdd);
+
+  if (mobileDropdown) {
+    mobileDropdown.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const mobileBtn = target.closest('.mobile-manager-item') as HTMLElement | null;
+      if (!mobileBtn) return;
+
+      const managerId = mobileBtn.dataset.managerId;
+      if (!managerId) return;
+
+      const settings = $currentSettings.get();
+      const buttons: ManagerButton[] = settings?.managerBarButtons ?? [];
+      const btn = buttons.find((b) => b.id === managerId);
+      if (!btn) return;
+
+      const activeId = $activeSessionId.get();
+      if (activeId) {
+        const text = btn.text.replace(/[\r\n]+$/, '');
+        sendCommand(activeId, text);
+      }
+    });
+  }
 }
 
 function renderButtons(buttons: ManagerButton[]): void {
@@ -88,7 +118,7 @@ function clickButton(id: string): void {
   const activeId = $activeSessionId.get();
   if (activeId) {
     const text = btn.text.replace(/[\r\n]+$/, '');
-    sendInput(activeId, `${text}\r`);
+    sendCommand(activeId, text);
   }
 }
 
@@ -222,6 +252,30 @@ function saveButtons(buttons: ManagerButton[]): void {
     .catch((e) => {
       log.error(() => `Failed to save manager bar buttons: ${String(e)}`);
     });
+}
+
+function renderMobileButtons(buttons: ManagerButton[]): void {
+  if (!mobileDropdown) return;
+
+  mobileDropdown
+    .querySelectorAll('.mobile-manager-item, .mobile-manager-separator')
+    .forEach((el) => el.remove());
+
+  if (buttons.length === 0) return;
+
+  const sep = document.createElement('div');
+  sep.className = 'mobile-manager-separator';
+  mobileDropdown.appendChild(sep);
+
+  for (const btn of buttons) {
+    const button = document.createElement('button');
+    button.className = 'mobile-actions-item topbar-action mobile-manager-item';
+    button.dataset.managerId = btn.id;
+    button.innerHTML =
+      `<span class="mobile-actions-symbol">\u25B6</span>` +
+      `<span class="mobile-actions-label">${escapeHtml(btn.label)}</span>`;
+    mobileDropdown.appendChild(button);
+  }
 }
 
 function escapeHtml(str: string): string {

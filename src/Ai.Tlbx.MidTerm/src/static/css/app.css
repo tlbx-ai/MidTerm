@@ -1834,6 +1834,13 @@ html, body {
         display: none !important;
     }
 
+    .mobile-manager-separator {
+        height: 1px;
+        background: var(--border-color);
+        margin: 4px 6px;
+        flex-shrink: 0;
+    }
+
     .mobile-actions-item {
         width: 100%;
         min-width: 0;
@@ -5704,24 +5711,7 @@ html, body {
     }
 
     body.keyboard-visible .manager-bar {
-        display: flex;
-        gap: 4px;
-        padding: 2px 6px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    body.keyboard-visible .manager-bar-buttons {
-        gap: 4px;
-        flex-wrap: nowrap;
-        min-width: max-content;
-    }
-
-    body.keyboard-visible .manager-btn,
-    body.keyboard-visible .manager-bar-add {
-        padding: 2px 8px;
-        font-size: var(--fs-sm);
+        display: none !important;
     }
 
     body.keyboard-visible .terminals-area {
@@ -6793,30 +6783,7 @@ body.ide-mode-off .session-tab-bar {
     }
 
     .manager-bar {
-        padding: 3px 6px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .manager-bar-buttons {
-        gap: 4px;
-        flex-wrap: nowrap;
-        min-width: max-content;
-    }
-
-    .manager-btn {
-        padding: 2px 8px;
-        font-size: var(--fs-sm);
-        max-width: 42vw;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .manager-bar-add {
-        padding: 2px 8px;
-        font-size: var(--fs-sm);
-        flex-shrink: 0;
+        display: none !important;
     }
 
     .file-browser-tree {
