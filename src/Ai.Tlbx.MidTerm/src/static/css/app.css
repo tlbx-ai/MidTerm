@@ -676,7 +676,7 @@ html, body {
 .history-item {
     display: flex;
     align-items: center;
-    padding: 2px 0;
+    padding: 2px 6px;
     cursor: pointer;
     transition: background 0.1s;
 }
@@ -735,6 +735,7 @@ html, body {
     white-space: nowrap;
     flex-shrink: 0;
     max-width: 50%;
+    padding: 2px 0;
 }
 
 .history-item-info .session-foreground {
@@ -742,6 +743,7 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding: 2px 0;
 }
 
 .history-item-text {
@@ -751,8 +753,8 @@ html, body {
 }
 
 .history-item-delete {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -807,8 +809,8 @@ html, body {
 }
 
 .history-item-rename {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border: none;
     background: transparent;
     color: var(--text-muted);
