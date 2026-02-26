@@ -298,27 +298,26 @@ describe('shouldRejectRelativeMatch', () => {
 // ===========================================================================
 
 describe('isFragmentOfAbsolutePath', () => {
-  it('detects relative match that is actually a fragment of Q:\\ path', () => {
+  it('detects fragment position within Q:\\ absolute path', () => {
     const input =
       'Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.UnitTests\\Ai.Tlbx.MidTerm.UnitTests.csproj';
-    const m = input.match(RELATIVE_PATH_PATTERN);
-    expect(m).not.toBeNull();
-    // The relative pattern matches from "repos\\" onward (after "Q:")
-    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
+    const idx = input.indexOf('repos\\');
+    expect(idx).toBeGreaterThan(0);
+    expect(isFragmentOfAbsolutePath({ input, index: idx })).toBe(true);
   });
 
-  it('detects fragment of C:\\ path', () => {
+  it('detects fragment position within C:\\ absolute path', () => {
     const input = 'C:\\Users\\dev\\src\\Program.cs';
-    const m = input.match(RELATIVE_PATH_PATTERN);
-    expect(m).not.toBeNull();
-    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
+    const idx = input.indexOf('Users\\');
+    expect(idx).toBeGreaterThan(0);
+    expect(isFragmentOfAbsolutePath({ input, index: idx })).toBe(true);
   });
 
-  it('detects fragment of D:\\ path', () => {
+  it('detects fragment position within D:\\ absolute path', () => {
     const input = 'D:\\repos\\MyProject\\Foo.cs';
-    const m = input.match(RELATIVE_PATH_PATTERN);
-    expect(m).not.toBeNull();
-    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
+    const idx = input.indexOf('repos\\');
+    expect(idx).toBeGreaterThan(0);
+    expect(isFragmentOfAbsolutePath({ input, index: idx })).toBe(true);
   });
 
   it('does NOT flag a genuine relative path', () => {
@@ -353,11 +352,11 @@ describe('isFragmentOfAbsolutePath', () => {
     expect(isFragmentOfAbsolutePath({ input: '..src/main.ts', index: 2 })).toBe(false);
   });
 
-  it('detects folder path fragment of absolute path', () => {
+  it('detects folder fragment position of absolute path', () => {
     const input = 'C:\\Users\\dev\\src\\';
-    const m = input.match(FOLDER_PATH_PATTERN);
-    expect(m).not.toBeNull();
-    expect(isFragmentOfAbsolutePath(m!)).toBe(true);
+    const idx = input.indexOf('Users\\');
+    expect(idx).toBeGreaterThan(0);
+    expect(isFragmentOfAbsolutePath({ input, index: idx })).toBe(true);
   });
 });
 
@@ -522,11 +521,9 @@ describe('URLs — current filter behavior', () => {
     expect(isLikelyFalsePositive('api.example.com')).toBe(true);
   });
 
-  it('RELATIVE_PATH_PATTERN extracts fragments from URLs with file extensions', () => {
-    // URLs containing paths with file extensions will produce regex matches
+  it('RELATIVE_PATH_PATTERN no longer extracts URL fragments with file extensions', () => {
     const m = 'ftp://files.server.com/pub/release.tar.gz'.match(RELATIVE_PATH_PATTERN);
-    expect(m).not.toBeNull();
-    expect(m![1]).toBe('files.server.com/pub/release.tar.gz');
+    expect(m).toBeNull();
   });
 });
 
@@ -686,11 +683,10 @@ describe('dotnet test output — remaining edge cases', () => {
     expect(isValidPath('/api/files/resolve')).toBe(true);
   });
 
-  it('glob pattern fragment still matches as relative path', () => {
+  it('glob pattern fragment no longer matches as relative path', () => {
     const input = 'ESLint config: Added **/*.test.ts to ignores';
     const m = input.match(RELATIVE_PATH_PATTERN);
-    expect(m).not.toBeNull();
-    expect(m![1]).toBe('.test.ts');
+    expect(m).toBeNull();
   });
 
   it('C# method name with slash still matches as folder', () => {
