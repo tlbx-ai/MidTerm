@@ -114,7 +114,8 @@ public static class ServerSetup
         builder.Services.AddSingleton<WebPreviewService>(sp =>
         {
             var (port, _) = ArgumentParser.Parse(args);
-            return new WebPreviewService(port);
+            var cookiesDir = Path.Combine(settingsService.SettingsDirectory, "cookies");
+            return new WebPreviewService(port, cookiesDir);
         });
 
         builder.Services.AddResponseCompression(options =>

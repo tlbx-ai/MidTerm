@@ -11,6 +11,7 @@ public sealed class WebPreviewService
     private volatile string? _targetUrl;
     private volatile Uri? _targetUri;
     private readonly int _serverPort;
+    private readonly string? _cookiesDirectory;
 
     private HttpClient _httpClient;
     private CookieContainer _cookieContainer;
@@ -20,9 +21,10 @@ public sealed class WebPreviewService
     public Uri? TargetUri => _targetUri;
     public bool IsActive => _targetUri is not null;
 
-    public WebPreviewService(int serverPort)
+    public WebPreviewService(int serverPort, string? cookiesDirectory = null)
     {
         _serverPort = serverPort;
+        _cookiesDirectory = cookiesDirectory;
         _cookieContainer = new CookieContainer();
         _httpClient = CreateHttpClient(_cookieContainer);
     }
@@ -46,7 +48,6 @@ public sealed class WebPreviewService
         if (IsLocalAddress(uri.Host) && uri.Port == _serverPort)
             return false;
 
-        // Reset cookie jar when target changes (new site = fresh cookies)
         var oldTarget = _targetUri;
         if (oldTarget is null || !oldTarget.Host.Equals(uri.Host, StringComparison.OrdinalIgnoreCase))
         {
@@ -55,6 +56,7 @@ public sealed class WebPreviewService
 
         _targetUri = uri;
         _targetUrl = uri.ToString();
+        LoadCookiesFromDisk(uri);
         return true;
     }
 
@@ -67,9 +69,11 @@ public sealed class WebPreviewService
 
     public bool HardReload()
     {
-        if (_targetUri is null)
+        var target = _targetUri;
+        if (target is null)
             return false;
 
+        DeleteCookieFile(target);
         ResetCookieJar();
         return true;
     }
@@ -131,6 +135,7 @@ public sealed class WebPreviewService
                 {
                     _cookieContainer.Add(cookie);
                 }
+                PersistCookiesLocked(target);
                 return true;
             }
             catch (CookieException)
@@ -158,6 +163,7 @@ public sealed class WebPreviewService
             try
             {
                 _cookieContainer.Add(cookie);
+                PersistCookiesLocked(target);
                 return true;
             }
             catch (CookieException)
@@ -193,6 +199,137 @@ public sealed class WebPreviewService
         {
             ws.Options.SetRequestHeader("Cookie", cookieHeader);
         }
+    }
+
+    public void PersistCookies()
+    {
+        var target = _targetUri;
+        if (target is null)
+            return;
+
+        lock (_clientLock)
+        {
+            PersistCookiesLocked(target);
+        }
+    }
+
+    private void PersistCookiesLocked(Uri target)
+    {
+        var filePath = GetCookieFilePath(target);
+        if (filePath is null)
+            return;
+
+        try
+        {
+            var cookies = _cookieContainer.GetAllCookies();
+            var lines = new List<string>();
+            foreach (Cookie cookie in cookies)
+            {
+                if (cookie.Expired)
+                    continue;
+                lines.Add(FormatCookie(cookie));
+            }
+
+            if (lines.Count == 0)
+            {
+                File.Delete(filePath);
+                return;
+            }
+
+            Directory.CreateDirectory(_cookiesDirectory!);
+            File.WriteAllLines(filePath, lines);
+        }
+        catch
+        {
+            // Best-effort persistence — don't break the proxy
+        }
+    }
+
+    private void LoadCookiesFromDisk(Uri target)
+    {
+        var filePath = GetCookieFilePath(target);
+        if (filePath is null || !File.Exists(filePath))
+            return;
+
+        try
+        {
+            var lines = File.ReadAllLines(filePath);
+            lock (_clientLock)
+            {
+                foreach (var line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    if (!TryParseCookie(line, target, out var cookie))
+                        continue;
+
+                    if (cookie.Expired)
+                        continue;
+
+                    try
+                    {
+                        if (string.IsNullOrEmpty(cookie.Domain))
+                            _cookieContainer.Add(target, cookie);
+                        else
+                            _cookieContainer.Add(cookie);
+                    }
+                    catch (CookieException)
+                    {
+                        // Skip malformed cookies
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort load — don't block target activation
+        }
+    }
+
+    private void DeleteCookieFile(Uri target)
+    {
+        var filePath = GetCookieFilePath(target);
+        if (filePath is null)
+            return;
+
+        try
+        {
+            File.Delete(filePath);
+        }
+        catch
+        {
+            // Best-effort delete
+        }
+    }
+
+    private string? GetCookieFilePath(Uri target)
+    {
+        if (_cookiesDirectory is null)
+            return null;
+
+        var host = target.Host.Replace(':', '_');
+        var fileName = $"{host}_{target.Port}.txt";
+        return Path.Combine(_cookiesDirectory, fileName);
+    }
+
+    private static string FormatCookie(Cookie cookie)
+    {
+        var parts = new List<string>
+        {
+            $"{cookie.Name}={cookie.Value}",
+            $"Domain={cookie.Domain}",
+            $"Path={cookie.Path}"
+        };
+
+        if (cookie.Secure)
+            parts.Add("Secure");
+        if (cookie.HttpOnly)
+            parts.Add("HttpOnly");
+        if (cookie.Expires != DateTime.MinValue)
+            parts.Add($"Expires={cookie.Expires.ToUniversalTime():R}");
+
+        return string.Join("; ", parts);
     }
 
     private bool ValidateCertificate(

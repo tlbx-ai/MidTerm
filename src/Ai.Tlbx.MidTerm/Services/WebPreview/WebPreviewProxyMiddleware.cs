@@ -288,6 +288,8 @@ public sealed partial class WebPreviewProxyMiddleware
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
             context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
 
+        _service.PersistCookies();
+
         if (upstreamResponse is null)
         {
             context.Response.StatusCode = errorCode;
@@ -421,6 +423,8 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
             context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
+
+        _service.PersistCookies();
 
         if (upstreamResponse is null)
         {
@@ -683,10 +687,11 @@ public sealed partial class WebPreviewProxyMiddleware
         var upstreamUrl = BuildUpstreamWsUrl(targetUri, path, context.Request.QueryString.Value);
         var upstreamUri = new Uri(upstreamUrl);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
-        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin);
+        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin, targetUri);
     }
 
-    private async Task ProxyWebSocketToUpstreamAsync(HttpContext context, Uri upstreamUri, string upstreamOrigin)
+    private async Task ProxyWebSocketToUpstreamAsync(
+        HttpContext context, Uri upstreamUri, string upstreamOrigin, Uri? targetUri = null)
     {
         using var upstream = new ClientWebSocket();
         // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
@@ -756,10 +761,29 @@ public sealed partial class WebPreviewProxyMiddleware
             ? await context.WebSockets.AcceptWebSocketAsync(acceptProtocol)
             : await context.WebSockets.AcceptWebSocketAsync();
 
+        // Build URL rewrite functions for Blazor/SignalR compatibility.
+        // Blazor sends the browser's location.href (which includes /webpreview/) to the
+        // upstream server during circuit init (StartCircuit) and navigation events. The
+        // upstream doesn't know about /webpreview/, so we strip it from client→upstream
+        // messages and re-add it for upstream→client messages.
+        Func<string, string>? clientToUpstream = null;
+        Func<string, string>? upstreamToClient = null;
+
+        if (targetUri is not null)
+        {
+            var proxyScheme = context.Request.IsHttps ? "https" : "http";
+            var proxyBase = $"{proxyScheme}://{context.Request.Host}/webpreview";
+            var upstreamBase = $"{targetUri.Scheme}://{targetUri.Authority}"
+                + targetUri.AbsolutePath.TrimEnd('/');
+
+            clientToUpstream = text => text.Replace(proxyBase, upstreamBase);
+            upstreamToClient = text => text.Replace(upstreamBase, proxyBase);
+        }
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
 
-        var downToUp = PipeWebSocketAsync(downstream, upstream, cts);
-        var upToDown = PipeWebSocketAsync(upstream, downstream, cts);
+        var downToUp = PipeWebSocketAsync(downstream, upstream, cts, clientToUpstream);
+        var upToDown = PipeWebSocketAsync(upstream, downstream, cts, upstreamToClient);
 
         await Task.WhenAny(downToUp, upToDown);
         await cts.CancelAsync();
@@ -769,9 +793,11 @@ public sealed partial class WebPreviewProxyMiddleware
     }
 
     private static async Task PipeWebSocketAsync(
-        WebSocket source, WebSocket destination, CancellationTokenSource cts)
+        WebSocket source, WebSocket destination, CancellationTokenSource cts,
+        Func<string, string>? textRewriter = null)
     {
         var buffer = new byte[WsBufferSize];
+        MemoryStream? textAccumulator = null;
         try
         {
             while (source.State == WebSocketState.Open && !cts.Token.IsCancellationRequested)
@@ -782,11 +808,33 @@ public sealed partial class WebPreviewProxyMiddleware
                     break;
                 }
 
-                await destination.SendAsync(
-                    new ArraySegment<byte>(buffer, 0, result.Count),
-                    result.MessageType,
-                    result.EndOfMessage,
-                    cts.Token);
+                if (textRewriter is not null && result.MessageType == WebSocketMessageType.Text)
+                {
+                    textAccumulator ??= new MemoryStream();
+                    textAccumulator.Write(buffer, 0, result.Count);
+
+                    if (result.EndOfMessage)
+                    {
+                        var text = Encoding.UTF8.GetString(
+                            textAccumulator.GetBuffer(), 0, (int)textAccumulator.Length);
+                        var rewritten = textRewriter(text);
+                        var bytes = Encoding.UTF8.GetBytes(rewritten);
+                        await destination.SendAsync(
+                            new ArraySegment<byte>(bytes),
+                            WebSocketMessageType.Text,
+                            true,
+                            cts.Token);
+                        textAccumulator.SetLength(0);
+                    }
+                }
+                else
+                {
+                    await destination.SendAsync(
+                        new ArraySegment<byte>(buffer, 0, result.Count),
+                        result.MessageType,
+                        result.EndOfMessage,
+                        cts.Token);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -796,6 +844,10 @@ public sealed partial class WebPreviewProxyMiddleware
         catch (WebSocketException)
         {
             // Connection dropped
+        }
+        finally
+        {
+            textAccumulator?.Dispose();
         }
     }
 
