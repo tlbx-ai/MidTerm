@@ -14,7 +14,7 @@ import {
   getDockTarget,
   isDockOverlayVisible,
 } from '../layout/dockOverlay';
-import { dockSession, isSessionInLayout } from '../layout/layoutStore';
+import { dockSession, isLayoutActive, isSessionInLayout } from '../layout/layoutStore';
 import { getLayoutRoot } from '../layout/layoutRenderer';
 
 let draggedSessionId: string | null = null;
@@ -130,6 +130,12 @@ function handleDragOver(e: DragEvent): void {
 
   if (!draggedSessionId) return;
 
+  // When layout is active, sidebar drag should be dock-only (no reorder semantics).
+  if (isLayoutActive()) {
+    clearAllDropIndicators();
+    return;
+  }
+
   const target = e.target as HTMLElement;
   const sessionItem = target.closest('.session-item') as HTMLElement;
 
@@ -189,6 +195,11 @@ function handleDrop(e: DragEvent): void {
   e.preventDefault();
 
   if (!draggedSessionId) return;
+
+  if (isLayoutActive()) {
+    clearAllDropIndicators();
+    return;
+  }
 
   const target = e.target as HTMLElement;
   const targetItem = target.closest('.session-item') as HTMLElement;
@@ -277,6 +288,11 @@ function handleTouchMove(e: TouchEvent): void {
   if (touchGhost) touchGhost.style.display = '';
   if (!el) return;
 
+  if (isLayoutActive()) {
+    clearAllDropIndicators();
+    return;
+  }
+
   const sessionItem = el.closest('.session-item') as HTMLElement;
   clearAllDropIndicators();
 
@@ -312,7 +328,7 @@ function handleTouchEnd(e: TouchEvent): void {
     if (touchGhost) touchGhost.style.display = '';
     const targetItem = el?.closest('.session-item') as HTMLElement | null;
 
-    if (targetItem && targetItem !== draggedElement) {
+    if (targetItem && targetItem !== draggedElement && !isLayoutActive()) {
       const targetSessionId = targetItem.dataset.sessionId;
       if (targetSessionId) {
         const sessions = $sessionList.get();

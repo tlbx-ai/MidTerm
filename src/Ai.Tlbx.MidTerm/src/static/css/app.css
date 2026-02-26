@@ -1536,6 +1536,31 @@ html, body {
     border-left: 2px solid var(--border-subtle);
 }
 
+.session-item.layout-group-start,
+.session-item.layout-group-middle,
+.session-item.layout-group-end,
+.session-item.layout-group-single {
+    margin-right: 4px;
+    border-right: 1px solid var(--accent-blue-25);
+}
+
+.session-item.layout-group-start {
+    border-top: 1px solid var(--accent-blue-25);
+    border-top-right-radius: var(--radius-sm);
+}
+
+.session-item.layout-group-end {
+    border-bottom: 1px solid var(--accent-blue-25);
+    border-bottom-right-radius: var(--radius-sm);
+}
+
+.session-item.layout-group-single {
+    border-top: 1px solid var(--accent-blue-25);
+    border-bottom: 1px solid var(--accent-blue-25);
+    border-top-right-radius: var(--radius-sm);
+    border-bottom-right-radius: var(--radius-sm);
+}
+
 /* Hide layout badge - visual grouping is enough */
 .session-item .layout-badge {
     display: none;

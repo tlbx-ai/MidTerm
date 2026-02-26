@@ -131,19 +131,23 @@ export function connectStateWebSocket(): void {
       // Handle tmux focus instructions
       if (data.type === 'tmux-focus') {
         log.verbose(() => `Tmux focus: ${data.sessionId}`);
-        // Only focus if the session shares a parent with the current active session,
-        // or is the active session's child/parent — don't steal from unrelated sessions
+        // Only focus if the target is related to the active session
+        // (same tmux parent chain) or both are in the active layout group.
         const activeId = $activeSessionId.get();
         const activeParent = activeId ? getParentSessionId(activeId) : null;
         const focusParent = getParentSessionId(data.sessionId);
+        const activeInLayout = activeId ? isSessionInLayout(activeId) : false;
+        const focusInLayout = isSessionInLayout(data.sessionId);
+        const sameLayoutGroup = activeInLayout && focusInLayout;
         const isRelated =
           !activeId ||
           activeId === data.sessionId ||
           activeId === focusParent ||
           activeParent === data.sessionId ||
-          (activeParent !== null && activeParent === focusParent);
+          (activeParent !== null && activeParent === focusParent) ||
+          sameLayoutGroup;
         if (isRelated) {
-          if (isSessionInLayout(data.sessionId)) {
+          if (focusInLayout) {
             // Route through main select path to apply heat suppression and mux hinting.
             selectSession(data.sessionId, { closeSettingsPanel: false });
           }

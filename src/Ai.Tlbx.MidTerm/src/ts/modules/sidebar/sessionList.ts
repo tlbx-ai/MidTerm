@@ -11,7 +11,12 @@ import { pendingSessions, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList, isChildSession } from '../../stores';
 import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
-import { isSessionInLayout, undockSession } from '../layout/layoutStore';
+import {
+  getLayoutSessionIds,
+  isLayoutActive,
+  isSessionInLayout,
+  undockSession,
+} from '../layout/layoutStore';
 import { formatRuntimeDisplay } from './processDisplay';
 import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
@@ -245,6 +250,53 @@ export function getSessionDisplayName(session: Session): string {
 // =============================================================================
 
 /**
+ * Get sidebar display order.
+ * Keeps all sessions currently in the active layout contiguous and in layout-tree order.
+ */
+function getSidebarDisplaySessions(): Session[] {
+  const sessions = $sessionList.get();
+  if (sessions.length <= 1 || !isLayoutActive()) {
+    return sessions;
+  }
+
+  const layoutIds = getLayoutSessionIds();
+  if (layoutIds.length < 2) {
+    return sessions;
+  }
+
+  const sessionsById = new Map<string, Session>(sessions.map((s) => [s.id, s]));
+  const layoutIdSet = new Set(layoutIds);
+
+  const groupedLayoutSessions: Session[] = [];
+  for (const id of layoutIds) {
+    const session = sessionsById.get(id);
+    if (session) {
+      groupedLayoutSessions.push(session);
+    }
+  }
+
+  if (groupedLayoutSessions.length < 2) {
+    return sessions;
+  }
+
+  const firstLayoutIndex = sessions.findIndex((s) => layoutIdSet.has(s.id));
+  if (firstLayoutIndex < 0) {
+    return sessions;
+  }
+
+  const nonLayoutSessions = sessions.filter((s) => !layoutIdSet.has(s.id));
+  const nonLayoutBeforeAnchorCount = sessions
+    .slice(0, firstLayoutIndex)
+    .filter((s) => !layoutIdSet.has(s.id)).length;
+
+  return [
+    ...nonLayoutSessions.slice(0, nonLayoutBeforeAnchorCount),
+    ...groupedLayoutSessions,
+    ...nonLayoutSessions.slice(nonLayoutBeforeAnchorCount),
+  ];
+}
+
+/**
  * Create a session item DOM element
  */
 function createSessionItem(
@@ -441,7 +493,7 @@ export function renderSessionList(): void {
   if (!dom.sessionList) return;
 
   const sessionList = dom.sessionList;
-  const sessions = $sessionList.get();
+  const sessions = getSidebarDisplaySessions();
   const activeSessionId = $activeSessionId.get();
 
   // Build set of current session IDs
@@ -471,6 +523,14 @@ export function renderSessionList(): void {
       existingItem.classList.toggle('active', id === activeSessionId);
       existingItem.classList.toggle('pending', isPending);
       existingItem.classList.toggle('in-layout', isSessionInLayout(id));
+      const isChild = isChildSession(id);
+      existingItem.classList.toggle('tmux-child', isChild);
+      if (isChild) {
+        existingItem.dataset.parentId = session.parentSessionId ?? '';
+      } else {
+        delete existingItem.dataset.parentId;
+      }
+      existingItem.draggable = !isPending && !isChild;
 
       // Ensure correct order
       if (previousElement) {
@@ -497,6 +557,12 @@ export function renderSessionList(): void {
   const allItems = sessionList.querySelectorAll('.session-item');
   allItems.forEach((item) => {
     (item as HTMLElement).classList.remove('tmux-last-child');
+    (item as HTMLElement).classList.remove(
+      'layout-group-start',
+      'layout-group-middle',
+      'layout-group-end',
+      'layout-group-single',
+    );
   });
   allItems.forEach((item, idx) => {
     if ((item as HTMLElement).classList.contains('tmux-child')) {
@@ -508,6 +574,27 @@ export function renderSessionList(): void {
       ) {
         (item as HTMLElement).classList.add('tmux-last-child');
       }
+    }
+  });
+
+  // Mark contiguous layout groups in sidebar order for explicit visual grouping
+  allItems.forEach((item, idx) => {
+    const current = item as HTMLElement;
+    if (!current.classList.contains('in-layout')) return;
+
+    const prev = allItems[idx - 1] as HTMLElement | undefined;
+    const next = allItems[idx + 1] as HTMLElement | undefined;
+    const prevInLayout = !!prev?.classList.contains('in-layout');
+    const nextInLayout = !!next?.classList.contains('in-layout');
+
+    if (!prevInLayout && !nextInLayout) {
+      current.classList.add('layout-group-single');
+    } else if (!prevInLayout) {
+      current.classList.add('layout-group-start');
+    } else if (!nextInLayout) {
+      current.classList.add('layout-group-end');
+    } else {
+      current.classList.add('layout-group-middle');
     }
   });
 }
