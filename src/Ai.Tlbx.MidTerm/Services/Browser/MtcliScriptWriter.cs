@@ -69,7 +69,7 @@ public static class MtcliScriptWriter
         mt_status()     { mtbrowser status 2>/dev/null || _MC "$_MT/api/webpreview/target"; }
 
         # Direct execution: .midterm/mtcli.sh query ".error"
-        if [ "${BASH_SOURCE[0]}" = "$0" ] 2>/dev/null || [ "$0" = "${0##*/mtcli.sh}" ] 2>/dev/null; then
+        if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
           _cmd="$1"; shift 2>/dev/null; "mt_$_cmd" "$@"
         fi
         """;

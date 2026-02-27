@@ -7,6 +7,8 @@
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
 import { reloadWebPreview, setWebPreviewTarget } from './webApi';
 import { pasteToTerminal } from '../terminal';
+import { sendInput } from '../comms/muxChannel';
+import { getForegroundInfo } from '../process';
 import { createLogger } from '../logging';
 import { getActiveUrl, setActiveMode, setActiveUrl } from './webSessionState';
 
@@ -55,6 +57,7 @@ export function initWebPanel(): void {
     ?.addEventListener('click', () => void handleSnapshot());
   document.getElementById('web-preview-dom-html')?.addEventListener('click', handleDomHtml);
   document.getElementById('web-preview-dom-text')?.addEventListener('click', handleDomText);
+  document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
 }
 
 /** Restore the last-used URL for the active session into the URL input bar. */
@@ -205,6 +208,23 @@ function handleDomText(): void {
   if (!text) return;
   pasteToTerminal(sessionId, text, false);
   log.info(() => 'DOM innerText pasted to terminal');
+}
+
+/**
+ * Inject a chat message into the active terminal telling the agent to read
+ * the browser control guidance file. Points to CLAUDE.md for Claude Code,
+ * AGENTS.md for all other processes.
+ */
+function handleAgentHint(): void {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+
+  const fg = getForegroundInfo(sessionId);
+  const name = (fg.name ?? '').toLowerCase();
+  const guidanceFile = name === 'claude' ? '.midterm/CLAUDE.md' : '.midterm/AGENTS.md';
+  const message = `Read the file ${guidanceFile} for instructions on how to interact with this browser preview.\n`;
+
+  sendInput(sessionId, message);
 }
 
 /**

@@ -366,6 +366,7 @@
   "webPreview.dockBack": "Закрепить",
   "webPreview.detachedPlaceholder": "Превью открыто в отдельном окне",
   "webPreview.noTarget": "Введите URL для предпросмотра",
+  "webPreview.agentHint": "Подсказать ИИ-агенту об управлении браузером",
   "fileBrowser.unableToLoad": "Не удалось загрузить каталог",
   "fileBrowser.selectFile": "Выберите файл для предпросмотра",
   "fileBrowser.loading": "Загрузка...",

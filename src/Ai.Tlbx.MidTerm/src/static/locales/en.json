@@ -343,6 +343,7 @@
   "webPreview.dockBack": "Dock back",
   "webPreview.detachedPlaceholder": "Preview is open in a separate window",
   "webPreview.noTarget": "Enter a URL to preview",
+  "webPreview.agentHint": "Hint agent about browser control",
 
   "fileBrowser.unableToLoad": "Unable to load directory",
   "fileBrowser.selectFile": "Select a file to preview",

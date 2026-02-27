@@ -369,6 +369,7 @@
   "webPreview.dockBack": "停靠回来",
   "webPreview.detachedPlaceholder": "预览已在单独窗口中打开",
   "webPreview.noTarget": "输入要预览的URL",
+  "webPreview.agentHint": "提示AI代理使用浏览器控制",
   "fileBrowser.unableToLoad": "无法加载目录",
   "fileBrowser.selectFile": "选择文件进行预览",
   "fileBrowser.loading": "加载中...",

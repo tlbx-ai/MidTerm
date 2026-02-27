@@ -366,6 +366,7 @@
   "webPreview.dockBack": "Réancrer",
   "webPreview.detachedPlaceholder": "L'aperçu est ouvert dans une fenêtre séparée",
   "webPreview.noTarget": "Entrez une URL à prévisualiser",
+  "webPreview.agentHint": "Indiquer à l'agent IA le contrôle du navigateur",
   "fileBrowser.unableToLoad": "Impossible de charger le répertoire",
   "fileBrowser.selectFile": "Sélectionnez un fichier pour l'aperçu",
   "fileBrowser.loading": "Chargement...",

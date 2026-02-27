@@ -366,6 +366,7 @@
   "webPreview.dockBack": "Andocken",
   "webPreview.detachedPlaceholder": "Vorschau ist in einem separaten Fenster geöffnet",
   "webPreview.noTarget": "URL für Vorschau eingeben",
+  "webPreview.agentHint": "KI-Agent auf Browser-Steuerung hinweisen",
   "fileBrowser.unableToLoad": "Verzeichnis konnte nicht geladen werden",
   "fileBrowser.selectFile": "Datei zur Vorschau auswählen",
   "fileBrowser.loading": "Laden...",
