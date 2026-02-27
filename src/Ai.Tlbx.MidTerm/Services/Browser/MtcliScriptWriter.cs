@@ -45,18 +45,35 @@ public static class MtcliScriptWriter
         _MK="mm-session={{token}}"
         _MC() { curl -sfk -b "$_MK" "$@" 2>/dev/null; }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
+        # JSON-escape a string value (handles quotes, backslashes, newlines — pure bash)
+        _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
 
         # Browser interaction (requires web preview panel open in MidTerm)
-        mt_query()      { local t=${2:-false}; _MJ -d "{\"selector\":\"$1\",\"textOnly\":$t}" "$_MT/api/browser/query"; }
-        mt_click()      { _MJ -d "{\"selector\":\"$1\"}" "$_MT/api/browser/click"; }
-        mt_fill()       { _MJ -d "{\"selector\":\"$1\",\"value\":\"$2\"}" "$_MT/api/browser/fill"; }
-        mt_exec()       { _MJ -d "{\"value\":\"$1\"}" "$_MT/api/browser/exec"; }
-        mt_wait()       { local t=${2:-5}; _MJ -d "{\"selector\":\"$1\",\"timeout\":$t}" "$_MT/api/browser/wait"; }
-        mt_screenshot() { _MJ "$_MT/api/browser/screenshot"; }
-        mt_snapshot()   { _MJ "$_MT/api/browser/snapshot"; }
+        # mt_query SELECTOR [true]  — query DOM; pass true for text-only (smaller output)
+        mt_query() {
+          local t=${2:-false}
+          _MJ -d "{\"selector\":\"$(_ME "$1")\",\"textOnly\":$t}" "$_MT/api/browser/query"
+        }
+        # mt_click SELECTOR
+        mt_click() { _MJ -d "{\"selector\":\"$(_ME "$1")\"}" "$_MT/api/browser/click"; }
+        # mt_fill SELECTOR VALUE
+        mt_fill()  { _MJ -d "{\"selector\":\"$(_ME "$1")\",\"value\":\"$(_ME "$2")\"}" "$_MT/api/browser/fill"; }
+        # mt_exec JS_CODE  — or pipe: echo 'code' | mt_exec
+        mt_exec() {
+          local code="$1"
+          if [ -z "$code" ] && [ ! -t 0 ]; then code=$(cat); fi
+          _MJ -d "{\"value\":\"$(_ME "$code")\"}" "$_MT/api/browser/exec"
+        }
+        # mt_wait SELECTOR [TIMEOUT]  — wait for element (default 5s)
+        mt_wait() {
+          local t=${2:-5}
+          _MJ -d "{\"selector\":\"$(_ME "$1")\",\"timeout\":$t}" "$_MT/api/browser/wait"
+        }
+        mt_screenshot() { _MJ -d '{}' "$_MT/api/browser/screenshot"; }
+        mt_snapshot()   { _MJ -d '{}' "$_MT/api/browser/snapshot"; }
 
         # Web preview target management
-        mt_navigate()   { _MC -X PUT -H "Content-Type: application/json" -d "{\"url\":\"$1\"}" "$_MT/api/webpreview/target"; }
+        mt_navigate()   { _MJ -d "{\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
         mt_target()     { _MC "$_MT/api/webpreview/target"; }
         mt_cookies()    { _MC "$_MT/api/webpreview/cookies"; }
@@ -86,18 +103,46 @@ public static class MtcliScriptWriter
 
         function script:_MC { & curl.exe -sfk -b $script:_MK @args 2>$null }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
+        # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
+        function script:_MB { param([hashtable]$h) $h | ConvertTo-Json -Compress }
 
         # Browser interaction (requires web preview panel open in MidTerm)
-        function Mt-Query      { param([string]$Selector, [switch]$Text) _MJ -d "{`"selector`":`"$Selector`",`"textOnly`":$($Text.IsPresent.ToString().ToLower())}" "$script:_MT/api/browser/query" }
-        function Mt-Click      { param([string]$Selector) _MJ -d "{`"selector`":`"$Selector`"}" "$script:_MT/api/browser/click" }
-        function Mt-Fill       { param([string]$Selector, [string]$Value) _MJ -d "{`"selector`":`"$Selector`",`"value`":`"$Value`"}" "$script:_MT/api/browser/fill" }
-        function Mt-Exec       { param([string]$Code) _MJ -d "{`"value`":`"$Code`"}" "$script:_MT/api/browser/exec" }
-        function Mt-Wait       { param([string]$Selector, [int]$Timeout = 5) _MJ -d "{`"selector`":`"$Selector`",`"timeout`":$Timeout}" "$script:_MT/api/browser/wait" }
-        function Mt-Screenshot { _MJ "$script:_MT/api/browser/screenshot" }
-        function Mt-Snapshot   { _MJ "$script:_MT/api/browser/snapshot" }
+        # Mt-Query -Selector CSS_SELECTOR [-Text]  — query DOM; -Text for text-only
+        function Mt-Query {
+            param([string]$Selector, [switch]$Text)
+            _MJ -d (_MB @{selector=$Selector; textOnly=$Text.IsPresent}) "$script:_MT/api/browser/query"
+        }
+        # Mt-Click -Selector CSS_SELECTOR
+        function Mt-Click {
+            param([string]$Selector)
+            _MJ -d (_MB @{selector=$Selector}) "$script:_MT/api/browser/click"
+        }
+        # Mt-Fill -Selector CSS_SELECTOR -Value TEXT
+        function Mt-Fill {
+            param([string]$Selector, [string]$Value)
+            _MJ -d (_MB @{selector=$Selector; value=$Value}) "$script:_MT/api/browser/fill"
+        }
+        # Mt-Exec -Code JS_CODE  — or pipe: 'code' | Mt-Exec
+        function Mt-Exec {
+            param([Parameter(ValueFromPipeline)][string]$Code)
+            process {
+                if (-not $Code) { return }
+                _MJ -d (_MB @{value=$Code}) "$script:_MT/api/browser/exec"
+            }
+        }
+        # Mt-Wait -Selector CSS_SELECTOR [-Timeout N]  — wait for element (default 5s)
+        function Mt-Wait {
+            param([string]$Selector, [int]$Timeout = 5)
+            _MJ -d (_MB @{selector=$Selector; timeout=$Timeout}) "$script:_MT/api/browser/wait"
+        }
+        function Mt-Screenshot { _MJ -d '{}' "$script:_MT/api/browser/screenshot" }
+        function Mt-Snapshot   { _MJ -d '{}' "$script:_MT/api/browser/snapshot" }
 
         # Web preview target management
-        function Mt-Navigate   { param([string]$Url) _MC -X PUT -H "Content-Type: application/json" -d "{`"url`":`"$Url`"}" "$script:_MT/api/webpreview/target" }
+        function Mt-Navigate {
+            param([string]$Url)
+            _MJ -d (_MB @{url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
+        }
         function Mt-Reload     { _MJ -d '{"mode":"soft"}' "$script:_MT/api/webpreview/reload" }
         function Mt-Target     { _MC "$script:_MT/api/webpreview/target" }
         function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies" }
