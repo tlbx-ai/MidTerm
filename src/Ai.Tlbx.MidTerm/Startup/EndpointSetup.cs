@@ -9,6 +9,7 @@ using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
@@ -614,12 +615,14 @@ public static class EndpointSetup
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
         GitWatcherService gitWatcher,
+        BrowserCommandService browserCommandService,
         TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
+        var browserHandler = new BrowserWebSocketHandler(browserCommandService, settingsService, authService, shutdownService);
 
         app.Use(async (context, next) =>
         {
@@ -658,6 +661,12 @@ public static class EndpointSetup
             if (path == "/ws/mux")
             {
                 await muxHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/browser")
+            {
+                await browserHandler.HandleAsync(context);
                 return;
             }
 

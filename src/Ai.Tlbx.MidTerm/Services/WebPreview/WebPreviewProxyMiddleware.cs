@@ -111,6 +111,107 @@ public sealed partial class WebPreviewProxyMiddleware
               }
             }
           }).observe(document.documentElement,{childList:true,subtree:true});
+          // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
+          var bws,bwsReady=false;
+          function truncDom(el,d,mx){
+            if(d>=mx)return"<!-- ... -->";
+            var t=el.cloneNode(false);
+            if(el.childNodes)for(var i=0;i<el.childNodes.length;i++){
+              var c=el.childNodes[i];
+              if(c.nodeType===1)t.appendChild(truncDom(c,d+1,mx).content?truncDom(c,d+1,mx):document.createRange().createContextualFragment(truncDom(c,d+1,mx)));
+              else if(c.nodeType===3)t.appendChild(c.cloneNode(false));
+            }
+            return t.outerHTML||t.textContent||"";
+          }
+          function truncEl(el,mx){
+            if(!mx||mx<1)return el.outerHTML;
+            var clone=el.cloneNode(true);
+            function trim(n,d){if(d>=mx){n.innerHTML="<!-- ... -->";return;}
+              for(var i=0;i<n.children.length;i++)trim(n.children[i],d+1);
+            }
+            trim(clone,0);return clone.outerHTML;
+          }
+          function handleBCmd(msg){
+            var res={id:msg.id,success:true,result:null,error:null,matchCount:null};
+            try{
+              switch(msg.command){
+                case"query":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var els=document.querySelectorAll(msg.selector);
+                  res.matchCount=els.length;
+                  var parts=[];var mx=msg.maxDepth||0;
+                  for(var i=0;i<els.length&&i<50;i++){
+                    parts.push(msg.textOnly?els[i].textContent:mx>0?truncEl(els[i],mx):els[i].outerHTML);
+                  }
+                  res.result=parts.join("\n---\n");
+                  break;}
+                case"click":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var el=document.querySelector(msg.selector);
+                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
+                  el.click();res.result="clicked";
+                  break;}
+                case"fill":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var el=document.querySelector(msg.selector);
+                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
+                  var nv=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
+                  if(nv&&nv.set)nv.set.call(el,msg.value||"");
+                  else el.value=msg.value||"";
+                  el.dispatchEvent(new Event("input",{bubbles:true}));
+                  el.dispatchEvent(new Event("change",{bubbles:true}));
+                  res.result="filled";
+                  break;}
+                case"exec":{
+                  if(!msg.value){res.success=false;res.error="js code required";break;}
+                  var rv=eval(msg.value);
+                  res.result=rv===undefined?"undefined":String(rv);
+                  break;}
+                case"wait":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var to=(msg.timeout||5)*1000,start=Date.now();
+                  (function poll(){
+                    var found=document.querySelector(msg.selector);
+                    if(found){res.result="found";res.matchCount=document.querySelectorAll(msg.selector).length;bws.send(JSON.stringify(res));}
+                    else if(Date.now()-start>to){res.success=false;res.error="timeout waiting for: "+msg.selector;bws.send(JSON.stringify(res));}
+                    else setTimeout(poll,200);
+                  })();return;}
+                case"screenshot":{
+                  var scr=document.createElement("script");
+                  scr.src="/js/html2canvas.min.js";
+                  scr.onload=function(){
+                    html2canvas(document.documentElement,{useCORS:true,logging:false,scale:1}).then(function(canvas){
+                      res.result=canvas.toDataURL("image/png");bws.send(JSON.stringify(res));
+                    }).catch(function(e){res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));});
+                  };
+                  scr.onerror=function(){res.success=false;res.error="failed to load html2canvas";bws.send(JSON.stringify(res));};
+                  document.head.appendChild(scr);return;}
+                case"snapshot":{
+                  res.result=document.documentElement.outerHTML;
+                  break;}
+                case"navigate":{
+                  if(!msg.value){res.success=false;res.error="url required";break;}
+                  location.href=msg.value;res.result="navigating";
+                  break;}
+                case"reload":{
+                  location.reload();res.result="reloading";
+                  break;}
+                default:res.success=false;res.error="unknown command: "+msg.command;
+              }
+            }catch(e){res.success=false;res.error=e.message||String(e);}
+            bws.send(JSON.stringify(res));
+          }
+          function connectBws(){
+            try{
+              var proto=location.protocol==="https:"?"wss:":"ws:";
+              bws=new OWS(proto+"//"+location.host+"/ws/browser");
+              bws.onopen=function(){bwsReady=true;};
+              bws.onmessage=function(e){try{handleBCmd(JSON.parse(e.data));}catch(ex){}};
+              bws.onclose=function(){bwsReady=false;setTimeout(connectBws,3000);};
+              bws.onerror=function(){};
+            }catch(e){}
+          }
+          setTimeout(connectBws,500);
         })();</script>
         """;
 

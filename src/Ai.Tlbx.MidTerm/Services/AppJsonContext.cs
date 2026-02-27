@@ -10,6 +10,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -109,6 +110,12 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(UpdateType))]
 [JsonSerializable(typeof(UpdateResult))]
 [JsonSerializable(typeof(VersionManifest))]
+
+// --- Browser ---
+[JsonSerializable(typeof(BrowserCommandRequest))]
+[JsonSerializable(typeof(BrowserCommandResponse))]
+[JsonSerializable(typeof(BrowserWsMessage))]
+[JsonSerializable(typeof(BrowserWsResult))]
 
 // --- WebSocket Protocol ---
 [JsonSerializable(typeof(WsCommand))]
