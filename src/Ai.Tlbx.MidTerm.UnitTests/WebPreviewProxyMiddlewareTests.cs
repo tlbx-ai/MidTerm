@@ -162,4 +162,104 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains(expected1, resultStr);
         Assert.Contains(expected2, resultStr);
     }
+
+    [Fact]
+    public void RewriteBinaryUrls_NoValidHeader_PassesThrough()
+    {
+        // URL bytes appear in binary data but NOT preceded by a valid MsgPack string header
+        var fromUrl = "http://a.co";
+        var toUrl = "http://b.co";
+        var fromUtf8 = Encoding.UTF8.GetBytes(fromUrl);
+        var toUtf8 = Encoding.UTF8.GetBytes(toUrl);
+
+        // Just raw bytes with no MsgPack header (preceding byte 0x05 is a positive fixint, not a str header)
+        var frame = new byte[1 + fromUtf8.Length];
+        frame[0] = 0x05;
+        fromUtf8.CopyTo(frame, 1);
+
+        var result = WebPreviewProxyMiddleware.RewriteBinaryUrls(
+            frame, frame.Length, fromUtf8, toUtf8);
+
+        Assert.Null(result); // No valid header → null → caller forwards original
+    }
+
+    [Fact]
+    public void RewriteBinaryUrls_StringExtendsPastBuffer_ReturnsNull()
+    {
+        var fromUrl = "http://a.co";
+        var toUrl = "http://b.co";
+        var fromUtf8 = Encoding.UTF8.GetBytes(fromUrl);
+        var toUtf8 = Encoding.UTF8.GetBytes(toUrl);
+
+        // str8 header claims string is 200 bytes, but buffer is only header + fromUrl
+        var frame = new byte[2 + fromUtf8.Length];
+        frame[0] = 0xd9;
+        frame[1] = 200; // Claimed length far exceeds actual data
+        fromUtf8.CopyTo(frame, 2);
+
+        var result = WebPreviewProxyMiddleware.RewriteBinaryUrls(
+            frame, frame.Length, fromUtf8, toUtf8);
+
+        Assert.Null(result); // Corrupt data → bail → caller forwards original
+    }
+
+    [Fact]
+    public void RewriteBinaryUrls_SurroundingDataPreserved()
+    {
+        var fromUrl = "http://a.co";
+        var toUrl = "http://longer.example.com";
+        var fromUtf8 = Encoding.UTF8.GetBytes(fromUrl);
+        var toUtf8 = Encoding.UTF8.GetBytes(toUrl);
+
+        // Build: [prefix bytes] [str8 header] [url] [suffix bytes]
+        var prefix = new byte[] { 0x93, 0x80, 0x01 }; // fixarray(3), fixmap(0), fixint(1)
+        var suffix = new byte[] { 0xc0, 0x90 };        // nil, fixarray(0)
+
+        var frame = new byte[prefix.Length + 2 + fromUtf8.Length + suffix.Length];
+        prefix.CopyTo(frame, 0);
+        frame[prefix.Length] = 0xd9;
+        frame[prefix.Length + 1] = (byte)fromUtf8.Length;
+        fromUtf8.CopyTo(frame, prefix.Length + 2);
+        suffix.CopyTo(frame, prefix.Length + 2 + fromUtf8.Length);
+
+        var result = WebPreviewProxyMiddleware.RewriteBinaryUrls(
+            frame, frame.Length, fromUtf8, toUtf8);
+
+        Assert.NotNull(result);
+
+        // Prefix preserved
+        Assert.Equal(prefix[0], result[0]);
+        Assert.Equal(prefix[1], result[1]);
+        Assert.Equal(prefix[2], result[2]);
+
+        // Suffix preserved at end
+        Assert.Equal(suffix[0], result[^2]);
+        Assert.Equal(suffix[1], result[^1]);
+
+        // Rewriter uses most compact header: 25 bytes fits in fixstr (1 byte header)
+        Assert.Equal((byte)(0xa0 | toUtf8.Length), result[prefix.Length]);
+        var strStart = prefix.Length + 1; // fixstr header is 1 byte
+        Assert.Equal(toUrl, Encoding.UTF8.GetString(result, strStart, toUtf8.Length));
+    }
+
+    [Fact]
+    public void RewriteBinaryUrls_PartialBufferLength_OnlyReadsWithinLength()
+    {
+        var fromUrl = "http://a.co";
+        var toUrl = "http://b.co";
+        var fromUtf8 = Encoding.UTF8.GetBytes(fromUrl);
+        var toUtf8 = Encoding.UTF8.GetBytes(toUrl);
+
+        // Frame has the URL but length parameter cuts it short
+        var frame = new byte[2 + fromUtf8.Length + 10];
+        frame[0] = 0xd9;
+        frame[1] = (byte)fromUtf8.Length;
+        fromUtf8.CopyTo(frame, 2);
+
+        // Only pass length that covers half the URL — should not match
+        var result = WebPreviewProxyMiddleware.RewriteBinaryUrls(
+            frame, fromUtf8.Length / 2, fromUtf8, toUtf8);
+
+        Assert.Null(result);
+    }
 }

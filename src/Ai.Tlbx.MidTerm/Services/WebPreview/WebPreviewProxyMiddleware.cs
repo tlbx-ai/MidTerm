@@ -1131,12 +1131,25 @@ public sealed partial class WebPreviewProxyMiddleware
 
                     if (result.EndOfMessage)
                     {
-                        var text = Encoding.UTF8.GetString(
-                            accumulator.GetBuffer(), 0, (int)accumulator.Length);
-                        var rewritten = textRewriter(text);
-                        var bytes = Encoding.UTF8.GetBytes(rewritten);
+                        var raw = accumulator.GetBuffer();
+                        var rawLen = (int)accumulator.Length;
+                        byte[]? outBytes = null;
+
+                        try
+                        {
+                            var text = Encoding.UTF8.GetString(raw, 0, rawLen);
+                            var rewritten = textRewriter(text);
+                            outBytes = Encoding.UTF8.GetBytes(rewritten);
+                        }
+                        catch
+                        {
+                            // Rewrite failed — forward original bytes unchanged
+                        }
+
                         await destination.SendAsync(
-                            new ArraySegment<byte>(bytes),
+                            outBytes is not null
+                                ? new ArraySegment<byte>(outBytes)
+                                : new ArraySegment<byte>(raw, 0, rawLen),
                             WebSocketMessageType.Text,
                             true,
                             cts.Token);
@@ -1152,23 +1165,24 @@ public sealed partial class WebPreviewProxyMiddleware
                     {
                         var data = accumulator.GetBuffer();
                         var len = (int)accumulator.Length;
-                        var rewritten = binaryRewriter(data, len);
-                        if (rewritten is not null)
+                        byte[]? rewritten = null;
+
+                        try
                         {
-                            await destination.SendAsync(
-                                new ArraySegment<byte>(rewritten),
-                                WebSocketMessageType.Binary,
-                                true,
-                                cts.Token);
+                            rewritten = binaryRewriter(data, len);
                         }
-                        else
+                        catch
                         {
-                            await destination.SendAsync(
-                                new ArraySegment<byte>(data, 0, len),
-                                WebSocketMessageType.Binary,
-                                true,
-                                cts.Token);
+                            // Rewrite failed — forward original bytes unchanged
                         }
+
+                        await destination.SendAsync(
+                            rewritten is not null
+                                ? new ArraySegment<byte>(rewritten)
+                                : new ArraySegment<byte>(data, 0, len),
+                            WebSocketMessageType.Binary,
+                            true,
+                            cts.Token);
                         accumulator.SetLength(0);
                     }
                 }
@@ -1231,7 +1245,7 @@ public sealed partial class WebPreviewProxyMiddleware
         foreach (var matchPos in positions)
         {
             if (matchPos < copyFrom)
-                continue; // Overlaps with previous replacement
+                continue; // Inside a previously rewritten string
 
             // Try to find the MessagePack string header enclosing this URL.
             // The URL is expected at the START of the MessagePack string value.
@@ -1262,10 +1276,16 @@ public sealed partial class WebPreviewProxyMiddleware
             }
 
             if (headerStart < 0 || oldStrLen < fromUtf8.Length)
-            {
-                // No valid MessagePack string header found — skip
+                continue; // No valid header — skip this match, bytes pass through
+
+            // Bail if the header overlaps with a previous replacement region
+            if (headerStart < copyFrom)
                 continue;
-            }
+
+            // Bail if the claimed string extends past the buffer — data is corrupt
+            var stringEnd = headerStart + headerLen + oldStrLen;
+            if (stringEnd > length)
+                return null; // Unsafe to rewrite — pass through entire frame
 
             var newStrLen = oldStrLen + delta;
 
@@ -1293,18 +1313,17 @@ public sealed partial class WebPreviewProxyMiddleware
             ms.Write(toUtf8);
 
             // Write the rest of the original string (path/query after the URL prefix)
-            var restStart = matchPos + fromUtf8.Length;
             var restLen = oldStrLen - fromUtf8.Length;
-            if (restLen > 0 && restStart + restLen <= length)
+            if (restLen > 0)
             {
-                ms.Write(data, restStart, restLen);
+                ms.Write(data, matchPos + fromUtf8.Length, restLen);
             }
 
-            copyFrom = headerStart + headerLen + oldStrLen;
+            copyFrom = stringEnd;
         }
 
         if (copyFrom == 0)
-            return null; // No successful replacements
+            return null; // No successful replacements — pass through
 
         // Write remaining data after last replacement
         if (copyFrom < length)
