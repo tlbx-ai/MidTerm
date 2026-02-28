@@ -1,3 +1,4 @@
+<!-- guidance-version: 2 -->
 # MidTerm Agent Workflows
 
 Patterns for AI agents using MidTerm's browser control. Source the helpers
@@ -7,7 +8,7 @@ first: `. .midterm/mtcli.sh` (bash) or `. .midterm\mtcli.ps1` (PowerShell).
 
 The core pattern for any browser interaction:
 
-1. **Inspect** — `mt_query` to understand current page state
+1. **Inspect** — `mt_outline` → `mt_attrs` / `mt_css` to understand page state
 2. **Act** — `mt_click`, `mt_fill`, `mt_exec` to make changes
 3. **Verify** — `mt_query` or `mt_wait` to confirm the result
 
@@ -16,38 +17,56 @@ The core pattern for any browser interaction:
 ### Debug a visual bug
 
 ```bash
-mt_snapshot                          # capture current state
-cat .midterm/snapshot_*/index.html   # read the DOM
-cat .midterm/snapshot_*/css/*.css    # read the styles
+mt_outline                              # see page structure
+mt_css ".problematic-element" "color,background,display,visibility,margin,padding"
 # ... make code fixes ...
-mt_reload                            # reload the preview
-mt_query ".problematic-element"      # verify the fix
+mt_reload                               # reload the preview
+mt_css ".problematic-element" "color,background,display,visibility"  # verify
+```
+
+### Debug CSS / dark mode leak
+
+```bash
+mt_css "body" "color,background-color"
+mt_css ".card" "color,background-color,border-color"
+mt_css ".header" "color,background-color"
+# Compare values against expected theme palette
+```
+
+### Check console for JS errors
+
+```bash
+mt_log error                            # just errors
+mt_log                                  # all console output
+```
+
+### Explore page structure
+
+```bash
+mt_outline                              # tree overview
+mt_outline 6                            # deeper tree
+mt_links                                # all navigation links
+mt_forms                                # all forms with fields
+mt_attrs "nav a"                        # inspect nav link attributes
 ```
 
 ### Fill and submit a form
 
 ```bash
-mt_query "form" true                 # understand form structure
+mt_forms                                # understand form structure
 mt_fill "#username" "testuser"
 mt_fill "#password" "testpass"
 mt_click "button[type=submit]"
-mt_wait ".dashboard"                 # wait for navigation
-mt_query ".welcome-message" true     # verify login succeeded
+mt_wait ".dashboard"                    # wait for navigation
+mt_query ".welcome-message" true        # verify login succeeded
 ```
 
 ### Navigate and inspect a new page
 
 ```bash
 mt_navigate "http://localhost:3000/settings"
-mt_wait ".settings-page" 10          # wait up to 10s for load
-mt_query ".settings-page" true       # read the content
-```
-
-### Take a screenshot for visual verification
-
-```bash
-mt_screenshot
-# screenshot saved to .midterm/screenshots/screenshot_YYYYMMDD_HHMMSS.png
+mt_wait ".settings-page" 10             # wait up to 10s for load
+mt_outline                              # get page structure
 ```
 
 ### Execute JavaScript for advanced queries
@@ -55,13 +74,15 @@ mt_screenshot
 ```bash
 mt_exec "document.querySelectorAll('li').length"
 mt_exec "window.location.href"
-mt_exec "JSON.stringify(localStorage)"
+echo 'JSON.stringify(Object.keys(localStorage))' | mt_exec
 ```
 
 ## Tips
 
-- Use `true` as second arg to `mt_query` for text-only output (much smaller)
-- Use `mt_wait` before `mt_query` after navigation or clicks that trigger loads
-- Snapshots are more useful than screenshots for understanding page structure
+- Start with `mt_outline` not `mt_query` — it's much smaller output
+- Use `mt_css` to inspect specific properties instead of full DOM snapshots
+- Use `mt_log` after actions to catch runtime errors
+- Use `true` as second arg to `mt_query` for text-only output
+- Use stdin piping for complex JS: `echo 'code' | mt_exec`
 - All responses are JSON — use `jq` for field extraction
 - If `mt_status` shows "disconnected", the web preview panel needs to be open

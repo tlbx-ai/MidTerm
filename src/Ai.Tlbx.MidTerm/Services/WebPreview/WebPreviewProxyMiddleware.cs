@@ -372,6 +372,12 @@ public sealed partial class WebPreviewProxyMiddleware
     private readonly RequestDelegate _next;
     private readonly WebPreviewService _service;
 
+    // Learned path prefixes where subpath-prefixed requests returned 404 but server-root
+    // succeeded. Keyed by prefix (e.g. "/_framework/"), value is true = prefer root.
+    // Reset when the target URL changes.
+    private readonly Dictionary<string, bool> _rootFallbackPrefixes = new(StringComparer.OrdinalIgnoreCase);
+    private string? _rootFallbackTarget;
+
     public WebPreviewProxyMiddleware(RequestDelegate next, WebPreviewService service)
     {
         _next = next;
@@ -480,8 +486,21 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
     {
-        var currentUrl = BuildUpstreamUrl(targetUri, path, context.Request.QueryString.Value);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
+        var targetBase = targetUri.AbsolutePath.TrimEnd('/');
+        var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
+
+        // Determine primary URL (may use root fallback if previously learned)
+        var primaryPath = BuildUpstreamPath(targetUri, path);
+        var useRootFirst = hasSubpath && ShouldTryRootFirst(path, targetBase);
+        if (useRootFirst)
+        {
+            primaryPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
+            if (!primaryPath.StartsWith('/'))
+                primaryPath = "/" + primaryPath;
+        }
+
+        var currentUrl = BuildUpstreamUrlFromPath(targetUri, primaryPath, context.Request.QueryString.Value);
 
         var originalMethod = new HttpMethod(context.Request.Method);
         byte[]? requestBodyBuffer = null;
@@ -507,6 +526,50 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
             context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
+
+        // Retry-on-404: if we got 404 and the target has a subpath, try the alternate path.
+        // If we tried subpath-prefixed first, retry at server root. If we tried root first
+        // (from learned cache), retry with subpath-prefixed.
+        if (hasSubpath
+            && upstreamResponse is not null
+            && upstreamResponse.StatusCode == System.Net.HttpStatusCode.NotFound
+            && !PathAlreadyUnderTarget(path, targetBase))
+        {
+            var fallbackPath = useRootFirst
+                ? BuildUpstreamPath(targetUri, path)
+                : (string.IsNullOrEmpty(path) || path == "/" ? "/" : (path.StartsWith('/') ? path : "/" + path));
+
+            if (fallbackPath != primaryPath)
+            {
+                var fallbackUrl = BuildUpstreamUrlFromPath(targetUri, fallbackPath, context.Request.QueryString.Value);
+                var (fallbackResponse, fallbackError, fallbackFinalUrl) = await SendUpstreamAsync(
+                    context, originalMethod, fallbackUrl, BuildRequest, context.RequestAborted);
+
+                if (fallbackResponse is not null
+                    && fallbackResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+                {
+                    upstreamResponse.Dispose();
+                    upstreamResponse = fallbackResponse;
+                    errorCode = fallbackError;
+                    finalUrl = fallbackFinalUrl;
+
+                    // Learn: if root worked, remember this prefix for future requests
+                    if (!useRootFirst)
+                    {
+                        LearnRootFallback(path, targetUri.ToString());
+                    }
+                }
+                else
+                {
+                    fallbackResponse?.Dispose();
+                    // Learn: if subpath worked from root-first attempt, un-learn
+                    if (useRootFirst && fallbackResponse?.StatusCode != System.Net.HttpStatusCode.NotFound)
+                    {
+                        UnlearnRootFallback(path);
+                    }
+                }
+            }
+        }
 
         _service.PersistCookies();
 
@@ -904,7 +967,23 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyWebSocketAsync(HttpContext context, Uri targetUri, string path)
     {
-        var upstreamUrl = BuildUpstreamWsUrl(targetUri, path, context.Request.QueryString.Value);
+        var targetBase = targetUri.AbsolutePath.TrimEnd('/');
+        var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
+
+        // Use learned root fallback for WebSocket paths too
+        string wsPath;
+        if (hasSubpath && ShouldTryRootFirst(path, targetBase))
+        {
+            wsPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
+            if (!wsPath.StartsWith('/'))
+                wsPath = "/" + wsPath;
+        }
+        else
+        {
+            wsPath = BuildUpstreamPath(targetUri, path);
+        }
+
+        var upstreamUrl = BuildUpstreamWsUrlFromPath(targetUri, wsPath, context.Request.QueryString.Value);
         var upstreamUri = new Uri(upstreamUrl);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
         await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin, targetUri);
@@ -1157,6 +1236,80 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return targetBase + normalizedPath;
+    }
+
+    private static string BuildUpstreamUrlFromPath(Uri target, string upstreamPath, string? queryString)
+    {
+        var sb = new StringBuilder(256);
+        sb.Append(target.Scheme).Append("://").Append(target.Authority);
+        sb.Append(upstreamPath);
+        if (!string.IsNullOrEmpty(queryString))
+            sb.Append(queryString);
+        return sb.ToString();
+    }
+
+    private static string BuildUpstreamWsUrlFromPath(Uri target, string upstreamPath, string? queryString)
+    {
+        var scheme = target.Scheme == "https" ? "wss" : "ws";
+        var sb = new StringBuilder(256);
+        sb.Append(scheme).Append("://").Append(target.Authority);
+        sb.Append(upstreamPath);
+        if (!string.IsNullOrEmpty(queryString))
+            sb.Append(queryString);
+        return sb.ToString();
+    }
+
+    private static bool PathAlreadyUnderTarget(string path, string targetBase)
+    {
+        var normalized = string.IsNullOrEmpty(path) ? "/" : path;
+        if (!normalized.StartsWith('/'))
+            normalized = "/" + normalized;
+        return normalized.StartsWith(targetBase + "/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals(targetBase, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ShouldTryRootFirst(string path, string targetBase)
+    {
+        ResetFallbackCacheIfTargetChanged();
+        var prefix = GetPathPrefix(path);
+        return prefix is not null && _rootFallbackPrefixes.TryGetValue(prefix, out var preferRoot) && preferRoot;
+    }
+
+    private void LearnRootFallback(string path, string targetUrl)
+    {
+        ResetFallbackCacheIfTargetChanged();
+        _rootFallbackTarget = targetUrl;
+        var prefix = GetPathPrefix(path);
+        if (prefix is not null)
+            _rootFallbackPrefixes[prefix] = true;
+    }
+
+    private void UnlearnRootFallback(string path)
+    {
+        var prefix = GetPathPrefix(path);
+        if (prefix is not null)
+            _rootFallbackPrefixes.Remove(prefix);
+    }
+
+    private void ResetFallbackCacheIfTargetChanged()
+    {
+        var currentTarget = _service.TargetUri?.ToString();
+        if (_rootFallbackTarget != currentTarget)
+        {
+            _rootFallbackPrefixes.Clear();
+            _rootFallbackTarget = currentTarget;
+        }
+    }
+
+    private static string? GetPathPrefix(string path)
+    {
+        var normalized = string.IsNullOrEmpty(path) ? "/" : path;
+        if (!normalized.StartsWith('/'))
+            normalized = "/" + normalized;
+        if (normalized == "/")
+            return null;
+        var secondSlash = normalized.IndexOf('/', 1);
+        return secondSlash > 0 ? normalized[..secondSlash] + "/" : normalized + "/";
     }
 
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]

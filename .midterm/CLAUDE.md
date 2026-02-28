@@ -1,3 +1,4 @@
+<!-- guidance-version: 2 -->
 # MidTerm — AI Agent Integration
 
 This folder is managed by [MidTerm](https://midterm.sh), a web-based terminal
@@ -23,23 +24,38 @@ multiplexer with built-in web preview and browser control.
 # Check what's being previewed
 mt_target
 
-# Query the page DOM
-mt_query "body"
+# Get page structure (token-efficient overview)
+mt_outline
+
+# Query specific elements
 mt_query ".error-message" true    # text-only (smaller output)
+
+# Inspect CSS
+mt_css "body" "color,background-color,font-size"
+
+# Check for JS errors
+mt_log error
 
 # Interact with the page
 mt_click "#submit-btn"
 mt_fill "#email" "test@example.com"
 mt_wait ".success-toast"
-
-# Save state for analysis
-mt_snapshot
-mt_screenshot
 ```
 
 ## Available commands
 
-### Browser interaction (requires web preview panel open)
+### Browser inspection (read-only, token-efficient)
+
+| Command | Description |
+|---------|-------------|
+| `mt_outline [depth]` | Page structure tree — tag names, ids, classes (default depth 4) |
+| `mt_attrs <selector>` | Element attributes only (no children, no text) |
+| `mt_css <selector> <props>` | Computed CSS values for comma-separated properties |
+| `mt_log [error\|warn\|all]` | Console log buffer (last 50 entries) |
+| `mt_links` | All links on page (href + text) |
+| `mt_forms [selector]` | Form structure: inputs, types, values, labels |
+
+### Browser interaction
 
 | Command | Description |
 |---------|-------------|
@@ -49,7 +65,7 @@ mt_screenshot
 | `mt_exec <js-code>` | Execute JavaScript in the page |
 | `mt_wait <selector> [timeout]` | Wait for element to appear (default 5s) |
 | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
-| `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
+| `mt_snapshot` | Save full DOM snapshot to .midterm/snapshot_*/ |
 
 ### Web preview management
 
@@ -68,12 +84,11 @@ mt_screenshot
 | `mt_buffer <id>` | Read terminal buffer for a session |
 | `mt_status` | Browser connection status |
 
-## Snapshots & screenshots
+## Recommended workflow
 
-- **Snapshots** capture the live rendered DOM (including JS-injected content)
-  saved to `.midterm/snapshot_YYYYMMDD_HHMMSS/index.html` + `css/`
-- **Screenshots** save a PNG to `.midterm/screenshots/`
-- Both are gitignored automatically
+Start with `mt_outline` to understand page structure, then drill down with
+`mt_attrs` or `mt_css` for specific elements. Use `mt_query` only when you
+need the actual HTML content. This keeps context usage minimal.
 
 ## Notes
 
