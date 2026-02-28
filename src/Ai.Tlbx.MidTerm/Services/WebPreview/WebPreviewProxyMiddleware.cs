@@ -26,6 +26,7 @@ public sealed partial class WebPreviewProxyMiddleware
           try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
           try{Object.defineProperty(window,"frameElement",{get:function(){return null},configurable:true});}catch(e){}
           var P="/webpreview",E=P+"/_ext?u=";
+          // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
           function r(u){
             if(typeof u!=="string")return u;
             if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
@@ -43,40 +44,107 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             return u;
           }
+          // s(u): strip proxy prefix from a URL (inverse of r, for location spoofing)
+          function s(u){
+            if(typeof u!=="string")return u;
+            try{var h=new URL(u);
+              if(h.host===location.host&&h.pathname.startsWith(P+"/")){h.pathname=h.pathname.slice(P.length);return h.toString();}
+              if(h.host===location.host&&h.pathname.startsWith(P)){h.pathname=h.pathname.slice(P.length)||"/";return h.toString();}
+            }catch(e){}
+            if(u.startsWith(P+"/"))return u.slice(P.length);
+            if(u===P)return "/";
+            return u;
+          }
+          // === Network APIs ===
           var F=window.fetch;
-          window.fetch=function(u,o){return F.call(this,typeof u==="string"?r(u):u,o);};
+          window.fetch=function(u,o){
+            if(typeof u==="string")return F.call(this,r(u),o);
+            if(u&&typeof u==="object"&&u.url){try{return F.call(this,new Request(r(u.url),u),o);}catch(e){}}
+            return F.call(this,u,o);
+          };
           var X=XMLHttpRequest.prototype.open;
           XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);return X.apply(this,a);};
-          // Patch .src property on elements that load resources
+          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
+          // === Element property setters ===
+          // .src on elements that load resources
           ["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLEmbedElement","HTMLVideoElement","HTMLAudioElement"].forEach(function(n){
             var p=window[n]&&window[n].prototype;if(!p)return;
             var d=Object.getOwnPropertyDescriptor(p,"src");if(!d||!d.set)return;
             Object.defineProperty(p,"src",{set:function(v){d.set.call(this,r(v));},get:d.get,configurable:true,enumerable:true});
           });
-          // Patch .href on link elements (stylesheets, preloads)
+          // .href on link elements (stylesheets, preloads)
           var ld=Object.getOwnPropertyDescriptor(HTMLLinkElement.prototype,"href");
           if(ld&&ld.set){Object.defineProperty(HTMLLinkElement.prototype,"href",{set:function(v){ld.set.call(this,r(v));},get:ld.get,configurable:true,enumerable:true});}
-          // Patch setAttribute for src/href/action/poster
+          // .href on anchor elements
+          var ad=Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype,"href");
+          if(ad&&ad.set){Object.defineProperty(HTMLAnchorElement.prototype,"href",{set:function(v){ad.set.call(this,r(v));},get:ad.get,configurable:true,enumerable:true});}
+          // .action on form elements
+          var fd=Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,"action");
+          if(fd&&fd.set){Object.defineProperty(HTMLFormElement.prototype,"action",{set:function(v){fd.set.call(this,r(v));},get:fd.get,configurable:true,enumerable:true});}
+          // .data on object elements
+          var od=Object.getOwnPropertyDescriptor(HTMLObjectElement.prototype,"data");
+          if(od&&od.set){Object.defineProperty(HTMLObjectElement.prototype,"data",{set:function(v){od.set.call(this,r(v));},get:od.get,configurable:true,enumerable:true});}
+          // setAttribute for src/href/action/poster/data/formaction
           var sa=Element.prototype.setAttribute;
-          Element.prototype.setAttribute=function(n,v){if(typeof v==="string"&&/^(src|href|action|poster)$/i.test(n))v=r(v);return sa.call(this,n,v);};
-          // Patch window.open
+          Element.prototype.setAttribute=function(n,v){if(typeof v==="string"&&/^(src|href|action|poster|data|formaction)$/i.test(n))v=r(v);return sa.call(this,n,v);};
+          // === Constructors ===
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
-          // Patch WebSocket constructor
           var OWS=window.WebSocket;
           if(OWS&&window.Proxy){
-            try{
-              window.WebSocket=new Proxy(OWS,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
-            }catch(e){}
+            try{window.WebSocket=new Proxy(OWS,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});}catch(e){}
           }
-          // Patch EventSource constructor
           var OES=window.EventSource;
           if(OES&&window.Proxy){
-            try{
-              window.EventSource=new Proxy(OES,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
-            }catch(e){}
+            try{window.EventSource=new Proxy(OES,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});}catch(e){}
           }
-          // Bridge document.cookie to server-side cookie jar used by proxy.
+          var OA=window.Audio;
+          if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
+          var OI=window.Image;
+          if(OI){window.Image=function(w,h){return new OI(w,h);};window.Image.prototype=OI.prototype;}
+          // Worker/SharedWorker constructors
+          if(window.Worker){var OW=window.Worker;window.Worker=function(u,o){return new OW(r(u),o);};window.Worker.prototype=OW.prototype;}
+          if(window.SharedWorker){var OSW=window.SharedWorker;window.SharedWorker=function(u,o){return new OSW(r(u),o);};window.SharedWorker.prototype=OSW.prototype;}
+          // Service worker registration
+          if(navigator.serviceWorker&&navigator.serviceWorker.register){
+            var swr=navigator.serviceWorker.register.bind(navigator.serviceWorker);
+            navigator.serviceWorker.register=function(u,o){return swr(r(u),o);};
+          }
+          // === Navigation APIs ===
+          var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
+          history.pushState=function(s,t,u){return hps(s,t,u?r(u):u);};
+          history.replaceState=function(s,t,u){return hrs(s,t,u?r(u):u);};
+          var la=location.assign.bind(location),lr=location.replace.bind(location);
+          location.assign=function(u){return la(r(u));};
+          location.replace=function(u){return lr(r(u));};
+          try{var ld2=Object.getOwnPropertyDescriptor(window.Location.prototype,"href")||Object.getOwnPropertyDescriptor(location,"href");
+            if(ld2&&ld2.set){var lhs=ld2.set;Object.defineProperty(location,"href",{set:function(v){lhs.call(this,r(v));},get:function(){return s(ld2.get.call(this));},configurable:true,enumerable:true});}
+          }catch(e){}
+          // === Location spoofing: strip /webpreview from reads so apps see real paths ===
+          try{
+            var LP=window.Location.prototype;
+            ["pathname","search","hash"].forEach(function(prop){
+              var pd=Object.getOwnPropertyDescriptor(LP,prop);
+              if(pd&&pd.get){Object.defineProperty(location,prop,{get:function(){
+                var v=pd.get.call(this);
+                if(prop==="pathname"&&v.startsWith(P+"/"))return v.slice(P.length);
+                if(prop==="pathname"&&v===P)return "/";
+                return v;
+              },set:pd.set?function(v){pd.set.call(this,v);}:undefined,configurable:true,enumerable:true});}
+            });
+            var tsd=Object.getOwnPropertyDescriptor(LP,"toString")||{value:location.toString};
+            location.toString=function(){return s(tsd.value?tsd.value.call(location):LP.toString.call(location));};
+          }catch(e){}
+          // Spoof document.URL/documentURI/referrer to hide proxy prefix
+          try{
+            var duRL=Object.getOwnPropertyDescriptor(Document.prototype,"URL");
+            if(duRL&&duRL.get){Object.defineProperty(document,"URL",{get:function(){return s(duRL.get.call(this));},configurable:true,enumerable:true});}
+            var ddURI=Object.getOwnPropertyDescriptor(Document.prototype,"documentURI");
+            if(ddURI&&ddURI.get){Object.defineProperty(document,"documentURI",{get:function(){return s(ddURI.get.call(this));},configurable:true,enumerable:true});}
+            var dRef=Object.getOwnPropertyDescriptor(Document.prototype,"referrer");
+            if(dRef&&dRef.get){Object.defineProperty(document,"referrer",{get:function(){return s(dRef.get.call(this));},configurable:true,enumerable:true});}
+          }catch(e){}
+          // === Cookie bridge ===
           var C=P+"/_cookies",cc="";
           function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
           rc();
@@ -90,38 +158,19 @@ public sealed partial class WebPreviewProxyMiddleware
               }});
             }
           }catch(e){}
-          // Patch Audio constructor (new Audio('/path/to/file.mp3'))
-          var OA=window.Audio;
-          if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
-          // Patch navigator.sendBeacon
-          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
-          // Patch history.pushState/replaceState to rewrite URLs through proxy
-          var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
-          history.pushState=function(s,t,u){return hps(s,t,u?r(u):u);};
-          history.replaceState=function(s,t,u){return hrs(s,t,u?r(u):u);};
-          // Patch location.assign/replace/href to keep navigations inside proxy
-          var la=location.assign.bind(location),lr=location.replace.bind(location);
-          location.assign=function(u){return la(r(u));};
-          location.replace=function(u){return lr(r(u));};
-          try{var ld2=Object.getOwnPropertyDescriptor(window.Location.prototype,"href")||Object.getOwnPropertyDescriptor(location,"href");
-            if(ld2&&ld2.set){var lhs=ld2.set;Object.defineProperty(location,"href",{set:function(v){lhs.call(this,r(v));},get:ld2.get,configurable:true,enumerable:true});}
-          }catch(e){}
-          // Patch Image constructor (new Image().src is handled by setter, but direct constructor arg)
-          var OI=window.Image;
-          if(OI){window.Image=function(w,h){var i=new OI(w,h);return i;};window.Image.prototype=OI.prototype;}
-          // MutationObserver: catch elements added via innerHTML/insertAdjacentHTML/document.write
+          // === MutationObserver: catch dynamically added elements ===
           new MutationObserver(function(muts){
             for(var i=0;i<muts.length;i++){
               var nodes=muts[i].addedNodes;
               for(var j=0;j<nodes.length;j++){
                 var n=nodes[j];if(n.nodeType!==1)continue;
-                var els=n.querySelectorAll?[n].concat([].slice.call(n.querySelectorAll("[src],[href]"))):[n];
+                var els=n.querySelectorAll?[n].concat([].slice.call(n.querySelectorAll("[src],[href],[action],[data],[formaction]"))):[n];
                 for(var k=0;k<els.length;k++){
                   var el=els[k];if(!el.getAttribute)continue;
-                  var s=el.getAttribute("src");
-                  if(s){var rs=r(s);if(rs!==s)sa.call(el,"src",rs);}
-                  var h=el.getAttribute("href");
-                  if(h){var rh=r(h);if(rh!==h)sa.call(el,"href",rh);}
+                  ["src","href","action","data","formaction"].forEach(function(attr){
+                    var v=el.getAttribute(attr);
+                    if(v){var rv=r(v);if(rv!==v)sa.call(el,attr,rv);}
+                  });
                 }
               }
             }
