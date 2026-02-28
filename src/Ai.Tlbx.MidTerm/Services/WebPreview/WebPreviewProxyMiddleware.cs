@@ -635,14 +635,25 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Build proxy-prefixed base href. Prefer the original <base href> from upstream
         // (preserves exact path semantics), fall back to computing from the final URL.
+        // Special case: when upstream sends <base href="/"> but the target URL has a subpath
+        // (e.g., target is /kicoach), the app doesn't know about its mount path — use the
+        // target URL's path prefix instead.
         string baseHref;
         if (originalBaseHref is not null)
         {
             var basePath = originalBaseHref.TrimEnd('/');
             if (basePath.Length == 0 || basePath == "/")
-                baseHref = "/webpreview/";
+            {
+                var targetPath = _service.TargetUri?.AbsolutePath.TrimEnd('/') ?? "";
+                if (targetPath.Length > 0)
+                    baseHref = "/webpreview" + targetPath + "/";
+                else
+                    baseHref = "/webpreview/";
+            }
             else
+            {
                 baseHref = "/webpreview" + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+            }
         }
         else
         {
