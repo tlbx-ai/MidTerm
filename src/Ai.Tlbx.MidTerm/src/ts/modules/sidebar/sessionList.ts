@@ -233,7 +233,11 @@ export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
   if (session.name) {
     return { primary: session.name, secondary: termTitle };
   }
-  // Unnamed sessions: use cwd + process as primary (shown inline in process row style)
+  // Process set a console title — show it as the primary title with process info below
+  if (session.terminalTitle) {
+    return { primary: session.terminalTitle, secondary: null };
+  }
+  // No name, no console title: show cwd + process as the title row
   return { primary: termTitle, secondary: null, useProcessAsTitle: true };
 }
 
