@@ -110,6 +110,7 @@ public static class AgentGuidanceWriter
         | `mt_reload` | Soft-reload the preview |
         | `mt_target` | Show current preview target |
         | `mt_cookies` | List server-side cookie jar |
+        | `mt_proxylog [limit]` | Last N proxy requests with full details (default 100) |
 
         ### Session management
 

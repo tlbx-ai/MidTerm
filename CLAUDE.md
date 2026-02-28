@@ -383,6 +383,8 @@ POST /api/webpreview/cookies          Set cookie from raw header {raw}
 DELETE /api/webpreview/cookies        Delete cookie {name, path?, domain?}
 POST /api/webpreview/reload           Reload target {mode}
 POST /api/webpreview/snapshot         Save DOM snapshot to session cwd
+GET  /api/webpreview/proxylog         Last N proxy requests (?limit=100)
+DELETE /api/webpreview/proxylog       Clear proxy log buffer
 ```
 
 ## WebSocket Endpoints

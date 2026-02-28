@@ -23,6 +23,7 @@ public static partial class WebPreviewEndpoints
         MapTargetEndpoints(app, webPreviewService, sessionManager);
         MapCookieEndpoints(app, webPreviewService);
         MapActionEndpoints(app, webPreviewService, sessionManager);
+        MapProxyLogEndpoints(app, webPreviewService);
     }
 
     private static void MapTargetEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
@@ -192,6 +193,21 @@ public static partial class WebPreviewEndpoints
             return Results.Json(
                 new WebPreviewSnapshotResponse { SnapshotPath = snapshotDir },
                 AppJsonContext.Default.WebPreviewSnapshotResponse);
+        });
+    }
+
+    private static void MapProxyLogEndpoints(WebApplication app, WebPreviewService service)
+    {
+        app.MapGet("/api/webpreview/proxylog", (int? limit) =>
+        {
+            var entries = service.GetLogEntries(limit ?? 100);
+            return Results.Json(entries, AppJsonContext.Default.ListWebPreviewProxyLogEntry);
+        });
+
+        app.MapDelete("/api/webpreview/proxylog", () =>
+        {
+            service.ClearLog();
+            return Results.Ok();
         });
     }
 

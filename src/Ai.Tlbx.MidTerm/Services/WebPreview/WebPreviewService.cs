@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Security;
 using System.Net.WebSockets;
@@ -17,6 +18,10 @@ public sealed class WebPreviewService
     private CookieContainer _cookieContainer;
     private readonly object _clientLock = new();
 
+    private const int MaxLogEntries = 100;
+    private readonly ConcurrentQueue<WebPreviewProxyLogEntry> _proxyLog = new();
+    private int _logIdCounter;
+
     public string? TargetUrl => _targetUrl;
     public Uri? TargetUri => _targetUri;
     public bool IsActive => _targetUri is not null;
@@ -30,6 +35,28 @@ public sealed class WebPreviewService
     }
 
     public HttpClient HttpClient => _httpClient;
+
+    public void AddLogEntry(WebPreviewProxyLogEntry entry)
+    {
+        entry.Id = Interlocked.Increment(ref _logIdCounter);
+        entry.Timestamp = DateTimeOffset.UtcNow;
+        _proxyLog.Enqueue(entry);
+        while (_proxyLog.Count > MaxLogEntries)
+            _proxyLog.TryDequeue(out _);
+    }
+
+    public List<WebPreviewProxyLogEntry> GetLogEntries(int limit = MaxLogEntries)
+    {
+        var entries = _proxyLog.ToArray();
+        if (limit >= entries.Length)
+            return entries.ToList();
+        return entries[^limit..].ToList();
+    }
+
+    public void ClearLog()
+    {
+        while (_proxyLog.TryDequeue(out _)) { }
+    }
 
     public bool SetTarget(string url)
     {

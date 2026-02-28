@@ -89,6 +89,8 @@ public static class MtcliScriptWriter
         mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
         mt_target()     { _MC "$_MT/api/webpreview/target"; }
         mt_cookies()    { _MC "$_MT/api/webpreview/cookies"; }
+        # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
+        mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?limit=$n"; }
 
         # Session management
         mt_sessions()   { _MC "$_MT/api/sessions"; }
@@ -170,6 +172,8 @@ public static class MtcliScriptWriter
         function Mt-Reload     { _MJ -d '{"mode":"soft"}' "$script:_MT/api/webpreview/reload" }
         function Mt-Target     { _MC "$script:_MT/api/webpreview/target" }
         function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies" }
+        # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
+        function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog?limit=$Limit" }
 
         # Session management
         function Mt-Sessions   { _MC "$script:_MT/api/sessions" }

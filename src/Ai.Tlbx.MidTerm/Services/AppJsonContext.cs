@@ -103,6 +103,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(WebPreviewReloadRequest))]
 [JsonSerializable(typeof(WebPreviewSnapshotRequest))]
 [JsonSerializable(typeof(WebPreviewSnapshotResponse))]
+[JsonSerializable(typeof(WebPreviewProxyLogEntry))]
+[JsonSerializable(typeof(List<WebPreviewProxyLogEntry>))]
 
 // --- Updates ---
 [JsonSerializable(typeof(UpdateInfo))]

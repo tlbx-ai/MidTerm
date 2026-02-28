@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.WebSockets;
 using System.Text;
@@ -837,7 +838,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
-            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
+            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted, "ext-http");
 
         _service.PersistCookies();
 
@@ -927,12 +928,14 @@ public sealed partial class WebPreviewProxyMiddleware
         HttpMethod originalMethod,
         string startUrl,
         Func<HttpMethod, string, HttpRequestMessage> buildRequest,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? logType = null)
     {
         const int maxRedirects = 10;
         var currentUrl = startUrl;
         var currentMethod = originalMethod;
         HttpResponseMessage? upstreamResponse = null;
+        var sw = Stopwatch.StartNew();
 
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
@@ -944,13 +947,17 @@ public sealed partial class WebPreviewProxyMiddleware
                 upstreamResponse = await _service.HttpClient.SendAsync(
                     requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException ex)
             {
+                sw.Stop();
+                LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 502, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 502, null);
             }
-            catch (TaskCanceledException)
+            catch (TaskCanceledException ex)
             {
+                sw.Stop();
+                LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 504, null);
             }
@@ -970,6 +977,8 @@ public sealed partial class WebPreviewProxyMiddleware
                 }
             }
 
+            sw.Stop();
+            LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, statusCode, sw.ElapsedMilliseconds, requestMessage, upstreamResponse, null);
             requestMessage.Dispose();
             break;
         }
@@ -977,6 +986,75 @@ public sealed partial class WebPreviewProxyMiddleware
         return upstreamResponse is not null
             ? (upstreamResponse, 0, currentUrl)
             : (null, 502, null);
+    }
+
+    private void LogHttpRequest(
+        HttpContext context, string type, string method,
+        string startUrl, string finalUrl, int statusCode, long durationMs,
+        HttpRequestMessage? request, HttpResponseMessage? response, string? error)
+    {
+        var entry = new WebPreviewProxyLogEntry
+        {
+            Type = type,
+            Method = method,
+            RequestUrl = context.Request.Path + context.Request.QueryString,
+            UpstreamUrl = finalUrl,
+            StatusCode = statusCode,
+            DurationMs = durationMs,
+            Error = error
+        };
+
+        if (request is not null)
+        {
+            foreach (var h in request.Headers)
+                entry.RequestHeaders[h.Key] = string.Join(", ", h.Value);
+            var cookieHeader = request.Headers.TryGetValues("Cookie", out var cookies)
+                ? string.Join("; ", cookies) : null;
+            entry.RequestCookies = cookieHeader;
+        }
+
+        if (response is not null)
+        {
+            foreach (var h in response.Headers)
+                entry.ResponseHeaders[h.Key] = string.Join(", ", h.Value);
+            foreach (var h in response.Content.Headers)
+                entry.ResponseHeaders[h.Key] = string.Join(", ", h.Value);
+            entry.ContentType = response.Content.Headers.ContentType?.ToString();
+            entry.ContentLength = response.Content.Headers.ContentLength;
+
+            var setCookies = response.Headers.TryGetValues("Set-Cookie", out var sc)
+                ? string.Join(" | ", sc) : null;
+            entry.ResponseCookies = setCookies;
+        }
+
+        _service.AddLogEntry(entry);
+    }
+
+    private void LogWebSocket(
+        HttpContext context, string type, string upstreamUrl,
+        IList<string> requestedProtocols, string? negotiatedProtocol,
+        long durationMs, int statusCode, string? error)
+    {
+        var entry = new WebPreviewProxyLogEntry
+        {
+            Type = type,
+            Method = "WS-UPGRADE",
+            RequestUrl = context.Request.Path + context.Request.QueryString,
+            UpstreamUrl = upstreamUrl,
+            StatusCode = statusCode,
+            DurationMs = durationMs,
+            Error = error,
+            SubProtocols = requestedProtocols.Count > 0 ? string.Join(", ", requestedProtocols) : null,
+            NegotiatedProtocol = negotiatedProtocol
+        };
+
+        foreach (var h in context.Request.Headers)
+        {
+            entry.RequestHeaders[h.Key] = h.Value.ToString();
+        }
+
+        entry.RequestCookies = context.Request.Headers.Cookie.ToString();
+        _service.AddLogEntry(entry);
     }
 
     private async Task DispatchResponseBodyAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
@@ -1171,20 +1249,30 @@ public sealed partial class WebPreviewProxyMiddleware
             upstream.Options.AddSubProtocol(protocol);
         }
 
+        var wsType = context.Request.Path.Value?.Contains("/_ext") == true ? "ext-ws" : "ws";
+        var wsSw = Stopwatch.StartNew();
+
         try
         {
             await upstream.ConnectAsync(upstreamUri, context.RequestAborted);
         }
-        catch (WebSocketException)
+        catch (WebSocketException ex)
         {
+            wsSw.Stop();
+            LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
             context.Response.StatusCode = 502;
             return;
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
+            wsSw.Stop();
+            LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
             context.Response.StatusCode = 502;
             return;
         }
+
+        wsSw.Stop();
+        LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, upstream.SubProtocol, wsSw.ElapsedMilliseconds, 101, null);
 
         // Accept downstream with the negotiated sub-protocol from upstream
         var acceptProtocol = upstream.SubProtocol;
