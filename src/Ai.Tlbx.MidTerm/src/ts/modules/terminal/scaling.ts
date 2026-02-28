@@ -95,18 +95,20 @@ function logResizeDiagnostics(
     }
   }
 
-  // eslint-disable-next-line no-console
-  console.log(
-    `[RESIZE DIAG] ${operation}\n` +
-      `  Session: "${session?.name ?? sessionId}" (${session?.terminalTitle ?? 'no title'})\n` +
-      `  Container: ${containerRect.width.toFixed(0)}×${containerRect.height.toFixed(0)} px\n` +
-      `  Font: ${TERMINAL_FONT_STACK.split(',')[0]}, ${fontSize}px\n` +
-      `  Cell size: ${cellWidth.toFixed(2)}×${cellHeight.toFixed(2)} px (from: ${measurementSource})\n` +
-      `  Calculated fit: ${cols}×${rows}\n` +
-      `  Assumed size: ${assumedWidth.toFixed(0)}×${assumedHeight.toFixed(0)} px\n` +
-      `  Actual size: ${actualWidth.toFixed(0)}×${actualHeight.toFixed(0)} px\n` +
-      `  Scale factor: ${scaleFactor.toFixed(3)}`,
-  );
+  if (localStorage.getItem('latency-overlay-enabled') === 'true') {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[RESIZE DIAG] ${operation}\n` +
+        `  Session: "${session?.name ?? sessionId}" (${session?.terminalTitle ?? 'no title'})\n` +
+        `  Container: ${containerRect.width.toFixed(0)}×${containerRect.height.toFixed(0)} px\n` +
+        `  Font: ${TERMINAL_FONT_STACK.split(',')[0]}, ${fontSize}px\n` +
+        `  Cell size: ${cellWidth.toFixed(2)}×${cellHeight.toFixed(2)} px (from: ${measurementSource})\n` +
+        `  Calculated fit: ${cols}×${rows}\n` +
+        `  Assumed size: ${assumedWidth.toFixed(0)}×${assumedHeight.toFixed(0)} px\n` +
+        `  Actual size: ${actualWidth.toFixed(0)}×${actualHeight.toFixed(0)} px\n` +
+        `  Scale factor: ${scaleFactor.toFixed(3)}`,
+    );
+  }
 }
 
 /**

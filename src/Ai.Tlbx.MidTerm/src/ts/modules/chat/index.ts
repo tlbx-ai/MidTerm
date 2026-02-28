@@ -326,7 +326,7 @@ function updateGroupCount(group: ActiveToolGroup): void {
  */
 export function finalizeToolGroup(): void {
   if (activeToolGroup) {
-    log.info(() => `Finalized tool group with ${activeToolGroup!.entries.length} entries`);
+    log.info(() => `Finalized tool group with ${activeToolGroup?.entries.length ?? 0} entries`);
     activeToolGroup = null;
   }
 }
@@ -338,7 +338,7 @@ function trimChatDom(): void {
   const container = document.getElementById('chat-messages');
   if (!container) return;
   while (container.children.length > MAX_CHAT_ELEMENTS) {
-    container.removeChild(container.children[0]!);
+    container.removeChild(container.children[0] as Node);
   }
 }
 
