@@ -75,7 +75,7 @@ export function initMobilePiP(): void {
   if ('mediaSession' in navigator) {
     try {
       // TypeScript's MediaSessionAction type lags behind the spec — cast required.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       (navigator.mediaSession as any).setActionHandler('enterpictureinpicture', () => {
         void openPiPIfEligibleAsync();
       });
