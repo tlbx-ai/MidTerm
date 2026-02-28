@@ -2,6 +2,8 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class AgentGuidanceWriter
 {
+    private const string GuidanceVersion = "2";
+
     public static void WriteToCwd(string cwd)
     {
         try
@@ -9,22 +11,29 @@ public static class AgentGuidanceWriter
             var midtermDir = Path.Combine(cwd, ".midterm");
             Directory.CreateDirectory(midtermDir);
 
-            WriteIfMissing(Path.Combine(midtermDir, "CLAUDE.md"), ClaudeMdContent);
-            WriteIfMissing(Path.Combine(midtermDir, "AGENTS.md"), AgentsMdContent);
+            WriteIfOutdated(Path.Combine(midtermDir, "CLAUDE.md"), ClaudeMdContent);
+            WriteIfOutdated(Path.Combine(midtermDir, "AGENTS.md"), AgentsMdContent);
         }
         catch
         {
         }
     }
 
-    private static void WriteIfMissing(string path, string content)
+    private static void WriteIfOutdated(string path, string content)
     {
-        if (!File.Exists(path))
-            File.WriteAllText(path, content);
+        if (File.Exists(path))
+        {
+            var existing = File.ReadAllText(path);
+            if (existing.Contains($"guidance-version: {GuidanceVersion}"))
+                return;
+        }
+
+        File.WriteAllText(path, content);
     }
 
     private const string ClaudeMdContent =
-        """
+        $$"""
+        <!-- guidance-version: {{GuidanceVersion}} -->
         # MidTerm — AI Agent Integration
 
         This folder is managed by [MidTerm](https://midterm.sh), a web-based terminal
@@ -50,23 +59,38 @@ public static class AgentGuidanceWriter
         # Check what's being previewed
         mt_target
 
-        # Query the page DOM
-        mt_query "body"
+        # Get page structure (token-efficient overview)
+        mt_outline
+
+        # Query specific elements
         mt_query ".error-message" true    # text-only (smaller output)
+
+        # Inspect CSS
+        mt_css "body" "color,background-color,font-size"
+
+        # Check for JS errors
+        mt_log error
 
         # Interact with the page
         mt_click "#submit-btn"
         mt_fill "#email" "test@example.com"
         mt_wait ".success-toast"
-
-        # Save state for analysis
-        mt_snapshot
-        mt_screenshot
         ```
 
         ## Available commands
 
-        ### Browser interaction (requires web preview panel open)
+        ### Browser inspection (read-only, token-efficient)
+
+        | Command | Description |
+        |---------|-------------|
+        | `mt_outline [depth]` | Page structure tree — tag names, ids, classes (default depth 4) |
+        | `mt_attrs <selector>` | Element attributes only (no children, no text) |
+        | `mt_css <selector> <props>` | Computed CSS values for comma-separated properties |
+        | `mt_log [error\|warn\|all]` | Console log buffer (last 50 entries) |
+        | `mt_links` | All links on page (href + text) |
+        | `mt_forms [selector]` | Form structure: inputs, types, values, labels |
+
+        ### Browser interaction
 
         | Command | Description |
         |---------|-------------|
@@ -76,7 +100,7 @@ public static class AgentGuidanceWriter
         | `mt_exec <js-code>` | Execute JavaScript in the page |
         | `mt_wait <selector> [timeout]` | Wait for element to appear (default 5s) |
         | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
-        | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
+        | `mt_snapshot` | Save full DOM snapshot to .midterm/snapshot_*/ |
 
         ### Web preview management
 
@@ -95,12 +119,11 @@ public static class AgentGuidanceWriter
         | `mt_buffer <id>` | Read terminal buffer for a session |
         | `mt_status` | Browser connection status |
 
-        ## Snapshots & screenshots
+        ## Recommended workflow
 
-        - **Snapshots** capture the live rendered DOM (including JS-injected content)
-          saved to `.midterm/snapshot_YYYYMMDD_HHMMSS/index.html` + `css/`
-        - **Screenshots** save a PNG to `.midterm/screenshots/`
-        - Both are gitignored automatically
+        Start with `mt_outline` to understand page structure, then drill down with
+        `mt_attrs` or `mt_css` for specific elements. Use `mt_query` only when you
+        need the actual HTML content. This keeps context usage minimal.
 
         ## Notes
 
@@ -111,7 +134,8 @@ public static class AgentGuidanceWriter
         """;
 
     private const string AgentsMdContent =
-        """
+        $$"""
+        <!-- guidance-version: {{GuidanceVersion}} -->
         # MidTerm Agent Workflows
 
         Patterns for AI agents using MidTerm's browser control. Source the helpers
@@ -121,7 +145,7 @@ public static class AgentGuidanceWriter
 
         The core pattern for any browser interaction:
 
-        1. **Inspect** — `mt_query` to understand current page state
+        1. **Inspect** — `mt_outline` → `mt_attrs` / `mt_css` to understand page state
         2. **Act** — `mt_click`, `mt_fill`, `mt_exec` to make changes
         3. **Verify** — `mt_query` or `mt_wait` to confirm the result
 
@@ -130,38 +154,56 @@ public static class AgentGuidanceWriter
         ### Debug a visual bug
 
         ```bash
-        mt_snapshot                          # capture current state
-        cat .midterm/snapshot_*/index.html   # read the DOM
-        cat .midterm/snapshot_*/css/*.css    # read the styles
+        mt_outline                              # see page structure
+        mt_css ".problematic-element" "color,background,display,visibility,margin,padding"
         # ... make code fixes ...
-        mt_reload                            # reload the preview
-        mt_query ".problematic-element"      # verify the fix
+        mt_reload                               # reload the preview
+        mt_css ".problematic-element" "color,background,display,visibility"  # verify
+        ```
+
+        ### Debug CSS / dark mode leak
+
+        ```bash
+        mt_css "body" "color,background-color"
+        mt_css ".card" "color,background-color,border-color"
+        mt_css ".header" "color,background-color"
+        # Compare values against expected theme palette
+        ```
+
+        ### Check console for JS errors
+
+        ```bash
+        mt_log error                            # just errors
+        mt_log                                  # all console output
+        ```
+
+        ### Explore page structure
+
+        ```bash
+        mt_outline                              # tree overview
+        mt_outline 6                            # deeper tree
+        mt_links                                # all navigation links
+        mt_forms                                # all forms with fields
+        mt_attrs "nav a"                        # inspect nav link attributes
         ```
 
         ### Fill and submit a form
 
         ```bash
-        mt_query "form" true                 # understand form structure
+        mt_forms                                # understand form structure
         mt_fill "#username" "testuser"
         mt_fill "#password" "testpass"
         mt_click "button[type=submit]"
-        mt_wait ".dashboard"                 # wait for navigation
-        mt_query ".welcome-message" true     # verify login succeeded
+        mt_wait ".dashboard"                    # wait for navigation
+        mt_query ".welcome-message" true        # verify login succeeded
         ```
 
         ### Navigate and inspect a new page
 
         ```bash
         mt_navigate "http://localhost:3000/settings"
-        mt_wait ".settings-page" 10          # wait up to 10s for load
-        mt_query ".settings-page" true       # read the content
-        ```
-
-        ### Take a screenshot for visual verification
-
-        ```bash
-        mt_screenshot
-        # screenshot saved to .midterm/screenshots/screenshot_YYYYMMDD_HHMMSS.png
+        mt_wait ".settings-page" 10             # wait up to 10s for load
+        mt_outline                              # get page structure
         ```
 
         ### Execute JavaScript for advanced queries
@@ -169,14 +211,16 @@ public static class AgentGuidanceWriter
         ```bash
         mt_exec "document.querySelectorAll('li').length"
         mt_exec "window.location.href"
-        mt_exec "JSON.stringify(localStorage)"
+        echo 'JSON.stringify(Object.keys(localStorage))' | mt_exec
         ```
 
         ## Tips
 
-        - Use `true` as second arg to `mt_query` for text-only output (much smaller)
-        - Use `mt_wait` before `mt_query` after navigation or clicks that trigger loads
-        - Snapshots are more useful than screenshots for understanding page structure
+        - Start with `mt_outline` not `mt_query` — it's much smaller output
+        - Use `mt_css` to inspect specific properties instead of full DOM snapshots
+        - Use `mt_log` after actions to catch runtime errors
+        - Use `true` as second arg to `mt_query` for text-only output
+        - Use stdin piping for complex JS: `echo 'code' | mt_exec`
         - All responses are JSON — use `jq` for field extraction
         - If `mt_status` shows "disconnected", the web preview panel needs to be open
         """;

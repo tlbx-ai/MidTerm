@@ -71,6 +71,18 @@ public static class MtcliScriptWriter
         }
         mt_screenshot() { _MJ -d '{}' "$_MT/api/browser/screenshot"; }
         mt_snapshot()   { _MJ -d '{}' "$_MT/api/browser/snapshot"; }
+        # mt_outline [DEPTH]  — page structure tree (default depth 4)
+        mt_outline() { local d=${1:-4}; _MJ -d "{\"maxDepth\":$d}" "$_MT/api/browser/outline"; }
+        # mt_attrs SELECTOR  — element attributes (no children)
+        mt_attrs()   { _MJ -d "{\"selector\":\"$(_ME "$1")\"}" "$_MT/api/browser/attrs"; }
+        # mt_css SELECTOR PROPS  — computed CSS (comma-separated property names)
+        mt_css()     { _MJ -d "{\"selector\":\"$(_ME "$1")\",\"value\":\"$(_ME "$2")\"}" "$_MT/api/browser/css"; }
+        # mt_log [error|warn|all]  — console log buffer (default: all)
+        mt_log()     { local f=${1:-all}; _MJ -d "{\"value\":\"$(_ME "$f")\"}" "$_MT/api/browser/log"; }
+        # mt_links  — all links on page
+        mt_links()   { _MJ -d '{}' "$_MT/api/browser/links"; }
+        # mt_forms [SELECTOR]  — form structure and values (default: all forms)
+        mt_forms()   { local s="${1:-form}"; _MJ -d "{\"selector\":\"$(_ME "$s")\"}" "$_MT/api/browser/forms"; }
 
         # Web preview target management
         mt_navigate()   { _MJ -d "{\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
@@ -137,6 +149,18 @@ public static class MtcliScriptWriter
         }
         function Mt-Screenshot { _MJ -d '{}' "$script:_MT/api/browser/screenshot" }
         function Mt-Snapshot   { _MJ -d '{}' "$script:_MT/api/browser/snapshot" }
+        # Mt-Outline [-Depth N]  — page structure tree (default depth 4)
+        function Mt-Outline { param([int]$Depth = 4) _MJ -d (_MB @{maxDepth=$Depth}) "$script:_MT/api/browser/outline" }
+        # Mt-Attrs -Selector CSS_SELECTOR  — element attributes (no children)
+        function Mt-Attrs   { param([string]$Selector) _MJ -d (_MB @{selector=$Selector}) "$script:_MT/api/browser/attrs" }
+        # Mt-Css -Selector CSS_SELECTOR -Props COMMA_SEPARATED  — computed CSS values
+        function Mt-Css     { param([string]$Selector, [string]$Props) _MJ -d (_MB @{selector=$Selector; value=$Props}) "$script:_MT/api/browser/css" }
+        # Mt-Log [-Filter error|warn|all]  — console log buffer (default: all)
+        function Mt-Log     { param([string]$Filter = "all") _MJ -d (_MB @{value=$Filter}) "$script:_MT/api/browser/log" }
+        # Mt-Links  — all links on page
+        function Mt-Links   { _MJ -d '{}' "$script:_MT/api/browser/links" }
+        # Mt-Forms [-Selector CSS_SELECTOR]  — form structure and values (default: all forms)
+        function Mt-Forms   { param([string]$Selector = "form") _MJ -d (_MB @{selector=$Selector}) "$script:_MT/api/browser/forms" }
 
         # Web preview target management
         function Mt-Navigate {

@@ -41,7 +41,7 @@ public static class BrowserEndpoints
             if (args.Count == 0)
             {
                 BrowserLog.Error($"Empty request ({body.Length} bytes)");
-                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--hard]\n  status\n", statusCode: 400);
+                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  forms [selector]    Form structure and values\n  status\n", statusCode: 400);
             }
 
             var command = args[0].ToLowerInvariant();
@@ -169,6 +169,48 @@ public static class BrowserEndpoints
 
             return ToJsonResult(result);
         });
+
+        app.MapPost("/api/browser/outline", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "outline");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
+        app.MapPost("/api/browser/attrs", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "attrs");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
+        app.MapPost("/api/browser/css", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "css");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
+        app.MapPost("/api/browser/log", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "log");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
+        app.MapPost("/api/browser/links", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "links");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
+        app.MapPost("/api/browser/forms", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "forms");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
     }
 
     private static BrowserCommandRequest? ParseCliArgs(string command, List<string> args)
@@ -225,6 +267,37 @@ public static class BrowserEndpoints
             {
                 Command = "reload",
                 Value = HasFlag(args, "--hard") ? "hard" : "soft"
+            },
+            "outline" => new BrowserCommandRequest
+            {
+                Command = "outline",
+                MaxDepth = GetIntFlag(args, "--depth") ??
+                    (args.Count > 1 && int.TryParse(args[1], out var od) ? od : 4)
+            },
+            "attrs" => new BrowserCommandRequest
+            {
+                Command = "attrs",
+                Selector = GetPositional(args, 1)
+            },
+            "css" => new BrowserCommandRequest
+            {
+                Command = "css",
+                Selector = GetPositional(args, 1),
+                Value = GetPositional(args, 2)
+            },
+            "log" => new BrowserCommandRequest
+            {
+                Command = "log",
+                Value = GetPositional(args, 1) ?? "all"
+            },
+            "links" => new BrowserCommandRequest
+            {
+                Command = "links"
+            },
+            "forms" => new BrowserCommandRequest
+            {
+                Command = "forms",
+                Selector = GetPositional(args, 1)
             },
             _ => null
         };

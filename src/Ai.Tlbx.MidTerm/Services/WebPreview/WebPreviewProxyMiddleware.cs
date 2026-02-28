@@ -21,6 +21,10 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string UrlRewriteScript = """
         <script>(function(){
           if(window.__mtProxy)return;window.__mtProxy=1;
+          // Iframe cloaking: make the page think it's top-level
+          try{Object.defineProperty(window,"top",{get:function(){return window},configurable:true});}catch(e){}
+          try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
+          try{Object.defineProperty(window,"frameElement",{get:function(){return null},configurable:true});}catch(e){}
           var P="/webpreview",E=P+"/_ext?u=";
           function r(u){
             if(typeof u!=="string")return u;
@@ -195,6 +199,121 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"reload":{
                   location.reload();res.result="reloading";
+                  break;}
+                case"outline":{
+                  var mx=msg.maxDepth||4;
+                  function ol(el,d,ind){
+                    if(d>=mx)return"";
+                    var tag=el.tagName.toLowerCase();
+                    var id=el.id?"#"+el.id:"";
+                    var cls=el.className&&typeof el.className==="string"?"."+el.className.trim().split(/\s+/).join("."):"";
+                    var line=ind+tag+id+cls;
+                    var ch=[].slice.call(el.children);
+                    var lines=[line];var ci=0;
+                    while(ci<ch.length){
+                      var ce=ch[ci];var cnt=1;
+                      while(ci+cnt<ch.length&&ch[ci+cnt].tagName===ce.tagName&&(ch[ci+cnt].className||"")===(ce.className||""))cnt++;
+                      if(cnt>2&&!ce.id){
+                        lines.push(ind+"  "+ce.tagName.toLowerCase()+(ce.className&&typeof ce.className==="string"?"."+ce.className.trim().split(/\s+/).join("."):"")+" x"+cnt);
+                        ci+=cnt;
+                      }else{lines.push(ol(ce,d+1,ind+"  "));ci++;}
+                    }
+                    return lines.filter(Boolean).join("\n");
+                  }
+                  res.result=ol(document.documentElement,0,"");
+                  break;}
+                case"attrs":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var els=document.querySelectorAll(msg.selector);
+                  res.matchCount=els.length;
+                  var parts=[];
+                  for(var i=0;i<els.length&&i<30;i++){
+                    var ae=els[i].cloneNode(false);ae.innerHTML="";
+                    parts.push(ae.outerHTML.replace("></"+ae.tagName.toLowerCase()+">",">"));
+                  }
+                  res.result=parts.join("\n---\n");
+                  break;}
+                case"css":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  if(!msg.value){res.success=false;res.error="css properties required (comma-separated)";break;}
+                  var props=msg.value.split(",").map(function(p){return p.trim();});
+                  var els=document.querySelectorAll(msg.selector);
+                  res.matchCount=els.length;
+                  var parts=[];
+                  for(var i=0;i<els.length&&i<20;i++){
+                    var cs=getComputedStyle(els[i]);
+                    var lines=[msg.selector+" ("+(i+1)+" of "+els.length+")"];
+                    for(var j=0;j<props.length;j++)lines.push("  "+props[j]+": "+cs.getPropertyValue(props[j]));
+                    parts.push(lines.join("\n"));
+                  }
+                  res.result=parts.join("\n---\n");
+                  break;}
+                case"log":{
+                  if(!window.__mtLog){
+                    window.__mtLog=[];
+                    var orig={log:console.log,warn:console.warn,error:console.error};
+                    ["error","warn","log"].forEach(function(lvl){
+                      console[lvl]=function(){
+                        var a=[].slice.call(arguments).map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x);}catch(e){return String(x);}}).join(" ");
+                        window.__mtLog.push({l:lvl,m:a,t:Date.now()});
+                        if(window.__mtLog.length>50)window.__mtLog.shift();
+                        orig[lvl].apply(console,arguments);
+                      };
+                    });
+                    window.addEventListener("error",function(ev){
+                      window.__mtLog.push({l:"error",m:ev.message+" ("+(ev.filename||"")+":"+(ev.lineno||0)+")",t:Date.now()});
+                      if(window.__mtLog.length>50)window.__mtLog.shift();
+                    });
+                  }
+                  var flt=msg.value||"all";
+                  var ent=window.__mtLog.filter(function(e){return flt==="all"||e.l===flt;});
+                  res.result=ent.length?ent.map(function(e){return"["+e.l+"] "+e.m;}).join("\n"):"(no entries)";
+                  res.matchCount=ent.length;
+                  break;}
+                case"links":{
+                  var anchors=document.querySelectorAll("a[href]");
+                  var seen={},parts=[];
+                  for(var i=0;i<anchors.length;i++){
+                    var href=anchors[i].getAttribute("href");
+                    if(!href||href==="#"||seen[href])continue;
+                    seen[href]=1;
+                    var txt=(anchors[i].textContent||"").trim().substring(0,80);
+                    parts.push(href+" > "+txt);
+                  }
+                  parts.sort();
+                  res.result=parts.join("\n");
+                  res.matchCount=parts.length;
+                  break;}
+                case"forms":{
+                  var fsel=msg.selector||"form";
+                  var forms=document.querySelectorAll(fsel);
+                  res.matchCount=forms.length;
+                  var parts=[];
+                  for(var i=0;i<forms.length;i++){
+                    var f=forms[i];
+                    var ftag=f.tagName.toLowerCase();
+                    var fid=f.id?"#"+f.id:"";
+                    var fhdr=ftag+fid;
+                    if(f.action)fhdr+=" (action="+f.getAttribute("action")+", method="+(f.method||"GET").toUpperCase()+")";
+                    var flines=[fhdr];
+                    var inputs=f.querySelectorAll("input,select,textarea,button");
+                    for(var j=0;j<inputs.length;j++){
+                      var inp=inputs[j];
+                      var it=inp.tagName.toLowerCase();
+                      var iname=inp.name?"[name="+inp.name+"]":"";
+                      var itp=inp.type?" type="+inp.type:"";
+                      var ireq=inp.required?" required":"";
+                      var ival=it==="select"?" value=\""+(inp.options[inp.selectedIndex]||{}).text+"\"":
+                               it==="button"?" \""+(inp.textContent||"").trim()+"\"":
+                               " value=\""+((inp.type==="password"?"***":inp.value)||"")+"\"";
+                      var ilbl="";
+                      if(inp.id){var le=f.querySelector("label[for="+inp.id+"]");if(le)ilbl=" label=\""+le.textContent.trim()+"\"";}
+                      if(!ilbl&&inp.closest&&inp.closest("label"))ilbl=" label=\""+inp.closest("label").textContent.trim()+"\"";
+                      flines.push("  "+it+iname+itp+ireq+ival+ilbl);
+                    }
+                    parts.push(flines.join("\n"));
+                  }
+                  res.result=parts.join("\n---\n");
                   break;}
                 default:res.success=false;res.error="unknown command: "+msg.command;
               }
