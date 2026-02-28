@@ -1111,11 +1111,10 @@ public sealed partial class WebPreviewProxyMiddleware
             clientToUpstream = text => text.Replace(proxyBase, upstreamRoot);
             upstreamToClient = text => text.Replace(upstreamRoot, proxyBase);
 
-            // Binary rewriting disabled — Blazor blazorpack embeds URLs in MessagePack
-            // binary frames, but the text-based initial handshake + negotiate handle the
-            // critical protocol setup. Binary URL rewriting may corrupt non-URL payloads.
-            _ = proxyBase; // suppress unused warning
-            _ = upstreamRoot;
+            var proxyBaseUtf8 = Encoding.UTF8.GetBytes(proxyBase);
+            var upstreamRootUtf8 = Encoding.UTF8.GetBytes(upstreamRoot);
+            binaryClientToUpstream = (data, len) => RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamRootUtf8);
+            binaryUpstreamToClient = (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
