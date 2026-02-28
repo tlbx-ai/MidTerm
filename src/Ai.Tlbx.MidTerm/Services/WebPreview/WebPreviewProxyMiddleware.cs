@@ -95,6 +95,17 @@ public sealed partial class WebPreviewProxyMiddleware
           if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
           // Patch navigator.sendBeacon
           if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
+          // Patch history.pushState/replaceState to rewrite URLs through proxy
+          var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
+          history.pushState=function(s,t,u){return hps(s,t,u?r(u):u);};
+          history.replaceState=function(s,t,u){return hrs(s,t,u?r(u):u);};
+          // Patch location.assign/replace/href to keep navigations inside proxy
+          var la=location.assign.bind(location),lr=location.replace.bind(location);
+          location.assign=function(u){return la(r(u));};
+          location.replace=function(u){return lr(r(u));};
+          try{var ld2=Object.getOwnPropertyDescriptor(window.Location.prototype,"href")||Object.getOwnPropertyDescriptor(location,"href");
+            if(ld2&&ld2.set){var lhs=ld2.set;Object.defineProperty(location,"href",{set:function(v){lhs.call(this,r(v));},get:ld2.get,configurable:true,enumerable:true});}
+          }catch(e){}
           // Patch Image constructor (new Image().src is handled by setter, but direct constructor arg)
           var OI=window.Image;
           if(OI){window.Image=function(w,h){var i=new OI(w,h);return i;};window.Image.prototype=OI.prototype;}
