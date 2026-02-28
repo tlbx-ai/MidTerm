@@ -614,6 +614,17 @@ public sealed partial class WebPreviewProxyMiddleware
         html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetHost));
         html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetHost));
 
+        // Extract the original <base href> value before removing — Blazor and other
+        // frameworks rely on precise base URI (e.g., <base href="/kicoach/">).
+        // Recomputing from the final URL loses trailing-slash semantics when the server
+        // doesn't redirect /path → /path/.
+        string? originalBaseHref = null;
+        var baseMatch = BaseHrefValueRegex().Match(html);
+        if (baseMatch.Success)
+        {
+            originalBaseHref = baseMatch.Groups[1].Value;
+        }
+
         // Remove any existing <base> tags to avoid duplicates — we inject our own
         html = ExistingBaseTagRegex().Replace(html, "");
 
@@ -622,10 +633,21 @@ public sealed partial class WebPreviewProxyMiddleware
         // causing the proxied page to block framing of external resources.
         html = UpstreamSecurityMetaTagRegex().Replace(html, "");
 
-        // Compute base href from the final upstream URL's directory path.
-        // This preserves correct relative URL resolution when the upstream redirected
-        // (e.g., / → /wiki/Main_Page means relative URLs resolve against /wiki/).
-        var baseHref = ComputeBaseHref(finalUrl);
+        // Build proxy-prefixed base href. Prefer the original <base href> from upstream
+        // (preserves exact path semantics), fall back to computing from the final URL.
+        string baseHref;
+        if (originalBaseHref is not null)
+        {
+            var basePath = originalBaseHref.TrimEnd('/');
+            if (basePath.Length == 0 || basePath == "/")
+                baseHref = "/webpreview/";
+            else
+                baseHref = "/webpreview" + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+        }
+        else
+        {
+            baseHref = ComputeBaseHref(finalUrl);
+        }
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
@@ -1502,6 +1524,10 @@ public sealed partial class WebPreviewProxyMiddleware
     // Matches existing <base ...> tags (self-closing or not) to remove before injecting ours
     [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex ExistingBaseTagRegex();
+
+    // Extracts the href value from a <base href="..."> tag
+    [GeneratedRegex(@"<base\s[^>]*href\s*=\s*[""']([^""']*)[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex BaseHrefValueRegex();
 
     // Matches <meta http-equiv="content-security-policy" ...> and <meta http-equiv="x-frame-options" ...>
     // Upstream CSP/XFO meta tags must be stripped: after proxying, 'self' resolves to MidTerm's origin,
