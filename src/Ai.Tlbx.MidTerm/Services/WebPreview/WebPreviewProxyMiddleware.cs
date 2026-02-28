@@ -1065,6 +1065,12 @@ public sealed partial class WebPreviewProxyMiddleware
         // upstream server during circuit init (StartCircuit) and navigation events. The
         // upstream doesn't know about /webpreview/, so we strip it from client→upstream
         // messages and re-add it for upstream→client messages.
+        //
+        // /webpreview maps to the upstream server root — the full upstream path (including
+        // any subpath like /kicoach) follows AFTER /webpreview/. So:
+        //   client:   https://proxy/webpreview/kicoach/page
+        //   upstream: https://upstream/kicoach/page
+        // We rewrite proxy scheme+host+/webpreview → upstream scheme+host (no path).
         Func<string, string>? clientToUpstream = null;
         Func<string, string>? upstreamToClient = null;
 
@@ -1072,11 +1078,10 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var proxyScheme = context.Request.IsHttps ? "https" : "http";
             var proxyBase = $"{proxyScheme}://{context.Request.Host}/webpreview";
-            var upstreamBase = $"{targetUri.Scheme}://{targetUri.Authority}"
-                + targetUri.AbsolutePath.TrimEnd('/');
+            var upstreamRoot = $"{targetUri.Scheme}://{targetUri.Authority}";
 
-            clientToUpstream = text => text.Replace(proxyBase, upstreamBase);
-            upstreamToClient = text => text.Replace(upstreamBase, proxyBase);
+            clientToUpstream = text => text.Replace(proxyBase, upstreamRoot);
+            upstreamToClient = text => text.Replace(upstreamRoot, proxyBase);
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
