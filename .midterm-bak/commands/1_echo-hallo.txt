@@ -1,0 +1,3 @@
+echo Hallo
+Hallo
+[Console]::Beep(800, 300) 
