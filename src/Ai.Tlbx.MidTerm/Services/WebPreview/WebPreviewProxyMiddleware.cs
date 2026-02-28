@@ -84,9 +84,29 @@ public sealed partial class WebPreviewProxyMiddleware
           // .data on object elements
           var od=Object.getOwnPropertyDescriptor(HTMLObjectElement.prototype,"data");
           if(od&&od.set){Object.defineProperty(HTMLObjectElement.prototype,"data",{set:function(v){od.set.call(this,r(v));},get:od.get,configurable:true,enumerable:true});}
-          // setAttribute for src/href/action/poster/data/formaction
+          // srcset rewriting: each entry is "url descriptor, ..." — rewrite each URL
+          function rss(v){
+            if(typeof v!=="string")return v;
+            return v.replace(/(^|,\s*)([^\s,]+)/g,function(m,pre,url){return pre+r(url);});
+          }
+          // .srcset on img/source elements
+          ["HTMLImageElement","HTMLSourceElement"].forEach(function(n){
+            var p=window[n]&&window[n].prototype;if(!p)return;
+            var d=Object.getOwnPropertyDescriptor(p,"srcset");if(!d||!d.set)return;
+            Object.defineProperty(p,"srcset",{set:function(v){d.set.call(this,rss(v));},get:d.get,configurable:true,enumerable:true});
+          });
+          // .poster on video elements
+          var vpd=Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype,"poster");
+          if(vpd&&vpd.set){Object.defineProperty(HTMLVideoElement.prototype,"poster",{set:function(v){vpd.set.call(this,r(v));},get:vpd.get,configurable:true,enumerable:true});}
+          // setAttribute for src/href/action/poster/data/formaction/srcset
           var sa=Element.prototype.setAttribute;
-          Element.prototype.setAttribute=function(n,v){if(typeof v==="string"&&/^(src|href|action|poster|data|formaction)$/i.test(n))v=r(v);return sa.call(this,n,v);};
+          Element.prototype.setAttribute=function(n,v){
+            if(typeof v==="string"){
+              if(/^(src|href|action|poster|data|formaction)$/i.test(n))v=r(v);
+              else if(/^srcset$/i.test(n))v=rss(v);
+            }
+            return sa.call(this,n,v);
+          };
           // === Constructors ===
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
@@ -135,7 +155,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var tsd=Object.getOwnPropertyDescriptor(LP,"toString")||{value:location.toString};
             location.toString=function(){return s(tsd.value?tsd.value.call(location):LP.toString.call(location));};
           }catch(e){}
-          // Spoof document.URL/documentURI/referrer to hide proxy prefix
+          // Spoof document.URL/documentURI/baseURI/referrer to hide proxy prefix
           try{
             var duRL=Object.getOwnPropertyDescriptor(Document.prototype,"URL");
             if(duRL&&duRL.get){Object.defineProperty(document,"URL",{get:function(){return s(duRL.get.call(this));},configurable:true,enumerable:true});}
@@ -143,6 +163,14 @@ public sealed partial class WebPreviewProxyMiddleware
             if(ddURI&&ddURI.get){Object.defineProperty(document,"documentURI",{get:function(){return s(ddURI.get.call(this));},configurable:true,enumerable:true});}
             var dRef=Object.getOwnPropertyDescriptor(Document.prototype,"referrer");
             if(dRef&&dRef.get){Object.defineProperty(document,"referrer",{get:function(){return s(dRef.get.call(this));},configurable:true,enumerable:true});}
+            // document.baseURI — React Router, Vue Router, Angular all read this
+            var dbU=Object.getOwnPropertyDescriptor(Document.prototype,"baseURI")||Object.getOwnPropertyDescriptor(Node.prototype,"baseURI");
+            if(dbU&&dbU.get){Object.defineProperty(document,"baseURI",{get:function(){return s(dbU.get.call(this));},configurable:true,enumerable:true});}
+          }catch(e){}
+          // Spoof HTMLBaseElement.href getter — Angular reads base[href] element
+          try{
+            var bhd=Object.getOwnPropertyDescriptor(HTMLBaseElement.prototype,"href");
+            if(bhd&&bhd.get){Object.defineProperty(HTMLBaseElement.prototype,"href",{get:function(){return s(bhd.get.call(this));},set:bhd.set,configurable:true,enumerable:true});}
           }catch(e){}
           // === Cookie bridge ===
           var C=P+"/_cookies",cc="";
@@ -159,18 +187,30 @@ public sealed partial class WebPreviewProxyMiddleware
             }
           }catch(e){}
           // === MutationObserver: catch dynamically added elements ===
+          function rewriteEl(el){
+            if(!el.getAttribute)return;
+            ["src","href","action","data","formaction","poster"].forEach(function(attr){
+              var v=el.getAttribute(attr);
+              if(v){var rv=r(v);if(rv!==v)sa.call(el,attr,rv);}
+            });
+            var ss=el.getAttribute("srcset");
+            if(ss){var rv=rss(ss);if(rv!==ss)sa.call(el,"srcset",rv);}
+            // <meta http-equiv="refresh" content="0;url=/path"> — PHP redirect pattern
+            if(el.tagName==="META"&&/^refresh$/i.test(el.getAttribute("http-equiv")||"")){
+              var ct=el.getAttribute("content")||"";
+              var rm=ct.match(/^(\d+\s*;\s*url\s*=\s*)(.+)$/i);
+              if(rm){var ru=r(rm[2].trim());sa.call(el,"content",rm[1]+ru);}
+            }
+          }
           new MutationObserver(function(muts){
             for(var i=0;i<muts.length;i++){
               var nodes=muts[i].addedNodes;
               for(var j=0;j<nodes.length;j++){
                 var n=nodes[j];if(n.nodeType!==1)continue;
-                var els=n.querySelectorAll?[n].concat([].slice.call(n.querySelectorAll("[src],[href],[action],[data],[formaction]"))):[n];
-                for(var k=0;k<els.length;k++){
-                  var el=els[k];if(!el.getAttribute)continue;
-                  ["src","href","action","data","formaction"].forEach(function(attr){
-                    var v=el.getAttribute(attr);
-                    if(v){var rv=r(v);if(rv!==v)sa.call(el,attr,rv);}
-                  });
+                rewriteEl(n);
+                if(n.querySelectorAll){
+                  var els=n.querySelectorAll("[src],[href],[action],[data],[formaction],[poster],[srcset],meta[http-equiv]");
+                  for(var k=0;k<els.length;k++)rewriteEl(els[k]);
                 }
               }
             }
@@ -667,6 +707,16 @@ public sealed partial class WebPreviewProxyMiddleware
         html = RootRelativeAttrRegex().Replace(html, "$1/webpreview/");
         html = RootRelativeSrcsetRegex().Replace(html, "$1/webpreview/");
         html = RootRelativeCssUrlRegex().Replace(html, "url(/webpreview/");
+
+        // Rewrite <meta http-equiv="refresh" content="0;url=/path"> URLs (PHP redirect pattern)
+        html = MetaRefreshRegex().Replace(html, m =>
+        {
+            var prefix = m.Groups[1].Value;
+            var url = m.Groups[2].Value;
+            if (url.StartsWith('/') && !url.StartsWith("/webpreview/"))
+                return prefix + "/webpreview" + url;
+            return m.Value;
+        });
 
         // Rewrite absolute external URLs (https://cdn.example.com/...) to go through _ext proxy.
         // This allows MT to fetch third-party resources server-side, bypassing CORS/ad blockers.
@@ -1597,6 +1647,10 @@ public sealed partial class WebPreviewProxyMiddleware
     // which would block framing of the upstream site's own resources.
     [GeneratedRegex(@"<meta\s[^>]*http-equiv\s*=\s*[""']\s*(?:content-security-policy|x-frame-options)\s*[""'][^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex UpstreamSecurityMetaTagRegex();
+
+    // Matches <meta http-equiv="refresh" content="N;url=/path"> for PHP-style redirects
+    [GeneratedRegex(@"(<meta\s[^>]*content\s*=\s*[""']\d+\s*;\s*url\s*=\s*)([^""'>\s]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex MetaRefreshRegex();
 
     // Matches src="/...", href="/...", action="/...", poster="/..." with word boundaries
     // to avoid matching data-src, data-href, metadata, etc.
