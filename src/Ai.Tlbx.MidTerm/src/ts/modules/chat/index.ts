@@ -2,18 +2,38 @@
  * Chat Module
  *
  * Handles the voice chat panel display, message rendering,
- * and panel visibility state.
+ * and panel visibility state. Tool calls within a turn are
+ * consolidated into collapsible group bubbles.
  */
 
 import { createLogger } from '../logging';
 import type { ChatMessage, VoiceToolName, InteractiveOp } from '../../types';
 import { escapeHtml } from '../../utils';
+import { t } from '../i18n';
 
 const log = createLogger('chat');
 const STORAGE_KEY = 'midterm.chatPanelOpen';
+const MAX_CHAT_ELEMENTS = 69;
 
 const chatMessages: ChatMessage[] = [];
 let autoAcceptEnabled = false;
+
+interface ToolEntry {
+  toolName: string;
+  request: string;
+  response: string;
+  rowEl: HTMLElement;
+}
+
+interface ActiveToolGroup {
+  element: HTMLElement;
+  entriesContainer: HTMLElement;
+  headerCountEl: HTMLElement;
+  timeEl: HTMLElement;
+  entries: ToolEntry[];
+}
+
+let activeToolGroup: ActiveToolGroup | null = null;
 
 /**
  * Initialize the chat panel and event handlers
@@ -64,11 +84,39 @@ export function toggleChatPanel(): void {
 }
 
 /**
- * Add a chat message and render it
+ * Add a chat message and render it.
+ * Tool call requests and responses are consolidated into groups.
  */
 export function addChatMessage(message: ChatMessage): void {
   chatMessages.push(message);
-  renderMessage(message);
+
+  if (message.role === 'assistant' && isToolCallMessage(message.content)) {
+    const toolName = extractToolName(message.content);
+    const lines = message.content.split('\n');
+    const args = lines.slice(1).join('\n').trim();
+
+    if (!activeToolGroup) {
+      const group = createToolGroup(message.timestamp);
+      const container = document.getElementById('chat-messages');
+      if (container) {
+        container.appendChild(group.element);
+      }
+      activeToolGroup = group;
+    }
+
+    addToolEntry(activeToolGroup, toolName, args, message.timestamp);
+    updateGroupCount(activeToolGroup);
+  } else if (message.role === 'tool' && activeToolGroup) {
+    const lastEntry = activeToolGroup.entries[activeToolGroup.entries.length - 1];
+    if (lastEntry) {
+      updateToolEntryResponse(lastEntry, message.content);
+    }
+  } else {
+    finalizeToolGroup();
+    renderMessage(message);
+  }
+
+  trimChatDom();
   scrollToBottom();
   log.info(() => `Chat message added: ${message.role}`);
 }
@@ -108,7 +156,194 @@ function formatJsonContent(content: string): string {
 }
 
 /**
- * Render a single message to the chat panel
+ * Condense text to first N lines, adding ellipsis if truncated
+ */
+function condensed(text: string, maxLines: number): string {
+  const lines = text.split('\n');
+  if (lines.length <= maxLines) return text;
+  return lines.slice(0, maxLines).join('\n') + '\n…';
+}
+
+/**
+ * Create a tool group bubble element
+ */
+function createToolGroup(timestamp: string): ActiveToolGroup {
+  const el = document.createElement('div');
+  el.className = 'chat-msg chat-msg-tool-group';
+
+  const header = document.createElement('div');
+  header.className = 'tool-group-header';
+
+  const icon = document.createElement('span');
+  icon.className = 'tool-group-icon';
+  icon.textContent = '⚡';
+
+  const countEl = document.createElement('span');
+  countEl.className = 'tool-group-count';
+  countEl.textContent = `0 ${t('chat.toolCalls')}`;
+
+  header.appendChild(icon);
+  header.appendChild(countEl);
+  el.appendChild(header);
+
+  const entriesContainer = document.createElement('div');
+  entriesContainer.className = 'tool-group-entries';
+  el.appendChild(entriesContainer);
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'chat-msg-time';
+  timeEl.textContent = formatTime(timestamp);
+  el.appendChild(timeEl);
+
+  return { element: el, entriesContainer, headerCountEl: countEl, timeEl, entries: [] };
+}
+
+/**
+ * Add a collapsible tool entry row to a group
+ */
+function addToolEntry(
+  group: ActiveToolGroup,
+  toolName: string,
+  args: string,
+  timestamp: string,
+): void {
+  const entry: ToolEntry = {
+    toolName,
+    request: args,
+    response: '',
+    rowEl: document.createElement('div'),
+  };
+  const row = entry.rowEl;
+  row.className = 'tool-group-entry-row';
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'tool-group-entry-header';
+
+  const arrow = document.createElement('span');
+  arrow.className = 'tool-group-expand';
+  arrow.textContent = '▸';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'tool-group-entry-name';
+  nameEl.textContent = toolName;
+
+  headerRow.appendChild(arrow);
+  headerRow.appendChild(nameEl);
+
+  const summaryEl = document.createElement('div');
+  summaryEl.className = 'tool-group-entry-summary';
+
+  const detailEl = document.createElement('div');
+  detailEl.className = 'tool-group-entry-detail';
+
+  row.appendChild(headerRow);
+  row.appendChild(summaryEl);
+  row.appendChild(detailEl);
+
+  headerRow.addEventListener('click', () => {
+    const isExpanded = row.classList.contains('expanded');
+    if (isExpanded) {
+      row.classList.remove('expanded', 'fully-expanded');
+      arrow.textContent = '▸';
+    } else {
+      row.classList.add('expanded');
+      arrow.textContent = '▾';
+      rebuildSummary(entry, summaryEl);
+    }
+  });
+
+  summaryEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!row.classList.contains('fully-expanded')) {
+      row.classList.add('fully-expanded');
+      rebuildDetail(entry, detailEl);
+    } else {
+      row.classList.remove('fully-expanded');
+    }
+  });
+
+  group.entriesContainer.appendChild(row);
+  group.entries.push(entry);
+  group.timeEl.textContent = formatTime(timestamp);
+}
+
+/**
+ * Rebuild the summary section (condensed request + response)
+ */
+function rebuildSummary(entry: ToolEntry, el: HTMLElement): void {
+  const reqText = entry.request ? condensed(entry.request, 2) : '';
+  const resText = entry.response ? condensed(entry.response, 2) : '';
+  let html = '';
+  if (reqText) html += `<span class="tool-group-summary-text">${escapeHtml(reqText)}</span>`;
+  if (resText) html += `<span class="tool-group-summary-response">${escapeHtml(resText)}</span>`;
+  el.innerHTML = html;
+}
+
+/**
+ * Rebuild the detail section (full pre blocks)
+ */
+function rebuildDetail(entry: ToolEntry, el: HTMLElement): void {
+  const reqFormatted = entry.request ? formatJsonContent(entry.request) : '';
+  const resFormatted = entry.response ? formatJsonContent(entry.response) : '';
+  let html = '';
+  if (reqFormatted) {
+    html += `<div class="tool-group-detail-label">${escapeHtml(t('chat.toolRequest'))}</div>`;
+    html += `<pre class="chat-msg-tool-args">${escapeHtml(reqFormatted)}</pre>`;
+  }
+  if (resFormatted) {
+    html += `<div class="tool-group-detail-label">${escapeHtml(t('chat.toolResponse'))}</div>`;
+    html += `<pre class="chat-msg-tool-result">${escapeHtml(resFormatted)}</pre>`;
+  }
+  el.innerHTML = html;
+}
+
+/**
+ * Attach a tool response to an existing entry
+ */
+function updateToolEntryResponse(entry: ToolEntry, content: string): void {
+  entry.response = content;
+  const summaryEl = entry.rowEl.querySelector<HTMLElement>('.tool-group-entry-summary');
+  if (summaryEl && entry.rowEl.classList.contains('expanded')) {
+    rebuildSummary(entry, summaryEl);
+  }
+  const detailEl = entry.rowEl.querySelector<HTMLElement>('.tool-group-entry-detail');
+  if (detailEl && entry.rowEl.classList.contains('fully-expanded')) {
+    rebuildDetail(entry, detailEl);
+  }
+}
+
+/**
+ * Update the count display in the group header
+ */
+function updateGroupCount(group: ActiveToolGroup): void {
+  const n = group.entries.length;
+  const label = n === 1 ? t('chat.toolCall') : t('chat.toolCalls');
+  group.headerCountEl.textContent = `${n} ${label}`;
+}
+
+/**
+ * Close the active tool group so subsequent messages render normally
+ */
+export function finalizeToolGroup(): void {
+  if (activeToolGroup) {
+    log.info(() => `Finalized tool group with ${activeToolGroup!.entries.length} entries`);
+    activeToolGroup = null;
+  }
+}
+
+/**
+ * Remove oldest children from #chat-messages until <= MAX_CHAT_ELEMENTS
+ */
+function trimChatDom(): void {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  while (container.children.length > MAX_CHAT_ELEMENTS) {
+    container.removeChild(container.children[0]!);
+  }
+}
+
+/**
+ * Render a single message to the chat panel (non-tool or orphan tool)
  */
 function renderMessage(message: ChatMessage): void {
   const container = document.getElementById('chat-messages');
@@ -117,7 +352,6 @@ function renderMessage(message: ChatMessage): void {
   const msgEl = document.createElement('div');
   const time = formatTime(message.timestamp);
 
-  // Tool response messages (role = 'tool')
   if (message.role === 'tool') {
     msgEl.className = 'chat-msg chat-msg-tool-response';
     const formattedContent = formatJsonContent(message.content);
@@ -125,33 +359,12 @@ function renderMessage(message: ChatMessage): void {
       <div class="chat-msg-tool-header">
         <span class="chat-msg-tool-icon">🔧</span>
         <span class="chat-msg-tool-name">${escapeHtml(message.toolName || 'tool')}</span>
-        <span class="chat-msg-tool-label">Response</span>
+        <span class="chat-msg-tool-label">${escapeHtml(t('chat.toolResponse'))}</span>
       </div>
       <pre class="chat-msg-tool-result">${escapeHtml(formattedContent)}</pre>
       <div class="chat-msg-time">${time}</div>
     `;
-  }
-  // Tool call request from assistant (content starts with "Calling tool:")
-  else if (message.role === 'assistant' && isToolCallMessage(message.content)) {
-    msgEl.className = 'chat-msg chat-msg-tool-call';
-    const toolName = extractToolName(message.content);
-    // Extract arguments after the first line
-    const lines = message.content.split('\n');
-    const args = lines.slice(1).join('\n').trim();
-    const formattedArgs = args ? formatJsonContent(args) : '';
-
-    msgEl.innerHTML = `
-      <div class="chat-msg-tool-header">
-        <span class="chat-msg-tool-icon">⚡</span>
-        <span class="chat-msg-tool-name">${escapeHtml(toolName)}</span>
-        <span class="chat-msg-tool-label">Request</span>
-      </div>
-      ${formattedArgs ? `<pre class="chat-msg-tool-args">${escapeHtml(formattedArgs)}</pre>` : ''}
-      <div class="chat-msg-time">${time}</div>
-    `;
-  }
-  // Regular user/assistant message
-  else {
+  } else {
     msgEl.className = `chat-msg chat-msg-${message.role}`;
     msgEl.innerHTML = `
       <div class="chat-msg-content">${escapeHtml(message.content)}</div>
@@ -216,7 +429,6 @@ function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): 
  * Format input text with escape sequence visualization
  */
 function formatInputText(text: string): string {
-  // Use string literals instead of regex for control characters
   let result = text;
   result = result.split('\r').join('⏎');
   result = result.split('\n').join('↵');
@@ -241,7 +453,6 @@ export function showToolConfirmation(
   args: Record<string, unknown>,
   justification: string | undefined,
 ): Promise<boolean> {
-  // If auto-accept is enabled, return immediately
   if (autoAcceptEnabled) {
     log.info(() => `Auto-accepting tool: ${tool}`);
     return Promise.resolve(true);
@@ -254,6 +465,8 @@ export function showToolConfirmation(
       resolve(false);
       return;
     }
+
+    finalizeToolGroup();
 
     const displayText = formatToolDisplay(tool, args);
 
@@ -279,21 +492,19 @@ export function showToolConfirmation(
     `;
 
     container.appendChild(msgEl);
+    trimChatDom();
     scrollToBottom();
 
-    // Bind button events
     const acceptBtn = msgEl.querySelector('.btn-tool-accept') as HTMLButtonElement;
     const declineBtn = msgEl.querySelector('.btn-tool-decline') as HTMLButtonElement;
     const autoAcceptCheck = msgEl.querySelector('.tool-auto-accept-check') as HTMLInputElement;
 
     const handleResponse = (approved: boolean): void => {
-      // Check if auto-accept was toggled
       if (autoAcceptCheck.checked) {
         autoAcceptEnabled = true;
         log.info(() => 'Auto-accept enabled for this session');
       }
 
-      // Update UI to show result
       msgEl.classList.add(approved ? 'confirmed' : 'declined');
       const actionsEl = msgEl.querySelector('.chat-msg-tool-actions');
       if (actionsEl) {

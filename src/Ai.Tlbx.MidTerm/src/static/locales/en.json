@@ -41,6 +41,10 @@
 
   "chat.title": "Voice Chat",
   "chat.hide": "Hide chat panel",
+  "chat.toolCall": "tool call",
+  "chat.toolCalls": "tool calls",
+  "chat.toolRequest": "Request",
+  "chat.toolResponse": "Response",
 
   "topbar.sessions": "Sessions",
   "topbar.fullscreen": "Fullscreen",

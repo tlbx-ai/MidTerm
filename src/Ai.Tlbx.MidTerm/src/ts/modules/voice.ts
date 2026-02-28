@@ -7,7 +7,13 @@
 
 import { createLogger } from './logging';
 import { setVoiceStatus, setToggleRecording } from './sidebar/voiceSection';
-import { addChatMessage, showChatPanel, toggleChatPanel, showToolConfirmation } from './chat';
+import {
+  addChatMessage,
+  showChatPanel,
+  toggleChatPanel,
+  showToolConfirmation,
+  finalizeToolGroup,
+} from './chat';
 import { processToolRequest } from './voiceTools';
 import { $voiceServerPassword } from '../stores';
 import type { VoiceToolName } from '../types';
@@ -399,6 +405,7 @@ export async function stopVoiceSession(): Promise<void> {
   }
 
   isSessionActive = false;
+  finalizeToolGroup();
   setVoiceStatus('Ready');
   setToggleRecording(false);
   log.info(() => '[SESSION] Voice session stopped');

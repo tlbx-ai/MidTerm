@@ -5518,6 +5518,122 @@ html, body {
     background-color: var(--accent-red-15);
 }
 
+/* Tool Group (consolidated tool calls) */
+.chat-msg-tool-group {
+    align-self: flex-start;
+    background: var(--tool-yellow-gradient);
+    border: 1px solid var(--tool-yellow-border-emphasis);
+    padding: 8px 12px;
+    max-width: 95%;
+    border-radius: 8px;
+}
+
+.tool-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.tool-group-icon {
+    font-size: var(--fs-md);
+}
+
+.tool-group-count {
+    color: var(--accent-gold);
+    font-weight: 600;
+    font-size: var(--fs-sm);
+}
+
+.tool-group-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tool-group-entry-row {
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.tool-group-entry-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.1s;
+}
+
+.tool-group-entry-header:hover {
+    background-color: var(--tool-yellow-bg);
+}
+
+.tool-group-expand {
+    width: 14px;
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.tool-group-entry-name {
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--accent-gold);
+    font-weight: 500;
+}
+
+.tool-group-entry-summary {
+    display: none;
+    padding: 2px 6px 2px 24px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.tool-group-entry-row.expanded .tool-group-entry-summary {
+    display: block;
+}
+
+.tool-group-summary-text {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 2.8em;
+    overflow: hidden;
+}
+
+.tool-group-summary-response {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 2.8em;
+    overflow: hidden;
+    color: var(--accent-purple);
+    margin-top: 2px;
+}
+
+.tool-group-entry-detail {
+    display: none;
+    padding: 4px 6px 4px 24px;
+}
+
+.tool-group-entry-row.fully-expanded .tool-group-entry-detail {
+    display: block;
+}
+
+.tool-group-detail-label {
+    font-size: var(--fs-2xs);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+    margin-bottom: 2px;
+}
+
 /* Chat panel is a flex sibling - main-content shrinks automatically when chat opens */
 
 
