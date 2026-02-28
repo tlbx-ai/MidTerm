@@ -13,9 +13,10 @@ import {
   setupWebPreviewDockResize,
   openWebPreviewDock,
   applyWebPreviewHiddenState,
+  suspendWebPreviewDock,
   hideWebPreviewDockForDetach,
 } from './webDock';
-import { initWebPanel, loadPreview, restoreLastUrl } from './webPanel';
+import { initWebPanel, loadPreview, restoreLastUrl, getLoadedUrl } from './webPanel';
 import { closeDetachedIfOwnedBy, initDetach, isDetachedOpenForSession } from './webDetach';
 import { setWebPreviewTarget } from './webApi';
 import { getSessionState, removeSessionState } from './webSessionState';
@@ -51,9 +52,40 @@ export function initWebPreview(): void {
 
   async function syncActiveSessionPreview(token: number, sessionId: string | null): Promise<void> {
     const state = getSessionState(sessionId);
+
     if (!sessionId || !state || !state.url || state.mode === 'hidden') {
       $webPreviewDetached.set(isDetachedOpenForSession(sessionId));
-      applyWebPreviewHiddenState();
+      if (getLoadedUrl()) {
+        suspendWebPreviewDock();
+      } else {
+        applyWebPreviewHiddenState();
+      }
+      return;
+    }
+
+    if (state.mode === 'docked') {
+      const loaded = getLoadedUrl();
+      if (loaded && loaded === state.url) {
+        $webPreviewDetached.set(false);
+        $webPreviewUrl.set(state.url);
+        openWebPreviewDock();
+        restoreLastUrl();
+        return;
+      }
+
+      const result = await setWebPreviewTarget(state.url);
+      if (token !== syncToken) return;
+      if (!result?.active) {
+        $webPreviewDetached.set(isDetachedOpenForSession(sessionId));
+        applyWebPreviewHiddenState();
+        return;
+      }
+
+      $webPreviewUrl.set(state.url);
+      $webPreviewDetached.set(false);
+      openWebPreviewDock();
+      restoreLastUrl();
+      loadPreview();
       return;
     }
 
@@ -66,15 +98,8 @@ export function initWebPreview(): void {
     }
 
     $webPreviewUrl.set(state.url);
-    if (state.mode === 'docked') {
-      $webPreviewDetached.set(false);
-      openWebPreviewDock();
-      restoreLastUrl();
-      loadPreview();
-    } else {
-      $webPreviewDetached.set(true);
-      hideWebPreviewDockForDetach();
-    }
+    $webPreviewDetached.set(true);
+    hideWebPreviewDockForDetach();
   }
 }
 

@@ -27,6 +27,12 @@ interface Html2CanvasWindow extends Window {
 const log = createLogger('webPanel');
 let urlInput: HTMLInputElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
+let loadedUrl: string | null = null;
+
+/** Get the URL currently loaded in the iframe (null if unloaded). */
+export function getLoadedUrl(): string | null {
+  return loadedUrl;
+}
 
 /** Initialize the web preview panel: wire up URL input, buttons, and keyboard shortcuts. */
 export function initWebPanel(): void {
@@ -99,7 +105,7 @@ async function handleGo(): Promise<void> {
 /** Reload the web preview iframe with a cache-busting query parameter. */
 export function loadPreview(): void {
   if (!iframe) return;
-  // Force reload by setting src with a cache-busting fragment
+  loadedUrl = $webPreviewUrl.get();
   iframe.src = `/webpreview/?${Date.now()}`;
 }
 
@@ -130,6 +136,7 @@ export function unloadIframe(): void {
     iframe.src = 'about:blank';
     iframe.classList.add('hidden');
   }
+  loadedUrl = null;
 }
 
 /** Show the "detached" placeholder message and hide the iframe. */

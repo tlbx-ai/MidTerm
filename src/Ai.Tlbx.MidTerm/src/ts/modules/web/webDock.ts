@@ -135,6 +135,24 @@ export function closeWebPreviewDock(): void {
   log.info(() => 'Web preview dock closed');
 }
 
+/** Suspend the web preview dock: hide the panel but keep iframe loaded and proxy target active. */
+export function suspendWebPreviewDock(): void {
+  $webPreviewDocked.set(false);
+  setActionButtonActive('web', false);
+
+  const dockPanel = document.getElementById('web-preview-dock');
+  if (dockPanel) {
+    dockPanel.classList.add('hidden');
+    dockPanel.style.width = '';
+  }
+
+  adjustInnerDockPositions();
+  updateAllDockMargins();
+  handleDockLayoutChange();
+
+  log.info(() => 'Web preview dock suspended (iframe kept alive)');
+}
+
 /** Hide the dock panel when detaching to a popup window, keeping the action button active. */
 export function hideWebPreviewDockForDetach(): void {
   $webPreviewDocked.set(false);
