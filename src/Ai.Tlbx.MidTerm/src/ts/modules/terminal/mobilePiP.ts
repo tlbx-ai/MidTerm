@@ -72,6 +72,18 @@ export function initMobilePiP(): void {
   trackedSessionId = $activeSessionId.get();
   resetHeatTracking(trackedSessionId);
 
+  if ('mediaSession' in navigator) {
+    try {
+      // TypeScript's MediaSessionAction type lags behind the spec — cast required.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (navigator.mediaSession as any).setActionHandler('enterpictureinpicture', () => {
+        void openPiPIfEligibleAsync();
+      });
+    } catch {
+      // Browser doesn't support this action handler — PiP from visibilitychange won't work.
+    }
+  }
+
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('pageshow', handlePageShow);
 
@@ -152,8 +164,11 @@ async function openPiPIfEligibleAsync(): Promise<void> {
 
     attachPiPWindow(win);
   } catch (error) {
-    autoPiPDisabled = true;
-    log.info(() => `Mobile PiP unavailable: ${String(error)}`);
+    const name = error instanceof DOMException ? error.name : '';
+    if (name === 'NotSupportedError') {
+      autoPiPDisabled = true;
+    }
+    log.info(() => `Mobile PiP failed: ${String(error)}`);
   }
 }
 
