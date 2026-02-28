@@ -106,7 +106,14 @@ async function handleGo(): Promise<void> {
 export function loadPreview(): void {
   if (!iframe) return;
   loadedUrl = $webPreviewUrl.get();
-  iframe.src = `/webpreview/?${Date.now()}`;
+  let targetPath = '';
+  try {
+    const url = new URL(loadedUrl ?? '');
+    targetPath = url.pathname.replace(/\/$/, '');
+  } catch {
+    /* ignore invalid URLs */
+  }
+  iframe.src = `/webpreview${targetPath}/?${Date.now()}`;
 }
 
 async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {

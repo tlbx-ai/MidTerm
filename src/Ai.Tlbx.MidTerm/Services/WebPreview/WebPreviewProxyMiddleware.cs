@@ -1107,16 +1107,14 @@ public sealed partial class WebPreviewProxyMiddleware
             var proxyScheme = context.Request.IsHttps ? "https" : "http";
             var proxyBase = $"{proxyScheme}://{context.Request.Host}/webpreview";
             var upstreamRoot = $"{targetUri.Scheme}://{targetUri.Authority}";
-            var targetPath = targetUri.AbsolutePath.TrimEnd('/');
-            var upstreamBase = upstreamRoot + targetPath;
 
-            clientToUpstream = text => text.Replace(proxyBase, upstreamBase);
-            upstreamToClient = text => text.Replace(upstreamBase, proxyBase);
+            clientToUpstream = text => text.Replace(proxyBase, upstreamRoot);
+            upstreamToClient = text => text.Replace(upstreamRoot, proxyBase);
 
             var proxyBaseUtf8 = Encoding.UTF8.GetBytes(proxyBase);
-            var upstreamBaseUtf8 = Encoding.UTF8.GetBytes(upstreamBase);
-            binaryClientToUpstream = (data, len) => RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamBaseUtf8);
-            binaryUpstreamToClient = (data, len) => RewriteBinaryUrls(data, len, upstreamBaseUtf8, proxyBaseUtf8);
+            var upstreamRootUtf8 = Encoding.UTF8.GetBytes(upstreamRoot);
+            binaryClientToUpstream = (data, len) => RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamRootUtf8);
+            binaryUpstreamToClient = (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
@@ -1514,6 +1512,9 @@ public sealed partial class WebPreviewProxyMiddleware
         var normalized = string.IsNullOrEmpty(path) ? "/" : path;
         if (!normalized.StartsWith('/'))
             normalized = "/" + normalized;
+        var queryIdx = normalized.IndexOf('?');
+        if (queryIdx >= 0)
+            normalized = normalized[..queryIdx];
         if (normalized == "/")
             return null;
         var secondSlash = normalized.IndexOf('/', 1);
