@@ -45,17 +45,6 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             return u;
           }
-          // s(u): strip proxy prefix from a URL (inverse of r, for location spoofing)
-          function s(u){
-            if(typeof u!=="string")return u;
-            try{var h=new URL(u);
-              if(h.host===location.host&&h.pathname.startsWith(P+"/")){h.pathname=h.pathname.slice(P.length);return h.toString();}
-              if(h.host===location.host&&h.pathname.startsWith(P)){h.pathname=h.pathname.slice(P.length)||"/";return h.toString();}
-            }catch(e){}
-            if(u.startsWith(P+"/"))return u.slice(P.length);
-            if(u===P)return "/";
-            return u;
-          }
           // === Network APIs ===
           var F=window.fetch;
           window.fetch=function(u,o){
@@ -138,41 +127,6 @@ public sealed partial class WebPreviewProxyMiddleware
           var la=location.assign.bind(location),lr=location.replace.bind(location);
           location.assign=function(u){return la(r(u));};
           location.replace=function(u){return lr(r(u));};
-          try{var ld2=Object.getOwnPropertyDescriptor(window.Location.prototype,"href")||Object.getOwnPropertyDescriptor(location,"href");
-            if(ld2&&ld2.set){var lhs=ld2.set;Object.defineProperty(location,"href",{set:function(v){lhs.call(this,r(v));},get:function(){return s(ld2.get.call(this));},configurable:true,enumerable:true});}
-          }catch(e){}
-          // === Location spoofing: strip /webpreview from reads so apps see real paths ===
-          try{
-            var LP=window.Location.prototype;
-            ["pathname","search","hash"].forEach(function(prop){
-              var pd=Object.getOwnPropertyDescriptor(LP,prop);
-              if(pd&&pd.get){Object.defineProperty(location,prop,{get:function(){
-                var v=pd.get.call(this);
-                if(prop==="pathname"&&v.startsWith(P+"/"))return v.slice(P.length);
-                if(prop==="pathname"&&v===P)return "/";
-                return v;
-              },set:pd.set?function(v){pd.set.call(this,v);}:undefined,configurable:true,enumerable:true});}
-            });
-            var tsd=Object.getOwnPropertyDescriptor(LP,"toString")||{value:location.toString};
-            location.toString=function(){return s(tsd.value?tsd.value.call(location):LP.toString.call(location));};
-          }catch(e){}
-          // Spoof document.URL/documentURI/baseURI/referrer to hide proxy prefix
-          try{
-            var duRL=Object.getOwnPropertyDescriptor(Document.prototype,"URL");
-            if(duRL&&duRL.get){Object.defineProperty(document,"URL",{get:function(){return s(duRL.get.call(this));},configurable:true,enumerable:true});}
-            var ddURI=Object.getOwnPropertyDescriptor(Document.prototype,"documentURI");
-            if(ddURI&&ddURI.get){Object.defineProperty(document,"documentURI",{get:function(){return s(ddURI.get.call(this));},configurable:true,enumerable:true});}
-            var dRef=Object.getOwnPropertyDescriptor(Document.prototype,"referrer");
-            if(dRef&&dRef.get){Object.defineProperty(document,"referrer",{get:function(){return s(dRef.get.call(this));},configurable:true,enumerable:true});}
-            // document.baseURI — React Router, Vue Router, Angular all read this
-            var dbU=Object.getOwnPropertyDescriptor(Document.prototype,"baseURI")||Object.getOwnPropertyDescriptor(Node.prototype,"baseURI");
-            if(dbU&&dbU.get){Object.defineProperty(document,"baseURI",{get:function(){return s(dbU.get.call(this));},configurable:true,enumerable:true});}
-          }catch(e){}
-          // Spoof HTMLBaseElement.href getter — Angular reads base[href] element
-          try{
-            var bhd=Object.getOwnPropertyDescriptor(HTMLBaseElement.prototype,"href");
-            if(bhd&&bhd.get){Object.defineProperty(HTMLBaseElement.prototype,"href",{get:function(){return s(bhd.get.call(this));},set:bhd.set,configurable:true,enumerable:true});}
-          }catch(e){}
           // === Cookie bridge ===
           var C=P+"/_cookies",cc="";
           function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
@@ -1307,19 +1261,19 @@ public sealed partial class WebPreviewProxyMiddleware
             var proxyOrigin = $"{proxyScheme}://{context.Request.Host}";
             var upstreamRoot = $"{targetUri.Scheme}://{targetUri.Authority}";
 
-            // WebSocket URL rewriting must be consistent with the location spoofing
-            // injected into the page. JS sees URLs without /webpreview (spoofed away),
-            // so WebSocket messages must also use the bare proxy origin.
+            // WebSocket URL rewriting must be consistent with the page's URL space.
+            // The page lives under /webpreview/ (no read-side spoofing), so all URLs
+            // visible to JS include /webpreview. WebSocket messages must match.
             //
-            // Client→upstream: proxy origin → upstream (two-pass: longer /webpreview match first)
-            // Upstream→client: upstream → proxy origin (no /webpreview — JS spoofing handles routing)
+            // Client→upstream: strip proxy prefix (two-pass: longer /webpreview match first)
+            // Upstream→client: upstream → proxyBase (with /webpreview, consistent with page URLs)
             clientToUpstream = text =>
             {
                 text = text.Replace(proxyBase, upstreamRoot);
                 text = text.Replace(proxyOrigin, upstreamRoot);
                 return text;
             };
-            upstreamToClient = text => text.Replace(upstreamRoot, proxyOrigin);
+            upstreamToClient = text => text.Replace(upstreamRoot, proxyBase);
 
             var proxyBaseUtf8 = Encoding.UTF8.GetBytes(proxyBase);
             var proxyOriginUtf8 = Encoding.UTF8.GetBytes(proxyOrigin);
@@ -1348,8 +1302,8 @@ public sealed partial class WebPreviewProxyMiddleware
 
             binaryClientToUpstream = ClientToUpstreamBinary;
             binaryUpstreamToClient = isBlazorPack
-                ? (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyOriginUtf8)
-                : (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyOriginUtf8);
+                ? (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyBaseUtf8)
+                : (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);

@@ -457,6 +457,7 @@ MidTerm includes a reverse proxy for previewing local dev servers (or any websit
 - DOM snapshots saved to `<cwd>/.midterm/snapshot_*/` with CSS files downloaded locally
 - Screenshots via html2canvas (bundled to `/js/html2canvas.min.js`)
 - Per-session state: each terminal tracks its own URL and dock/detach mode via `webSessionState.ts`
+- **Before modifying any web preview proxy code, read `docs/devbrowser.md` first. After changes, update that document to reflect the new state.**
 
 ## Code Style (C#)
 
