@@ -367,9 +367,7 @@ public static class BrowserEndpoints
                 var html = result.Result;
                 await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
 
-                var gitignorePath = Path.Combine(midtermDir, ".gitignore");
-                if (!File.Exists(gitignorePath))
-                    await File.WriteAllTextAsync(gitignorePath, "snapshot_*/\nscreenshots/\n");
+                MtcliScriptWriter.EnsureGitignore(midtermDir);
 
                 return snapshotDir;
             }

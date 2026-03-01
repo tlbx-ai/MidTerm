@@ -181,9 +181,7 @@ public static partial class WebPreviewEndpoints
 
             await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
 
-            var gitignorePath = Path.Combine(midtermDir, ".gitignore");
-            if (!File.Exists(gitignorePath))
-                await File.WriteAllTextAsync(gitignorePath, "snapshot_*/\n");
+            MtcliScriptWriter.EnsureGitignore(midtermDir);
 
             AgentGuidanceWriter.WriteToCwd(cwd);
 
