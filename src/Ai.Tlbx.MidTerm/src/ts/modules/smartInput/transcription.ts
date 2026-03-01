@@ -1,48 +1,31 @@
 /**
  * Transcription Client
  *
- * Connects to MidTerm.Voice /transcribe WebSocket endpoint
- * for push-to-talk speech-to-text transcription.
+ * Records audio via webAudioAccess.js, then POSTs raw PCM16
+ * to the MidTerm.Voice /api/transcribe REST endpoint.
  */
 
 import { $voiceServerPassword } from '../../stores';
 import { createLogger } from '../logging';
 
 const log = createLogger('transcription');
+const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
 
-let ws: WebSocket | null = null;
-let onDeltaCallback: ((text: string) => void) | null = null;
+let audioChunks: ArrayBuffer[] = [];
+let isRecording = false;
 let onCompletedCallback: ((text: string) => void) | null = null;
-let audioFrameCount = 0;
-
-interface TranscriptionMessage {
-  type: string;
-  content?: string;
-  message?: string;
-}
 
 export function startTranscription(
-  onDelta: (text: string) => void,
+  _onDelta: (text: string) => void,
   onCompleted: (text: string) => void,
 ): void {
-  onDeltaCallback = onDelta;
   onCompletedCallback = onCompleted;
+  audioChunks = [];
+  isRecording = true;
 
-  let wsUrl = `wss://midterm.tlbx.ai/transcribe`;
-  const password = $voiceServerPassword.get();
-  if (password) {
-    wsUrl += `?password=${encodeURIComponent(password)}`;
-  }
+  log.info(() => 'Starting push-to-talk recording');
 
-  audioFrameCount = 0;
-  log.info(() => `Connecting to ${wsUrl}`);
-
-  ws = new WebSocket(wsUrl);
-
-  ws.onopen = async () => {
-    log.info(() => 'Connected, sending start');
-    ws?.send(JSON.stringify({ type: 'start' }));
-
+  void (async () => {
     if (window.initAudioWithUserInteraction) {
       await window.initAudioWithUserInteraction();
     }
@@ -50,11 +33,8 @@ export function startTranscription(
     if (window.startRecording) {
       const success = await window.startRecording(
         (base64Audio: string) => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            const bytes = base64ToArrayBuffer(base64Audio);
-            audioFrameCount++;
-            ws.send(bytes);
-          }
+          if (!isRecording) return;
+          audioChunks.push(base64ToArrayBuffer(base64Audio));
         },
         500,
         null,
@@ -63,55 +43,57 @@ export function startTranscription(
 
       if (!success) {
         log.error(() => 'Recording failed to start');
-        void stopTranscription();
+        isRecording = false;
       }
     }
-  };
-
-  ws.onmessage = (event: MessageEvent) => {
-    if (typeof event.data !== 'string') return;
-    try {
-      const msg = JSON.parse(event.data) as TranscriptionMessage;
-      switch (msg.type) {
-        case 'delta':
-          if (msg.content && onDeltaCallback) {
-            onDeltaCallback(msg.content);
-          }
-          break;
-        case 'completed':
-          if (msg.content && onCompletedCallback) {
-            onCompletedCallback(msg.content);
-          }
-          break;
-        case 'error':
-          log.error(() => `Transcription error: ${msg.message ?? 'unknown'}`);
-          break;
-      }
-    } catch {
-      log.warn(() => `Invalid JSON: ${event.data}`);
-    }
-  };
-
-  ws.onclose = () => {
-    log.info(() => `Disconnected (${audioFrameCount} frames sent)`);
-  };
-
-  ws.onerror = () => {
-    log.error(() => 'WebSocket error');
-  };
+  })();
 }
 
 export async function stopTranscription(): Promise<void> {
+  if (!isRecording) return;
+  isRecording = false;
+
   if (window.stopRecording) {
     await window.stopRecording();
   }
 
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'stop' }));
+  if (audioChunks.length === 0) {
+    log.warn(() => 'No audio frames captured');
+    return;
   }
 
-  onDeltaCallback = null;
-  onCompletedCallback = null;
+  const pcmData = concatenateBuffers(audioChunks);
+  audioChunks = [];
+
+  log.info(() => `Sending ${pcmData.byteLength} bytes for transcription`);
+
+  try {
+    const password = $voiceServerPassword.get();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/octet-stream',
+    };
+    if (password) {
+      headers['Authorization'] = `Bearer ${password}`;
+    }
+
+    const response = await fetch(`${VOICE_SERVER_URL}/api/transcribe`, {
+      method: 'POST',
+      headers,
+      body: pcmData,
+    });
+
+    if (!response.ok) {
+      log.error(() => `Transcription failed: ${String(response.status)}`);
+      return;
+    }
+
+    const result = (await response.json()) as { text?: string };
+    if (result.text && onCompletedCallback) {
+      onCompletedCallback(result.text);
+    }
+  } catch (e) {
+    log.error(() => `Transcription error: ${String(e)}`);
+  }
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -121,4 +103,15 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+function concatenateBuffers(buffers: ArrayBuffer[]): ArrayBuffer {
+  const totalLength = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const buf of buffers) {
+    result.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+  return result.buffer;
 }
