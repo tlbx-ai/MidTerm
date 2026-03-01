@@ -74,11 +74,11 @@ export function initMobilePiP(): void {
 
   if ('mediaSession' in navigator) {
     try {
-      // TypeScript's MediaSessionAction type lags behind the spec — cast required.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       (navigator.mediaSession as any).setActionHandler('enterpictureinpicture', () => {
         void openPiPIfEligibleAsync();
       });
+      /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
     } catch {
       // Browser doesn't support this action handler — PiP from visibilitychange won't work.
     }

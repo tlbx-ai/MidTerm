@@ -722,10 +722,14 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
 
+  /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any */
+  // xterm-link-provider references the old 'xterm' package types; cast required
+  const term = terminal as any;
+
   // 1. Folder paths — least specific (e.g., docs/, src\components\)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       FOLDER_PATH_PATTERN,
       (_event, folderPath) => {
         void handleFolderPathClick(folderPath);
@@ -762,7 +766,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 2. Known extensionless files (e.g., Dockerfile, .gitignore, LICENSE)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       KNOWN_FILE_PATTERN,
       (_event, relativePath) => {
         void handleRelativePathClick(relativePath);
@@ -790,7 +794,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 3. Relative paths with extensions (e.g., src/main.ts, foo.jpg)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       RELATIVE_PATH_PATTERN,
       (_event, relativePath) => {
         void handleRelativePathClick(relativePath);
@@ -822,7 +826,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 4. Quoted absolute paths (e.g., "C:\Program Files\Git\bin\bash.exe")
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       QUOTED_ABSOLUTE_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);
@@ -838,7 +842,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 5. Windows UNC absolute paths (e.g., \\server\share\file.txt)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       UNC_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);
@@ -854,7 +858,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 6. Windows absolute paths (e.g., C:\Users\file.txt)
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       WIN_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);
@@ -870,7 +874,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
   // 7. Unix absolute paths — most specific, highest priority
   terminal.registerLinkProvider(
     new LinkProvider(
-      terminal,
+      term,
       UNIX_PATH_PATTERN,
       (_event, path) => {
         void handlePathClick(path);
@@ -882,6 +886,8 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       } as unknown as Record<string, unknown>,
     ),
   );
+
+  /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any */
 
   log.verbose(() => `Registered file link provider`);
 }
