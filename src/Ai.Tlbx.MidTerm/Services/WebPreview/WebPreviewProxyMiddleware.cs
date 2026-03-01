@@ -1307,19 +1307,19 @@ public sealed partial class WebPreviewProxyMiddleware
             var proxyOrigin = $"{proxyScheme}://{context.Request.Host}";
             var upstreamRoot = $"{targetUri.Scheme}://{targetUri.Authority}";
 
-            // Client→upstream: replace URLs with /webpreview prefix first (longer match),
-            // then bare proxy origin. The bare origin catch is needed because location
-            // spoofing strips /webpreview from JS-visible URLs, so frameworks like Blazor
-            // send the proxy host without the prefix in circuit init messages.
+            // WebSocket URL rewriting must be consistent with the location spoofing
+            // injected into the page. JS sees URLs without /webpreview (spoofed away),
+            // so WebSocket messages must also use the bare proxy origin.
+            //
+            // Client→upstream: proxy origin → upstream (two-pass: longer /webpreview match first)
+            // Upstream→client: upstream → proxy origin (no /webpreview — JS spoofing handles routing)
             clientToUpstream = text =>
             {
                 text = text.Replace(proxyBase, upstreamRoot);
                 text = text.Replace(proxyOrigin, upstreamRoot);
                 return text;
             };
-            // Upstream→client: replace upstream origin with proxy base (includes /webpreview)
-            // so all URLs route through the proxy. Location spoofing strips the prefix on read.
-            upstreamToClient = text => text.Replace(upstreamRoot, proxyBase);
+            upstreamToClient = text => text.Replace(upstreamRoot, proxyOrigin);
 
             var proxyBaseUtf8 = Encoding.UTF8.GetBytes(proxyBase);
             var proxyOriginUtf8 = Encoding.UTF8.GetBytes(proxyOrigin);
@@ -1348,8 +1348,8 @@ public sealed partial class WebPreviewProxyMiddleware
 
             binaryClientToUpstream = ClientToUpstreamBinary;
             binaryUpstreamToClient = isBlazorPack
-                ? (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyBaseUtf8)
-                : (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
+                ? (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyOriginUtf8)
+                : (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyOriginUtf8);
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
