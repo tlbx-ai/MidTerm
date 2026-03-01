@@ -1311,8 +1311,21 @@ public sealed partial class WebPreviewProxyMiddleware
 
             var proxyBaseUtf8 = Encoding.UTF8.GetBytes(proxyBase);
             var upstreamRootUtf8 = Encoding.UTF8.GetBytes(upstreamRoot);
-            binaryClientToUpstream = (data, len) => RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamRootUtf8);
-            binaryUpstreamToClient = (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
+
+            // SignalR's blazorpack protocol wraps each MessagePack message with a VarInt
+            // length prefix. URL rewriting changes the payload size, so we must re-encode
+            // the VarInt after rewriting. Non-blazorpack binary frames use raw byte matching.
+            var isBlazorPack = acceptProtocol?.Equals("blazorpack", StringComparison.OrdinalIgnoreCase) == true;
+            if (isBlazorPack)
+            {
+                binaryClientToUpstream = (data, len) => RewriteSignalRBinaryFrame(data, len, proxyBaseUtf8, upstreamRootUtf8);
+                binaryUpstreamToClient = (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyBaseUtf8);
+            }
+            else
+            {
+                binaryClientToUpstream = (data, len) => RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamRootUtf8);
+                binaryUpstreamToClient = (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
+            }
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
@@ -1552,6 +1565,99 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Rewrites URLs in a SignalR binary frame that uses VarInt length-prefixed messages.
+    /// Each message in the frame is: [VarInt: payload_length][MessagePack payload].
+    /// After rewriting URLs in each payload, the VarInt prefix is re-encoded with the
+    /// new payload size to maintain correct framing.
+    /// </summary>
+    internal static byte[]? RewriteSignalRBinaryFrame(byte[] data, int length, byte[] fromUtf8, byte[] toUtf8)
+    {
+        if (fromUtf8.Length == 0 || length < fromUtf8.Length + 1)
+            return null;
+
+        using var output = new MemoryStream(length + 64);
+        var offset = 0;
+        var anyRewritten = false;
+
+        while (offset < length)
+        {
+            if (!TryReadVarInt(data, offset, length, out var payloadLen, out var prefixLen))
+                break;
+
+            var payloadStart = offset + prefixLen;
+            var payloadEnd = payloadStart + payloadLen;
+            if (payloadEnd > length)
+                break;
+
+            var rewritten = RewriteBinaryUrls(data, payloadStart, payloadLen, fromUtf8, toUtf8);
+            if (rewritten is not null)
+            {
+                anyRewritten = true;
+                WriteVarInt(output, rewritten.Length);
+                output.Write(rewritten);
+            }
+            else
+            {
+                output.Write(data, offset, payloadEnd - offset);
+            }
+
+            offset = payloadEnd;
+        }
+
+        if (!anyRewritten)
+            return null;
+
+        if (offset < length)
+            output.Write(data, offset, length - offset);
+
+        return output.ToArray();
+    }
+
+    /// <summary>
+    /// Overload that rewrites URLs starting at an offset within the data array.
+    /// Used by <see cref="RewriteSignalRBinaryFrame"/> to process individual message payloads.
+    /// </summary>
+    internal static byte[]? RewriteBinaryUrls(byte[] data, int offset, int length, byte[] fromUtf8, byte[] toUtf8)
+    {
+        if (offset == 0)
+            return RewriteBinaryUrls(data, length, fromUtf8, toUtf8);
+
+        var slice = new byte[length];
+        Buffer.BlockCopy(data, offset, slice, 0, length);
+        return RewriteBinaryUrls(slice, length, fromUtf8, toUtf8);
+    }
+
+    private static bool TryReadVarInt(byte[] data, int offset, int length, out int value, out int bytesRead)
+    {
+        value = 0;
+        bytesRead = 0;
+        while (offset + bytesRead < length)
+        {
+            var b = data[offset + bytesRead];
+            value |= (b & 0x7f) << (bytesRead * 7);
+            bytesRead++;
+            if ((b & 0x80) == 0)
+                return true;
+            if (bytesRead >= 5)
+                return false;
+        }
+        return false;
+    }
+
+    private static void WriteVarInt(MemoryStream ms, int value)
+    {
+        var unsigned = (uint)value;
+        do
+        {
+            var b = (byte)(unsigned & 0x7f);
+            unsigned >>= 7;
+            if (unsigned > 0)
+                b |= 0x80;
+            ms.WriteByte(b);
+        } while (unsigned > 0);
     }
 
     private static async Task CloseWebSocketSafe(WebSocket ws)

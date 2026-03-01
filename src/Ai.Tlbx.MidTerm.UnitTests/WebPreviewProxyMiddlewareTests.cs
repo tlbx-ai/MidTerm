@@ -262,4 +262,147 @@ public class WebPreviewProxyMiddlewareTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public void RewriteSignalRBinaryFrame_AdjustsVarIntPrefix()
+    {
+        var fromUrl = "https://localhost:2000/webpreview";
+        var toUrl = "https://webapp.windor.mediathek.aturis.org";
+        var fromUtf8 = Encoding.UTF8.GetBytes(fromUrl);
+        var toUtf8 = Encoding.UTF8.GetBytes(toUrl);
+
+        var fullString = fromUrl + "/page";
+        var strBytes = Encoding.UTF8.GetBytes(fullString);
+
+        // Build MessagePack payload: [str8 header][string content]
+        var payload = new byte[2 + strBytes.Length];
+        payload[0] = 0xd9;
+        payload[1] = (byte)strBytes.Length;
+        strBytes.CopyTo(payload, 2);
+
+        // Build SignalR binary frame: [VarInt: payload.Length][payload]
+        var frame = new byte[1 + payload.Length]; // VarInt fits in 1 byte for small payloads
+        frame[0] = (byte)payload.Length;
+        payload.CopyTo(frame, 1);
+
+        var result = WebPreviewProxyMiddleware.RewriteSignalRBinaryFrame(
+            frame, frame.Length, fromUtf8, toUtf8);
+
+        Assert.NotNull(result);
+
+        // Parse the result: first byte should be VarInt with new payload length
+        var expectedString = toUrl + "/page";
+        var expectedStrBytes = Encoding.UTF8.GetBytes(expectedString);
+        var expectedPayloadLen = 2 + expectedStrBytes.Length; // str8 header + content
+
+        // VarInt should match new payload length
+        Assert.Equal((byte)expectedPayloadLen, result[0]);
+
+        // Verify the MessagePack string was rewritten
+        var resultContent = Encoding.UTF8.GetString(result, 3, expectedStrBytes.Length); // skip VarInt(1) + str8 header(2)
+        Assert.Equal(expectedString, resultContent);
+    }
+
+    [Fact]
+    public void RewriteSignalRBinaryFrame_MultipleMessages_AllRewritten()
+    {
+        var fromUrl = "http://a.co";
+        var toUrl = "http://b.co";
+        var fromUtf8 = Encoding.UTF8.GetBytes(fromUrl);
+        var toUtf8 = Encoding.UTF8.GetBytes(toUrl);
+
+        // Build two SignalR messages, each with a URL string
+        using var ms = new System.IO.MemoryStream();
+        for (var i = 0; i < 2; i++)
+        {
+            var strBytes = Encoding.UTF8.GetBytes(fromUrl);
+            var payload = new byte[2 + strBytes.Length]; // str8 header + content
+            payload[0] = 0xd9;
+            payload[1] = (byte)strBytes.Length;
+            strBytes.CopyTo(payload, 2);
+
+            ms.WriteByte((byte)payload.Length); // VarInt prefix
+            ms.Write(payload);
+        }
+
+        var frame = ms.ToArray();
+        var result = WebPreviewProxyMiddleware.RewriteSignalRBinaryFrame(
+            frame, frame.Length, fromUtf8, toUtf8);
+
+        Assert.NotNull(result);
+
+        // Both URLs should be rewritten
+        var resultStr = Encoding.UTF8.GetString(result);
+        Assert.DoesNotContain(fromUrl, resultStr);
+        // Count occurrences of toUrl
+        var count = 0;
+        var idx = 0;
+        while ((idx = resultStr.IndexOf(toUrl, idx, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            idx += toUrl.Length;
+        }
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public void RewriteSignalRBinaryFrame_NoMatch_ReturnsNull()
+    {
+        var fromUtf8 = Encoding.UTF8.GetBytes("https://localhost:2000/webpreview");
+        var toUtf8 = Encoding.UTF8.GetBytes("https://upstream.example.com");
+
+        // Build a SignalR message with no URL content
+        var payload = new byte[] { 0xa5, 0x68, 0x65, 0x6c, 0x6c, 0x6f }; // fixstr "hello"
+        var frame = new byte[1 + payload.Length];
+        frame[0] = (byte)payload.Length;
+        payload.CopyTo(frame, 1);
+
+        var result = WebPreviewProxyMiddleware.RewriteSignalRBinaryFrame(
+            frame, frame.Length, fromUtf8, toUtf8);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void RewriteSignalRBinaryFrame_LargerVarInt_HandledCorrectly()
+    {
+        var fromUrl = "https://localhost:2000/webpreview";
+        var toUrl = "https://upstream.example.com";
+        var fromUtf8 = Encoding.UTF8.GetBytes(fromUrl);
+        var toUtf8 = Encoding.UTF8.GetBytes(toUrl);
+
+        // Build a payload > 127 bytes so VarInt needs 2 bytes
+        var urlStr = fromUrl + "/" + new string('x', 100);
+        var strBytes = Encoding.UTF8.GetBytes(urlStr);
+
+        // Use str16 header for the long string
+        var payload = new byte[3 + strBytes.Length];
+        payload[0] = 0xda; // str16
+        payload[1] = (byte)(strBytes.Length >> 8);
+        payload[2] = (byte)(strBytes.Length & 0xff);
+        strBytes.CopyTo(payload, 3);
+
+        // VarInt encoding for payload.Length (> 127)
+        using var frameMs = new System.IO.MemoryStream();
+        var len = (uint)payload.Length;
+        do
+        {
+            var b = (byte)(len & 0x7f);
+            len >>= 7;
+            if (len > 0) b |= 0x80;
+            frameMs.WriteByte(b);
+        } while (len > 0);
+        frameMs.Write(payload);
+
+        var frame = frameMs.ToArray();
+        var result = WebPreviewProxyMiddleware.RewriteSignalRBinaryFrame(
+            frame, frame.Length, fromUtf8, toUtf8);
+
+        Assert.NotNull(result);
+
+        // Verify the URL was rewritten
+        var resultStr = Encoding.UTF8.GetString(result);
+        Assert.DoesNotContain(fromUrl, resultStr);
+        Assert.Contains(toUrl, resultStr);
+    }
 }
