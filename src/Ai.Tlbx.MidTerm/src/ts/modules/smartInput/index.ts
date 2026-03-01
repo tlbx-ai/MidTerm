@@ -6,5 +6,11 @@
  * terminal unfocused while providing a text input + mic button.
  */
 
-export { initSmartInput, showSmartInput, hideSmartInput, isSmartInputMode } from './smartInput';
+export {
+  initSmartInput,
+  showSmartInput,
+  hideSmartInput,
+  isSmartInputMode,
+  isBothMode,
+} from './smartInput';
 export { startTranscription, stopTranscription } from './transcription';

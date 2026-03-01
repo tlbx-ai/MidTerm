@@ -5725,6 +5725,21 @@ html, body {
     color: #000;
 }
 
+/* Docked Smart Input - sits in flex flow after manager bar, steals vertical space from terminal */
+.smart-input-docked {
+    display: none;
+    flex-shrink: 0;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--bg-secondary, #1e1e1e);
+    border-top: 1px solid var(--border-color, #444);
+}
+
+.smart-input-docked.visible {
+    display: flex;
+}
+
 /* ==========================================================================
    Touch Controller Bar (Mobile)
    ========================================================================== */

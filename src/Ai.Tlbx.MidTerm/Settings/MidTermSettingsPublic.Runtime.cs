@@ -72,7 +72,7 @@ public sealed partial class MidTermSettingsPublic
         settings.RightClickPaste = RightClickPaste;
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.ScrollbackProtection = ScrollbackProtection;
-        if (InputMode is "keyboard" or "smartinput")
+        if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
         settings.TmuxCompatibility = TmuxCompatibility;
