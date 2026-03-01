@@ -1304,28 +1304,52 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var proxyScheme = context.Request.IsHttps ? "https" : "http";
             var proxyBase = $"{proxyScheme}://{context.Request.Host}/webpreview";
+            var proxyOrigin = $"{proxyScheme}://{context.Request.Host}";
             var upstreamRoot = $"{targetUri.Scheme}://{targetUri.Authority}";
 
-            clientToUpstream = text => text.Replace(proxyBase, upstreamRoot);
+            // Client→upstream: replace URLs with /webpreview prefix first (longer match),
+            // then bare proxy origin. The bare origin catch is needed because location
+            // spoofing strips /webpreview from JS-visible URLs, so frameworks like Blazor
+            // send the proxy host without the prefix in circuit init messages.
+            clientToUpstream = text =>
+            {
+                text = text.Replace(proxyBase, upstreamRoot);
+                text = text.Replace(proxyOrigin, upstreamRoot);
+                return text;
+            };
+            // Upstream→client: replace upstream origin with proxy base (includes /webpreview)
+            // so all URLs route through the proxy. Location spoofing strips the prefix on read.
             upstreamToClient = text => text.Replace(upstreamRoot, proxyBase);
 
             var proxyBaseUtf8 = Encoding.UTF8.GetBytes(proxyBase);
+            var proxyOriginUtf8 = Encoding.UTF8.GetBytes(proxyOrigin);
             var upstreamRootUtf8 = Encoding.UTF8.GetBytes(upstreamRoot);
 
             // SignalR's blazorpack protocol wraps each MessagePack message with a VarInt
             // length prefix. URL rewriting changes the payload size, so we must re-encode
             // the VarInt after rewriting. Non-blazorpack binary frames use raw byte matching.
             var isBlazorPack = acceptProtocol?.Equals("blazorpack", StringComparison.OrdinalIgnoreCase) == true;
-            if (isBlazorPack)
+
+            // Client→upstream binary: two-pass rewrite (longer match first, then bare origin)
+            byte[]? ClientToUpstreamBinary(byte[] data, int len)
             {
-                binaryClientToUpstream = (data, len) => RewriteSignalRBinaryFrame(data, len, proxyBaseUtf8, upstreamRootUtf8);
-                binaryUpstreamToClient = (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyBaseUtf8);
+                var result = isBlazorPack
+                    ? RewriteSignalRBinaryFrame(data, len, proxyBaseUtf8, upstreamRootUtf8)
+                    : RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamRootUtf8);
+
+                if (result is not null) { data = result; len = result.Length; }
+
+                var result2 = isBlazorPack
+                    ? RewriteSignalRBinaryFrame(data, len, proxyOriginUtf8, upstreamRootUtf8)
+                    : RewriteBinaryUrls(data, len, proxyOriginUtf8, upstreamRootUtf8);
+
+                return result2 ?? result;
             }
-            else
-            {
-                binaryClientToUpstream = (data, len) => RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamRootUtf8);
-                binaryUpstreamToClient = (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
-            }
+
+            binaryClientToUpstream = ClientToUpstreamBinary;
+            binaryUpstreamToClient = isBlazorPack
+                ? (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyBaseUtf8)
+                : (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
