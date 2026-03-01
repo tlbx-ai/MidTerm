@@ -525,6 +525,20 @@ public static class EndpointSetup
             return Results.Ok("Server is restarting...");
         });
 
+        // POST /api/shutdown - graceful shutdown without respawn (loopback only, no auth required)
+        app.MapPost("/api/shutdown", () =>
+        {
+            Log.Info(() => "Server shutdown requested via API");
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(500);
+                Environment.Exit(0);
+            });
+
+            return Results.Ok("Server is shutting down...");
+        });
+
         app.MapGet("/api/networks", () =>
         {
             var interfaces = NetworkInterfaceFilter.GetNetworkInterfaces();

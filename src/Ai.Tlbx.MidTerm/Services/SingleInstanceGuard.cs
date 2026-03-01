@@ -11,8 +11,13 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// </summary>
 public sealed class SingleInstanceGuard : IDisposable
 {
+#if DEBUG
+    private const string MutexName = "Global\\MidTermDev";
+    private const string PidFileName = "midterm-dev.pid";
+#else
     private const string MutexName = "Global\\MidTerm";
     private const string PidFileName = "midterm.pid";
+#endif
 
 #if WINDOWS
     private Mutex? _mutex;

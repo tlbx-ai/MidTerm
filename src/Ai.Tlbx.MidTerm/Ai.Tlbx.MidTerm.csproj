@@ -148,7 +148,8 @@
 
   <!-- Embedded resources - static ItemGroups evaluated at project load -->
   <!-- Debug: embed all wwwroot (uncompressed text + binary) -->
-  <ItemGroup Condition="'$(IsPublishing)' != 'true'">
+  <!-- DevWatch=true skips embedding — debug serves from disk via PhysicalFileProvider -->
+  <ItemGroup Condition="'$(IsPublishing)' != 'true' And '$(DevWatch)' != 'true'">
     <EmbeddedResource Include="wwwroot\**\*" />
   </ItemGroup>
 
