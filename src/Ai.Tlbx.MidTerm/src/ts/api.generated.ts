@@ -1936,6 +1936,7 @@ export interface components {
       rightClickPaste: boolean;
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       scrollbackProtection: boolean;
+      inputMode: string;
       fileRadar: boolean;
       tmuxCompatibility: boolean;
       ideMode: boolean;

@@ -173,6 +173,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-scrollbar-style', settings.scrollbarStyle);
   setElementChecked('setting-webgl', settings.useWebGL);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection);
+  setElementValue('setting-input-mode', settings.inputMode);
   setElementChecked('setting-file-radar', settings.fileRadar);
   setElementChecked('setting-manager-bar', settings.managerBarEnabled);
   setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility);
@@ -334,6 +335,7 @@ export function saveAllSettings(): void {
       'auto',
     ) as ClipboardShortcutsSetting,
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
+    inputMode: getElementValue('setting-input-mode', 'keyboard'),
     fileRadar: getElementChecked('setting-file-radar'),
     managerBarEnabled: getElementChecked('setting-manager-bar'),
     managerBarButtons: prevSettings?.managerBarButtons ?? [],

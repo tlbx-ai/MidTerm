@@ -46,6 +46,9 @@ public sealed class MidTermSettings
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public bool ScrollbackProtection { get; set; } = false;
 
+    // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)
+    public string InputMode { get; set; } = "keyboard";
+
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
 

@@ -15,10 +15,12 @@ import {
   teardownPointerDetection,
 } from './detection';
 import { rescaleAllTerminals } from '../terminal/scaling';
+import { $currentSettings } from '../../stores';
 
 let controllerElement: HTMLElement | null = null;
 let isInitialized = false;
 let userDismissed = false;
+let unsubscribeSettings: (() => void) | null = null;
 
 /**
  * Initialize the touch controller bar
@@ -42,6 +44,15 @@ export function initTouchController(): void {
 
   window.addEventListener('resize', handleResize);
 
+  unsubscribeSettings = $currentSettings.subscribe((settings) => {
+    if (!settings) return;
+    if (settings.inputMode === 'smartinput') {
+      hideTouchController();
+    } else {
+      updateVisibility();
+    }
+  });
+
   const kbObserver = new MutationObserver(() => {
     if (document.body.classList.contains('keyboard-visible')) {
       closePopup();
@@ -63,6 +74,10 @@ export function destroyTouchController(): void {
   closePopup();
   teardownPointerDetection();
   window.removeEventListener('resize', handleResize);
+  if (unsubscribeSettings) {
+    unsubscribeSettings();
+    unsubscribeSettings = null;
+  }
 
   if (controllerElement) {
     controllerElement.classList.remove(CSS_CLASSES.visible);
@@ -99,6 +114,10 @@ export function hideTouchController(): void {
  */
 export function updateVisibility(): void {
   if (userDismissed) return;
+  if ($currentSettings.get()?.inputMode === 'smartinput') {
+    hideTouchController();
+    return;
+  }
   if (shouldShowTouchController()) {
     showTouchController();
   } else {

@@ -19,6 +19,7 @@ import {
   fitTerminalToContainer,
   fitSessionToScreen,
 } from '../terminal/scaling';
+import { isSmartInputMode, showSmartInput } from '../smartInput';
 
 let layoutRoot: HTMLElement | null = null;
 let unsubscribeLayout: (() => void) | null = null;
@@ -264,10 +265,13 @@ function updateFocusIndicator(focusedId: string | null): void {
     if (sessionId === focusedId) {
       pane.classList.add('focused');
 
-      // Focus the terminal
-      const state = sessionTerminals.get(sessionId);
-      if (state?.terminal && state.opened) {
-        state.terminal.focus();
+      if (isSmartInputMode()) {
+        showSmartInput();
+      } else {
+        const state = sessionTerminals.get(sessionId);
+        if (state?.terminal && state.opened) {
+          state.terminal.focus();
+        }
       }
     }
   });

@@ -5638,6 +5638,94 @@ html, body {
 
 
 /* ==========================================================================
+   Smart Input Overlay
+   ========================================================================== */
+
+.smart-input-overlay {
+    display: none;
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 50;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 8px;
+    background: var(--bg-secondary, #1e1e1e);
+    border: 1px solid var(--border-color, #444);
+    border-radius: 12px;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.smart-input-overlay.visible {
+    display: flex;
+}
+
+.smart-input-textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    background: var(--bg-primary, #2d2d2d);
+    color: var(--text-color, #e0e0e0);
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.4;
+    max-height: calc(1.4em * 3 + 16px);
+    overflow-y: auto;
+    outline: none;
+}
+
+.smart-input-textarea:focus {
+    border-color: var(--accent-color, #4fc3f7);
+}
+
+.smart-input-textarea::placeholder {
+    color: var(--text-muted, #888);
+}
+
+.smart-input-mic-btn,
+.smart-input-send-btn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bg-tertiary, #333);
+    color: var(--text-color, #e0e0e0);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.smart-input-mic-btn:active,
+.smart-input-send-btn:active {
+    background: var(--accent-color, #4fc3f7);
+    color: #000;
+}
+
+.smart-input-mic-btn.recording {
+    background: #e53935;
+    color: #fff;
+    animation: mic-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(229, 57, 53, 0); }
+}
+
+.smart-input-send-btn {
+    background: var(--accent-color, #4fc3f7);
+    color: #000;
+}
+
+/* ==========================================================================
    Touch Controller Bar (Mobile)
    ========================================================================== */
 

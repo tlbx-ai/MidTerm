@@ -2078,6 +2078,7 @@
           "rightClickPaste",
           "clipboardShortcuts",
           "scrollbackProtection",
+          "inputMode",
           "fileRadar",
           "tmuxCompatibility",
           "ideMode",
@@ -2172,6 +2173,9 @@
           },
           "scrollbackProtection": {
             "type": "boolean"
+          },
+          "inputMode": {
+            "type": "string"
           },
           "fileRadar": {
             "type": "boolean"

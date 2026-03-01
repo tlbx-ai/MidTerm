@@ -56,6 +56,7 @@ import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { getEffectiveTerminalFontSize } from './fontSize';
 import { getForegroundInfo } from '../process';
+import { isSmartInputMode, showSmartInput } from '../smartInput';
 
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -96,6 +97,11 @@ export function refreshCursorBlink(terminal: Terminal): void {
 export function focusActiveTerminal(): void {
   if (isSearchVisible()) return;
   if (hasNonTerminalFocus()) return;
+
+  if (isSmartInputMode()) {
+    showSmartInput();
+    return;
+  }
 
   if (focusDebounceTimer !== null) {
     window.clearTimeout(focusDebounceTimer);
