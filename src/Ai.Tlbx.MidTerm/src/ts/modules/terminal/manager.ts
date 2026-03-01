@@ -287,6 +287,17 @@ export function createTerminalForSession(
 
     state.opened = true;
 
+    // Intercept xterm's internal textarea focus when Smart Input is active
+    const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
+    if (xtermTextarea) {
+      xtermTextarea.addEventListener('focus', () => {
+        if (isSmartInputMode()) {
+          (xtermTextarea as HTMLTextAreaElement).blur();
+          showSmartInput();
+        }
+      });
+    }
+
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
     // Other event handlers are set up later in setupTerminalEvents
     state.earlyDataDisposable = terminal.onData((data: string) => {
