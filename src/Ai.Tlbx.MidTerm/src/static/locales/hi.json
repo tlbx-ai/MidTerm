@@ -395,5 +395,6 @@
   "dialog.confirm": "पुष्टि करें",
   "dialog.info": "जानकारी",
   "dialog.ok": "ठीक है",
-  "dialog.cancel": "रद्द करें"
+  "dialog.cancel": "रद्द करें",
+  "smartInput.autoSend": "स्वतः भेजें"
 }

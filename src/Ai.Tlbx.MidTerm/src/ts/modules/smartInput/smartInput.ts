@@ -2,20 +2,25 @@
  * Smart Input UI
  *
  * Creates and manages a text input bar for terminal sessions.
- * Two modes:
+ * Three modes:
+ * - "keyboard": no smart input bar (default)
  * - "smartinput": floating overlay that replaces terminal keyboard focus (mobile)
  * - "both": docked bar below manager bar, terminal keeps keyboard focus (desktop)
  *
- * Text typed in the input is sent to the active terminal session via the mux channel.
+ * Right Ctrl push-to-talk: hold to record, release to transcribe.
+ * Auto-send checkbox: when checked, transcribed text is sent immediately.
  */
 
 import { $currentSettings, $activeSessionId } from '../../stores';
 import { sendInput } from '../comms';
+import { t } from '../i18n';
 import { startTranscription, stopTranscription } from './transcription';
 
 let overlay: HTMLDivElement | null = null;
 let dockedBar: HTMLDivElement | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
+let activeMicBtn: HTMLButtonElement | null = null;
+let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
 let isRecording = false;
 
 export function isSmartInputMode(): boolean {
@@ -25,6 +30,11 @@ export function isSmartInputMode(): boolean {
 
 export function isBothMode(): boolean {
   return $currentSettings.get()?.inputMode === 'both';
+}
+
+function hasSmartInput(): boolean {
+  const mode = $currentSettings.get()?.inputMode;
+  return mode === 'smartinput' || mode === 'both';
 }
 
 export function initSmartInput(): void {
@@ -44,12 +54,28 @@ export function initSmartInput(): void {
       hideDockedBar();
     }
   });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'ControlRight') return;
+    if (!hasSmartInput()) return;
+    if (isRecording) return;
+    e.preventDefault();
+    beginRecording();
+  });
+
+  document.addEventListener('keyup', (e) => {
+    if (e.code !== 'ControlRight') return;
+    if (!isRecording) return;
+    e.preventDefault();
+    endRecording();
+  });
 }
 
 export function showSmartInput(): void {
   if (!overlay) createOverlayDOM();
   overlay?.classList.add('visible');
   activeTextarea = overlay?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
+  activeMicBtn = overlay?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
   activeTextarea?.focus();
 }
 
@@ -61,6 +87,7 @@ function showDockedBar(): void {
   if (!dockedBar) createDockedDOM();
   dockedBar?.classList.add('visible');
   activeTextarea = dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
+  activeMicBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
 }
 
 function hideDockedBar(): void {
@@ -69,6 +96,7 @@ function hideDockedBar(): void {
 
 function createInputElements(): {
   micBtn: HTMLButtonElement;
+  autoSendLabel: HTMLLabelElement;
   textarea: HTMLTextAreaElement;
   sendBtn: HTMLButtonElement;
 } {
@@ -76,7 +104,22 @@ function createInputElements(): {
   micBtn.className = 'smart-input-mic-btn';
   micBtn.innerHTML =
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
-  micBtn.title = 'Push to talk';
+  micBtn.title = 'Push to talk (Right Ctrl)';
+
+  const autoSendLabel = document.createElement('label');
+  autoSendLabel.className = 'smart-input-autosend';
+  const autoSendCheckbox = document.createElement('input');
+  autoSendCheckbox.type = 'checkbox';
+  autoSendCheckbox.checked = autoSendEnabled;
+  const autoSendText = document.createElement('span');
+  autoSendText.textContent = t('smartInput.autoSend');
+  autoSendLabel.appendChild(autoSendCheckbox);
+  autoSendLabel.appendChild(autoSendText);
+
+  autoSendCheckbox.addEventListener('change', () => {
+    autoSendEnabled = autoSendCheckbox.checked;
+    localStorage.setItem('smartinput-autosend', String(autoSendEnabled));
+  });
 
   const textarea = document.createElement('textarea');
   textarea.className = 'smart-input-textarea';
@@ -108,32 +151,33 @@ function createInputElements(): {
     sendText(textarea);
   });
 
-  // Push-to-talk mic button
+  // Push-to-talk mic button (touch/mouse)
   micBtn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    startMicRecording(micBtn, textarea);
+    beginRecording();
   });
 
   micBtn.addEventListener('pointerup', () => {
-    stopMicRecording(micBtn);
+    endRecording();
   });
 
   micBtn.addEventListener('pointerleave', () => {
     if (isRecording) {
-      stopMicRecording(micBtn);
+      endRecording();
     }
   });
 
-  return { micBtn, textarea, sendBtn };
+  return { micBtn, autoSendLabel, textarea, sendBtn };
 }
 
 function createOverlayDOM(): void {
   overlay = document.createElement('div');
   overlay.className = 'smart-input-overlay';
 
-  const { micBtn, textarea, sendBtn } = createInputElements();
+  const { micBtn, autoSendLabel, textarea, sendBtn } = createInputElements();
 
   overlay.appendChild(micBtn);
+  overlay.appendChild(autoSendLabel);
   overlay.appendChild(textarea);
   overlay.appendChild(sendBtn);
 
@@ -149,9 +193,10 @@ function createDockedDOM(): void {
   dockedBar = document.createElement('div');
   dockedBar.className = 'smart-input-docked';
 
-  const { micBtn, textarea, sendBtn } = createInputElements();
+  const { micBtn, autoSendLabel, textarea, sendBtn } = createInputElements();
 
   dockedBar.appendChild(micBtn);
+  dockedBar.appendChild(autoSendLabel);
   dockedBar.appendChild(textarea);
   dockedBar.appendChild(sendBtn);
 
@@ -180,11 +225,13 @@ function sendText(ta: HTMLTextAreaElement): void {
   ta.focus();
 }
 
-function startMicRecording(btn: HTMLButtonElement, ta: HTMLTextAreaElement): void {
+function beginRecording(): void {
   if (isRecording) return;
+  if (!activeTextarea) return;
   isRecording = true;
-  btn.classList.add('recording');
+  activeMicBtn?.classList.add('recording');
 
+  const ta = activeTextarea;
   startTranscription(
     (delta) => {
       ta.value += delta;
@@ -194,14 +241,17 @@ function startMicRecording(btn: HTMLButtonElement, ta: HTMLTextAreaElement): voi
       if (completed) {
         ta.value = completed;
         ta.dispatchEvent(new Event('input'));
+        if (autoSendEnabled) {
+          sendText(ta);
+        }
       }
     },
   );
 }
 
-function stopMicRecording(btn: HTMLButtonElement): void {
+function endRecording(): void {
   if (!isRecording) return;
   isRecording = false;
-  btn.classList.remove('recording');
+  activeMicBtn?.classList.remove('recording');
   void stopTranscription();
 }

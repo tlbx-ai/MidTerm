@@ -395,5 +395,6 @@
   "dialog.confirm": "Bestätigen",
   "dialog.info": "Info",
   "dialog.ok": "OK",
-  "dialog.cancel": "Abbrechen"
+  "dialog.cancel": "Abbrechen",
+  "smartInput.autoSend": "Sofort senden"
 }

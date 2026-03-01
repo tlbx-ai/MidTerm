@@ -395,5 +395,6 @@
   "dialog.confirm": "নিশ্চিত করুন",
   "dialog.info": "তথ্য",
   "dialog.ok": "ঠিক আছে",
-  "dialog.cancel": "বাতিল"
+  "dialog.cancel": "বাতিল",
+  "smartInput.autoSend": "স্বয়ংক্রিয় পাঠান"
 }

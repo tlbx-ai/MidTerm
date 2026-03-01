@@ -395,5 +395,6 @@
   "dialog.confirm": "Confirmar",
   "dialog.info": "Informação",
   "dialog.ok": "OK",
-  "dialog.cancel": "Cancelar"
+  "dialog.cancel": "Cancelar",
+  "smartInput.autoSend": "Envio automático"
 }

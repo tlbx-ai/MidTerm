@@ -395,5 +395,6 @@
   "dialog.confirm": "確認",
   "dialog.info": "情報",
   "dialog.ok": "OK",
-  "dialog.cancel": "キャンセル"
+  "dialog.cancel": "キャンセル",
+  "smartInput.autoSend": "自動送信"
 }

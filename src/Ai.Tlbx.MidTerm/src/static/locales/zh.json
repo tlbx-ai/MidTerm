@@ -398,5 +398,6 @@
   "dialog.confirm": "确认",
   "dialog.info": "信息",
   "dialog.ok": "确定",
-  "dialog.cancel": "取消"
+  "dialog.cancel": "取消",
+  "smartInput.autoSend": "自动发送"
 }

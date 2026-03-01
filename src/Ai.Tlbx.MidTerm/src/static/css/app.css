@@ -5725,6 +5725,23 @@ html, body {
     color: #000;
 }
 
+.smart-input-autosend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted, #888);
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.smart-input-autosend input[type="checkbox"] {
+    margin: 0;
+    accent-color: var(--accent-color, #4fc3f7);
+}
+
 /* Docked Smart Input - sits in flex flow after manager bar, steals vertical space from terminal */
 .smart-input-docked {
     display: none;
