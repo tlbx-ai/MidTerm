@@ -5,6 +5,7 @@
   "sidebar.terminals": "Terminales",
   "sidebar.hide": "Ocultar barra lateral",
   "sidebar.show": "Mostrar barra lateral",
+  "sidebar.leadingBrowser": "Este navegador lidera \u2014 los terminales se redimensionan autom\u00e1ticamente",
   "sidebar.followingBrowser": "Siguiendo navegador (solo escala)",
   "sidebar.rename": "Renombrar",
   "sidebar.updateAvailable": "Actualización Disponible",

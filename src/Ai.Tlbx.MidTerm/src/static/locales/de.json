@@ -5,6 +5,7 @@
   "sidebar.terminals": "Terminals",
   "sidebar.hide": "Seitenleiste ausblenden",
   "sidebar.show": "Seitenleiste einblenden",
+  "sidebar.leadingBrowser": "Dieser Browser f\u00fchrt \u2014 Terminals passen sich automatisch an",
   "sidebar.followingBrowser": "Browser-Modus (nur Skalierung)",
   "sidebar.rename": "Umbenennen",
   "sidebar.updateAvailable": "Update verfügbar",

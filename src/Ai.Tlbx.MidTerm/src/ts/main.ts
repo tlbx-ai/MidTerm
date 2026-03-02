@@ -60,7 +60,7 @@ import {
   recordBytes,
   suppressAllHeat,
 } from './modules/sidebar';
-import { initI18n } from './modules/i18n';
+import { initI18n, t } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
@@ -151,7 +151,7 @@ import {
 } from './stores';
 import type { Session } from './types';
 import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
-import { bindClick } from './utils';
+import { bindClick, getOrCreateClientId } from './utils';
 import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
@@ -235,6 +235,7 @@ async function init(): Promise<void> {
   void fontPromise.then(() => initCalibrationTerminal());
 
   registerCallbacks();
+  getOrCreateClientId(); // Ensure mt-client-id cookie exists before WS upgrade
   connectStateWebSocket();
   connectMuxWebSocket();
   connectSettingsWebSocket();
@@ -881,28 +882,42 @@ function initMainBrowserButton(): void {
   const btn = document.getElementById('btn-main-browser');
   if (!btn) return;
 
-  function updateVisibility(): void {
+  function updateState(): void {
     if (!btn) return;
     const isMain = $isMainBrowser.get();
     const showButton = $showMainBrowserButton.get();
-    btn.style.display = !isMain && showButton ? '' : 'none';
+
+    if (!showButton) {
+      btn.style.display = 'none';
+      return;
+    }
+
+    btn.style.display = '';
+    if (isMain) {
+      btn.classList.add('main-browser-active');
+      btn.title = t('sidebar.leadingBrowser');
+    } else {
+      btn.classList.remove('main-browser-active');
+      btn.title = t('sidebar.claimMainBrowser');
+    }
   }
 
-  updateVisibility();
+  updateState();
 
   btn.addEventListener('click', () => {
+    if ($isMainBrowser.get()) return;
     claimMainBrowser();
   });
 
   $isMainBrowser.subscribe((isMain) => {
-    updateVisibility();
+    updateState();
     if (isMain) {
       requestAnimationFrame(autoResizeAllTerminalsImmediate);
     }
   });
 
   $showMainBrowserButton.subscribe(() => {
-    updateVisibility();
+    updateState();
   });
 }
 

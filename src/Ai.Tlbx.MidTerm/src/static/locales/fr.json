@@ -5,6 +5,7 @@
   "sidebar.terminals": "Terminaux",
   "sidebar.hide": "Masquer la barre latérale",
   "sidebar.show": "Afficher la barre latérale",
+  "sidebar.leadingBrowser": "Ce navigateur est le principal \u2014 les terminaux s'adaptent automatiquement",
   "sidebar.followingBrowser": "Suit le navigateur (mise à l'échelle uniquement)",
   "sidebar.rename": "Renommer",
   "sidebar.updateAvailable": "Mise à Jour Disponible",

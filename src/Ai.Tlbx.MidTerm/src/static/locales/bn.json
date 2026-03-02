@@ -5,6 +5,7 @@
   "sidebar.terminals": "টার্মিনাল",
   "sidebar.hide": "সাইডবার লুকান",
   "sidebar.show": "সাইডবার দেখান",
+  "sidebar.leadingBrowser": "এই ব্রাউজারটি প্রধান \u2014 টার্মিনালগুলো এই উইন্ডোতে স্বয়ংক্রিয়ভাবে মানানসই হয়",
   "sidebar.followingBrowser": "ব্রাউজার অনুসরণ (শুধু স্কেল)",
   "sidebar.rename": "নাম পরিবর্তন",
   "sidebar.updateAvailable": "আপডেট উপলব্ধ",

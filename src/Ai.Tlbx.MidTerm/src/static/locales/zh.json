@@ -5,6 +5,7 @@
   "sidebar.terminals": "终端",
   "sidebar.hide": "隐藏侧边栏",
   "sidebar.show": "显示侧边栏",
+  "sidebar.leadingBrowser": "此浏览器为主导 \u2014 终端自动调整以适应此窗口",
   "sidebar.followingBrowser": "跟随浏览器（仅缩放）",
   "sidebar.rename": "重命名",
   "sidebar.updateAvailable": "可用更新",

@@ -5,6 +5,7 @@
   "sidebar.terminals": "टर्मिनल",
   "sidebar.hide": "साइडबार छिपाएं",
   "sidebar.show": "साइडबार दिखाएं",
+  "sidebar.leadingBrowser": "यह ब्राउज़र मुख्य है \u2014 टर्मिनल इस विंडो के अनुसार स्वतः आकार बदलते हैं",
   "sidebar.followingBrowser": "ब्राउज़र का अनुसरण (केवल स्केल)",
   "sidebar.rename": "नाम बदलें",
   "sidebar.updateAvailable": "अपडेट उपलब्ध",

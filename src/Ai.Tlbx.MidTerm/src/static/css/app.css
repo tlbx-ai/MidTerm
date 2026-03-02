@@ -1596,6 +1596,11 @@ html, body {
     color: var(--accent-blue) !important;
 }
 
+#btn-main-browser.main-browser-active {
+    color: var(--accent-green) !important;
+    cursor: default;
+}
+
 .collapsed-title-bar {
     display: none;
     position: fixed;
