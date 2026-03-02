@@ -5725,21 +5725,31 @@ html, body {
     color: #000;
 }
 
-.smart-input-autosend {
+.smart-input-autosend-btn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bg-tertiary, #333);
+    color: var(--text-color, #e0e0e0);
+    cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--text-muted, #888);
-    white-space: nowrap;
-    cursor: pointer;
+    justify-content: center;
+    touch-action: none;
     -webkit-user-select: none;
     user-select: none;
 }
 
-.smart-input-autosend input[type="checkbox"] {
-    margin: 0;
-    accent-color: var(--accent-color, #4fc3f7);
+.smart-input-autosend-btn:active {
+    background: var(--accent-color, #4fc3f7);
+    color: #000;
+}
+
+.smart-input-autosend-btn.active {
+    background: var(--accent-color, #4fc3f7);
+    color: #000;
 }
 
 .autosend-active .smart-input-textarea,

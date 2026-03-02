@@ -96,7 +96,7 @@ function hideDockedBar(): void {
 
 function createInputElements(): {
   micBtn: HTMLButtonElement;
-  autoSendLabel: HTMLLabelElement;
+  autoSendBtn: HTMLButtonElement;
   textarea: HTMLTextAreaElement;
   sendBtn: HTMLButtonElement;
 } {
@@ -106,18 +106,16 @@ function createInputElements(): {
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
   micBtn.title = 'Push to talk (Right Ctrl)';
 
-  const autoSendLabel = document.createElement('label');
-  autoSendLabel.className = 'smart-input-autosend';
-  const autoSendCheckbox = document.createElement('input');
-  autoSendCheckbox.type = 'checkbox';
-  autoSendCheckbox.checked = autoSendEnabled;
-  const autoSendText = document.createElement('span');
-  autoSendText.textContent = t('smartInput.autoSend');
-  autoSendLabel.appendChild(autoSendCheckbox);
-  autoSendLabel.appendChild(autoSendText);
+  const autoSendBtn = document.createElement('button');
+  autoSendBtn.className = 'smart-input-autosend-btn';
+  autoSendBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>';
+  autoSendBtn.title = t('smartInput.autoSend');
+  if (autoSendEnabled) autoSendBtn.classList.add('active');
 
-  autoSendCheckbox.addEventListener('change', () => {
-    autoSendEnabled = autoSendCheckbox.checked;
+  autoSendBtn.addEventListener('click', () => {
+    autoSendEnabled = !autoSendEnabled;
+    autoSendBtn.classList.toggle('active', autoSendEnabled);
     localStorage.setItem('smartinput-autosend', String(autoSendEnabled));
     updateAutoSendVisibility();
   });
@@ -168,17 +166,17 @@ function createInputElements(): {
     }
   });
 
-  return { micBtn, autoSendLabel, textarea, sendBtn };
+  return { micBtn, autoSendBtn, textarea, sendBtn };
 }
 
 function createOverlayDOM(): void {
   overlay = document.createElement('div');
   overlay.className = 'smart-input-overlay';
 
-  const { micBtn, autoSendLabel, textarea, sendBtn } = createInputElements();
+  const { micBtn, autoSendBtn, textarea, sendBtn } = createInputElements();
 
   overlay.appendChild(micBtn);
-  overlay.appendChild(autoSendLabel);
+  overlay.appendChild(autoSendBtn);
   overlay.appendChild(textarea);
   overlay.appendChild(sendBtn);
 
@@ -195,10 +193,10 @@ function createDockedDOM(): void {
   dockedBar = document.createElement('div');
   dockedBar.className = 'smart-input-docked';
 
-  const { micBtn, autoSendLabel, textarea, sendBtn } = createInputElements();
+  const { micBtn, autoSendBtn, textarea, sendBtn } = createInputElements();
 
   dockedBar.appendChild(micBtn);
-  dockedBar.appendChild(autoSendLabel);
+  dockedBar.appendChild(autoSendBtn);
   dockedBar.appendChild(textarea);
   dockedBar.appendChild(sendBtn);
 
