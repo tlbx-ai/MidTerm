@@ -123,6 +123,7 @@ import {
 import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
 import { closeGitDock } from './modules/git/gitDock';
 import { initWebPreview, closeWebPreviewDock } from './modules/web';
+import { initDockState, removeSessionDockState } from './modules/dockState';
 import { initSmartInput } from './modules/smartInput';
 import {
   cacheDOMElements,
@@ -261,6 +262,7 @@ async function init(): Promise<void> {
   initGitPanel();
   initCommandsPanel();
   initWebPreview();
+  initDockState();
 
   // React to ideMode setting: toggle tab bar visibility and git WS connection
   let gitWsConnected = false;
@@ -535,7 +537,8 @@ function deleteSession(sessionId: string): void {
   // Remove from layout if present
   handleSessionClosed(sessionId);
 
-  // Remove session tab wrapper and feature panels
+  // Remove session tab wrapper, feature panels, and dock state
+  removeSessionDockState(sessionId);
   destroyFileBrowser(sessionId);
   destroyGitSession(sessionId);
   destroyCommandsSession(sessionId);
