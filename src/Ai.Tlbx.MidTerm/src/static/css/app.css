@@ -50,6 +50,10 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
+.icon.icon-svg {
+    font-family: inherit !important;
+}
+
 /* Midnight Harbor Theme Variables */
 :root {
     /* === BACKGROUNDS (17-point luminance spread) === */
@@ -2632,8 +2636,11 @@ html, body {
 
 .sidebar-nav-btn .icon {
     font-size: var(--fs-xl);
-    width: 18px;
-    text-align: center;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
 }
 
