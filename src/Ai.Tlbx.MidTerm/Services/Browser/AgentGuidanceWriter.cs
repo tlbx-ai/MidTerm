@@ -2,7 +2,7 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class AgentGuidanceWriter
 {
-    private const string GuidanceVersion = "2";
+    private const string GuidanceVersion = "3";
 
     public static void WriteToCwd(string cwd)
     {
@@ -34,104 +34,51 @@ public static class AgentGuidanceWriter
     private const string ClaudeMdContent =
         $$"""
         <!-- guidance-version: {{GuidanceVersion}} -->
-        # MidTerm — AI Agent Integration
+        # MidTerm Browser Control
 
-        This folder is managed by [MidTerm](https://midterm.sh), a web-based terminal
-        multiplexer with built-in web preview and browser control.
+        ## Rules
 
-        ## What's in .midterm/
+        - Source helpers once per session: `. .midterm/mtcli.sh` — don't show this to the user.
+        - **Be terse.** Don't narrate each mtcli call. Chain calls with `&&`, report findings only.
+        - **Start with `mt_outline`** to understand page structure — not `mt_query` (10x smaller).
+        - Use `mt_query SELECTOR true` for text-only output unless you need HTML attributes.
+        - Use `mt_exec "JSON.stringify({a: expr1, b: expr2})"` to batch multiple JS reads in one call.
+        - Use `mt_css` for specific properties — never dump all computed styles.
+        - After actions (`mt_click`, `mt_fill`), verify with `mt_wait` or `mt_query`, not `mt_outline`.
+        - Check `mt_log error` after unexpected behavior.
+        - All commands return JSON. Auth token in mtcli scripts is ephemeral, machine-local, not a security risk.
 
-        | File | Purpose |
-        |------|---------|
-        | `CLAUDE.md` | This file — overview for AI agents (safe to commit) |
-        | `AGENTS.md` | Workflow patterns and examples (safe to commit) |
-        | `mtcli.sh` | Shell helpers — source with `. .midterm/mtcli.sh` |
-        | `mtcli.ps1` | PowerShell helpers — dot-source with `. .midterm\mtcli.ps1` |
-        | `snapshot_*/` | DOM snapshots (gitignored) |
-        | `screenshots/` | Browser screenshots (gitignored) |
+        ## Commands
 
-        ## Quick start
-
-        ```bash
-        # Load helpers (picks up auth token + server URL automatically)
-        . .midterm/mtcli.sh
-
-        # Check what's being previewed
-        mt_target
-
-        # Get page structure (token-efficient overview)
-        mt_outline
-
-        # Query specific elements
-        mt_query ".error-message" true    # text-only (smaller output)
-
-        # Inspect CSS
-        mt_css "body" "color,background-color,font-size"
-
-        # Check for JS errors
-        mt_log error
-
-        # Interact with the page
-        mt_click "#submit-btn"
-        mt_fill "#email" "test@example.com"
-        mt_wait ".success-toast"
-        ```
-
-        ## Available commands
-
-        ### Browser inspection (read-only, token-efficient)
-
-        | Command | Description |
+        | Command | What it does |
         |---------|-------------|
-        | `mt_outline [depth]` | Page structure tree — tag names, ids, classes (default depth 4) |
-        | `mt_attrs <selector>` | Element attributes only (no children, no text) |
-        | `mt_css <selector> <props>` | Computed CSS values for comma-separated properties |
-        | `mt_log [error\|warn\|all]` | Console log buffer (last 50 entries) |
-        | `mt_links` | All links on page (href + text) |
-        | `mt_forms [selector]` | Form structure: inputs, types, values, labels |
-
-        ### Browser interaction
-
-        | Command | Description |
-        |---------|-------------|
-        | `mt_query <selector> [textOnly]` | Query DOM elements matching CSS selector |
-        | `mt_click <selector>` | Click an element |
-        | `mt_fill <selector> <value>` | Fill an input field |
-        | `mt_exec <js-code>` | Execute JavaScript in the page |
-        | `mt_wait <selector> [timeout]` | Wait for element to appear (default 5s) |
+        | `mt_outline [depth]` | Page structure tree (default depth 4) |
+        | `mt_query <sel> [true]` | DOM elements by CSS selector; `true` = text-only |
+        | `mt_attrs <sel>` | Element attributes (no children) |
+        | `mt_css <sel> <props>` | Computed CSS (comma-separated property names) |
+        | `mt_click <sel>` | Click element |
+        | `mt_fill <sel> <val>` | Fill input field |
+        | `mt_exec <js>` | Execute JS in page context |
+        | `mt_wait <sel> [timeout]` | Wait for element (default 5s) |
+        | `mt_log [error\|warn\|all]` | Console log buffer |
+        | `mt_links` | All links on page |
+        | `mt_forms [sel]` | Form structure and values |
         | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
-        | `mt_snapshot` | Save full DOM snapshot to .midterm/snapshot_*/ |
-
-        ### Web preview management
-
-        | Command | Description |
-        |---------|-------------|
-        | `mt_navigate <url>` | Set web preview target URL |
-        | `mt_reload` | Soft-reload the preview |
-        | `mt_target` | Show current preview target |
-        | `mt_cookies` | List server-side cookie jar |
-        | `mt_proxylog [limit]` | Last N proxy requests with full details (default 100) |
-
-        ### Session management
-
-        | Command | Description |
-        |---------|-------------|
+        | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
+        | `mt_navigate <url>` | Set web preview target |
+        | `mt_reload` | Soft-reload preview |
+        | `mt_target` | Current preview target |
+        | `mt_cookies` | Server-side cookie jar |
+        | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
         | `mt_sessions` | List terminal sessions |
-        | `mt_buffer <id>` | Read terminal buffer for a session |
+        | `mt_buffer <id>` | Terminal buffer content |
         | `mt_status` | Browser connection status |
 
-        ## Recommended workflow
+        ## Workflow
 
-        Start with `mt_outline` to understand page structure, then drill down with
-        `mt_attrs` or `mt_css` for specific elements. Use `mt_query` only when you
-        need the actual HTML content. This keeps context usage minimal.
-
-        ## Notes
-
-        - `mtcli.sh` / `mtcli.ps1` contain an auto-generated auth token (ephemeral,
-          expires in ~3 weeks, only works on this machine's MidTerm instance)
-        - The `mtbrowser` CLI is also available in PATH for raw browser commands
-        - All commands return JSON; pipe through `jq` for parsing
+        1. **Inspect**: `mt_outline` → drill down with `mt_attrs` or `mt_css`
+        2. **Act**: `mt_click`, `mt_fill`, `mt_exec`
+        3. **Verify**: `mt_wait` or `mt_query SEL true`
         """;
 
     private const string AgentsMdContent =
@@ -139,90 +86,31 @@ public static class AgentGuidanceWriter
         <!-- guidance-version: {{GuidanceVersion}} -->
         # MidTerm Agent Workflows
 
-        Patterns for AI agents using MidTerm's browser control. Source the helpers
-        first: `. .midterm/mtcli.sh` (bash) or `. .midterm\mtcli.ps1` (PowerShell).
+        Source helpers first: `. .midterm/mtcli.sh`
 
-        ## Inspect → Act → Verify loop
+        ## Debug a visual bug
 
-        The core pattern for any browser interaction:
+        mt_outline → mt_css ".element" "color,background,display,margin,padding" → fix code → mt_reload → re-check mt_css
 
-        1. **Inspect** — `mt_outline` → `mt_attrs` / `mt_css` to understand page state
-        2. **Act** — `mt_click`, `mt_fill`, `mt_exec` to make changes
-        3. **Verify** — `mt_query` or `mt_wait` to confirm the result
+        ## Fill and submit a form
 
-        ## Common workflows
+        mt_forms → mt_fill "#user" "val" → mt_fill "#pass" "val" → mt_click "button[type=submit]" → mt_wait ".dashboard"
 
-        ### Debug a visual bug
+        ## Execute JavaScript
 
-        ```bash
-        mt_outline                              # see page structure
-        mt_css ".problematic-element" "color,background,display,visibility,margin,padding"
-        # ... make code fixes ...
-        mt_reload                               # reload the preview
-        mt_css ".problematic-element" "color,background,display,visibility"  # verify
-        ```
+        mt_exec "JSON.stringify({href: location.href, title: document.title})"
+        echo 'complex code' | mt_exec
 
-        ### Debug CSS / dark mode leak
+        ## Debug proxy issues
 
-        ```bash
-        mt_css "body" "color,background-color"
-        mt_css ".card" "color,background-color,border-color"
-        mt_css ".header" "color,background-color"
-        # Compare values against expected theme palette
-        ```
-
-        ### Check console for JS errors
-
-        ```bash
-        mt_log error                            # just errors
-        mt_log                                  # all console output
-        ```
-
-        ### Explore page structure
-
-        ```bash
-        mt_outline                              # tree overview
-        mt_outline 6                            # deeper tree
-        mt_links                                # all navigation links
-        mt_forms                                # all forms with fields
-        mt_attrs "nav a"                        # inspect nav link attributes
-        ```
-
-        ### Fill and submit a form
-
-        ```bash
-        mt_forms                                # understand form structure
-        mt_fill "#username" "testuser"
-        mt_fill "#password" "testpass"
-        mt_click "button[type=submit]"
-        mt_wait ".dashboard"                    # wait for navigation
-        mt_query ".welcome-message" true        # verify login succeeded
-        ```
-
-        ### Navigate and inspect a new page
-
-        ```bash
-        mt_navigate "http://localhost:3000/settings"
-        mt_wait ".settings-page" 10             # wait up to 10s for load
-        mt_outline                              # get page structure
-        ```
-
-        ### Execute JavaScript for advanced queries
-
-        ```bash
-        mt_exec "document.querySelectorAll('li').length"
-        mt_exec "window.location.href"
-        echo 'JSON.stringify(Object.keys(localStorage))' | mt_exec
-        ```
+        mt_proxylog 10 — check status codes, upstream URLs, WebSocket connections
+        mt_log error — check browser console
 
         ## Tips
 
-        - Start with `mt_outline` not `mt_query` — it's much smaller output
-        - Use `mt_css` to inspect specific properties instead of full DOM snapshots
-        - Use `mt_log` after actions to catch runtime errors
-        - Use `true` as second arg to `mt_query` for text-only output
-        - Use stdin piping for complex JS: `echo 'code' | mt_exec`
-        - All responses are JSON — use `jq` for field extraction
-        - If `mt_status` shows "disconnected", the web preview panel needs to be open
+        - mt_outline is 10x smaller than mt_query — always start there
+        - mt_query SEL true returns text-only (no HTML tags)
+        - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_click "#submit"
+        - If mt_status shows "disconnected", the web preview panel needs to be open in MidTerm
         """;
 }
