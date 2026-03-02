@@ -22,6 +22,8 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string UrlRewriteScript = """
         <script>(function(){
           if(window.__mtProxy)return;window.__mtProxy=1;
+          // Save real parent before cloaking (used for navigation notifications)
+          var _realParent=window.parent;
           // Iframe cloaking: make the page think it's top-level
           try{Object.defineProperty(window,"top",{get:function(){return window},configurable:true});}catch(e){}
           try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
@@ -121,7 +123,7 @@ public sealed partial class WebPreviewProxyMiddleware
             navigator.serviceWorker.register=function(u,o){return swr(r(u),o);};
           }
           // === Navigation APIs ===
-          function ntfy(){try{window.parent.postMessage({type:"mt-navigation",url:location.href},"*");}catch(e){}}
+          function ntfy(){try{_realParent.postMessage({type:"mt-navigation",url:location.href},"*");}catch(e){}}
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
           history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
           history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
