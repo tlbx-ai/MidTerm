@@ -394,5 +394,7 @@
   "dialog.info": "जानकारी",
   "dialog.ok": "ठीक है",
   "dialog.cancel": "रद्द करें",
-  "smartInput.autoSend": "स्वतः भेजें"
+  "smartInput.autoSend": "स्वतः भेजें",
+  "smartInput.photo": "फ़ोटो लें",
+  "smartInput.attach": "फ़ाइल संलग्न करें"
 }

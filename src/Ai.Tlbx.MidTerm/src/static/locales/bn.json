@@ -394,5 +394,7 @@
   "dialog.info": "তথ্য",
   "dialog.ok": "ঠিক আছে",
   "dialog.cancel": "বাতিল",
-  "smartInput.autoSend": "স্বয়ংক্রিয় পাঠান"
+  "smartInput.autoSend": "স্বয়ংক্রিয় পাঠান",
+  "smartInput.photo": "ছবি তুলুন",
+  "smartInput.attach": "ফাইল সংযুক্ত করুন"
 }

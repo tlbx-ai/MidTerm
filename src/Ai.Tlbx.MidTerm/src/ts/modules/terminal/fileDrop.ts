@@ -366,7 +366,7 @@ async function sendNativeClipboardImage(
  * - Rejected files (pdf, exe, etc.): show error toast
  * - Text files: read content and paste (with 40KB limit)
  */
-async function handleFileDrop(files: FileList): Promise<void> {
+export async function handleFileDrop(files: FileList): Promise<void> {
   const activeId = $activeSessionId.get();
   if (!activeId || files.length === 0) return;
 

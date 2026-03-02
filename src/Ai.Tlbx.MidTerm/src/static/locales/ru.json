@@ -394,5 +394,7 @@
   "dialog.info": "Информация",
   "dialog.ok": "ОК",
   "dialog.cancel": "Отмена",
-  "smartInput.autoSend": "Автоотправка"
+  "smartInput.autoSend": "Автоотправка",
+  "smartInput.photo": "Сделать фото",
+  "smartInput.attach": "Прикрепить файл"
 }

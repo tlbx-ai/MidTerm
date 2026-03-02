@@ -5697,7 +5697,9 @@ html, body {
 }
 
 .smart-input-mic-btn,
-.smart-input-send-btn {
+.smart-input-send-btn,
+.smart-input-photo-btn,
+.smart-input-attach-btn {
     flex-shrink: 0;
     width: 40px;
     height: 40px;
@@ -5715,7 +5717,9 @@ html, body {
 }
 
 .smart-input-mic-btn:active,
-.smart-input-send-btn:active {
+.smart-input-send-btn:active,
+.smart-input-photo-btn:active,
+.smart-input-attach-btn:active {
     background: var(--accent-blue);
     color: var(--bg-primary);
 }

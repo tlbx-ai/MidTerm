@@ -394,5 +394,7 @@
   "dialog.info": "Informação",
   "dialog.ok": "OK",
   "dialog.cancel": "Cancelar",
-  "smartInput.autoSend": "Envio automático"
+  "smartInput.autoSend": "Envio automático",
+  "smartInput.photo": "Tirar foto",
+  "smartInput.attach": "Anexar arquivo"
 }

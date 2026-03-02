@@ -432,5 +432,7 @@
   "dialog.info": "Info",
   "dialog.ok": "OK",
   "dialog.cancel": "Cancel",
-  "smartInput.autoSend": "Auto-send"
+  "smartInput.autoSend": "Auto-send",
+  "smartInput.photo": "Take photo",
+  "smartInput.attach": "Attach file"
 }
