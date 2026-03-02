@@ -533,14 +533,14 @@ public sealed partial class WebPreviewProxyMiddleware
             return true;
         }
 
-        // Root-level MidTerm files
+        // Root-level MidTerm files (only pages/assets that MidTerm itself needs).
+        // Do NOT include /favicon.ico, /site.webmanifest, or other root-level assets
+        // that proxied sites commonly reference — those should go to upstream.
         return path is "/"
             or "/index.html"
             or "/login.html"
             or "/trust.html"
             or "/web-preview-popup.html"
-            or "/favicon.ico"
-            or "/site.webmanifest"
             or "/THIRD-PARTY-LICENSES.txt"
             or "/midFont-style.css";
     }
