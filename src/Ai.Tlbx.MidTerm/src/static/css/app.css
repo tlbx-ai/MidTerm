@@ -5843,6 +5843,71 @@ html, body {
     display: none !important;
 }
 
+/* Camera Capture Overlay */
+.camera-capture-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+}
+
+.camera-capture-overlay video {
+    max-width: 90vw;
+    max-height: 65vh;
+    border-radius: 12px;
+    background: #000;
+}
+
+.camera-capture-controls {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.camera-capture-snap {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.camera-capture-snap:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.camera-capture-snap:active {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.camera-capture-cancel {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: var(--btn-secondary, #3A3E52);
+    color: var(--text-primary, #D4D7E8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.camera-capture-cancel:hover {
+    background: var(--btn-secondary-hover, #4A4F68);
+}
+
 /* ==========================================================================
    Touch Controller Bar (Mobile)
    ========================================================================== */
