@@ -1,10 +1,12 @@
+using Ai.Tlbx.MidTerm.Common.Logging;
+
 namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class MainBrowserService
 {
     private readonly Lock _lock = new();
-    private readonly HashSet<object> _connections = new(ReferenceEqualityComparer.Instance);
-    private object? _mainBrowserToken;
+    private readonly Dictionary<string, HashSet<object>> _browserConnections = new();
+    private string? _mainBrowserId;
 
     public event Action? OnMainBrowserChanged;
 
@@ -14,82 +16,110 @@ public sealed class MainBrowserService
         {
             lock (_lock)
             {
-                return _connections.Count >= 2;
+                return _browserConnections.Count >= 2;
             }
         }
     }
 
-    public void Register(object token)
+    public void Register(string browserId, object connectionToken)
     {
         bool notify;
         lock (_lock)
         {
-            _connections.Add(token);
-            var promoted = _mainBrowserToken is null;
-            if (promoted) _mainBrowserToken = token;
-            notify = promoted || _connections.Count == 2;
+            if (!_browserConnections.TryGetValue(browserId, out var tokens))
+            {
+                tokens = new HashSet<object>(ReferenceEqualityComparer.Instance);
+                _browserConnections[browserId] = tokens;
+            }
+
+            tokens.Add(connectionToken);
+
+            if (_mainBrowserId is null)
+            {
+                // First browser ever (cold start) — auto-promote
+                _mainBrowserId = browserId;
+                Log.Verbose(() => $"[MainBrowser] Initial promote {browserId[..8]}");
+                notify = true;
+            }
+            else if (_mainBrowserId == browserId)
+            {
+                // Main browser reconnected — notify so it gets fresh status
+                notify = true;
+            }
+            else
+            {
+                // Another browser connected — notify if this is the 2nd unique browser
+                notify = _browserConnections.Count == 2;
+            }
         }
         if (notify) OnMainBrowserChanged?.Invoke();
     }
 
-    public void Unregister(object token)
+    public void Unregister(string browserId, object connectionToken)
     {
         bool changed;
         lock (_lock)
         {
-            var wasMultiple = _connections.Count >= 2;
-            _connections.Remove(token);
-            var isMultiple = _connections.Count >= 2;
+            if (!_browserConnections.TryGetValue(browserId, out var tokens))
+                return;
 
-            if (!ReferenceEquals(_mainBrowserToken, token))
+            tokens.Remove(connectionToken);
+
+            if (tokens.Count == 0)
             {
-                changed = wasMultiple != isMultiple;
+                _browserConnections.Remove(browserId);
             }
-            else if (_connections.Count == 1)
-            {
-                _mainBrowserToken = GetSingleConnection();
-                changed = true;
-            }
-            else
-            {
-                _mainBrowserToken = null;
-                changed = true;
-            }
+
+            // _mainBrowserId is NOT cleared when the main browser disconnects.
+            // It stays set so the browser retains main status when it reconnects.
+            // Only Claim() from another browser can override it.
+
+            // Notify if multi-client count changed (affects showButton for remaining clients)
+            changed = !_browserConnections.ContainsKey(browserId);
         }
         if (changed) OnMainBrowserChanged?.Invoke();
     }
 
-    public void Claim(object token)
+    public void Claim(string browserId)
     {
         lock (_lock)
         {
-            _mainBrowserToken = token;
+            _mainBrowserId = browserId;
+            Log.Verbose(() => $"[MainBrowser] Claimed by {browserId[..8]}");
         }
         OnMainBrowserChanged?.Invoke();
     }
 
-    public void Release(object token)
+    public void Release(string browserId)
     {
         bool changed;
         lock (_lock)
         {
-            changed = ReferenceEquals(_mainBrowserToken, token);
-            if (changed) _mainBrowserToken = null;
+            changed = _mainBrowserId == browserId;
+            if (changed) _mainBrowserId = null;
         }
         if (changed) OnMainBrowserChanged?.Invoke();
     }
 
-    public bool IsMain(object token)
+    public bool IsMain(string browserId)
     {
         lock (_lock)
         {
-            return ReferenceEquals(_mainBrowserToken, token);
+            return _mainBrowserId == browserId;
         }
     }
 
-    private object? GetSingleConnection()
+    /// <summary>
+    /// Whether the main browser button should be visible for this browser.
+    /// True when 2+ browsers are connected, or when main is set to a different
+    /// (possibly offline) browser so this one can claim.
+    /// </summary>
+    public bool ShouldShowButton(string browserId)
     {
-        foreach (var c in _connections) return c;
-        return null;
+        lock (_lock)
+        {
+            return _browserConnections.Count >= 2
+                || (_mainBrowserId is not null && _mainBrowserId != browserId);
+        }
     }
 }

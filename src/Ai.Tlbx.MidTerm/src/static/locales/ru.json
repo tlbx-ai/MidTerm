@@ -5,6 +5,7 @@
   "sidebar.terminals": "Терминалы",
   "sidebar.hide": "Скрыть боковую панель",
   "sidebar.show": "Показать боковую панель",
+  "sidebar.leadingBrowser": "Этот браузер ведущий \u2014 терминалы автоматически подстраиваются",
   "sidebar.followingBrowser": "Следовать за браузером (только масштаб)",
   "sidebar.rename": "Переименовать",
   "sidebar.updateAvailable": "Доступно обновление",

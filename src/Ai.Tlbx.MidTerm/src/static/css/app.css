@@ -50,6 +50,10 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
+.icon.icon-svg {
+    font-family: inherit !important;
+}
+
 /* Midnight Harbor Theme Variables */
 :root {
     /* === BACKGROUNDS (17-point luminance spread) === */
@@ -1596,6 +1600,11 @@ html, body {
     color: var(--accent-blue) !important;
 }
 
+#btn-main-browser.main-browser-active {
+    color: var(--accent-green) !important;
+    cursor: default;
+}
+
 .collapsed-title-bar {
     display: none;
     position: fixed;
@@ -2627,8 +2636,11 @@ html, body {
 
 .sidebar-nav-btn .icon {
     font-size: var(--fs-xl);
-    width: 18px;
-    text-align: center;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
 }
 
@@ -5648,11 +5660,10 @@ html, body {
     left: 8px;
     right: 8px;
     z-index: 50;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: column;
     padding: 8px;
-    background: var(--bg-secondary, #1e1e1e);
-    border: 1px solid var(--border-color, #444);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3);
 }
@@ -5664,10 +5675,10 @@ html, body {
 .smart-input-textarea {
     flex: 1;
     resize: none;
-    border: 1px solid var(--border-color, #555);
+    border: 1px solid var(--border-subtle);
     border-radius: 8px;
-    background: var(--bg-primary, #2d2d2d);
-    color: var(--text-color, #e0e0e0);
+    background: var(--bg-surface);
+    color: var(--text-primary);
     padding: 8px 12px;
     font-family: inherit;
     font-size: 15px;
@@ -5678,11 +5689,11 @@ html, body {
 }
 
 .smart-input-textarea:focus {
-    border-color: var(--accent-color, #4fc3f7);
+    border-color: var(--accent-blue);
 }
 
 .smart-input-textarea::placeholder {
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
 }
 
 .smart-input-mic-btn,
@@ -5692,8 +5703,8 @@ html, body {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: var(--bg-tertiary, #333);
-    color: var(--text-color, #e0e0e0);
+    background: var(--btn-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -5705,8 +5716,8 @@ html, body {
 
 .smart-input-mic-btn:active,
 .smart-input-send-btn:active {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .smart-input-mic-btn.recording {
@@ -5721,8 +5732,8 @@ html, body {
 }
 
 .smart-input-send-btn {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .smart-input-autosend-btn {
@@ -5731,8 +5742,8 @@ html, body {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: var(--bg-tertiary, #333);
-    color: var(--text-color, #e0e0e0);
+    background: var(--btn-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -5743,13 +5754,13 @@ html, body {
 }
 
 .smart-input-autosend-btn:active {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .smart-input-autosend-btn.active {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .autosend-active .smart-input-textarea,
@@ -5761,15 +5772,71 @@ html, body {
 .smart-input-docked {
     display: none;
     flex-shrink: 0;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: column;
     padding: 6px 8px;
-    background: var(--bg-secondary, #1e1e1e);
-    border-top: 1px solid var(--border-color, #444);
+    background: var(--terminal-bg);
+    border-top: 1px solid var(--border-color);
 }
 
 .smart-input-docked.visible {
     display: flex;
+}
+
+/* Input row — flex row holding mic, autosend, textarea, send, toggle */
+.smart-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    width: 100%;
+}
+
+/* Toggle keys chevron button */
+.smart-input-toggle-keys {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: var(--btn-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 0.2s;
+}
+
+.smart-input-toggle-keys:active {
+    background: var(--accent-blue);
+    color: var(--bg-primary);
+}
+
+.smart-input-toggle-keys.expanded {
+    transform: rotate(180deg);
+}
+
+/* Embedded touch controller inside smart input bar */
+.touch-controller.embedded {
+    display: flex !important;
+    max-height: none;
+    border-top: 1px solid var(--border-color);
+    margin-top: 6px;
+    padding: 4px 0;
+    padding-bottom: 0;
+    background: transparent;
+}
+
+.touch-controller.embedded .touch-dismiss {
+    display: none;
+}
+
+/* Collapsed: hide embedded touch controller */
+.smart-input-overlay:not(.keys-expanded) .touch-controller.embedded,
+.smart-input-docked:not(.keys-expanded) .touch-controller.embedded {
+    display: none !important;
 }
 
 /* ==========================================================================

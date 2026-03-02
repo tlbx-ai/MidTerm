@@ -6,6 +6,7 @@
   "sidebar.hide": "Hide sidebar",
   "sidebar.show": "Show sidebar",
   "sidebar.claimMainBrowser": "Become the leading browser \u2014 terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead.",
+  "sidebar.leadingBrowser": "This browser is leading \u2014 terminals auto-resize to fit this window",
   "sidebar.followingBrowser": "Following browser (scale only)",
   "sidebar.rename": "Rename",
 

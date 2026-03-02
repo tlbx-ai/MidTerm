@@ -46,11 +46,12 @@ export function initTouchController(): void {
 
   unsubscribeSettings = $currentSettings.subscribe((settings) => {
     if (!settings) return;
-    if (settings.inputMode === 'smartinput') {
-      hideTouchController();
-    } else {
-      updateVisibility();
+    const mode = settings.inputMode;
+    if (mode === 'smartinput' || mode === 'both') {
+      // Smart input module handles embedding the touch controller
+      return;
     }
+    updateVisibility();
   });
 
   const kbObserver = new MutationObserver(() => {
@@ -114,8 +115,8 @@ export function hideTouchController(): void {
  */
 export function updateVisibility(): void {
   if (userDismissed) return;
-  if ($currentSettings.get()?.inputMode === 'smartinput') {
-    hideTouchController();
+  const mode = $currentSettings.get()?.inputMode;
+  if (mode === 'smartinput' || mode === 'both') {
     return;
   }
   if (shouldShowTouchController()) {

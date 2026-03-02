@@ -88,6 +88,7 @@ When a website doesn't load through the web preview:
 | Page renders but navigation broken | URL inconsistency between location.href and document.baseURI |
 | CSS/JS 404s | Root-relative URLs not caught by `IsMidTermPath` catch-all |
 | Login redirect loops | Cookies not forwarding — check `requestCookies`/`responseCookies` in proxylog |
+| All assets return HTML | Host redirect (e.g. `foo.com` → `www.foo.com`) drops the path — proxy auto-updates target on first redirect |
 
 ## Implementation Files
 

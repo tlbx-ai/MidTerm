@@ -144,13 +144,15 @@ public sealed class StateWebSocketHandler
         }
 
         var connectionToken = new object();
+        var browserId = context.Request.Cookies["mt-client-id"]
+            ?? Guid.NewGuid().ToString("N");
 
         async Task SendMainBrowserStatusAsync()
         {
             var status = new MainBrowserStatusMessage
             {
-                IsMain = _mainBrowserService.IsMain(connectionToken),
-                ShowButton = _mainBrowserService.HasMultipleClients
+                IsMain = _mainBrowserService.IsMain(browserId),
+                ShowButton = _mainBrowserService.ShouldShowButton(browserId)
             };
             await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
         }
@@ -199,7 +201,7 @@ public sealed class StateWebSocketHandler
             lastUpdate = _updateService.LatestUpdate;
             await SendStateAsync();
             _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
-            _mainBrowserService.Register(connectionToken);
+            _mainBrowserService.Register(browserId, connectionToken);
             await SendMainBrowserStatusAsync();
 
             var buffer = new byte[8192];
@@ -227,7 +229,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, connectionToken);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId);
                         }
                     }
                 }
@@ -246,7 +248,7 @@ public sealed class StateWebSocketHandler
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
             _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
-            _mainBrowserService.Unregister(connectionToken);
+            _mainBrowserService.Unregister(browserId, connectionToken);
 
             if (_tmuxLayoutBridge is not null)
             {
@@ -277,7 +279,7 @@ public sealed class StateWebSocketHandler
         }
     }
 
-    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse, object connectionToken)
+    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse, string browserId)
     {
         WsCommand? cmd;
         try
@@ -319,12 +321,12 @@ public sealed class StateWebSocketHandler
                     break;
 
                 case "browser.claimMain":
-                    _mainBrowserService.Claim(connectionToken);
+                    _mainBrowserService.Claim(browserId);
                     await sendResponse(cmd.Id, true, null, null);
                     break;
 
                 case "browser.releaseMain":
-                    _mainBrowserService.Release(connectionToken);
+                    _mainBrowserService.Release(browserId);
                     await sendResponse(cmd.Id, true, null, null);
                     break;
 

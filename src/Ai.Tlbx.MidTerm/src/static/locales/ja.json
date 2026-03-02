@@ -5,6 +5,7 @@
   "sidebar.terminals": "ターミナル",
   "sidebar.hide": "サイドバーを隠す",
   "sidebar.show": "サイドバーを表示",
+  "sidebar.leadingBrowser": "このブラウザがリーダーです \u2014 ターミナルは自動的にリサイズされます",
   "sidebar.followingBrowser": "ブラウザに追従（スケールのみ）",
   "sidebar.rename": "名前を変更",
   "sidebar.updateAvailable": "アップデートあり",

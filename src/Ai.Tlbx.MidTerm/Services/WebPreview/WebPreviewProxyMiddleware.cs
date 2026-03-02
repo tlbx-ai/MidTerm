@@ -632,6 +632,17 @@ public sealed partial class WebPreviewProxyMiddleware
 
         _service.PersistCookies();
 
+        // If a redirect changed the host (e.g. wikipedia.de → www.wikipedia.de),
+        // update the target so subsequent asset requests go to the canonical host.
+        if (finalUrl is not null
+            && Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri)
+            && !finalUri.Authority.Equals(targetUri.Authority, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonicalTarget = finalUri.GetLeftPart(UriPartial.Authority)
+                + targetUri.AbsolutePath;
+            _service.SetTarget(canonicalTarget);
+        }
+
         if (upstreamResponse is null)
         {
             context.Response.StatusCode = errorCode;
