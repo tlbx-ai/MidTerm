@@ -5655,8 +5655,8 @@ html, body {
     z-index: 50;
     flex-direction: column;
     padding: 8px;
-    background: var(--bg-secondary, #1e1e1e);
-    border: 1px solid var(--border-color, #444);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3);
 }
@@ -5668,10 +5668,10 @@ html, body {
 .smart-input-textarea {
     flex: 1;
     resize: none;
-    border: 1px solid var(--border-color, #555);
+    border: 1px solid var(--border-subtle);
     border-radius: 8px;
-    background: var(--bg-primary, #2d2d2d);
-    color: var(--text-color, #e0e0e0);
+    background: var(--bg-surface);
+    color: var(--text-primary);
     padding: 8px 12px;
     font-family: inherit;
     font-size: 15px;
@@ -5682,11 +5682,11 @@ html, body {
 }
 
 .smart-input-textarea:focus {
-    border-color: var(--accent-color, #4fc3f7);
+    border-color: var(--accent-blue);
 }
 
 .smart-input-textarea::placeholder {
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
 }
 
 .smart-input-mic-btn,
@@ -5696,8 +5696,8 @@ html, body {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: var(--bg-tertiary, #333);
-    color: var(--text-color, #e0e0e0);
+    background: var(--btn-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -5709,8 +5709,8 @@ html, body {
 
 .smart-input-mic-btn:active,
 .smart-input-send-btn:active {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .smart-input-mic-btn.recording {
@@ -5725,8 +5725,8 @@ html, body {
 }
 
 .smart-input-send-btn {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .smart-input-autosend-btn {
@@ -5735,8 +5735,8 @@ html, body {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: var(--bg-tertiary, #333);
-    color: var(--text-color, #e0e0e0);
+    background: var(--btn-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -5747,13 +5747,13 @@ html, body {
 }
 
 .smart-input-autosend-btn:active {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .smart-input-autosend-btn.active {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .autosend-active .smart-input-textarea,
@@ -5767,8 +5767,8 @@ html, body {
     flex-shrink: 0;
     flex-direction: column;
     padding: 6px 8px;
-    background: var(--bg-secondary, #1e1e1e);
-    border-top: 1px solid var(--border-color, #444);
+    background: var(--terminal-bg);
+    border-top: 1px solid var(--border-color);
 }
 
 .smart-input-docked.visible {
@@ -5790,8 +5790,8 @@ html, body {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: var(--bg-tertiary, #333);
-    color: var(--text-color, #e0e0e0);
+    background: var(--btn-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -5803,8 +5803,8 @@ html, body {
 }
 
 .smart-input-toggle-keys:active {
-    background: var(--accent-color, #4fc3f7);
-    color: #000;
+    background: var(--accent-blue);
+    color: var(--bg-primary);
 }
 
 .smart-input-toggle-keys.expanded {
@@ -5815,7 +5815,7 @@ html, body {
 .touch-controller.embedded {
     display: flex !important;
     max-height: none;
-    border-top: 1px solid var(--border-color, #444);
+    border-top: 1px solid var(--border-color);
     margin-top: 6px;
     padding: 4px 0;
     padding-bottom: 0;
