@@ -5742,6 +5742,11 @@ html, body {
     accent-color: var(--accent-color, #4fc3f7);
 }
 
+.autosend-active .smart-input-textarea,
+.autosend-active .smart-input-send-btn {
+    display: none;
+}
+
 /* Docked Smart Input - sits in flex flow after manager bar, steals vertical space from terminal */
 .smart-input-docked {
     display: none;

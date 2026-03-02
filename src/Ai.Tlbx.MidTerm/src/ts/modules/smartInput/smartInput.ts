@@ -119,6 +119,7 @@ function createInputElements(): {
   autoSendCheckbox.addEventListener('change', () => {
     autoSendEnabled = autoSendCheckbox.checked;
     localStorage.setItem('smartinput-autosend', String(autoSendEnabled));
+    updateAutoSendVisibility();
   });
 
   const textarea = document.createElement('textarea');
@@ -187,6 +188,7 @@ function createOverlayDOM(): void {
   } else {
     document.body.appendChild(overlay);
   }
+  updateAutoSendVisibility();
 }
 
 function createDockedDOM(): void {
@@ -206,6 +208,7 @@ function createDockedDOM(): void {
   } else {
     document.querySelector('.main-content')?.appendChild(dockedBar);
   }
+  updateAutoSendVisibility();
 }
 
 function sendText(ta: HTMLTextAreaElement): void {
@@ -227,26 +230,36 @@ function sendText(ta: HTMLTextAreaElement): void {
 
 function beginRecording(): void {
   if (isRecording) return;
-  if (!activeTextarea) return;
   isRecording = true;
   activeMicBtn?.classList.add('recording');
 
   const ta = activeTextarea;
   startTranscription(
     (delta) => {
-      ta.value += delta;
-      ta.dispatchEvent(new Event('input'));
+      if (ta && !autoSendEnabled) {
+        ta.value += delta;
+        ta.dispatchEvent(new Event('input'));
+      }
     },
     (completed) => {
-      if (completed) {
+      if (!completed) return;
+      if (autoSendEnabled) {
+        sendDirectly(completed);
+      } else if (ta) {
         ta.value = completed;
         ta.dispatchEvent(new Event('input'));
-        if (autoSendEnabled) {
-          sendText(ta);
-        }
       }
     },
   );
+}
+
+function sendDirectly(text: string): void {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+  sendInput(sessionId, text);
+  setTimeout(() => {
+    sendInput(sessionId, '\r');
+  }, 50);
 }
 
 function endRecording(): void {
@@ -254,4 +267,11 @@ function endRecording(): void {
   isRecording = false;
   activeMicBtn?.classList.remove('recording');
   void stopTranscription();
+}
+
+function updateAutoSendVisibility(): void {
+  for (const container of [overlay, dockedBar]) {
+    if (!container) continue;
+    container.classList.toggle('autosend-active', autoSendEnabled);
+  }
 }
