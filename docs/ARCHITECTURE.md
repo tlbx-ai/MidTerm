@@ -416,6 +416,8 @@ Terminal file path detection with security controls.
 
 Settings: `fileRadar` (enable/disable path detection)
 
+Detailed design and regex behavior: `docs/file-radar.md`
+
 ### Voice Chat
 
 Voice input integration for terminal commands.
@@ -799,7 +801,8 @@ const { data, response } = await createSession({ cols: 120, rows: 30, shell: 'pw
 | Settings client (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/comms/settingsChannel.ts` |
 | Voice | `src/Ai.Tlbx.MidTerm/src/ts/modules/voice.ts` |
 | Touch | `src/Ai.Tlbx.MidTerm/src/ts/modules/touchController/` |
-| File links | `src/Ai.Tlbx.MidTerm/src/ts/modules/fileLinks.ts` |
+| File links | `src/Ai.Tlbx.MidTerm/src/ts/modules/terminal/fileLinks.ts` |
+| File Radar patterns | `src/Ai.Tlbx.MidTerm/src/ts/modules/terminal/fileRadar.patterns.ts` |
 | History (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/history/` |
 | Tmux services | `src/Ai.Tlbx.MidTerm/Services/Tmux/` |
 | Layout module | `src/Ai.Tlbx.MidTerm/src/ts/modules/layout/` |

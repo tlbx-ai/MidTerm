@@ -7,7 +7,7 @@
  */
 
 import type { Terminal } from '@xterm/xterm';
-import type { TerminalState, Settings } from '../types';
+import type { TerminalState, MidTermSettingsPublic } from '../types';
 
 // Extend Terminal with internal properties we access
 declare module '@xterm/xterm' {
@@ -28,7 +28,7 @@ declare global {
     mmDebug?: {
       readonly terminals: Map<string, TerminalState>;
       readonly activeId: string | null;
-      readonly settings: Settings | null;
+      readonly settings: MidTermSettingsPublic | null;
     };
 
     // Voice audio functions from webAudioAccess.js

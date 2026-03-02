@@ -979,9 +979,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             refreshed.Name = existing.Name;
         }
 
-        // Preserve process/cwd metadata if refreshed snapshot is sparse.
-        if (string.IsNullOrWhiteSpace(refreshed.CurrentDirectory) &&
-            !string.IsNullOrWhiteSpace(existing.CurrentDirectory))
+        // Always prefer the existing CWD — it's kept current by HandleOscCwdUpdate
+        // and HandleClientForegroundChanged. The refreshed snapshot from GetInfoAsync
+        // reads the Win32 process PEB, which is stale on PowerShell (Set-Location
+        // doesn't call SetCurrentDirectoryW). Only use the refreshed value for
+        // initial population when the existing entry has no CWD yet.
+        if (!string.IsNullOrWhiteSpace(existing.CurrentDirectory))
         {
             refreshed.CurrentDirectory = existing.CurrentDirectory;
         }

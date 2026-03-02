@@ -2,12 +2,12 @@
   "profiles": {
     "Ai.Tlbx.MidTerm.Aot": {
       "commandName": "Project",
-      "commandLineArgs": "--spawned",
+      "commandLineArgs": "--port 2001",
       "launchBrowser": true,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
-      "applicationUrl": "https://localhost:55353;http://localhost:55354"
+      "applicationUrl": "https://localhost:2001"
     }
   }
 }

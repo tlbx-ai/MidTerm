@@ -93,7 +93,7 @@ export function restoreSidebarState(): void {
     if (width >= MIN_SIDEBAR_WIDTH && width <= MAX_SIDEBAR_WIDTH) {
       const sidebar = document.getElementById('sidebar');
       if (sidebar) {
-        sidebar.style.width = width + 'px';
+        sidebar.style.width = `${width}px`;
       }
     }
   }
@@ -130,7 +130,7 @@ export function setupSidebarResize(): void {
     if (!isResizing) return;
     const delta = clientX - startX;
     const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + delta));
-    sidebarEl.style.width = newWidth + 'px';
+    sidebarEl.style.width = `${newWidth}px`;
   }
 
   function endResize(): void {
@@ -151,15 +151,18 @@ export function setupSidebarResize(): void {
     beginResize(e.clientX);
     e.preventDefault();
   });
-  document.addEventListener('mousemove', (e: MouseEvent) => updateResize(e.clientX));
+  document.addEventListener('mousemove', (e: MouseEvent) => {
+    updateResize(e.clientX);
+  });
   document.addEventListener('mouseup', endResize);
 
   // Touch events
   gripEl.addEventListener(
     'touchstart',
     (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      beginResize(e.touches[0]!.clientX);
+      const touch = e.touches[0];
+      if (e.touches.length !== 1 || !touch) return;
+      beginResize(touch.clientX);
       e.preventDefault();
     },
     { passive: false },
@@ -168,8 +171,9 @@ export function setupSidebarResize(): void {
   document.addEventListener(
     'touchmove',
     (e: TouchEvent) => {
-      if (!isResizing || e.touches.length !== 1) return;
-      updateResize(e.touches[0]!.clientX);
+      const touch = e.touches[0];
+      if (!isResizing || e.touches.length !== 1 || !touch) return;
+      updateResize(touch.clientX);
       e.preventDefault();
     },
     { passive: false },

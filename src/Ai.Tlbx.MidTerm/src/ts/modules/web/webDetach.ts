@@ -23,10 +23,12 @@ function channelName(sessionId: string): string {
 /** Initialize the detach system: wire up detach/dock-back buttons. */
 export function initDetach(): void {
   document.getElementById('web-preview-detach')?.addEventListener('click', detachPreview);
-  document.getElementById('web-preview-dock-back')?.addEventListener('click', () => dockBack());
+  document.getElementById('web-preview-dock-back')?.addEventListener('click', () => {
+    dockBack();
+  });
 }
 
-function handleMessage(e: MessageEvent): void {
+function handleMessage(e: MessageEvent<{ type: string; sessionId?: string }>): void {
   const { type, sessionId } = e.data;
   if (type === 'dock-back' || type === 'popup-closed') {
     dockBack(sessionId ?? undefined);

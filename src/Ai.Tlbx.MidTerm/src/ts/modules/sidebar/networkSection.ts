@@ -24,7 +24,7 @@ export function initNetworkSection(): void {
 
   if (isUntrusted) {
     section.classList.add('untrusted');
-    const titleEl = section.querySelector('.network-section-title') as HTMLElement | null;
+    const titleEl = section.querySelector<HTMLElement>('.network-section-title');
     if (titleEl) {
       titleEl.dataset.notTrusted = t('network.notTrusted');
     }

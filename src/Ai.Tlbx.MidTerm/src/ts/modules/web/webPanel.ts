@@ -7,12 +7,28 @@
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
 import { reloadWebPreview, setWebPreviewTarget } from './webApi';
 import { pasteToTerminal } from '../terminal';
+import { sendInput } from '../comms/muxChannel';
+import { getForegroundInfo } from '../process';
 import { createLogger } from '../logging';
 import { getActiveUrl, setActiveMode, setActiveUrl } from './webSessionState';
+
+interface UploadResponse {
+  path?: string;
+}
+
+interface Html2CanvasWindow extends Window {
+  html2canvas?: (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+}
 
 const log = createLogger('webPanel');
 let urlInput: HTMLInputElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
+let loadedUrl: string | null = null;
+
+/** Get the URL currently loaded in the iframe (null if unloaded). */
+export function getLoadedUrl(): string | null {
+  return loadedUrl;
+}
 
 /** Initialize the web preview panel: wire up URL input, buttons, and keyboard shortcuts. */
 export function initWebPanel(): void {
@@ -26,7 +42,7 @@ export function initWebPanel(): void {
   goBtn?.addEventListener('click', () => {
     void handleGo();
   });
-  urlInput?.addEventListener('keydown', (e: KeyboardEvent) => {
+  urlInput.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       void handleGo();
@@ -38,11 +54,14 @@ export function initWebPanel(): void {
     void handleRefresh(hard ? 'hard' : 'soft');
   });
   screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
-  document
-    .getElementById('web-preview-snapshot')
-    ?.addEventListener('click', () => void handleSnapshot());
-  document.getElementById('web-preview-dom-html')?.addEventListener('click', handleDomHtml);
-  document.getElementById('web-preview-dom-text')?.addEventListener('click', handleDomText);
+  document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
+
+  window.addEventListener('message', (e: MessageEvent<unknown>) => {
+    const d = e.data as Record<string, unknown> | null;
+    if (d && d.type === 'mt-navigation' && typeof d.url === 'string') {
+      updateUrlBarFromIframe(d.url);
+    }
+  });
 }
 
 /** Restore the last-used URL for the active session into the URL input bar. */
@@ -84,8 +103,15 @@ async function handleGo(): Promise<void> {
 /** Reload the web preview iframe with a cache-busting query parameter. */
 export function loadPreview(): void {
   if (!iframe) return;
-  // Force reload by setting src with a cache-busting fragment
-  iframe.src = '/webpreview/' + '?' + Date.now();
+  loadedUrl = $webPreviewUrl.get();
+  let targetPath = '';
+  try {
+    const url = new URL(loadedUrl ?? '');
+    targetPath = url.pathname.replace(/\/$/, '');
+  } catch {
+    /* ignore invalid URLs */
+  }
+  iframe.src = `/webpreview${targetPath}/?${Date.now()}`;
 }
 
 async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
@@ -95,6 +121,30 @@ async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
 
   await reloadWebPreview(mode);
   loadPreview();
+}
+
+/**
+ * Update the URL bar to reflect in-iframe navigation (redirects, pushState, etc.).
+ * Strips the /webpreview prefix and reconstructs the upstream URL.
+ */
+function updateUrlBarFromIframe(iframeUrl: string): void {
+  if (!urlInput) return;
+  try {
+    const parsed = new URL(iframeUrl);
+    let path = parsed.pathname;
+    if (path.startsWith('/webpreview/')) {
+      path = path.slice('/webpreview'.length);
+    } else if (path === '/webpreview') {
+      path = '/';
+    }
+    const target = $webPreviewUrl.get();
+    if (!target) return;
+    const targetUrl = new URL(target);
+    const displayUrl = targetUrl.origin + path + parsed.search + parsed.hash;
+    urlInput.value = displayUrl;
+  } catch {
+    // ignore malformed URLs
+  }
 }
 
 /** Show the web preview iframe and hide the detached placeholder message. */
@@ -115,6 +165,7 @@ export function unloadIframe(): void {
     iframe.src = 'about:blank';
     iframe.classList.add('hidden');
   }
+  loadedUrl = null;
 }
 
 /** Show the "detached" placeholder message and hide the iframe. */
@@ -132,67 +183,20 @@ export function hideDetachedPlaceholder(): void {
 }
 
 /**
- * Save a DOM snapshot of the web preview to the active session's cwd.
- * Sends the live rendered HTML + CSS hrefs to the server, which writes them
- * to <cwd>/.midterm/snapshot_YYYYMMDD_HHMMSS/ and pastes the path into the terminal.
+ * Inject a chat message into the active terminal telling the agent to read
+ * the browser control guidance file. Points to CLAUDE.md for Claude Code,
+ * AGENTS.md for all other processes.
  */
-async function handleSnapshot(): Promise<void> {
-  if (!iframe || iframe.src === 'about:blank') return;
+function handleAgentHint(): void {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
 
-  const iframeDoc = iframe.contentDocument;
-  if (!iframeDoc) return;
+  const fg = getForegroundInfo(sessionId);
+  const name = (fg.name ?? '').toLowerCase();
+  const guidanceFile = name === 'claude' ? '.midterm/CLAUDE.md' : '.midterm/AGENTS.md';
+  const message = `Read the file ${guidanceFile} for instructions on how to interact with this browser preview.\n`;
 
-  const html = iframeDoc.documentElement.outerHTML;
-  const cssUrls = Array.from(
-    iframeDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]'),
-  ).map((el) => el.href);
-
-  try {
-    const resp = await fetch('/api/webpreview/snapshot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, html, cssUrls }),
-    });
-    if (!resp.ok) {
-      log.warn(() => `Snapshot failed: ${resp.status}`);
-      return;
-    }
-    const result = await resp.json();
-    if (result.snapshotPath) {
-      pasteToTerminal(sessionId, result.snapshotPath, true);
-      log.info(() => `Snapshot saved: ${result.snapshotPath}`);
-    }
-  } catch (err) {
-    log.warn(() => `Snapshot error: ${String(err)}`);
-  }
-}
-
-/**
- * Paste the iframe's full HTML source into the active terminal session.
- */
-function handleDomHtml(): void {
-  if (!iframe || iframe.src === 'about:blank') return;
-  const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
-  const html = iframe.contentDocument?.documentElement.outerHTML ?? '';
-  if (!html) return;
-  pasteToTerminal(sessionId, html, false);
-  log.info(() => 'DOM outerHTML pasted to terminal');
-}
-
-/**
- * Paste the iframe's visible text content into the active terminal session.
- */
-function handleDomText(): void {
-  if (!iframe || iframe.src === 'about:blank') return;
-  const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
-  const text = iframe.contentDocument?.documentElement.innerText ?? '';
-  if (!text) return;
-  pasteToTerminal(sessionId, text, false);
-  log.info(() => 'DOM innerText pasted to terminal');
+  sendInput(sessionId, message);
 }
 
 /**
@@ -205,9 +209,8 @@ function handleDomText(): void {
  * to be asked for html2canvas (which it doesn't have). blob: URLs are explicitly excluded
  * from that rewriter, so they reach the browser's native script loader unchanged.
  */
-async function ensureHtml2Canvas(iframeWin: Window): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if ((iframeWin as any).html2canvas) return;
+async function ensureHtml2Canvas(iframeWin: Html2CanvasWindow): Promise<void> {
+  if (iframeWin.html2canvas) return;
 
   // Fetch from parent window — not subject to the iframe's URL-rewriting patches.
   const response = await fetch('/js/html2canvas.min.js');
@@ -242,25 +245,23 @@ async function captureIframeScreenshot(): Promise<Blob | null> {
   const iframeDoc = iframe.contentDocument;
   if (!iframeWin || !iframeDoc) return null;
 
-  await ensureHtml2Canvas(iframeWin);
+  const typedWin = iframeWin as Html2CanvasWindow;
+  await ensureHtml2Canvas(typedWin);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const canvas: HTMLCanvasElement = await (iframeWin as any).html2canvas(
-    iframeDoc.documentElement,
-    {
-      useCORS: false, // not needed — all resources are same-origin via the proxy
-      allowTaint: false,
-      scale: window.devicePixelRatio || 1,
-      width: iframe.clientWidth,
-      height: iframe.clientHeight,
-      scrollX: -iframeDoc.documentElement.scrollLeft,
-      scrollY: -iframeDoc.documentElement.scrollTop,
-      windowWidth: iframe.clientWidth,
-      windowHeight: iframe.clientHeight,
-      logging: false,
-      imageTimeout: 15000,
-    },
-  );
+  if (!typedWin.html2canvas) return null;
+  const canvas: HTMLCanvasElement = await typedWin.html2canvas(iframeDoc.documentElement, {
+    useCORS: false, // not needed — all resources are same-origin via the proxy
+    allowTaint: false,
+    scale: window.devicePixelRatio || 1,
+    width: iframe.clientWidth,
+    height: iframe.clientHeight,
+    scrollX: -iframeDoc.documentElement.scrollLeft,
+    scrollY: -iframeDoc.documentElement.scrollTop,
+    windowWidth: iframe.clientWidth,
+    windowHeight: iframe.clientHeight,
+    logging: false,
+    imageTimeout: 15000,
+  });
 
   return new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, 'image/png');
@@ -311,7 +312,7 @@ async function handleScreenshot(download = false): Promise<void> {
       log.warn(() => `Screenshot upload failed: ${resp.status}`);
       return;
     }
-    const result = await resp.json();
+    const result = (await resp.json()) as UploadResponse;
     if (result.path) {
       pasteToTerminal(sessionId, result.path, true);
       log.info(() => 'Screenshot pasted to terminal');

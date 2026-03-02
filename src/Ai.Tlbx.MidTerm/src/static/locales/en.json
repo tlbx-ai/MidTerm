@@ -41,6 +41,10 @@
 
   "chat.title": "Voice Chat",
   "chat.hide": "Hide chat panel",
+  "chat.toolCall": "tool call",
+  "chat.toolCalls": "tool calls",
+  "chat.toolRequest": "Request",
+  "chat.toolResponse": "Response",
 
   "topbar.sessions": "Sessions",
   "topbar.fullscreen": "Fullscreen",
@@ -72,6 +76,9 @@
   "settings.general.frontend": "Frontend",
   "settings.general.host": "Host",
   "settings.general.environment": "Environment",
+  "settings.general.codeSigning": "Code Signing",
+  "settings.general.signed": "Signed",
+  "settings.general.unsigned": "Unsigned",
   "settings.general.updates": "Updates",
   "settings.general.checkForUpdates": "Check for Updates",
   "settings.general.changelog": "Changelog",
@@ -118,6 +125,8 @@
   "settings.behavior.clipboardShortcuts": "Copy/Paste Shortcuts",
   "settings.behavior.smoothScrolling": "Smooth Scrolling",
   "settings.behavior.gpuRendering": "GPU Rendering (WebGL)",
+  "settings.behavior.inputMode": "Input Mode",
+  "settings.behavior.inputModeHint": "Smart Input uses a text box instead of direct keyboard input. Both mode docks the input bar below the terminal.",
   "settings.behavior.scrollbackProtection": "Claude Code scrollback glitch protection",
   "settings.behavior.fileRadar": "File Radar",
   "settings.behavior.managerBar": "Middle Manager Bar",
@@ -213,6 +222,9 @@
   "settings.options.bellSound": "Sound",
   "settings.options.bellVisual": "Visual Flash",
   "settings.options.bellOff": "Off",
+  "settings.options.inputKeyboard": "Keyboard",
+  "settings.options.inputSmartInput": "Smart Input",
+  "settings.options.inputBoth": "Both",
   "settings.options.clipboardAuto": "Auto (detect platform)",
   "settings.options.clipboardWindows": "Windows (Ctrl+C/V)",
   "settings.options.clipboardUnix": "Unix (Ctrl+Shift+C/V)",
@@ -280,6 +292,7 @@
   "changelog.failed": "Failed to load changelog.",
   "changelog.viewOnGithub": "View on GitHub",
   "changelog.noNotes": "No release notes.",
+  "changelog.dontShowAgain": "Don't show after updates",
 
   "session.terminal": "Terminal",
   "session.split": "SPLIT",
@@ -323,6 +336,7 @@
   "managerBar.remove": "Remove",
   "managerBar.labelHint": "label…",
 
+  "sessionTabs.files": "Files",
   "sessionTabs.commands": "Commands",
   "sessionTabs.git": "Git",
   "sessionTabs.web": "Web Preview",
@@ -330,14 +344,12 @@
   "webPreview.urlPlaceholder": "https://localhost:3000",
   "webPreview.go": "Go",
   "webPreview.refresh": "Refresh",
-  "webPreview.snapshot": "Save DOM snapshot to filesystem",
-  "webPreview.domHtml": "Copy page HTML to terminal",
-  "webPreview.domText": "Copy page text to terminal",
   "webPreview.screenshot": "Screenshot to terminal (Ctrl+click to download)",
   "webPreview.detach": "Pop out to window",
   "webPreview.dockBack": "Dock back",
   "webPreview.detachedPlaceholder": "Preview is open in a separate window",
   "webPreview.noTarget": "Enter a URL to preview",
+  "webPreview.agentHint": "Hint agent about browser control",
 
   "fileBrowser.unableToLoad": "Unable to load directory",
   "fileBrowser.selectFile": "Select a file to preview",
@@ -418,5 +430,6 @@
   "dialog.confirm": "Confirm",
   "dialog.info": "Info",
   "dialog.ok": "OK",
-  "dialog.cancel": "Cancel"
+  "dialog.cancel": "Cancel",
+  "smartInput.autoSend": "Auto-send"
 }

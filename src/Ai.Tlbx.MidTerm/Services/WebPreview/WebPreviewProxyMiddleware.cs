@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.WebSockets;
 using System.Text;
@@ -21,7 +22,12 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string UrlRewriteScript = """
         <script>(function(){
           if(window.__mtProxy)return;window.__mtProxy=1;
+          // Iframe cloaking: make the page think it's top-level
+          try{Object.defineProperty(window,"top",{get:function(){return window},configurable:true});}catch(e){}
+          try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
+          try{Object.defineProperty(window,"frameElement",{get:function(){return null},configurable:true});}catch(e){}
           var P="/webpreview",E=P+"/_ext?u=";
+          // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
           function r(u){
             if(typeof u!=="string")return u;
             if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
@@ -39,40 +45,93 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             return u;
           }
+          // === Network APIs ===
           var F=window.fetch;
-          window.fetch=function(u,o){return F.call(this,typeof u==="string"?r(u):u,o);};
+          window.fetch=function(u,o){
+            if(typeof u==="string")return F.call(this,r(u),o);
+            if(u&&typeof u==="object"&&u.url){try{return F.call(this,new Request(r(u.url),u),o);}catch(e){}}
+            return F.call(this,u,o);
+          };
           var X=XMLHttpRequest.prototype.open;
           XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);return X.apply(this,a);};
-          // Patch .src property on elements that load resources
+          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
+          // === Element property setters ===
+          // .src on elements that load resources
           ["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLEmbedElement","HTMLVideoElement","HTMLAudioElement"].forEach(function(n){
             var p=window[n]&&window[n].prototype;if(!p)return;
             var d=Object.getOwnPropertyDescriptor(p,"src");if(!d||!d.set)return;
             Object.defineProperty(p,"src",{set:function(v){d.set.call(this,r(v));},get:d.get,configurable:true,enumerable:true});
           });
-          // Patch .href on link elements (stylesheets, preloads)
+          // .href on link elements (stylesheets, preloads)
           var ld=Object.getOwnPropertyDescriptor(HTMLLinkElement.prototype,"href");
           if(ld&&ld.set){Object.defineProperty(HTMLLinkElement.prototype,"href",{set:function(v){ld.set.call(this,r(v));},get:ld.get,configurable:true,enumerable:true});}
-          // Patch setAttribute for src/href/action/poster
+          // .href on anchor elements
+          var ad=Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype,"href");
+          if(ad&&ad.set){Object.defineProperty(HTMLAnchorElement.prototype,"href",{set:function(v){ad.set.call(this,r(v));},get:ad.get,configurable:true,enumerable:true});}
+          // .action on form elements
+          var fd=Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,"action");
+          if(fd&&fd.set){Object.defineProperty(HTMLFormElement.prototype,"action",{set:function(v){fd.set.call(this,r(v));},get:fd.get,configurable:true,enumerable:true});}
+          // .data on object elements
+          var od=Object.getOwnPropertyDescriptor(HTMLObjectElement.prototype,"data");
+          if(od&&od.set){Object.defineProperty(HTMLObjectElement.prototype,"data",{set:function(v){od.set.call(this,r(v));},get:od.get,configurable:true,enumerable:true});}
+          // srcset rewriting: each entry is "url descriptor, ..." — rewrite each URL
+          function rss(v){
+            if(typeof v!=="string")return v;
+            return v.replace(/(^|,\s*)([^\s,]+)/g,function(m,pre,url){return pre+r(url);});
+          }
+          // .srcset on img/source elements
+          ["HTMLImageElement","HTMLSourceElement"].forEach(function(n){
+            var p=window[n]&&window[n].prototype;if(!p)return;
+            var d=Object.getOwnPropertyDescriptor(p,"srcset");if(!d||!d.set)return;
+            Object.defineProperty(p,"srcset",{set:function(v){d.set.call(this,rss(v));},get:d.get,configurable:true,enumerable:true});
+          });
+          // .poster on video elements
+          var vpd=Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype,"poster");
+          if(vpd&&vpd.set){Object.defineProperty(HTMLVideoElement.prototype,"poster",{set:function(v){vpd.set.call(this,r(v));},get:vpd.get,configurable:true,enumerable:true});}
+          // setAttribute for src/href/action/poster/data/formaction/srcset
           var sa=Element.prototype.setAttribute;
-          Element.prototype.setAttribute=function(n,v){if(typeof v==="string"&&/^(src|href|action|poster)$/i.test(n))v=r(v);return sa.call(this,n,v);};
-          // Patch window.open
+          Element.prototype.setAttribute=function(n,v){
+            if(typeof v==="string"){
+              if(/^(src|href|action|poster|data|formaction)$/i.test(n))v=r(v);
+              else if(/^srcset$/i.test(n))v=rss(v);
+            }
+            return sa.call(this,n,v);
+          };
+          // === Constructors ===
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
-          // Patch WebSocket constructor
           var OWS=window.WebSocket;
           if(OWS&&window.Proxy){
-            try{
-              window.WebSocket=new Proxy(OWS,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
-            }catch(e){}
+            try{window.WebSocket=new Proxy(OWS,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});}catch(e){}
           }
-          // Patch EventSource constructor
           var OES=window.EventSource;
           if(OES&&window.Proxy){
-            try{
-              window.EventSource=new Proxy(OES,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});
-            }catch(e){}
+            try{window.EventSource=new Proxy(OES,{construct:function(t,a){if(a&&a.length>0)a[0]=r(a[0]);return Reflect.construct(t,a);}});}catch(e){}
           }
-          // Bridge document.cookie to server-side cookie jar used by proxy.
+          var OA=window.Audio;
+          if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
+          var OI=window.Image;
+          if(OI){window.Image=function(w,h){return new OI(w,h);};window.Image.prototype=OI.prototype;}
+          // Worker/SharedWorker constructors
+          if(window.Worker){var OW=window.Worker;window.Worker=function(u,o){return new OW(r(u),o);};window.Worker.prototype=OW.prototype;}
+          if(window.SharedWorker){var OSW=window.SharedWorker;window.SharedWorker=function(u,o){return new OSW(r(u),o);};window.SharedWorker.prototype=OSW.prototype;}
+          // Service worker registration
+          if(navigator.serviceWorker&&navigator.serviceWorker.register){
+            var swr=navigator.serviceWorker.register.bind(navigator.serviceWorker);
+            navigator.serviceWorker.register=function(u,o){return swr(r(u),o);};
+          }
+          // === Navigation APIs ===
+          function ntfy(){try{window.parent.postMessage({type:"mt-navigation",url:location.href},"*");}catch(e){}}
+          var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
+          history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
+          history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
+          var la=location.assign.bind(location),lr=location.replace.bind(location);
+          location.assign=function(u){return la(r(u));};
+          location.replace=function(u){return lr(r(u));};
+          window.addEventListener("popstate",ntfy);
+          window.addEventListener("hashchange",ntfy);
+          setTimeout(ntfy,0);
+          // === Cookie bridge ===
           var C=P+"/_cookies",cc="";
           function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
           rc();
@@ -86,31 +145,251 @@ public sealed partial class WebPreviewProxyMiddleware
               }});
             }
           }catch(e){}
-          // Patch Audio constructor (new Audio('/path/to/file.mp3'))
-          var OA=window.Audio;
-          if(OA){window.Audio=function(u){return new OA(r(u));};window.Audio.prototype=OA.prototype;}
-          // Patch navigator.sendBeacon
-          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
-          // Patch Image constructor (new Image().src is handled by setter, but direct constructor arg)
-          var OI=window.Image;
-          if(OI){window.Image=function(w,h){var i=new OI(w,h);return i;};window.Image.prototype=OI.prototype;}
-          // MutationObserver: catch elements added via innerHTML/insertAdjacentHTML/document.write
+          // === MutationObserver: catch dynamically added elements ===
+          function rewriteEl(el){
+            if(!el.getAttribute)return;
+            ["src","href","action","data","formaction","poster"].forEach(function(attr){
+              var v=el.getAttribute(attr);
+              if(v){var rv=r(v);if(rv!==v)sa.call(el,attr,rv);}
+            });
+            var ss=el.getAttribute("srcset");
+            if(ss){var rv=rss(ss);if(rv!==ss)sa.call(el,"srcset",rv);}
+            // <meta http-equiv="refresh" content="0;url=/path"> — PHP redirect pattern
+            if(el.tagName==="META"&&/^refresh$/i.test(el.getAttribute("http-equiv")||"")){
+              var ct=el.getAttribute("content")||"";
+              var rm=ct.match(/^(\d+\s*;\s*url\s*=\s*)(.+)$/i);
+              if(rm){var ru=r(rm[2].trim());sa.call(el,"content",rm[1]+ru);}
+            }
+          }
           new MutationObserver(function(muts){
             for(var i=0;i<muts.length;i++){
               var nodes=muts[i].addedNodes;
               for(var j=0;j<nodes.length;j++){
                 var n=nodes[j];if(n.nodeType!==1)continue;
-                var els=n.querySelectorAll?[n].concat([].slice.call(n.querySelectorAll("[src],[href]"))):[n];
-                for(var k=0;k<els.length;k++){
-                  var el=els[k];if(!el.getAttribute)continue;
-                  var s=el.getAttribute("src");
-                  if(s){var rs=r(s);if(rs!==s)sa.call(el,"src",rs);}
-                  var h=el.getAttribute("href");
-                  if(h){var rh=r(h);if(rh!==h)sa.call(el,"href",rh);}
+                rewriteEl(n);
+                if(n.querySelectorAll){
+                  var els=n.querySelectorAll("[src],[href],[action],[data],[formaction],[poster],[srcset],meta[http-equiv]");
+                  for(var k=0;k<els.length;k++)rewriteEl(els[k]);
                 }
               }
             }
           }).observe(document.documentElement,{childList:true,subtree:true});
+          // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
+          var bws,bwsReady=false;
+          function truncDom(el,d,mx){
+            if(d>=mx)return"<!-- ... -->";
+            var t=el.cloneNode(false);
+            if(el.childNodes)for(var i=0;i<el.childNodes.length;i++){
+              var c=el.childNodes[i];
+              if(c.nodeType===1)t.appendChild(truncDom(c,d+1,mx).content?truncDom(c,d+1,mx):document.createRange().createContextualFragment(truncDom(c,d+1,mx)));
+              else if(c.nodeType===3)t.appendChild(c.cloneNode(false));
+            }
+            return t.outerHTML||t.textContent||"";
+          }
+          function truncEl(el,mx){
+            if(!mx||mx<1)return el.outerHTML;
+            var clone=el.cloneNode(true);
+            function trim(n,d){if(d>=mx){n.innerHTML="<!-- ... -->";return;}
+              for(var i=0;i<n.children.length;i++)trim(n.children[i],d+1);
+            }
+            trim(clone,0);return clone.outerHTML;
+          }
+          function handleBCmd(msg){
+            var res={id:msg.id,success:true,result:null,error:null,matchCount:null};
+            try{
+              switch(msg.command){
+                case"query":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var els=document.querySelectorAll(msg.selector);
+                  res.matchCount=els.length;
+                  var parts=[];var mx=msg.maxDepth||0;
+                  for(var i=0;i<els.length&&i<50;i++){
+                    parts.push(msg.textOnly?els[i].textContent:mx>0?truncEl(els[i],mx):els[i].outerHTML);
+                  }
+                  res.result=parts.join("\n---\n");
+                  break;}
+                case"click":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var el=document.querySelector(msg.selector);
+                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
+                  el.click();res.result="clicked";
+                  break;}
+                case"fill":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var el=document.querySelector(msg.selector);
+                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
+                  var nv=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
+                  if(nv&&nv.set)nv.set.call(el,msg.value||"");
+                  else el.value=msg.value||"";
+                  el.dispatchEvent(new Event("input",{bubbles:true}));
+                  el.dispatchEvent(new Event("change",{bubbles:true}));
+                  res.result="filled";
+                  break;}
+                case"exec":{
+                  if(!msg.value){res.success=false;res.error="js code required";break;}
+                  var rv=eval(msg.value);
+                  res.result=rv===undefined?"undefined":String(rv);
+                  break;}
+                case"wait":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var to=(msg.timeout||5)*1000,start=Date.now();
+                  (function poll(){
+                    var found=document.querySelector(msg.selector);
+                    if(found){res.result="found";res.matchCount=document.querySelectorAll(msg.selector).length;bws.send(JSON.stringify(res));}
+                    else if(Date.now()-start>to){res.success=false;res.error="timeout waiting for: "+msg.selector;bws.send(JSON.stringify(res));}
+                    else setTimeout(poll,200);
+                  })();return;}
+                case"screenshot":{
+                  var scr=document.createElement("script");
+                  scr.src="/js/html2canvas.min.js";
+                  scr.onload=function(){
+                    html2canvas(document.documentElement,{useCORS:true,logging:false,scale:1}).then(function(canvas){
+                      res.result=canvas.toDataURL("image/png");bws.send(JSON.stringify(res));
+                    }).catch(function(e){res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));});
+                  };
+                  scr.onerror=function(){res.success=false;res.error="failed to load html2canvas";bws.send(JSON.stringify(res));};
+                  document.head.appendChild(scr);return;}
+                case"snapshot":{
+                  res.result=document.documentElement.outerHTML;
+                  break;}
+                case"navigate":{
+                  if(!msg.value){res.success=false;res.error="url required";break;}
+                  location.href=msg.value;res.result="navigating";
+                  break;}
+                case"reload":{
+                  location.reload();res.result="reloading";
+                  break;}
+                case"outline":{
+                  var mx=msg.maxDepth||4;
+                  function ol(el,d,ind){
+                    if(d>=mx)return"";
+                    var tag=el.tagName.toLowerCase();
+                    var id=el.id?"#"+el.id:"";
+                    var cls=el.className&&typeof el.className==="string"?"."+el.className.trim().split(/\s+/).join("."):"";
+                    var line=ind+tag+id+cls;
+                    var ch=[].slice.call(el.children);
+                    var lines=[line];var ci=0;
+                    while(ci<ch.length){
+                      var ce=ch[ci];var cnt=1;
+                      while(ci+cnt<ch.length&&ch[ci+cnt].tagName===ce.tagName&&(ch[ci+cnt].className||"")===(ce.className||""))cnt++;
+                      if(cnt>2&&!ce.id){
+                        lines.push(ind+"  "+ce.tagName.toLowerCase()+(ce.className&&typeof ce.className==="string"?"."+ce.className.trim().split(/\s+/).join("."):"")+" x"+cnt);
+                        ci+=cnt;
+                      }else{lines.push(ol(ce,d+1,ind+"  "));ci++;}
+                    }
+                    return lines.filter(Boolean).join("\n");
+                  }
+                  res.result=ol(document.documentElement,0,"");
+                  break;}
+                case"attrs":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  var els=document.querySelectorAll(msg.selector);
+                  res.matchCount=els.length;
+                  var parts=[];
+                  for(var i=0;i<els.length&&i<30;i++){
+                    var ae=els[i].cloneNode(false);ae.innerHTML="";
+                    parts.push(ae.outerHTML.replace("></"+ae.tagName.toLowerCase()+">",">"));
+                  }
+                  res.result=parts.join("\n---\n");
+                  break;}
+                case"css":{
+                  if(!msg.selector){res.success=false;res.error="selector required";break;}
+                  if(!msg.value){res.success=false;res.error="css properties required (comma-separated)";break;}
+                  var props=msg.value.split(",").map(function(p){return p.trim();});
+                  var els=document.querySelectorAll(msg.selector);
+                  res.matchCount=els.length;
+                  var parts=[];
+                  for(var i=0;i<els.length&&i<20;i++){
+                    var cs=getComputedStyle(els[i]);
+                    var lines=[msg.selector+" ("+(i+1)+" of "+els.length+")"];
+                    for(var j=0;j<props.length;j++)lines.push("  "+props[j]+": "+cs.getPropertyValue(props[j]));
+                    parts.push(lines.join("\n"));
+                  }
+                  res.result=parts.join("\n---\n");
+                  break;}
+                case"log":{
+                  if(!window.__mtLog){
+                    window.__mtLog=[];
+                    var orig={log:console.log,warn:console.warn,error:console.error};
+                    ["error","warn","log"].forEach(function(lvl){
+                      console[lvl]=function(){
+                        var a=[].slice.call(arguments).map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x);}catch(e){return String(x);}}).join(" ");
+                        window.__mtLog.push({l:lvl,m:a,t:Date.now()});
+                        if(window.__mtLog.length>50)window.__mtLog.shift();
+                        orig[lvl].apply(console,arguments);
+                      };
+                    });
+                    window.addEventListener("error",function(ev){
+                      window.__mtLog.push({l:"error",m:ev.message+" ("+(ev.filename||"")+":"+(ev.lineno||0)+")",t:Date.now()});
+                      if(window.__mtLog.length>50)window.__mtLog.shift();
+                    });
+                  }
+                  var flt=msg.value||"all";
+                  var ent=window.__mtLog.filter(function(e){return flt==="all"||e.l===flt;});
+                  res.result=ent.length?ent.map(function(e){return"["+e.l+"] "+e.m;}).join("\n"):"(no entries)";
+                  res.matchCount=ent.length;
+                  break;}
+                case"links":{
+                  var anchors=document.querySelectorAll("a[href]");
+                  var seen={},parts=[];
+                  for(var i=0;i<anchors.length;i++){
+                    var href=anchors[i].getAttribute("href");
+                    if(!href||href==="#"||seen[href])continue;
+                    seen[href]=1;
+                    var txt=(anchors[i].textContent||"").trim().substring(0,80);
+                    parts.push(href+" > "+txt);
+                  }
+                  parts.sort();
+                  res.result=parts.join("\n");
+                  res.matchCount=parts.length;
+                  break;}
+                case"forms":{
+                  var fsel=msg.selector||"form";
+                  var forms=document.querySelectorAll(fsel);
+                  res.matchCount=forms.length;
+                  var parts=[];
+                  for(var i=0;i<forms.length;i++){
+                    var f=forms[i];
+                    var ftag=f.tagName.toLowerCase();
+                    var fid=f.id?"#"+f.id:"";
+                    var fhdr=ftag+fid;
+                    if(f.action)fhdr+=" (action="+f.getAttribute("action")+", method="+(f.method||"GET").toUpperCase()+")";
+                    var flines=[fhdr];
+                    var inputs=f.querySelectorAll("input,select,textarea,button");
+                    for(var j=0;j<inputs.length;j++){
+                      var inp=inputs[j];
+                      var it=inp.tagName.toLowerCase();
+                      var iname=inp.name?"[name="+inp.name+"]":"";
+                      var itp=inp.type?" type="+inp.type:"";
+                      var ireq=inp.required?" required":"";
+                      var ival=it==="select"?" value=\""+(inp.options[inp.selectedIndex]||{}).text+"\"":
+                               it==="button"?" \""+(inp.textContent||"").trim()+"\"":
+                               " value=\""+((inp.type==="password"?"***":inp.value)||"")+"\"";
+                      var ilbl="";
+                      if(inp.id){var le=f.querySelector("label[for="+inp.id+"]");if(le)ilbl=" label=\""+le.textContent.trim()+"\"";}
+                      if(!ilbl&&inp.closest&&inp.closest("label"))ilbl=" label=\""+inp.closest("label").textContent.trim()+"\"";
+                      flines.push("  "+it+iname+itp+ireq+ival+ilbl);
+                    }
+                    parts.push(flines.join("\n"));
+                  }
+                  res.result=parts.join("\n---\n");
+                  break;}
+                default:res.success=false;res.error="unknown command: "+msg.command;
+              }
+            }catch(e){res.success=false;res.error=e.message||String(e);}
+            bws.send(JSON.stringify(res));
+          }
+          function connectBws(){
+            try{
+              var proto=location.protocol==="https:"?"wss:":"ws:";
+              bws=new OWS(proto+"//"+location.host+"/ws/browser");
+              bws.onopen=function(){bwsReady=true;};
+              bws.onmessage=function(e){try{handleBCmd(JSON.parse(e.data));}catch(ex){}};
+              bws.onclose=function(){bwsReady=false;setTimeout(connectBws,3000);};
+              bws.onerror=function(){};
+            }catch(e){}
+          }
+          setTimeout(connectBws,500);
         })();</script>
         """;
 
@@ -151,6 +430,12 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private readonly RequestDelegate _next;
     private readonly WebPreviewService _service;
+
+    // Learned path prefixes where subpath-prefixed requests returned 404 but server-root
+    // succeeded. Keyed by prefix (e.g. "/_framework/"), value is true = prefer root.
+    // Reset when the target URL changes.
+    private readonly Dictionary<string, bool> _rootFallbackPrefixes = new(StringComparer.OrdinalIgnoreCase);
+    private string? _rootFallbackTarget;
 
     public WebPreviewProxyMiddleware(RequestDelegate next, WebPreviewService service)
     {
@@ -260,8 +545,21 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
     {
-        var currentUrl = BuildUpstreamUrl(targetUri, path, context.Request.QueryString.Value);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
+        var targetBase = targetUri.AbsolutePath.TrimEnd('/');
+        var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
+
+        // Determine primary URL (may use root fallback if previously learned)
+        var primaryPath = BuildUpstreamPath(targetUri, path);
+        var useRootFirst = hasSubpath && ShouldTryRootFirst(path, targetBase);
+        if (useRootFirst)
+        {
+            primaryPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
+            if (!primaryPath.StartsWith('/'))
+                primaryPath = "/" + primaryPath;
+        }
+
+        var currentUrl = BuildUpstreamUrlFromPath(targetUri, primaryPath, context.Request.QueryString.Value);
 
         var originalMethod = new HttpMethod(context.Request.Method);
         byte[]? requestBodyBuffer = null;
@@ -287,6 +585,52 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
             context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
+
+        // Retry-on-404: if we got 404 and the target has a subpath, try the alternate path.
+        // If we tried subpath-prefixed first, retry at server root. If we tried root first
+        // (from learned cache), retry with subpath-prefixed.
+        if (hasSubpath
+            && upstreamResponse is not null
+            && upstreamResponse.StatusCode == System.Net.HttpStatusCode.NotFound
+            && !PathAlreadyUnderTarget(path, targetBase))
+        {
+            var fallbackPath = useRootFirst
+                ? BuildUpstreamPath(targetUri, path)
+                : (string.IsNullOrEmpty(path) || path == "/" ? "/" : (path.StartsWith('/') ? path : "/" + path));
+
+            if (fallbackPath != primaryPath)
+            {
+                var fallbackUrl = BuildUpstreamUrlFromPath(targetUri, fallbackPath, context.Request.QueryString.Value);
+                var (fallbackResponse, fallbackError, fallbackFinalUrl) = await SendUpstreamAsync(
+                    context, originalMethod, fallbackUrl, BuildRequest, context.RequestAborted);
+
+                if (fallbackResponse is not null
+                    && fallbackResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+                {
+                    upstreamResponse.Dispose();
+                    upstreamResponse = fallbackResponse;
+                    errorCode = fallbackError;
+                    finalUrl = fallbackFinalUrl;
+
+                    // Learn: if root worked, remember this prefix for future requests
+                    if (!useRootFirst)
+                    {
+                        LearnRootFallback(path, targetUri.ToString());
+                    }
+                }
+                else
+                {
+                    fallbackResponse?.Dispose();
+                    // Learn: if subpath worked from root-first attempt, un-learn
+                    if (useRootFirst && fallbackResponse?.StatusCode != System.Net.HttpStatusCode.NotFound)
+                    {
+                        UnlearnRootFallback(path);
+                    }
+                }
+            }
+        }
+
+        _service.PersistCookies();
 
         if (upstreamResponse is null)
         {
@@ -323,11 +667,32 @@ public sealed partial class WebPreviewProxyMiddleware
         html = RootRelativeSrcsetRegex().Replace(html, "$1/webpreview/");
         html = RootRelativeCssUrlRegex().Replace(html, "url(/webpreview/");
 
+        // Rewrite <meta http-equiv="refresh" content="0;url=/path"> URLs (PHP redirect pattern)
+        html = MetaRefreshRegex().Replace(html, m =>
+        {
+            var prefix = m.Groups[1].Value;
+            var url = m.Groups[2].Value;
+            if (url.StartsWith('/') && !url.StartsWith("/webpreview/"))
+                return prefix + "/webpreview" + url;
+            return m.Value;
+        });
+
         // Rewrite absolute external URLs (https://cdn.example.com/...) to go through _ext proxy.
         // This allows MT to fetch third-party resources server-side, bypassing CORS/ad blockers.
         var targetHost = _service.TargetUri?.Host;
         html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetHost));
         html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetHost));
+
+        // Extract the original <base href> value before removing — Blazor and other
+        // frameworks rely on precise base URI (e.g., <base href="/kicoach/">).
+        // Recomputing from the final URL loses trailing-slash semantics when the server
+        // doesn't redirect /path → /path/.
+        string? originalBaseHref = null;
+        var baseMatch = BaseHrefValueRegex().Match(html);
+        if (baseMatch.Success)
+        {
+            originalBaseHref = baseMatch.Groups[1].Value;
+        }
 
         // Remove any existing <base> tags to avoid duplicates — we inject our own
         html = ExistingBaseTagRegex().Replace(html, "");
@@ -337,10 +702,21 @@ public sealed partial class WebPreviewProxyMiddleware
         // causing the proxied page to block framing of external resources.
         html = UpstreamSecurityMetaTagRegex().Replace(html, "");
 
-        // Compute base href from the final upstream URL's directory path.
-        // This preserves correct relative URL resolution when the upstream redirected
-        // (e.g., / → /wiki/Main_Page means relative URLs resolve against /wiki/).
-        var baseHref = ComputeBaseHref(finalUrl);
+        // Build proxy-prefixed base href. Trust the upstream's <base href> value — it knows
+        // how its assets are served (root vs subpath). Just prefix with /webpreview.
+        string baseHref;
+        if (originalBaseHref is not null)
+        {
+            var basePath = originalBaseHref.TrimEnd('/');
+            if (basePath.Length == 0 || basePath == "/")
+                baseHref = "/webpreview/";
+            else
+                baseHref = "/webpreview" + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+        }
+        else
+        {
+            baseHref = ComputeBaseHref(finalUrl);
+        }
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
@@ -420,7 +796,9 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
-            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
+            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted, "ext-http");
+
+        _service.PersistCookies();
 
         if (upstreamResponse is null)
         {
@@ -508,12 +886,14 @@ public sealed partial class WebPreviewProxyMiddleware
         HttpMethod originalMethod,
         string startUrl,
         Func<HttpMethod, string, HttpRequestMessage> buildRequest,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? logType = null)
     {
         const int maxRedirects = 10;
         var currentUrl = startUrl;
         var currentMethod = originalMethod;
         HttpResponseMessage? upstreamResponse = null;
+        var sw = Stopwatch.StartNew();
 
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
@@ -525,13 +905,17 @@ public sealed partial class WebPreviewProxyMiddleware
                 upstreamResponse = await _service.HttpClient.SendAsync(
                     requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException ex)
             {
+                sw.Stop();
+                LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 502, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 502, null);
             }
-            catch (TaskCanceledException)
+            catch (TaskCanceledException ex)
             {
+                sw.Stop();
+                LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 504, null);
             }
@@ -551,6 +935,8 @@ public sealed partial class WebPreviewProxyMiddleware
                 }
             }
 
+            sw.Stop();
+            LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, statusCode, sw.ElapsedMilliseconds, requestMessage, upstreamResponse, null);
             requestMessage.Dispose();
             break;
         }
@@ -558,6 +944,75 @@ public sealed partial class WebPreviewProxyMiddleware
         return upstreamResponse is not null
             ? (upstreamResponse, 0, currentUrl)
             : (null, 502, null);
+    }
+
+    private void LogHttpRequest(
+        HttpContext context, string type, string method,
+        string startUrl, string finalUrl, int statusCode, long durationMs,
+        HttpRequestMessage? request, HttpResponseMessage? response, string? error)
+    {
+        var entry = new WebPreviewProxyLogEntry
+        {
+            Type = type,
+            Method = method,
+            RequestUrl = context.Request.Path + context.Request.QueryString,
+            UpstreamUrl = finalUrl,
+            StatusCode = statusCode,
+            DurationMs = durationMs,
+            Error = error
+        };
+
+        if (request is not null)
+        {
+            foreach (var h in request.Headers)
+                entry.RequestHeaders[h.Key] = string.Join(", ", h.Value);
+            var cookieHeader = request.Headers.TryGetValues("Cookie", out var cookies)
+                ? string.Join("; ", cookies) : null;
+            entry.RequestCookies = cookieHeader;
+        }
+
+        if (response is not null)
+        {
+            foreach (var h in response.Headers)
+                entry.ResponseHeaders[h.Key] = string.Join(", ", h.Value);
+            foreach (var h in response.Content.Headers)
+                entry.ResponseHeaders[h.Key] = string.Join(", ", h.Value);
+            entry.ContentType = response.Content.Headers.ContentType?.ToString();
+            entry.ContentLength = response.Content.Headers.ContentLength;
+
+            var setCookies = response.Headers.TryGetValues("Set-Cookie", out var sc)
+                ? string.Join(" | ", sc) : null;
+            entry.ResponseCookies = setCookies;
+        }
+
+        _service.AddLogEntry(entry);
+    }
+
+    private void LogWebSocket(
+        HttpContext context, string type, string upstreamUrl,
+        IList<string> requestedProtocols, string? negotiatedProtocol,
+        long durationMs, int statusCode, string? error)
+    {
+        var entry = new WebPreviewProxyLogEntry
+        {
+            Type = type,
+            Method = "WS-UPGRADE",
+            RequestUrl = context.Request.Path + context.Request.QueryString,
+            UpstreamUrl = upstreamUrl,
+            StatusCode = statusCode,
+            DurationMs = durationMs,
+            Error = error,
+            SubProtocols = requestedProtocols.Count > 0 ? string.Join(", ", requestedProtocols) : null,
+            NegotiatedProtocol = negotiatedProtocol
+        };
+
+        foreach (var h in context.Request.Headers)
+        {
+            entry.RequestHeaders[h.Key] = h.Value.ToString();
+        }
+
+        entry.RequestCookies = context.Request.Headers.Cookie.ToString();
+        _service.AddLogEntry(entry);
     }
 
     private async Task DispatchResponseBodyAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
@@ -680,13 +1135,30 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyWebSocketAsync(HttpContext context, Uri targetUri, string path)
     {
-        var upstreamUrl = BuildUpstreamWsUrl(targetUri, path, context.Request.QueryString.Value);
+        var targetBase = targetUri.AbsolutePath.TrimEnd('/');
+        var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
+
+        // Use learned root fallback for WebSocket paths too
+        string wsPath;
+        if (hasSubpath && ShouldTryRootFirst(path, targetBase))
+        {
+            wsPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
+            if (!wsPath.StartsWith('/'))
+                wsPath = "/" + wsPath;
+        }
+        else
+        {
+            wsPath = BuildUpstreamPath(targetUri, path);
+        }
+
+        var upstreamUrl = BuildUpstreamWsUrlFromPath(targetUri, wsPath, context.Request.QueryString.Value);
         var upstreamUri = new Uri(upstreamUrl);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
-        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin);
+        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin, targetUri);
     }
 
-    private async Task ProxyWebSocketToUpstreamAsync(HttpContext context, Uri upstreamUri, string upstreamOrigin)
+    private async Task ProxyWebSocketToUpstreamAsync(
+        HttpContext context, Uri upstreamUri, string upstreamOrigin, Uri? targetUri = null)
     {
         using var upstream = new ClientWebSocket();
         // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
@@ -735,20 +1207,30 @@ public sealed partial class WebPreviewProxyMiddleware
             upstream.Options.AddSubProtocol(protocol);
         }
 
+        var wsType = context.Request.Path.Value?.Contains("/_ext") == true ? "ext-ws" : "ws";
+        var wsSw = Stopwatch.StartNew();
+
         try
         {
             await upstream.ConnectAsync(upstreamUri, context.RequestAborted);
         }
-        catch (WebSocketException)
+        catch (WebSocketException ex)
         {
+            wsSw.Stop();
+            LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
             context.Response.StatusCode = 502;
             return;
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
+            wsSw.Stop();
+            LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
             context.Response.StatusCode = 502;
             return;
         }
+
+        wsSw.Stop();
+        LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, upstream.SubProtocol, wsSw.ElapsedMilliseconds, 101, null);
 
         // Accept downstream with the negotiated sub-protocol from upstream
         var acceptProtocol = upstream.SubProtocol;
@@ -756,10 +1238,15 @@ public sealed partial class WebPreviewProxyMiddleware
             ? await context.WebSockets.AcceptWebSocketAsync(acceptProtocol)
             : await context.WebSockets.AcceptWebSocketAsync();
 
+        // WebSocket messages are relayed without content rewriting. The page lives
+        // under /webpreview/ and JS sees proxy URLs in location.href and document.baseURI.
+        // Frameworks like Blazor store client-provided URLs (proxy URLs) in their state
+        // and use relative paths for routing — the absolute origin doesn't matter.
+        // When the server echoes URLs back, they're already proxy URLs. No rewriting needed.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
 
-        var downToUp = PipeWebSocketAsync(downstream, upstream, cts);
-        var upToDown = PipeWebSocketAsync(upstream, downstream, cts);
+        var downToUp = RelayWebSocketAsync(downstream, upstream, cts);
+        var upToDown = RelayWebSocketAsync(upstream, downstream, cts);
 
         await Task.WhenAny(downToUp, upToDown);
         await cts.CancelAsync();
@@ -768,7 +1255,7 @@ public sealed partial class WebPreviewProxyMiddleware
         await CloseWebSocketSafe(upstream);
     }
 
-    private static async Task PipeWebSocketAsync(
+    private static async Task RelayWebSocketAsync(
         WebSocket source, WebSocket destination, CancellationTokenSource cts)
     {
         var buffer = new byte[WsBufferSize];
@@ -778,9 +1265,7 @@ public sealed partial class WebPreviewProxyMiddleware
             {
                 var result = await source.ReceiveAsync(buffer, cts.Token);
                 if (result.MessageType == WebSocketMessageType.Close)
-                {
                     break;
-                }
 
                 await destination.SendAsync(
                     new ArraySegment<byte>(buffer, 0, result.Count),
@@ -798,6 +1283,7 @@ public sealed partial class WebPreviewProxyMiddleware
             // Connection dropped
         }
     }
+
 
     private static async Task CloseWebSocketSafe(WebSocket ws)
     {
@@ -887,6 +1373,83 @@ public sealed partial class WebPreviewProxyMiddleware
         return targetBase + normalizedPath;
     }
 
+    private static string BuildUpstreamUrlFromPath(Uri target, string upstreamPath, string? queryString)
+    {
+        var sb = new StringBuilder(256);
+        sb.Append(target.Scheme).Append("://").Append(target.Authority);
+        sb.Append(upstreamPath);
+        if (!string.IsNullOrEmpty(queryString))
+            sb.Append(queryString);
+        return sb.ToString();
+    }
+
+    private static string BuildUpstreamWsUrlFromPath(Uri target, string upstreamPath, string? queryString)
+    {
+        var scheme = target.Scheme == "https" ? "wss" : "ws";
+        var sb = new StringBuilder(256);
+        sb.Append(scheme).Append("://").Append(target.Authority);
+        sb.Append(upstreamPath);
+        if (!string.IsNullOrEmpty(queryString))
+            sb.Append(queryString);
+        return sb.ToString();
+    }
+
+    private static bool PathAlreadyUnderTarget(string path, string targetBase)
+    {
+        var normalized = string.IsNullOrEmpty(path) ? "/" : path;
+        if (!normalized.StartsWith('/'))
+            normalized = "/" + normalized;
+        return normalized.StartsWith(targetBase + "/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals(targetBase, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ShouldTryRootFirst(string path, string targetBase)
+    {
+        ResetFallbackCacheIfTargetChanged();
+        var prefix = GetPathPrefix(path);
+        return prefix is not null && _rootFallbackPrefixes.TryGetValue(prefix, out var preferRoot) && preferRoot;
+    }
+
+    private void LearnRootFallback(string path, string targetUrl)
+    {
+        ResetFallbackCacheIfTargetChanged();
+        _rootFallbackTarget = targetUrl;
+        var prefix = GetPathPrefix(path);
+        if (prefix is not null)
+            _rootFallbackPrefixes[prefix] = true;
+    }
+
+    private void UnlearnRootFallback(string path)
+    {
+        var prefix = GetPathPrefix(path);
+        if (prefix is not null)
+            _rootFallbackPrefixes.Remove(prefix);
+    }
+
+    private void ResetFallbackCacheIfTargetChanged()
+    {
+        var currentTarget = _service.TargetUri?.ToString();
+        if (_rootFallbackTarget != currentTarget)
+        {
+            _rootFallbackPrefixes.Clear();
+            _rootFallbackTarget = currentTarget;
+        }
+    }
+
+    private static string? GetPathPrefix(string path)
+    {
+        var normalized = string.IsNullOrEmpty(path) ? "/" : path;
+        if (!normalized.StartsWith('/'))
+            normalized = "/" + normalized;
+        var queryIdx = normalized.IndexOf('?');
+        if (queryIdx >= 0)
+            normalized = normalized[..queryIdx];
+        if (normalized == "/")
+            return null;
+        var secondSlash = normalized.IndexOf('/', 1);
+        return secondSlash > 0 ? normalized[..secondSlash] + "/" : normalized + "/";
+    }
+
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]
     private static partial Regex HeadTagRegex();
 
@@ -894,11 +1457,19 @@ public sealed partial class WebPreviewProxyMiddleware
     [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex ExistingBaseTagRegex();
 
+    // Extracts the href value from a <base href="..."> tag
+    [GeneratedRegex(@"<base\s[^>]*href\s*=\s*[""']([^""']*)[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex BaseHrefValueRegex();
+
     // Matches <meta http-equiv="content-security-policy" ...> and <meta http-equiv="x-frame-options" ...>
     // Upstream CSP/XFO meta tags must be stripped: after proxying, 'self' resolves to MidTerm's origin,
     // which would block framing of the upstream site's own resources.
     [GeneratedRegex(@"<meta\s[^>]*http-equiv\s*=\s*[""']\s*(?:content-security-policy|x-frame-options)\s*[""'][^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex UpstreamSecurityMetaTagRegex();
+
+    // Matches <meta http-equiv="refresh" content="N;url=/path"> for PHP-style redirects
+    [GeneratedRegex(@"(<meta\s[^>]*content\s*=\s*[""']\d+\s*;\s*url\s*=\s*)([^""'>\s]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex MetaRefreshRegex();
 
     // Matches src="/...", href="/...", action="/...", poster="/..." with word boundaries
     // to avoid matching data-src, data-href, metadata, etc.

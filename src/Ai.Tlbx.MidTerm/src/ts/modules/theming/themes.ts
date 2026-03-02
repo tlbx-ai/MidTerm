@@ -19,7 +19,9 @@ export function getEffectiveXtermTheme(): TerminalTheme {
   const s = $currentSettings.get();
   const colorScheme = s?.terminalColorScheme ?? 'auto';
   const key = colorScheme === 'auto' ? (s?.theme ?? 'dark') : colorScheme;
-  return THEMES[key] ?? THEMES['dark']!;
+  const theme = THEMES[key] ?? THEMES['dark'];
+  if (!theme) throw new Error(`Theme '${key}' not found`);
+  return theme;
 }
 
 /**

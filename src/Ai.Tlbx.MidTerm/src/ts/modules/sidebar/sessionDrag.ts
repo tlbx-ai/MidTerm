@@ -14,7 +14,7 @@ import {
   getDockTarget,
   isDockOverlayVisible,
 } from '../layout/dockOverlay';
-import { dockSession, isSessionInLayout } from '../layout/layoutStore';
+import { dockSession, isLayoutActive, isSessionInLayout } from '../layout/layoutStore';
 import { getLayoutRoot } from '../layout/layoutRenderer';
 
 let draggedSessionId: string | null = null;
@@ -36,6 +36,11 @@ let touchActive = false;
  */
 export function isSessionDragActive(): boolean {
   return draggedSessionId !== null;
+}
+
+function closestSessionItem(el: Element | null): HTMLElement | null {
+  const found = el?.closest('.session-item');
+  return found instanceof HTMLElement ? found : null;
 }
 
 // Track elements with active drop indicators (avoids full DOM scan)
@@ -67,7 +72,7 @@ export function initSessionDrag(): void {
 
 function handleDragStart(e: DragEvent): void {
   const target = e.target as HTMLElement;
-  const sessionItem = target.closest('.session-item') as HTMLElement;
+  const sessionItem = closestSessionItem(target);
   if (!sessionItem) return;
 
   draggedSessionId = sessionItem.dataset.sessionId ?? null;
@@ -85,7 +90,7 @@ function handleDragStart(e: DragEvent): void {
     dragImage.style.top = '-1000px';
     dragImage.style.opacity = '0.9';
     dragImage.style.transform = 'scale(0.95)';
-    dragImage.style.width = sessionItem.offsetWidth + 'px';
+    dragImage.style.width = `${sessionItem.offsetWidth}px`;
     dragImage.classList.remove('dragging');
     document.body.appendChild(dragImage);
     e.dataTransfer.setDragImage(dragImage, 20, sessionItem.offsetHeight / 2);
@@ -130,8 +135,14 @@ function handleDragOver(e: DragEvent): void {
 
   if (!draggedSessionId) return;
 
+  // When layout is active, sidebar drag should be dock-only (no reorder semantics).
+  if (isLayoutActive()) {
+    clearAllDropIndicators();
+    return;
+  }
+
   const target = e.target as HTMLElement;
-  const sessionItem = target.closest('.session-item') as HTMLElement;
+  const sessionItem = closestSessionItem(target);
 
   if (!sessionItem || sessionItem === draggedElement) {
     clearAllDropIndicators();
@@ -174,10 +185,10 @@ function handleDragOver(e: DragEvent): void {
 
 function handleDragLeave(e: DragEvent): void {
   const target = e.target as HTMLElement;
-  const sessionItem = target.closest('.session-item') as HTMLElement;
+  const sessionItem = closestSessionItem(target);
 
   if (sessionItem) {
-    const relatedTarget = e.relatedTarget as HTMLElement;
+    const relatedTarget = e.relatedTarget as HTMLElement | null;
     if (!relatedTarget || !sessionItem.contains(relatedTarget)) {
       sessionItem.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
       activeIndicators.delete(sessionItem);
@@ -190,8 +201,13 @@ function handleDrop(e: DragEvent): void {
 
   if (!draggedSessionId) return;
 
+  if (isLayoutActive()) {
+    clearAllDropIndicators();
+    return;
+  }
+
   const target = e.target as HTMLElement;
-  const targetItem = target.closest('.session-item') as HTMLElement;
+  const targetItem = closestSessionItem(target);
 
   if (!targetItem || targetItem === draggedElement) return;
 
@@ -230,7 +246,7 @@ function handleTouchStart(e: TouchEvent): void {
   if (!touch) return;
 
   const target = touch.target as HTMLElement;
-  const sessionItem = target.closest('.session-item') as HTMLElement;
+  const sessionItem = closestSessionItem(target);
   if (!sessionItem) return;
 
   touchStartY = touch.clientY;
@@ -245,7 +261,7 @@ function handleTouchStart(e: TouchEvent): void {
     touchGhost.style.position = 'fixed';
     touchGhost.style.left = '0';
     touchGhost.style.top = `${touch.clientY - sessionItem.offsetHeight / 2}px`;
-    touchGhost.style.width = sessionItem.offsetWidth + 'px';
+    touchGhost.style.width = `${sessionItem.offsetWidth}px`;
     touchGhost.style.opacity = '0.85';
     touchGhost.style.pointerEvents = 'none';
     touchGhost.style.zIndex = '9999';
@@ -277,7 +293,12 @@ function handleTouchMove(e: TouchEvent): void {
   if (touchGhost) touchGhost.style.display = '';
   if (!el) return;
 
-  const sessionItem = el.closest('.session-item') as HTMLElement;
+  if (isLayoutActive()) {
+    clearAllDropIndicators();
+    return;
+  }
+
+  const sessionItem = closestSessionItem(el);
   clearAllDropIndicators();
 
   if (sessionItem && sessionItem !== draggedElement) {
@@ -310,9 +331,9 @@ function handleTouchEnd(e: TouchEvent): void {
     if (touchGhost) touchGhost.style.display = 'none';
     const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
     if (touchGhost) touchGhost.style.display = '';
-    const targetItem = el?.closest('.session-item') as HTMLElement | null;
+    const targetItem = closestSessionItem(el);
 
-    if (targetItem && targetItem !== draggedElement) {
+    if (targetItem && targetItem !== draggedElement && !isLayoutActive()) {
       const targetSessionId = targetItem.dataset.sessionId;
       if (targetSessionId) {
         const sessions = $sessionList.get();

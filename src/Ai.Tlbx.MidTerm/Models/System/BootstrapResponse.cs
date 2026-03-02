@@ -94,6 +94,11 @@ public sealed class BootstrapResponse
     /// Git version string if git is available, null otherwise
     /// </summary>
     public string? GitVersion { get; init; }
+
+    /// <summary>
+    /// Whether the running binary has a valid code signature (Authenticode on Windows, codesign on macOS)
+    /// </summary>
+    public bool CodeSigned { get; init; }
 }
 
 /// <summary>

@@ -162,7 +162,7 @@ export function applyUpdate(): void {
         log.error(() => 'Update failed');
       }
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       if (btn) {
         btn.disabled = false;
         btn.textContent = t('sidebar.updateRestart');
@@ -228,7 +228,7 @@ export function checkForUpdates(e?: MouseEvent): void {
         renderUpdateCards(null, t('update.failed'));
       }
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       if (btn) {
         btn.disabled = false;
         btn.textContent = t('settings.general.checkForUpdates');
@@ -256,7 +256,7 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
   }
 
   const hasGitHub = update?.available ?? false;
-  const hasLocal = update?.environment && update?.localUpdate?.available;
+  const hasLocal = update?.environment && update.localUpdate?.available;
 
   // No updates available
   if (!hasGitHub && !hasLocal) {
@@ -279,7 +279,7 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
   }
 
   // Local update card (only in dev environment)
-  if (hasLocal && update?.localUpdate) {
+  if (hasLocal && update.localUpdate) {
     const card = createUpdateCard({
       type: 'local',
       title: 'Local Build',
@@ -324,13 +324,11 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
   `;
 
   const btn = card.querySelector('.btn-update') as HTMLButtonElement;
-  if (btn) {
-    btn.addEventListener('click', () => {
-      btn.disabled = true;
-      btn.textContent = t('update.applying');
-      opts.onApply();
-    });
-  }
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    btn.textContent = t('update.applying');
+    opts.onApply();
+  });
 
   return card;
 }
@@ -342,9 +340,7 @@ export function applyLocalUpdate(): void {
   setPendingChangelogFlag();
   apiApplyUpdate('local')
     .then(({ response }) => {
-      const btn = document.querySelector(
-        '#update-card-local .btn-update',
-      ) as HTMLButtonElement | null;
+      const btn = document.querySelector<HTMLButtonElement>('#update-card-local .btn-update');
       if (response.ok) {
         if (btn) btn.textContent = 'Restarting...';
         waitForServerAndReload();
@@ -356,10 +352,8 @@ export function applyLocalUpdate(): void {
         log.error(() => 'Local update failed');
       }
     })
-    .catch((e) => {
-      const btn = document.querySelector(
-        '#update-card-local .btn-update',
-      ) as HTMLButtonElement | null;
+    .catch((e: unknown) => {
+      const btn = document.querySelector<HTMLButtonElement>('#update-card-local .btn-update');
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Apply';
@@ -421,12 +415,12 @@ export function checkUpdateResult(): void {
       renderUpdateResult();
 
       // Clear the result file after storing
-      deleteUpdateResult().catch((e) => {
-        log.verbose(() => `Failed to clear update result: ${e}`);
+      deleteUpdateResult().catch((e: unknown) => {
+        log.verbose(() => `Failed to clear update result: ${String(e)}`);
       });
     })
-    .catch((e) => {
-      log.warn(() => `Failed to check update result: ${e}`);
+    .catch((e: unknown) => {
+      log.warn(() => `Failed to check update result: ${String(e)}`);
     });
 }
 

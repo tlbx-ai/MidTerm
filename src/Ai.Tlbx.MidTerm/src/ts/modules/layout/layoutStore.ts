@@ -438,7 +438,7 @@ function filterLayoutToValidSessions(node: LayoutNode | null): LayoutNode | null
   }
 
   if (validChildren.length === 0) return null;
-  if (validChildren.length === 1) return validChildren[0]!;
+  if (validChildren.length === 1) return validChildren[0] ?? null;
   return { ...node, children: validChildren };
 }
 

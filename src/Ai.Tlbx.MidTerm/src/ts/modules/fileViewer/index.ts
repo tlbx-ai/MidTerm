@@ -91,11 +91,11 @@ export function initFileViewer(): void {
 }
 
 function toggleFullscreen(): void {
-  const content = modal?.querySelector('.file-viewer-modal-content') as HTMLElement;
+  const content = modal?.querySelector('.file-viewer-modal-content') as HTMLElement | undefined;
   if (document.fullscreenElement) {
     void document.exitFullscreen();
-  } else {
-    void content?.requestFullscreen();
+  } else if (content) {
+    void content.requestFullscreen();
   }
 }
 
@@ -211,8 +211,8 @@ async function renderInDock(path: string): Promise<void> {
   if (info.isDirectory) {
     if (bodyEl)
       bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.dirNotSupported')}</div>`;
-  } else {
-    await renderFile(path, info, bodyEl!);
+  } else if (bodyEl) {
+    await renderFile(path, info, bodyEl);
   }
 }
 
@@ -238,7 +238,7 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
   const titleEl = modal.querySelector('.file-viewer-title');
   const pathEl = modal.querySelector('.file-viewer-path');
   const bodyEl = modal.querySelector('.file-viewer-body');
-  const downloadBtn = modal.querySelector('#file-viewer-download') as HTMLButtonElement | null;
+  const downloadBtn = modal.querySelector<HTMLElement>('#file-viewer-download');
 
   if (titleEl) titleEl.textContent = getFileName(path);
   if (pathEl) pathEl.textContent = path;
@@ -261,10 +261,12 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
     return;
   }
 
+  if (!bodyEl) return;
+
   if (info.isDirectory) {
-    await renderDirectory(path, bodyEl!);
+    await renderDirectory(path, bodyEl);
   } else {
-    await renderFile(path, info, bodyEl!);
+    await renderFile(path, info, bodyEl);
   }
 }
 
@@ -280,7 +282,7 @@ async function checkFilePath(path: string): Promise<FilePathInfo | null> {
       body: JSON.stringify({ paths: [path] }),
     });
     if (!resp.ok) return null;
-    const data = await resp.json();
+    const data = (await resp.json()) as { results: Record<string, FilePathInfo> };
     return data.results[path] || null;
   } catch (e) {
     log.error(() => `Failed to check file path: ${String(e)}`);
@@ -303,7 +305,7 @@ async function renderDirectory(path: string, container: Element): Promise<void> 
       return;
     }
 
-    const data: DirectoryListResponse = await resp.json();
+    const data = (await resp.json()) as DirectoryListResponse;
     renderDirectoryListing(data.entries, path, container);
   } catch (e) {
     log.error(() => `Failed to list directory: ${String(e)}`);

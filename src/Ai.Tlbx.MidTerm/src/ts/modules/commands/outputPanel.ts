@@ -34,7 +34,7 @@ function loadOverlayRect(): { x: number; y: number; w: number; h: number } | nul
   try {
     const raw = localStorage.getItem(OVERLAY_STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    return JSON.parse(raw) as { x: number; y: number; w: number; h: number };
   } catch {
     return null;
   }

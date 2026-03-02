@@ -10,6 +10,7 @@ using Ai.Tlbx.MidTerm.Startup;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.Certificates;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 namespace Ai.Tlbx.MidTerm;
 
@@ -188,6 +189,11 @@ public class Program
                 tmuxWindowCommands, tmuxConfigCommands, tmuxMiscCommands);
         }
 
+        // Browser control (agent-driven web preview interaction)
+        BrowserLog.Initialize(logDirectory);
+        var browserCommandService = new BrowserCommandService();
+        BrowserScriptWriter.WriteScript(port);
+
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
             var session = sessionManager.GetSession(sessionId);
@@ -237,6 +243,7 @@ public class Program
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 
         _ = EndpointSetup.DetectGitAsync();
+        EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
@@ -253,9 +260,10 @@ public class Program
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
+        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager, authService, port);
+        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService, authService, port);
         var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, tmuxLayoutBridge);
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, browserCommandService, tmuxLayoutBridge);
 
         lifetime.ApplicationStarted.Register(() =>
         {
@@ -291,6 +299,8 @@ public class Program
                 gitWatcher.Dispose();
                 TmuxLog.Shutdown();
                 TmuxScriptWriter.Cleanup();
+                BrowserLog.Shutdown();
+                BrowserScriptWriter.Cleanup();
                 tempCleanupService.CleanupAllMidTermFiles();
                 Log.Shutdown();
                 instanceGuard.Dispose();

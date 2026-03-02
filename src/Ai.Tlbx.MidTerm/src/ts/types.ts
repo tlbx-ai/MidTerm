@@ -43,13 +43,7 @@ export type {
   BellStyleSetting,
   ClipboardShortcutsSetting,
   TabTitleModeSetting,
-  // Backward compat aliases
-  Settings,
-  AuthStatus,
-  HealthResponse,
-  ShellInfo,
-  CertificateInfo,
-  NetworkInterface,
+  // Backward compat aliases (non-deprecated only)
   ThemeName,
   CursorStyle,
   CursorInactiveStyle,

@@ -5,6 +5,8 @@
  */
 
 import { escapeHtml } from '../../utils';
+import { $currentSettings } from '../../stores';
+import { updateSettings } from '../../api/client';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 
@@ -26,11 +28,13 @@ let hasMoreReleases = true;
 let isLoading = false;
 
 /**
- * Show the changelog modal and fetch releases from GitHub
+ * Show the changelog modal and fetch releases from GitHub.
+ * When afterUpdate is true, a "don't show again" option is displayed.
  */
-export function showChangelog(): void {
+export function showChangelog(afterUpdate = false): void {
   const modal = document.getElementById('changelog-modal');
   const body = document.getElementById('changelog-body');
+  const dontShow = document.getElementById('changelog-dont-show');
 
   // Reset pagination state
   currentPage = 1;
@@ -40,7 +44,34 @@ export function showChangelog(): void {
   if (modal) modal.classList.remove('hidden');
   if (body) body.innerHTML = `<div class="changelog-loading">${t('changelog.loading')}</div>`;
 
+  if (dontShow) {
+    if (afterUpdate) {
+      dontShow.classList.remove('hidden');
+    } else {
+      dontShow.classList.add('hidden');
+    }
+  }
+
   fetchReleases(true);
+}
+
+export function disableChangelogAfterUpdate(): void {
+  const settings = $currentSettings.get();
+  if (!settings) return;
+
+  const updated = { ...settings, showChangelogAfterUpdate: false };
+  $currentSettings.set(updated);
+
+  const checkbox = document.getElementById(
+    'setting-changelog-after-update',
+  ) as HTMLInputElement | null;
+  if (checkbox) checkbox.checked = false;
+
+  updateSettings(updated).catch((e: unknown) => {
+    log.error(() => `Failed to save showChangelogAfterUpdate: ${String(e)}`);
+  });
+
+  closeChangelog();
 }
 
 /**
@@ -60,7 +91,7 @@ function fetchReleases(isInitial: boolean): void {
     .then((releases: GitHubRelease[]) => {
       isLoading = false;
 
-      if (!releases || !Array.isArray(releases)) {
+      if (!Array.isArray(releases)) {
         if (isInitial) {
           body.innerHTML = `<p>${t('changelog.noReleases')}</p>`;
         }
@@ -120,7 +151,7 @@ function fetchReleases(isInitial: boolean): void {
         body.appendChild(loadMoreBtn);
       }
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       isLoading = false;
       if (isInitial) {
         body.innerHTML =

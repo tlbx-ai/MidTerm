@@ -165,10 +165,10 @@ export function getFileIcon(name: string, isDir?: boolean): string {
 }
 
 export function formatSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-  return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  if (bytes < 1024) return `${String(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
 export function formatDate(isoDate: string): string {
@@ -371,7 +371,7 @@ export function highlightCode(text: string, _ext: string): string {
 export function renderMarkdown(text: string): string {
   let html = escapeHtml(text);
 
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match: string, _lang: string, code: string) => {
     return `<pre><code>${code.trim()}</code></pre>`;
   });
 

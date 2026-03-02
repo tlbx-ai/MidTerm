@@ -9,8 +9,10 @@ import {
   createHistoryEntry as apiCreateHistoryEntry,
   toggleHistoryStar,
   deleteHistoryEntry,
+  patchHistoryEntry as apiPatchHistoryEntry,
   type LaunchEntry,
   type CreateHistoryRequest,
+  type HistoryPatchRequest,
 } from '../../api/client';
 
 // Re-export types for consumers
@@ -37,7 +39,12 @@ export async function removeHistoryEntry(id: string): Promise<boolean> {
 export async function createHistoryEntry(request: CreateHistoryRequest): Promise<string | null> {
   const { data, response } = await apiCreateHistoryEntry(request);
   if (!response.ok || !data) return null;
-  return data.id ?? null;
+  return data.id;
+}
+
+export async function renameHistoryEntry(id: string, label: string): Promise<boolean> {
+  const { response } = await apiPatchHistoryEntry(id, { label } as HistoryPatchRequest);
+  return response.ok;
 }
 
 export async function reorderHistory(orderedIds: string[]): Promise<boolean> {

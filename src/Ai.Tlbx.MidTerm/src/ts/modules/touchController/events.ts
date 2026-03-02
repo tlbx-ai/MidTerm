@@ -106,7 +106,7 @@ function handleTouchEnd(event: TouchEvent): void {
   }
 
   if (alternatesPopup) {
-    const altKey = (target as HTMLElement).dataset.key;
+    const altKey = target.dataset.key;
     if (altKey) {
       handleKeyPress(altKey);
     }
@@ -177,14 +177,14 @@ function buildKeySequence(
 
   if (['up', 'down', 'left', 'right'].includes(key)) {
     const arrows: Record<string, string> = { up: 'A', down: 'B', right: 'C', left: 'D' };
-    return '\x1b[1;' + modCode + arrows[key];
+    return `\x1b[1;${modCode}${arrows[key] ?? ''}`;
   }
 
-  if (key === 'home') return '\x1b[1;' + modCode + 'H';
-  if (key === 'end') return '\x1b[1;' + modCode + 'F';
+  if (key === 'home') return `\x1b[1;${modCode}H`;
+  if (key === 'end') return `\x1b[1;${modCode}F`;
 
-  if (key === 'pgup') return '\x1b[5;' + modCode + '~';
-  if (key === 'pgdn') return '\x1b[6;' + modCode + '~';
+  if (key === 'pgup') return `\x1b[5;${modCode}~`;
+  if (key === 'pgdn') return `\x1b[6;${modCode}~`;
 
   if (key === 'tab' && mods.shift) {
     return '\x1b[Z';

@@ -25,6 +25,52 @@ import { renderUpdatePanel } from '../updating/checker';
 import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
 
+interface TmuxDockMessage {
+  type: 'tmux-dock';
+  newSessionId: string;
+  relativeToSessionId: string;
+  position: string;
+}
+
+interface TmuxFocusMessage {
+  type: 'tmux-focus';
+  sessionId: string;
+}
+
+interface TmuxSwapMessage {
+  type: 'tmux-swap';
+  sessionIdA: string;
+  sessionIdB: string;
+}
+
+interface MainBrowserStatusMessage {
+  type: 'main-browser-status';
+  isMain: boolean;
+  showButton: boolean;
+}
+
+interface StateUpdateMessage {
+  type?: undefined;
+  sessions?: { sessions: Session[] };
+  update: UpdateInfo | null;
+}
+
+interface CommandResponseMessage {
+  type: 'response';
+  id: string;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+type StateWsMessage =
+  | TmuxDockMessage
+  | TmuxFocusMessage
+  | TmuxSwapMessage
+  | MainBrowserStatusMessage
+  | StateUpdateMessage
+  | CommandResponseMessage;
+
 const log = createLogger('state');
 const stateReconnect = new ReconnectController();
 import {
@@ -101,11 +147,11 @@ export function connectStateWebSocket(): void {
 
   ws.onmessage = (event) => {
     try {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data as string) as StateWsMessage;
 
       // Handle command responses
       if (data.type === 'response') {
-        handleCommandResponse(data as WsCommandResponse);
+        handleCommandResponse(data);
         return;
       }
 
@@ -124,26 +170,35 @@ export function connectStateWebSocket(): void {
           });
           return;
         }
-        dockSession(data.relativeToSessionId, data.newSessionId, data.position, true);
+        dockSession(
+          data.relativeToSessionId,
+          data.newSessionId,
+          data.position as DockPosition,
+          true,
+        );
         return;
       }
 
       // Handle tmux focus instructions
       if (data.type === 'tmux-focus') {
         log.verbose(() => `Tmux focus: ${data.sessionId}`);
-        // Only focus if the session shares a parent with the current active session,
-        // or is the active session's child/parent — don't steal from unrelated sessions
+        // Only focus if the target is related to the active session
+        // (same tmux parent chain) or both are in the active layout group.
         const activeId = $activeSessionId.get();
         const activeParent = activeId ? getParentSessionId(activeId) : null;
         const focusParent = getParentSessionId(data.sessionId);
+        const activeInLayout = activeId ? isSessionInLayout(activeId) : false;
+        const focusInLayout = isSessionInLayout(data.sessionId);
+        const sameLayoutGroup = activeInLayout && focusInLayout;
         const isRelated =
           !activeId ||
           activeId === data.sessionId ||
           activeId === focusParent ||
           activeParent === data.sessionId ||
-          (activeParent !== null && activeParent === focusParent);
+          (activeParent !== null && activeParent === focusParent) ||
+          sameLayoutGroup;
         if (isRelated) {
-          if (isSessionInLayout(data.sessionId)) {
+          if (focusInLayout) {
             // Route through main select path to apply heat suppression and mux hinting.
             selectSession(data.sessionId, { closeSettingsPanel: false });
           }
@@ -160,8 +215,8 @@ export function connectStateWebSocket(): void {
 
       // Handle main browser status (server-driven)
       if (data.type === 'main-browser-status') {
-        $isMainBrowser.set(data.isMain === true);
-        $showMainBrowserButton.set(data.showButton === true);
+        $isMainBrowser.set(data.isMain);
+        $showMainBrowserButton.set(data.showButton);
         return;
       }
 
@@ -258,7 +313,8 @@ export function handleStateUpdate(newSessions: Session[]): void {
 
   // Apply any queued dock instructions now that sessions exist
   for (let i = pendingDocks.length - 1; i >= 0; i--) {
-    const dock = pendingDocks[i]!;
+    const dock = pendingDocks[i];
+    if (!dock) continue;
     if (sessionTerminals.has(dock.newSessionId)) {
       pendingDocks.splice(i, 1);
       dockSession(dock.targetSessionId, dock.newSessionId, dock.position as DockPosition, true);
@@ -389,8 +445,8 @@ export function isStateConnected(): boolean {
 export function persistSessionOrder(sessionIds: string[]): void {
   if (!isStateConnected()) return;
 
-  sendCommand('session.reorder', { sessionIds }).catch((e) => {
-    log.warn(() => `Failed to persist session order: ${e}`);
+  sendCommand('session.reorder', { sessionIds }).catch((e: unknown) => {
+    log.warn(() => `Failed to persist session order: ${String(e)}`);
   });
 }
 
@@ -400,8 +456,8 @@ export function persistSessionOrder(sessionIds: string[]): void {
  */
 export function claimMainBrowser(): void {
   if (!isStateConnected()) return;
-  sendCommand('browser.claimMain').catch((e) => {
-    log.warn(() => `Failed to claim main browser: ${e}`);
+  sendCommand('browser.claimMain').catch((e: unknown) => {
+    log.warn(() => `Failed to claim main browser: ${String(e)}`);
   });
 }
 
@@ -411,7 +467,7 @@ export function claimMainBrowser(): void {
  */
 export function releaseMainBrowser(): void {
   if (!isStateConnected()) return;
-  sendCommand('browser.releaseMain').catch((e) => {
-    log.warn(() => `Failed to release main browser: ${e}`);
+  sendCommand('browser.releaseMain').catch((e: unknown) => {
+    log.warn(() => `Failed to release main browser: ${String(e)}`);
   });
 }

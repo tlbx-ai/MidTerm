@@ -101,14 +101,14 @@ function expandNamedKeys(text: string): string {
     }
 
     const ctrlMatch = lower.match(/^ctrl\+([a-z])$/);
-    if (ctrlMatch) {
-      const code = ctrlMatch[1]!.charCodeAt(0) - 96;
+    if (ctrlMatch && ctrlMatch[1]) {
+      const code = ctrlMatch[1].charCodeAt(0) - 96;
       return String.fromCharCode(code);
     }
 
     const altMatch = lower.match(/^alt\+(.+)$/);
-    if (altMatch) {
-      const altKey = altMatch[1]!;
+    if (altMatch && altMatch[1]) {
+      const altKey = altMatch[1];
       if (altKey === 'enter') return '\x1b\r';
       if (altKey.length === 1) return '\x1b' + altKey;
     }
@@ -126,7 +126,7 @@ function parseEscapeSequences(text: string): string {
     .replace(/\\r/g, '\r')
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, '\t')
-    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
 }
 
 /**
@@ -305,18 +305,15 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
   const cols = refSession?.cols ?? 120;
   const rows = refSession?.rows ?? 30;
 
-  const { data, error } = await apiCreateSession({
+  const { data } = await apiCreateSession({
     cols,
     rows,
     shell: args.shellType ?? null,
     workingDirectory: args.workingDirectory ?? null,
   });
+  if (!data) return { success: false, error: 'Failed to create session' };
 
-  if (error || !data?.id) {
-    return { success: false, error: error ?? 'Failed to create session' };
-  }
-
-  return { success: true, sessionId: data.id, shell: data.shellType ?? null };
+  return { success: true, sessionId: data.id, shell: data.shellType };
 }
 
 /**
@@ -328,11 +325,7 @@ async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
     return { success: false, error: `Session ${args.sessionId} not found` };
   }
 
-  const { error } = await apiDeleteSession(args.sessionId);
-  if (error) {
-    return { success: false, error: String(error) };
-  }
-
+  await apiDeleteSession(args.sessionId);
   return { success: true };
 }
 
@@ -341,12 +334,10 @@ async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
  */
 async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
   if (args.action === 'list') {
-    const { data, error } = await getHistory();
-    if (error || !data) {
-      return { success: false, error: error ?? 'Failed to fetch history' };
-    }
+    const { data } = await getHistory();
+    if (!data) return { success: false, error: 'Failed to fetch history' };
 
-    const starred = (data as Array<Record<string, unknown>>).filter((e) => e.isStarred === true);
+    const starred = data.filter((e) => e.isStarred);
 
     return {
       success: true,
@@ -365,13 +356,10 @@ async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
       return { success: false, error: 'bookmarkId is required for launch action' };
     }
 
-    const { data: historyData, error: historyError } = await getHistory();
-    if (historyError || !historyData) {
-      return { success: false, error: historyError ?? 'Failed to fetch history' };
-    }
+    const { data: historyData } = await getHistory();
+    if (!historyData) return { success: false, error: 'Failed to fetch history' };
 
-    const entries = historyData as Array<Record<string, unknown>>;
-    const bookmark = entries.find((e) => e.id === args.bookmarkId && e.isStarred === true);
+    const bookmark = historyData.find((e) => e.id === args.bookmarkId && e.isStarred);
     if (!bookmark) {
       return { success: false, error: `Bookmark ${args.bookmarkId} not found` };
     }
@@ -381,21 +369,17 @@ async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
     const cols = refSession?.cols ?? 120;
     const rows = refSession?.rows ?? 30;
 
-    const { data: sessionData, error: sessionError } = await apiCreateSession({
+    const { data: sessionData } = await apiCreateSession({
       cols,
       rows,
-      shell: (bookmark.shellType as string) || null,
-      workingDirectory: (bookmark.workingDirectory as string) || null,
+      shell: bookmark.shellType || null,
+      workingDirectory: bookmark.workingDirectory || null,
     });
+    if (!sessionData) return { success: false, error: 'Failed to create session' };
 
-    if (sessionError || !sessionData?.id) {
-      return { success: false, error: sessionError ?? 'Failed to create session' };
-    }
-
-    const commandLine = bookmark.commandLine as string | null;
-    if (commandLine) {
+    if (bookmark.commandLine) {
       await sleep(300);
-      sendInput(sessionData.id, commandLine + '\r');
+      sendInput(sessionData.id, bookmark.commandLine + '\r');
     }
 
     return {

@@ -1,49 +1,32 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
 public static partial class WebPreviewEndpoints
 {
-    private const string ClaudeMdContent =
-        """
-        # MidTerm Web Preview Snapshots
+    private static AuthService? _authService;
+    private static int _port;
 
-        This folder is managed by MidTerm (https://github.com/tlbx-ai/MidTerm),
-        a web-based terminal multiplexer with a built-in web preview panel.
-
-        ## What are snapshots?
-        When the web preview panel is open, clicking the 💾 button saves the
-        **live rendered DOM** (not the raw server HTML) as a local file tree:
-
-          .midterm/snapshot_YYYYMMDD_HHMMSS/
-          ├── index.html   ← full rendered DOM, JS-modified content included
-          └── css/         ← CSS stylesheets referenced by the page
-
-        The snapshot captures what the browser actually rendered, including
-        content injected by JavaScript frameworks, SPAs, etc.
-
-        ## Using snapshots for debugging
-        - Read index.html to understand page structure and element IDs/classes
-        - Read css/ files to understand layout, theming, and visual rules
-        - External resources (images, scripts) reference their original URLs
-        - The snapshot is static — no JavaScript runs from these files
-
-        ## Notes
-        - snapshot_*/ folders are gitignored (see .gitignore in this folder)
-        - CLAUDE.md (this file) is safe to commit — helps teammates' AI agents
-        """;
-
-    public static void MapWebPreviewEndpoints(WebApplication app, WebPreviewService webPreviewService, TtyHostSessionManager sessionManager)
+    public static void MapWebPreviewEndpoints(
+        WebApplication app,
+        WebPreviewService webPreviewService,
+        TtyHostSessionManager sessionManager,
+        AuthService authService,
+        int port)
     {
-        MapTargetEndpoints(app, webPreviewService);
+        _authService = authService;
+        _port = port;
+        MapTargetEndpoints(app, webPreviewService, sessionManager);
         MapCookieEndpoints(app, webPreviewService);
         MapActionEndpoints(app, webPreviewService, sessionManager);
+        MapProxyLogEndpoints(app, webPreviewService);
     }
 
-    private static void MapTargetEndpoints(WebApplication app, WebPreviewService service)
+    private static void MapTargetEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
     {
         app.MapGet("/api/webpreview/target", () =>
         {
@@ -61,6 +44,8 @@ public static partial class WebPreviewEndpoints
             {
                 return Results.BadRequest("Invalid URL. Must be http:// or https:// and cannot point to this server.");
             }
+
+            WriteMtcliToActiveSessions(sessionManager);
 
             var response = new WebPreviewTargetResponse
             {
@@ -196,17 +181,31 @@ public static partial class WebPreviewEndpoints
 
             await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
 
-            var gitignorePath = Path.Combine(midtermDir, ".gitignore");
-            if (!File.Exists(gitignorePath))
-                await File.WriteAllTextAsync(gitignorePath, "snapshot_*/\n");
+            MtcliScriptWriter.EnsureGitignore(midtermDir);
 
-            var claudeMdPath = Path.Combine(midtermDir, "CLAUDE.md");
-            if (!File.Exists(claudeMdPath))
-                await File.WriteAllTextAsync(claudeMdPath, ClaudeMdContent);
+            AgentGuidanceWriter.WriteToCwd(cwd);
+
+            if (_authService is not null)
+                MtcliScriptWriter.WriteToCwd(cwd, _port, _authService.CreateSessionToken());
 
             return Results.Json(
                 new WebPreviewSnapshotResponse { SnapshotPath = snapshotDir },
                 AppJsonContext.Default.WebPreviewSnapshotResponse);
+        });
+    }
+
+    private static void MapProxyLogEndpoints(WebApplication app, WebPreviewService service)
+    {
+        app.MapGet("/api/webpreview/proxylog", (int? limit) =>
+        {
+            var entries = service.GetLogEntries(limit ?? 100);
+            return Results.Json(entries, AppJsonContext.Default.ListWebPreviewProxyLogEntry);
+        });
+
+        app.MapDelete("/api/webpreview/proxylog", () =>
+        {
+            service.ClearLog();
+            return Results.Ok();
         });
     }
 
@@ -250,6 +249,24 @@ public static partial class WebPreviewEndpoints
 
         proxyPath = path;
         return true;
+    }
+
+    private static void WriteMtcliToActiveSessions(TtyHostSessionManager sessionManager)
+    {
+        if (_authService is null)
+            return;
+
+        var token = _authService.CreateSessionToken();
+        var sessions = sessionManager.GetAllSessions();
+        foreach (var session in sessions)
+        {
+            var cwd = session.CurrentDirectory;
+            if (!string.IsNullOrEmpty(cwd) && Directory.Exists(cwd))
+            {
+                AgentGuidanceWriter.WriteToCwd(cwd);
+                MtcliScriptWriter.WriteToCwd(cwd, _port, token);
+            }
+        }
     }
 
     /// <summary>

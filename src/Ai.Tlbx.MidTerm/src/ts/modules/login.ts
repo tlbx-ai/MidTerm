@@ -133,7 +133,7 @@ async function loadVersionAndPaths(): Promise<void> {
   try {
     const pathsRes = await fetch('/api/paths');
     if (pathsRes.ok && insiderEl) {
-      const paths = await pathsRes.json();
+      const paths = (await pathsRes.json()) as { settingsFile?: string; logDirectory?: string };
       const lines = [
         `settings: ${paths.settingsFile || 'n/a'}`,
         `logs: ${paths.logDirectory || 'n/a'}`,

@@ -72,6 +72,7 @@ import {
   checkForUpdates,
   showChangelog,
   closeChangelog,
+  disableChangelogAfterUpdate,
   showUpdateLog,
   dismissUpdateNotification,
   bindFooterUpdateLink,
@@ -122,6 +123,7 @@ import {
 import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
 import { closeGitDock } from './modules/git/gitDock';
 import { initWebPreview, closeWebPreviewDock } from './modules/web';
+import { initSmartInput } from './modules/smartInput';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -216,9 +218,15 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
-  initHistoryDropdown((entry) => {
-    void spawnFromHistory(entry);
-  });
+  initHistoryDropdown(
+    (entry) => {
+      void spawnFromHistory(entry);
+    },
+    (entryId, newLabel) => {
+      const session = $sessionList.get().find((s) => s.bookmarkId === entryId);
+      if (session) renameSession(session.id, newLabel || null);
+    },
+  );
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
@@ -244,6 +252,7 @@ async function init(): Promise<void> {
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
+  initSmartInput();
   initMobilePiP();
   initManagerBar();
   initSessionTabs();
@@ -405,26 +414,22 @@ async function createSession(): Promise<void> {
   closeSidebar();
 
   apiCreateSession({ cols, rows })
-    .then(({ data, error }) => {
+    .then(({ data }) => {
       // Remove temporary session
       pendingSessions.delete(tempId);
       removeSession(tempId);
 
-      if (error || !data || !data.id) {
-        log.error(() => `Failed to create session: ${error}`);
-        return;
-      }
-
+      if (!data) return;
       newlyCreatedSessions.add(data.id);
       // Wait for session to appear in store (WebSocket update race condition)
       selectSessionWithRetry(data.id);
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       // Remove temporary session on error
       pendingSessions.delete(tempId);
       removeSession(tempId);
       // Subscription handles renderSessionList and updateEmptyState via store change
-      log.error(() => `Failed to create session: ${e}`);
+      log.error(() => `Failed to create session: ${String(e)}`);
     });
 }
 
@@ -554,8 +559,8 @@ function deleteSession(sessionId: string): void {
   // Subscription handles renderSessionList, updateEmptyState, updateMobileTitle via store change
 
   // Send delete request to server
-  apiDeleteSession(sessionId).catch((e) => {
-    log.error(() => `Failed to delete session ${sessionId}: ${e}`);
+  apiDeleteSession(sessionId).catch((e: unknown) => {
+    log.error(() => `Failed to delete session ${sessionId}: ${String(e)}`);
   });
 }
 
@@ -568,7 +573,7 @@ function renameSession(sessionId: string, newName: string | null): void {
 
   // Store previous values for rollback
   const previousName = session.name;
-  const wasManuallyNamed = session.manuallyNamed ?? false;
+  const wasManuallyNamed = session.manuallyNamed;
 
   // Mark as pending to protect from server overwrites until confirmed
   setPendingRename(sessionId, nameToSend);
@@ -581,7 +586,7 @@ function renameSession(sessionId: string, newName: string | null): void {
     .then(() => {
       void patchPinnedHistoryLabelIfMatchingTuple(sessionId, nameToSend);
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       // Clear pending and rollback on error
       clearPendingRename(sessionId);
       const currentSession = getSession(sessionId);
@@ -589,7 +594,7 @@ function renameSession(sessionId: string, newName: string | null): void {
         setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
       }
       // Subscription handles renderSessionList and updateMobileTitle via store change
-      log.error(() => `Failed to rename session ${sessionId}: ${e}`);
+      log.error(() => `Failed to rename session ${sessionId}: ${String(e)}`);
     });
 }
 
@@ -634,9 +639,9 @@ function startInlineRename(sessionId: string): void {
   if (!item) return;
 
   const renameAnchor =
-    (item.querySelector('.session-title') as HTMLElement | null) ||
-    (item.querySelector('.process-title') as HTMLElement | null) ||
-    (item.querySelector('.session-title-row') as HTMLElement | null);
+    item.querySelector('.session-title') ||
+    item.querySelector('.process-title') ||
+    item.querySelector('.session-title-row');
   if (!renameAnchor) return;
 
   const session = getSession(sessionId);
@@ -771,12 +776,8 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
     shell: entry.shellType || null,
     workingDirectory: entry.workingDirectory || null,
   })
-    .then(({ data, error }) => {
-      if (error || !data || !data.id) {
-        log.error(() => `Failed to spawn from history: ${error}`);
-        return;
-      }
-
+    .then(({ data }) => {
+      if (!data) return;
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
 
@@ -798,14 +799,14 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       applyBookmark();
 
       if (entry.commandLine) {
-        const replayCmd = buildReplayCommand(entry.executable ?? '', entry.commandLine);
+        const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
         setTimeout(() => {
           sendInput(data.id, replayCmd + '\r');
         }, 100);
       }
     })
-    .catch((e) => {
-      log.error(() => `Failed to spawn from history: ${e}`);
+    .catch((e: unknown) => {
+      log.error(() => `Failed to spawn from history: ${String(e)}`);
     });
 }
 
@@ -825,7 +826,7 @@ function showBellNotification(sessionId: string): void {
   if (!settings) return;
   if (bellNotificationsSuppressed) return;
 
-  const bellStyle = settings.bellStyle || 'notification';
+  const bellStyle = settings.bellStyle;
   const session = getSession(sessionId);
   const title = session ? getSessionDisplayName(session) : 'Terminal';
 
@@ -881,9 +882,10 @@ function initMainBrowserButton(): void {
   if (!btn) return;
 
   function updateVisibility(): void {
+    if (!btn) return;
     const isMain = $isMainBrowser.get();
     const showButton = $showMainBrowserButton.get();
-    btn!.style.display = !isMain && showButton ? '' : 'none';
+    btn.style.display = !isMain && showButton ? '' : 'none';
   }
 
   updateVisibility();
@@ -1136,12 +1138,17 @@ function bindEvents(): void {
   bindClick('update-btn', applyUpdate);
   bindClick('btn-check-updates', checkForUpdates);
   bindClick('btn-apply-update', applyUpdate);
-  bindClick('btn-show-changelog', showChangelog);
+  bindClick('btn-show-changelog', () => {
+    showChangelog();
+  });
   bindClick('btn-view-update-log', () => {
     void showUpdateLog();
   });
   bindClick('btn-close-changelog', closeChangelog);
-  bindClick('update-changelog-link', showChangelog);
+  bindClick('btn-changelog-dont-show', disableChangelogAfterUpdate);
+  bindClick('update-changelog-link', () => {
+    showChangelog();
+  });
   bindClick('update-dismiss-btn', dismissUpdateNotification);
   bindFooterUpdateLink();
 

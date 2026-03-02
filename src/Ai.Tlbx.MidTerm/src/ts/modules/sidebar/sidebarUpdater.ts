@@ -5,7 +5,7 @@
  * for data-only changes. Uses nanostores subscriptions for reactive updates.
  */
 
-import type { Session } from '../../types';
+import type { LayoutNode, Session } from '../../types';
 import { $sessions, $activeSessionId, $layout } from '../../stores';
 import { createLogger } from '../logging';
 import {
@@ -15,7 +15,6 @@ import {
   getSessionDisplayInfo,
   applyPinButtonState,
 } from './sessionList';
-import { isSessionInLayout } from '../layout/layoutStore';
 import { unregisterHeatCanvas } from './heatIndicator';
 
 const log = createLogger('sidebarUpdater');
@@ -29,6 +28,9 @@ let previousSessionIds = new Set<string>();
 
 /** Previous session data for data change detection */
 let previousSessions: Record<string, Session> = {};
+
+/** Signature of current layout leaf order (for layout-driven sidebar grouping) */
+let previousLayoutSignature = '';
 
 /** Whether the updater has been initialized */
 let initialized = false;
@@ -211,6 +213,28 @@ function applyUpdate(type: ChangeType, sessions: Record<string, Session>): void 
 // Initialization
 // =============================================================================
 
+function collectLayoutLeafIds(node: LayoutNode | null, ids: string[]): void {
+  if (!node) return;
+  if (node.type === 'leaf') {
+    ids.push(node.sessionId);
+    return;
+  }
+
+  for (const child of node.children) {
+    collectLayoutLeafIds(child, ids);
+  }
+}
+
+function getLayoutSignature(root: LayoutNode | null): string {
+  if (!root) {
+    return 'none';
+  }
+
+  const ids: string[] = [];
+  collectLayoutLeafIds(root, ids);
+  return ids.join('|');
+}
+
 /**
  * Initialize sidebar updater - subscribes to store changes
  */
@@ -224,6 +248,7 @@ export function initializeSidebarUpdater(): void {
   const initialSessions = $sessions.get();
   previousSessions = { ...initialSessions };
   previousSessionIds = new Set(Object.keys(initialSessions));
+  previousLayoutSignature = getLayoutSignature($layout.get().root);
 
   // Subscribe to session changes
   $sessions.subscribe((sessions) => {
@@ -241,26 +266,16 @@ export function initializeSidebarUpdater(): void {
     updateMobileTitle();
   });
 
-  // Subscribe to layout changes to update in-layout class on session items
-  $layout.subscribe(() => {
-    updateLayoutStates();
+  // Layout changes affect both in-layout state and sidebar grouping/order.
+  // Re-render whenever layout leaf membership/order changes.
+  $layout.subscribe((layout) => {
+    const nextSignature = getLayoutSignature(layout.root);
+    if (nextSignature === previousLayoutSignature) return;
+    previousLayoutSignature = nextSignature;
+
+    renderSessionList();
+    updateMobileTitle();
   });
 
   log.info(() => 'Sidebar updater initialized');
-}
-
-/**
- * Update in-layout class on all session items based on current layout state.
- */
-function updateLayoutStates(): void {
-  const sessionList = document.getElementById('session-list');
-  if (!sessionList) return;
-
-  const items = sessionList.querySelectorAll('.session-item');
-  items.forEach((item) => {
-    const sessionId = (item as HTMLElement).dataset.sessionId;
-    if (sessionId) {
-      item.classList.toggle('in-layout', isSessionInLayout(sessionId));
-    }
-  });
 }

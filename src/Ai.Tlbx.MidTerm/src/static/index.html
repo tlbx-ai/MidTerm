@@ -45,8 +45,8 @@
             </div>
             <div class="sidebar-nav">
                 <button class="sidebar-nav-btn" id="btn-new-session"><span class="icon">&#xea81;</span><span data-i18n="sidebar.newTerminal">New Terminal</span></button>
-                <button class="sidebar-nav-btn btn-history" id="btn-history"><span class="icon">&#x2606;</span><span data-i18n="sidebar.loadBookmarked">Bookmarks</span></button>
                 <button class="sidebar-nav-btn" id="btn-settings"><span class="icon">&#xe991;</span><span data-i18n="sidebar.settings">Settings</span></button>
+                <button class="sidebar-nav-btn btn-history" id="btn-history"><span class="icon">&#x2606;</span><span data-i18n="sidebar.loadBookmarked">Bookmarks</span></button>
             </div>
             <div class="sidebar-section-label" data-i18n="sidebar.terminals">Terminals</div>
             <div class="session-list" id="session-list"></div>
@@ -193,8 +193,8 @@
                         <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-tab-terminal" data-i18n-title="session.terminal" title="Terminal">
                             <span class="mobile-actions-label" data-i18n="session.terminal">Terminal</span>
                         </button>
-                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-tab-files" data-i18n-title="modal.file" title="File">
-                            <span class="mobile-actions-label" data-i18n="modal.file">File</span>
+                        <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-tab-files" data-i18n-title="sessionTabs.files" title="Files">
+                            <span class="mobile-actions-label" data-i18n="sessionTabs.files">Files</span>
                         </button>
                         <button class="mobile-actions-item topbar-btn topbar-action topbar-ide-action" id="btn-mobile-web" data-i18n-title="sessionTabs.web" title="Web Preview">
                             <span class="mobile-actions-symbol">&#x1f310;</span>
@@ -281,6 +281,10 @@
                                     <div class="setting-row" id="dev-environment-row" style="display:none">
                                         <label data-i18n="settings.general.environment">Environment</label>
                                         <span class="version-value dev-badge" id="dev-environment-name">-</span>
+                                    </div>
+                                    <div class="setting-row" id="code-signing-row">
+                                        <label data-i18n="settings.general.codeSigning">Code Signing</label>
+                                        <span class="version-value" id="code-signing-value">-</span>
                                     </div>
                                     <div class="setting-row">
                                         <label data-i18n="settings.general.updates">Updates</label>
@@ -571,6 +575,15 @@
                                         <input type="checkbox" id="setting-smooth-scrolling" />
                                     </div>
                                     <div class="setting-row">
+                                        <label for="setting-input-mode" data-i18n="settings.behavior.inputMode">Input Mode</label>
+                                        <select id="setting-input-mode">
+                                            <option value="keyboard" data-i18n="settings.options.inputKeyboard">Keyboard</option>
+                                            <option value="smartinput" data-i18n="settings.options.inputSmartInput">Smart Input</option>
+                                            <option value="both" data-i18n="settings.options.inputBoth">Both</option>
+                                        </select>
+                                    </div>
+                                    <p class="setting-hint" data-i18n="settings.behavior.inputModeHint">Smart Input uses a floating text box instead of direct keyboard input. Ideal for mobile — prevents the on-screen keyboard from appearing.</p>
+                                    <div class="setting-row">
                                         <label for="setting-scrollback-protection" data-i18n="settings.behavior.scrollbackProtection">Claude Code scrollback glitch protection</label>
                                         <input type="checkbox" id="setting-scrollback-protection" />
                                     </div>
@@ -831,9 +844,7 @@
                 <div class="web-preview-dock-header">
                     <span class="web-preview-dock-title" data-i18n="webPreview.title">Web Preview</span>
                     <div class="web-preview-dock-actions">
-                        <button class="btn-icon" id="web-preview-snapshot" data-i18n-title="webPreview.snapshot" title="Save DOM snapshot">&#x1f4be;</button>
-                        <button class="btn-icon" id="web-preview-dom-html" data-i18n-title="webPreview.domHtml" title="Copy page HTML to terminal">&lt;/&gt;</button>
-                        <button class="btn-icon" id="web-preview-dom-text" data-i18n-title="webPreview.domText" title="Copy page text to terminal">T</button>
+                        <button class="btn-icon" id="web-preview-agent-hint" data-i18n-title="webPreview.agentHint" title="Hint agent">&#x1F916;</button>
                         <button class="btn-icon" id="web-preview-screenshot" data-i18n-title="webPreview.screenshot" title="Screenshot to terminal">&#x1f4f7;</button>
                         <button class="btn-icon" id="web-preview-refresh" data-i18n-title="webPreview.refresh" title="Refresh">&#x21bb;</button>
                         <button class="btn-icon" id="web-preview-detach" data-i18n-title="webPreview.detach" title="Pop out">&#x2197;</button>
@@ -899,6 +910,9 @@
             </div>
             <div class="modal-body" id="changelog-body">
                 <div class="changelog-loading">Loading...</div>
+            </div>
+            <div id="changelog-dont-show" class="changelog-dont-show hidden">
+                <button id="btn-changelog-dont-show" class="btn-link" data-i18n="changelog.dontShowAgain">Don't show after updates</button>
             </div>
         </div>
     </div>

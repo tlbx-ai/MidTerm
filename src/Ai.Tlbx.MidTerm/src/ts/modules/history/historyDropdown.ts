@@ -7,9 +7,9 @@
 
 import {
   fetchHistory,
-  toggleStar,
   removeHistoryEntry,
   reorderHistory,
+  renameHistoryEntry,
   type LaunchEntry,
 } from './historyApi';
 import { icon } from '../../constants';
@@ -24,6 +24,7 @@ let dropdownEl: HTMLElement | null = null;
 let isOpen = false;
 let cachedEntries: LaunchEntry[] = [];
 let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
+let onRenameEntry: ((entryId: string, newLabel: string) => void) | null = null;
 
 // Drag state
 let draggedId: string | null = null;
@@ -41,8 +42,12 @@ let touchActive = false;
 /**
  * Initialize the history dropdown.
  */
-export function initHistoryDropdown(spawnCallback: (entry: LaunchEntry) => void): void {
+export function initHistoryDropdown(
+  spawnCallback: (entry: LaunchEntry) => void,
+  renameCallback?: (entryId: string, newLabel: string) => void,
+): void {
   onSpawnSession = spawnCallback;
+  onRenameEntry = renameCallback ?? null;
   createDropdownElement();
   void loadHistory();
 }
@@ -174,29 +179,7 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
 
   if (isPinned) {
     item.draggable = true;
-
-    const grip = document.createElement('span');
-    grip.className = 'history-item-grip';
-    grip.textContent = '\u2807';
-    item.appendChild(grip);
   }
-
-  const starBtn = document.createElement('button');
-  starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
-  starBtn.title = entry.isStarred ? t('history.unstar') : t('history.star');
-  starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
-  starBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!entry.id) return;
-    starBtn.disabled = true;
-    starBtn.classList.add('loading');
-    void (async () => {
-      await toggleStar(entry.id);
-      await loadHistory();
-      renderDropdownContent();
-    })();
-  });
-  item.appendChild(starBtn);
 
   const infoDiv = document.createElement('div');
   infoDiv.className = 'history-item-info';
@@ -209,13 +192,26 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
   }
 
   const fgIndicator = createForegroundIndicator(
-    entry.workingDirectory ?? '',
-    entry.commandLine ?? null,
-    entry.executable ?? '',
+    entry.workingDirectory,
+    entry.commandLine,
+    entry.executable,
   );
   infoDiv.appendChild(fgIndicator);
 
   item.appendChild(infoDiv);
+
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'history-item-actions';
+
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'history-item-rename';
+  renameBtn.title = t('sidebar.rename');
+  renameBtn.innerHTML = icon('rename');
+  renameBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startHistoryInlineRename(item, entry);
+  });
+  actionsDiv.appendChild(renameBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'history-item-delete';
@@ -234,15 +230,12 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
       renderDropdownContent();
     })();
   });
-  item.appendChild(deleteBtn);
+  actionsDiv.appendChild(deleteBtn);
+  item.appendChild(actionsDiv);
 
   item.addEventListener('click', (e) => {
     const target = e.target as Element;
-    if (
-      target.closest('.history-item-delete') ||
-      target.closest('.history-item-star') ||
-      target.closest('.history-item-grip')
-    ) {
+    if (target.closest('.history-item-delete') || target.closest('.history-item-rename')) {
       return;
     }
     if (onSpawnSession) {
@@ -252,6 +245,69 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
   });
 
   return item;
+}
+
+function startHistoryInlineRename(item: HTMLElement, entry: LaunchEntry): void {
+  const infoEl = item.querySelector('.history-item-info');
+  if (!infoEl) return;
+
+  const info = infoEl;
+  const currentLabel = entry.label || '';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'history-rename-input';
+  input.value = currentLabel;
+
+  const originalContent = info.innerHTML;
+  info.innerHTML = '';
+  info.appendChild(input);
+
+  let committed = false;
+  function finishRename(): void {
+    if (committed) return;
+    committed = true;
+    const newLabel = input.value.trim();
+    info.innerHTML = originalContent;
+
+    if (newLabel !== currentLabel) {
+      const newLabelEl = info.querySelector('.history-item-label');
+      if (newLabelEl) {
+        newLabelEl.textContent = newLabel || '';
+      } else if (newLabel) {
+        const span = document.createElement('span');
+        span.className = 'history-item-label';
+        span.textContent = newLabel;
+        info.insertBefore(span, info.firstChild);
+      }
+
+      entry.label = newLabel || null;
+
+      void renameHistoryEntry(entry.id, newLabel).then(() => {
+        if (onRenameEntry) onRenameEntry(entry.id, newLabel);
+      });
+    }
+  }
+
+  function cancelRename(): void {
+    if (committed) return;
+    committed = true;
+    info.innerHTML = originalContent;
+  }
+
+  input.addEventListener('blur', finishRename);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelRename();
+    }
+  });
+
+  input.focus();
+  input.select();
 }
 
 function createForegroundIndicator(
@@ -301,7 +357,7 @@ function initDragHandlers(container: HTMLElement): void {
 }
 
 function onDragStart(e: DragEvent): void {
-  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const item = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!item) return;
 
   draggedId = item.dataset.id ?? null;
@@ -326,7 +382,7 @@ function onDragOver(e: DragEvent): void {
   e.preventDefault();
   if (!draggedId) return;
 
-  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const item = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!item || item === draggedElement) {
     clearAllIndicators();
     return;
@@ -350,9 +406,9 @@ function onDragOver(e: DragEvent): void {
 }
 
 function onDragLeave(e: DragEvent): void {
-  const item = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const item = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!item) return;
-  const related = e.relatedTarget as HTMLElement;
+  const related = e.relatedTarget as Node | null;
   if (!related || !item.contains(related)) {
     item.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
     activeIndicators.delete(item);
@@ -363,7 +419,7 @@ function onDrop(e: DragEvent): void {
   e.preventDefault();
   if (!draggedId) return;
 
-  const targetItem = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
+  const targetItem = (e.target as HTMLElement).closest<HTMLElement>('.history-item');
   if (!targetItem || targetItem === draggedElement) return;
 
   const targetId = targetItem.dataset.id;
@@ -382,7 +438,7 @@ function onTouchStart(e: TouchEvent): void {
   const grip = (touch.target as HTMLElement).closest('.history-item-grip');
   if (!grip) return;
 
-  const item = grip.closest('.history-item') as HTMLElement;
+  const item = grip.closest<HTMLElement>('.history-item');
   if (!item) return;
 
   touchStartY = touch.clientY;
@@ -397,7 +453,7 @@ function onTouchStart(e: TouchEvent): void {
     touchGhost.style.position = 'fixed';
     touchGhost.style.left = '0';
     touchGhost.style.top = `${touch.clientY - item.offsetHeight / 2}px`;
-    touchGhost.style.width = item.offsetWidth + 'px';
+    touchGhost.style.width = `${item.offsetWidth}px`;
     touchGhost.style.opacity = '0.85';
     touchGhost.style.pointerEvents = 'none';
     touchGhost.style.zIndex = '9999';
@@ -425,7 +481,7 @@ function onTouchMove(e: TouchEvent): void {
   if (touchGhost) touchGhost.style.display = '';
   if (!el) return;
 
-  const item = el.closest('.history-item') as HTMLElement;
+  const item = el.closest<HTMLElement>('.history-item');
   clearAllIndicators();
 
   if (item && item !== draggedElement) {
@@ -516,7 +572,7 @@ function applyReorder(fromId: string, toId: string, position: 'above' | 'below' 
 
   renderDropdownContent();
 
-  void reorderHistory(orderedIds).catch((err) => {
+  void reorderHistory(orderedIds).catch((err: unknown) => {
     log.warn(() => `Failed to persist history reorder: ${String(err)}`);
   });
 }

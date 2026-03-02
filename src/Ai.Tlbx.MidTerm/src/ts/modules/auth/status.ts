@@ -25,8 +25,8 @@ export async function checkAuthStatus(): Promise<void> {
 
     if (data) {
       $authStatus.set({
-        authenticationEnabled: data.authenticationEnabled ?? false,
-        passwordSet: data.passwordSet ?? false,
+        authenticationEnabled: data.authenticationEnabled,
+        passwordSet: data.passwordSet,
       });
     }
     updateSecurityWarning();

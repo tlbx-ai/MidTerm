@@ -457,8 +457,8 @@ export function setupFileDrop(container: HTMLElement): void {
 
 /**
  * Handle clipboard paste with automatic image strategy:
- * - native clipboard injection for known CLI agents (Codex/Claude/Gemini/etc.)
- * - path paste fallback for all apps
+ * - native clipboard injection for known CLI agents (Codex, Gemini, etc.)
+ * - path paste for apps that read file paths (Claude, unknown)
  * - text paste fallback when clipboard has no image
  */
 export async function handleClipboardPaste(
@@ -505,13 +505,15 @@ export async function handleClipboardPaste(
 }
 
 /**
- * Handle Alt+V clipboard image injection for terminal apps like Codex CLI.
- * Uploads the clipboard image to the server, which sets the OS clipboard
- * and injects Alt+V (\x1bv) into the terminal PTY.
- * Returns 'image' if successful, 'none' if no image found, and
- * 'unavailable' if image paste was attempted but server clipboard sync failed.
+ * Handle Alt+V clipboard image paste.
+ * Process-aware: for native-clipboard apps (Codex, etc.) sets OS clipboard
+ * and injects \x1bv into PTY. For path-mode apps (Claude, unknown) uploads
+ * and pastes the file path instead.
  */
-export async function handleNativeImagePaste(sessionId: string): Promise<ClipboardPasteResult> {
+export async function handleNativeImagePaste(
+  sessionId: string,
+  context: ClipboardPasteContext = {},
+): Promise<ClipboardPasteResult> {
   if (!window.isSecureContext) {
     showHttpsRequiredToast();
     return 'unavailable';
@@ -526,5 +528,15 @@ export async function handleNativeImagePaste(sessionId: string): Promise<Clipboa
 
   const imageData = await readClipboardImageData();
   if (!imageData) return 'none';
+
+  const mode = resolveImagePasteMode({
+    name: context.foregroundName ?? null,
+    commandLine: context.foregroundCommandLine ?? null,
+  });
+
+  if (mode === 'path') {
+    return pasteClipboardImageAsPath(sessionId, imageData);
+  }
+
   return sendNativeClipboardImage(sessionId, imageData);
 }

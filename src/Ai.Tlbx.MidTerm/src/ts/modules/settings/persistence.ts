@@ -33,7 +33,7 @@ import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
 } from '../terminal/scrollbarStyle';
-import { setLocale } from '../i18n';
+import { setLocale, t } from '../i18n';
 import type { LanguageSetting } from '../../api/types';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
@@ -83,6 +83,7 @@ export function populateVersionInfo(
   hostVersion: string | null,
   frontendVersion: string,
   devMode?: boolean,
+  codeSigned?: boolean,
 ): void {
   // Strip git hash suffix but preserve [LOCAL] indicator
   const formatVersion = (v: string) => 'v' + v.replace(/[+-][a-f0-9]+$/i, '');
@@ -110,6 +111,17 @@ export function populateVersionInfo(
       envEl.textContent = 'DEV';
     } else {
       envRow.style.display = 'none';
+    }
+  }
+
+  const sigEl = document.getElementById('code-signing-value');
+  if (sigEl) {
+    if (codeSigned) {
+      sigEl.textContent = t('settings.general.signed');
+      sigEl.className = 'version-value signed-badge';
+    } else {
+      sigEl.textContent = t('settings.general.unsigned');
+      sigEl.className = 'version-value unsigned-badge';
     }
   }
 }
@@ -142,33 +154,34 @@ export function populateUserDropdown(
  */
 export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-default-shell', settings.defaultShell ?? 'Pwsh');
-  setElementValue('setting-working-dir', settings.defaultWorkingDirectory ?? '');
-  setElementValue('setting-font-size', settings.fontSize ?? 14);
-  setElementValue('setting-font-family', settings.fontFamily ?? 'Cascadia Code');
-  setElementValue('setting-cursor-style', settings.cursorStyle ?? 'bar');
+  setElementValue('setting-working-dir', settings.defaultWorkingDirectory);
+  setElementValue('setting-font-size', settings.fontSize);
+  setElementValue('setting-font-family', settings.fontFamily);
+  setElementValue('setting-cursor-style', settings.cursorStyle);
   setElementChecked('setting-cursor-blink', settings.cursorBlink);
-  setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle ?? 'outline');
-  setElementValue('setting-theme', settings.theme ?? 'dark');
-  setElementValue('setting-terminal-color-scheme', settings.terminalColorScheme ?? 'auto');
-  setElementValue('setting-tab-title', settings.tabTitleMode ?? 'hostname');
-  setElementValue('setting-contrast', String(settings.minimumContrastRatio ?? 1));
-  setElementValue('setting-scrollback', settings.scrollbackLines ?? 10000);
-  setElementValue('setting-bell-style', settings.bellStyle ?? 'notification');
+  setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle);
+  setElementValue('setting-theme', settings.theme);
+  setElementValue('setting-terminal-color-scheme', settings.terminalColorScheme);
+  setElementValue('setting-tab-title', settings.tabTitleMode);
+  setElementValue('setting-contrast', String(settings.minimumContrastRatio));
+  setElementValue('setting-scrollback', settings.scrollbackLines);
+  setElementValue('setting-bell-style', settings.bellStyle);
   setElementChecked('setting-copy-on-select', settings.copyOnSelect);
   setElementChecked('setting-right-click-paste', settings.rightClickPaste);
-  setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts ?? 'auto');
+  setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts);
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling);
-  setElementValue('setting-scrollbar-style', settings.scrollbarStyle ?? 'off');
+  setElementValue('setting-scrollbar-style', settings.scrollbarStyle);
   setElementChecked('setting-webgl', settings.useWebGL);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection);
+  setElementValue('setting-input-mode', settings.inputMode);
   setElementChecked('setting-file-radar', settings.fileRadar);
   setElementChecked('setting-manager-bar', settings.managerBarEnabled);
   setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility);
   setElementChecked('setting-ide-mode', settings.ideMode);
   setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate);
   setElementChecked('setting-show-update-notification', settings.showUpdateNotification);
-  setElementValue('setting-update-channel', settings.updateChannel ?? 'stable');
-  setElementValue('setting-language', settings.language ?? 'auto');
+  setElementValue('setting-update-channel', settings.updateChannel);
+  setElementValue('setting-language', settings.language);
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
 }
 
@@ -221,22 +234,22 @@ export function applySettingsToTerminals(): void {
   if (!settings) return;
 
   const theme = getEffectiveXtermTheme();
-  const fontFamily = `'${settings.fontFamily ?? 'Cascadia Code'}', ${TERMINAL_FONT_STACK}`;
-  const fontSize = getEffectiveTerminalFontSize(settings.fontSize ?? 14);
-  const contrastRatio = settings.minimumContrastRatio ?? 1;
+  const fontFamily = `'${settings.fontFamily}', ${TERMINAL_FONT_STACK}`;
+  const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
+  const contrastRatio = settings.minimumContrastRatio;
 
   const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);
 
   sessionTerminals.forEach((state: TerminalState) => {
-    state.terminal.options.cursorBlink = settings.cursorBlink ?? true;
-    state.terminal.options.cursorStyle = settings.cursorStyle ?? 'bar';
-    state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle ?? 'outline';
+    state.terminal.options.cursorBlink = settings.cursorBlink;
+    state.terminal.options.cursorStyle = settings.cursorStyle;
+    state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
     state.terminal.options.fontFamily = fontFamily;
     state.terminal.options.fontSize = fontSize;
     state.terminal.options.theme = theme;
     state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
-    state.terminal.options.scrollback = settings.scrollbackLines ?? 10000;
+    state.terminal.options.scrollback = settings.scrollbackLines;
 
     applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
   });
@@ -253,19 +266,16 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
     populateSettingsForm(settings);
   }
 
-  const themeName = settings.theme ?? 'dark';
-  applyCssTheme(themeName);
-  setCookie('mm-theme', themeName);
+  applyCssTheme(settings.theme);
+  setCookie('mm-theme', settings.theme);
 
-  const languageValue = settings.language ?? 'auto';
-  setCookie('mm-language', languageValue);
-  void setLocale(languageValue);
+  setCookie('mm-language', settings.language);
+  void setLocale(settings.language);
 
   applySettingsToTerminals();
   updateTabTitle();
   renderUpdatePanel();
 
-  // Update dev mode badge visibility
   const envRow = document.getElementById('dev-environment-row');
   const envEl = document.getElementById('dev-environment-name');
   if (envRow && envEl) {
@@ -325,6 +335,7 @@ export function saveAllSettings(): void {
       'auto',
     ) as ClipboardShortcutsSetting,
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
+    inputMode: getElementValue('setting-input-mode', 'keyboard'),
     fileRadar: getElementChecked('setting-file-radar'),
     managerBarEnabled: getElementChecked('setting-manager-bar'),
     managerBarButtons: prevSettings?.managerBarButtons ?? [],
@@ -338,11 +349,9 @@ export function saveAllSettings(): void {
     runAsUser: runAsUserValue || null,
   };
 
-  const themeName = settings.theme ?? 'dark';
-  setCookie('mm-theme', themeName);
+  setCookie('mm-theme', settings.theme);
 
-  const languageValue = settings.language ?? 'auto';
-  setCookie('mm-language', languageValue);
+  setCookie('mm-language', settings.language);
 
   updateSettings(settings)
     .then(({ response, error }) => {
@@ -350,15 +359,15 @@ export function saveAllSettings(): void {
         if (prevSettings) {
           $currentSettings.set({ ...prevSettings, ...settings });
         }
-        applyCssTheme(themeName);
+        applyCssTheme(settings.theme);
         applySettingsToTerminals();
         updateTabTitle();
-        void setLocale(languageValue);
+        void setLocale(settings.language);
       } else {
         log.error(() => `Settings save failed: ${response.status} ${String(error)}`);
       }
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       log.error(() => `Error saving settings: ${String(e)}`);
     });
 }
@@ -382,8 +391,8 @@ export function bindSettingsAutoSave(): void {
   });
 
   settingsView.querySelectorAll('.text-input-wrapper').forEach((wrapper) => {
-    const input = wrapper.querySelector('input') as HTMLInputElement | null;
-    const saveBtn = wrapper.querySelector('.inline-save-btn') as HTMLButtonElement | null;
+    const input = wrapper.querySelector('input');
+    const saveBtn = wrapper.querySelector('.inline-save-btn');
     if (!input || !saveBtn) return;
 
     let originalValue = '';

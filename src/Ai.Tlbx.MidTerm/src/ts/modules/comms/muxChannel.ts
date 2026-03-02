@@ -189,9 +189,8 @@ async function refreshSessionList(): Promise<void> {
     const { data, response } = await getSessions();
     if (!response.ok || !data) return;
 
-    const sessions = data.sessions ?? [];
-    handleStateUpdate(sessions);
-    log.info(() => `Refreshed session list: ${sessions.length} sessions`);
+    handleStateUpdate(data.sessions);
+    log.info(() => `Refreshed session list: ${data.sessions.length} sessions`);
   } catch (e) {
     log.warn(() => `Failed to refresh session list: ${String(e)}`);
   }
@@ -448,10 +447,11 @@ async function processOneFrame(item: OutputFrameItem): Promise<void> {
       bufferedPayload[3] = (rows >> 8) & 0xff;
       bufferedPayload.set(data, 4);
 
-      if (!pendingOutputFrames.has(item.sessionId)) {
-        pendingOutputFrames.set(item.sessionId, []);
+      let frames = pendingOutputFrames.get(item.sessionId);
+      if (!frames) {
+        frames = [];
+        pendingOutputFrames.set(item.sessionId, frames);
       }
-      const frames = pendingOutputFrames.get(item.sessionId)!;
       if (frames.length >= MAX_PENDING_FRAMES_PER_SESSION) {
         // Overflow: partial data is useless for TUI apps, request immediate resync
         log.warn(() => `Pending frames overflow for ${item.sessionId}, requesting buffer refresh`);
@@ -613,7 +613,8 @@ export function connectMuxWebSocket(): void {
     if (type === 0xff) {
       // Init frame format: [0xFF][clientId:8][protocolVersion:2][fullClientId:32]
       if (data.length >= MUX_HEADER_SIZE + 2) {
-        const serverVersion = data[MUX_HEADER_SIZE]! | (data[MUX_HEADER_SIZE + 1]! << 8);
+        const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        const serverVersion = dv.getUint16(MUX_HEADER_SIZE, true);
         setServerProtocolVersion(serverVersion);
         log.info(
           () =>
@@ -688,21 +689,22 @@ export function connectMuxWebSocket(): void {
       }
     } else if (type === MUX_TYPE_PONG) {
       if (payload.length >= 9 && pongCallback) {
-        const pongMode = payload[0]!;
+        const pdv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+        const pongMode = pdv.getUint8(0);
         const timestampBytes = payload.slice(1, 9); // must copy — Float64Array needs 8-byte alignment
-        const timestamp = new Float64Array(timestampBytes.buffer)[0]!;
+        const timestamp = new DataView(timestampBytes.buffer).getFloat64(0, true);
         const rtt = performance.now() - timestamp;
         // Server pong (mode 0) includes diagnostics: [flushDelay:2][serverRtt:2]
         if (pongMode === 0 && payload.length >= 13) {
-          lastFlushDelayMs = payload[9]! | (payload[10]! << 8);
-          lastServerIoRttMs = payload[11]! | (payload[12]! << 8);
+          lastFlushDelayMs = pdv.getUint16(9, true);
+          lastServerIoRttMs = pdv.getUint16(11, true);
         }
         pongCallback(pongMode, rtt);
       }
     } else if (type === MUX_TYPE_DATA_LOSS) {
       const droppedBytes =
         payload.length >= 4
-          ? payload[0]! | (payload[1]! << 8) | (payload[2]! << 16) | (payload[3]! << 24)
+          ? new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(0, true)
           : 0;
       log.warn(
         () => `Data loss: session ${sessionId} dropped ${droppedBytes} bytes, requesting resync`,
@@ -775,7 +777,8 @@ export function sendInput(sessionId: string, data: string): void {
  */
 function flushPendingInput(): void {
   while (pendingInputQueue.length > 0) {
-    const item = pendingInputQueue.shift()!;
+    const item = pendingInputQueue.shift();
+    if (!item) break;
     sendInput(item.sessionId, item.data);
   }
 }

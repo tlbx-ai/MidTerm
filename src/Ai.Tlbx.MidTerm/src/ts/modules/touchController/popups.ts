@@ -135,9 +135,10 @@ function openPopup(popupId: string): void {
     }
   };
 
+  const handler = outsideTapHandler;
   requestAnimationFrame(() => {
-    document.addEventListener('touchstart', outsideTapHandler!, { passive: true });
-    document.addEventListener('mousedown', outsideTapHandler!);
+    document.addEventListener('touchstart', handler, { passive: true });
+    document.addEventListener('mousedown', handler);
   });
 }
 

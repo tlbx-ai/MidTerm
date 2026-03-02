@@ -190,9 +190,9 @@ function bindEvents(state: CommandsPanelState): void {
       state.editingFilename = filename;
       renderPanel(state);
 
-      const slot = container.querySelector(
+      const slot = container.querySelector<HTMLElement>(
         `.command-edit-slot[data-filename="${filename}"]`,
-      ) as HTMLElement;
+      );
       const script = scripts.find((s) => s.filename === filename);
       if (slot && script) {
         createCommandForm(
@@ -231,7 +231,7 @@ function bindEvents(state: CommandsPanelState): void {
     state.showForm = true;
     renderPanel(state);
 
-    const slot = container.querySelector('.command-create-slot') as HTMLElement;
+    const slot = container.querySelector<HTMLElement>('.command-create-slot');
     if (slot) {
       createCommandForm(
         slot,

@@ -15,9 +15,9 @@
 import { atom, map, computed } from 'nanostores';
 import type {
   Session,
-  Settings,
+  MidTermSettingsPublic,
   UpdateInfo,
-  AuthStatus,
+  AuthStatusResponse,
   ProcessState,
   DisplayLayout,
 } from '../types';
@@ -197,13 +197,13 @@ export const $connectionStatus = computed(
 // =============================================================================
 
 /** User settings from server */
-export const $currentSettings = atom<Settings | null>(null);
+export const $currentSettings = atom<MidTermSettingsPublic | null>(null);
 
 /** Update info from server */
 export const $updateInfo = atom<UpdateInfo | null>(null);
 
 /** Auth status from server */
-export const $authStatus = atom<AuthStatus | null>(null);
+export const $authStatus = atom<AuthStatusResponse | null>(null);
 
 /** Windows build number for ConPTY configuration (null on non-Windows) */
 export const $windowsBuildNumber = atom<number | null>(null);
@@ -260,7 +260,7 @@ export function removeSession(sessionId: string): void {
  */
 export function setSessions(sessionList: Session[]): void {
   const sessionsMap: Record<string, Session> = {};
-  sessionList.forEach((session, i) => {
+  sessionList.forEach((session) => {
     const id = session.id;
     if (!id) return;
 
@@ -278,7 +278,7 @@ export function setSessions(sessionList: Session[]): void {
       }
     }
 
-    const entry: Session = { ...session, name, _order: session.order ?? i };
+    const entry: Session = { ...session, name, _order: session.order };
     sessionsMap[id] = entry;
   });
   $sessions.set(sessionsMap);

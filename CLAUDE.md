@@ -383,6 +383,8 @@ POST /api/webpreview/cookies          Set cookie from raw header {raw}
 DELETE /api/webpreview/cookies        Delete cookie {name, path?, domain?}
 POST /api/webpreview/reload           Reload target {mode}
 POST /api/webpreview/snapshot         Save DOM snapshot to session cwd
+GET  /api/webpreview/proxylog         Last N proxy requests (?limit=100)
+DELETE /api/webpreview/proxylog       Clear proxy log buffer
 ```
 
 ## WebSocket Endpoints
@@ -455,6 +457,7 @@ MidTerm includes a reverse proxy for previewing local dev servers (or any websit
 - DOM snapshots saved to `<cwd>/.midterm/snapshot_*/` with CSS files downloaded locally
 - Screenshots via html2canvas (bundled to `/js/html2canvas.min.js`)
 - Per-session state: each terminal tracks its own URL and dock/detach mode via `webSessionState.ts`
+- **Before modifying any web preview proxy code, read `docs/devbrowser.md` first. After changes, update that document to reflect the new state.**
 
 ## Code Style (C#)
 
@@ -644,6 +647,8 @@ pwsh -NoProfile -File scripts/release-dev.ps1 `
     -ReleaseNotes @("Detailed entry 1", "Detailed entry 2") `
     -mthostUpdate <yes|no>
 ```
+
+**Post-release:** After any release (dev or stable), your final message must be a ≤2-line summary of what was shipped. The user runs 100+ agents simultaneously and needs instant context to decide the next task.
 
 **Common mistakes to avoid:**
 - Running the release with uncommitted changes (script commits version.json — dirty tree causes conflicts)

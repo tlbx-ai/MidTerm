@@ -184,6 +184,25 @@ if ($isPtyBreaking) {
     Write-Host "  TtyHost: skipped (web-only release)" -ForegroundColor DarkGray
 }
 
+# Pre-release build verification (catches ESLint, TypeScript, C# errors before committing)
+Write-Host ""
+Write-Host "Running build verification..." -ForegroundColor Cyan
+$buildResult = dotnet build "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj" -c Release 2>&1
+$buildExitCode = $LASTEXITCODE
+if ($buildExitCode -ne 0) {
+    Write-Host ""
+    Write-Host "ERROR: Build failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Build output:" -ForegroundColor Yellow
+    $buildResult | ForEach-Object { Write-Host "  $_" }
+    Write-Host ""
+    Write-Host "Fix the build errors and try again." -ForegroundColor Yellow
+    # Revert version.json change
+    git checkout -- $versionJsonPath 2>$null
+    exit 1
+}
+Write-Host "Build succeeded." -ForegroundColor Green
+
 # Git operations
 Write-Host ""
 Write-Host "Committing and tagging..." -ForegroundColor Cyan

@@ -70,8 +70,8 @@ export function getActiveSettingsTab(): SettingsTab {
 function bindTabEvents(): void {
   document.querySelectorAll('.settings-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const tab = btn.getAttribute('data-tab') as SettingsTab;
-      if (tab) switchSettingsTab(tab);
+      const tab = btn.getAttribute('data-tab');
+      if (tab) switchSettingsTab(tab as SettingsTab);
     });
   });
 }
@@ -79,7 +79,7 @@ function bindTabEvents(): void {
 function restoreLastTab(): void {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved && isValidTab(saved)) {
-    switchSettingsTab(saved as SettingsTab);
+    switchSettingsTab(saved);
   } else {
     switchSettingsTab(DEFAULT_TAB);
   }

@@ -161,7 +161,7 @@ async function loadTranslations(locale: string): Promise<Record<string, string>>
   try {
     const resp = await fetch(`/locales/${locale}.json`);
     if (resp.ok) {
-      return await resp.json();
+      return (await resp.json()) as Record<string, string>;
     }
   } catch {
     // Fall through to empty

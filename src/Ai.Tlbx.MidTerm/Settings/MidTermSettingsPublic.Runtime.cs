@@ -30,6 +30,7 @@ public sealed partial class MidTermSettingsPublic
             RightClickPaste = settings.RightClickPaste,
             ClipboardShortcuts = settings.ClipboardShortcuts,
             ScrollbackProtection = settings.ScrollbackProtection,
+            InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             TmuxCompatibility = settings.TmuxCompatibility,
             IdeMode = settings.IdeMode,
@@ -71,6 +72,8 @@ public sealed partial class MidTermSettingsPublic
         settings.RightClickPaste = RightClickPaste;
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.ScrollbackProtection = ScrollbackProtection;
+        if (InputMode is "keyboard" or "smartinput" or "both")
+            settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
         settings.TmuxCompatibility = TmuxCompatibility;
         settings.IdeMode = IdeMode;

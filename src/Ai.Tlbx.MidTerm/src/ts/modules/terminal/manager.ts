@@ -56,6 +56,7 @@ import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { getEffectiveTerminalFontSize } from './fontSize';
 import { getForegroundInfo } from '../process';
+import { isSmartInputMode, showSmartInput } from '../smartInput';
 
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -96,6 +97,11 @@ export function refreshCursorBlink(terminal: Terminal): void {
 export function focusActiveTerminal(): void {
   if (isSearchVisible()) return;
   if (hasNonTerminalFocus()) return;
+
+  if (isSmartInputMode()) {
+    showSmartInput();
+    return;
+  }
 
   if (focusDebounceTimer !== null) {
     window.clearTimeout(focusDebounceTimer);
@@ -281,6 +287,17 @@ export function createTerminalForSession(
 
     state.opened = true;
 
+    // Intercept xterm's internal textarea focus when Smart Input is active
+    const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
+    if (xtermTextarea) {
+      xtermTextarea.addEventListener('focus', () => {
+        if (isSmartInputMode()) {
+          (xtermTextarea as HTMLTextAreaElement).blur();
+          showSmartInput();
+        }
+      });
+    }
+
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
     // Other event handlers are set up later in setupTerminalEvents
     state.earlyDataDisposable = terminal.onData((data: string) => {
@@ -347,7 +364,7 @@ export function createTerminalForSession(
       // Double-rAF: let the resize paint before measuring for scaling
       requestAnimationFrame(() => {
         if ($isMainBrowser.get()) {
-          const layoutPane = container.closest('.layout-leaf') as HTMLElement | null;
+          const layoutPane = container.closest<HTMLElement>('.layout-leaf');
           if (layoutPane) {
             fitTerminalToContainer(sessionId, layoutPane);
           } else if (!container.classList.contains('hidden')) {
@@ -480,9 +497,7 @@ export function setupTerminalEvents(
       try {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const text = new TextDecoder().decode(bytes);
-        if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(text).catch(() => {});
-        }
+        navigator.clipboard.writeText(text).catch(() => {});
       } catch {
         // invalid base64 or clipboard unavailable
       }
@@ -494,8 +509,8 @@ export function setupTerminalEvents(
   disposables.push(
     terminal.parser.registerOscHandler(7, (data: string) => {
       const match = data.match(/^file:\/\/[^/]*(\/.*)/);
-      if (!match) return false;
-      let path = decodeURIComponent(match[1]!);
+      if (!match?.[1]) return false;
+      let path = decodeURIComponent(match[1]);
       if (/^\/[A-Za-z]:/.test(path)) {
         path = path.substring(1).replace(/\//g, '\\');
       }
@@ -547,10 +562,15 @@ export function setupTerminalEvents(
       return true;
     }
 
-    // Alt+V: native clipboard image paste for terminal apps (Codex CLI, etc.)
-    // Uploads image to server, sets OS clipboard, injects \x1bv into PTY.
+    // Alt+V: clipboard image paste (process-aware).
+    // Native apps (Codex): sets OS clipboard + injects \x1bv.
+    // Path apps (Claude, unknown): uploads image + pastes file path.
     if (isNativeImagePasteShortcut(e)) {
-      void handleNativeImagePaste(sessionId).then((result) => {
+      const foreground = getForegroundInfo(sessionId);
+      void handleNativeImagePaste(sessionId, {
+        foregroundName: foreground.name,
+        foregroundCommandLine: foreground.commandLine,
+      }).then((result) => {
         if (result === 'none') {
           sendInput(sessionId, '\x1bv');
         }
@@ -799,7 +819,7 @@ export function pasteToTerminal(
   if (!state) return;
 
   const muxBpm = isBracketedPasteEnabled(sessionId);
-  const xtermBpm = state.terminal.modes?.bracketedPasteMode ?? false;
+  const xtermBpm = state.terminal.modes.bracketedPasteMode;
   const bpmEnabled = muxBpm || xtermBpm;
 
   const content = isFilePath ? '"' + data + '"' : data;
@@ -923,7 +943,7 @@ export function initCalibrationTerminal(): Promise<void> {
     terminal.open(container);
 
     requestAnimationFrame(() => {
-      const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+      const screen = container.querySelector<HTMLElement>('.xterm-screen');
       if (screen && terminal.cols > 0 && terminal.rows > 0) {
         const cellWidth = screen.offsetWidth / terminal.cols;
         const cellHeight = screen.offsetHeight / terminal.rows;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -8,6 +9,7 @@ using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
@@ -25,11 +27,57 @@ public static class EndpointSetup
 {
     private static string? _cachedGitVersion;
     private static bool _gitVersionChecked;
+    private static bool _codeSigned;
+    private static bool _codeSigningChecked;
 
     public static async Task DetectGitAsync()
     {
         _cachedGitVersion = await GitCommandRunner.GetGitVersionAsync();
         _gitVersionChecked = true;
+    }
+
+    public static void DetectCodeSigning()
+    {
+        _codeSigned = CheckCodeSigning();
+        _codeSigningChecked = true;
+    }
+
+    private static bool CheckCodeSigning()
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+                return false;
+
+            if (OperatingSystem.IsWindows())
+            {
+#pragma warning disable SYSLIB0057
+                using var cert = X509Certificate2.CreateFromSignedFile(exePath);
+#pragma warning restore SYSLIB0057
+                return cert is not null;
+            }
+
+            if (OperatingSystem.IsMacOS())
+            {
+                var psi = new ProcessStartInfo("codesign", $"--verify --strict \"{exePath}\"")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit(5000);
+                return proc?.ExitCode == 0;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static void MapBootstrapEndpoints(
@@ -96,7 +144,8 @@ public static class EndpointSetup
                 DevMode = isDevMode,
                 Features = features,
                 VoicePassword = isDevMode ? settings.VoiceServerPassword : null,
-                GitVersion = _gitVersionChecked ? _cachedGitVersion : null
+                GitVersion = _gitVersionChecked ? _cachedGitVersion : null,
+                CodeSigned = _codeSigningChecked && _codeSigned
             };
 
             return Results.Json(response, AppJsonContext.Default.BootstrapResponse);
@@ -476,6 +525,20 @@ public static class EndpointSetup
             return Results.Ok("Server is restarting...");
         });
 
+        // POST /api/shutdown - graceful shutdown without respawn (loopback only, no auth required)
+        app.MapPost("/api/shutdown", () =>
+        {
+            Log.Info(() => "Server shutdown requested via API");
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(500);
+                Environment.Exit(0);
+            });
+
+            return Results.Ok("Server is shutting down...");
+        });
+
         app.MapGet("/api/networks", () =>
         {
             var interfaces = NetworkInterfaceFilter.GetNetworkInterfaces();
@@ -566,12 +629,14 @@ public static class EndpointSetup
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
         GitWatcherService gitWatcher,
+        BrowserCommandService browserCommandService,
         TmuxLayoutBridge? tmuxLayoutBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
+        var browserHandler = new BrowserWebSocketHandler(browserCommandService, settingsService, authService, shutdownService);
 
         app.Use(async (context, next) =>
         {
@@ -610,6 +675,12 @@ public static class EndpointSetup
             if (path == "/ws/mux")
             {
                 await muxHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/browser")
+            {
+                await browserHandler.HandleAsync(context);
                 return;
             }
 

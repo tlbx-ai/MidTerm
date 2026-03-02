@@ -4,4 +4,4 @@
  * Quick-action buttons below the terminal area for common commands.
  */
 
-export { initManagerBar } from './managerBar';
+export { initManagerBar, sendCommand } from './managerBar';
