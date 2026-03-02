@@ -1,82 +1,50 @@
-# Web Preview Dev Browser — WebSocket Proxy Design
+# Web Preview Dev Browser — Proxy Design
 
-The web preview reverse proxy (`/webpreview/*`) intercepts browser requests and forwards them to an upstream target. This works transparently for HTTP, but WebSocket connections require careful URL rewriting because the proxied page lives under `/webpreview/` while the upstream server doesn't know about that prefix.
+The web preview reverse proxy (`/webpreview/*`) intercepts browser requests and forwards them to an upstream target. HTTP requests are straightforward (strip prefix, forward, return response). WebSocket connections are relayed without content modification.
 
-## URL Space Design (No Read-Side Spoofing)
+## URL Space Design
 
-The proxy uses a **write-only interception** strategy: the injected `UrlRewriteScript` patches outgoing APIs (`fetch`, `XHR`, `WebSocket`, `history.pushState`, `location.assign`, element `.src`/`.href` setters, `setAttribute`) to add `/webpreview` to URLs before they leave JavaScript. But it does **NOT** spoof read-side APIs (`location.href`, `location.pathname`, `document.URL`, `document.baseURI`).
+The proxy uses a **write-only interception** strategy. The injected `UrlRewriteScript` patches outgoing APIs to add `/webpreview` to URLs before they leave JavaScript:
+
+- `fetch`, `XMLHttpRequest.open` — HTTP requests
+- `WebSocket`, `EventSource` — connection constructors
+- `history.pushState`, `history.replaceState` — navigation
+- `location.assign`, `location.replace` — redirects
+- Element `.src`, `.href`, `.action` setters — DOM properties
+- `setAttribute` — attribute writes
+
+Read-side APIs (`location.href`, `location.pathname`, `document.URL`, `document.baseURI`) are **not spoofed**. The page sees its real URL including `/webpreview/`.
 
 | Layer | URL the code sees | Example |
 |-------|-------------------|---------|
-| **Browser (real)** | `https://proxy:2000/webpreview/page` | Kestrel routes through middleware |
-| **JavaScript (real)** | `https://proxy:2000/webpreview/page` | `location.pathname` returns `/webpreview/page` |
-| **Upstream (actual)** | `https://upstream.example.com/page` | What the real server knows |
+| **Browser** | `https://proxy:2000/webpreview/page` | Real browser URL |
+| **JavaScript** | `https://proxy:2000/webpreview/page` | `location.pathname` = `/webpreview/page` |
+| **Upstream** | `https://upstream.example.com/page` | What the real server knows |
 
-The `<base href="/webpreview/">` tag is injected into every HTML response. This means:
-- `document.baseURI` = `https://proxy:2000/webpreview/` (from `<base>` tag, real value)
+The `<base href="/webpreview/">` tag is injected into every HTML response, so:
+- `document.baseURI` = `https://proxy:2000/webpreview/` (from `<base>` tag)
 - `location.href` = `https://proxy:2000/webpreview/page` (real browser URL)
 - Both are consistent — frameworks see the app mounted at `/webpreview/`
 
 ### Why No Read-Side Spoofing?
 
-Chrome's `Location.prototype` properties have `configurable: false`. Attempting `Object.defineProperty(location, "href", ...)` silently fails. This means `location.href` and `location.pathname` **cannot be spoofed** on Chrome. But `document.baseURI`, `document.URL`, and `HTMLBaseElement.href` **can** be overridden. This inconsistency is fatal for frameworks like Blazor that compare `location.href` against `document.baseURI` — they see mismatched URL spaces and fail to route.
+Chrome's `Location.prototype` properties have `configurable: false`. `Object.defineProperty(location, "href", ...)` silently fails. But `document.baseURI` and `document.URL` *can* be overridden. This inconsistency is fatal for frameworks like Blazor that compare `location.href` against `document.baseURI` — they see mismatched URL spaces and fail to route.
 
-The solution: don't spoof anything on the read side. Let all URLs consistently include `/webpreview/`. The write-side interceptors ensure outgoing requests go through the proxy correctly.
+## WebSocket Relay (No Content Rewriting)
 
-## WebSocket URL Rewriting
+WebSocket messages are relayed **untouched** between client and upstream. No URL rewriting, no binary manipulation, no protocol-specific handling.
 
-### Direction: Client → Upstream
+This works because:
+- **Frameworks use relative paths for routing.** Blazor's `NavigationManager` computes routes as `currentUri` minus `baseUri`. If both are proxy URLs (`https://proxy:2000/webpreview/...`), the relative path is identical to what it would be with upstream URLs.
+- **Server state comes from the client.** Blazor's `StartCircuit` receives `baseUri` and `currentUri` from the client. The server stores these and uses them for all subsequent URL operations. Since the client sends proxy URLs, the server's `NavigationManager` operates in the proxy URL space.
+- **Server echoes client-provided URLs.** When the server sends URLs back (e.g., `OnLocationChanged`), they're already proxy URLs. No rewriting needed.
+- **No message corruption risk.** Previous approaches rewrote URL strings inside JSON and MessagePack binary frames, which required: text `string.Replace`, MessagePack string header adjustment, SignalR VarInt length prefix re-encoding. Each layer was a source of bugs.
 
-JavaScript constructs URLs from `document.baseURI` or `location.href`, both of which include `/webpreview/`. Two-pass replacement strips the proxy prefix:
+### What About Server-Generated URLs?
 
-```
-Pass 1: https://proxy:2000/webpreview  →  https://upstream.example.com
-Pass 2: https://proxy:2000             →  https://upstream.example.com
-```
+If the upstream server independently generates URLs using its own origin (not from client state), those URLs would point to the upstream directly. The client's `fetch`/`XHR` interceptors would route them through the `/_ext` external proxy. This is functional, though slightly less efficient than direct `/webpreview/` routing.
 
-Pass 1 catches the common case (URLs containing `/webpreview` from the page's URL space). Pass 2 catches edge cases where only the bare origin appears (e.g., a hardcoded origin string).
-
-### Direction: Upstream → Client
-
-The upstream sends its own URLs. These must become proxy URLs **with `/webpreview`** to match the page's URL space:
-
-```
-https://upstream.example.com  →  https://proxy:2000/webpreview
-```
-
-This ensures that framework state (e.g., Blazor's `NavigationManager.currentUri`) stays consistent with `document.baseURI` and `location.href`.
-
-## SignalR Protocol Variants
-
-### JSON Hub Protocol (Blazor Web / .NET 8+)
-
-- Sub-protocol: none (no `Sec-WebSocket-Protocol` header)
-- Messages: text WebSocket frames, JSON with `\x1e` record separator
-- URL rewriting: simple `string.Replace()` on the text content
-- Example message:
-  ```
-  {"type":1,"target":"StartCircuit","arguments":["https://proxy:2000/webpreview/","https://proxy:2000/webpreview/?ts"]}\x1e
-  ```
-
-### blazorpack (Blazor Server / .NET 7 and earlier)
-
-- Sub-protocol: `blazorpack`
-- Messages: binary WebSocket frames
-- Framing: `[VarInt: payload_length][MessagePack payload]` (one or more per frame)
-- URLs embedded as MessagePack strings with length-prefixed headers:
-  - fixstr (`0xa0-0xbf`): up to 31 bytes
-  - str8 (`0xd9 XX`): up to 255 bytes
-  - str16 (`0xda XX XX`): up to 65535 bytes
-
-**The VarInt bug:** URL replacement changes the MessagePack payload size, but the VarInt length prefix at the start of each message wasn't updated. The upstream read the old VarInt, sliced the wrong number of bytes, and deserialization failed — closing the connection with "Server returned an error on close."
-
-**Fix:** `RewriteSignalRBinaryFrame` parses the VarInt framing, applies `RewriteBinaryUrls` to each individual payload, then re-encodes with the correct VarInt length. Only activates when `SubProtocol == "blazorpack"`.
-
-### Plain WebSocket (non-SignalR)
-
-- Text frames: `string.Replace()` (same as JSON hub)
-- Binary frames: `RewriteBinaryUrls` scans for URL byte patterns, adjusts MessagePack string headers
-- No VarInt framing — binary bytes are processed directly
+In practice, Blazor and most SPA frameworks derive all URLs from client-provided state, so this edge case rarely occurs.
 
 ## Proxy Log
 
@@ -89,7 +57,7 @@ This ensures that framework state (e.g., Blazor's `NavigationManager.currentUri`
 
 CLI: `mt_proxylog [limit]` / `Mt-ProxyLog [-Limit N]`
 
-Use this as the **first diagnostic step** when a site doesn't work through the proxy. The log shows exactly what requests the proxy made, what the upstream returned, and whether WebSocket connections succeeded.
+Use this as the **first diagnostic step** when a site doesn't work through the proxy.
 
 ## Debugging Checklist
 
@@ -98,16 +66,15 @@ When a website doesn't load through the web preview:
 1. **`mt_proxylog`** — Check if requests reach upstream and what status codes come back
 2. **`mt_log error`** — Check browser console for JS errors
 3. **`mt_outline`** — Check if the page has any rendered content
-4. **WebSocket entries in proxylog** — Check `statusCode` (101 = connected, 502 = failed), `subProtocols`, `negotiatedProtocol`, `error`
-5. **`mt_exec` to inspect framework state** — e.g., `Blazor._internal.navigationManager` for baseUri/currentUri mismatch
+4. **WebSocket entries in proxylog** — Check `statusCode` (101 = connected, 502 = failed), `subProtocols`, `error`
+5. **`mt_exec` to inspect framework state** — e.g., `Blazor._internal.navigationManager` for baseUri/currentUri
 
 ### Common Failures
 
 | Symptom | Likely Cause |
 |---------|-------------|
 | WS status 502 | Upstream rejected connection (wrong Origin, missing cookies, SSL error) |
-| WS 101 but page empty | URL rewriting mismatch — check NavigationManager or framework router state |
-| WS 101 then immediate close (1006) | Binary message corruption — check if VarInt framing applies |
+| WS 101 but page empty | Framework routing issue — check NavigationManager or router state |
 | Page renders but navigation broken | URL inconsistency between location.href and document.baseURI |
 | CSS/JS 404s | Root-relative URLs not caught by `IsMidTermPath` catch-all |
 | Login redirect loops | Cookies not forwarding — check `requestCookies`/`responseCookies` in proxylog |
@@ -116,19 +83,15 @@ When a website doesn't load through the web preview:
 
 | File | Role |
 |------|------|
-| `WebPreviewProxyMiddleware.cs` | Core proxy: HTTP forwarding, WebSocket relay, URL rewriting, injected JS |
+| `WebPreviewProxyMiddleware.cs` | Core proxy: HTTP forwarding, WebSocket relay, injected JS |
 | `WebPreviewService.cs` | State: target URL, cookie jar, HTTP client, proxy log ring buffer |
 | `WebPreviewEndpoints.cs` | REST API: target CRUD, cookie management, proxy log, snapshots |
 | `MtcliScriptWriter.cs` | CLI helpers: `mt_proxylog`, `mt_navigate`, etc. |
 
 ## Key Design Decisions
 
-**No read-side spoofing.** Chrome's `Location.prototype` properties are non-configurable, making it impossible to consistently spoof `location.href` and `location.pathname`. Rather than partially spoofing (which creates fatal inconsistencies for frameworks like Blazor), we let all URLs consistently include `/webpreview/`. The `<base href="/webpreview/">` tag makes this work for relative URL resolution.
+**No read-side spoofing.** Chrome blocks overriding `Location.prototype` properties. Partial spoofing creates fatal inconsistencies. Let all URLs consistently include `/webpreview/`.
 
-**Write-side interception is sufficient.** Outgoing APIs (fetch, XHR, WebSocket, history, element setters) are patched to add `/webpreview` before requests leave JS. This ensures all requests route through the proxy middleware. The read-side consistency means framework routers see a coherent URL space.
+**No WebSocket content rewriting.** Frameworks use relative paths for routing. The absolute origin in URLs doesn't matter as long as `baseUri` and `currentUri` share the same origin. Relaying messages untouched eliminates an entire class of bugs (JSON corruption, MessagePack header mismatch, VarInt framing errors).
 
-**Two-pass client→upstream, single-pass upstream→client.** Client messages may contain URLs both with and without `/webpreview` (depending on the API that generated them). The longer match (`/webpreview`) is tried first to avoid partial replacements. Upstream messages consistently use the upstream's own origin, so one pass suffices.
-
-**VarInt framing is protocol-specific.** Only `blazorpack` uses VarInt-prefixed messages within WebSocket frames. Other protocols get raw byte matching. Detecting by `SubProtocol` avoids false-positive framing on arbitrary binary data.
-
-**The proxy log exists because WebSocket debugging is blind.** You can't see WebSocket message contents in browser DevTools when you're inside a proxied iframe. The server-side log captures the HTTP and WebSocket metadata that the proxy generates, which is the only way to diagnose connection failures.
+**Write-side interception is sufficient.** Outgoing APIs (fetch, XHR, WebSocket, history, element setters) are patched to add `/webpreview` before requests leave JS. This ensures all requests route through the proxy middleware.

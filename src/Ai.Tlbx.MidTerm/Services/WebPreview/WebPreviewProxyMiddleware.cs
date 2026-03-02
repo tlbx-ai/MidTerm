@@ -1234,82 +1234,15 @@ public sealed partial class WebPreviewProxyMiddleware
             ? await context.WebSockets.AcceptWebSocketAsync(acceptProtocol)
             : await context.WebSockets.AcceptWebSocketAsync();
 
-        // Build URL rewrite functions for Blazor/SignalR compatibility.
-        // Blazor sends the browser's location.href (which includes /webpreview/) to the
-        // upstream server during circuit init (StartCircuit) and navigation events. The
-        // upstream doesn't know about /webpreview/, so we strip it from client→upstream
-        // messages and re-add it for upstream→client messages.
-        //
-        // /webpreview maps to the upstream server root — the full upstream path (including
-        // any subpath like /kicoach) follows AFTER /webpreview/. So:
-        //   client:   https://proxy/webpreview/kicoach/page
-        //   upstream: https://upstream/kicoach/page
-        // We rewrite proxy scheme+host+/webpreview → upstream scheme+host (no path).
-        //
-        // Text rewriting handles JSON-based SignalR protocols. Binary rewriting handles
-        // MessagePack-based protocols (like Blazor's "blazorpack") where URLs are embedded
-        // as UTF-8 bytes in binary frames with MessagePack string length prefixes.
-        Func<string, string>? clientToUpstream = null;
-        Func<string, string>? upstreamToClient = null;
-        Func<byte[], int, byte[]?>? binaryClientToUpstream = null;
-        Func<byte[], int, byte[]?>? binaryUpstreamToClient = null;
-
-        if (targetUri is not null)
-        {
-            var proxyScheme = context.Request.IsHttps ? "https" : "http";
-            var proxyBase = $"{proxyScheme}://{context.Request.Host}/webpreview";
-            var proxyOrigin = $"{proxyScheme}://{context.Request.Host}";
-            var upstreamRoot = $"{targetUri.Scheme}://{targetUri.Authority}";
-
-            // WebSocket URL rewriting must be consistent with the page's URL space.
-            // The page lives under /webpreview/ (no read-side spoofing), so all URLs
-            // visible to JS include /webpreview. WebSocket messages must match.
-            //
-            // Client→upstream: strip proxy prefix (two-pass: longer /webpreview match first)
-            // Upstream→client: upstream → proxyBase (with /webpreview, consistent with page URLs)
-            clientToUpstream = text =>
-            {
-                text = text.Replace(proxyBase, upstreamRoot);
-                text = text.Replace(proxyOrigin, upstreamRoot);
-                return text;
-            };
-            upstreamToClient = text => text.Replace(upstreamRoot, proxyBase);
-
-            var proxyBaseUtf8 = Encoding.UTF8.GetBytes(proxyBase);
-            var proxyOriginUtf8 = Encoding.UTF8.GetBytes(proxyOrigin);
-            var upstreamRootUtf8 = Encoding.UTF8.GetBytes(upstreamRoot);
-
-            // SignalR's blazorpack protocol wraps each MessagePack message with a VarInt
-            // length prefix. URL rewriting changes the payload size, so we must re-encode
-            // the VarInt after rewriting. Non-blazorpack binary frames use raw byte matching.
-            var isBlazorPack = acceptProtocol?.Equals("blazorpack", StringComparison.OrdinalIgnoreCase) == true;
-
-            // Client→upstream binary: two-pass rewrite (longer match first, then bare origin)
-            byte[]? ClientToUpstreamBinary(byte[] data, int len)
-            {
-                var result = isBlazorPack
-                    ? RewriteSignalRBinaryFrame(data, len, proxyBaseUtf8, upstreamRootUtf8)
-                    : RewriteBinaryUrls(data, len, proxyBaseUtf8, upstreamRootUtf8);
-
-                if (result is not null) { data = result; len = result.Length; }
-
-                var result2 = isBlazorPack
-                    ? RewriteSignalRBinaryFrame(data, len, proxyOriginUtf8, upstreamRootUtf8)
-                    : RewriteBinaryUrls(data, len, proxyOriginUtf8, upstreamRootUtf8);
-
-                return result2 ?? result;
-            }
-
-            binaryClientToUpstream = ClientToUpstreamBinary;
-            binaryUpstreamToClient = isBlazorPack
-                ? (data, len) => RewriteSignalRBinaryFrame(data, len, upstreamRootUtf8, proxyBaseUtf8)
-                : (data, len) => RewriteBinaryUrls(data, len, upstreamRootUtf8, proxyBaseUtf8);
-        }
-
+        // WebSocket messages are relayed without content rewriting. The page lives
+        // under /webpreview/ and JS sees proxy URLs in location.href and document.baseURI.
+        // Frameworks like Blazor store client-provided URLs (proxy URLs) in their state
+        // and use relative paths for routing — the absolute origin doesn't matter.
+        // When the server echoes URLs back, they're already proxy URLs. No rewriting needed.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
 
-        var downToUp = PipeWebSocketAsync(downstream, upstream, cts, clientToUpstream, binaryClientToUpstream);
-        var upToDown = PipeWebSocketAsync(upstream, downstream, cts, upstreamToClient, binaryUpstreamToClient);
+        var downToUp = RelayWebSocketAsync(downstream, upstream, cts);
+        var upToDown = RelayWebSocketAsync(upstream, downstream, cts);
 
         await Task.WhenAny(downToUp, upToDown);
         await cts.CancelAsync();
@@ -1318,93 +1251,23 @@ public sealed partial class WebPreviewProxyMiddleware
         await CloseWebSocketSafe(upstream);
     }
 
-    private static async Task PipeWebSocketAsync(
-        WebSocket source, WebSocket destination, CancellationTokenSource cts,
-        Func<string, string>? textRewriter = null,
-        Func<byte[], int, byte[]?>? binaryRewriter = null)
+    private static async Task RelayWebSocketAsync(
+        WebSocket source, WebSocket destination, CancellationTokenSource cts)
     {
         var buffer = new byte[WsBufferSize];
-        MemoryStream? accumulator = null;
         try
         {
             while (source.State == WebSocketState.Open && !cts.Token.IsCancellationRequested)
             {
                 var result = await source.ReceiveAsync(buffer, cts.Token);
                 if (result.MessageType == WebSocketMessageType.Close)
-                {
                     break;
-                }
 
-                if (textRewriter is not null && result.MessageType == WebSocketMessageType.Text)
-                {
-                    accumulator ??= new MemoryStream();
-                    accumulator.Write(buffer, 0, result.Count);
-
-                    if (result.EndOfMessage)
-                    {
-                        var raw = accumulator.GetBuffer();
-                        var rawLen = (int)accumulator.Length;
-                        byte[]? outBytes = null;
-
-                        try
-                        {
-                            var text = Encoding.UTF8.GetString(raw, 0, rawLen);
-                            var rewritten = textRewriter(text);
-                            outBytes = Encoding.UTF8.GetBytes(rewritten);
-                        }
-                        catch
-                        {
-                            // Rewrite failed — forward original bytes unchanged
-                        }
-
-                        await destination.SendAsync(
-                            outBytes is not null
-                                ? new ArraySegment<byte>(outBytes)
-                                : new ArraySegment<byte>(raw, 0, rawLen),
-                            WebSocketMessageType.Text,
-                            true,
-                            cts.Token);
-                        accumulator.SetLength(0);
-                    }
-                }
-                else if (binaryRewriter is not null && result.MessageType == WebSocketMessageType.Binary)
-                {
-                    accumulator ??= new MemoryStream();
-                    accumulator.Write(buffer, 0, result.Count);
-
-                    if (result.EndOfMessage)
-                    {
-                        var data = accumulator.GetBuffer();
-                        var len = (int)accumulator.Length;
-                        byte[]? rewritten = null;
-
-                        try
-                        {
-                            rewritten = binaryRewriter(data, len);
-                        }
-                        catch
-                        {
-                            // Rewrite failed — forward original bytes unchanged
-                        }
-
-                        await destination.SendAsync(
-                            rewritten is not null
-                                ? new ArraySegment<byte>(rewritten)
-                                : new ArraySegment<byte>(data, 0, len),
-                            WebSocketMessageType.Binary,
-                            true,
-                            cts.Token);
-                        accumulator.SetLength(0);
-                    }
-                }
-                else
-                {
-                    await destination.SendAsync(
-                        new ArraySegment<byte>(buffer, 0, result.Count),
-                        result.MessageType,
-                        result.EndOfMessage,
-                        cts.Token);
-                }
+                await destination.SendAsync(
+                    new ArraySegment<byte>(buffer, 0, result.Count),
+                    result.MessageType,
+                    result.EndOfMessage,
+                    cts.Token);
             }
         }
         catch (OperationCanceledException)
@@ -1415,228 +1278,8 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             // Connection dropped
         }
-        finally
-        {
-            accumulator?.Dispose();
-        }
     }
 
-    /// <summary>
-    /// Rewrites URL strings embedded in binary MessagePack data.
-    /// Finds occurrences of <paramref name="fromUtf8"/> bytes and replaces them with
-    /// <paramref name="toUtf8"/> bytes, adjusting MessagePack string length prefixes.
-    /// Used for Blazor's "blazorpack" protocol where StartCircuit sends URLs as
-    /// MessagePack-encoded strings in binary WebSocket frames.
-    /// </summary>
-    internal static byte[]? RewriteBinaryUrls(byte[] data, int length, byte[] fromUtf8, byte[] toUtf8)
-    {
-        if (fromUtf8.Length == 0 || length < fromUtf8.Length + 1)
-            return null;
-
-        var span = data.AsSpan(0, length);
-
-        // First pass: find all match positions
-        var positions = new List<int>();
-        var searchStart = 0;
-        while (searchStart <= length - fromUtf8.Length)
-        {
-            var idx = span[searchStart..].IndexOf(fromUtf8);
-            if (idx < 0) break;
-            positions.Add(searchStart + idx);
-            searchStart += idx + fromUtf8.Length;
-        }
-
-        if (positions.Count == 0)
-            return null;
-
-        var delta = toUtf8.Length - fromUtf8.Length;
-        using var ms = new MemoryStream(length + (Math.Abs(delta) * positions.Count) + 16);
-        var copyFrom = 0;
-
-        foreach (var matchPos in positions)
-        {
-            if (matchPos < copyFrom)
-                continue; // Inside a previously rewritten string
-
-            // Try to find the MessagePack string header enclosing this URL.
-            // The URL is expected at the START of the MessagePack string value.
-            int headerStart = -1;
-            int headerLen = 0;
-            int oldStrLen = 0;
-
-            if (matchPos >= 2 && data[matchPos - 2] == 0xd9)
-            {
-                // str 8: [0xd9] [1-byte length] [content...]
-                headerStart = matchPos - 2;
-                headerLen = 2;
-                oldStrLen = data[matchPos - 1];
-            }
-            else if (matchPos >= 1 && (data[matchPos - 1] & 0xe0) == 0xa0)
-            {
-                // fixstr: [0xa0-0xbf] [content...]
-                headerStart = matchPos - 1;
-                headerLen = 1;
-                oldStrLen = data[matchPos - 1] & 0x1f;
-            }
-            else if (matchPos >= 3 && data[matchPos - 3] == 0xda)
-            {
-                // str 16: [0xda] [2-byte length BE] [content...]
-                headerStart = matchPos - 3;
-                headerLen = 3;
-                oldStrLen = (data[matchPos - 2] << 8) | data[matchPos - 1];
-            }
-
-            if (headerStart < 0 || oldStrLen < fromUtf8.Length)
-                continue; // No valid header — skip this match, bytes pass through
-
-            // Bail if the header overlaps with a previous replacement region
-            if (headerStart < copyFrom)
-                continue;
-
-            // Bail if the claimed string extends past the buffer — data is corrupt
-            var stringEnd = headerStart + headerLen + oldStrLen;
-            if (stringEnd > length)
-                return null; // Unsafe to rewrite — pass through entire frame
-
-            var newStrLen = oldStrLen + delta;
-
-            // Write everything before this string header
-            ms.Write(data, copyFrom, headerStart - copyFrom);
-
-            // Write new MessagePack string header
-            if (newStrLen <= 31)
-            {
-                ms.WriteByte((byte)(0xa0 | newStrLen));
-            }
-            else if (newStrLen <= 255)
-            {
-                ms.WriteByte(0xd9);
-                ms.WriteByte((byte)newStrLen);
-            }
-            else
-            {
-                ms.WriteByte(0xda);
-                ms.WriteByte((byte)(newStrLen >> 8));
-                ms.WriteByte((byte)(newStrLen & 0xff));
-            }
-
-            // Write replacement URL bytes
-            ms.Write(toUtf8);
-
-            // Write the rest of the original string (path/query after the URL prefix)
-            var restLen = oldStrLen - fromUtf8.Length;
-            if (restLen > 0)
-            {
-                ms.Write(data, matchPos + fromUtf8.Length, restLen);
-            }
-
-            copyFrom = stringEnd;
-        }
-
-        if (copyFrom == 0)
-            return null; // No successful replacements — pass through
-
-        // Write remaining data after last replacement
-        if (copyFrom < length)
-        {
-            ms.Write(data, copyFrom, length - copyFrom);
-        }
-
-        return ms.ToArray();
-    }
-
-    /// <summary>
-    /// Rewrites URLs in a SignalR binary frame that uses VarInt length-prefixed messages.
-    /// Each message in the frame is: [VarInt: payload_length][MessagePack payload].
-    /// After rewriting URLs in each payload, the VarInt prefix is re-encoded with the
-    /// new payload size to maintain correct framing.
-    /// </summary>
-    internal static byte[]? RewriteSignalRBinaryFrame(byte[] data, int length, byte[] fromUtf8, byte[] toUtf8)
-    {
-        if (fromUtf8.Length == 0 || length < fromUtf8.Length + 1)
-            return null;
-
-        using var output = new MemoryStream(length + 64);
-        var offset = 0;
-        var anyRewritten = false;
-
-        while (offset < length)
-        {
-            if (!TryReadVarInt(data, offset, length, out var payloadLen, out var prefixLen))
-                break;
-
-            var payloadStart = offset + prefixLen;
-            var payloadEnd = payloadStart + payloadLen;
-            if (payloadEnd > length)
-                break;
-
-            var rewritten = RewriteBinaryUrls(data, payloadStart, payloadLen, fromUtf8, toUtf8);
-            if (rewritten is not null)
-            {
-                anyRewritten = true;
-                WriteVarInt(output, rewritten.Length);
-                output.Write(rewritten);
-            }
-            else
-            {
-                output.Write(data, offset, payloadEnd - offset);
-            }
-
-            offset = payloadEnd;
-        }
-
-        if (!anyRewritten)
-            return null;
-
-        if (offset < length)
-            output.Write(data, offset, length - offset);
-
-        return output.ToArray();
-    }
-
-    /// <summary>
-    /// Overload that rewrites URLs starting at an offset within the data array.
-    /// Used by <see cref="RewriteSignalRBinaryFrame"/> to process individual message payloads.
-    /// </summary>
-    internal static byte[]? RewriteBinaryUrls(byte[] data, int offset, int length, byte[] fromUtf8, byte[] toUtf8)
-    {
-        if (offset == 0)
-            return RewriteBinaryUrls(data, length, fromUtf8, toUtf8);
-
-        var slice = new byte[length];
-        Buffer.BlockCopy(data, offset, slice, 0, length);
-        return RewriteBinaryUrls(slice, length, fromUtf8, toUtf8);
-    }
-
-    private static bool TryReadVarInt(byte[] data, int offset, int length, out int value, out int bytesRead)
-    {
-        value = 0;
-        bytesRead = 0;
-        while (offset + bytesRead < length)
-        {
-            var b = data[offset + bytesRead];
-            value |= (b & 0x7f) << (bytesRead * 7);
-            bytesRead++;
-            if ((b & 0x80) == 0)
-                return true;
-            if (bytesRead >= 5)
-                return false;
-        }
-        return false;
-    }
-
-    private static void WriteVarInt(MemoryStream ms, int value)
-    {
-        var unsigned = (uint)value;
-        do
-        {
-            var b = (byte)(unsigned & 0x7f);
-            unsigned >>= 7;
-            if (unsigned > 0)
-                b |= 0x80;
-            ms.WriteByte(b);
-        } while (unsigned > 0);
-    }
 
     private static async Task CloseWebSocketSafe(WebSocket ws)
     {
