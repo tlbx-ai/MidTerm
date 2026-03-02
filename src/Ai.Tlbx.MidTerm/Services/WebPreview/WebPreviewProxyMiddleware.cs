@@ -121,12 +121,16 @@ public sealed partial class WebPreviewProxyMiddleware
             navigator.serviceWorker.register=function(u,o){return swr(r(u),o);};
           }
           // === Navigation APIs ===
+          function ntfy(){try{window.parent.postMessage({type:"mt-navigation",url:location.href},"*");}catch(e){}}
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
-          history.pushState=function(s,t,u){return hps(s,t,u?r(u):u);};
-          history.replaceState=function(s,t,u){return hrs(s,t,u?r(u):u);};
+          history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
+          history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
           var la=location.assign.bind(location),lr=location.replace.bind(location);
           location.assign=function(u){return la(r(u));};
           location.replace=function(u){return lr(r(u));};
+          window.addEventListener("popstate",ntfy);
+          window.addEventListener("hashchange",ntfy);
+          setTimeout(ntfy,0);
           // === Cookie bridge ===
           var C=P+"/_cookies",cc="";
           function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}

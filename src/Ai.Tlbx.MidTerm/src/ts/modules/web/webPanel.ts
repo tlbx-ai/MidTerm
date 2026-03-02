@@ -12,10 +12,6 @@ import { getForegroundInfo } from '../process';
 import { createLogger } from '../logging';
 import { getActiveUrl, setActiveMode, setActiveUrl } from './webSessionState';
 
-interface SnapshotResponse {
-  snapshotPath?: string;
-}
-
 interface UploadResponse {
   path?: string;
 }
@@ -58,12 +54,14 @@ export function initWebPanel(): void {
     void handleRefresh(hard ? 'hard' : 'soft');
   });
   screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
-  document
-    .getElementById('web-preview-snapshot')
-    ?.addEventListener('click', () => void handleSnapshot());
-  document.getElementById('web-preview-dom-html')?.addEventListener('click', handleDomHtml);
-  document.getElementById('web-preview-dom-text')?.addEventListener('click', handleDomText);
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
+
+  window.addEventListener('message', (e: MessageEvent<unknown>) => {
+    const d = e.data as Record<string, unknown> | null;
+    if (d && d.type === 'mt-navigation' && typeof d.url === 'string') {
+      updateUrlBarFromIframe(d.url);
+    }
+  });
 }
 
 /** Restore the last-used URL for the active session into the URL input bar. */
@@ -125,6 +123,30 @@ async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
   loadPreview();
 }
 
+/**
+ * Update the URL bar to reflect in-iframe navigation (redirects, pushState, etc.).
+ * Strips the /webpreview prefix and reconstructs the upstream URL.
+ */
+function updateUrlBarFromIframe(iframeUrl: string): void {
+  if (!urlInput) return;
+  try {
+    const parsed = new URL(iframeUrl);
+    let path = parsed.pathname;
+    if (path.startsWith('/webpreview/')) {
+      path = path.slice('/webpreview'.length);
+    } else if (path === '/webpreview') {
+      path = '/';
+    }
+    const target = $webPreviewUrl.get();
+    if (!target) return;
+    const targetUrl = new URL(target);
+    const displayUrl = targetUrl.origin + path + parsed.search + parsed.hash;
+    urlInput.value = displayUrl;
+  } catch {
+    // ignore malformed URLs
+  }
+}
+
 /** Show the web preview iframe and hide the detached placeholder message. */
 export function showIframe(): void {
   if (iframe) iframe.classList.remove('hidden');
@@ -158,70 +180,6 @@ export function hideDetachedPlaceholder(): void {
   const placeholder = document.getElementById('web-preview-detached-msg');
   if (placeholder) placeholder.classList.add('hidden');
   showIframe();
-}
-
-/**
- * Save a DOM snapshot of the web preview to the active session's cwd.
- * Sends the live rendered HTML + CSS hrefs to the server, which writes them
- * to <cwd>/.midterm/snapshot_YYYYMMDD_HHMMSS/ and pastes the path into the terminal.
- */
-async function handleSnapshot(): Promise<void> {
-  if (!iframe || iframe.src === 'about:blank') return;
-  const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
-
-  const iframeDoc = iframe.contentDocument;
-  if (!iframeDoc) return;
-
-  const html = iframeDoc.documentElement.outerHTML;
-  const cssUrls = Array.from(
-    iframeDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]'),
-  ).map((el) => el.href);
-
-  try {
-    const resp = await fetch('/api/webpreview/snapshot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, html, cssUrls }),
-    });
-    if (!resp.ok) {
-      log.warn(() => `Snapshot failed: ${resp.status}`);
-      return;
-    }
-    const result = (await resp.json()) as SnapshotResponse;
-    if (result.snapshotPath) {
-      pasteToTerminal(sessionId, result.snapshotPath, true);
-      log.info(() => `Snapshot saved: ${result.snapshotPath}`);
-    }
-  } catch (err) {
-    log.warn(() => `Snapshot error: ${String(err)}`);
-  }
-}
-
-/**
- * Paste the iframe's full HTML source into the active terminal session.
- */
-function handleDomHtml(): void {
-  if (!iframe || iframe.src === 'about:blank') return;
-  const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
-  const html = iframe.contentDocument?.documentElement.outerHTML ?? '';
-  if (!html) return;
-  pasteToTerminal(sessionId, html, false);
-  log.info(() => 'DOM outerHTML pasted to terminal');
-}
-
-/**
- * Paste the iframe's visible text content into the active terminal session.
- */
-function handleDomText(): void {
-  if (!iframe || iframe.src === 'about:blank') return;
-  const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
-  const text = iframe.contentDocument?.documentElement.innerText ?? '';
-  if (!text) return;
-  pasteToTerminal(sessionId, text, false);
-  log.info(() => 'DOM innerText pasted to terminal');
 }
 
 /**

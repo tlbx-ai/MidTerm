@@ -26,6 +26,16 @@ The `<base href="/webpreview/">` tag is injected into every HTML response, so:
 - `location.href` = `https://proxy:2000/webpreview/page` (real browser URL)
 - Both are consistent — frameworks see the app mounted at `/webpreview/`
 
+### Navigation Notifications
+
+The injected script sends `postMessage({type: "mt-navigation", url: location.href})` to the parent window whenever in-iframe navigation occurs:
+
+- `history.pushState` / `history.replaceState` — SPA navigation
+- `popstate` / `hashchange` events — back/forward navigation
+- Initial page load (`setTimeout(ntfy, 0)`) — captures redirects
+
+The parent `webPanel.ts` listens for these messages and updates the URL bar, stripping the `/webpreview` prefix and reconstructing the upstream URL.
+
 ### Why No Read-Side Spoofing?
 
 Chrome's `Location.prototype` properties have `configurable: false`. `Object.defineProperty(location, "href", ...)` silently fails. But `document.baseURI` and `document.URL` *can* be overridden. This inconsistency is fatal for frameworks like Blazor that compare `location.href` against `document.baseURI` — they see mismatched URL spaces and fail to route.
