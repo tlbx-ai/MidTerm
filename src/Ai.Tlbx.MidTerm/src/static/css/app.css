@@ -5648,8 +5648,7 @@ html, body {
     left: 8px;
     right: 8px;
     z-index: 50;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: column;
     padding: 8px;
     background: var(--bg-secondary, #1e1e1e);
     border: 1px solid var(--border-color, #444);
@@ -5761,8 +5760,7 @@ html, body {
 .smart-input-docked {
     display: none;
     flex-shrink: 0;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: column;
     padding: 6px 8px;
     background: var(--bg-secondary, #1e1e1e);
     border-top: 1px solid var(--border-color, #444);
@@ -5770,6 +5768,63 @@ html, body {
 
 .smart-input-docked.visible {
     display: flex;
+}
+
+/* Input row — flex row holding mic, autosend, textarea, send, toggle */
+.smart-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    width: 100%;
+}
+
+/* Toggle keys chevron button */
+.smart-input-toggle-keys {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bg-tertiary, #333);
+    color: var(--text-color, #e0e0e0);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 0.2s;
+}
+
+.smart-input-toggle-keys:active {
+    background: var(--accent-color, #4fc3f7);
+    color: #000;
+}
+
+.smart-input-toggle-keys.expanded {
+    transform: rotate(180deg);
+}
+
+/* Embedded touch controller inside smart input bar */
+.touch-controller.embedded {
+    display: flex !important;
+    max-height: none;
+    border-top: 1px solid var(--border-color, #444);
+    margin-top: 6px;
+    padding: 4px 0;
+    padding-bottom: 0;
+    background: transparent;
+}
+
+.touch-controller.embedded .touch-dismiss {
+    display: none;
+}
+
+/* Collapsed: hide embedded touch controller */
+.smart-input-overlay:not(.keys-expanded) .touch-controller.embedded,
+.smart-input-docked:not(.keys-expanded) .touch-controller.embedded {
+    display: none !important;
 }
 
 /* ==========================================================================
