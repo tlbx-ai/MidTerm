@@ -2237,9 +2237,9 @@ html, body {
     }
 
     .settings-content {
-        padding: 16px;
-        padding-top: calc(16px + env(safe-area-inset-top, 0));
-        padding-bottom: calc(16px + env(safe-area-inset-bottom, 0));
+        padding: 8px;
+        padding-top: calc(8px + env(safe-area-inset-top, 0));
+        padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
     }
 
     .settings-panel {
@@ -2250,20 +2250,39 @@ html, body {
         font-size: var(--fs-3xl);
     }
 
+    .settings-section {
+        padding: 12px;
+    }
+
     .setting-row {
-        flex-direction: column;
-        align-items: stretch;
         gap: 8px;
-        text-align: left;
+        padding: 8px 4px;
+        margin: 0;
     }
 
     .setting-row label {
         text-align: left;
+        min-width: 0;
+        flex-shrink: 1;
     }
 
-    .setting-row select,
+    .setting-row select {
+        width: auto;
+        min-width: 120px;
+        max-width: 55%;
+        flex-shrink: 0;
+    }
+
     .text-input-wrapper {
-        width: 100%;
+        width: auto;
+        min-width: 80px;
+        max-width: 45%;
+        flex-shrink: 0;
+    }
+
+    .version-value {
+        word-break: break-all;
+        text-align: right;
     }
 
     .update-actions-inline {
@@ -3676,10 +3695,13 @@ html, body {
 
 .detail-label {
     color: var(--text-secondary);
+    flex-shrink: 0;
 }
 
 .detail-value {
     color: var(--text-primary);
+    word-break: break-all;
+    text-align: right;
 }
 
 .detail-value code {
