@@ -4220,6 +4220,10 @@ html, body {
     margin-top: 8px;
 }
 
+.update-result.hidden {
+    display: none;
+}
+
 /* Reinstall Hint in Update Section */
 .reinstall-hint {
     margin-top: 14px;
