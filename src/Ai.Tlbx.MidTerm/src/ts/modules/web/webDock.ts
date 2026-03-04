@@ -200,6 +200,8 @@ export function setupWebPreviewDockResize(): void {
   let startX = 0;
   let startWidth = 0;
 
+  const iframe = panel.querySelector<HTMLIFrameElement>('iframe');
+
   function beginResize(clientX: number): void {
     isResizing = true;
     startX = clientX;
@@ -207,6 +209,7 @@ export function setupWebPreviewDockResize(): void {
     grip.classList.add('active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
+    if (iframe) iframe.style.pointerEvents = 'none';
   }
 
   function updateResize(clientX: number): void {
@@ -214,8 +217,6 @@ export function setupWebPreviewDockResize(): void {
     const delta = startX - clientX;
     const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
     panel.style.width = `${newWidth}px`;
-    adjustInnerDockPositions();
-    updateAllDockMargins();
   }
 
   function endResize(): void {
@@ -224,6 +225,9 @@ export function setupWebPreviewDockResize(): void {
     grip.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+    if (iframe) iframe.style.pointerEvents = '';
+    adjustInnerDockPositions();
+    updateAllDockMargins();
     localStorage.setItem(DOCK_WIDTH_KEY, String(panel.offsetWidth));
     handleDockLayoutChange();
   }
