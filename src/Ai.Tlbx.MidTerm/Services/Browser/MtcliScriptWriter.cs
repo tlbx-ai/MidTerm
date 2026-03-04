@@ -1,36 +1,21 @@
-using Ai.Tlbx.MidTerm.Common.Logging;
-
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class MtcliScriptWriter
 {
-    public static void WriteToCwd(string cwd, int port, string authToken)
+    internal static void WriteScripts(string midtermDir, int port, string authToken)
     {
-        try
+        var shPath = Path.Combine(midtermDir, "mtcli.sh");
+        File.WriteAllText(shPath, GenerateShellScript(port, authToken));
+        if (!OperatingSystem.IsWindows())
         {
-            var midtermDir = Path.Combine(cwd, ".midterm");
-            Directory.CreateDirectory(midtermDir);
-
-            var shPath = Path.Combine(midtermDir, "mtcli.sh");
-            File.WriteAllText(shPath, GenerateShellScript(port, authToken));
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(shPath,
-                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
-            }
-
-            var ps1Path = Path.Combine(midtermDir, "mtcli.ps1");
-            File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken));
-
-            EnsureGitignore(midtermDir);
-            BrowserLog.Info($"Wrote mtcli scripts to {midtermDir}");
+            File.SetUnixFileMode(shPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
         }
-        catch (Exception ex)
-        {
-            Log.Verbose(() => $"MtcliScriptWriter: Failed to write to {cwd}: {ex.Message}");
-        }
+
+        var ps1Path = Path.Combine(midtermDir, "mtcli.ps1");
+        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken));
     }
 
     private static string GenerateShellScript(int port, string token) =>
@@ -84,8 +69,12 @@ public static class MtcliScriptWriter
         # mt_forms [SELECTOR]  — form structure and values (default: all forms)
         mt_forms()   { local s="${1:-form}"; _MJ -d "{\"selector\":\"$(_ME "$s")\"}" "$_MT/api/browser/forms"; }
 
-        # Web preview target management
+        # Web preview (dev browser)
         mt_navigate()   { _MJ -d "{\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
+        # mt_open URL  — open URL in web preview panel (alias for mt_navigate)
+        mt_open()       { mt_navigate "$1"; }
+        # mt_close_preview  — close web preview panel
+        mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target"; }
         mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
         mt_target()     { _MC "$_MT/api/webpreview/target"; }
         mt_cookies()    { _MC "$_MT/api/webpreview/cookies"; }
@@ -95,6 +84,21 @@ public static class MtcliScriptWriter
         # Session management
         mt_sessions()   { _MC "$_MT/api/sessions"; }
         mt_buffer()     { _MC "$_MT/api/sessions/$1/buffer"; }
+        # mt_new_session [SHELL] [CWD]  — create a new terminal session, returns JSON with session id
+        mt_new_session() {
+          local shell="${1:-}" cwd="${2:-}"
+          local body="{}"
+          if [ -n "$shell" ] && [ -n "$cwd" ]; then
+            body="{\"shell\":\"$(_ME "$shell")\",\"workingDirectory\":\"$(_ME "$cwd")\"}"
+          elif [ -n "$shell" ]; then
+            body="{\"shell\":\"$(_ME "$shell")\"}"
+          elif [ -n "$cwd" ]; then
+            body="{\"workingDirectory\":\"$(_ME "$cwd")\"}"
+          fi
+          _MJ -d "$body" "$_MT/api/sessions"
+        }
+        # mt_split [-h]  — split terminal (creates adjacent pane via tmux shim)
+        mt_split() { tmux split-window "$@"; }
 
         # Status
         mt_status()     { mtbrowser status 2>/dev/null || _MC "$_MT/api/webpreview/target"; }
@@ -164,11 +168,15 @@ public static class MtcliScriptWriter
         # Mt-Forms [-Selector CSS_SELECTOR]  — form structure and values (default: all forms)
         function Mt-Forms   { param([string]$Selector = "form") _MJ -d (_MB @{selector=$Selector}) "$script:_MT/api/browser/forms" }
 
-        # Web preview target management
+        # Web preview (dev browser)
         function Mt-Navigate {
             param([string]$Url)
             _MJ -d (_MB @{url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
         }
+        # Mt-Open -Url URL  — open URL in web preview panel (alias for Mt-Navigate)
+        function Mt-Open { param([string]$Url) Mt-Navigate -Url $Url }
+        # Mt-ClosePreview  — close web preview panel
+        function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target" }
         function Mt-Reload     { _MJ -d '{"mode":"soft"}' "$script:_MT/api/webpreview/reload" }
         function Mt-Target     { _MC "$script:_MT/api/webpreview/target" }
         function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies" }
@@ -178,6 +186,19 @@ public static class MtcliScriptWriter
         # Session management
         function Mt-Sessions   { _MC "$script:_MT/api/sessions" }
         function Mt-Buffer     { param([string]$Id) _MC "$script:_MT/api/sessions/$Id/buffer" }
+        # Mt-NewSession [-Shell SHELL] [-Cwd PATH]  — create a new terminal session
+        function Mt-NewSession {
+            param([string]$Shell, [string]$Cwd)
+            $body = @{}
+            if ($Shell) { $body.shell = $Shell }
+            if ($Cwd) { $body.workingDirectory = $Cwd }
+            _MJ -d (_MB $body) "$script:_MT/api/sessions"
+        }
+        # Mt-Split [-Horizontal]  — split terminal (creates adjacent pane via tmux shim)
+        function Mt-Split {
+            param([switch]$Horizontal)
+            if ($Horizontal) { & tmux split-window -h } else { & tmux split-window }
+        }
 
         # Status
         function Mt-Status     { try { & mtbrowser status 2>$null } catch { Mt-Target } }
@@ -189,24 +210,4 @@ public static class MtcliScriptWriter
             & "Mt-$($cmd.Substring(0,1).ToUpper() + $cmd.Substring(1))" @cmdArgs
         }
         """;
-
-    internal static void EnsureGitignore(string midtermDir)
-    {
-        var gitignorePath = Path.Combine(midtermDir, ".gitignore");
-
-        try
-        {
-            if (File.Exists(gitignorePath))
-            {
-                var content = File.ReadAllText(gitignorePath);
-                if (content.Split('\n', StringSplitOptions.RemoveEmptyEntries).Contains("*"))
-                    return;
-            }
-
-            File.WriteAllText(gitignorePath, "# All .midterm/ content is auto-generated by MidTerm\n*\n");
-        }
-        catch
-        {
-        }
-    }
 }

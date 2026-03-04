@@ -335,6 +335,7 @@
   "session.pinToQuickLaunch": "固定到快速启动",
   "session.rename": "重命名会话",
   "session.close": "关闭会话",
+  "session.injectGuidance": "告知AI关于MidTerm",
   "session.removeFromLayout": "从分屏布局中移除",
   "session.actions": "操作",
   "network.enableClipboard": "点击启用剪贴板和安全功能",

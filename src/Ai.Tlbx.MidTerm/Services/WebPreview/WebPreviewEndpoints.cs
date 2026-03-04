@@ -1,25 +1,17 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
-using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
 public static partial class WebPreviewEndpoints
 {
-    private static AuthService? _authService;
-    private static int _port;
-
     public static void MapWebPreviewEndpoints(
         WebApplication app,
         WebPreviewService webPreviewService,
-        TtyHostSessionManager sessionManager,
-        AuthService authService,
-        int port)
+        TtyHostSessionManager sessionManager)
     {
-        _authService = authService;
-        _port = port;
         MapTargetEndpoints(app, webPreviewService, sessionManager);
         MapCookieEndpoints(app, webPreviewService);
         MapActionEndpoints(app, webPreviewService, sessionManager);
@@ -115,10 +107,8 @@ public static partial class WebPreviewEndpoints
             if (string.IsNullOrEmpty(cwd) || !Directory.Exists(cwd))
                 return Results.BadRequest("Session has no valid working directory");
 
-            // Create snapshot folder
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var midtermDir = Path.Combine(cwd, ".midterm");
-            var snapshotDir = Path.Combine(midtermDir, $"snapshot_{ts}");
+            var snapshotDir = MidtermDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
             var cssDir = Path.Combine(snapshotDir, "css");
             Directory.CreateDirectory(cssDir);
 
@@ -180,13 +170,6 @@ public static partial class WebPreviewEndpoints
             }
 
             await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
-
-            MtcliScriptWriter.EnsureGitignore(midtermDir);
-
-            AgentGuidanceWriter.WriteToCwd(cwd);
-
-            if (_authService is not null)
-                MtcliScriptWriter.WriteToCwd(cwd, _port, _authService.CreateSessionToken());
 
             return Results.Json(
                 new WebPreviewSnapshotResponse { SnapshotPath = snapshotDir },
@@ -253,18 +236,13 @@ public static partial class WebPreviewEndpoints
 
     private static void WriteMtcliToActiveSessions(TtyHostSessionManager sessionManager)
     {
-        if (_authService is null)
-            return;
-
-        var token = _authService.CreateSessionToken();
         var sessions = sessionManager.GetAllSessions();
         foreach (var session in sessions)
         {
             var cwd = session.CurrentDirectory;
             if (!string.IsNullOrEmpty(cwd) && Directory.Exists(cwd))
             {
-                AgentGuidanceWriter.WriteToCwd(cwd);
-                MtcliScriptWriter.WriteToCwd(cwd, _port, token);
+                MidtermDirectory.Ensure(cwd);
             }
         }
     }

@@ -332,6 +332,7 @@
   "session.pinToQuickLaunch": "কুইক লঞ্চে পিন করুন",
   "session.rename": "সেশনের নাম পরিবর্তন করুন",
   "session.close": "সেশন বন্ধ করুন",
+  "session.injectGuidance": "AI-কে MidTerm সম্পর্কে জানান",
   "session.removeFromLayout": "বিভক্ত লেআউট থেকে সরান",
   "session.actions": "কার্যক্রম",
   "network.enableClipboard": "ক্লিপবোর্ড ও নিরাপদ বৈশিষ্ট্য সক্রিয় করতে ক্লিক করুন",

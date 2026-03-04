@@ -155,6 +155,8 @@ public class Program
 
         ServerSetup.ConfigureMiddleware(app, settingsService, authService);
 
+        MidtermDirectory.Initialize(port, authService);
+
         var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService);
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
         var historyService = new HistoryService(settingsService);
@@ -249,7 +251,7 @@ public class Program
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService);
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, authService, port);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
@@ -260,8 +262,8 @@ public class Program
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager, authService, port);
-        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService, authService, port);
+        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
+        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService);
         var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
         EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, browserCommandService, tmuxLayoutBridge);
 

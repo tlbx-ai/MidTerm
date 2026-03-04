@@ -332,6 +332,7 @@
   "session.pinToQuickLaunch": "クイック起動にピン留め",
   "session.rename": "セッション名を変更",
   "session.close": "セッションを閉じる",
+  "session.injectGuidance": "AIにMidTermを伝える",
   "session.removeFromLayout": "分割レイアウトから削除",
   "session.actions": "アクション",
   "network.enableClipboard": "クリックしてクリップボードとセキュア機能を有効にする",

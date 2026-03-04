@@ -30,6 +30,7 @@ export interface SessionListCallbacks {
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
+  onInjectGuidance?: (sessionId: string) => void;
   onCloseSidebar: () => void;
 }
 
@@ -430,6 +431,18 @@ function createSessionItem(
       }
     });
 
+    const injectBtn = document.createElement('button');
+    injectBtn.className = 'session-inject';
+    injectBtn.innerHTML = icon('inject');
+    injectBtn.title = t('session.injectGuidance');
+    injectBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      if (callbacks?.onInjectGuidance) {
+        callbacks.onInjectGuidance(sessionId);
+      }
+    });
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'session-close';
     closeBtn.innerHTML = icon('close');
@@ -455,6 +468,7 @@ function createSessionItem(
 
     actions.appendChild(pinBtn);
     actions.appendChild(renameBtn);
+    actions.appendChild(injectBtn);
     actions.appendChild(undockBtn);
     actions.appendChild(closeBtn);
   }

@@ -301,6 +301,7 @@
   "session.pinToQuickLaunch": "Pin to QuickLaunch",
   "session.rename": "Rename session",
   "session.close": "Close session",
+  "session.injectGuidance": "Tell AI about MidTerm",
   "session.removeFromLayout": "Remove from split layout",
   "session.actions": "Actions",
 
