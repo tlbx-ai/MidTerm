@@ -537,6 +537,14 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     xterm.style.transformOrigin = 'center center';
     container.classList.add('scaled');
 
+    if ($isMainBrowser.get()) {
+      if (overlay) {
+        overlay.remove();
+      }
+      scheduleMainBrowserResize();
+      return;
+    }
+
     const el = ensureOverlay();
     positionOverlay(el);
 
@@ -563,10 +571,16 @@ export function applyTerminalScalingSync(state: TerminalState): void {
 
     const usage = Math.max(termWidth / availWidth, termHeight / availHeight);
     if (usage < 0.7) {
+      if ($isMainBrowser.get()) {
+        if (overlay) {
+          overlay.remove();
+        }
+        scheduleMainBrowserResize();
+        return;
+      }
       const el = ensureOverlay();
       positionOverlay(el);
-      const fitHint = $isMainBrowser.get() ? ' — click to fit' : '';
-      el.innerHTML = `${icon('resize')} Sized for smaller screen${fitHint}`;
+      el.innerHTML = `${icon('resize')} Sized for smaller screen`;
     } else if (overlay) {
       overlay.remove();
       overlay = null;
@@ -655,6 +669,18 @@ export function autoResizeAllTerminals(): void {
  */
 export function autoResizeAllTerminalsImmediate(): void {
   autoResizeAllTerminalsInternal();
+}
+
+let _mainResizeScheduled = false;
+
+function scheduleMainBrowserResize(): void {
+  if (_mainResizeScheduled) return;
+  _mainResizeScheduled = true;
+  requestAnimationFrame(() => {
+    _mainResizeScheduled = false;
+    if (!$isMainBrowser.get()) return;
+    autoResizeAllTerminalsImmediate();
+  });
 }
 
 /**

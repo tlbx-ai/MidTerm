@@ -904,19 +904,15 @@ function initMainBrowserButton(): void {
     const isMain = $isMainBrowser.get();
     const showButton = $showMainBrowserButton.get();
 
-    if (!showButton) {
+    if (!showButton || isMain) {
       btn.style.display = 'none';
+      btn.classList.remove('main-browser-active');
       return;
     }
 
     btn.style.display = '';
-    if (isMain) {
-      btn.classList.add('main-browser-active');
-      btn.title = t('sidebar.leadingBrowser');
-    } else {
-      btn.classList.remove('main-browser-active');
-      btn.title = t('sidebar.claimMainBrowser');
-    }
+    btn.classList.remove('main-browser-active');
+    btn.title = t('sidebar.claimMainBrowser');
   }
 
   updateState();
