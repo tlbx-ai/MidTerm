@@ -90,3 +90,15 @@ public sealed class FileTreeEntry
     public string? MimeType { get; set; }
     public string? GitStatus { get; set; }
 }
+
+public sealed class FileSaveRequest
+{
+    public string Path { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+}
+
+public sealed class FileSaveResponse
+{
+    public bool Success { get; set; }
+    public long Size { get; set; }
+}

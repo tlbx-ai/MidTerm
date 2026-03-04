@@ -58,6 +58,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(FileTreeResponse))]
 [JsonSerializable(typeof(FileTreeEntry))]
 [JsonSerializable(typeof(FileTreeEntry[]))]
+[JsonSerializable(typeof(FileSaveRequest))]
+[JsonSerializable(typeof(FileSaveResponse))]
 
 // --- History ---
 [JsonSerializable(typeof(HistoryPatchRequest))]

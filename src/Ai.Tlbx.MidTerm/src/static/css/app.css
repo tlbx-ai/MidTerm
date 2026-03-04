@@ -6422,6 +6422,78 @@ html, body {
     overflow-x: auto;
 }
 
+/* File viewer: Editable textarea */
+.file-viewer-textarea {
+    width: 100%;
+    min-height: 400px;
+    margin: 0;
+    padding: 16px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xl);
+    line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: none;
+    outline: none;
+    resize: none;
+    white-space: pre;
+    overflow: auto;
+    tab-size: 4;
+    -moz-tab-size: 4;
+    box-sizing: border-box;
+}
+
+.file-viewer-textarea:focus {
+    outline: none;
+}
+
+.file-viewer-body .file-viewer-textarea {
+    height: calc(85vh - 80px);
+}
+
+.file-viewer-dock-body .file-viewer-textarea {
+    min-height: 0;
+    height: 100%;
+}
+
+.file-viewer-modal-content:fullscreen .file-viewer-textarea {
+    height: calc(100vh - 80px);
+}
+
+/* Load More button */
+.file-viewer-load-more {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    color: var(--accent-blue);
+    cursor: pointer;
+    font-size: var(--fs-base);
+    text-align: center;
+}
+
+.file-viewer-load-more:hover {
+    background: var(--bg-hover);
+}
+
+/* Binary content info bar */
+.file-viewer-binary-bar {
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--fs-md);
+    color: var(--text-secondary);
+}
+
+/* Binary text view */
+.file-viewer-binary-text {
+    color: var(--text-secondary);
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
 /* File viewer: Binary file card */
 .file-viewer-binary {
     display: flex;

@@ -294,6 +294,8 @@
   "fileViewer.binaryFile": "বাইনারি ফাইল",
   "fileViewer.modified": "পরিবর্তিত",
   "fileViewer.downloadHint": "এই ফাইলটি সংরক্ষণ করতে ডাউনলোড বোতাম ব্যবহার করুন।",
+  "fileViewer.save": "সংরক্ষণ",
+  "fileViewer.loadMore": "বাকি বিষয়বস্তু লোড করুন...",
   "git.notARepo": "Git রিপোজিটরি নয়",
   "git.notARepoHint": "স্ট্যাটাস দেখতে Git রিপোজিটরিতে যান",
   "git.stagedChanges": "স্টেজ করা পরিবর্তন",

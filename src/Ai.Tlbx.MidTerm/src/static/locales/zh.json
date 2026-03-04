@@ -297,6 +297,8 @@
   "fileViewer.binaryFile": "二进制文件",
   "fileViewer.modified": "修改时间",
   "fileViewer.downloadHint": "使用下载按钮保存此文件。",
+  "fileViewer.save": "保存",
+  "fileViewer.loadMore": "加载剩余内容...",
   "git.notARepo": "不是 Git 仓库",
   "git.notARepoHint": "导航到 Git 仓库以查看状态",
   "git.stagedChanges": "已暂存的更改",

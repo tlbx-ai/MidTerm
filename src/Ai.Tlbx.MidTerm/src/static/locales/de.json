@@ -294,6 +294,8 @@
   "fileViewer.binaryFile": "Binärdatei",
   "fileViewer.modified": "Geändert",
   "fileViewer.downloadHint": "Verwenden Sie die Download-Schaltfläche, um diese Datei zu speichern.",
+  "fileViewer.save": "Speichern",
+  "fileViewer.loadMore": "Restlichen Inhalt laden...",
   "git.notARepo": "Kein Git-Repository",
   "git.notARepoHint": "Navigieren Sie zu einem Git-Repository, um den Status zu sehen",
   "git.stagedChanges": "Bereitgestellte Änderungen",

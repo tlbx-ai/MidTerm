@@ -704,6 +704,44 @@
         }
       }
     },
+    "/api/files/save": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileSaveResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/logs/files": {
       "get": {
         "tags": [
@@ -1776,6 +1814,37 @@
               "null",
               "boolean"
             ]
+          }
+        }
+      },
+      "FileSaveRequest": {
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "FileSaveResponse": {
+        "required": [
+          "success",
+          "size"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

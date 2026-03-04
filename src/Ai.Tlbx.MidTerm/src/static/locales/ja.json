@@ -294,6 +294,8 @@
   "fileViewer.binaryFile": "バイナリファイル",
   "fileViewer.modified": "更新日時",
   "fileViewer.downloadHint": "ダウンロードボタンを使用してこのファイルを保存してください。",
+  "fileViewer.save": "保存",
+  "fileViewer.loadMore": "残りのコンテンツを読み込む...",
   "git.notARepo": "Gitリポジトリではありません",
   "git.notARepoHint": "ステータスを表示するにはGitリポジトリに移動してください",
   "git.stagedChanges": "ステージされた変更",

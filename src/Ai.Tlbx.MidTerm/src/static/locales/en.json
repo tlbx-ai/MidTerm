@@ -257,6 +257,8 @@
   "fileViewer.binaryFile": "Binary file",
   "fileViewer.modified": "Modified",
   "fileViewer.downloadHint": "Use the download button to save this file.",
+  "fileViewer.save": "Save",
+  "fileViewer.loadMore": "Load remaining content...",
 
   "git.title": "Git",
   "git.notARepo": "Not a git repository",
