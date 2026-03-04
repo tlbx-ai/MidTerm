@@ -32,7 +32,9 @@ function isShellProcess(processName: string, sessionId: string): boolean {
   const sessions = $sessionList.get();
   const session = sessions.find((s) => s.id === sessionId);
   if (!session?.shellType) return false;
-  const normalized = processName.replace(/\.exe$/i, '').toLowerCase();
+  // Extract filename from full path (e.g. "C:\Program Files\PowerShell\7\pwsh.exe" → "pwsh")
+  const basename = processName.split(/[\\/]/).pop() ?? processName;
+  const normalized = basename.replace(/\.exe$/i, '').toLowerCase();
   return normalized === session.shellType.toLowerCase();
 }
 
