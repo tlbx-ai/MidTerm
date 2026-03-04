@@ -370,20 +370,20 @@ export async function handleFileDrop(files: FileList): Promise<void> {
   const activeId = $activeSessionId.get();
   if (!activeId || files.length === 0) return;
 
-  const imagePaths: string[] = [];
+  const uploadedPaths: string[] = [];
 
   for (const file of Array.from(files)) {
     // Image files: upload and collect path
     if (isImageFile(file.name)) {
       const path = await uploadFile(activeId, file);
-      if (path) imagePaths.push(path);
+      if (path) uploadedPaths.push(path);
       continue;
     }
 
-    // Rejected files: show error toast
+    // Binary/document files: upload and paste path (PDFs, archives, etc.)
     if (isRejectedFile(file.name)) {
-      const ext = getFileExtension(file.name);
-      showDropToast(t('fileDrop.cannotPaste').replace('{ext}', ext));
+      const path = await uploadFile(activeId, file);
+      if (path) uploadedPaths.push(path);
       continue;
     }
 
@@ -404,9 +404,9 @@ export async function handleFileDrop(files: FileList): Promise<void> {
     }
   }
 
-  // Paste collected image paths (if any)
-  if (imagePaths.length > 0) {
-    const joined = sanitizePasteContent(imagePaths.join(' '));
+  // Paste collected file paths (if any)
+  if (uploadedPaths.length > 0) {
+    const joined = sanitizePasteContent(uploadedPaths.join(' '));
     pasteToTerminal(activeId, joined, true);
   }
 }
