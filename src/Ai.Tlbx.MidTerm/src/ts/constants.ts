@@ -281,7 +281,7 @@ export const ICONS = {
   history: '\ue967', // history (clock with arrow)
   undock: '\ue920', // close_fullscreen
   fullscreen: '\ue90c', // expand (open fullscreen)
-  inject: '\uea0c', // info (tell AI about MidTerm)
+  inject: '\ue997', // magic-wand (tell AI about MidTerm)
 } as const;
 
 /** Creates an icon span element */

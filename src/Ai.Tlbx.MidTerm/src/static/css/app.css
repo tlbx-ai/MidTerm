@@ -918,6 +918,7 @@ html, body {
 .session-pin,
 .session-resize,
 .session-rename,
+.session-inject,
 .session-undock,
 .session-close {
     width: 26px;
@@ -944,7 +945,8 @@ html, body {
 
 .session-pin:hover,
 .session-resize:hover,
-.session-rename:hover {
+.session-rename:hover,
+.session-inject:hover {
     background-color: var(--accent-gold);
     color: var(--bg-primary);
 }
@@ -2099,6 +2101,7 @@ html, body {
     .session-actions .session-pin,
     .session-actions .session-resize,
     .session-actions .session-rename,
+    .session-actions .session-inject,
     .session-actions .session-undock,
     .session-actions .session-close {
         display: flex;
@@ -2121,6 +2124,11 @@ html, body {
 
     .session-actions .session-rename:active {
         background-color: var(--btn-secondary-hover);
+    }
+
+    .session-actions .session-inject:active {
+        background-color: var(--accent-blue);
+        color: var(--text-on-accent);
     }
 
     .session-actions .session-undock:active {
@@ -6260,6 +6268,7 @@ html, body {
 .session-pin:focus-visible,
 .session-resize:focus-visible,
 .session-rename:focus-visible,
+.session-inject:focus-visible,
 .session-undock:focus-visible,
 .session-close:focus-visible,
 .add-session-btn:focus-visible,
@@ -6278,6 +6287,7 @@ html, body {
 .session-pin:focus,
 .session-resize:focus,
 .session-rename:focus,
+.session-inject:focus,
 .session-undock:focus,
 .session-close:focus,
 .add-session-btn:focus,
