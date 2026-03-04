@@ -2290,6 +2290,7 @@ html, body {
 
     .setting-row input[type="checkbox"] {
         flex-shrink: 0;
+        margin-left: auto;
     }
 
     .version-value {
