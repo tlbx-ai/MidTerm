@@ -2268,15 +2268,19 @@ html, body {
 
     .setting-row select {
         width: auto;
-        min-width: 120px;
-        max-width: 55%;
-        flex-shrink: 0;
+        min-width: 0;
+        flex: 1;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
 
     .text-input-wrapper {
         width: auto;
-        min-width: 80px;
-        max-width: 45%;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .setting-row input[type="checkbox"] {
         flex-shrink: 0;
     }
 
@@ -2285,12 +2289,28 @@ html, body {
         text-align: right;
     }
 
+    .path-value {
+        max-width: 50%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     .update-actions-inline {
-        justify-content: flex-start;
+        flex-wrap: wrap;
     }
 
     .update-status {
         text-align: left;
+    }
+
+    .diag-help-commands {
+        grid-template-columns: 1fr;
+        gap: 2px 0;
+    }
+
+    .diag-help-commands span {
+        margin-bottom: 6px;
+        padding-left: 8px;
     }
 
     /* Connection status - above safe area */
