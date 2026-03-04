@@ -21,6 +21,22 @@ import { formatRuntimeDisplay } from './processDisplay';
 import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Check if a foreground process name is just the session's own shell.
+ * Strips .exe suffix and compares case-insensitively against shellType.
+ */
+function isShellProcess(processName: string, sessionId: string): boolean {
+  const sessions = $sessionList.get();
+  const session = sessions.find((s) => s.id === sessionId);
+  if (!session?.shellType) return false;
+  const normalized = processName.replace(/\.exe$/i, '').toLowerCase();
+  return normalized === session.shellType.toLowerCase();
+}
+
+// =============================================================================
 // Callback Types
 // =============================================================================
 
@@ -107,7 +123,7 @@ function renderProcessTitle(
   fgInfo: { cwd?: string | null; name?: string | null; commandLine?: string | null },
   sessionId: string,
 ): void {
-  if (fgInfo.name && fgInfo.name !== 'shell') {
+  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     fgIndicator.classList.add('process-title');
     titleRow.appendChild(fgIndicator);
@@ -171,7 +187,7 @@ function updateSessionProcessInfo(sessionId: string): void {
 
   processInfoEl.innerHTML = '';
 
-  if (fgInfo.name && fgInfo.name !== 'shell') {
+  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
   } else if (fgInfo.cwd) {
@@ -386,7 +402,7 @@ function createSessionItem(
 
   if (!displayInfo.useProcessAsTitle) {
     const fgInfo = getForegroundInfo(sessionId);
-    if (fgInfo.name && fgInfo.name !== 'shell') {
+    if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
       const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
       processInfo.appendChild(fgIndicator);
     } else if (fgInfo.cwd) {

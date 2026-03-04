@@ -35,6 +35,7 @@ function Find-SignTool
 
 $signtool = Find-SignTool
 Write-Host "Using signtool: $signtool" -ForegroundColor Cyan
+Write-Host "Running as user: $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)" -ForegroundColor Cyan
 
 # ── Validate staging path and binaries ───────────────────────────────────────
 
