@@ -73,6 +73,14 @@
     <Compile Include="..\Ai.Tlbx.MidTerm.Common\**\*.cs" Exclude="..\Ai.Tlbx.MidTerm.Common\obj\**;..\Ai.Tlbx.MidTerm.Common\bin\**" LinkBase="Common" />
   </ItemGroup>
 
+  <!-- Windows application manifest -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) AND '$(RuntimeIdentifier)' == ''">
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
   <!-- Define WINDOWS for Windows builds (both native and cross-compile) -->
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) AND '$(RuntimeIdentifier)' == ''">
     <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
