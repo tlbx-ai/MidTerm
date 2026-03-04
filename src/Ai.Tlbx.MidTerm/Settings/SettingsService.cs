@@ -177,6 +177,30 @@ public sealed class SettingsService
             }
             catch (Exception ex)
             {
+                Log.Error(() => $"Settings corrupt or unreadable: {ex.Message}");
+
+                var bakPath = _settingsPath + ".bak";
+                if (File.Exists(bakPath))
+                {
+                    try
+                    {
+                        var bakJson = File.ReadAllText(bakPath);
+                        _cached = JsonSerializer.Deserialize(bakJson, SettingsJsonContext.Default.MidTermSettings)
+                            ?? new MidTermSettings();
+                        ApplyMissingDefaults(_cached, bakJson);
+                        MigrateServiceInstallFlag(_cached, bakJson);
+                        LoadSecretsIntoSettings(_cached);
+                        LoadStatus = SettingsLoadStatus.RecoveredFromBackup;
+                        Log.Warn(() => "Recovered settings from backup file");
+                        Save(_cached);
+                        return _cached;
+                    }
+                    catch (Exception bakEx)
+                    {
+                        Log.Error(() => $"Backup recovery also failed: {bakEx.Message}");
+                    }
+                }
+
                 _cached = new MidTermSettings();
                 LoadSecretsIntoSettings(_cached);
                 LoadStatus = SettingsLoadStatus.ErrorFallbackToDefault;
@@ -306,31 +330,69 @@ public sealed class SettingsService
             return;
         }
 
-        // Migrate user preferences (keep security settings from current/installer)
+        // Preserve security/installer fields that come from the installer, not the user
+        var runAsUser = current.RunAsUser;
+        var runAsUserSid = current.RunAsUserSid;
+        var authEnabled = current.AuthenticationEnabled;
+        var isServiceInstall = current.IsServiceInstall;
+        var certPath = current.CertificatePath;
+        var keyProtection = current.KeyProtection;
+        var certThumbprint = current.CertificateThumbprint;
+
+        // Copy ALL user preferences from old settings
         current.DefaultShell = old.DefaultShell;
         current.DefaultCols = old.DefaultCols;
         current.DefaultRows = old.DefaultRows;
         current.DefaultWorkingDirectory = old.DefaultWorkingDirectory;
         current.FontSize = old.FontSize;
+        current.FontFamily = old.FontFamily;
         current.CursorStyle = old.CursorStyle;
         current.CursorBlink = old.CursorBlink;
+        current.CursorInactiveStyle = old.CursorInactiveStyle;
         current.Theme = old.Theme;
+        current.TerminalColorScheme = old.TerminalColorScheme;
+        current.TabTitleMode = old.TabTitleMode;
+        current.MinimumContrastRatio = old.MinimumContrastRatio;
+        current.SmoothScrolling = old.SmoothScrolling;
+        current.ScrollbarStyle = old.ScrollbarStyle;
+        current.UseWebGL = old.UseWebGL;
         current.ScrollbackLines = old.ScrollbackLines;
         current.BellStyle = old.BellStyle;
         current.CopyOnSelect = old.CopyOnSelect;
         current.RightClickPaste = old.RightClickPaste;
+        current.ClipboardShortcuts = old.ClipboardShortcuts;
+        current.ScrollbackProtection = old.ScrollbackProtection;
+        current.InputMode = old.InputMode;
+        current.FileRadar = old.FileRadar;
+        current.ManagerBarEnabled = old.ManagerBarEnabled;
+        current.ManagerBarButtons = old.ManagerBarButtons;
+        current.TmuxCompatibility = old.TmuxCompatibility;
+        current.IdeMode = old.IdeMode;
+        current.DevMode = old.DevMode;
+        current.ShowChangelogAfterUpdate = old.ShowChangelogAfterUpdate;
+        current.ShowUpdateNotification = old.ShowUpdateNotification;
+        current.UpdateChannel = old.UpdateChannel;
+        current.Language = old.Language;
 
-        // Migrate certificate settings if not already set by installer
-        // These are critical for preserving trusted certificates across updates
-        if (string.IsNullOrEmpty(current.CertificatePath) && !string.IsNullOrEmpty(old.CertificatePath))
+        // Restore security/installer fields (these come from the installer, not the user)
+        current.RunAsUser = runAsUser;
+        current.RunAsUserSid = runAsUserSid;
+        current.AuthenticationEnabled = authEnabled;
+        current.IsServiceInstall = isServiceInstall;
+        current.CertificateThumbprint = certThumbprint;
+
+        // Only migrate cert path if current is empty (installer didn't set one)
+        if (string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(old.CertificatePath))
         {
             current.CertificatePath = old.CertificatePath;
             current.KeyProtection = old.KeyProtection;
             Log.Info(() => $"Migrated certificate path from old settings: {old.CertificatePath}");
         }
-
-        // Note: RunAsUser/RunAsUserSid/RunAsUid/RunAsGid are NOT migrated
-        // They come from the installer which captures the current user
+        else
+        {
+            current.CertificatePath = certPath;
+            current.KeyProtection = keyProtection;
+        }
     }
 
     public void Save(MidTermSettings settings)
@@ -347,15 +409,29 @@ public sealed class SettingsService
                 Log.Warn(() => $"Failed to save secrets to secure storage: {ex.Message}");
             }
 
+            if (_cached is not null && _cached.UpdateChannel != settings.UpdateChannel)
+            {
+                Log.Warn(() => $"UpdateChannel changing: {_cached.UpdateChannel} → {settings.UpdateChannel}");
+            }
+
             var dir = Path.GetDirectoryName(_settingsPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
             }
 
-            // Secrets have [JsonIgnore] so they won't be written to settings.json
+            // Backup current file before writing (recovery source if crash mid-write)
+            if (File.Exists(_settingsPath))
+            {
+                try { File.Copy(_settingsPath, _settingsPath + ".bak", overwrite: true); }
+                catch { }
+            }
+
+            // Atomic write: write to temp file, then move (prevents half-written files on crash)
             var json = JsonSerializer.Serialize(settings, SettingsJsonContext.Default.MidTermSettings);
-            File.WriteAllText(_settingsPath, json);
+            var tmpPath = _settingsPath + ".tmp";
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, _settingsPath, overwrite: true);
             _cached = settings;
         }
 

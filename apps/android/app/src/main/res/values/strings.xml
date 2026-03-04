@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MidTerm</string>
+    <string name="no_servers">Tap + to add a MidTerm server</string>
+    <string name="add_server">Add server</string>
+    <string name="edit_server">Edit server</string>
+    <string name="hint_name">Server name</string>
+    <string name="hint_url">https://hostname:2000</string>
+    <string name="hint_password">Password (optional)</string>
+</resources>

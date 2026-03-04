@@ -44,6 +44,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]
 [JsonSerializable(typeof(FileUploadResponse))]
+[JsonSerializable(typeof(InjectGuidanceResponse))]
 
 // --- Files ---
 [JsonSerializable(typeof(FileCheckRequest))]

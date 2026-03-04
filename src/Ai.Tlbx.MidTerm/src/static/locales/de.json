@@ -332,6 +332,7 @@
   "session.pinToQuickLaunch": "An Schnellstart anheften",
   "session.rename": "Sitzung umbenennen",
   "session.close": "Sitzung schließen",
+  "session.injectGuidance": "KI über MidTerm informieren",
   "session.removeFromLayout": "Aus geteiltem Layout entfernen",
   "session.actions": "Aktionen",
   "network.enableClipboard": "Klicken Sie, um Zwischenablage & sichere Funktionen zu aktivieren",
@@ -394,5 +395,7 @@
   "dialog.info": "Info",
   "dialog.ok": "OK",
   "dialog.cancel": "Abbrechen",
-  "smartInput.autoSend": "Sofort senden"
+  "smartInput.autoSend": "Sofort senden",
+  "smartInput.photo": "Foto aufnehmen",
+  "smartInput.attach": "Datei anhängen"
 }

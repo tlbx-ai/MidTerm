@@ -332,6 +332,7 @@
   "session.pinToQuickLaunch": "Закрепить в быстром запуске",
   "session.rename": "Переименовать сессию",
   "session.close": "Закрыть сессию",
+  "session.injectGuidance": "Сообщить ИИ о MidTerm",
   "session.removeFromLayout": "Удалить из разделённого макета",
   "session.actions": "Действия",
   "network.enableClipboard": "Нажмите для включения буфера обмена и безопасных функций",
@@ -394,5 +395,7 @@
   "dialog.info": "Информация",
   "dialog.ok": "ОК",
   "dialog.cancel": "Отмена",
-  "smartInput.autoSend": "Автоотправка"
+  "smartInput.autoSend": "Автоотправка",
+  "smartInput.photo": "Сделать фото",
+  "smartInput.attach": "Прикрепить файл"
 }

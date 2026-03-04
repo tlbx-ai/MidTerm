@@ -123,6 +123,7 @@ import {
 import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
 import { closeGitDock } from './modules/git/gitDock';
 import { initWebPreview, closeWebPreviewDock } from './modules/web';
+import { initDockState, removeSessionDockState } from './modules/dockState';
 import { initSmartInput } from './modules/smartInput';
 import {
   cacheDOMElements,
@@ -261,6 +262,7 @@ async function init(): Promise<void> {
   initGitPanel();
   initCommandsPanel();
   initWebPreview();
+  initDockState();
 
   // React to ideMode setting: toggle tab bar visibility and git WS connection
   let gitWsConnected = false;
@@ -314,6 +316,9 @@ function registerCallbacks(): void {
     onRename: startInlineRename,
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
+    },
+    onInjectGuidance: (sessionId: string) => {
+      void injectGuidance(sessionId);
     },
     onCloseSidebar: closeSidebar,
   });
@@ -535,7 +540,8 @@ function deleteSession(sessionId: string): void {
   // Remove from layout if present
   handleSessionClosed(sessionId);
 
-  // Remove session tab wrapper and feature panels
+  // Remove session tab wrapper, feature panels, and dock state
+  removeSessionDockState(sessionId);
   destroyFileBrowser(sessionId);
   destroyGitSession(sessionId);
   destroyCommandsSession(sessionId);
@@ -563,6 +569,17 @@ function deleteSession(sessionId: string): void {
   apiDeleteSession(sessionId).catch((e: unknown) => {
     log.error(() => `Failed to delete session ${sessionId}: ${String(e)}`);
   });
+}
+
+async function injectGuidance(sessionId: string): Promise<void> {
+  try {
+    const res = await fetch(`/api/sessions/${sessionId}/inject-guidance`, { method: 'POST' });
+    if (!res.ok) {
+      log.warn(() => `Inject guidance failed: ${res.status}`);
+    }
+  } catch (e: unknown) {
+    log.error(() => `Failed to inject guidance for ${sessionId}: ${String(e)}`);
+  }
 }
 
 function renameSession(sessionId: string, newName: string | null): void {
@@ -1100,6 +1117,10 @@ function bindEvents(): void {
   bindClick('btn-close-mobile', () => {
     const activeId = $activeSessionId.get();
     if (activeId) deleteSession(activeId);
+  });
+  bindClick('btn-inject-mobile', () => {
+    const activeId = $activeSessionId.get();
+    if (activeId) void injectGuidance(activeId);
   });
   bindClick('btn-mobile-tab-terminal', () => {
     const activeId = $activeSessionId.get();

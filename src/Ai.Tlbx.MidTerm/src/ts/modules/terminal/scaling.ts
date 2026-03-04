@@ -17,7 +17,13 @@ import {
   icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
-import { $currentSettings, $isMainBrowser, $sessions, getSession } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $isMainBrowser,
+  $sessions,
+  getSession,
+} from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
 import { sendResize } from '../comms';
@@ -615,64 +621,16 @@ export function rescaleAllTerminalsImmediate(): void {
  * For layout panes, resizes to pane size. For standalone, resizes to screen.
  */
 function autoResizeAllTerminalsInternal(): void {
-  const resizedSessions = new Set<string>();
-
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
     const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
     if (layoutPane) {
       fitTerminalToContainer(sessionId, layoutPane);
-      resizedSessions.add(sessionId);
     } else if (!state.container.classList.contains('hidden')) {
       fitSessionToScreen(sessionId);
-      resizedSessions.add(sessionId);
     }
   });
-
-  resizeBackgroundSessions(resizedSessions);
-}
-
-/**
- * Resize sessions that have no open terminal on this browser.
- * Calculates optimal screen dimensions from cell measurements and sends
- * resize commands directly to the server for any session not already handled.
- */
-function resizeBackgroundSessions(alreadyResized: Set<string>): void {
-  if (!dom.terminalsArea) return;
-
-  const sessions = $sessions.get();
-  const allIds = Object.keys(sessions);
-  const unhandled = allIds.filter((id) => !alreadyResized.has(id));
-  if (unhandled.length === 0) return;
-
-  const fontSize = $currentSettings.get()?.fontSize ?? 14;
-  const measurement =
-    measureFromExistingTerminal(fontSize) ??
-    getCalibrationMeasurement() ??
-    measureFromFont(fontSize);
-
-  const rect = dom.terminalsArea.getBoundingClientRect();
-  const tabBarH = getTabBarHeight();
-  const dockWidth = getDockPanelWidth();
-  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
-  const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
-
-  const cols = Math.max(
-    MIN_TERMINAL_COLS,
-    Math.min(Math.floor(availWidth / measurement.cellWidth), MAX_TERMINAL_COLS),
-  );
-  const rows = Math.max(
-    MIN_TERMINAL_ROWS,
-    Math.min(Math.floor(availHeight / measurement.cellHeight), MAX_TERMINAL_ROWS),
-  );
-
-  for (const id of unhandled) {
-    const session = sessions[id];
-    if (session && (session.cols !== cols || session.rows !== rows)) {
-      sendResize(id, cols, rows);
-    }
-  }
 }
 
 let autoResizeTimer: number | undefined;
@@ -699,6 +657,27 @@ export function autoResizeAllTerminalsImmediate(): void {
   autoResizeAllTerminalsInternal();
 }
 
+/**
+ * Central dock layout change handler.
+ * All dock modules call this after opening/closing/resizing a dock panel.
+ * Uses rAF coalescing so close+open in the same synchronous block (e.g., dock
+ * state restore on session switch) produces only a single resize pass.
+ */
+let dockChangeScheduled = false;
+
+export function handleDockLayoutChange(): void {
+  if (dockChangeScheduled) return;
+  dockChangeScheduled = true;
+  requestAnimationFrame(() => {
+    dockChangeScheduled = false;
+    if ($isMainBrowser.get()) {
+      autoResizeAllTerminalsImmediate();
+    } else {
+      rescaleAllTerminalsImmediate();
+    }
+  });
+}
+
 /** Last periodic resize check result for diagnostics overlay */
 let lastPeriodicCheckResult = 'idle';
 
@@ -715,10 +694,17 @@ function periodicResizeCheck(): void {
   const sessions = $sessions.get();
   const details: string[] = [];
 
+  const activeId = $activeSessionId.get();
+
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
     const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
+
+    // Skip standalone sessions that aren't active — dock layout in DOM
+    // reflects the active session's config, not theirs.
+    if (!layoutPane && sessionId !== activeId) return;
+
     const container = layoutPane ?? dom.terminalsArea;
     if (!container) return;
 

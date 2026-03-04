@@ -15,9 +15,8 @@ import {
   $dockedFilePath,
   $commandsPanelDocked,
   $gitPanelDocked,
-  $isMainBrowser,
 } from '../../stores';
-import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
+import { handleDockLayoutChange } from '../terminal/scaling';
 import { closeCommandsDock } from '../commands/dock';
 import { closeGitDock } from '../git/gitDock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
@@ -66,7 +65,7 @@ export function initFileViewer(): void {
   // Dock panel buttons
   const dockPanel = document.getElementById('file-viewer-dock');
   if (dockPanel) {
-    dockPanel.querySelector('#dock-close')?.addEventListener('click', closeDock);
+    dockPanel.querySelector('#dock-close')?.addEventListener('click', closeFileViewerDock);
     dockPanel.querySelector('#dock-undock')?.addEventListener('click', undockViewer);
     dockPanel.querySelector('#dock-refresh')?.addEventListener('click', () => {
       void refreshDock();
@@ -131,19 +130,12 @@ function dockViewer(): void {
   // Render the file in dock
   void renderInDock(path);
 
-  // Update dock coexistence layout
   adjustInnerDockPositions();
   updateAllDockMargins();
-
-  // Trigger terminal resize
-  if ($isMainBrowser.get()) {
-    autoResizeAllTerminalsImmediate();
-  } else {
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
-  }
+  handleDockLayoutChange();
 }
 
-function closeDock(): void {
+export function closeFileViewerDock(): void {
   const dockPanel = document.getElementById('file-viewer-dock');
   const terminalPage = document.getElementById('app');
 
@@ -157,16 +149,27 @@ function closeDock(): void {
   currentPath = null;
   currentSessionId = null;
 
-  // Update dock coexistence layout
   adjustInnerDockPositions();
   updateAllDockMargins();
+  handleDockLayoutChange();
+}
 
-  // Trigger terminal resize
-  if ($isMainBrowser.get()) {
-    autoResizeAllTerminalsImmediate();
-  } else {
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
-  }
+export function openFileViewerDock(path: string): void {
+  $dockedFilePath.set(path);
+  $fileViewerDocked.set(true);
+  currentPath = path;
+  currentSessionId = $activeSessionId.get() ?? null;
+
+  const dockPanel = document.getElementById('file-viewer-dock');
+  const terminalPage = document.getElementById('app');
+  if (dockPanel) dockPanel.classList.remove('hidden');
+  terminalPage?.classList.add('file-viewer-docked');
+
+  void renderInDock(path);
+
+  adjustInnerDockPositions();
+  updateAllDockMargins();
+  handleDockLayoutChange();
 }
 
 function undockViewer(): void {
@@ -174,7 +177,7 @@ function undockViewer(): void {
   if (!path) return;
 
   // Close dock first
-  closeDock();
+  closeFileViewerDock();
 
   // Open in modal
   void openFile(path);

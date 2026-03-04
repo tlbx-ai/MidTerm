@@ -332,6 +332,7 @@
   "session.pinToQuickLaunch": "क्विक लॉन्च में पिन करें",
   "session.rename": "सत्र का नाम बदलें",
   "session.close": "सत्र बंद करें",
+  "session.injectGuidance": "AI को MidTerm के बारे में बताएं",
   "session.removeFromLayout": "विभाजित लेआउट से हटाएँ",
   "session.actions": "कार्रवाइयाँ",
   "network.enableClipboard": "क्लिपबोर्ड और सुरक्षित सुविधाएँ सक्षम करने के लिए क्लिक करें",
@@ -394,5 +395,7 @@
   "dialog.info": "जानकारी",
   "dialog.ok": "ठीक है",
   "dialog.cancel": "रद्द करें",
-  "smartInput.autoSend": "स्वतः भेजें"
+  "smartInput.autoSend": "स्वतः भेजें",
+  "smartInput.photo": "फ़ोटो लें",
+  "smartInput.attach": "फ़ाइल संलग्न करें"
 }

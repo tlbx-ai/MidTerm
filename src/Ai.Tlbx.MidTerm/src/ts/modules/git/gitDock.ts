@@ -10,9 +10,8 @@ import {
   $fileViewerDocked,
   $dockedFilePath,
   $commandsPanelDocked,
-  $isMainBrowser,
 } from '../../stores';
-import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
+import { handleDockLayoutChange } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { renderGitPanelInto } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
@@ -22,14 +21,6 @@ import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { createLogger } from '../logging';
 
 const log = createLogger('gitDock');
-
-function handleDockLayoutChange(): void {
-  if ($isMainBrowser.get()) {
-    autoResizeAllTerminalsImmediate();
-  } else {
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
-  }
-}
 
 const DOCK_MIN_WIDTH = 250;
 const DOCK_MAX_WIDTH = 600;
@@ -60,7 +51,7 @@ export function toggleGitDock(sessionId: string): void {
   }
 }
 
-function openGitDock(sessionId: string): void {
+export function openGitDock(sessionId: string): void {
   closeFileViewerDockIfOpen();
   closeCommandsDockIfOpen();
 

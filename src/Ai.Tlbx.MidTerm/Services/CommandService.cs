@@ -88,8 +88,7 @@ public sealed class CommandService
 
     public ScriptDefinition CreateScript(string workingDirectory, string name, string extension, string content)
     {
-        var dir = GetScriptsDir(workingDirectory);
-        Directory.CreateDirectory(dir);
+        var dir = MidtermDirectory.Ensure(workingDirectory);
 
         var filename = $"{name}{extension}";
         var filePath = Path.Combine(dir, filename);

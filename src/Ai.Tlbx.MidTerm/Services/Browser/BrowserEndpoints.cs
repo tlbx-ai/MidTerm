@@ -8,19 +8,12 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class BrowserEndpoints
 {
-    private static AuthService? _authService;
-    private static int _port;
-
     public static void MapBrowserEndpoints(
         WebApplication app,
         BrowserCommandService commandService,
         TtyHostSessionManager sessionManager,
-        WebPreviewService webPreviewService,
-        AuthService authService,
-        int port)
+        WebPreviewService webPreviewService)
     {
-        _authService = authService;
-        _port = port;
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
     }
@@ -326,15 +319,9 @@ public static class BrowserEndpoints
         if (string.IsNullOrEmpty(cwd) || !Directory.Exists(cwd))
             return null;
 
-        var midtermDir = Path.Combine(cwd, ".midterm");
-
-        AgentGuidanceWriter.WriteToCwd(cwd);
-        WriteMtcliScripts(cwd);
-
         if (command == "screenshot" && result.Result is not null)
         {
-            var screenshotsDir = Path.Combine(midtermDir, "screenshots");
-            Directory.CreateDirectory(screenshotsDir);
+            var screenshotsDir = MidtermDirectory.EnsureSubdirectory(cwd, "screenshots");
 
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             var filePath = Path.Combine(screenshotsDir, $"screenshot_{ts}.png");
@@ -359,15 +346,12 @@ public static class BrowserEndpoints
         if (command == "snapshot" && result.Result is not null)
         {
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var snapshotDir = Path.Combine(midtermDir, $"snapshot_{ts}");
-            Directory.CreateDirectory(snapshotDir);
+            var snapshotDir = MidtermDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
 
             try
             {
                 var html = result.Result;
                 await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
-
-                MtcliScriptWriter.EnsureGitignore(midtermDir);
 
                 return snapshotDir;
             }
@@ -379,15 +363,6 @@ public static class BrowserEndpoints
         }
 
         return null;
-    }
-
-    private static void WriteMtcliScripts(string cwd)
-    {
-        if (_authService is null)
-            return;
-
-        var token = _authService.CreateSessionToken();
-        MtcliScriptWriter.WriteToCwd(cwd, _port, token);
     }
 
     private static BrowserCommandRequest WithCommand(BrowserCommandRequest request, string command) =>

@@ -332,6 +332,7 @@
   "session.pinToQuickLaunch": "Épingler au lancement rapide",
   "session.rename": "Renommer la session",
   "session.close": "Fermer la session",
+  "session.injectGuidance": "Informer l'IA de MidTerm",
   "session.removeFromLayout": "Retirer du layout divisé",
   "session.actions": "Actions",
   "network.enableClipboard": "Cliquez pour activer le presse-papiers et les fonctionnalités sécurisées",
@@ -394,5 +395,7 @@
   "dialog.info": "Info",
   "dialog.ok": "OK",
   "dialog.cancel": "Annuler",
-  "smartInput.autoSend": "Envoi auto"
+  "smartInput.autoSend": "Envoi auto",
+  "smartInput.photo": "Prendre une photo",
+  "smartInput.attach": "Joindre un fichier"
 }

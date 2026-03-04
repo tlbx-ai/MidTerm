@@ -86,7 +86,7 @@ When a website doesn't load through the web preview:
 | WS status 502 | Upstream rejected connection (wrong Origin, missing cookies, SSL error) |
 | WS 101 but page empty | Framework routing issue — check NavigationManager or router state |
 | Page renders but navigation broken | URL inconsistency between location.href and document.baseURI |
-| CSS/JS 404s | Root-relative URLs not caught by `IsMidTermPath` catch-all |
+| CSS/JS 404s | Root-relative URLs claimed by `IsMidTermPath` — only MidTerm's own pages/assets should be listed there |
 | Login redirect loops | Cookies not forwarding — check `requestCookies`/`responseCookies` in proxylog |
 | All assets return HTML | Host redirect (e.g. `foo.com` → `www.foo.com`) drops the path — proxy auto-updates target on first redirect |
 

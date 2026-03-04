@@ -60,15 +60,24 @@ public static class EndpointSetup
 
             if (OperatingSystem.IsMacOS())
             {
-                var psi = new ProcessStartInfo("codesign", $"--verify --strict \"{exePath}\"")
+                var psi = new ProcessStartInfo("/usr/bin/codesign")
                 {
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+                psi.ArgumentList.Add("--verify");
+                psi.ArgumentList.Add("--strict");
+                psi.ArgumentList.Add(exePath);
                 using var proc = Process.Start(psi);
                 proc?.WaitForExit(5000);
+                if (proc?.ExitCode != 0)
+                {
+                    var stderr = proc?.StandardError.ReadToEnd();
+                    if (!string.IsNullOrWhiteSpace(stderr))
+                        Log.Warn(() => $"Code signing check failed: {stderr.Trim()}");
+                }
                 return proc?.ExitCode == 0;
             }
 

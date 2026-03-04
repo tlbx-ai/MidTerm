@@ -43,7 +43,9 @@ public static partial class SessionApiEndpoints
     public static void MapSessionEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
-        ClipboardService clipboardService)
+        ClipboardService clipboardService,
+        AuthService authService,
+        int port)
     {
         app.MapGet("/api/sessions", () =>
         {
@@ -170,6 +172,31 @@ public static partial class SessionApiEndpoints
 
             return Results.Ok();
         }).DisableAntiforgery();
+
+        app.MapPost("/api/sessions/{id}/inject-guidance", (string id) =>
+        {
+            var session = sessionManager.GetSession(id);
+            if (session is null)
+            {
+                return Results.NotFound();
+            }
+
+            var cwd = session.CurrentDirectory;
+            if (string.IsNullOrWhiteSpace(cwd) || !Directory.Exists(cwd))
+            {
+                return Results.BadRequest("Session has no valid working directory");
+            }
+
+            var midtermDir = MidtermDirectory.Ensure(cwd);
+            var (claudeUpdated, agentsUpdated) = MidtermDirectory.AppendRootPointer(cwd);
+
+            return Results.Json(new InjectGuidanceResponse
+            {
+                MidtermDir = midtermDir,
+                ClaudeMdUpdated = claudeUpdated,
+                AgentsMdUpdated = agentsUpdated,
+            }, AppJsonContext.Default.InjectGuidanceResponse);
+        });
     }
 
     private static async Task<string> SaveUploadedFileAsync(
@@ -181,16 +208,16 @@ public static partial class SessionApiEndpoints
             fileName = $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
         }
 
-        var tempDir = sessionManager.GetTempDirectory(sessionId);
+        var uploadDir = GetUploadDirectory(sessionManager, sessionId);
 
-        var targetPath = Path.Combine(tempDir, fileName);
+        var targetPath = Path.Combine(uploadDir, fileName);
         var counter = 1;
         var baseName = Path.GetFileNameWithoutExtension(fileName);
         var extension = Path.GetExtension(fileName);
         while (File.Exists(targetPath))
         {
             fileName = $"{baseName}_{counter}{extension}";
-            targetPath = Path.Combine(tempDir, fileName);
+            targetPath = Path.Combine(uploadDir, fileName);
             counter++;
         }
 
@@ -200,6 +227,26 @@ public static partial class SessionApiEndpoints
         }
 
         return targetPath;
+    }
+
+    private static string GetUploadDirectory(TtyHostSessionManager sessionManager, string sessionId)
+    {
+        var session = sessionManager.GetSession(sessionId);
+        var cwd = session?.CurrentDirectory;
+
+        if (!string.IsNullOrWhiteSpace(cwd) && Directory.Exists(cwd))
+        {
+            try
+            {
+                return MidtermDirectory.EnsureSubdirectory(cwd, "uploads");
+            }
+            catch
+            {
+                // Fall through to temp directory if cwd is not writable
+            }
+        }
+
+        return sessionManager.GetTempDirectory(sessionId);
     }
 
     private static bool IsImageUpload(IFormFile file, string savedPath)

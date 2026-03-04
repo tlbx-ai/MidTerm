@@ -918,6 +918,7 @@ html, body {
 .session-pin,
 .session-resize,
 .session-rename,
+.session-inject,
 .session-undock,
 .session-close {
     width: 26px;
@@ -944,7 +945,8 @@ html, body {
 
 .session-pin:hover,
 .session-resize:hover,
-.session-rename:hover {
+.session-rename:hover,
+.session-inject:hover {
     background-color: var(--accent-gold);
     color: var(--bg-primary);
 }
@@ -2099,6 +2101,7 @@ html, body {
     .session-actions .session-pin,
     .session-actions .session-resize,
     .session-actions .session-rename,
+    .session-actions .session-inject,
     .session-actions .session-undock,
     .session-actions .session-close {
         display: flex;
@@ -2121,6 +2124,11 @@ html, body {
 
     .session-actions .session-rename:active {
         background-color: var(--btn-secondary-hover);
+    }
+
+    .session-actions .session-inject:active {
+        background-color: var(--accent-blue);
+        color: var(--text-on-accent);
     }
 
     .session-actions .session-undock:active {
@@ -2237,9 +2245,9 @@ html, body {
     }
 
     .settings-content {
-        padding: 16px;
-        padding-top: calc(16px + env(safe-area-inset-top, 0));
-        padding-bottom: calc(16px + env(safe-area-inset-bottom, 0));
+        padding: 8px;
+        padding-top: calc(8px + env(safe-area-inset-top, 0));
+        padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
     }
 
     .settings-panel {
@@ -2250,28 +2258,68 @@ html, body {
         font-size: var(--fs-3xl);
     }
 
+    .settings-section {
+        padding: 12px;
+    }
+
     .setting-row {
-        flex-direction: column;
-        align-items: stretch;
         gap: 8px;
-        text-align: left;
+        padding: 8px 4px;
+        margin: 0;
     }
 
     .setting-row label {
         text-align: left;
+        min-width: 0;
+        flex-shrink: 1;
     }
 
-    .setting-row select,
+    .setting-row select {
+        width: auto;
+        min-width: 0;
+        flex: 1;
+        text-overflow: ellipsis;
+        overflow: hidden;
+    }
+
     .text-input-wrapper {
-        width: 100%;
+        width: auto;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .setting-row input[type="checkbox"] {
+        flex-shrink: 0;
+        margin-left: auto;
+    }
+
+    .version-value {
+        word-break: break-all;
+        text-align: right;
+    }
+
+    .path-value {
+        max-width: 50%;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .update-actions-inline {
-        justify-content: flex-start;
+        flex-wrap: wrap;
     }
 
     .update-status {
         text-align: left;
+    }
+
+    .diag-help-commands {
+        grid-template-columns: 1fr;
+        gap: 2px 0;
+    }
+
+    .diag-help-commands span {
+        margin-bottom: 6px;
+        padding-left: 8px;
     }
 
     /* Connection status - above safe area */
@@ -3676,10 +3724,13 @@ html, body {
 
 .detail-label {
     color: var(--text-secondary);
+    flex-shrink: 0;
 }
 
 .detail-value {
     color: var(--text-primary);
+    word-break: break-all;
+    text-align: right;
 }
 
 .detail-value code {
@@ -4218,6 +4269,10 @@ html, body {
 
 .update-result .btn-view-log {
     margin-top: 8px;
+}
+
+.update-result.hidden {
+    display: none;
 }
 
 /* Reinstall Hint in Update Section */
@@ -5697,7 +5752,9 @@ html, body {
 }
 
 .smart-input-mic-btn,
-.smart-input-send-btn {
+.smart-input-send-btn,
+.smart-input-photo-btn,
+.smart-input-attach-btn {
     flex-shrink: 0;
     width: 40px;
     height: 40px;
@@ -5715,7 +5772,9 @@ html, body {
 }
 
 .smart-input-mic-btn:active,
-.smart-input-send-btn:active {
+.smart-input-send-btn:active,
+.smart-input-photo-btn:active,
+.smart-input-attach-btn:active {
     background: var(--accent-blue);
     color: var(--bg-primary);
 }
@@ -5837,6 +5896,71 @@ html, body {
 .smart-input-overlay:not(.keys-expanded) .touch-controller.embedded,
 .smart-input-docked:not(.keys-expanded) .touch-controller.embedded {
     display: none !important;
+}
+
+/* Camera Capture Overlay */
+.camera-capture-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+}
+
+.camera-capture-overlay video {
+    max-width: 90vw;
+    max-height: 65vh;
+    border-radius: 12px;
+    background: #000;
+}
+
+.camera-capture-controls {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.camera-capture-snap {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.camera-capture-snap:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.camera-capture-snap:active {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.camera-capture-cancel {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: var(--btn-secondary, #3A3E52);
+    color: var(--text-primary, #D4D7E8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.camera-capture-cancel:hover {
+    background: var(--btn-secondary-hover, #4A4F68);
 }
 
 /* ==========================================================================
@@ -6145,6 +6269,7 @@ html, body {
 .session-pin:focus-visible,
 .session-resize:focus-visible,
 .session-rename:focus-visible,
+.session-inject:focus-visible,
 .session-undock:focus-visible,
 .session-close:focus-visible,
 .add-session-btn:focus-visible,
@@ -6163,6 +6288,7 @@ html, body {
 .session-pin:focus,
 .session-resize:focus,
 .session-rename:focus,
+.session-inject:focus,
 .session-undock:focus,
 .session-close:focus,
 .add-session-btn:focus,
