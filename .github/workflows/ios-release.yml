@@ -1,0 +1,180 @@
+name: iOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Increment build number
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          CURRENT=$(cat apps/build-number | tr -d '[:space:]')
+          NEXT=$((CURRENT + 1))
+          echo "$NEXT" > apps/build-number
+          git add apps/build-number
+          git commit -m "[ci] build $NEXT"
+          git push
+          echo "BUILD_NUMBER=$NEXT" >> "$GITHUB_ENV"
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+
+      - name: Import certificate
+        env:
+          CERT_P12: ${{ secrets.IOS_DISTRIBUTION_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Install provisioning profile
+        env:
+          PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROVISIONING_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/midterm.mobileprovision
+
+      - name: Set version
+        run: |
+          cd apps/ios
+          sed -i '' "s/MARKETING_VERSION = .*/MARKETING_VERSION = ${{ github.event.inputs.version }};/g" MidTermConnector.xcodeproj/project.pbxproj
+          sed -i '' "s/CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = ${{ env.BUILD_NUMBER }};/g" MidTermConnector.xcodeproj/project.pbxproj
+
+      - name: Archive
+        run: |
+          cd apps/ios
+          xcodebuild archive \
+            -project MidTermConnector.xcodeproj \
+            -scheme MidTermConnector \
+            -archivePath $RUNNER_TEMP/MidTermConnector.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=FK7G5C74WH \
+            -allowProvisioningUpdates
+
+      - name: Export signed IPA
+        run: |
+          cat > $RUNNER_TEMP/export.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>teamID</key>
+            <string>FK7G5C74WH</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/MidTermConnector.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/export.plist \
+            -exportPath $RUNNER_TEMP/export
+          echo "=== IPA size ==="
+          ls -lh $RUNNER_TEMP/export/MidTermConnector.ipa
+
+      - name: Setup App Store Connect API key
+        env:
+          API_KEY_ID: ${{ secrets.APPSTORE_CONNECT_API_KEY_ID }}
+          API_PRIVATE_KEY: ${{ secrets.APPSTORE_CONNECT_API_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.private_keys
+          echo "$API_PRIVATE_KEY" > ~/.private_keys/AuthKey_${API_KEY_ID}.p8
+
+      - name: Validate IPA
+        env:
+          API_KEY_ID: ${{ secrets.APPSTORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_API_ISSUER_ID }}
+        run: |
+          xcrun altool --validate-app \
+            -f $RUNNER_TEMP/export/MidTermConnector.ipa \
+            --type ios \
+            --apiKey "$API_KEY_ID" \
+            --apiIssuer "$API_ISSUER_ID"
+
+      - name: Upload IPA to App Store Connect
+        env:
+          API_KEY_ID: ${{ secrets.APPSTORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_API_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app \
+            -f $RUNNER_TEMP/export/MidTermConnector.ipa \
+            --type ios \
+            --apiKey "$API_KEY_ID" \
+            --apiIssuer "$API_ISSUER_ID"
+
+      - name: Rename artifact for release
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          cp $RUNNER_TEMP/export/MidTermConnector.ipa \
+             "$RUNNER_TEMP/MidTermConnector-${VERSION}.ipa"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="app-v${{ github.event.inputs.version }}"
+          VERSION="${{ github.event.inputs.version }}"
+
+          git tag "$TAG" 2>/dev/null && git push origin "$TAG" || true
+
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "MidTerm Connector v${VERSION}" \
+              --notes "## MidTerm Connector v${VERSION} (build ${{ env.BUILD_NUMBER }})
+
+          ### Downloads
+          - **iOS IPA** — validated and uploaded to App Store Connect
+
+          ### Install
+          iOS: Available on the App Store after Apple review."
+
+          gh release upload "$TAG" \
+            "$RUNNER_TEMP/MidTermConnector-${VERSION}.ipa" \
+            --clobber
+
+      - name: Summary
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          IPA_SIZE=$(stat -f%z "$RUNNER_TEMP/MidTermConnector-${VERSION}.ipa")
+          IPA_KB=$((IPA_SIZE / 1024))
+          echo "### iOS Release v${VERSION} (build ${{ env.BUILD_NUMBER }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **IPA size:** ${IPA_KB} KB" >> $GITHUB_STEP_SUMMARY
+          echo "- **App Store Connect:** validated + uploaded" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release:** app-v${VERSION}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Clean up
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN_PATH" || true
+          rm -rf ~/.private_keys
+          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/midterm.mobileprovision

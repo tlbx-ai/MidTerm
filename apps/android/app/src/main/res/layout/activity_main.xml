@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0D1117">
+
+    <TextView
+        android:id="@+id/empty_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="@string/no_servers"
+        android:textColor="#8B949E"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
+    <ListView
+        android:id="@+id/server_list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:divider="#21262D"
+        android:dividerHeight="1dp"
+        android:paddingBottom="80dp"
+        android:clipToPadding="false" />
+
+    <ImageButton
+        android:id="@+id/fab_add"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:background="@drawable/fab_background"
+        android:src="@android:drawable/ic_input_add"
+        android:tint="#FFFFFF"
+        android:contentDescription="@string/add_server"
+        android:elevation="6dp" />
+
+</FrameLayout>

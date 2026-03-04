@@ -1,0 +1,126 @@
+name: Android Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 1.0.0)'
+        required: true
+      track:
+        description: 'Play Store track'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Increment build number
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          CURRENT=$(cat apps/build-number | tr -d '[:space:]')
+          NEXT=$((CURRENT + 1))
+          echo "$NEXT" > apps/build-number
+          git add apps/build-number
+          git commit -m "[ci] build $NEXT"
+          git push
+          echo "BUILD_NUMBER=$NEXT" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/upload.jks
+
+      - name: Set version
+        working-directory: apps/android
+        run: |
+          sed -i "s/versionCode = .*/versionCode = ${{ env.BUILD_NUMBER }}/" app/build.gradle.kts
+          sed -i "s/versionName = .*/versionName = \"${{ github.event.inputs.version }}\"/" app/build.gradle.kts
+
+      - name: Build signed APK + AAB
+        working-directory: apps/android
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease bundleRelease --no-daemon
+          echo "=== APK size ==="
+          ls -lh app/build/outputs/apk/release/app-release.apk
+
+      - name: Rename artifacts
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          cp apps/android/app/build/outputs/apk/release/app-release.apk \
+             "$RUNNER_TEMP/MidTermConnector-${VERSION}.apk"
+          cp apps/android/app/build/outputs/bundle/release/app-release.aab \
+             "$RUNNER_TEMP/MidTermConnector-${VERSION}.aab"
+
+      - name: Upload AAB to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ai.tlbx.midterm
+          releaseFiles: apps/android/app/build/outputs/bundle/release/app-release.aab
+          track: ${{ github.event.inputs.track }}
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="app-v${{ github.event.inputs.version }}"
+          VERSION="${{ github.event.inputs.version }}"
+
+          git tag "$TAG" 2>/dev/null && git push origin "$TAG" || true
+
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "MidTerm Connector v${VERSION}" \
+              --notes "## MidTerm Connector v${VERSION} (build ${{ env.BUILD_NUMBER }})
+
+          ### Downloads
+          - **Android APK** — sideload or install directly
+          - **Android AAB** — uploaded to Google Play (${{ github.event.inputs.track }} track)
+          - **iOS IPA** — available after iOS workflow runs"
+
+          gh release upload "$TAG" \
+            "$RUNNER_TEMP/MidTermConnector-${VERSION}.apk" \
+            "$RUNNER_TEMP/MidTermConnector-${VERSION}.aab" \
+            --clobber
+
+      - name: Summary
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          APK_SIZE=$(stat -c%s "apps/android/app/build/outputs/apk/release/app-release.apk")
+          APK_KB=$((APK_SIZE / 1024))
+          echo "### Android Release v${VERSION} (build ${{ env.BUILD_NUMBER }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK size:** ${APK_KB} KB" >> $GITHUB_STEP_SUMMARY
+          echo "- **Play Store track:** ${{ github.event.inputs.track }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release:** app-v${VERSION}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Clean up
+        if: always()
+        run: rm -f $RUNNER_TEMP/upload.jks

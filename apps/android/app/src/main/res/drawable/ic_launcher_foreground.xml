@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- M shape inspired by MidTerm logo -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,75 L30,33 L42,33 L54,55 L66,33 L78,33 L78,75 L68,75 L68,50 L57,70 L51,70 L40,50 L40,75 Z" />
+    <!-- Dot -->
+    <path
+        android:fillColor="#58A6FF"
+        android:pathData="M54,78 m-4,0 a4,4 0,1 1,8 0 a4,4 0,1 1,-8 0" />
+</vector>
