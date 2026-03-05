@@ -7076,11 +7076,40 @@ html, body {
     overflow: hidden;
 }
 
+.web-preview-dock-body.viewport-constrained {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary, #1a1a2e);
+}
+
 #web-preview-iframe {
     width: 100%;
     height: 100%;
     border: none;
     background: #fff;
+}
+
+.web-preview-dock-body.viewport-constrained #web-preview-iframe {
+    box-shadow: 0 0 0 1px var(--border-color, #333);
+}
+
+.web-preview-viewport-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--border-color, #333);
+    background: var(--bg-hover, #2a2a3a);
+    color: var(--text-secondary, #aaa);
+    cursor: pointer;
+    font-family: var(--font-mono, monospace);
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.web-preview-viewport-badge:hover {
+    color: var(--text-primary, #fff);
+    background: var(--bg-active, #3a3a4a);
 }
 
 .web-preview-detached-placeholder {

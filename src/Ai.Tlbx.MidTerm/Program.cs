@@ -194,6 +194,7 @@ public class Program
         // Browser control (agent-driven web preview interaction)
         BrowserLog.Initialize(logDirectory);
         var browserCommandService = new BrowserCommandService();
+        var browserUiBridge = new BrowserUiBridge();
         BrowserScriptWriter.WriteScript(port);
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
@@ -263,9 +264,9 @@ public class Program
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
         WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
-        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService);
+        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService, browserUiBridge);
         var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, browserCommandService, tmuxLayoutBridge);
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, browserCommandService, tmuxLayoutBridge, browserUiBridge);
 
         lifetime.ApplicationStarted.Register(() =>
         {

@@ -12,10 +12,37 @@ public static class BrowserEndpoints
         WebApplication app,
         BrowserCommandService commandService,
         TtyHostSessionManager sessionManager,
-        WebPreviewService webPreviewService)
+        WebPreviewService webPreviewService,
+        BrowserUiBridge? uiBridge = null)
     {
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
+
+        if (uiBridge is not null)
+        {
+            MapUiEndpoints(app, uiBridge);
+        }
+    }
+
+    private static void MapUiEndpoints(WebApplication app, BrowserUiBridge uiBridge)
+    {
+        app.MapPost("/api/browser/detach", () =>
+        {
+            uiBridge.RequestDetach();
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/browser/dock", () =>
+        {
+            uiBridge.RequestDock();
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/browser/viewport", (Models.Browser.ViewportRequest request) =>
+        {
+            uiBridge.RequestViewport(request.Width, request.Height);
+            return Results.Ok();
+        });
     }
 
     private static void MapCliEndpoint(

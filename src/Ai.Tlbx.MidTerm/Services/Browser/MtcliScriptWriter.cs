@@ -100,6 +100,17 @@ public static class MtcliScriptWriter
         # mt_split [-h]  — split terminal (creates adjacent pane via tmux shim)
         mt_split() { tmux split-window "$@"; }
 
+        # Panel control
+        # mt_detach  — detach web preview to a popup window
+        mt_detach()    { _MJ -d '{}' "$_MT/api/browser/detach"; }
+        # mt_dock  — dock web preview back from popup
+        mt_dock()      { _MJ -d '{}' "$_MT/api/browser/dock"; }
+        # mt_viewport WIDTH HEIGHT  — set iframe viewport size (0 0 to reset)
+        mt_viewport() {
+          local w=${1:-0} h=${2:-0}
+          _MJ -d "{\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
+        }
+
         # Status
         mt_status()     { mtbrowser status 2>/dev/null || _MC "$_MT/api/webpreview/target"; }
 
@@ -198,6 +209,17 @@ public static class MtcliScriptWriter
         function Mt-Split {
             param([switch]$Horizontal)
             if ($Horizontal) { & tmux split-window -h } else { & tmux split-window }
+        }
+
+        # Panel control
+        # Mt-Detach  — detach web preview to a popup window
+        function Mt-Detach   { _MJ -d '{}' "$script:_MT/api/browser/detach" }
+        # Mt-Dock  — dock web preview back from popup
+        function Mt-Dock     { _MJ -d '{}' "$script:_MT/api/browser/dock" }
+        # Mt-Viewport [-Width N] [-Height N]  — set iframe viewport size (0 0 to reset)
+        function Mt-Viewport {
+            param([int]$Width = 0, [int]$Height = 0)
+            _MJ -d (_MB @{width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
         }
 
         # Status

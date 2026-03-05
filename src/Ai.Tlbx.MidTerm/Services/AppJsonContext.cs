@@ -121,6 +121,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(BrowserCommandResponse))]
 [JsonSerializable(typeof(BrowserWsMessage))]
 [JsonSerializable(typeof(BrowserWsResult))]
+[JsonSerializable(typeof(BrowserUiInstruction))]
+[JsonSerializable(typeof(ViewportRequest))]
 
 // --- WebSocket Protocol ---
 [JsonSerializable(typeof(WsCommand))]

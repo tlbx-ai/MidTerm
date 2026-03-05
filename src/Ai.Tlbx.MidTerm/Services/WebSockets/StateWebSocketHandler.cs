@@ -6,6 +6,7 @@ using System.Text.Json.Serialization.Metadata;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -28,6 +29,7 @@ public sealed class StateWebSocketHandler
     private readonly ShutdownService _shutdownService;
     private readonly MainBrowserService _mainBrowserService;
     private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
+    private readonly BrowserUiBridge? _browserUiBridge;
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
@@ -36,7 +38,8 @@ public sealed class StateWebSocketHandler
         AuthService authService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
-        TmuxLayoutBridge? tmuxLayoutBridge = null)
+        TmuxLayoutBridge? tmuxLayoutBridge = null,
+        BrowserUiBridge? browserUiBridge = null)
     {
         _sessionManager = sessionManager;
         _updateService = updateService;
@@ -45,6 +48,7 @@ public sealed class StateWebSocketHandler
         _shutdownService = shutdownService;
         _mainBrowserService = mainBrowserService;
         _tmuxLayoutBridge = tmuxLayoutBridge;
+        _browserUiBridge = browserUiBridge;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -196,6 +200,36 @@ public sealed class StateWebSocketHandler
             _tmuxLayoutBridge.OnSwapRequested += OnSwapRequested;
         }
 
+        void OnBrowserDetach()
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction { Command = "detach" };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
+        void OnBrowserDock()
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction { Command = "dock" };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
+        void OnBrowserViewport(int width, int height)
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "viewport",
+                Width = width,
+                Height = height
+            };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
+        if (_browserUiBridge is not null)
+        {
+            _browserUiBridge.OnDetachRequested += OnBrowserDetach;
+            _browserUiBridge.OnDockRequested += OnBrowserDock;
+            _browserUiBridge.OnViewportRequested += OnBrowserViewport;
+        }
+
         try
         {
             lastUpdate = _updateService.LatestUpdate;
@@ -255,6 +289,13 @@ public sealed class StateWebSocketHandler
                 _tmuxLayoutBridge.OnDockRequested -= OnDockRequested;
                 _tmuxLayoutBridge.OnFocusRequested -= OnFocusRequested;
                 _tmuxLayoutBridge.OnSwapRequested -= OnSwapRequested;
+            }
+
+            if (_browserUiBridge is not null)
+            {
+                _browserUiBridge.OnDetachRequested -= OnBrowserDetach;
+                _browserUiBridge.OnDockRequested -= OnBrowserDock;
+                _browserUiBridge.OnViewportRequested -= OnBrowserViewport;
             }
 
             sendLock.Dispose();

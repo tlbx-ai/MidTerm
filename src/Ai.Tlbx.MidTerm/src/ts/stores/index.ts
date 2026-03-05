@@ -163,6 +163,9 @@ export const $webPreviewUrl = atom<string | null>(null);
 /** Whether web preview is detached to popup window */
 export const $webPreviewDetached = atom<boolean>(false);
 
+/** Custom viewport size for responsive testing (null = full size) */
+export const $webPreviewViewport = atom<{ width: number; height: number } | null>(null);
+
 // =============================================================================
 // Connection State Stores
 // =============================================================================

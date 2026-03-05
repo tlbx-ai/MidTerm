@@ -6,7 +6,12 @@
  * The web preview dock sits as the outermost (rightmost) panel.
  */
 
-import { $activeSessionId, $webPreviewDocked, $isMainBrowser } from '../../stores';
+import {
+  $activeSessionId,
+  $webPreviewDocked,
+  $webPreviewViewport,
+  $isMainBrowser,
+} from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { restoreLastUrl, showIframe, unloadIframe } from './webPanel';
@@ -265,4 +270,51 @@ export function setupWebPreviewDockResize(): void {
 
   document.addEventListener('touchend', endResize);
   document.addEventListener('touchcancel', endResize);
+}
+
+/**
+ * Set the web preview iframe to a fixed viewport size for responsive testing.
+ * Pass width=0, height=0 to reset to full size.
+ */
+export function setViewportSize(width: number, height: number): void {
+  const iframe = document.getElementById('web-preview-iframe');
+  const body = document.querySelector<HTMLElement>('.web-preview-dock-body');
+  const badge = document.getElementById('web-preview-viewport-badge');
+  if (!iframe || !body) return;
+
+  if (width <= 0 && height <= 0) {
+    iframe.style.width = '';
+    iframe.style.height = '';
+    iframe.style.maxWidth = '';
+    iframe.style.maxHeight = '';
+    body.classList.remove('viewport-constrained');
+    $webPreviewViewport.set(null);
+    if (badge) badge.classList.add('hidden');
+    log.info(() => 'Viewport reset to full size');
+    return;
+  }
+
+  iframe.style.width = `${width}px`;
+  iframe.style.height = `${height}px`;
+  iframe.style.maxWidth = `${width}px`;
+  iframe.style.maxHeight = `${height}px`;
+  body.classList.add('viewport-constrained');
+  $webPreviewViewport.set({ width, height });
+
+  if (badge) {
+    badge.textContent = `${width}\u00D7${height}`;
+    badge.classList.remove('hidden');
+  }
+
+  log.info(() => `Viewport set to ${width}\u00D7${height}`);
+}
+
+/** Wire up the viewport reset badge click handler. */
+export function initViewportReset(): void {
+  const badge = document.getElementById('web-preview-viewport-badge');
+  if (badge) {
+    badge.addEventListener('click', () => {
+      setViewportSize(0, 0);
+    });
+  }
 }

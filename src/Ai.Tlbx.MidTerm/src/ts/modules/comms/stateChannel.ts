@@ -24,6 +24,8 @@ import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
 import { renderUpdatePanel } from '../updating/checker';
 import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
+import { detachPreview, dockBack } from '../web/webDetach';
+import { setViewportSize } from '../web/webDock';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -49,6 +51,13 @@ interface MainBrowserStatusMessage {
   showButton: boolean;
 }
 
+interface BrowserUiMessage {
+  type: 'browser-ui';
+  command: string;
+  width?: number;
+  height?: number;
+}
+
 interface StateUpdateMessage {
   type?: undefined;
   sessions?: { sessions: Session[] };
@@ -68,6 +77,7 @@ type StateWsMessage =
   | TmuxFocusMessage
   | TmuxSwapMessage
   | MainBrowserStatusMessage
+  | BrowserUiMessage
   | StateUpdateMessage
   | CommandResponseMessage;
 
@@ -217,6 +227,12 @@ export function connectStateWebSocket(): void {
       if (data.type === 'main-browser-status') {
         $isMainBrowser.set(data.isMain);
         $showMainBrowserButton.set(data.showButton);
+        return;
+      }
+
+      // Handle browser UI commands (detach/dock/viewport from mtcli)
+      if (data.type === 'browser-ui') {
+        handleBrowserUiCommand(data);
         return;
       }
 
@@ -429,6 +445,25 @@ export async function sendCommand<T = unknown>(
       reject(new Error(e instanceof Error ? e.message : String(e)));
     }
   });
+}
+
+/**
+ * Handle browser UI commands from the server (detach, dock, viewport).
+ */
+function handleBrowserUiCommand(msg: BrowserUiMessage): void {
+  switch (msg.command) {
+    case 'detach':
+      detachPreview();
+      break;
+    case 'dock':
+      dockBack();
+      break;
+    case 'viewport':
+      setViewportSize(msg.width ?? 0, msg.height ?? 0);
+      break;
+    default:
+      log.warn(() => `Unknown browser-ui command: ${msg.command}`);
+  }
 }
 
 /**

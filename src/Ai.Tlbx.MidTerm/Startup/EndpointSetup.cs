@@ -639,10 +639,11 @@ public static class EndpointSetup
         MainBrowserService mainBrowserService,
         GitWatcherService gitWatcher,
         BrowserCommandService browserCommandService,
-        TmuxLayoutBridge? tmuxLayoutBridge = null)
+        TmuxLayoutBridge? tmuxLayoutBridge = null,
+        BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
+        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
         var browserHandler = new BrowserWebSocketHandler(browserCommandService, settingsService, authService, shutdownService);

@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "7";
+    private const string GuidanceVersion = "8";
 
     private static int _port;
     private static AuthService? _authService;
@@ -207,6 +207,9 @@ public static class MidtermDirectory
         | `mt_buffer <id>` | Terminal buffer content |
         | `mt_new_session [shell] [cwd]` | Create a new terminal session |
         | `mt_split [-h]` | Split terminal (adjacent pane via tmux) |
+        | `mt_detach` | Detach web preview to popup window |
+        | `mt_dock` | Dock web preview back from popup |
+        | `mt_viewport W H` | Set iframe viewport size (0 0 to reset) |
         | `mt_status` | Browser connection status |
 
         ## Workflow
@@ -254,6 +257,14 @@ public static class MidtermDirectory
 
         mt_proxylog 10 — check status codes, upstream URLs, WebSocket connections
         mt_log error — check browser console
+
+        ## Responsive testing
+
+        mt_viewport 375 667 → mt_outline → mt_query ".menu" true → mt_viewport 0 0
+
+        ## Detach/dock preview
+
+        mt_detach → (preview opens in popup) → mt_dock → (back in panel)
 
         ## Tips
 

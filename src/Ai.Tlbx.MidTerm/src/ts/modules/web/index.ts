@@ -15,6 +15,7 @@ import {
   applyWebPreviewHiddenState,
   suspendWebPreviewDock,
   hideWebPreviewDockForDetach,
+  initViewportReset,
 } from './webDock';
 import { initWebPanel, loadPreview, restoreLastUrl, getLoadedUrl } from './webPanel';
 import { closeDetachedIfOwnedBy, initDetach, isDetachedOpenForSession } from './webDetach';
@@ -28,6 +29,7 @@ export function initWebPreview(): void {
 
   initWebPanel();
   initDetach();
+  initViewportReset();
 
   document.getElementById('web-preview-close')?.addEventListener('click', closeWebPreviewDock);
   setupWebPreviewDockResize();
