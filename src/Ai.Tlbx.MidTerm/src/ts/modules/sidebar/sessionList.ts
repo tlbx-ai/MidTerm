@@ -50,8 +50,9 @@ function normalizeExecutableName(value: string): string {
   if (!trimmed) return '';
 
   let firstToken = trimmed;
-  if (firstToken.startsWith('"') || firstToken.startsWith("'")) {
-    const quote = firstToken[0];
+  const firstChar = firstToken[0] ?? '';
+  if (firstChar === '"' || firstChar === "'") {
+    const quote = firstChar;
     const closingQuote = firstToken.indexOf(quote, 1);
     if (closingQuote > 1) {
       firstToken = firstToken.slice(1, closingQuote);
