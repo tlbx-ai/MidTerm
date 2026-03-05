@@ -82,8 +82,8 @@ public static class MtcliScriptWriter
         mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
         mt_target()     { _MC "$_MT/api/webpreview/target"; }
         mt_cookies()    { _MC "$_MT/api/webpreview/cookies"; }
-        # mt_clearcookies  — clear all proxy cookies (jar + disk)
-        mt_clearcookies() { _MC -X POST "$_MT/api/webpreview/cookies/clear"; }
+        # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
+        mt_clearcookies() { _MB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear"; }
         # mt_hardreload  — clear cookies + reload (fresh session)
         mt_hardreload() { mt_clearcookies; mt_reload; }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
@@ -216,8 +216,8 @@ public static class MtcliScriptWriter
         function Mt-Reload     { _MJ -d '{"mode":"soft"}' "$script:_MT/api/webpreview/reload" }
         function Mt-Target     { _MC "$script:_MT/api/webpreview/target" }
         function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies" }
-        # Mt-ClearCookies  — clear all proxy cookies (jar + disk)
-        function Mt-ClearCookies { _MC -X POST "$script:_MT/api/webpreview/cookies/clear" }
+        # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
+        function Mt-ClearCookies { _MB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear" }
         # Mt-HardReload  — clear cookies + reload (fresh session)
         function Mt-HardReload { Mt-ClearCookies; Mt-Reload }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)

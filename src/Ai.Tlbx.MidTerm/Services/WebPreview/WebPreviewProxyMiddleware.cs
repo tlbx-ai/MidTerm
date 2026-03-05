@@ -392,6 +392,11 @@ public sealed partial class WebPreviewProxyMiddleware
                   else if(path===P)path="/";
                   res.result=(window.__mtTargetOrigin||"")+path+location.search+location.hash;
                   break;}
+                case"clearcookies":{
+                  var all=document.cookie.split(";");
+                  for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
+                  cc="";res.result="cleared";
+                  break;}
                 default:res.success=false;res.error="unknown command: "+msg.command;
               }
             }catch(e){res.success=false;res.error=e.message||String(e);}
@@ -505,6 +510,19 @@ public sealed partial class WebPreviewProxyMiddleware
                 await ProxyHttpAsync(context, targetUri, remaining.Value ?? "/");
             }
 
+            return;
+        }
+
+        // Guard: if web preview is active and a proxied page's JS leaks calls to
+        // /api/webpreview/* (e.g. inner MidTerm calling DELETE /api/webpreview/target),
+        // proxy those upstream instead of letting them hit our local handlers.
+        if (_service.IsActive && path.StartsWithSegments("/api/webpreview"))
+        {
+            var targetUri = _service.TargetUri!;
+            if (context.WebSockets.IsWebSocketRequest)
+                await ProxyWebSocketAsync(context, targetUri, path.Value ?? "/");
+            else
+                await ProxyHttpAsync(context, targetUri, path.Value ?? "/");
             return;
         }
 
