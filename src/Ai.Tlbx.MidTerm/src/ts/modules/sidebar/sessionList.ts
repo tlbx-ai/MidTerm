@@ -26,16 +26,45 @@ import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
 /**
  * Check if a foreground process name is just the session's own shell.
- * Strips .exe suffix and compares case-insensitively against shellType.
+ * Compares basename + extensionless identity of both values, handling
+ * full paths, quoted command lines, and command arguments.
  */
 function isShellProcess(processName: string, sessionId: string): boolean {
   const sessions = $sessionList.get();
   const session = sessions.find((s) => s.id === sessionId);
   if (!session?.shellType) return false;
-  // Extract filename from full path (e.g. "C:\Program Files\PowerShell\7\pwsh.exe" → "pwsh")
-  const basename = processName.split(/[\\/]/).pop() ?? processName;
-  const normalized = basename.replace(/\.exe$/i, '').toLowerCase();
-  return normalized === session.shellType.toLowerCase();
+  const normalizedProcess = normalizeExecutableName(processName);
+  const normalizedShell = normalizeExecutableName(session.shellType);
+  return normalizedProcess !== '' && normalizedProcess === normalizedShell;
+}
+
+/**
+ * Normalize a shell/process identifier to a comparable executable identity.
+ * - strips command-line arguments
+ * - strips quotes
+ * - extracts basename from paths
+ * - removes ".exe" extension
+ */
+function normalizeExecutableName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  let firstToken = trimmed;
+  if (firstToken.startsWith('"') || firstToken.startsWith("'")) {
+    const quote = firstToken[0];
+    const closingQuote = firstToken.indexOf(quote, 1);
+    if (closingQuote > 1) {
+      firstToken = firstToken.slice(1, closingQuote);
+    }
+  } else {
+    const spaceIdx = firstToken.search(/\s/);
+    if (spaceIdx > 0) {
+      firstToken = firstToken.slice(0, spaceIdx);
+    }
+  }
+
+  const basename = firstToken.replace(/\\/g, '/').split('/').pop() ?? firstToken;
+  return basename.replace(/\\.exe$/i, '').toLowerCase();
 }
 
 // =============================================================================
@@ -253,7 +282,7 @@ export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
     return { primary: session.name, secondary: termTitle };
   }
   // Process set a console title — show it as the primary title with process info below
-  if (session.terminalTitle) {
+  if (session.terminalTitle && !isShellProcess(session.terminalTitle, session.id)) {
     return { primary: session.terminalTitle, secondary: null };
   }
   // No name, no console title: show cwd + process as the title row
