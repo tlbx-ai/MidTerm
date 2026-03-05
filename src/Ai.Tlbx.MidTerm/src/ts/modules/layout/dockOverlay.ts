@@ -58,14 +58,9 @@ export function showDockOverlay(x: number, y: number, draggedSessionId: string):
   if (!overlayElement) return;
 
   // Find target session at point
-  let targetSessionId: string | null = null;
-
-  if (isLayoutActive()) {
-    targetSessionId = findSessionAtPoint(x, y);
-  } else {
-    // Standalone mode - target the active session
-    targetSessionId = $activeSessionId.get();
-  }
+  const targetSessionId: string | null = isLayoutActive()
+    ? findSessionAtPoint(x, y)
+    : $activeSessionId.get();
 
   // Don't show overlay if dragging over self or no target
   if (!targetSessionId || targetSessionId === draggedSessionId) {
