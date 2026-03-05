@@ -377,6 +377,7 @@
   "webPreview.detachedPlaceholder": "La vista previa está en una ventana separada",
   "webPreview.noTarget": "Ingrese una URL para previsualizar",
   "webPreview.agentHint": "Indicar al agente IA sobre control del navegador",
+  "webPreview.clearCookies": "Borrar todas las cookies y recargar",
   "fileBrowser.unableToLoad": "No se pudo cargar el directorio",
   "fileBrowser.selectFile": "Seleccione un archivo para vista previa",
   "fileBrowser.loading": "Cargando...",

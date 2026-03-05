@@ -5,7 +5,7 @@
  */
 
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
-import { reloadWebPreview, setWebPreviewTarget } from './webApi';
+import { clearWebPreviewCookies, reloadWebPreview, setWebPreviewTarget } from './webApi';
 import { pasteToTerminal } from '../terminal';
 import { sendInput } from '../comms/muxChannel';
 import { getForegroundInfo } from '../process';
@@ -54,6 +54,9 @@ export function initWebPanel(): void {
     void handleRefresh(hard ? 'hard' : 'soft');
   });
   screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
+  document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
+    void handleClearCookies();
+  });
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
 
   window.addEventListener('message', (e: MessageEvent<unknown>) => {
@@ -319,6 +322,16 @@ async function handleScreenshot(download = false): Promise<void> {
     }
   } catch (err) {
     log.warn(() => `Screenshot upload error: ${String(err)}`);
+  }
+}
+
+async function handleClearCookies(): Promise<void> {
+  const ok = await clearWebPreviewCookies();
+  if (ok) {
+    log.info(() => 'Cookies cleared');
+    loadPreview();
+  } else {
+    log.warn(() => 'Failed to clear cookies');
   }
 }
 

@@ -377,6 +377,7 @@
   "webPreview.detachedPlaceholder": "प्रीव्यू अलग विंडो में खुला है",
   "webPreview.noTarget": "प्रीव्यू के लिए URL दर्ज करें",
   "webPreview.agentHint": "AI एजेंट को ब्राउज़र नियंत्रण के बारे में बताएं",
+  "webPreview.clearCookies": "सभी कुकीज़ हटाएं और पुनः लोड करें",
   "fileBrowser.unableToLoad": "निर्देशिका लोड करने में असमर्थ",
   "fileBrowser.selectFile": "पूर्वावलोकन के लिए फ़ाइल चुनें",
   "fileBrowser.loading": "लोड हो रहा है...",

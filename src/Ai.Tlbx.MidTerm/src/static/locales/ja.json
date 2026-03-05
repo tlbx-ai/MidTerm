@@ -377,6 +377,7 @@
   "webPreview.detachedPlaceholder": "プレビューは別ウィンドウで開いています",
   "webPreview.noTarget": "プレビューするURLを入力",
   "webPreview.agentHint": "AIエージェントにブラウザ操作を通知",
+  "webPreview.clearCookies": "すべてのCookieを削除して再読み込み",
   "fileBrowser.unableToLoad": "ディレクトリを読み込めません",
   "fileBrowser.selectFile": "プレビューするファイルを選択",
   "fileBrowser.loading": "読み込み中...",

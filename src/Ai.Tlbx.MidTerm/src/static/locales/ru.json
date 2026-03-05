@@ -377,6 +377,7 @@
   "webPreview.detachedPlaceholder": "Превью открыто в отдельном окне",
   "webPreview.noTarget": "Введите URL для предпросмотра",
   "webPreview.agentHint": "Подсказать ИИ-агенту об управлении браузером",
+  "webPreview.clearCookies": "Удалить все cookies и перезагрузить",
   "fileBrowser.unableToLoad": "Не удалось загрузить каталог",
   "fileBrowser.selectFile": "Выберите файл для предпросмотра",
   "fileBrowser.loading": "Загрузка...",

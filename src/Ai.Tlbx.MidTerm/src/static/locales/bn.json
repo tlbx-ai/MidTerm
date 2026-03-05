@@ -377,6 +377,7 @@
   "webPreview.detachedPlaceholder": "প্রিভিউ আলাদা উইন্ডোতে খোলা আছে",
   "webPreview.noTarget": "প্রিভিউ করতে URL লিখুন",
   "webPreview.agentHint": "AI এজেন্টকে ব্রাউজার নিয়ন্ত্রণ সম্পর্কে জানান",
+  "webPreview.clearCookies": "সমস্ত কুকি মুছুন এবং পুনরায় লোড করুন",
   "fileBrowser.unableToLoad": "ডিরেক্টরি লোড করতে অক্ষম",
   "fileBrowser.selectFile": "প্রিভিউয়ের জন্য ফাইল নির্বাচন করুন",
   "fileBrowser.loading": "লোড হচ্ছে...",

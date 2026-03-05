@@ -44,6 +44,16 @@ export async function clearWebPreviewTarget(): Promise<void> {
   }
 }
 
+/** Clear all cookies in the server-side proxy cookie jar and on disk. */
+export async function clearWebPreviewCookies(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/webpreview/cookies/clear', { method: 'POST' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Trigger a soft or hard reload of the web preview on the server. */
 export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> {
   try {
