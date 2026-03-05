@@ -65,7 +65,7 @@ function normalizeExecutableName(value: string): string {
   }
 
   const basename = firstToken.replace(/\\/g, '/').split('/').pop() ?? firstToken;
-  return basename.replace(/\\.exe$/i, '').toLowerCase();
+  return basename.replace(/\.exe$/i, '').toLowerCase();
 }
 
 // =============================================================================
