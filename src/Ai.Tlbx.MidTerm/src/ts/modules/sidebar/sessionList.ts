@@ -49,23 +49,19 @@ function normalizeExecutableName(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
 
-  let firstToken = trimmed;
-  const firstChar = firstToken[0] ?? '';
+  let candidate = trimmed;
+  const firstChar = candidate[0] ?? '';
   if (firstChar === '"' || firstChar === "'") {
     const quote = firstChar;
-    const closingQuote = firstToken.indexOf(quote, 1);
+    const closingQuote = candidate.indexOf(quote, 1);
     if (closingQuote > 1) {
-      firstToken = firstToken.slice(1, closingQuote);
-    }
-  } else {
-    const spaceIdx = firstToken.search(/\s/);
-    if (spaceIdx > 0) {
-      firstToken = firstToken.slice(0, spaceIdx);
+      candidate = candidate.slice(1, closingQuote);
     }
   }
 
-  const basename = firstToken.replace(/\\/g, '/').split('/').pop() ?? firstToken;
-  return basename.replace(/\.exe$/i, '').toLowerCase();
+  const basename = candidate.replace(/\\/g, '/').split('/').pop() ?? candidate;
+  const token = basename.trim().split(/\s+/)[0] ?? basename.trim();
+  return token.replace(/\.exe$/i, '').toLowerCase();
 }
 
 // =============================================================================
