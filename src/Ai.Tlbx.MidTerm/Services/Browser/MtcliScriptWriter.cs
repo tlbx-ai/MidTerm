@@ -71,8 +71,8 @@ public static class MtcliScriptWriter
 
         # Web preview (dev browser)
         mt_navigate()   { _MJ -d "{\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
-        # mt_open URL  — open URL in web preview panel (alias for mt_navigate)
-        mt_open()       { mt_navigate "$1"; }
+        # mt_open URL  — open URL in web preview panel and dock it
+        mt_open()       { mt_navigate "$1"; _MJ -d "{\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
         # mt_close_preview  — close web preview panel
         mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target"; }
         mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
@@ -184,8 +184,12 @@ public static class MtcliScriptWriter
             param([string]$Url)
             _MJ -d (_MB @{url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
         }
-        # Mt-Open -Url URL  — open URL in web preview panel (alias for Mt-Navigate)
-        function Mt-Open { param([string]$Url) Mt-Navigate -Url $Url }
+        # Mt-Open -Url URL  — open URL in web preview panel and dock it
+        function Mt-Open {
+            param([string]$Url)
+            Mt-Navigate -Url $Url
+            _MJ -d (_MB @{url=$Url}) "$script:_MT/api/browser/open"
+        }
         # Mt-ClosePreview  — close web preview panel
         function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target" }
         function Mt-Reload     { _MJ -d '{"mode":"soft"}' "$script:_MT/api/webpreview/reload" }

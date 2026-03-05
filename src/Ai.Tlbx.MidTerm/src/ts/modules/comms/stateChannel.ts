@@ -25,7 +25,10 @@ import { renderUpdatePanel } from '../updating/checker';
 import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
 import { detachPreview, dockBack } from '../web/webDetach';
-import { setViewportSize } from '../web/webDock';
+import { setViewportSize, openWebPreviewDock } from '../web/webDock';
+import { setWebPreviewTarget } from '../web/webApi';
+import { setActiveUrl, setActiveMode } from '../web/webSessionState';
+import { loadPreview } from '../web/webPanel';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -56,6 +59,7 @@ interface BrowserUiMessage {
   command: string;
   width?: number;
   height?: number;
+  url?: string;
 }
 
 interface StateUpdateMessage {
@@ -108,6 +112,7 @@ import {
   $updateInfo,
   $isMainBrowser,
   $showMainBrowserButton,
+  $webPreviewUrl,
   setSessions,
   getParentSessionId,
 } from '../../stores';
@@ -461,9 +466,24 @@ function handleBrowserUiCommand(msg: BrowserUiMessage): void {
     case 'viewport':
       setViewportSize(msg.width ?? 0, msg.height ?? 0);
       break;
+    case 'open':
+      if (msg.url) {
+        void handleBrowserOpen(msg.url);
+      }
+      break;
     default:
       log.warn(() => `Unknown browser-ui command: ${msg.command}`);
   }
+}
+
+async function handleBrowserOpen(url: string): Promise<void> {
+  const result = await setWebPreviewTarget(url);
+  if (!result?.active) return;
+  setActiveUrl(url);
+  setActiveMode('docked');
+  $webPreviewUrl.set(url);
+  openWebPreviewDock();
+  loadPreview();
 }
 
 /**

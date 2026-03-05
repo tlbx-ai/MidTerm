@@ -223,11 +223,18 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
+        void OnBrowserOpen(string url)
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction { Command = "open", Url = url };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
         if (_browserUiBridge is not null)
         {
             _browserUiBridge.OnDetachRequested += OnBrowserDetach;
             _browserUiBridge.OnDockRequested += OnBrowserDock;
             _browserUiBridge.OnViewportRequested += OnBrowserViewport;
+            _browserUiBridge.OnOpenRequested += OnBrowserOpen;
         }
 
         try
@@ -296,6 +303,7 @@ public sealed class StateWebSocketHandler
                 _browserUiBridge.OnDetachRequested -= OnBrowserDetach;
                 _browserUiBridge.OnDockRequested -= OnBrowserDock;
                 _browserUiBridge.OnViewportRequested -= OnBrowserViewport;
+                _browserUiBridge.OnOpenRequested -= OnBrowserOpen;
             }
 
             sendLock.Dispose();

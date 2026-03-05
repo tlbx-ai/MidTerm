@@ -404,3 +404,5 @@ Helpful commands:
 Environment variables:
 - `VERTEX_AI_PROJECT_ID`
 - `VERTEX_AI_SERVICE_ACCOUNT_JSON`
+
+This terminal runs inside MidTerm (web terminal multiplexer) — see .midterm/AGENTS.md for browser control and tmux workflows.

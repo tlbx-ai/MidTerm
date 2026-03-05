@@ -831,3 +831,5 @@ Keep character descriptions consistent across scenes for visual continuity.
 - `chain_clips.py` — FFmpeg clip merger
 - `features.md`, `features_usecases.md`, `why.md` — Content source material
 - `meme-spots.md` — Meme format ideas
+
+This terminal runs inside MidTerm (web terminal multiplexer) — see .midterm/CLAUDE.md for browser control, tmux split-pane, and DOM inspection tools.

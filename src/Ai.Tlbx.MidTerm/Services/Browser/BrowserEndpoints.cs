@@ -43,6 +43,12 @@ public static class BrowserEndpoints
             uiBridge.RequestViewport(request.Width, request.Height);
             return Results.Ok();
         });
+
+        app.MapPost("/api/browser/open", (Models.WebPreview.WebPreviewTargetRequest request) =>
+        {
+            uiBridge.RequestOpen(request.Url ?? "");
+            return Results.Ok();
+        });
     }
 
     private static void MapCliEndpoint(
