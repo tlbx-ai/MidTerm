@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "8";
+    private const string GuidanceVersion = "9";
 
     private static int _port;
     private static AuthService? _authService;
@@ -184,11 +184,13 @@ public static class MidtermDirectory
         | Command | What it does |
         |---------|-------------|
         | `mt_outline [depth]` | Page structure tree (default depth 4) |
+        | `mt_text [sel]` | Page text content (default: body) |
         | `mt_query <sel> [true]` | DOM elements by CSS selector; `true` = text-only |
         | `mt_attrs <sel>` | Element attributes (no children) |
         | `mt_css <sel> <props>` | Computed CSS (comma-separated property names) |
         | `mt_click <sel>` | Click element |
         | `mt_fill <sel> <val>` | Fill input field |
+        | `mt_submit [sel]` | Submit form (default: first form) |
         | `mt_exec <js>` | Execute JS in page context |
         | `mt_wait <sel> [timeout]` | Wait for element (default 5s) |
         | `mt_log [error\|warn\|all]` | Console log buffer |
@@ -197,7 +199,8 @@ public static class MidtermDirectory
         | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
         | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
         | `mt_navigate <url>` | Set web preview target |
-        | `mt_open <url>` | Open URL in web preview (alias for mt_navigate) |
+        | `mt_url` | Current page URL in web preview |
+        | `mt_open <url>` | Open URL in web preview and dock panel |
         | `mt_close_preview` | Close web preview panel |
         | `mt_reload` | Soft-reload preview |
         | `mt_target` | Current preview target |
@@ -214,9 +217,9 @@ public static class MidtermDirectory
 
         ## Workflow
 
-        1. **Inspect**: `mt_outline` → drill down with `mt_attrs` or `mt_css`
-        2. **Act**: `mt_click`, `mt_fill`, `mt_exec`
-        3. **Verify**: `mt_wait` or `mt_query SEL true`
+        1. **Inspect**: `mt_outline` → drill down with `mt_text` or `mt_attrs`
+        2. **Act**: `mt_fill`, `mt_submit`, `mt_click`, `mt_exec`
+        3. **Verify**: `mt_wait` → `mt_text`
         """;
 
     private const string AgentsMdContent =
@@ -238,7 +241,7 @@ public static class MidtermDirectory
 
         ## Fill and submit a form
 
-        mt_forms → mt_fill "#user" "val" → mt_fill "#pass" "val" → mt_click "button[type=submit]" → mt_wait ".dashboard"
+        mt_forms → mt_fill "#user" "val" → mt_fill "#pass" "val" → mt_submit → mt_wait ".dashboard"
 
         ## Execute JavaScript
 
@@ -269,8 +272,9 @@ public static class MidtermDirectory
         ## Tips
 
         - mt_outline is 10x smaller than mt_query — always start there
-        - mt_query SEL true returns text-only (no HTML tags)
-        - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_click "#submit"
+        - mt_text is shorter than mt_query SEL true — use it for page text
+        - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
+        - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
         - If mt_status shows "disconnected", the web preview panel needs to be open in MidTerm
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
         """;

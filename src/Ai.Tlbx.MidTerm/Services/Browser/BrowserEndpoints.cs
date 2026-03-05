@@ -67,7 +67,7 @@ public static class BrowserEndpoints
             if (args.Count == 0)
             {
                 BrowserLog.Error($"Empty request ({body.Length} bytes)");
-                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  forms [selector]    Form structure and values\n  status\n", statusCode: 400);
+                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  status\n", statusCode: 400);
             }
 
             var command = args[0].ToLowerInvariant();
@@ -231,6 +231,13 @@ public static class BrowserEndpoints
             return ToJsonResult(result);
         });
 
+        app.MapPost("/api/browser/submit", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "submit");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
         app.MapPost("/api/browser/forms", async (BrowserCommandRequest request, HttpContext ctx) =>
         {
             var cmd = WithCommand(request, "forms");
@@ -319,6 +326,11 @@ public static class BrowserEndpoints
             "links" => new BrowserCommandRequest
             {
                 Command = "links"
+            },
+            "submit" => new BrowserCommandRequest
+            {
+                Command = "submit",
+                Selector = GetPositional(args, 1)
             },
             "forms" => new BrowserCommandRequest
             {

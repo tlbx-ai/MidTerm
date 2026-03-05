@@ -64,6 +64,12 @@ public static class MtcliScriptWriter
         mt_css()     { _MJ -d "{\"selector\":\"$(_ME "$1")\",\"value\":\"$(_ME "$2")\"}" "$_MT/api/browser/css"; }
         # mt_log [error|warn|all]  — console log buffer (default: all)
         mt_log()     { local f=${1:-all}; _MJ -d "{\"value\":\"$(_ME "$f")\"}" "$_MT/api/browser/log"; }
+        # mt_text [SELECTOR]  — page text content (default: body)
+        mt_text()    { local s="${1:-body}"; mt_query "$s" true; }
+        # mt_submit [FORM_SELECTOR]  — submit form via JS (default: first form)
+        mt_submit()  { local s="${1:-form}"; _MJ -d "{\"selector\":\"$(_ME "$s")\"}" "$_MT/api/browser/submit"; }
+        # mt_url  — current page URL in web preview
+        mt_url()     { mt_exec "window.location.href"; }
         # mt_links  — all links on page
         mt_links()   { _MJ -d '{}' "$_MT/api/browser/links"; }
         # mt_forms [SELECTOR]  — form structure and values (default: all forms)
@@ -174,6 +180,12 @@ public static class MtcliScriptWriter
         function Mt-Css     { param([string]$Selector, [string]$Props) _MJ -d (_MB @{selector=$Selector; value=$Props}) "$script:_MT/api/browser/css" }
         # Mt-Log [-Filter error|warn|all]  — console log buffer (default: all)
         function Mt-Log     { param([string]$Filter = "all") _MJ -d (_MB @{value=$Filter}) "$script:_MT/api/browser/log" }
+        # Mt-Text [-Selector CSS_SELECTOR]  — page text content (default: body)
+        function Mt-Text    { param([string]$Selector = "body") Mt-Query -Selector $Selector -Text }
+        # Mt-Submit [-Selector FORM_SELECTOR]  — submit form via JS (default: first form)
+        function Mt-Submit  { param([string]$Selector = "form") _MJ -d (_MB @{selector=$Selector}) "$script:_MT/api/browser/submit" }
+        # Mt-Url  — current page URL in web preview
+        function Mt-Url     { Mt-Exec -Code "window.location.href" }
         # Mt-Links  — all links on page
         function Mt-Links   { _MJ -d '{}' "$script:_MT/api/browser/links" }
         # Mt-Forms [-Selector CSS_SELECTOR]  — form structure and values (default: all forms)

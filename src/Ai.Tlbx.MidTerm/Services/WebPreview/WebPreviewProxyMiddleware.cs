@@ -345,6 +345,16 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result=parts.join("\n");
                   res.matchCount=parts.length;
                   break;}
+                case"submit":{
+                  var fsel=msg.selector||"form";
+                  var f=document.querySelector(fsel);
+                  if(!f){res.success=false;res.error="form not found: "+fsel;break;}
+                  rc().finally(function(){
+                    res.result="submitted";
+                    bws.send(JSON.stringify(res));
+                    setTimeout(function(){try{f.requestSubmit();}catch(e){f.submit();}},50);
+                  });
+                  return;}
                 case"forms":{
                   var fsel=msg.selector||"form";
                   var forms=document.querySelectorAll(fsel);
