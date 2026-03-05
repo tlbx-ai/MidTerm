@@ -386,6 +386,12 @@ public sealed partial class WebPreviewProxyMiddleware
                   }
                   res.result=parts.join("\n---\n");
                   break;}
+                case"url":{
+                  var path=location.pathname;
+                  if(path.indexOf(P+"/")==0)path=path.substring(P.length);
+                  else if(path===P)path="/";
+                  res.result=(window.__mtTargetOrigin||"")+path+location.search+location.hash;
+                  break;}
                 default:res.success=false;res.error="unknown command: "+msg.command;
               }
             }catch(e){res.success=false;res.error=e.message||String(e);}
@@ -743,7 +749,9 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
-        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">" + UrlRewriteScript, 1);
+        var targetOrigin = _service.TargetUri?.GetLeftPart(UriPartial.Authority) ?? "";
+        var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
+        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + UrlRewriteScript, 1);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");

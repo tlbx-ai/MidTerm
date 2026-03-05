@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "9";
+    private const string GuidanceVersion = "10";
 
     private static int _port;
     private static AuthService? _authService;
@@ -175,17 +175,17 @@ public static class MidtermDirectory
 
         **Rules:**
         - Start with `mt_outline` (10x smaller than `mt_query`)
-        - Use `mt_query SELECTOR true` for text-only output
+        - Use `mt_query SELECTOR --text` for text-only output
         - Batch JS reads: `mt_exec "JSON.stringify({a: expr1, b: expr2})"`
         - After actions, verify with `mt_wait` or `mt_query`, not `mt_outline`
         - Check `mt_log error` after unexpected behavior
-        - All commands return JSON. Auth tokens in mtcli scripts are ephemeral and machine-local.
+        - Browser commands return plain text. Auth tokens in mtcli scripts are ephemeral and machine-local.
 
         | Command | What it does |
         |---------|-------------|
         | `mt_outline [depth]` | Page structure tree (default depth 4) |
         | `mt_text [sel]` | Page text content (default: body) |
-        | `mt_query <sel> [true]` | DOM elements by CSS selector; `true` = text-only |
+        | `mt_query <sel> [--text]` | DOM elements by CSS selector; `--text` = text-only |
         | `mt_attrs <sel>` | Element attributes (no children) |
         | `mt_css <sel> <props>` | Computed CSS (comma-separated property names) |
         | `mt_click <sel>` | Click element |
@@ -199,12 +199,14 @@ public static class MidtermDirectory
         | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
         | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
         | `mt_navigate <url>` | Set web preview target |
-        | `mt_url` | Current page URL in web preview |
+        | `mt_url` | Upstream page URL (not proxy URL) |
         | `mt_open <url>` | Open URL in web preview and dock panel |
         | `mt_close_preview` | Close web preview panel |
         | `mt_reload` | Soft-reload preview |
+        | `mt_hardreload` | Clear cookies + reload (fresh session) |
         | `mt_target` | Current preview target |
-        | `mt_cookies` | Server-side cookie jar |
+        | `mt_cookies` | All cookies in proxy jar |
+        | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
         | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
         | `mt_sessions` | List terminal sessions |
         | `mt_buffer <id>` | Terminal buffer content |
@@ -250,7 +252,11 @@ public static class MidtermDirectory
 
         ## Open web preview
 
-        mt_open "http://localhost:3000" → mt_outline → mt_query ".error" true
+        mt_open "http://localhost:3000" → mt_outline → mt_query ".error" --text
+
+        ## Fresh session (clear cookies + reload)
+
+        mt_hardreload → mt_wait "input[type=password]" → mt_url
 
         ## Create a side terminal
 
@@ -263,7 +269,7 @@ public static class MidtermDirectory
 
         ## Responsive testing
 
-        mt_viewport 375 667 → mt_outline → mt_query ".menu" true → mt_viewport 0 0
+        mt_viewport 375 667 → mt_outline → mt_query ".menu" --text → mt_viewport 0 0
 
         ## Detach/dock preview
 
@@ -272,7 +278,7 @@ public static class MidtermDirectory
         ## Tips
 
         - mt_outline is 10x smaller than mt_query — always start there
-        - mt_text is shorter than mt_query SEL true — use it for page text
+        - mt_text is shorter than mt_query SEL --text — use it for page text
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
         - If mt_status shows "disconnected", the web preview panel needs to be open in MidTerm
