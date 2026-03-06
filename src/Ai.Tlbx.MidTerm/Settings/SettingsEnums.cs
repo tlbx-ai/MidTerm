@@ -42,6 +42,12 @@ public enum ClipboardShortcutsSetting
     [JsonStringEnumMemberName("unix")] Unix
 }
 
+public enum TerminalEnterModeSetting
+{
+    [JsonStringEnumMemberName("default")] Default,
+    [JsonStringEnumMemberName("shiftEnterLineFeed")] ShiftEnterLineFeed
+}
+
 public enum KeyProtectionMethod
 {
     [JsonStringEnumMemberName("osProtected")] OsProtected,

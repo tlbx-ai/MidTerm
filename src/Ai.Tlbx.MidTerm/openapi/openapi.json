@@ -2146,7 +2146,9 @@
           "copyOnSelect",
           "rightClickPaste",
           "clipboardShortcuts",
+          "terminalEnterMode",
           "scrollbackProtection",
+          "batchedTerminalUpdates",
           "inputMode",
           "fileRadar",
           "tmuxCompatibility",
@@ -2240,7 +2242,13 @@
           "clipboardShortcuts": {
             "$ref": "#/components/schemas/ClipboardShortcutsSetting"
           },
+          "terminalEnterMode": {
+            "$ref": "#/components/schemas/TerminalEnterModeSetting"
+          },
           "scrollbackProtection": {
+            "type": "boolean"
+          },
+          "batchedTerminalUpdates": {
             "type": "boolean"
           },
           "inputMode": {
@@ -2771,6 +2779,12 @@
           "solarizedDark",
           "solarizedLight",
           "matrix"
+        ]
+      },
+      "TerminalEnterModeSetting": {
+        "enum": [
+          "default",
+          "shiftEnterLineFeed"
         ]
       },
       "ThemeSetting": {

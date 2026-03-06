@@ -169,10 +169,12 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-copy-on-select', settings.copyOnSelect);
   setElementChecked('setting-right-click-paste', settings.rightClickPaste);
   setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts);
+  setElementValue('setting-terminal-enter-mode', settings.terminalEnterMode);
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling);
   setElementValue('setting-scrollbar-style', settings.scrollbarStyle);
   setElementChecked('setting-webgl', settings.useWebGL);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection);
+  setElementChecked('setting-batched-terminal-updates', settings.batchedTerminalUpdates);
   setElementValue('setting-input-mode', settings.inputMode);
   setElementChecked('setting-file-radar', settings.fileRadar);
   setElementChecked('setting-manager-bar', settings.managerBarEnabled);
@@ -310,11 +312,11 @@ export function saveAllSettings(): void {
     defaultWorkingDirectory: getElementValue('setting-working-dir', ''),
     fontSize: parseInt(getElementValue('setting-font-size', '14'), 10) || 14,
     fontFamily: getElementValue('setting-font-family', 'Cascadia Code'),
-    cursorStyle: getElementValue('setting-cursor-style', 'bar') as CursorStyleSetting,
+    cursorStyle: getElementValue('setting-cursor-style', 'block') as CursorStyleSetting,
     cursorBlink: getElementChecked('setting-cursor-blink'),
     cursorInactiveStyle: getElementValue(
       'setting-cursor-inactive',
-      'outline',
+      'none',
     ) as CursorInactiveStyleSetting,
     theme: getElementValue('setting-theme', 'dark') as ThemeSetting,
     terminalColorScheme: getElementValue(
@@ -334,7 +336,12 @@ export function saveAllSettings(): void {
       'setting-clipboard-shortcuts',
       'auto',
     ) as ClipboardShortcutsSetting,
+    terminalEnterMode: getElementValue(
+      'setting-terminal-enter-mode',
+      'default',
+    ) as MidTermSettingsUpdate['terminalEnterMode'],
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
+    batchedTerminalUpdates: getElementChecked('setting-batched-terminal-updates'),
     inputMode: getElementValue('setting-input-mode', 'keyboard'),
     fileRadar: getElementChecked('setting-file-radar'),
     managerBarEnabled: getElementChecked('setting-manager-bar'),

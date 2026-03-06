@@ -487,7 +487,7 @@
                                     </div>
                                     <div class="setting-row">
                                         <label for="setting-cursor-blink" data-i18n="settings.appearance.cursorBlink">Cursor Blink</label>
-                                        <input type="checkbox" id="setting-cursor-blink" checked />
+                                        <input type="checkbox" id="setting-cursor-blink" />
                                     </div>
                                     <div class="setting-row">
                                         <label for="setting-cursor-inactive" data-i18n="settings.appearance.cursorUnfocused">Cursor (Unfocused)</label>
@@ -575,6 +575,13 @@
                                         </select>
                                     </div>
                                     <div class="setting-row">
+                                        <label for="setting-terminal-enter-mode" data-i18n="settings.behavior.terminalEnterMode">Enter Key Behavior</label>
+                                        <select id="setting-terminal-enter-mode">
+                                            <option value="default" data-i18n="settings.options.terminalEnterDefault">Default (Shift+Enter sends Enter)</option>
+                                            <option value="shiftEnterLineFeed" data-i18n="settings.options.terminalEnterShiftLineFeed">Shift+Enter sends line feed (\n)</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row">
                                         <label for="setting-smooth-scrolling" data-i18n="settings.behavior.smoothScrolling">Smooth Scrolling</label>
                                         <input type="checkbox" id="setting-smooth-scrolling" />
                                     </div>
@@ -590,6 +597,10 @@
                                     <div class="setting-row">
                                         <label for="setting-scrollback-protection" data-i18n="settings.behavior.scrollbackProtection">Claude Code scrollback glitch protection</label>
                                         <input type="checkbox" id="setting-scrollback-protection" />
+                                    </div>
+                                    <div class="setting-row">
+                                        <label for="setting-batched-terminal-updates" data-i18n="settings.behavior.batchedTerminalUpdates">Batched Terminal Updates</label>
+                                        <input type="checkbox" id="setting-batched-terminal-updates" />
                                     </div>
                                     <div class="setting-row">
                                         <label for="setting-file-radar" title="Detects file paths in terminal output and makes them clickable. Click to view files remotely." data-i18n="settings.behavior.fileRadar">File Radar</label>

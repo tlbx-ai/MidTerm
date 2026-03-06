@@ -1985,7 +1985,9 @@ export interface components {
       copyOnSelect: boolean;
       rightClickPaste: boolean;
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
+      terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
+      batchedTerminalUpdates: boolean;
       inputMode: string;
       fileRadar: boolean;
       tmuxCompatibility: boolean;
@@ -2135,6 +2137,8 @@ export interface components {
       | 'solarizedDark'
       | 'solarizedLight'
       | 'matrix';
+    /** @enum {unknown} */
+    TerminalEnterModeSetting: 'default' | 'shiftEnterLineFeed';
     /** @enum {unknown} */
     ThemeSetting: 'dark' | 'light' | 'solarizedDark' | 'solarizedLight';
     TtyHostInfo: {

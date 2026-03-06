@@ -195,13 +195,14 @@ export const THEMES: Record<string, TerminalTheme> = {
 export const DEFAULT_SETTINGS = {
   fontSize: 14,
   scrollbackLines: 10000,
-  cursorStyle: 'bar' as const,
-  cursorBlink: true,
+  cursorStyle: 'block' as const,
+  cursorBlink: false,
   theme: 'dark' as const,
   bellStyle: 'notification' as const,
   copyOnSelect: false,
   rightClickPaste: true,
   clipboardShortcuts: 'auto' as const,
+  terminalEnterMode: 'default' as const,
 };
 
 // =============================================================================

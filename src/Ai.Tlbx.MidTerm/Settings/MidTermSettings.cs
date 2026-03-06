@@ -27,9 +27,9 @@ public sealed class MidTermSettings
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
     public string FontFamily { get; set; } = "Cascadia Code";
-    public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Bar;
-    public bool CursorBlink { get; set; } = true;
-    public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.Outline;
+    public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
+    public bool CursorBlink { get; set; } = false;
+    public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
     public TerminalColorSchemeSetting TerminalColorScheme { get; set; } = TerminalColorSchemeSetting.Auto;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
@@ -44,7 +44,9 @@ public sealed class MidTermSettings
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
+    public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.Default;
     public bool ScrollbackProtection { get; set; } = false;
+    public bool BatchedTerminalUpdates { get; set; } = false;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)
     public string InputMode { get; set; } = "keyboard";

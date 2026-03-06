@@ -51,6 +51,7 @@ import {
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
+import { getTerminalEnterOverride } from './enterBehavior';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -186,9 +187,9 @@ export function getTerminalOptions(): ITerminalOptions {
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
 
   const options: ITerminalOptions = {
-    cursorBlink: currentSettings?.cursorBlink ?? true,
-    cursorStyle: currentSettings?.cursorStyle ?? 'bar',
-    cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'outline',
+    cursorBlink: currentSettings?.cursorBlink ?? false,
+    cursorStyle: currentSettings?.cursorStyle ?? 'block',
+    cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'none',
     fontFamily: `'${fontFamily}', ${TERMINAL_FONT_STACK}`,
     fontSize: fontSize,
     letterSpacing: 0,
@@ -543,9 +544,12 @@ export function setupTerminalEvents(
     // F12: let browser handle it (open DevTools)
     if (e.key === 'F12') return false;
 
-    // Ctrl+Enter: Send LF (\n) instead of CR (\r) for TUI apps that use it for line breaks
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === 'Enter') {
-      sendInput(sessionId, '\n');
+    const enterOverride = getTerminalEnterOverride(
+      e,
+      $currentSettings.get()?.terminalEnterMode ?? 'default',
+    );
+    if (enterOverride !== null) {
+      sendInput(sessionId, enterOverride);
       return false;
     }
 

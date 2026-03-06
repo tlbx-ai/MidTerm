@@ -57,6 +57,7 @@ import {
   $muxWsConnected,
   $muxHasConnected,
   $activeSessionId,
+  $currentSettings,
   $stateWsConnected,
   $dataLossDetected,
 } from '../../stores';
@@ -336,10 +337,18 @@ interface OutputFrameItem {
   compressed: boolean;
 }
 
+interface ParsedOutputFrame {
+  cols: number;
+  rows: number;
+  data: Uint8Array;
+}
+
 const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const COMPACT_THRESHOLD = 1000;
 const YIELD_BUDGET_MS = 8;
+const SYNC_OUTPUT_START = new Uint8Array([0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x32, 0x36, 0x68]);
+const SYNC_OUTPUT_END = new Uint8Array([0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x32, 0x36, 0x6c]);
 
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
@@ -375,6 +384,62 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   void processOutputQueue();
 }
 
+function isBatchedTerminalUpdatesEnabled(): boolean {
+  return $currentSettings.get()?.batchedTerminalUpdates === true;
+}
+
+function containsSynchronizedOutputControl(data: Uint8Array): boolean {
+  for (let i = 0, end = data.length - 8; i <= end; i++) {
+    if (
+      data[i] === 0x1b &&
+      data[i + 1] === 0x5b &&
+      data[i + 2] === 0x3f &&
+      data[i + 3] === 0x32 &&
+      data[i + 4] === 0x30 &&
+      data[i + 5] === 0x32 &&
+      data[i + 6] === 0x36
+    ) {
+      const mode = data[i + 7];
+      if (mode === 0x68 || mode === 0x6c) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function concatUint8Arrays(parts: Uint8Array[], totalLength: number): Uint8Array {
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const part of parts) {
+    combined.set(part, offset);
+    offset += part.length;
+  }
+
+  return combined;
+}
+
+function maybeWrapSynchronizedOutput(
+  state: TerminalState,
+  data: Uint8Array,
+  frameCount: number,
+): Uint8Array {
+  if (frameCount < 2) {
+    return data;
+  }
+
+  if (state.terminal.modes.synchronizedOutputMode || containsSynchronizedOutputControl(data)) {
+    return data;
+  }
+
+  return concatUint8Arrays(
+    [SYNC_OUTPUT_START, data, SYNC_OUTPUT_END],
+    SYNC_OUTPUT_START.length + data.length + SYNC_OUTPUT_END.length,
+  );
+}
+
 async function processOutputQueue(): Promise<void> {
   if (processingQueue) return;
   processingQueue = true;
@@ -388,7 +453,7 @@ async function processOutputQueue(): Promise<void> {
         const item = outputQueue[queueIndex];
         if (!item || item.sessionId !== activeId) break;
         queueIndex++;
-        await processOneFrame(item);
+        await processQueuedFrames(item, isBatchedTerminalUpdatesEnabled());
         if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
       }
 
@@ -398,7 +463,7 @@ async function processOutputQueue(): Promise<void> {
         const item = outputQueue[queueIndex];
         if (item && item.sessionId === $activeSessionId.get()) break;
         queueIndex++;
-        if (item) await processOneFrame(item);
+        if (item) await processQueuedFrames(item, isBatchedTerminalUpdatesEnabled());
         if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
 
         if (performance.now() - batchStart > YIELD_BUDGET_MS) {
@@ -415,52 +480,84 @@ async function processOutputQueue(): Promise<void> {
 }
 
 /**
- * Process a single frame - decompress if needed, then write to terminal.
+ * Parse a single frame - decompress if needed, then return terminal payload bytes.
  */
-async function processOneFrame(item: OutputFrameItem): Promise<void> {
-  try {
-    let cols: number;
-    let rows: number;
-    let data: Uint8Array;
+async function parseQueuedFrame(item: OutputFrameItem): Promise<ParsedOutputFrame> {
+  if (item.compressed) {
+    const frame = await parseCompressedOutputFrame(item.payload);
+    return { cols: frame.cols, rows: frame.rows, data: frame.data };
+  }
 
-    if (item.compressed) {
-      const frame = await parseCompressedOutputFrame(item.payload);
-      cols = frame.cols;
-      rows = frame.rows;
-      data = frame.data;
-    } else {
-      const frame = parseOutputFrame(item.payload);
-      cols = frame.cols;
-      rows = frame.rows;
-      data = frame.data;
+  const frame = parseOutputFrame(item.payload);
+  return { cols: frame.cols, rows: frame.rows, data: frame.data };
+}
+
+function bufferPendingFrame(sessionId: string, cols: number, rows: number, data: Uint8Array): void {
+  if (data.length <= 0) {
+    return;
+  }
+
+  const bufferedPayload = new Uint8Array(4 + data.length);
+  bufferedPayload[0] = cols & 0xff;
+  bufferedPayload[1] = (cols >> 8) & 0xff;
+  bufferedPayload[2] = rows & 0xff;
+  bufferedPayload[3] = (rows >> 8) & 0xff;
+  bufferedPayload.set(data, 4);
+
+  let frames = pendingOutputFrames.get(sessionId);
+  if (!frames) {
+    frames = [];
+    pendingOutputFrames.set(sessionId, frames);
+  }
+  if (frames.length >= MAX_PENDING_FRAMES_PER_SESSION) {
+    log.warn(() => `Pending frames overflow for ${sessionId}, requesting buffer refresh`);
+    sessionsNeedingResync.add(sessionId);
+    pendingOutputFrames.delete(sessionId);
+    requestBufferRefresh(sessionId);
+    return;
+  }
+
+  frames.push(bufferedPayload);
+}
+
+async function processQueuedFrames(item: OutputFrameItem, batchingEnabled: boolean): Promise<void> {
+  try {
+    const frames: ParsedOutputFrame[] = [await parseQueuedFrame(item)];
+    const sessionId = item.sessionId;
+
+    if (batchingEnabled) {
+      while (queueIndex < outputQueue.length) {
+        const next = outputQueue[queueIndex];
+        if (!next || next.sessionId !== sessionId) {
+          break;
+        }
+
+        queueIndex++;
+        frames.push(await parseQueuedFrame(next));
+      }
     }
 
-    const state = sessionTerminals.get(item.sessionId);
+    const state = sessionTerminals.get(sessionId);
     if (state && state.opened) {
-      writeToTerminal(item.sessionId, state, cols, rows, data);
-    } else if (data.length > 0) {
-      // Buffer for later replay
-      const bufferedPayload = new Uint8Array(4 + data.length);
-      bufferedPayload[0] = cols & 0xff;
-      bufferedPayload[1] = (cols >> 8) & 0xff;
-      bufferedPayload[2] = rows & 0xff;
-      bufferedPayload[3] = (rows >> 8) & 0xff;
-      bufferedPayload.set(data, 4);
-
-      let frames = pendingOutputFrames.get(item.sessionId);
-      if (!frames) {
-        frames = [];
-        pendingOutputFrames.set(item.sessionId, frames);
-      }
-      if (frames.length >= MAX_PENDING_FRAMES_PER_SESSION) {
-        // Overflow: partial data is useless for TUI apps, request immediate resync
-        log.warn(() => `Pending frames overflow for ${item.sessionId}, requesting buffer refresh`);
-        sessionsNeedingResync.add(item.sessionId);
-        pendingOutputFrames.delete(item.sessionId);
-        requestBufferRefresh(item.sessionId);
+      const lastFrame = frames[frames.length - 1];
+      if (!lastFrame) {
         return;
       }
-      frames.push(bufferedPayload);
+
+      const parts = frames.filter((frame) => frame.data.length > 0).map((frame) => frame.data);
+      const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+      const mergedData =
+        totalLength > 0 ? concatUint8Arrays(parts, totalLength) : new Uint8Array(0);
+      const finalData = batchingEnabled
+        ? maybeWrapSynchronizedOutput(state, mergedData, frames.length)
+        : mergedData;
+
+      writeToTerminal(sessionId, state, lastFrame.cols, lastFrame.rows, finalData);
+      return;
+    }
+
+    for (const frame of frames) {
+      bufferPendingFrame(sessionId, frame.cols, frame.rows, frame.data);
     }
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
