@@ -621,7 +621,7 @@ When the user asks to "do a dev release" (minor/major/patch), follow this exact 
 git branch --show-current   # Must be "dev". If not, switch: git checkout dev
 git status --short          # Check for uncommitted changes
 ```
-If there are uncommitted changes: commit them first (stage specific files, draft message from diff, get user approval).
+If there are uncommitted changes: commit them first with a good, specific message and continue the release flow. A user request like "do a patch release" or "do a dev release" already implies the full workflow: inspect the diff, create the commit yourself, push, draft release title/notes, and run `release-dev.ps1` without stopping just because a commit is needed.
 
 **Step 2 — Integrate remote changes**
 ```powershell

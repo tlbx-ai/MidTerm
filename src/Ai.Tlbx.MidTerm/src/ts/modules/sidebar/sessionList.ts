@@ -8,7 +8,13 @@
 import type { Session, ProcessState } from '../../types';
 import { t } from '../i18n';
 import { pendingSessions, dom } from '../../state';
-import { $settingsOpen, $activeSessionId, $sessionList, isChildSession } from '../../stores';
+import {
+  $settingsOpen,
+  $activeSessionId,
+  $sessionList,
+  getSession,
+  isChildSession,
+} from '../../stores';
 import { icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import {
@@ -30,8 +36,7 @@ import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
  * full paths, quoted command lines, and command arguments.
  */
 function isShellProcess(processName: string, sessionId: string): boolean {
-  const sessions = $sessionList.get();
-  const session = sessions.find((s) => s.id === sessionId);
+  const session = getSession(sessionId);
   if (!session?.shellType) return false;
   const normalizedProcess = normalizeExecutableName(processName);
   const normalizedShell = normalizeExecutableName(session.shellType);
@@ -166,8 +171,7 @@ function renderProcessTitle(
     titleRow.appendChild(cwdSpan);
   } else {
     // Fallback: show shell type while process info is not yet available
-    const sessions = $sessionList.get();
-    const session = sessions.find((s) => s.id === sessionId);
+    const session = getSession(sessionId);
     const fallback = session?.shellType || t('session.terminal');
     const title = document.createElement('span');
     title.className = 'session-title truncate';
@@ -557,17 +561,26 @@ export function renderSessionList(): void {
   const sessionList = dom.sessionList;
   const sessions = getSidebarDisplaySessions();
   const activeSessionId = $activeSessionId.get();
+  const existingItems = Array.from(sessionList.querySelectorAll<HTMLElement>('.session-item'));
+  const existingItemsById = new Map<string, HTMLElement>();
+
+  existingItems.forEach((item) => {
+    const itemId = item.dataset.sessionId;
+    if (itemId) {
+      existingItemsById.set(itemId, item);
+    }
+  });
 
   // Build set of current session IDs
   const newIds = new Set(sessions.map((s) => s.id));
 
   // Remove items that no longer exist
-  const existingItems = sessionList.querySelectorAll('.session-item');
   existingItems.forEach((item) => {
-    const itemId = (item as HTMLElement).dataset.sessionId;
+    const itemId = item.dataset.sessionId;
     if (itemId && !newIds.has(itemId)) {
       unregisterHeatCanvas(itemId);
       item.remove();
+      existingItemsById.delete(itemId);
     }
   });
 
@@ -575,7 +588,7 @@ export function renderSessionList(): void {
   let previousElement: Element | null = null;
   sessions.forEach((session) => {
     const id = session.id;
-    const existingItem = sessionList.querySelector(`[data-session-id="${id}"]`);
+    const existingItem = existingItemsById.get(id);
     const isPending = pendingSessions.has(id);
 
     if (existingItem) {
@@ -585,7 +598,7 @@ export function renderSessionList(): void {
       existingItem.classList.toggle('in-layout', isSessionInLayout(id));
       const isChild = isChildSession(id);
       existingItem.classList.toggle('tmux-child', isChild);
-      const htmlItem = existingItem as HTMLElement;
+      const htmlItem = existingItem;
       if (isChild) {
         htmlItem.dataset.parentId = session.parentSessionId ?? '';
       } else {
@@ -615,10 +628,10 @@ export function renderSessionList(): void {
   });
 
   // Mark last child in each tmux group
-  const allItems = sessionList.querySelectorAll('.session-item');
+  const allItems = sessionList.querySelectorAll<HTMLElement>('.session-item');
   allItems.forEach((item) => {
-    (item as HTMLElement).classList.remove('tmux-last-child');
-    (item as HTMLElement).classList.remove(
+    item.classList.remove('tmux-last-child');
+    item.classList.remove(
       'layout-group-start',
       'layout-group-middle',
       'layout-group-end',
@@ -626,36 +639,35 @@ export function renderSessionList(): void {
     );
   });
   allItems.forEach((item, idx) => {
-    if ((item as HTMLElement).classList.contains('tmux-child')) {
-      const nextItem = allItems[idx + 1] as HTMLElement | undefined;
+    if (item.classList.contains('tmux-child')) {
+      const nextItem = allItems[idx + 1];
       if (
         !nextItem ||
         !nextItem.classList.contains('tmux-child') ||
-        nextItem.dataset.parentId !== (item as HTMLElement).dataset.parentId
+        nextItem.dataset.parentId !== item.dataset.parentId
       ) {
-        (item as HTMLElement).classList.add('tmux-last-child');
+        item.classList.add('tmux-last-child');
       }
     }
   });
 
   // Mark contiguous layout groups in sidebar order for explicit visual grouping
   allItems.forEach((item, idx) => {
-    const current = item as HTMLElement;
-    if (!current.classList.contains('in-layout')) return;
+    if (!item.classList.contains('in-layout')) return;
 
-    const prev = allItems[idx - 1] as HTMLElement | undefined;
-    const next = allItems[idx + 1] as HTMLElement | undefined;
+    const prev = allItems[idx - 1];
+    const next = allItems[idx + 1];
     const prevInLayout = !!prev?.classList.contains('in-layout');
     const nextInLayout = !!next?.classList.contains('in-layout');
 
     if (!prevInLayout && !nextInLayout) {
-      current.classList.add('layout-group-single');
+      item.classList.add('layout-group-single');
     } else if (!prevInLayout) {
-      current.classList.add('layout-group-start');
+      item.classList.add('layout-group-start');
     } else if (!nextInLayout) {
-      current.classList.add('layout-group-end');
+      item.classList.add('layout-group-end');
     } else {
-      current.classList.add('layout-group-middle');
+      item.classList.add('layout-group-middle');
     }
   });
 }
