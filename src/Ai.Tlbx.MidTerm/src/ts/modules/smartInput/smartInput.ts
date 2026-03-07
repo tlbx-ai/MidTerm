@@ -84,6 +84,9 @@ export function showSmartInput(): void {
   overlay?.classList.add('visible');
   activeTextarea = overlay?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
   activeMicBtn = overlay?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
+  if (activeTextarea) {
+    resizeTextarea(activeTextarea);
+  }
   embedTouchController(overlay);
   activeTextarea?.focus();
 }
@@ -100,6 +103,9 @@ function showDockedBar(): void {
   dockedBar?.classList.add('visible');
   activeTextarea = dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
   activeMicBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
+  if (activeTextarea) {
+    resizeTextarea(activeTextarea);
+  }
   embedTouchController(dockedBar);
 }
 

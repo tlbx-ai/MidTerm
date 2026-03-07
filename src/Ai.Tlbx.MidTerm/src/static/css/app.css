@@ -5791,6 +5791,8 @@ html, body {
     max-height: calc(1.4em * 5 + 16px);
     overflow-y: hidden;
     outline: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
 .smart-input-textarea:focus {
@@ -5799,6 +5801,33 @@ html, body {
 
 .smart-input-textarea::placeholder {
     color: var(--text-muted);
+}
+
+.smart-input-textarea::-webkit-scrollbar {
+    width: 8px;
+}
+
+.smart-input-textarea::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.smart-input-textarea::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.smart-input-textarea::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.32);
+    background-clip: padding-box;
+}
+
+.smart-input-textarea::-webkit-scrollbar-button,
+.smart-input-textarea::-webkit-scrollbar-corner {
+    display: none;
+    width: 0;
+    height: 0;
 }
 
 .smart-input-mic-btn,
@@ -7357,7 +7386,12 @@ html, body {
     max-width: 300px;
     padding: 0 8px;
     user-select: text;
-    cursor: text;
+    cursor: copy;
+    transition: color 0.15s;
+}
+
+.session-cwd:hover {
+    color: var(--text-secondary);
 }
 
 .ide-bar-actions {

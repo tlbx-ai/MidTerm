@@ -46,6 +46,14 @@ export function createTabBar(
 
   const cwdSpan = document.createElement('span');
   cwdSpan.className = 'session-cwd';
+  cwdSpan.addEventListener('click', () => {
+    const cwd = cwdSpan.textContent?.trim();
+    if (!cwd || typeof navigator.clipboard === 'undefined') {
+      return;
+    }
+
+    void navigator.clipboard.writeText(cwd).catch(() => {});
+  });
   bar.appendChild(cwdSpan);
 
   for (const [tabId, label] of Object.entries(getTabLabels())) {
@@ -113,6 +121,7 @@ export function updateCwd(bar: HTMLDivElement, cwd: string): void {
   const cwdSpan = bar.querySelector('.session-cwd');
   if (cwdSpan) {
     cwdSpan.textContent = cwd;
+    cwdSpan.setAttribute('title', cwd);
   }
 }
 
