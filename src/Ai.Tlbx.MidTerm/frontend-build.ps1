@@ -30,6 +30,7 @@ $StaticSource = Join-Path $PSScriptRoot "src/static"
 $OutFile = Join-Path $WwwRoot "js/terminal.min.js"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $NodeModulesRoot = Join-Path $RepoRoot "node_modules"
+$AssetVersionPlaceholder = "__MIDTERM_ASSET_VERSION__"
 
 # ===========================================
 # PRECHECK: Required toolchain/dependencies
@@ -307,6 +308,10 @@ $totalSaved = 0
 function Process-TextFile {
     param([string]$Source, [string]$Destination, [bool]$Compress)
 
+    $content = [System.IO.File]::ReadAllText($Source)
+    $processedContent = $content.Replace($AssetVersionPlaceholder, $Version)
+    $tempPath = $null
+
     if ($Compress) {
         $dstPath = "$Destination.br"
         $srcStream = $null
@@ -314,7 +319,9 @@ function Process-TextFile {
         $brotli = $null
 
         try {
-            $srcStream = [System.IO.File]::OpenRead($Source)
+            $tempPath = [System.IO.Path]::GetTempFileName()
+            [System.IO.File]::WriteAllText($tempPath, $processedContent, [System.Text.Encoding]::UTF8)
+            $srcStream = [System.IO.File]::OpenRead($tempPath)
             $dstStream = [System.IO.File]::Create($dstPath)
             $brotli = [System.IO.Compression.BrotliStream]::new(
                 $dstStream,
@@ -323,7 +330,7 @@ function Process-TextFile {
             $srcStream.CopyTo($brotli)
             $brotli.Flush()
 
-            $srcSize = (Get-Item $Source).Length
+            $srcSize = [System.Text.Encoding]::UTF8.GetByteCount($processedContent)
             $dstSize = (Get-Item $dstPath).Length
             $reduction = [math]::Round((1 - $dstSize / $srcSize) * 100)
 
@@ -333,10 +340,11 @@ function Process-TextFile {
             if ($null -ne $brotli) { $brotli.Dispose() }
             if ($null -ne $dstStream) { $dstStream.Dispose() }
             if ($null -ne $srcStream) { $srcStream.Dispose() }
+            if ($null -ne $tempPath -and (Test-Path $tempPath)) { Remove-Item $tempPath -Force }
         }
     }
     else {
-        Copy-Item $Source -Destination $Destination -Force
+        [System.IO.File]::WriteAllText($Destination, $processedContent, [System.Text.Encoding]::UTF8)
         return @{ Saved = 0; Reduction = 0 }
     }
 }
