@@ -173,7 +173,7 @@ jobs:
           cp version.json staging/${{ matrix.rid }}/
 
           if [[ "${{ needs.prepare.outputs.is_web_only }}" == "true" ]]; then
-            PREVIOUS_URL=$(gh api "repos/${{ github.repository }}/releases?per_page=20" --jq '.[] | select(.tag_name != env.CURRENT_TAG) | .assets[]? | select(.name == env.ASSET_NAME) | .browser_download_url' | head -n1)
+            PREVIOUS_URL=$(gh api "repos/${{ github.repository }}/releases?per_page=20" --jq 'first(.[] | select(.tag_name != env.CURRENT_TAG) | .assets[]? | select(.name == env.ASSET_NAME) | .browser_download_url) // ""')
             if [[ -z "$PREVIOUS_URL" ]]; then
               echo "Could not find previous asset $ASSET_NAME" >&2
               exit 1
