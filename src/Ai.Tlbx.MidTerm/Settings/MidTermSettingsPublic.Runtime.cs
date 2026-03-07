@@ -20,6 +20,11 @@ public sealed partial class MidTermSettingsPublic
             HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
             Theme = settings.Theme,
             TerminalColorScheme = settings.TerminalColorScheme,
+            BackgroundImageEnabled = settings.BackgroundImageEnabled,
+            BackgroundImageFileName = settings.BackgroundImageFileName,
+            BackgroundImageRevision = settings.BackgroundImageRevision,
+            BackgroundImageFit = settings.BackgroundImageFit,
+            UiTransparency = settings.UiTransparency,
             TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
@@ -64,6 +69,12 @@ public sealed partial class MidTermSettingsPublic
         settings.HideCursorOnInputBursts = HideCursorOnInputBursts;
         settings.Theme = Theme;
         settings.TerminalColorScheme = TerminalColorScheme;
+        settings.BackgroundImageEnabled = BackgroundImageEnabled;
+        if (BackgroundImageFit is "cover" or "contain")
+        {
+            settings.BackgroundImageFit = BackgroundImageFit;
+        }
+        settings.UiTransparency = Math.Clamp(UiTransparency, 0, 85);
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
         settings.SmoothScrolling = SmoothScrolling;
@@ -104,6 +115,7 @@ public sealed partial class MidTermSettingsPublic
         // RunAsUserSid is derived server-side from RunAsUser (Windows only)
         // AuthenticationEnabled is managed by the auth endpoint
         // CertificatePath is set via install/CLI
+        // Background image metadata is managed by the background image endpoints
         // These fields are read-only in the GET response and ignored on PUT.
     }
 }

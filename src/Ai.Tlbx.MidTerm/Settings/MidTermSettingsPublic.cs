@@ -19,6 +19,11 @@ public sealed partial class MidTermSettingsPublic
     public bool HideCursorOnInputBursts { get; set; } = false;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
     public TerminalColorSchemeSetting TerminalColorScheme { get; set; } = TerminalColorSchemeSetting.Auto;
+    public bool BackgroundImageEnabled { get; set; } = false;
+    public string? BackgroundImageFileName { get; set; }
+    public long BackgroundImageRevision { get; set; } = 0;
+    public string BackgroundImageFit { get; set; } = "cover";
+    public int UiTransparency { get; set; } = 0;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;

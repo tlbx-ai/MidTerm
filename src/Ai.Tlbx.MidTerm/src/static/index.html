@@ -1,8 +1,11 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>MidTerm</title>
 
     <!-- Favicons -->
@@ -15,144 +18,1744 @@
     <meta name="apple-mobile-web-app-title" content="MidTerm" />
 
     <!-- Preload terminal fonts for instant availability -->
-    <link rel="preload" href="fonts/CascadiaCode-Regular.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link
+      rel="preload"
+      href="fonts/CascadiaCode-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="fonts/JetBrainsMono-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="preload" href="fonts/Terminus.woff2" as="font" type="font/woff2" crossorigin />
 
     <link rel="stylesheet" href="css/app.css?v=__MIDTERM_ASSET_VERSION__" />
     <link rel="stylesheet" href="css/xterm.css?v=__MIDTERM_ASSET_VERSION__" />
-</head>
-<body>
+  </head>
+  <body>
     <div id="security-warning" class="security-warning hidden">
-        <span class="warning-icon">&#9888;</span>
-        <span class="warning-text" data-i18n="security.warning">No password set. Anyone on the network can access your terminals.</span>
-        <button id="btn-set-password-warning" class="warning-btn" data-i18n="security.setPassword">Set Password</button>
-        <button id="btn-dismiss-warning" class="warning-dismiss">&times;</button>
+      <span class="warning-icon">&#9888;</span>
+      <span class="warning-text" data-i18n="security.warning"
+        >No password set. Anyone on the network can access your terminals.</span
+      >
+      <button id="btn-set-password-warning" class="warning-btn" data-i18n="security.setPassword">
+        Set Password
+      </button>
+      <button id="btn-dismiss-warning" class="warning-dismiss">&times;</button>
     </div>
 
     <div id="app" class="terminal-page">
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-resize-grip" id="sidebar-resize-grip"></div>
-            <div class="sidebar-header">
-                <div class="sidebar-brand">
-                    <img src="/img/logo.png" alt="MidTerm" class="sidebar-logo" />
-                    <span class="sidebar-title">MidTerm</span>
-                </div>
-                <div class="sidebar-header-buttons">
-                    <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" data-i18n-title="sidebar.hide" title="Hide sidebar"><span class="icon">&#xe913;</span></button>
-                    <button class="sidebar-btn" id="btn-main-browser" data-i18n-title="sidebar.claimMainBrowser" title="Become the leading browser — terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead."><span class="icon">&#xe989;</span></button>
-                </div>
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-resize-grip" id="sidebar-resize-grip"></div>
+        <div class="sidebar-header">
+          <div class="sidebar-brand">
+            <img src="/img/logo.png" alt="MidTerm" class="sidebar-logo" />
+            <span class="sidebar-title">MidTerm</span>
+          </div>
+          <div class="sidebar-header-buttons">
+            <button
+              class="sidebar-btn sidebar-collapse-btn"
+              id="btn-collapse-sidebar"
+              data-i18n-title="sidebar.hide"
+              title="Hide sidebar"
+            >
+              <span class="icon">&#xe913;</span>
+            </button>
+            <button
+              class="sidebar-btn"
+              id="btn-main-browser"
+              data-i18n-title="sidebar.claimMainBrowser"
+              title="Become the leading browser — terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead."
+            >
+              <span class="icon">&#xe989;</span>
+            </button>
+          </div>
+        </div>
+        <div class="sidebar-nav">
+          <button class="sidebar-nav-btn" id="btn-new-session">
+            <span class="icon">&#xea81;</span
+            ><span data-i18n="sidebar.newTerminal">New Terminal</span>
+          </button>
+          <button class="sidebar-nav-btn" id="btn-settings">
+            <span class="icon">&#xe991;</span><span data-i18n="sidebar.settings">Settings</span>
+          </button>
+          <button class="sidebar-nav-btn btn-history" id="btn-history">
+            <span class="icon icon-svg"
+              ><svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polygon
+                  points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                /></svg></span
+            ><span data-i18n="sidebar.loadBookmarked">Bookmarks</span>
+          </button>
+        </div>
+        <div class="sidebar-section-label" data-i18n="sidebar.terminals">Terminals</div>
+        <div class="session-list" id="session-list"></div>
+        <div class="sidebar-footer">
+          <div id="update-panel" class="update-panel hidden">
+            <button
+              id="update-dismiss-btn"
+              class="update-dismiss-btn"
+              data-i18n-title="sidebar.updateDismiss"
+              title="Dismiss"
+            >
+              &times;
+            </button>
+            <div class="update-header" data-i18n="sidebar.updateAvailable">Update Available</div>
+            <div class="update-versions">
+              <span class="update-current"></span>
+              <span class="update-arrow icon">&#xe91b;</span>
+              <span class="update-latest"></span>
+              <span
+                id="update-changelog-link"
+                class="update-changelog-link"
+                data-i18n="sidebar.showChangelog"
+                >Show Changelog</span
+              >
             </div>
-            <div class="sidebar-nav">
-                <button class="sidebar-nav-btn" id="btn-new-session"><span class="icon">&#xea81;</span><span data-i18n="sidebar.newTerminal">New Terminal</span></button>
-                <button class="sidebar-nav-btn" id="btn-settings"><span class="icon">&#xe991;</span><span data-i18n="sidebar.settings">Settings</span></button>
-                <button class="sidebar-nav-btn btn-history" id="btn-history"><span class="icon icon-svg"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span><span data-i18n="sidebar.loadBookmarked">Bookmarks</span></button>
+            <button id="update-btn" class="update-btn" data-i18n="sidebar.updateRestart">
+              Update & Restart
+            </button>
+            <div class="update-note" data-i18n="sidebar.sessionsClosed">
+              Sessions will be closed
             </div>
-            <div class="sidebar-section-label" data-i18n="sidebar.terminals">Terminals</div>
-            <div class="session-list" id="session-list"></div>
-            <div class="sidebar-footer">
-                <div id="update-panel" class="update-panel hidden">
-                    <button id="update-dismiss-btn" class="update-dismiss-btn" data-i18n-title="sidebar.updateDismiss" title="Dismiss">&times;</button>
-                    <div class="update-header" data-i18n="sidebar.updateAvailable">Update Available</div>
-                    <div class="update-versions">
-                        <span class="update-current"></span>
-                        <span class="update-arrow icon">&#xe91b;</span>
-                        <span class="update-latest"></span>
-                        <span id="update-changelog-link" class="update-changelog-link" data-i18n="sidebar.showChangelog">Show Changelog</span>
-                    </div>
-                    <button id="update-btn" class="update-btn" data-i18n="sidebar.updateRestart">Update & Restart</button>
-                    <div class="update-note" data-i18n="sidebar.sessionsClosed">Sessions will be closed</div>
-                </div>
-                <div id="voice-section" class="voice-section hidden">
-                    <button class="voice-section-header" id="btn-toggle-voice">
-                        <span class="voice-section-title" data-i18n="sidebar.voiceAssistant">Voice Assistant</span>
-                        <span class="voice-section-chevron icon">&#xe910;</span>
-                    </button>
-                    <div class="voice-section-content" id="voice-section-content">
-                        <div class="voice-controls">
-                            <button id="btn-voice-toggle" class="voice-btn" data-i18n-title="sidebar.voiceStartStop" title="Start/Stop">
-                                <span class="icon">&#xea15;</span>
-                            </button>
-                            <button id="btn-voice-sync" class="voice-btn hidden" data-i18n-title="sidebar.voiceTestConnection" title="Test Voice Server Connection">
-                                <span class="icon">&#xea2e;</span>
-                            </button>
-                            <button id="btn-voice-chat" class="voice-btn" data-i18n-title="sidebar.voiceToggleChat" title="Toggle Chat Panel">
-                                <span class="icon">&#xe96b;</span>
-                            </button>
-                        </div>
-                        <div class="voice-settings" id="voice-settings">
-                            <div class="voice-setting-row">
-                                <label data-i18n="sidebar.voiceLabel">Voice</label>
-                                <select id="voice-select" class="voice-select">
-                                    <option value="" data-i18n="sidebar.voiceLoading">Loading...</option>
-                                </select>
-                            </div>
-                            <div class="voice-setting-row">
-                                <label data-i18n="sidebar.voiceMicrophone">Microphone</label>
-                                <select id="mic-select" class="voice-select">
-                                    <option value="" data-i18n="sidebar.voiceDefault">Default</option>
-                                </select>
-                            </div>
-                            <div class="voice-setting-row">
-                                <label data-i18n="sidebar.voiceSpeed">Speed</label>
-                                <div class="voice-speed-control">
-                                    <input type="range" id="voice-speed" min="0.25" max="1.5" step="0.25" value="1.0">
-                                    <span id="voice-speed-value">1.0x</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="voice-status" id="voice-status" data-i18n="sidebar.voiceNotConnected">Not connected</div>
-                    </div>
-                </div>
-                <div class="network-section" id="network-section">
-                    <button class="network-section-header" id="btn-toggle-network" title="Toggle Network & Remote Access">
-                        <span class="network-section-title" data-i18n="sidebar.networkRemoteAccess">Network & Remote Access</span>
-                        <span class="network-section-chevron icon">&#xe910;</span>
-                    </button>
-                    <div class="network-section-content" id="network-section-content">
-                        <div class="network-list" id="network-list"></div>
-                        <div class="network-actions">
-                            <a id="trust-link" href="/trust" class="network-action-link" data-i18n-title="sidebar.trustCertificateHint" title="Trust certificate on this or other devices">
-                                <span class="icon">&#xe908;</span>
-                                <span data-i18n="sidebar.trustCertificate">Trust Certificate</span>
-                            </a>
-                            <button id="btn-share-access" class="share-access-link" data-i18n-title="sidebar.shareAccessHint" title="Share connection info via email">
-                                <span class="icon">&#xe925;</span>
-                                <span data-i18n="sidebar.shareAccess">Share Access...</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="footer-row">
-                    <span class="footer-traffic" id="ws-traffic" title="WebSocket throughput">0 B/s</span>
-                    <span class="footer-separator">&mdash;</span>
-                    <span class="version" id="app-version" title="Assembly version"></span>
-                    <span id="footer-update-hint" class="footer-update-hint hidden">&mdash; <a id="footer-update-link" data-i18n="sidebar.footerUpdateAvailable">Update available</a></span>
-                </div>
-            </div>
-        </aside>
-        <div class="sidebar-overlay" id="sidebar-overlay"></div>
-
-        <aside class="chat-panel hidden" id="chat-panel">
-            <div class="chat-header">
-                <span class="chat-title" data-i18n="chat.title">Voice Chat</span>
-                <button id="btn-collapse-chat" class="chat-collapse-btn" data-i18n-title="chat.hide" title="Hide chat panel">
-                    <span class="midFont-keyboard_arrow_left"></span>
+          </div>
+          <div id="voice-section" class="voice-section hidden">
+            <button class="voice-section-header" id="btn-toggle-voice">
+              <span class="voice-section-title" data-i18n="sidebar.voiceAssistant"
+                >Voice Assistant</span
+              >
+              <span class="voice-section-chevron icon">&#xe910;</span>
+            </button>
+            <div class="voice-section-content" id="voice-section-content">
+              <div class="voice-controls">
+                <button
+                  id="btn-voice-toggle"
+                  class="voice-btn"
+                  data-i18n-title="sidebar.voiceStartStop"
+                  title="Start/Stop"
+                >
+                  <span class="icon">&#xea15;</span>
                 </button>
+                <button
+                  id="btn-voice-sync"
+                  class="voice-btn hidden"
+                  data-i18n-title="sidebar.voiceTestConnection"
+                  title="Test Voice Server Connection"
+                >
+                  <span class="icon">&#xea2e;</span>
+                </button>
+                <button
+                  id="btn-voice-chat"
+                  class="voice-btn"
+                  data-i18n-title="sidebar.voiceToggleChat"
+                  title="Toggle Chat Panel"
+                >
+                  <span class="icon">&#xe96b;</span>
+                </button>
+              </div>
+              <div class="voice-settings" id="voice-settings">
+                <div class="voice-setting-row">
+                  <label data-i18n="sidebar.voiceLabel">Voice</label>
+                  <select id="voice-select" class="voice-select">
+                    <option value="" data-i18n="sidebar.voiceLoading">Loading...</option>
+                  </select>
+                </div>
+                <div class="voice-setting-row">
+                  <label data-i18n="sidebar.voiceMicrophone">Microphone</label>
+                  <select id="mic-select" class="voice-select">
+                    <option value="" data-i18n="sidebar.voiceDefault">Default</option>
+                  </select>
+                </div>
+                <div class="voice-setting-row">
+                  <label data-i18n="sidebar.voiceSpeed">Speed</label>
+                  <div class="voice-speed-control">
+                    <input
+                      type="range"
+                      id="voice-speed"
+                      min="0.25"
+                      max="1.5"
+                      step="0.25"
+                      value="1.0"
+                    />
+                    <span id="voice-speed-value">1.0x</span>
+                  </div>
+                </div>
+              </div>
+              <div class="voice-status" id="voice-status" data-i18n="sidebar.voiceNotConnected">
+                Not connected
+              </div>
             </div>
-            <div class="chat-messages" id="chat-messages"></div>
+          </div>
+          <div class="network-section" id="network-section">
+            <button
+              class="network-section-header"
+              id="btn-toggle-network"
+              title="Toggle Network & Remote Access"
+            >
+              <span class="network-section-title" data-i18n="sidebar.networkRemoteAccess"
+                >Network & Remote Access</span
+              >
+              <span class="network-section-chevron icon">&#xe910;</span>
+            </button>
+            <div class="network-section-content" id="network-section-content">
+              <div class="network-list" id="network-list"></div>
+              <div class="network-actions">
+                <a
+                  id="trust-link"
+                  href="/trust"
+                  class="network-action-link"
+                  data-i18n-title="sidebar.trustCertificateHint"
+                  title="Trust certificate on this or other devices"
+                >
+                  <span class="icon">&#xe908;</span>
+                  <span data-i18n="sidebar.trustCertificate">Trust Certificate</span>
+                </a>
+                <button
+                  id="btn-share-access"
+                  class="share-access-link"
+                  data-i18n-title="sidebar.shareAccessHint"
+                  title="Share connection info via email"
+                >
+                  <span class="icon">&#xe925;</span>
+                  <span data-i18n="sidebar.shareAccess">Share Access...</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="footer-row">
+            <span class="footer-traffic" id="ws-traffic" title="WebSocket throughput">0 B/s</span>
+            <span class="footer-separator">&mdash;</span>
+            <span class="version" id="app-version" title="Assembly version"></span>
+            <span id="footer-update-hint" class="footer-update-hint hidden"
+              >&mdash;
+              <a id="footer-update-link" data-i18n="sidebar.footerUpdateAvailable"
+                >Update available</a
+              ></span
+            >
+          </div>
+        </div>
+      </aside>
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+      <aside class="chat-panel hidden" id="chat-panel">
+        <div class="chat-header">
+          <span class="chat-title" data-i18n="chat.title">Voice Chat</span>
+          <button
+            id="btn-collapse-chat"
+            class="chat-collapse-btn"
+            data-i18n-title="chat.hide"
+            title="Hide chat panel"
+          >
+            <span class="midFont-keyboard_arrow_left"></span>
+          </button>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+      </aside>
+
+      <div class="collapsed-title-bar" id="collapsed-title-bar">
+        <div class="title-bar-buttons">
+          <button
+            class="title-bar-btn"
+            id="btn-expand-sidebar"
+            data-i18n-title="sidebar.show"
+            title="Show sidebar"
+          >
+            <span class="icon">&#xe910;</span>
+          </button>
+          <button
+            class="title-bar-btn"
+            id="btn-rename-titlebar"
+            data-i18n-title="sidebar.rename"
+            title="Rename"
+          >
+            <span class="icon">&#xe91f;</span>
+          </button>
+        </div>
+        <div class="title-bar-titles">
+          <span class="title-bar-custom" id="title-bar-custom"></span>
+          <span class="title-bar-separator" id="title-bar-separator">—</span>
+          <span class="title-bar-terminal" id="title-bar-terminal"></span>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <header class="mobile-topbar" id="mobile-topbar">
+          <button
+            class="topbar-btn topbar-hamburger"
+            id="btn-hamburger"
+            data-i18n-title="topbar.sessions"
+            title="Sessions"
+          >
+            <span class="icon">&#xe919;</span>
+          </button>
+          <div class="topbar-title" id="mobile-title">MidTerm</div>
+          <div class="topbar-actions no-terminal" id="topbar-actions">
+            <button
+              class="topbar-btn topbar-menu-toggle"
+              id="btn-mobile-actions-menu"
+              data-i18n-title="session.actions"
+              title="Actions"
+              aria-haspopup="true"
+              aria-expanded="false"
+            >
+              <span class="icon">&#x22EE;</span>
+            </button>
+            <div class="mobile-actions-dropdown" id="mobile-actions-dropdown" hidden>
+              <button
+                class="mobile-actions-item topbar-btn"
+                id="btn-new-session-mobile"
+                data-i18n-title="sidebar.newTerminal"
+                title="New Terminal"
+              >
+                <span class="icon">&#xea81;</span>
+                <span class="mobile-actions-label" data-i18n="sidebar.newTerminal"
+                  >New Terminal</span
+                >
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-touchbar hidden"
+                id="btn-show-touchbar"
+                data-i18n-title="topbar.showTouchBar"
+                title="Show touch bar"
+              >
+                <span class="icon">&#xe993;</span>
+                <span class="mobile-actions-label" data-i18n="topbar.showTouchBar"
+                  >Show touch bar</span
+                >
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-fullscreen"
+                id="btn-fullscreen-mobile"
+                data-i18n-title="topbar.fullscreen"
+                title="Fullscreen"
+              >
+                <span class="icon">&#xe90c;</span>
+                <span class="mobile-actions-label" data-i18n="topbar.fullscreen">Fullscreen</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ctrlc"
+                id="btn-ctrlc-mobile"
+                data-i18n-title="topbar.sendCtrlC"
+                title="Send Ctrl+C"
+              >
+                <span class="icon">&#xe9b5;</span>
+                <span class="mobile-actions-label" data-i18n="topbar.sendCtrlC">Send Ctrl+C</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action"
+                id="btn-paste-mobile"
+                data-i18n-title="settings.behavior.rightClickPaste"
+                title="Right-Click Paste"
+              >
+                <span class="mobile-actions-symbol">V</span>
+                <span class="mobile-actions-label" data-i18n="settings.behavior.rightClickPaste"
+                  >Right-Click Paste</span
+                >
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action"
+                id="btn-rename-mobile"
+                data-i18n-title="sidebar.rename"
+                title="Rename"
+              >
+                <span class="icon">&#xe91f;</span>
+                <span class="mobile-actions-label" data-i18n="sidebar.rename">Rename</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action"
+                id="btn-inject-mobile"
+                data-i18n-title="session.injectGuidance"
+                title="Tell AI about MidTerm"
+              >
+                <span class="icon">&#xea0c;</span>
+                <span class="mobile-actions-label" data-i18n="session.injectGuidance"
+                  >Tell AI about MidTerm</span
+                >
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-close"
+                id="btn-close-mobile"
+                data-i18n-title="topbar.closeTerminal"
+                title="Close terminal"
+              >
+                <span class="icon">&#xe909;</span>
+                <span class="mobile-actions-label" data-i18n="topbar.closeTerminal"
+                  >Close terminal</span
+                >
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-tab-terminal"
+                data-i18n-title="session.terminal"
+                title="Terminal"
+              >
+                <span class="mobile-actions-label" data-i18n="session.terminal">Terminal</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-tab-files"
+                data-i18n-title="sessionTabs.files"
+                title="Files"
+              >
+                <span class="mobile-actions-label" data-i18n="sessionTabs.files">Files</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-web"
+                data-i18n-title="sessionTabs.web"
+                title="Web Preview"
+              >
+                <span class="mobile-actions-symbol">&#x1f310;</span>
+                <span class="mobile-actions-label" data-i18n="sessionTabs.web">Web Preview</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-commands"
+                data-i18n-title="sessionTabs.commands"
+                title="Commands"
+              >
+                <span class="mobile-actions-symbol">&#x26A1;</span>
+                <span class="mobile-actions-label" data-i18n="sessionTabs.commands">Commands</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-git"
+                data-i18n-title="sessionTabs.git"
+                title="Git"
+              >
+                <span class="mobile-actions-symbol">&#x2387;</span>
+                <span class="mobile-actions-label" data-i18n="sessionTabs.git">Git</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div class="terminals-area">
+          <div id="terminal-search" class="terminal-search hidden">
+            <input
+              type="text"
+              id="search-input"
+              data-i18n-placeholder="terminal.search"
+              placeholder="Search..."
+              autocomplete="off"
+            />
+            <span id="search-results" class="search-results">0/0</span>
+            <button
+              id="search-prev"
+              class="search-btn"
+              data-i18n-title="terminal.searchPrevious"
+              title="Previous (Shift+Enter)"
+            >
+              <span class="icon">&#xe913;</span>
+            </button>
+            <button
+              id="search-next"
+              class="search-btn"
+              data-i18n-title="terminal.searchNext"
+              title="Next (Enter)"
+            >
+              <span class="icon">&#xe910;</span>
+            </button>
+            <button
+              id="search-close"
+              class="search-btn"
+              data-i18n-title="terminal.searchClose"
+              title="Close (Esc)"
+            >
+              <span class="icon">&#xe909;</span>
+            </button>
+          </div>
+          <div id="empty-state" class="empty-state">
+            <img src="/img/logo.png" alt="" class="empty-state-logo" />
+            <p data-i18n="terminal.noTerminals">No terminals open</p>
+            <button id="btn-create-terminal" data-i18n="terminal.createTerminal">
+              Create Terminal
+            </button>
+            <p class="empty-state-hint">
+              Press <kbd>Alt</kbd>+<kbd>T</kbd> to create a new terminal
+            </p>
+          </div>
+          <div id="settings-view" class="settings-view hidden">
+            <div class="settings-layout">
+              <!-- Left: Vertical Tab Bar -->
+              <nav class="settings-tabs" role="tablist">
+                <button
+                  class="settings-tab active"
+                  data-tab="general"
+                  role="tab"
+                  aria-selected="true"
+                >
+                  <span class="icon">&#xea0c;</span>
+                  <span class="tab-label" data-i18n="settings.general">General</span>
+                </button>
+                <button class="settings-tab" data-tab="appearance" role="tab" aria-selected="false">
+                  <span class="icon">&#xe90d;</span>
+                  <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
+                </button>
+                <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
+                  <span class="icon">&#xe993;</span>
+                  <span class="tab-label" data-i18n="settings.behavior">Behavior</span>
+                </button>
+                <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
+                  <span class="icon">&#xe908;</span>
+                  <span class="tab-label" data-i18n="settings.security">Security</span>
+                </button>
+                <button class="settings-tab" data-tab="ide" role="tab" aria-selected="false">
+                  <span class="icon">&#xea57;</span>
+                  <span class="tab-label" data-i18n="settings.ideMode">IDE Mode</span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="diagnostics"
+                  role="tab"
+                  aria-selected="false"
+                >
+                  <span class="icon">&#xe9ce;</span>
+                  <span class="tab-label" data-i18n="settings.diagnostics">Diagnostics</span>
+                </button>
+              </nav>
+
+              <!-- Right: Content Area -->
+              <div class="settings-content" role="tabpanel">
+                <!-- General Panel -->
+                <section class="settings-panel" data-panel="general">
+                  <h2 data-i18n="settings.general.title">General</h2>
+
+                  <!-- About & Updates -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.general.aboutUpdates">About & Updates</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.general.server">Server</label>
+                      <span class="version-value" id="version-server" title="mt.exe binary version"
+                        >-</span
+                      >
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.general.frontend">Frontend</label>
+                      <span
+                        class="version-value"
+                        id="version-frontend"
+                        title="JavaScript build version"
+                        >-</span
+                      >
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.general.host">Host</label>
+                      <span
+                        class="version-value"
+                        id="version-host"
+                        title="mthost.exe binary version"
+                        >-</span
+                      >
+                    </div>
+                    <div class="setting-row" id="dev-environment-row" style="display: none">
+                      <label data-i18n="settings.general.environment">Environment</label>
+                      <span class="version-value dev-badge" id="dev-environment-name">-</span>
+                    </div>
+                    <div class="setting-row" id="code-signing-row">
+                      <label data-i18n="settings.general.codeSigning">Code Signing</label>
+                      <span class="version-value" id="code-signing-value">-</span>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.general.updates">Updates</label>
+                      <div class="update-actions-inline">
+                        <button
+                          id="btn-check-updates"
+                          class="btn-secondary"
+                          data-i18n="settings.general.checkForUpdates"
+                        >
+                          Check for Updates
+                        </button>
+                        <button
+                          id="btn-show-changelog"
+                          class="btn-secondary"
+                          data-i18n="settings.general.changelog"
+                        >
+                          Changelog
+                        </button>
+                        <button
+                          id="btn-view-update-log"
+                          class="btn-secondary"
+                          data-i18n="settings.general.updateLog"
+                        >
+                          Update Log
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      id="update-status-none"
+                      class="update-status-none hidden"
+                      data-i18n="settings.general.latestVersion"
+                    >
+                      You are running the latest version
+                    </div>
+                    <div id="update-cards" class="update-cards"></div>
+                    <div id="update-result" class="update-result hidden"></div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-show-update-notification"
+                        data-i18n="settings.general.showUpdateNotification"
+                        >Show updates prominently in sidebar</label
+                      >
+                      <input type="checkbox" id="setting-show-update-notification" checked />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-update-channel" data-i18n="settings.general.updateChannel"
+                        >Update channel</label
+                      >
+                      <select id="setting-update-channel">
+                        <option value="stable" data-i18n="settings.general.updateChannelStable">
+                          Stable
+                        </option>
+                        <option value="dev" data-i18n="settings.general.updateChannelDev">
+                          Dev (pre-release)
+                        </option>
+                      </select>
+                    </div>
+                    <div id="reinstall-hint" class="reinstall-hint hidden"></div>
+                  </div>
+
+                  <!-- Server -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.general.serverSection">Server</h3>
+                    <p class="setting-hint" data-i18n="settings.general.serverHint">
+                      Server settings are configured via command line arguments:
+                    </p>
+                    <div class="setting-info">
+                      <code>--port 2000</code> - Port to listen on (default: 2000)
+                    </div>
+                    <div class="setting-info">
+                      <code>--bind 0.0.0.0</code> - Bind address (default: 0.0.0.0, use 127.0.0.1
+                      for local only)
+                    </div>
+                  </div>
+
+                  <!-- System Status -->
+                  <div class="settings-section system-status-section">
+                    <h3 data-i18n="settings.general.systemStatus">System Status</h3>
+                    <div id="system-status-content">
+                      <div class="status-loading" data-i18n="settings.general.loading">
+                        Loading...
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- OSS Licenses -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.general.ossLicenses">Open Source Licenses</h3>
+                    <p class="setting-hint" data-i18n="settings.general.ossHint">
+                      MidTerm uses the following open source components:
+                    </p>
+                    <div class="license-item">
+                      <strong>xterm.js</strong> <span class="license-version">v6.0.0</span>
+                      <span class="license-type">MIT License</span>
+                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
+                        >github.com/xtermjs/xterm.js</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>xterm-addon-fit</strong> <span class="license-version">v0.11.0</span>
+                      <span class="license-type">MIT License</span>
+                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
+                        >github.com/xtermjs/xterm.js</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>xterm-addon-webgl</strong>
+                      <span class="license-version">v0.19.0</span>
+                      <span class="license-type">MIT License</span>
+                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
+                        >github.com/xtermjs/xterm.js</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>xterm-addon-search</strong>
+                      <span class="license-version">v0.16.0</span>
+                      <span class="license-type">MIT License</span>
+                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
+                        >github.com/xtermjs/xterm.js</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>xterm-addon-web-links</strong>
+                      <span class="license-version">v0.12.0</span>
+                      <span class="license-type">MIT License</span>
+                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
+                        >github.com/xtermjs/xterm.js</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>xterm-link-provider</strong>
+                      <span class="license-version">v1.3.1</span>
+                      <span class="license-type">MIT License</span>
+                      <a
+                        href="https://github.com/LabhanshAgrawal/xterm-link-provider"
+                        target="_blank"
+                        rel="noopener"
+                        >github.com/LabhanshAgrawal/xterm-link-provider</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>nanostores</strong> <span class="license-version">v1.1.0</span>
+                      <span class="license-type">MIT License</span>
+                      <a
+                        href="https://github.com/nanostores/nanostores"
+                        target="_blank"
+                        rel="noopener"
+                        >github.com/nanostores/nanostores</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>CsWin32</strong> <span class="license-version">v0.3.106</span>
+                      <span class="license-type">MIT License</span>
+                      <a href="https://github.com/microsoft/CsWin32" target="_blank" rel="noopener"
+                        >github.com/microsoft/CsWin32</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>ASP.NET Core</strong>
+                      <span class="license-type">MIT License</span>
+                      <a href="https://github.com/dotnet/aspnetcore" target="_blank" rel="noopener"
+                        >github.com/dotnet/aspnetcore</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>JetBrains Mono</strong>
+                      <span class="license-type">SIL Open Font License 1.1</span>
+                      <a
+                        href="https://github.com/JetBrains/JetBrainsMono"
+                        target="_blank"
+                        rel="noopener"
+                        >github.com/JetBrains/JetBrainsMono</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>Cascadia Code</strong>
+                      <span class="license-type">SIL Open Font License 1.1</span>
+                      <a
+                        href="https://github.com/microsoft/cascadia-code"
+                        target="_blank"
+                        rel="noopener"
+                        >github.com/microsoft/cascadia-code</a
+                      >
+                    </div>
+                    <div class="license-item">
+                      <strong>Terminus Font</strong>
+                      <span class="license-type">SIL Open Font License 1.1</span>
+                      <a
+                        href="https://terminus-font.sourceforge.net/"
+                        target="_blank"
+                        rel="noopener"
+                        >terminus-font.sourceforge.net</a
+                      >
+                    </div>
+                  </div>
+                </section>
+
+                <!-- Appearance Panel -->
+                <section class="settings-panel hidden" data-panel="appearance">
+                  <h2 data-i18n="settings.appearance.title">Appearance</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.appearance.terminalAppearance">Terminal Appearance</h3>
+                    <div class="setting-row">
+                      <label for="setting-language" data-i18n="settings.appearance.language"
+                        >Language</label
+                      >
+                      <select id="setting-language">
+                        <option value="auto" data-i18n="settings.appearance.languageAuto">
+                          Auto (browser default)
+                        </option>
+                        <option value="en">English</option>
+                        <option value="zh">中文</option>
+                        <option value="es">Español</option>
+                        <option value="hi">हिन्दी</option>
+                        <option value="fr">Français</option>
+                        <option value="bn">বাংলা</option>
+                        <option value="pt">Português</option>
+                        <option value="ru">Русский</option>
+                        <option value="ja">日本語</option>
+                        <option value="de">Deutsch</option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-theme" data-i18n="settings.appearance.theme">Theme</label>
+                      <select id="setting-theme">
+                        <option value="dark" data-i18n="settings.options.themeDark">Dark</option>
+                        <option value="light" data-i18n="settings.options.themeLight">Light</option>
+                        <option
+                          value="solarizedDark"
+                          data-i18n="settings.options.themeSolarizedDark"
+                        >
+                          Solarized Dark
+                        </option>
+                        <option
+                          value="solarizedLight"
+                          data-i18n="settings.options.themeSolarizedLight"
+                        >
+                          Solarized Light
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-terminal-color-scheme"
+                        data-i18n="settings.appearance.terminalColorScheme"
+                        >Terminal Colors</label
+                      >
+                      <select id="setting-terminal-color-scheme">
+                        <option value="auto" data-i18n="settings.options.colorSchemeAuto">
+                          Auto (follows theme)
+                        </option>
+                        <option value="dark" data-i18n="settings.options.themeDark">Dark</option>
+                        <option value="light" data-i18n="settings.options.themeLight">Light</option>
+                        <option
+                          value="solarizedDark"
+                          data-i18n="settings.options.themeSolarizedDark"
+                        >
+                          Solarized Dark
+                        </option>
+                        <option
+                          value="solarizedLight"
+                          data-i18n="settings.options.themeSolarizedLight"
+                        >
+                          Solarized Light
+                        </option>
+                        <option value="matrix" data-i18n="settings.options.colorSchemeMatrix">
+                          Matrix
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-font-size" data-i18n="settings.appearance.fontSize"
+                        >Font Size</label
+                      >
+                      <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
+                        <input type="number" id="setting-font-size" min="8" max="24" value="14" />
+                        <button class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-font-family" data-i18n="settings.appearance.font"
+                        >Font</label
+                      >
+                      <select id="setting-font-family">
+                        <option value="Cascadia Code">Cascadia Code</option>
+                        <option value="JetBrains Mono">JetBrains Mono</option>
+                        <option value="Terminus">Terminus</option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle"
+                        >Browser Tab Title</label
+                      >
+                      <select id="setting-tab-title">
+                        <option value="hostname" data-i18n="settings.options.tabHostname">
+                          Hostname
+                        </option>
+                        <option value="static" data-i18n="settings.options.tabStatic">
+                          Just MidTerm
+                        </option>
+                        <option value="sessionName" data-i18n="settings.options.tabSessionName">
+                          Session Name
+                        </option>
+                        <option value="terminalTitle" data-i18n="settings.options.tabTerminalTitle">
+                          Terminal Title
+                        </option>
+                        <option
+                          value="foregroundProcess"
+                          data-i18n="settings.options.tabForegroundProcess"
+                        >
+                          Foreground Process
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-scrollbar-style"
+                        data-i18n="settings.appearance.terminalScrollbar"
+                        >Terminal Scrollbar</label
+                      >
+                      <select id="setting-scrollbar-style">
+                        <option value="off" data-i18n="settings.options.scrollbarOff">Off</option>
+                        <option value="hover" data-i18n="settings.options.scrollbarHover">
+                          Hover
+                        </option>
+                        <option value="always" data-i18n="settings.options.scrollbarAlways">
+                          Always
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-cursor-style" data-i18n="settings.appearance.cursorStyle"
+                        >Cursor Style</label
+                      >
+                      <select id="setting-cursor-style">
+                        <option value="bar" data-i18n="settings.options.cursorBar">Bar</option>
+                        <option value="block" data-i18n="settings.options.cursorBlock">
+                          Block
+                        </option>
+                        <option value="underline" data-i18n="settings.options.cursorUnderline">
+                          Underline
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-cursor-blink" data-i18n="settings.appearance.cursorBlink"
+                        >Cursor Blink</label
+                      >
+                      <input type="checkbox" id="setting-cursor-blink" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-cursor-inactive"
+                        data-i18n="settings.appearance.cursorUnfocused"
+                        >Cursor (Unfocused)</label
+                      >
+                      <select id="setting-cursor-inactive">
+                        <option value="outline" data-i18n="settings.options.cursorOutline">
+                          Outline
+                        </option>
+                        <option value="block" data-i18n="settings.options.cursorBlock">
+                          Block
+                        </option>
+                        <option value="bar" data-i18n="settings.options.cursorBar">Bar</option>
+                        <option value="underline" data-i18n="settings.options.cursorUnderline">
+                          Underline
+                        </option>
+                        <option value="none" data-i18n="settings.options.cursorHidden">
+                          Hidden
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-hide-cursor-on-input-bursts"
+                        data-i18n="settings.appearance.hideCursorOnInputBursts"
+                        >Cursor bei Input-Bursts kurz ausblenden</label
+                      >
+                      <input type="checkbox" id="setting-hide-cursor-on-input-bursts" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-contrast" data-i18n="settings.appearance.minimumContrast"
+                        >Minimum Contrast</label
+                      >
+                      <select id="setting-contrast">
+                        <option value="1" data-i18n="settings.options.contrastOff">Off</option>
+                        <option value="4.5" data-i18n="settings.options.contrastAA">
+                          WCAG AA (4.5:1)
+                        </option>
+                        <option value="7" data-i18n="settings.options.contrastAAA">
+                          WCAG AAA (7:1)
+                        </option>
+                        <option value="21" data-i18n="settings.options.contrastMax">
+                          Maximum (21:1)
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.appearance.backgroundTitle">
+                      Background &amp; Transparency
+                    </h3>
+                    <div class="setting-row setting-row-align-start">
+                      <label
+                        for="setting-background-upload"
+                        data-i18n="settings.appearance.backgroundImage"
+                        >Background Image</label
+                      >
+                      <div class="background-image-controls">
+                        <div class="background-image-actions">
+                          <button
+                            type="button"
+                            class="settings-action-btn"
+                            id="btn-background-upload"
+                            data-i18n="settings.appearance.backgroundUpload"
+                          >
+                            Upload Image
+                          </button>
+                          <button
+                            type="button"
+                            class="settings-action-btn"
+                            id="btn-background-remove"
+                            data-i18n="settings.appearance.backgroundRemove"
+                          >
+                            Remove
+                          </button>
+                          <input
+                            type="file"
+                            id="setting-background-upload"
+                            accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                            hidden
+                          />
+                        </div>
+                        <div class="background-image-preview-frame">
+                          <img
+                            id="background-image-preview"
+                            class="background-image-preview hidden"
+                            alt=""
+                          />
+                          <div
+                            id="background-image-empty"
+                            class="background-image-empty"
+                            data-i18n="settings.appearance.backgroundNone"
+                          >
+                            No image uploaded
+                          </div>
+                        </div>
+                        <div id="background-image-name" class="background-image-name"></div>
+                        <div class="setting-hint" data-i18n="settings.appearance.backgroundHint">
+                          Uploads a PNG or JPG and stores it beside the MidTerm logs.
+                        </div>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-image-enabled"
+                        data-i18n="settings.appearance.backgroundEnabled"
+                        >Show Background Image</label
+                      >
+                      <input type="checkbox" id="setting-background-image-enabled" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-fit"
+                        data-i18n="settings.appearance.backgroundFit"
+                        >Image Fit</label
+                      >
+                      <select id="setting-background-fit">
+                        <option value="cover" data-i18n="settings.options.backgroundFitCover">
+                          Cover
+                        </option>
+                        <option value="contain" data-i18n="settings.options.backgroundFitContain">
+                          Contain
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-ui-transparency"
+                        data-i18n="settings.appearance.uiTransparency"
+                        >UI Transparency</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-ui-transparency"
+                          min="0"
+                          max="85"
+                          step="5"
+                          value="0"
+                        />
+                        <span id="setting-ui-transparency-value" class="slider-value">0%</span>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- Behavior Panel -->
+                <section class="settings-panel hidden" data-panel="behavior">
+                  <h2 data-i18n="settings.behavior.title">Behavior</h2>
+
+                  <!-- Session Defaults -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.behavior.sessionDefaults">Session Defaults</h3>
+                    <div class="setting-row">
+                      <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell"
+                        >Default Shell</label
+                      >
+                      <select id="setting-default-shell">
+                        <option value="Pwsh">PowerShell 7</option>
+                        <option value="PowerShell">Windows PowerShell</option>
+                        <option value="Cmd">Command Prompt</option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-working-dir"
+                        data-i18n="settings.behavior.defaultWorkingDir"
+                        >Default Working Directory</label
+                      >
+                      <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
+                        <input
+                          type="text"
+                          id="setting-working-dir"
+                          data-i18n-placeholder="settings.behavior.defaultWorkingDirHint"
+                          placeholder="Leave empty for home directory"
+                        />
+                        <button class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Terminal Behavior -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.behavior.terminalBehavior">Terminal Behavior</h3>
+                    <div class="setting-row">
+                      <label for="setting-scrollback" data-i18n="settings.behavior.scrollbackLines"
+                        >Scrollback Lines</label
+                      >
+                      <div
+                        class="text-input-wrapper"
+                        data-setting="scrollbackLines"
+                        data-type="number"
+                      >
+                        <input
+                          type="number"
+                          id="setting-scrollback"
+                          min="500"
+                          max="100000"
+                          step="500"
+                          value="10000"
+                        />
+                        <button class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-webgl" data-i18n="settings.behavior.gpuRendering"
+                        >GPU Rendering (WebGL)</label
+                      >
+                      <input type="checkbox" id="setting-webgl" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-bell-style" data-i18n="settings.behavior.bellStyle"
+                        >Bell Style</label
+                      >
+                      <select id="setting-bell-style">
+                        <option value="notification" data-i18n="settings.options.bellNotification">
+                          Desktop Notification
+                        </option>
+                        <option value="sound" data-i18n="settings.options.bellSound">Sound</option>
+                        <option value="visual" data-i18n="settings.options.bellVisual">
+                          Visual Flash
+                        </option>
+                        <option value="off" data-i18n="settings.options.bellOff">Off</option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-copy-on-select" data-i18n="settings.behavior.copyOnSelect"
+                        >Copy on Select</label
+                      >
+                      <input type="checkbox" id="setting-copy-on-select" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-right-click-paste"
+                        data-i18n="settings.behavior.rightClickPaste"
+                        >Right-Click Paste</label
+                      >
+                      <input type="checkbox" id="setting-right-click-paste" checked />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-clipboard-shortcuts"
+                        data-i18n="settings.behavior.clipboardShortcuts"
+                        >Copy/Paste Shortcuts</label
+                      >
+                      <select id="setting-clipboard-shortcuts">
+                        <option value="auto" data-i18n="settings.options.clipboardAuto">
+                          Auto (detect platform)
+                        </option>
+                        <option value="windows" data-i18n="settings.options.clipboardWindows">
+                          Windows (Ctrl+C/V)
+                        </option>
+                        <option value="unix" data-i18n="settings.options.clipboardUnix">
+                          Unix (Ctrl+Shift+C/V)
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-terminal-enter-mode"
+                        data-i18n="settings.behavior.terminalEnterMode"
+                        >Enter Key Behavior</label
+                      >
+                      <select id="setting-terminal-enter-mode">
+                        <option value="default" data-i18n="settings.options.terminalEnterDefault">
+                          Default (Shift+Enter sends Enter)
+                        </option>
+                        <option
+                          value="shiftEnterLineFeed"
+                          data-i18n="settings.options.terminalEnterShiftLineFeed"
+                        >
+                          Shift+Enter sends line feed (\n)
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-smooth-scrolling"
+                        data-i18n="settings.behavior.smoothScrolling"
+                        >Smooth Scrolling</label
+                      >
+                      <input type="checkbox" id="setting-smooth-scrolling" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-input-mode" data-i18n="settings.behavior.inputMode"
+                        >Input Mode</label
+                      >
+                      <select id="setting-input-mode">
+                        <option value="keyboard" data-i18n="settings.options.inputKeyboard">
+                          Keyboard
+                        </option>
+                        <option value="smartinput" data-i18n="settings.options.inputSmartInput">
+                          Smart Input
+                        </option>
+                        <option value="both" data-i18n="settings.options.inputBoth">Both</option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.inputModeHint">
+                      Smart Input uses a floating text box instead of direct keyboard input. Ideal
+                      for mobile — prevents the on-screen keyboard from appearing.
+                    </p>
+                    <div class="setting-row">
+                      <label
+                        for="setting-scrollback-protection"
+                        data-i18n="settings.behavior.scrollbackProtection"
+                        >Claude Code scrollback glitch protection</label
+                      >
+                      <input type="checkbox" id="setting-scrollback-protection" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-file-radar"
+                        title="Detects file paths in terminal output and makes them clickable. Click to view files remotely."
+                        data-i18n="settings.behavior.fileRadar"
+                        >File Radar</label
+                      >
+                      <input type="checkbox" id="setting-file-radar" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
+                        >Middle Manager Bar</label
+                      >
+                      <input type="checkbox" id="setting-manager-bar" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-changelog-after-update"
+                        data-i18n="settings.behavior.changelogAfterUpdate"
+                        >Show changelog after update</label
+                      >
+                      <input type="checkbox" id="setting-changelog-after-update" checked />
+                    </div>
+                    <div class="setting-row hidden" id="pwa-install-row">
+                      <label data-i18n="settings.behavior.installAsApp">Install as App</label>
+                      <button
+                        id="btn-install-pwa"
+                        class="btn-secondary"
+                        title="Install MidTerm as App"
+                        data-i18n="settings.behavior.install"
+                      >
+                        Install
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Integrations -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.behavior.integrations">Integrations</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-tmux-compatibility"
+                        title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH)."
+                        data-i18n="settings.behavior.tmuxCompatibility"
+                        >Tmux Compatibility</label
+                      >
+                      <input type="checkbox" id="setting-tmux-compatibility" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">
+                      Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
+                      into remote hosts that run real tmux. Requires restart.
+                    </p>
+                  </div>
+                </section>
+
+                <!-- Security Panel -->
+                <section class="settings-panel hidden" data-panel="security" id="security-section">
+                  <h2 data-i18n="settings.security.title">Security</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.security.authentication">Authentication</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.password">Password</label>
+                      <div class="password-status">
+                        <span
+                          id="password-status-text"
+                          class="status-missing"
+                          data-i18n="settings.security.checking"
+                          >Checking...</span
+                        >
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.changePassword">Change Password</label>
+                      <button
+                        id="btn-change-password"
+                        class="btn-secondary"
+                        data-i18n="settings.security.change"
+                      >
+                        Change...
+                      </button>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.session">Session</label>
+                      <button
+                        id="btn-logout"
+                        class="btn-secondary"
+                        data-i18n="settings.security.logout"
+                      >
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.security.processIdentity">Process Identity</h3>
+                    <div class="setting-row">
+                      <label for="setting-run-as-user" data-i18n="settings.security.terminalUser"
+                        >Terminal User</label
+                      >
+                      <select id="setting-run-as-user">
+                        <option value="" data-i18n="settings.security.processOwnerDefault">
+                          Process Owner (default)
+                        </option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.security.terminalUserHint">
+                      When running as a system service, terminals spawn as this user instead of the
+                      service account.
+                    </p>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.security.httpsCertificate">HTTPS Certificate</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.fingerprint">Fingerprint</label>
+                      <code class="path-value" id="settings-cert-fingerprint">Loading...</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.validUntil">Valid Until</label>
+                      <span id="settings-cert-validity">-</span>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.trustOtherDevices"
+                        >Trust on Other Devices</label
+                      >
+                      <a
+                        href="/trust"
+                        target="_blank"
+                        class="btn-secondary"
+                        data-i18n="settings.security.openTrustPage"
+                        >Open Trust Page</a
+                      >
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.security.fingerprintHint">
+                      When connecting from a new device, click the padlock icon in your browser and
+                      compare the SHA-256 fingerprint with this one. Matching fingerprints confirm
+                      you're connecting to the real server.
+                    </p>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.regenerateCertificate"
+                        >Regenerate Certificate</label
+                      >
+                      <button
+                        id="btn-regenerate-cert"
+                        class="btn-secondary btn-danger"
+                        data-i18n="settings.security.regenerate"
+                      >
+                        Regenerate
+                      </button>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.security.regenerateHint">
+                      Delete and recreate the HTTPS certificate. MidTerm will restart and browsers
+                      will need to re-trust the new certificate.
+                    </p>
+                  </div>
+                </section>
+
+                <!-- IDE Mode Panel -->
+                <section class="settings-panel hidden" data-panel="ide">
+                  <h2 data-i18n="settings.ide.title">IDE Mode</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.ide.overview">Overview</h3>
+                    <div class="setting-row">
+                      <label for="setting-ide-mode" data-i18n="settings.ide.enableIdeMode"
+                        >Enable IDE Mode</label
+                      >
+                      <input type="checkbox" id="setting-ide-mode" checked />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.ide.overviewHint">
+                      IDE Mode adds per-session tabs (Terminal, Files, Git, Commands) above the
+                      terminal area. When disabled, sessions show only the terminal with no tab bar,
+                      file browser, git panel, or command runner.
+                    </p>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.ide.git">Git</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.ide.gitExecutable">Git executable</label>
+                      <code class="path-value" id="ide-git-status">checking...</code>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- Diagnostics Panel -->
+                <section class="settings-panel hidden" data-panel="diagnostics">
+                  <h2 data-i18n="settings.diagnostics.title">Diagnostics</h2>
+
+                  <!-- Latency -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.diagnostics.latency">Latency</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.serverRtt">Server RTT</label>
+                      <code class="path-value" id="diag-server-rtt">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.mthostRtt">MTHost RTT</label>
+                      <code class="path-value" id="diag-mthost-rtt">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.activeSession">Active Session</label>
+                      <code class="path-value" id="diag-ping-session">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.outputRtt">Output RTT</label>
+                      <code
+                        class="path-value"
+                        id="diag-output-rtt"
+                        data-i18n="settings.diagnostics.typeToMeasure"
+                        >type to measure</code
+                      >
+                    </div>
+                    <div class="setting-row">
+                      <label for="diag-overlay-toggle" data-i18n="settings.diagnostics.showOverlay"
+                        >Show overlay on terminal</label
+                      >
+                      <input type="checkbox" id="diag-overlay-toggle" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="diag-git-overlay-toggle"
+                        data-i18n="settings.diagnostics.showGitDebugOverlay"
+                        >Show git debug overlay</label
+                      >
+                      <input type="checkbox" id="diag-git-overlay-toggle" />
+                    </div>
+                  </div>
+
+                  <!-- Paths -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.diagnostics.filePaths">File Paths</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.pathSettings">Settings</label>
+                      <div class="path-value-row">
+                        <code class="path-value" id="path-settings">-</code>
+                        <button
+                          id="btn-reload-settings"
+                          class="btn-icon"
+                          title="Reload settings from file"
+                        >
+                          <span class="icon">&#xe9bd;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.pathSecrets">Secrets</label>
+                      <code class="path-value" id="path-secrets">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.pathCertificate">Certificate</label>
+                      <code class="path-value" id="path-certificate">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.pathLogDir">Log Directory</label>
+                      <code class="path-value" id="path-logs">-</code>
+                    </div>
+                  </div>
+
+                  <!-- Server -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.diagnostics.server">Server</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.restartServerDesc"
+                        >Restart the server process. All clients will temporarily disconnect.</label
+                      >
+                      <button
+                        id="btn-restart-server"
+                        class="btn-danger"
+                        data-i18n="settings.diagnostics.restartServer"
+                      >
+                        Restart Server
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Frontend Logging -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.diagnostics.frontendLogging">Frontend Logging</h3>
+                    <p class="diag-help-text">
+                      Use the browser console (<kbd>F12</kbd>) to control frontend logging. Errors
+                      and warnings always appear. Info and verbose output is per-module.
+                    </p>
+                    <div class="diag-help-commands">
+                      <code>mtlog.list()</code> <span>Show all modules and their state</span>
+                      <code>mtlog.enable('mux')</code> <span>Enable logging for a module</span>
+                      <code>mtlog.enable('*')</code> <span>Enable all modules</span>
+                      <code>mtlog.disable('mux')</code> <span>Disable a module</span>
+                      <code>mtlog.level('info')</code>
+                      <span>Set minimum level (exception, error, warn, info, verbose)</span>
+                      <code>mtlog.reset()</code> <span>Reset to defaults</span>
+                    </div>
+                    <p class="diag-help-text">
+                      Settings persist in localStorage across page reloads.
+                    </p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Middle Manager Bar -->
+        <div id="manager-bar" class="manager-bar">
+          <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
+          <button
+            class="manager-bar-add"
+            id="manager-bar-add"
+            data-i18n-title="managerBar.addButton"
+            title="Add button"
+          >
+            +
+          </button>
+        </div>
+
+        <!-- File Viewer Dock Panel -->
+        <aside id="file-viewer-dock" class="file-viewer-dock hidden">
+          <div class="file-viewer-dock-header">
+            <span class="file-viewer-dock-title"></span>
+            <span class="file-viewer-dock-path"></span>
+            <div class="file-viewer-dock-actions">
+              <button class="btn-icon" id="dock-save" title="Save" style="display: none">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    d="M13 1H3C1.9 1 1 1.9 1 3v10c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zM8 13c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm2-8H3V3h7v2z"
+                  />
+                </svg>
+              </button>
+              <button class="btn-icon" id="dock-download" title="Download">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z" />
+                  <path d="M2 13h12v1H2v-1z" />
+                </svg>
+              </button>
+              <button class="btn-icon" id="dock-refresh" title="Refresh">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    d="M13.5 8c0 3-2.5 5.5-5.5 5.5S2.5 11 2.5 8 5 2.5 8 2.5c1.5 0 2.9.6 3.9 1.6L10 6h5V1l-1.9 1.9C11.6 1.5 9.9.8 8 .8 3.8.8.8 3.8.8 8s3 7.2 7.2 7.2 7.2-3.2 7.2-7.2h-1.7z"
+                  />
+                </svg>
+              </button>
+              <button class="btn-icon" id="dock-undock" title="Pop out to modal">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M2 3h8v2H4v8h8V9h2v6H2V3zm8-1h5v5h-1V4l-5 5-1-1 5-5h-3V1z" />
+                </svg>
+              </button>
+              <button class="btn-icon" id="dock-close" title="Close">&times;</button>
+            </div>
+          </div>
+          <div class="file-viewer-dock-body"></div>
         </aside>
 
-        <div class="collapsed-title-bar" id="collapsed-title-bar">
-            <div class="title-bar-buttons">
-                <button class="title-bar-btn" id="btn-expand-sidebar" data-i18n-title="sidebar.show" title="Show sidebar"><span class="icon">&#xe910;</span></button>
-                <button class="title-bar-btn" id="btn-rename-titlebar" data-i18n-title="sidebar.rename" title="Rename"><span class="icon">&#xe91f;</span></button>
+        <!-- Git Dock Panel -->
+        <aside id="git-dock" class="git-dock hidden">
+          <div class="git-dock-resize-grip"></div>
+          <div class="git-dock-body"></div>
+        </aside>
+
+        <!-- Commands Dock Panel -->
+        <aside id="commands-dock" class="commands-dock hidden">
+          <div class="commands-dock-resize-grip"></div>
+          <div class="commands-dock-header">
+            <span class="commands-dock-title" data-i18n="commands.title">Commands</span>
+            <div class="commands-dock-actions">
+              <button class="btn-icon" id="cmd-dock-close" title="Close">&times;</button>
             </div>
-            <div class="title-bar-titles">
-                <span class="title-bar-custom" id="title-bar-custom"></span>
-                <span class="title-bar-separator" id="title-bar-separator">—</span>
-                <span class="title-bar-terminal" id="title-bar-terminal"></span>
+          </div>
+          <div class="commands-dock-body"></div>
+        </aside>
+
+        <!-- Web Preview Dock Panel -->
+        <aside id="web-preview-dock" class="web-preview-dock hidden">
+          <div class="web-preview-dock-resize-grip"></div>
+          <div class="web-preview-dock-header">
+            <span class="web-preview-dock-title" data-i18n="webPreview.title">Web Preview</span>
+            <div class="web-preview-dock-actions">
+              <button
+                class="btn-icon"
+                id="web-preview-agent-hint"
+                data-i18n-title="webPreview.agentHint"
+                title="Hint agent"
+              >
+                &#x1F916;
+              </button>
+              <button
+                class="btn-icon"
+                id="web-preview-screenshot"
+                data-i18n-title="webPreview.screenshot"
+                title="Screenshot to terminal"
+              >
+                &#x1f4f7;
+              </button>
+              <button
+                class="btn-icon"
+                id="web-preview-clear-cookies"
+                data-i18n-title="webPreview.clearCookies"
+                title="Clear cookies"
+              >
+                &#x1f36a;
+              </button>
+              <button
+                class="btn-icon"
+                id="web-preview-refresh"
+                data-i18n-title="webPreview.refresh"
+                title="Refresh"
+              >
+                &#x21bb;
+              </button>
+              <button
+                class="btn-icon"
+                id="web-preview-detach"
+                data-i18n-title="webPreview.detach"
+                title="Pop out"
+              >
+                &#x2197;
+              </button>
+              <button class="btn-icon" id="web-preview-close" title="Close">&times;</button>
             </div>
+          </div>
+          <div class="web-preview-dock-url-bar">
+            <input
+              type="url"
+              id="web-preview-url-input"
+              data-i18n-placeholder="webPreview.urlPlaceholder"
+              placeholder="https://localhost:3000"
+              spellcheck="false"
+            />
+            <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
+          </div>
+          <div class="web-preview-dock-body">
+            <iframe
+              id="web-preview-iframe"
+              src="about:blank"
+              allow="
+                camera *;
+                microphone *;
+                geolocation *;
+                fullscreen *;
+                autoplay *;
+                clipboard-read *;
+                clipboard-write *;
+                display-capture *;
+              "
+            ></iframe>
+          </div>
+          <div class="web-preview-detached-placeholder hidden" id="web-preview-detached-msg">
+            <span data-i18n="webPreview.detachedPlaceholder"
+              >Preview is open in a separate window</span
+            >
+            <button class="btn-icon" id="web-preview-dock-back" data-i18n="webPreview.dockBack">
+              Dock back
+            </button>
+          </div>
+        </aside>
+
+        <!-- Touch Controller Bar (mobile only) -->
+        <div id="touch-controller" class="touch-controller" aria-label="Terminal touch controls">
+          <div class="touch-bar-main">
+            <div class="touch-group touch-modifiers">
+              <button class="touch-key touch-modifier" data-modifier="ctrl" aria-pressed="false">
+                Ctrl
+              </button>
+              <button class="touch-key touch-modifier" data-modifier="alt" aria-pressed="false">
+                Alt
+              </button>
+              <button class="touch-key touch-modifier" data-modifier="shift" aria-pressed="false">
+                Shft
+              </button>
+            </div>
+            <div class="touch-group touch-arrows">
+              <button class="touch-key" data-key="left" aria-label="Arrow left">&#x2190;</button>
+              <button class="touch-key" data-key="up" aria-label="Arrow up">&#x2191;</button>
+              <button class="touch-key" data-key="down" aria-label="Arrow down">&#x2193;</button>
+              <button class="touch-key" data-key="right" aria-label="Arrow right">&#x2192;</button>
+            </div>
+            <div class="touch-group touch-categories">
+              <button
+                class="touch-key touch-cat"
+                data-popup="nav"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                Nav
+              </button>
+              <button
+                class="touch-key touch-cat"
+                data-popup="sym"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                Sym
+              </button>
+              <button
+                class="touch-key touch-cat"
+                data-popup="fn"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                Fn
+              </button>
+              <button
+                class="touch-key touch-cat"
+                data-popup="ctrl"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                ^+
+              </button>
+            </div>
+            <button
+              class="touch-key touch-dismiss"
+              id="btn-dismiss-touchbar"
+              data-i18n-title="topbar.hideTouchBar"
+              title="Hide touch bar"
+              aria-label="Hide touch bar"
+            >
+              &#xea0f;
+            </button>
+          </div>
         </div>
 
         <div class="main-content">
@@ -938,96 +2541,124 @@
 
     <!-- Changelog Modal -->
     <div id="changelog-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content changelog-modal-content">
-            <div class="modal-header">
-                <h3 data-i18n="modal.changelog">Changelog</h3>
-                <button id="btn-close-changelog" class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body" id="changelog-body">
-                <div class="changelog-loading">Loading...</div>
-            </div>
-            <div id="changelog-dont-show" class="changelog-dont-show hidden">
-                <button id="btn-changelog-dont-show" class="btn-link" data-i18n="changelog.dontShowAgain">Don't show after updates</button>
-            </div>
+      <div class="modal-backdrop"></div>
+      <div class="modal-content changelog-modal-content">
+        <div class="modal-header">
+          <h3 data-i18n="modal.changelog">Changelog</h3>
+          <button id="btn-close-changelog" class="modal-close">&times;</button>
         </div>
+        <div class="modal-body" id="changelog-body">
+          <div class="changelog-loading">Loading...</div>
+        </div>
+        <div id="changelog-dont-show" class="changelog-dont-show hidden">
+          <button id="btn-changelog-dont-show" class="btn-link" data-i18n="changelog.dontShowAgain">
+            Don't show after updates
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Password Change Modal -->
     <div id="password-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content password-modal-content">
-            <div class="modal-header">
-                <h3 id="password-modal-title" data-i18n="modal.changePassword">Change Password</h3>
-                <button id="btn-close-password" class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="password-form">
-                    <input type="text" name="username" autocomplete="username" tabindex="-1" style="position:absolute;left:-9999px;opacity:0" aria-hidden="true" />
-                    <div class="form-group" id="current-password-group">
-                        <label for="current-password" data-i18n="modal.currentPassword">Current Password</label>
-                        <input type="password" id="current-password" autocomplete="current-password" />
-                    </div>
-                    <div class="form-group">
-                        <label for="new-password" data-i18n="modal.newPassword">New Password</label>
-                        <input type="password" id="new-password" required autocomplete="new-password" />
-                    </div>
-                    <div class="form-group">
-                        <label for="confirm-password" data-i18n="modal.confirmPassword">Confirm Password</label>
-                        <input type="password" id="confirm-password" required autocomplete="new-password" />
-                    </div>
-                    <div id="password-error" class="error-message hidden"></div>
-                    <div class="modal-footer">
-                        <button type="button" id="btn-cancel-password" class="btn-secondary" data-i18n="modal.cancel">Cancel</button>
-                        <button type="submit" id="btn-save-password" class="btn-primary" data-i18n="modal.save">Save</button>
-                    </div>
-                </form>
-            </div>
+      <div class="modal-backdrop"></div>
+      <div class="modal-content password-modal-content">
+        <div class="modal-header">
+          <h3 id="password-modal-title" data-i18n="modal.changePassword">Change Password</h3>
+          <button id="btn-close-password" class="modal-close">&times;</button>
         </div>
+        <div class="modal-body">
+          <form id="password-form">
+            <input
+              type="text"
+              name="username"
+              autocomplete="username"
+              tabindex="-1"
+              style="position: absolute; left: -9999px; opacity: 0"
+              aria-hidden="true"
+            />
+            <div class="form-group" id="current-password-group">
+              <label for="current-password" data-i18n="modal.currentPassword"
+                >Current Password</label
+              >
+              <input type="password" id="current-password" autocomplete="current-password" />
+            </div>
+            <div class="form-group">
+              <label for="new-password" data-i18n="modal.newPassword">New Password</label>
+              <input type="password" id="new-password" required autocomplete="new-password" />
+            </div>
+            <div class="form-group">
+              <label for="confirm-password" data-i18n="modal.confirmPassword"
+                >Confirm Password</label
+              >
+              <input type="password" id="confirm-password" required autocomplete="new-password" />
+            </div>
+            <div id="password-error" class="error-message hidden"></div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                id="btn-cancel-password"
+                class="btn-secondary"
+                data-i18n="modal.cancel"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                id="btn-save-password"
+                class="btn-primary"
+                data-i18n="modal.save"
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
 
     <!-- File Viewer Modal -->
     <div id="file-viewer-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content file-viewer-modal-content">
-            <div class="modal-header">
-                <div class="file-viewer-header-info">
-                    <h3 class="file-viewer-title" data-i18n="modal.file">File</h3>
-                    <span class="file-viewer-path"></span>
-                </div>
-                <div class="file-viewer-header-actions">
-                    <button id="file-viewer-dock-btn" class="btn-icon" title="Dock to right">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M1 2h14v12H1V2zm1 1v10h8V3H2zm9 0v10h3V3h-3z"/>
-                        </svg>
-                    </button>
-                    <button id="file-viewer-maximize" class="btn-icon" title="Fullscreen">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M2 2h5v1H3v4H2V2zm7 0h5v5h-1V3H9V2zM3 9v4h4v1H2V9h1zm10 0v5H9v-1h4V9h1z"/>
-                        </svg>
-                    </button>
-                    <button id="file-viewer-save" class="btn-icon" title="Save" style="display:none">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M13 1H3C1.9 1 1 1.9 1 3v10c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zM8 13c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm2-8H3V3h7v2z"/>
-                        </svg>
-                    </button>
-                    <button id="file-viewer-download" class="btn-icon" title="Download">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z"/>
-                            <path d="M2 13h12v1H2v-1z"/>
-                        </svg>
-                    </button>
-                    <button class="modal-close">&times;</button>
-                </div>
-            </div>
-            <div class="modal-body file-viewer-body">
-                <div class="file-viewer-loading">Loading...</div>
-            </div>
+      <div class="modal-backdrop"></div>
+      <div class="modal-content file-viewer-modal-content">
+        <div class="modal-header">
+          <div class="file-viewer-header-info">
+            <h3 class="file-viewer-title" data-i18n="modal.file">File</h3>
+            <span class="file-viewer-path"></span>
+          </div>
+          <div class="file-viewer-header-actions">
+            <button id="file-viewer-dock-btn" class="btn-icon" title="Dock to right">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1 2h14v12H1V2zm1 1v10h8V3H2zm9 0v10h3V3h-3z" />
+              </svg>
+            </button>
+            <button id="file-viewer-maximize" class="btn-icon" title="Fullscreen">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2 2h5v1H3v4H2V2zm7 0h5v5h-1V3H9V2zM3 9v4h4v1H2V9h1zm10 0v5H9v-1h4V9h1z" />
+              </svg>
+            </button>
+            <button id="file-viewer-save" class="btn-icon" title="Save" style="display: none">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path
+                  d="M13 1H3C1.9 1 1 1.9 1 3v10c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zM8 13c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm2-8H3V3h7v2z"
+                />
+              </svg>
+            </button>
+            <button id="file-viewer-download" class="btn-icon" title="Download">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z" />
+                <path d="M2 13h12v1H2v-1z" />
+              </svg>
+            </button>
+            <button class="modal-close">&times;</button>
+          </div>
         </div>
+        <div class="modal-body file-viewer-body">
+          <div class="file-viewer-loading">Loading...</div>
+        </div>
+      </div>
     </div>
-
 
     <script src="js/webAudioAccess.js?v=__MIDTERM_ASSET_VERSION__"></script>
     <script src="js/terminal.min.js?v=__MIDTERM_ASSET_VERSION__"></script>
-</body>
+  </body>
 </html>

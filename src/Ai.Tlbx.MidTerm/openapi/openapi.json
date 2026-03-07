@@ -2137,6 +2137,11 @@
           "hideCursorOnInputBursts",
           "theme",
           "terminalColorScheme",
+          "backgroundImageEnabled",
+          "backgroundImageFileName",
+          "backgroundImageRevision",
+          "backgroundImageFit",
+          "uiTransparency",
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
@@ -2212,6 +2217,26 @@
           },
           "terminalColorScheme": {
             "$ref": "#/components/schemas/TerminalColorSchemeSetting"
+          },
+          "backgroundImageEnabled": {
+            "type": "boolean"
+          },
+          "backgroundImageFileName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "backgroundImageRevision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "backgroundImageFit": {
+            "type": "string"
+          },
+          "uiTransparency": {
+            "type": "integer",
+            "format": "int32"
           },
           "tabTitleMode": {
             "$ref": "#/components/schemas/TabTitleModeSetting"

@@ -21,11 +21,20 @@ import type {
 } from '../../api/types';
 import { TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
+import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
 import { getEffectiveXtermTheme } from '../theming/themes';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
-import { getSettings, getUsers, getVersion, getHealth, updateSettings } from '../../api/client';
+import {
+  getSettings,
+  getUsers,
+  getVersion,
+  getHealth,
+  updateSettings,
+  uploadBackgroundImage,
+  deleteBackgroundImage,
+} from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
 import { getEffectiveTerminalFontSize } from '../terminal/fontSize';
 import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
@@ -163,6 +172,9 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementChecked('setting-hide-cursor-on-input-bursts', settings.hideCursorOnInputBursts);
   setElementValue('setting-theme', settings.theme);
   setElementValue('setting-terminal-color-scheme', settings.terminalColorScheme);
+  setElementChecked('setting-background-image-enabled', settings.backgroundImageEnabled);
+  setElementValue('setting-background-fit', settings.backgroundImageFit);
+  setElementValue('setting-ui-transparency', settings.uiTransparency);
   setElementValue('setting-tab-title', settings.tabTitleMode);
   setElementValue('setting-contrast', String(settings.minimumContrastRatio));
   setElementValue('setting-scrollback', settings.scrollbackLines);
@@ -185,6 +197,8 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-update-channel', settings.updateChannel);
   setElementValue('setting-language', settings.language);
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
+  updateTransparencyValue(settings.uiTransparency);
+  updateBackgroundImageUi(settings);
 }
 
 /**
@@ -235,6 +249,7 @@ export function applySettingsToTerminals(): void {
   const settings = $currentSettings.get();
   if (!settings) return;
 
+  applyBackgroundAppearance(settings);
   const theme = getEffectiveXtermTheme();
   const fontFamily = `'${settings.fontFamily}', ${TERMINAL_FONT_STACK}`;
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
@@ -275,6 +290,7 @@ export function applySettingsToTerminals(): void {
  * Updates the form if settings panel is open, applies to terminals, and updates theme.
  */
 export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
+  $currentSettings.set(settings);
   if ($settingsOpen.get()) {
     populateSettingsForm(settings);
   }
@@ -335,6 +351,11 @@ export function saveAllSettings(): void {
       'setting-terminal-color-scheme',
       'auto',
     ) as TerminalColorSchemeSetting,
+    backgroundImageEnabled: getElementChecked('setting-background-image-enabled'),
+    backgroundImageFileName: prevSettings?.backgroundImageFileName ?? null,
+    backgroundImageRevision: prevSettings?.backgroundImageRevision ?? 0,
+    backgroundImageFit: getElementValue('setting-background-fit', 'cover'),
+    uiTransparency: parseInt(getElementValue('setting-ui-transparency', '0'), 10) || 0,
     tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleModeSetting,
     minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
     smoothScrolling: getElementChecked('setting-smooth-scrolling'),
@@ -408,6 +429,60 @@ export function bindSettingsAutoSave(): void {
     el.addEventListener('change', saveAllSettings, { signal });
   });
 
+  settingsView.querySelectorAll('input[type="range"]').forEach((el) => {
+    el.addEventListener('change', saveAllSettings, { signal });
+  });
+
+  const transparencySlider = document.getElementById(
+    'setting-ui-transparency',
+  ) as HTMLInputElement | null;
+  if (transparencySlider) {
+    transparencySlider.addEventListener(
+      'input',
+      () => {
+        const value = parseInt(transparencySlider.value, 10) || 0;
+        updateTransparencyValue(value);
+        const current = $currentSettings.get();
+        if (!current) return;
+        applyBackgroundAppearance({ ...current, uiTransparency: value });
+      },
+      { signal },
+    );
+  }
+
+  const uploadInput = document.getElementById(
+    'setting-background-upload',
+  ) as HTMLInputElement | null;
+  const uploadBtn = document.getElementById('btn-background-upload') as HTMLButtonElement | null;
+  const removeBtn = document.getElementById('btn-background-remove') as HTMLButtonElement | null;
+
+  uploadBtn?.addEventListener(
+    'click',
+    () => {
+      uploadInput?.click();
+    },
+    { signal },
+  );
+
+  uploadInput?.addEventListener(
+    'change',
+    () => {
+      const file = uploadInput.files?.[0];
+      if (!file) return;
+      void handleBackgroundImageUpload(file);
+      uploadInput.value = '';
+    },
+    { signal },
+  );
+
+  removeBtn?.addEventListener(
+    'click',
+    () => {
+      void handleBackgroundImageDelete();
+    },
+    { signal },
+  );
+
   settingsView.querySelectorAll('.text-input-wrapper').forEach((wrapper) => {
     const input = wrapper.querySelector('input');
     const saveBtn = wrapper.querySelector('.inline-save-btn');
@@ -463,6 +538,95 @@ export function unbindSettingsAutoSave(): void {
   if (settingsAbortController) {
     settingsAbortController.abort();
     settingsAbortController = null;
+  }
+}
+
+function updateTransparencyValue(value: number): void {
+  const label = document.getElementById('setting-ui-transparency-value');
+  if (label) {
+    label.textContent = `${String(value)}%`;
+  }
+}
+
+function updateBackgroundImageUi(settings: MidTermSettingsPublic): void {
+  const preview = document.getElementById('background-image-preview') as HTMLImageElement | null;
+  const empty = document.getElementById('background-image-empty');
+  const name = document.getElementById('background-image-name');
+  const removeBtn = document.getElementById('btn-background-remove') as HTMLButtonElement | null;
+  const enabledCheckbox = document.getElementById(
+    'setting-background-image-enabled',
+  ) as HTMLInputElement | null;
+
+  const hasImage = Boolean(
+    settings.backgroundImageFileName && settings.backgroundImageRevision > 0,
+  );
+
+  if (preview) {
+    if (hasImage) {
+      preview.src = getBackgroundImageUrl(settings.backgroundImageRevision);
+      preview.alt = settings.backgroundImageFileName ?? 'Background image';
+      preview.classList.remove('hidden');
+    } else {
+      preview.removeAttribute('src');
+      preview.alt = '';
+      preview.classList.add('hidden');
+    }
+  }
+
+  empty?.classList.toggle('hidden', hasImage);
+  if (name) {
+    name.textContent = hasImage ? (settings.backgroundImageFileName ?? '') : '';
+  }
+  if (removeBtn) {
+    removeBtn.disabled = !hasImage;
+  }
+  if (enabledCheckbox) {
+    enabledCheckbox.disabled = !hasImage;
+    if (!hasImage) {
+      enabledCheckbox.checked = false;
+    }
+  }
+}
+
+async function handleBackgroundImageUpload(file: File): Promise<void> {
+  try {
+    const info = await uploadBackgroundImage(file);
+    const current = $currentSettings.get();
+    if (!current) return;
+
+    const nextSettings = {
+      ...current,
+      backgroundImageEnabled: true,
+      backgroundImageFileName: info.fileName ?? null,
+      backgroundImageRevision: info.revision,
+    };
+
+    $currentSettings.set(nextSettings);
+    updateBackgroundImageUi(nextSettings);
+    applySettingsToTerminals();
+  } catch (e) {
+    log.error(() => `Background image upload failed: ${String(e)}`);
+  }
+}
+
+async function handleBackgroundImageDelete(): Promise<void> {
+  try {
+    const info = await deleteBackgroundImage();
+    const current = $currentSettings.get();
+    if (!current) return;
+
+    const nextSettings = {
+      ...current,
+      backgroundImageEnabled: false,
+      backgroundImageFileName: info.fileName ?? null,
+      backgroundImageRevision: info.revision,
+    };
+
+    $currentSettings.set(nextSettings);
+    updateBackgroundImageUi(nextSettings);
+    applySettingsToTerminals();
+  } catch (e) {
+    log.error(() => `Background image delete failed: ${String(e)}`);
   }
 }
 

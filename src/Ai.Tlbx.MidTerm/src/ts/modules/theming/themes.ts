@@ -19,8 +19,18 @@ export function getEffectiveXtermTheme(): TerminalTheme {
   const s = $currentSettings.get();
   const colorScheme = s?.terminalColorScheme ?? 'auto';
   const key = colorScheme === 'auto' ? (s?.theme ?? 'dark') : colorScheme;
-  const theme = THEMES[key] ?? THEMES['dark'];
-  if (!theme) throw new Error(`Theme '${key}' not found`);
+  const fallbackTheme = THEMES['dark'];
+  if (!fallbackTheme) {
+    throw new Error("Theme 'dark' not found");
+  }
+  const baseTheme = THEMES[key] ?? fallbackTheme;
+  const theme: TerminalTheme = Object.assign({}, baseTheme);
+  const transparency = Math.min(Math.max(s?.uiTransparency ?? 0, 0), 85);
+  const hasWallpaper = s !== null && s.backgroundImageEnabled && s.backgroundImageFileName !== null;
+  if (hasWallpaper || transparency > 0) {
+    const alpha = Math.max(0.15, 1 - transparency / 100);
+    theme.background = withAlpha(theme.background, alpha);
+  }
   return theme;
 }
 
@@ -58,4 +68,35 @@ export function initThemeFromCookie(): void {
   if (savedTheme && THEMES[savedTheme]) {
     applyCssTheme(savedTheme);
   }
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const trimmed = color.trim();
+  if (trimmed.startsWith('#')) {
+    const hex = trimmed.slice(1);
+    const normalized =
+      hex.length === 3
+        ? hex
+            .split('')
+            .map((part) => part + part)
+            .join('')
+        : hex.slice(0, 6);
+
+    if (normalized.length === 6) {
+      const r = Number.parseInt(normalized.slice(0, 2), 16);
+      const g = Number.parseInt(normalized.slice(2, 4), 16);
+      const b = Number.parseInt(normalized.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+    }
+  }
+
+  const rgbMatch = trimmed.match(/rgba?\(([^)]+)\)/i);
+  if (rgbMatch) {
+    const parts = rgbMatch[1]?.split(',').map((part) => Number.parseFloat(part.trim()));
+    if (parts && parts.length >= 3) {
+      return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha.toFixed(3)})`;
+    }
+  }
+
+  return color;
 }

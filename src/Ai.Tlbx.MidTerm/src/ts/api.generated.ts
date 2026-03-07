@@ -1974,6 +1974,13 @@ export interface components {
       hideCursorOnInputBursts: boolean;
       theme: components['schemas']['ThemeSetting'];
       terminalColorScheme: components['schemas']['TerminalColorSchemeSetting'];
+      backgroundImageEnabled: boolean;
+      backgroundImageFileName: null | string;
+      /** Format: int64 */
+      backgroundImageRevision: number;
+      backgroundImageFit: string;
+      /** Format: int32 */
+      uiTransparency: number;
       tabTitleMode: components['schemas']['TabTitleModeSetting'];
       /** Format: double */
       minimumContrastRatio: number;

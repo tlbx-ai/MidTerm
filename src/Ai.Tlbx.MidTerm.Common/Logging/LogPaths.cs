@@ -32,6 +32,16 @@ public static class LogPaths
         return Path.Combine(userDir, ".midterm", "logs");
     }
 
+    public static string GetBackgroundDirectory(bool isWindowsService, bool isUnixService = false)
+    {
+        if (!OperatingSystem.IsWindows() && isUnixService)
+        {
+            return Path.Combine(UnixServiceLogDir, "midterm-backgrounds");
+        }
+
+        return Path.Combine(GetLogDirectory(isWindowsService, isUnixService), "backgrounds");
+    }
+
     public static string GetDataDirectory(bool isWindowsService, bool isUnixService = false)
     {
         if (OperatingSystem.IsWindows() && isWindowsService)

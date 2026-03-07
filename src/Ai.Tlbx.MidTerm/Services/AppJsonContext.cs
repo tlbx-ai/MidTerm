@@ -22,6 +22,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SystemHealth))]
 [JsonSerializable(typeof(TtyHostInfo))]
 [JsonSerializable(typeof(PathsResponse))]
+[JsonSerializable(typeof(BackgroundImageInfoResponse))]
 [JsonSerializable(typeof(List<NetworkInterfaceDto>))]
 [JsonSerializable(typeof(ShellInfoDto))]
 [JsonSerializable(typeof(List<ShellInfoDto>))]

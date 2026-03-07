@@ -110,6 +110,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<CertificateInfoService>();
         builder.Services.AddSingleton<SecurityStatusService>();
         builder.Services.AddSingleton<MainBrowserService>();
+        builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>
         {

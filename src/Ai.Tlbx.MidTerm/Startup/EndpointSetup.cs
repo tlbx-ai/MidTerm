@@ -568,6 +568,58 @@ public static class EndpointSetup
             return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
+        app.MapGet("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        {
+            var settings = settingsService.Load();
+            var imagePath = backgroundImageService.GetCurrentImagePath(settings);
+            if (imagePath is null)
+            {
+                return Results.NotFound();
+            }
+
+            var extension = Path.GetExtension(imagePath).ToLowerInvariant();
+            var contentType = extension switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                _ => "application/octet-stream"
+            };
+
+            return Results.File(imagePath, contentType, enableRangeProcessing: false);
+        });
+
+        app.MapPost("/api/settings/background-image", async (IFormFile file, BackgroundImageService backgroundImageService) =>
+        {
+            try
+            {
+                var info = await backgroundImageService.SaveAsync(file);
+                return Results.Json(info, AppJsonContext.Default.BackgroundImageInfoResponse);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 400);
+            }
+            catch (Exception ex)
+            {
+                Common.Logging.Log.Exception(ex, "POST /api/settings/background-image");
+                return Results.Problem($"Failed to save background image: {ex.Message}");
+            }
+        }).DisableAntiforgery();
+
+        app.MapDelete("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        {
+            try
+            {
+                var info = backgroundImageService.Delete();
+                return Results.Json(info, AppJsonContext.Default.BackgroundImageInfoResponse);
+            }
+            catch (Exception ex)
+            {
+                Common.Logging.Log.Exception(ex, "DELETE /api/settings/background-image");
+                return Results.Problem($"Failed to delete background image: {ex.Message}");
+            }
+        });
+
         app.MapGet("/api/paths", () =>
         {
             var settings = settingsService.Load();
