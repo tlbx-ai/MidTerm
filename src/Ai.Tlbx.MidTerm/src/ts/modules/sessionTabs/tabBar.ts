@@ -47,7 +47,7 @@ export function createTabBar(
   const cwdSpan = document.createElement('span');
   cwdSpan.className = 'session-cwd';
   cwdSpan.addEventListener('click', () => {
-    const cwd = cwdSpan.textContent?.trim();
+    const cwd = cwdSpan.textContent.trim();
     if (!cwd || typeof navigator.clipboard === 'undefined') {
       return;
     }
