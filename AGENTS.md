@@ -29,6 +29,14 @@ pwsh -NoProfile -Command '& ./scripts/release-dev.ps1 -ReleaseNotes @("note1", "
 
 **Rule:** Always use `pwsh -NoProfile -Command '...'` for any pwsh invocation that uses PowerShell-specific syntax (arrays, splatting, script blocks, etc.).
 
+## Terminal Title
+
+Set the terminal title to the current overall topic you are working on.
+
+- Keep it between 5 and 30 characters
+- Prefer a short task label, not a generic shell/program name
+- Update it when the task focus changes
+
 ---
 
 ## ⚠️ INSTALLER / SELF-UPDATER ROBUSTNESS ⚠️

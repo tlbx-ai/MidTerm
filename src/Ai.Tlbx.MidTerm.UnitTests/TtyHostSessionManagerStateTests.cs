@@ -95,6 +95,19 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task SetSessionNameAsync_AutoMode_ShellPathClearsTerminalTitle()
+    {
+        await using var manager = CreateManager();
+        var info = AddCachedSession(manager, "s1");
+        AddDisconnectedClient(manager, "s1");
+
+        var ok = await manager.SetSessionNameAsync("s1", @"C:\Program Files\PowerShell\7\pwsh.exe", isManual: false);
+
+        Assert.True(ok);
+        Assert.Null(info.TerminalTitle);
+    }
+
+    [Fact]
     public async Task SetSessionNameAsync_ManualMode_WhenSetNameFails_DoesNotUpdateName()
     {
         await using var manager = CreateManager();
@@ -130,6 +143,18 @@ public sealed class TtyHostSessionManagerStateTests
         InvokeHandleClientOutput(manager, "s1", data);
 
         Assert.Equal("Window Name", info.TerminalTitle);
+    }
+
+    [Fact]
+    public async Task OscTitleSequence_ShellExecutablePath_ClearsTerminalTitle()
+    {
+        await using var manager = CreateManager();
+        var info = AddCachedSession(manager, "s1");
+        var data = Encoding.UTF8.GetBytes("\u001b]2;C:\\Program Files\\PowerShell\\7\\pwsh.exe\u0007");
+
+        InvokeHandleClientOutput(manager, "s1", data);
+
+        Assert.Null(info.TerminalTitle);
     }
 
     [Fact]

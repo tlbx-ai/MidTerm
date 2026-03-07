@@ -411,6 +411,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
+        info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);
+
         // Start read loop after handshake completes (avoids race condition with GetInfoAsync)
         SubscribeToClient(client);
         client.StartReadLoop();
@@ -655,7 +657,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         else
         {
             // Terminal-reported title: store in TerminalTitle field (local only, no IPC)
-            info.TerminalTitle = string.IsNullOrWhiteSpace(name) ? null : name;
+            info.TerminalTitle = NormalizeTerminalTitle(info, name);
             OnStateChanged?.Invoke(sessionId);
             NotifyStateChange();
             return true;
@@ -861,10 +863,56 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private bool HandleOscTitle(string sessionId, string title)
     {
         if (!_sessionCache.TryGetValue(sessionId, out var info)) return false;
-        var trimmed = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        var trimmed = NormalizeTerminalTitle(info, title);
         if (string.Equals(info.TerminalTitle, trimmed, StringComparison.Ordinal)) return false;
         info.TerminalTitle = trimmed;
         return true;
+    }
+
+    private static string? NormalizeTerminalTitle(SessionInfo session, string? title)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        if (trimmed is null)
+        {
+            return null;
+        }
+
+        var normalizedTitle = NormalizeExecutableIdentity(trimmed);
+        var normalizedShell = NormalizeExecutableIdentity(session.ShellType);
+        if (!string.IsNullOrEmpty(normalizedTitle) &&
+            !string.IsNullOrEmpty(normalizedShell) &&
+            string.Equals(normalizedTitle, normalizedShell, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return trimmed;
+    }
+
+    private static string NormalizeExecutableIdentity(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var candidate = value.Trim();
+        var firstChar = candidate[0];
+        if ((firstChar == '"' || firstChar == '\'') && candidate.Length > 1)
+        {
+            var closingQuote = candidate.IndexOf(firstChar, 1);
+            if (closingQuote > 1)
+            {
+                candidate = candidate[1..closingQuote];
+            }
+        }
+
+        candidate = candidate.Replace('\\', '/');
+        var basename = candidate.Split('/').LastOrDefault() ?? candidate;
+        var token = basename.Trim().Split(' ', '\t').FirstOrDefault() ?? basename.Trim();
+        return token.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? token[..^4].ToLowerInvariant()
+            : token.ToLowerInvariant();
     }
 
     private bool HandleOscCwdUpdate(string sessionId, string payload)
