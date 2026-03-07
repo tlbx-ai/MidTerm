@@ -125,7 +125,7 @@ import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './
 import { closeGitDock } from './modules/git/gitDock';
 import { initWebPreview, closeWebPreviewDock } from './modules/web';
 import { initDockState, removeSessionDockState } from './modules/dockState';
-import { initSmartInput } from './modules/smartInput';
+import { initSmartInput, removeSmartInputSessionState } from './modules/smartInput';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -545,6 +545,7 @@ function deleteSession(sessionId: string): void {
 
   // Remove session tab wrapper, feature panels, and dock state
   removeSessionDockState(sessionId);
+  removeSmartInputSessionState(sessionId);
   destroyFileBrowser(sessionId);
   destroyGitSession(sessionId);
   destroyCommandsSession(sessionId);

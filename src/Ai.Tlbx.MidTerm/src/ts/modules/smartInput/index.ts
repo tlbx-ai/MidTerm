@@ -12,5 +12,6 @@ export {
   hideSmartInput,
   isSmartInputMode,
   isBothMode,
+  removeSmartInputSessionState,
 } from './smartInput';
 export { startTranscription, stopTranscription } from './transcription';

@@ -28,7 +28,9 @@ let keysExpanded = localStorage.getItem('smartinput-keys-expanded') === 'true';
 let isRecording = false;
 let touchControllerOriginalParent: HTMLElement | null = null;
 let touchControllerOriginalNext: Node | null = null;
+let lastSessionId: string | null = null;
 const MAX_TEXTAREA_LINES = 5;
+const sessionDrafts = new Map<string, string>();
 
 export function isSmartInputMode(): boolean {
   const mode = $currentSettings.get()?.inputMode;
@@ -45,8 +47,15 @@ function hasSmartInput(): boolean {
 }
 
 export function initSmartInput(): void {
+  $activeSessionId.subscribe((sessionId) => {
+    persistDraftForSession(lastSessionId);
+    lastSessionId = sessionId;
+    syncDraftForActiveSession();
+  });
+
   $currentSettings.subscribe((settings) => {
     if (!settings) return;
+    persistDraftForSession($activeSessionId.get());
     if (settings.inputMode === 'smartinput') {
       hideDockedBar();
       const activeId = $activeSessionId.get();
@@ -85,6 +94,7 @@ export function showSmartInput(): void {
   activeTextarea = overlay?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
   activeMicBtn = overlay?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
   if (activeTextarea) {
+    applyDraftToTextarea(activeTextarea, $activeSessionId.get());
     resizeTextarea(activeTextarea);
   }
   embedTouchController(overlay);
@@ -104,6 +114,7 @@ function showDockedBar(): void {
   activeTextarea = dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
   activeMicBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
   if (activeTextarea) {
+    applyDraftToTextarea(activeTextarea, $activeSessionId.get());
     resizeTextarea(activeTextarea);
   }
   embedTouchController(dockedBar);
@@ -247,6 +258,7 @@ function createInputElements(): {
 
   // Auto-grow textarea
   textarea.addEventListener('input', () => {
+    persistDraftForSession($activeSessionId.get(), textarea.value);
     resizeTextarea(textarea);
   });
 
@@ -336,9 +348,59 @@ function sendText(ta: HTMLTextAreaElement): void {
   }, 50);
 
   ta.value = '';
+  persistDraftForSession(sessionId, '');
+  syncDraftForActiveSession();
   ta.scrollTop = 0;
   resizeTextarea(ta);
   ta.focus();
+}
+
+function persistDraftForSession(sessionId: string | null, draftOverride?: string): void {
+  if (!sessionId) return;
+
+  const draft = draftOverride ?? activeTextarea?.value ?? '';
+  if (draft) {
+    sessionDrafts.set(sessionId, draft);
+    return;
+  }
+
+  sessionDrafts.delete(sessionId);
+}
+
+function applyDraftToTextarea(
+  textarea: HTMLTextAreaElement | null,
+  sessionId: string | null,
+): void {
+  if (!textarea) return;
+
+  const nextValue = sessionId ? (sessionDrafts.get(sessionId) ?? '') : '';
+  if (textarea.value !== nextValue) {
+    textarea.value = nextValue;
+  }
+  textarea.scrollTop = 0;
+  resizeTextarea(textarea);
+}
+
+function syncDraftForActiveSession(): void {
+  const sessionId = $activeSessionId.get();
+  applyDraftToTextarea(
+    overlay?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null,
+    sessionId,
+  );
+  applyDraftToTextarea(
+    dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null,
+    sessionId,
+  );
+  if (activeTextarea) {
+    applyDraftToTextarea(activeTextarea, sessionId);
+  }
+}
+
+export function removeSmartInputSessionState(sessionId: string): void {
+  sessionDrafts.delete(sessionId);
+  if ($activeSessionId.get() === sessionId) {
+    syncDraftForActiveSession();
+  }
 }
 
 function resizeTextarea(textarea: HTMLTextAreaElement): void {
