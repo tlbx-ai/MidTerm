@@ -1909,7 +1909,7 @@ body.has-app-background::after {
     }
 
     .terminal-page {
-        --mobile-safe-top: clamp(0px, env(safe-area-inset-top, 0px), 16px);
+        --mobile-safe-top: env(safe-area-inset-top, 0px);
         position: fixed;
         inset: 0;
         width: 100%;
@@ -4153,6 +4153,12 @@ body.has-app-background::after {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(20px + env(safe-area-inset-top, 0px))
+    calc(20px + env(safe-area-inset-right, 0px))
+    calc(20px + env(safe-area-inset-bottom, 0px))
+    calc(20px + env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
   background: linear-gradient(135deg, var(--bg-primary) 0%, #0a0b12 50%, var(--bg-primary) 100%);
   background-size: 400% 400%;
   animation: harbor-drift 30s ease infinite;
@@ -4940,8 +4946,13 @@ body.has-app-background::after {
 /* Trust Page */
 .trust-page {
   min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--bg-primary);
-  padding: 20px;
+  padding: calc(20px + env(safe-area-inset-top, 0px))
+    calc(20px + env(safe-area-inset-right, 0px))
+    calc(20px + env(safe-area-inset-bottom, 0px))
+    calc(20px + env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
   overflow: auto;
 }
 
