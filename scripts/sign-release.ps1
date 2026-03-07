@@ -18,6 +18,39 @@ if (-not $privateKeyB64) {
 
 Write-Host "Signing release artifacts..."
 
+function Get-ChecksumsFromManifest {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ManifestPath,
+
+        [Parameter(Mandatory=$true)]
+        [string[]]$ExpectedFiles
+    )
+
+    $checksums = @{}
+
+    foreach ($line in Get-Content $ManifestPath) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        if ($line -match '^([0-9a-fA-F]{64})\s+\*?(.+)$') {
+            $hash = $matches[1].ToLowerInvariant()
+            $fileName = [System.IO.Path]::GetFileName($matches[2].Trim())
+            $checksums[$fileName] = $hash
+        }
+    }
+
+    $filteredChecksums = @{}
+    foreach ($expectedFile in $ExpectedFiles) {
+        if ($checksums.ContainsKey($expectedFile)) {
+            $filteredChecksums[$expectedFile] = $checksums[$expectedFile]
+        }
+    }
+
+    return $filteredChecksums
+}
+
 # Write private key to temp file
 $keyFile = [System.IO.Path]::GetTempFileName()
 try {
@@ -49,17 +82,32 @@ try {
         $checksums = @{}
         $binaries = if ($isWebOnly) { @("mt") } else { @("mt", "mthost") }
         $ext = if ($platform -eq "win-x64") { ".exe" } else { "" }
+        $expectedFiles = $binaries | ForEach-Object { "$_$ext" }
+        $checksumManifestPath = Join-Path $platformDir "SHA256SUMS.txt"
 
         if ($isWebOnly) {
             Write-Host "    Web-only release: skipping mthost checksum" -ForegroundColor Cyan
         }
 
-        foreach ($binary in $binaries) {
-            $binaryPath = Join-Path $platformDir "$binary$ext"
-            if (Test-Path $binaryPath) {
-                $hash = (Get-FileHash -Path $binaryPath -Algorithm SHA256).Hash.ToLower()
-                $checksums["$binary$ext"] = $hash
-                Write-Host "    $binary$ext = $hash"
+        if (Test-Path $checksumManifestPath) {
+            $checksums = Get-ChecksumsFromManifest -ManifestPath $checksumManifestPath -ExpectedFiles $expectedFiles
+
+            if ($checksums.Count -gt 0) {
+                Write-Host "    Reusing checksums from SHA256SUMS.txt" -ForegroundColor DarkGray
+                foreach ($fileName in $checksums.Keys | Sort-Object) {
+                    Write-Host "    $fileName = $($checksums[$fileName])"
+                }
+            }
+        }
+
+        if ($checksums.Count -eq 0) {
+            foreach ($binary in $binaries) {
+                $binaryPath = Join-Path $platformDir "$binary$ext"
+                if (Test-Path $binaryPath) {
+                    $hash = (Get-FileHash -Path $binaryPath -Algorithm SHA256).Hash.ToLower()
+                    $checksums["$binary$ext"] = $hash
+                    Write-Host "    $binary$ext = $hash"
+                }
             }
         }
 
