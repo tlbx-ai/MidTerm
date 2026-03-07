@@ -24,11 +24,16 @@ jobs:
       contents: write
     outputs:
       is_dev: ${{ contains(github.ref_name, '-dev') }}
+      is_web_only: ${{ steps.release-flags.outputs.is_web_only }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
           fetch-tags: false
+
+      - name: Read release flags
+        id: release-flags
+        run: echo "is_web_only=$(jq -r '.webOnly // false' version.json)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch tag annotation
         run: git fetch origin tag ${{ github.ref_name }} --no-tags --force
@@ -124,9 +129,15 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
       - name: Build mt + mthost
+        if: needs.prepare.outputs.is_web_only != 'true'
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+
+      - name: Build mt only
+        if: needs.prepare.outputs.is_web_only == 'true'
+        run: |
+          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -152,11 +163,28 @@ jobs:
 
       - name: Stage artifacts
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ github.ref_name }}
+          ASSET_NAME: mt-${{ matrix.rid }}.tar.gz
         run: |
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
-          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp version.json staging/${{ matrix.rid }}/
+
+          if [[ "${{ needs.prepare.outputs.is_web_only }}" == "true" ]]; then
+            PREVIOUS_URL=$(gh api "repos/${{ github.repository }}/releases?per_page=20" --jq '.[] | select(.tag_name != env.CURRENT_TAG) | .assets[]? | select(.name == env.ASSET_NAME) | .browser_download_url' | head -n1)
+            if [[ -z "$PREVIOUS_URL" ]]; then
+              echo "Could not find previous asset $ASSET_NAME" >&2
+              exit 1
+            fi
+
+            curl -L "$PREVIOUS_URL" -o "staging/${{ matrix.rid }}/previous.tar.gz"
+            tar -xzf "staging/${{ matrix.rid }}/previous.tar.gz" -C "staging/${{ matrix.rid }}" ./mthost
+            rm "staging/${{ matrix.rid }}/previous.tar.gz"
+          else
+            cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          fi
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -244,17 +272,48 @@ jobs:
 
       - name: Build mt + mthost
         shell: pwsh
+        if: needs.prepare.outputs.is_web_only != 'true'
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
+      - name: Build mt only
+        shell: pwsh
+        if: needs.prepare.outputs.is_web_only == 'true'
+        run: |
+          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+
       - name: Stage artifacts
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ github.ref_name }}
         run: |
           New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
-          Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
           Copy-Item version.json staging/win-x64/
+
+          if ("${{ needs.prepare.outputs.is_web_only }}" -eq "true") {
+            $releases = gh api "repos/${{ github.repository }}/releases?per_page=20" | ConvertFrom-Json
+            $previousAsset = $releases |
+              Where-Object { $_.tag_name -ne $env:CURRENT_TAG } |
+              ForEach-Object { $_.assets } |
+              Where-Object { $_.name -eq 'mt-win-x64.zip' } |
+              Select-Object -First 1
+
+            if ($null -eq $previousAsset) {
+              throw 'Could not find previous asset mt-win-x64.zip'
+            }
+
+            $archivePath = Join-Path $PWD 'staging/win-x64/previous.zip'
+            Invoke-WebRequest -Uri $previousAsset.browser_download_url -OutFile $archivePath
+            Expand-Archive -Path $archivePath -DestinationPath 'staging/win-x64/previous' -Force
+            Copy-Item 'staging/win-x64/previous/mthost.exe' 'staging/win-x64/mthost.exe'
+            Remove-Item $archivePath -Force
+            Remove-Item 'staging/win-x64/previous' -Recurse -Force
+          } else {
+            Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
+          }
 
       - name: Sign Windows binaries (Certum Authenticode)
         if: needs.prepare.outputs.is_dev != 'true'
