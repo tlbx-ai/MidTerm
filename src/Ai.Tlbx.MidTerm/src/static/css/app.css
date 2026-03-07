@@ -285,6 +285,16 @@ body {
   background: #03040a;
 }
 
+@media (min-width: 769px) {
+  body {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+}
+
 body::before {
   content: '';
   position: fixed;
@@ -1809,6 +1819,14 @@ body.has-app-background::after {
   padding: 0 8px;
   align-items: center;
   gap: 8px;
+}
+
+@media (min-width: 769px) {
+  .collapsed-title-bar {
+    top: env(safe-area-inset-top, 0px);
+    left: env(safe-area-inset-left, 0px);
+    right: env(safe-area-inset-right, 0px);
+  }
 }
 
 .title-bar-btn {
