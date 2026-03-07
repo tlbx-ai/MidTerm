@@ -30,6 +30,7 @@ public sealed class MidTermSettings
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
     public bool CursorBlink { get; set; } = false;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
+    public bool HideCursorOnInputBursts { get; set; } = false;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
     public TerminalColorSchemeSetting TerminalColorScheme { get; set; } = TerminalColorSchemeSetting.Auto;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
@@ -46,7 +47,6 @@ public sealed class MidTermSettings
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.Default;
     public bool ScrollbackProtection { get; set; } = false;
-    public bool BatchedTerminalUpdates { get; set; } = false;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)
     public string InputMode { get; set; } = "keyboard";

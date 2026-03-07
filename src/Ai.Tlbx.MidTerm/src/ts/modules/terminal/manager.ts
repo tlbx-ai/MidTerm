@@ -730,6 +730,9 @@ export function destroyTerminalForSession(sessionId: string): void {
   if (state.cursorHideTimer != null) {
     clearTimeout(state.cursorHideTimer);
   }
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+  }
 
   // Clean up pending title update timer
   const titleTimer = pendingTitleUpdates.get(sessionId);

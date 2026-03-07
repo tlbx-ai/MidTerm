@@ -17,6 +17,7 @@ public sealed partial class MidTermSettingsPublic
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
             CursorInactiveStyle = settings.CursorInactiveStyle,
+            HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
             Theme = settings.Theme,
             TerminalColorScheme = settings.TerminalColorScheme,
             TabTitleMode = settings.TabTitleMode,
@@ -31,7 +32,6 @@ public sealed partial class MidTermSettingsPublic
             ClipboardShortcuts = settings.ClipboardShortcuts,
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
-            BatchedTerminalUpdates = settings.BatchedTerminalUpdates,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             TmuxCompatibility = settings.TmuxCompatibility,
@@ -61,6 +61,7 @@ public sealed partial class MidTermSettingsPublic
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
         settings.CursorInactiveStyle = CursorInactiveStyle;
+        settings.HideCursorOnInputBursts = HideCursorOnInputBursts;
         settings.Theme = Theme;
         settings.TerminalColorScheme = TerminalColorScheme;
         settings.TabTitleMode = TabTitleMode;
@@ -75,7 +76,6 @@ public sealed partial class MidTermSettingsPublic
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
-        settings.BatchedTerminalUpdates = BatchedTerminalUpdates;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;

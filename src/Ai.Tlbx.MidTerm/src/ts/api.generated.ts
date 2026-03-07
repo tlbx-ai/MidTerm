@@ -1971,6 +1971,7 @@ export interface components {
       cursorStyle: components['schemas']['CursorStyleSetting'];
       cursorBlink: boolean;
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];
+      hideCursorOnInputBursts: boolean;
       theme: components['schemas']['ThemeSetting'];
       terminalColorScheme: components['schemas']['TerminalColorSchemeSetting'];
       tabTitleMode: components['schemas']['TabTitleModeSetting'];
@@ -1987,7 +1988,6 @@ export interface components {
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
-      batchedTerminalUpdates: boolean;
       inputMode: string;
       fileRadar: boolean;
       tmuxCompatibility: boolean;

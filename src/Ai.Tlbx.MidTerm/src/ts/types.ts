@@ -88,6 +88,10 @@ export interface TerminalState {
   mouseLeaveHandler?: () => void;
   earlyDataDisposable?: { dispose: () => void };
   cursorHideTimer?: number | null;
+  burstCursorRestoreTimer?: number | null;
+  lastBurstOutputAtMs?: number | null;
+  remoteCursorVisible?: boolean;
+  burstCursorHidden?: boolean;
 }
 
 // =============================================================================

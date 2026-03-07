@@ -160,6 +160,7 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-cursor-style', settings.cursorStyle);
   setElementChecked('setting-cursor-blink', settings.cursorBlink);
   setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle);
+  setElementChecked('setting-hide-cursor-on-input-bursts', settings.hideCursorOnInputBursts);
   setElementValue('setting-theme', settings.theme);
   setElementValue('setting-terminal-color-scheme', settings.terminalColorScheme);
   setElementValue('setting-tab-title', settings.tabTitleMode);
@@ -174,7 +175,6 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-scrollbar-style', settings.scrollbarStyle);
   setElementChecked('setting-webgl', settings.useWebGL);
   setElementChecked('setting-scrollback-protection', settings.scrollbackProtection);
-  setElementChecked('setting-batched-terminal-updates', settings.batchedTerminalUpdates);
   setElementValue('setting-input-mode', settings.inputMode);
   setElementChecked('setting-file-radar', settings.fileRadar);
   setElementChecked('setting-manager-bar', settings.managerBarEnabled);
@@ -254,6 +254,17 @@ export function applySettingsToTerminals(): void {
     state.terminal.options.scrollback = settings.scrollbackLines;
 
     applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
+
+    if (!settings.hideCursorOnInputBursts && state.burstCursorHidden) {
+      if (state.burstCursorRestoreTimer != null) {
+        clearTimeout(state.burstCursorRestoreTimer);
+        state.burstCursorRestoreTimer = null;
+      }
+      state.burstCursorHidden = false;
+      if (state.remoteCursorVisible !== false) {
+        state.terminal.write('\x1b[?25h');
+      }
+    }
   });
 
   rescaleAllTerminalsImmediate();
@@ -314,6 +325,7 @@ export function saveAllSettings(): void {
     fontFamily: getElementValue('setting-font-family', 'Cascadia Code'),
     cursorStyle: getElementValue('setting-cursor-style', 'block') as CursorStyleSetting,
     cursorBlink: getElementChecked('setting-cursor-blink'),
+    hideCursorOnInputBursts: getElementChecked('setting-hide-cursor-on-input-bursts'),
     cursorInactiveStyle: getElementValue(
       'setting-cursor-inactive',
       'none',
@@ -341,7 +353,6 @@ export function saveAllSettings(): void {
       'default',
     ) as MidTermSettingsUpdate['terminalEnterMode'],
     scrollbackProtection: getElementChecked('setting-scrollback-protection'),
-    batchedTerminalUpdates: getElementChecked('setting-batched-terminal-updates'),
     inputMode: getElementValue('setting-input-mode', 'keyboard'),
     fileRadar: getElementChecked('setting-file-radar'),
     managerBarEnabled: getElementChecked('setting-manager-bar'),

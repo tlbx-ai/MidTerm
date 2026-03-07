@@ -337,18 +337,15 @@ interface OutputFrameItem {
   compressed: boolean;
 }
 
-interface ParsedOutputFrame {
-  cols: number;
-  rows: number;
-  data: Uint8Array;
-}
-
 const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const COMPACT_THRESHOLD = 1000;
 const YIELD_BUDGET_MS = 8;
-const SYNC_OUTPUT_START = new Uint8Array([0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x32, 0x36, 0x68]);
-const SYNC_OUTPUT_END = new Uint8Array([0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x32, 0x36, 0x6c]);
+const CURSOR_BURST_WINDOW_MS = 75;
+const CURSOR_BURST_HIDE_MS = 140;
+const CURSOR_BURST_MIN_BYTES = 24;
+const SHOW_CURSOR_SEQ = '\x1b[?25h';
+const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
@@ -384,62 +381,6 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   void processOutputQueue();
 }
 
-function isBatchedTerminalUpdatesEnabled(): boolean {
-  return $currentSettings.get()?.batchedTerminalUpdates === true;
-}
-
-function containsSynchronizedOutputControl(data: Uint8Array): boolean {
-  for (let i = 0, end = data.length - 8; i <= end; i++) {
-    if (
-      data[i] === 0x1b &&
-      data[i + 1] === 0x5b &&
-      data[i + 2] === 0x3f &&
-      data[i + 3] === 0x32 &&
-      data[i + 4] === 0x30 &&
-      data[i + 5] === 0x32 &&
-      data[i + 6] === 0x36
-    ) {
-      const mode = data[i + 7];
-      if (mode === 0x68 || mode === 0x6c) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-function concatUint8Arrays(parts: Uint8Array[], totalLength: number): Uint8Array {
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-
-  for (const part of parts) {
-    combined.set(part, offset);
-    offset += part.length;
-  }
-
-  return combined;
-}
-
-function maybeWrapSynchronizedOutput(
-  state: TerminalState,
-  data: Uint8Array,
-  frameCount: number,
-): Uint8Array {
-  if (frameCount < 2) {
-    return data;
-  }
-
-  if (state.terminal.modes.synchronizedOutputMode || containsSynchronizedOutputControl(data)) {
-    return data;
-  }
-
-  return concatUint8Arrays(
-    [SYNC_OUTPUT_START, data, SYNC_OUTPUT_END],
-    SYNC_OUTPUT_START.length + data.length + SYNC_OUTPUT_END.length,
-  );
-}
-
 async function processOutputQueue(): Promise<void> {
   if (processingQueue) return;
   processingQueue = true;
@@ -453,7 +394,7 @@ async function processOutputQueue(): Promise<void> {
         const item = outputQueue[queueIndex];
         if (!item || item.sessionId !== activeId) break;
         queueIndex++;
-        await processQueuedFrames(item, isBatchedTerminalUpdatesEnabled());
+        await processOneFrame(item);
         if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
       }
 
@@ -463,7 +404,7 @@ async function processOutputQueue(): Promise<void> {
         const item = outputQueue[queueIndex];
         if (item && item.sessionId === $activeSessionId.get()) break;
         queueIndex++;
-        if (item) await processQueuedFrames(item, isBatchedTerminalUpdatesEnabled());
+        if (item) await processOneFrame(item);
         if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
 
         if (performance.now() - batchStart > YIELD_BUDGET_MS) {
@@ -480,18 +421,8 @@ async function processOutputQueue(): Promise<void> {
 }
 
 /**
- * Parse a single frame - decompress if needed, then return terminal payload bytes.
+ * Process a single frame - decompress if needed, then write to terminal.
  */
-async function parseQueuedFrame(item: OutputFrameItem): Promise<ParsedOutputFrame> {
-  if (item.compressed) {
-    const frame = await parseCompressedOutputFrame(item.payload);
-    return { cols: frame.cols, rows: frame.rows, data: frame.data };
-  }
-
-  const frame = parseOutputFrame(item.payload);
-  return { cols: frame.cols, rows: frame.rows, data: frame.data };
-}
-
 function bufferPendingFrame(sessionId: string, cols: number, rows: number, data: Uint8Array): void {
   if (data.length <= 0) {
     return;
@@ -520,44 +451,29 @@ function bufferPendingFrame(sessionId: string, cols: number, rows: number, data:
   frames.push(bufferedPayload);
 }
 
-async function processQueuedFrames(item: OutputFrameItem, batchingEnabled: boolean): Promise<void> {
+async function processOneFrame(item: OutputFrameItem): Promise<void> {
   try {
-    const frames: ParsedOutputFrame[] = [await parseQueuedFrame(item)];
-    const sessionId = item.sessionId;
+    let cols: number;
+    let rows: number;
+    let data: Uint8Array;
 
-    if (batchingEnabled) {
-      while (queueIndex < outputQueue.length) {
-        const next = outputQueue[queueIndex];
-        if (!next || next.sessionId !== sessionId) {
-          break;
-        }
-
-        queueIndex++;
-        frames.push(await parseQueuedFrame(next));
-      }
+    if (item.compressed) {
+      const frame = await parseCompressedOutputFrame(item.payload);
+      cols = frame.cols;
+      rows = frame.rows;
+      data = frame.data;
+    } else {
+      const frame = parseOutputFrame(item.payload);
+      cols = frame.cols;
+      rows = frame.rows;
+      data = frame.data;
     }
 
-    const state = sessionTerminals.get(sessionId);
+    const state = sessionTerminals.get(item.sessionId);
     if (state && state.opened) {
-      const lastFrame = frames[frames.length - 1];
-      if (!lastFrame) {
-        return;
-      }
-
-      const parts = frames.filter((frame) => frame.data.length > 0).map((frame) => frame.data);
-      const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
-      const mergedData =
-        totalLength > 0 ? concatUint8Arrays(parts, totalLength) : new Uint8Array(0);
-      const finalData = batchingEnabled
-        ? maybeWrapSynchronizedOutput(state, mergedData, frames.length)
-        : mergedData;
-
-      writeToTerminal(sessionId, state, lastFrame.cols, lastFrame.rows, finalData);
-      return;
-    }
-
-    for (const frame of frames) {
-      bufferPendingFrame(sessionId, frame.cols, frame.rows, frame.data);
+      writeToTerminal(item.sessionId, state, cols, rows, data);
+    } else if (data.length > 0) {
+      bufferPendingFrame(item.sessionId, cols, rows, data);
     }
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
@@ -570,6 +486,74 @@ const bracketedPasteState = new Map<string, boolean>();
 /** Check if session has bracketed paste mode enabled */
 export function isBracketedPasteEnabled(sessionId: string): boolean {
   return bracketedPasteState.get(sessionId) ?? false;
+}
+
+function isHideCursorOnInputBurstsEnabled(): boolean {
+  return $currentSettings.get()?.hideCursorOnInputBursts === true;
+}
+
+function scanCursorVisibility(data: Uint8Array, state: TerminalState): void {
+  for (let i = 0, end = data.length - 6; i <= end; i++) {
+    if (
+      data[i] === 0x1b &&
+      data[i + 1] === 0x5b &&
+      data[i + 2] === 0x3f &&
+      data[i + 3] === 0x32 &&
+      data[i + 4] === 0x35
+    ) {
+      const final = data[i + 5];
+      if (final === 0x68) {
+        state.remoteCursorVisible = true;
+      } else if (final === 0x6c) {
+        state.remoteCursorVisible = false;
+      }
+    }
+  }
+}
+
+function restoreBurstCursor(state: TerminalState): void {
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+    state.burstCursorRestoreTimer = null;
+  }
+
+  if (!state.burstCursorHidden) {
+    return;
+  }
+
+  state.burstCursorHidden = false;
+  if (state.remoteCursorVisible !== false) {
+    state.terminal.write(SHOW_CURSOR_SEQ);
+  }
+}
+
+function maybeHideCursorForBurst(state: TerminalState, dataLength: number): void {
+  if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
+    return;
+  }
+
+  const now = performance.now();
+  const last = state.lastBurstOutputAtMs ?? 0;
+  state.lastBurstOutputAtMs = now;
+  const isBurst =
+    dataLength >= CURSOR_BURST_MIN_BYTES || (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS);
+
+  if (!isBurst && !state.burstCursorHidden) {
+    return;
+  }
+
+  if (!state.burstCursorHidden) {
+    state.terminal.write(HIDE_CURSOR_SEQ);
+    state.burstCursorHidden = true;
+  }
+
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+  }
+
+  state.burstCursorRestoreTimer = window.setTimeout(() => {
+    restoreBurstCursor(state);
+  }, CURSOR_BURST_HIDE_MS);
 }
 
 /**
@@ -585,7 +569,13 @@ function writeToTerminal(
   // Track bracketed paste mode by scanning raw bytes (no string allocation)
   if (data.length >= 8) {
     scanBracketedPaste(data, sessionId);
+    scanCursorVisibility(data, state);
   }
+
+  if (data.length > 0) {
+    maybeHideCursorForBurst(state, data.length);
+  }
+
   // Resize if dimensions are valid and different
   if (cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened) {
     const currentCols = state.terminal.cols;
@@ -845,6 +835,11 @@ function sendFrame(frame: Uint8Array): void {
  * Buffers input when WebSocket is disconnected for replay on reconnect.
  */
 export function sendInput(sessionId: string, data: string): void {
+  const state = sessionTerminals.get(sessionId);
+  if (state) {
+    restoreBurstCursor(state);
+  }
+
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
     // Buffer input during disconnection (prevents lost keystrokes during reconnect)
     if (pendingInputQueue.length < MAX_PENDING_INPUT) {

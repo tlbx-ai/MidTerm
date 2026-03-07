@@ -16,6 +16,7 @@ public sealed partial class MidTermSettingsPublic
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
     public bool CursorBlink { get; set; } = false;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
+    public bool HideCursorOnInputBursts { get; set; } = false;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
     public TerminalColorSchemeSetting TerminalColorScheme { get; set; } = TerminalColorSchemeSetting.Auto;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
@@ -32,7 +33,6 @@ public sealed partial class MidTermSettingsPublic
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.Default;
     public bool ScrollbackProtection { get; set; } = false;
-    public bool BatchedTerminalUpdates { get; set; } = false;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
     public bool TmuxCompatibility { get; set; } = true;

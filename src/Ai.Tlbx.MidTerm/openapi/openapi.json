@@ -2134,6 +2134,7 @@
           "cursorStyle",
           "cursorBlink",
           "cursorInactiveStyle",
+          "hideCursorOnInputBursts",
           "theme",
           "terminalColorScheme",
           "tabTitleMode",
@@ -2148,7 +2149,6 @@
           "clipboardShortcuts",
           "terminalEnterMode",
           "scrollbackProtection",
-          "batchedTerminalUpdates",
           "inputMode",
           "fileRadar",
           "tmuxCompatibility",
@@ -2204,6 +2204,9 @@
           "cursorInactiveStyle": {
             "$ref": "#/components/schemas/CursorInactiveStyleSetting"
           },
+          "hideCursorOnInputBursts": {
+            "type": "boolean"
+          },
           "theme": {
             "$ref": "#/components/schemas/ThemeSetting"
           },
@@ -2246,9 +2249,6 @@
             "$ref": "#/components/schemas/TerminalEnterModeSetting"
           },
           "scrollbackProtection": {
-            "type": "boolean"
-          },
-          "batchedTerminalUpdates": {
             "type": "boolean"
           },
           "inputMode": {
