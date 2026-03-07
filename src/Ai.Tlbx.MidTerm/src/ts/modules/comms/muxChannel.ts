@@ -341,9 +341,7 @@ const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const COMPACT_THRESHOLD = 1000;
 const YIELD_BUDGET_MS = 8;
-const CURSOR_BURST_WINDOW_MS = 250;
-const CURSOR_BURST_HIDE_MS = 325;
-const CURSOR_BURST_MIN_BYTES = 1;
+const CURSOR_IDLE_SHOW_MS = 500;
 const SHOW_CURSOR_SEQ = '\x1b[?25h';
 const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
@@ -511,40 +509,8 @@ function scanCursorVisibility(data: Uint8Array, state: TerminalState): void {
   }
 }
 
-function restoreBurstCursor(state: TerminalState): void {
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-    state.burstCursorRestoreTimer = null;
-  }
-
-  if (!state.burstCursorHidden) {
-    return;
-  }
-
-  state.burstCursorHidden = false;
-  if (state.remoteCursorVisible !== false) {
-    state.terminal.write(SHOW_CURSOR_SEQ);
-  }
-}
-
-function maybeHideCursorForBurst(state: TerminalState, dataLength: number): void {
+function hideBurstCursor(state: TerminalState): void {
   if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
-    return;
-  }
-
-  if (dataLength <= 0) {
-    return;
-  }
-
-  const now = performance.now();
-  const last = state.lastBurstOutputAtMs ?? 0;
-  state.lastBurstOutputAtMs = now;
-  const isBurst =
-    dataLength >= CURSOR_BURST_MIN_BYTES ||
-    state.burstCursorHidden ||
-    (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS);
-
-  if (!isBurst && !state.burstCursorHidden) {
     return;
   }
 
@@ -555,11 +521,34 @@ function maybeHideCursorForBurst(state: TerminalState, dataLength: number): void
 
   if (state.burstCursorRestoreTimer != null) {
     clearTimeout(state.burstCursorRestoreTimer);
+    state.burstCursorRestoreTimer = null;
+  }
+}
+
+function showBurstCursor(state: TerminalState): void {
+  if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
+    return;
+  }
+
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+    state.burstCursorRestoreTimer = null;
+  }
+
+  if (state.burstCursorHidden) {
+    state.burstCursorHidden = false;
+    state.terminal.write(SHOW_CURSOR_SEQ);
+  }
+}
+
+function scheduleBurstCursorShow(state: TerminalState): void {
+  if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
+    return;
   }
 
   state.burstCursorRestoreTimer = window.setTimeout(() => {
-    restoreBurstCursor(state);
-  }, CURSOR_BURST_HIDE_MS);
+    showBurstCursor(state);
+  }, CURSOR_IDLE_SHOW_MS);
 }
 
 /**
@@ -579,7 +568,8 @@ function writeToTerminal(
   }
 
   if (data.length > 0) {
-    maybeHideCursorForBurst(state, data.length);
+    hideBurstCursor(state);
+    scheduleBurstCursorShow(state);
   }
 
   // Resize if dimensions are valid and different
@@ -843,7 +833,8 @@ function sendFrame(frame: Uint8Array): void {
 export function sendInput(sessionId: string, data: string): void {
   const state = sessionTerminals.get(sessionId);
   if (state) {
-    restoreBurstCursor(state);
+    showBurstCursor(state);
+    scheduleBurstCursorShow(state);
   }
 
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
