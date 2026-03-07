@@ -648,7 +648,7 @@ pwsh -NoProfile -File scripts/release-dev.ps1 `
     -mthostUpdate <yes|no>
 ```
 
-**Post-release:** After any release (dev or stable), your final message must be a ≤2-line summary of what was shipped. The user runs 100+ agents simultaneously and needs instant context to decide the next task.
+**Post-release:** After any release (dev or stable), your final message must include a short "what's in this release" summary with 2-5 concrete shipped items. Keep it compact, but include enough detail that the user can return to the thread later and immediately understand what changed.
 
 **Common mistakes to avoid:**
 - Running the release with uncommitted changes (script commits version.json — dirty tree causes conflicts)
