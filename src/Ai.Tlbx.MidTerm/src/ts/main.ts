@@ -154,6 +154,7 @@ import {
 import type { Session } from './types';
 import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
 import { bindClick, getOrCreateClientId } from './utils';
+import { showAlert } from './utils/dialog';
 import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
@@ -946,30 +947,89 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
+interface NavigatorWithStandalone extends Navigator {
+  standalone?: boolean;
+}
+
 function initPwaInstall(): void {
   let deferredPrompt: BeforeInstallPromptEvent | null = null;
   const row = document.getElementById('pwa-install-row');
-  const btn = document.getElementById('btn-install-pwa');
+  const btn = document.getElementById('btn-install-pwa') as HTMLButtonElement | null;
   if (!row || !btn) return;
+
+  const rowEl = row;
+  const btnEl = btn;
+  const isIos = isIosInstallableDevice();
+
+  function showRow(): void {
+    rowEl.classList.remove('hidden');
+  }
+
+  function hideRow(): void {
+    rowEl.classList.add('hidden');
+  }
+
+  function setButtonLabel(key: string): void {
+    btnEl.dataset.i18n = key;
+    btnEl.textContent = t(key);
+  }
+
+  if (isRunningAsInstalledPwa()) {
+    hideRow();
+    return;
+  }
+
+  if (isIos) {
+    showRow();
+    setButtonLabel('settings.behavior.showInstallSteps');
+  }
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e as BeforeInstallPromptEvent;
-    row.classList.remove('hidden');
+    setButtonLabel('settings.behavior.install');
+    showRow();
   });
 
   btn.addEventListener('click', () => {
-    if (!deferredPrompt) return;
-    void deferredPrompt.prompt().then(() => {
-      deferredPrompt = null;
-      row.classList.add('hidden');
+    if (deferredPrompt) {
+      void deferredPrompt.prompt().then(() => {
+        deferredPrompt = null;
+        hideRow();
+      });
+      return;
+    }
+
+    if (!isIos) return;
+
+    void showAlert(t('settings.behavior.installIosMessage'), {
+      title: t('settings.behavior.installIosTitle'),
     });
   });
 
   window.addEventListener('appinstalled', () => {
-    row.classList.add('hidden');
+    hideRow();
     deferredPrompt = null;
   });
+}
+
+function isIosInstallableDevice(): boolean {
+  const ua = navigator.userAgent.toLowerCase();
+  return (
+    /iphone|ipad|ipod/.test(ua) ||
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
+function isRunningAsInstalledPwa(): boolean {
+  const standaloneNavigator = navigator as NavigatorWithStandalone;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    window.matchMedia('(display-mode: window-controls-overlay)').matches ||
+    standaloneNavigator.standalone === true
+  );
 }
 
 function getActiveSessionTabBar(): HTMLDivElement | null {
