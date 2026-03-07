@@ -341,7 +341,9 @@ const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const COMPACT_THRESHOLD = 1000;
 const YIELD_BUDGET_MS = 8;
-const CURSOR_IDLE_SHOW_MS = 500;
+const CURSOR_BURST_WINDOW_MS = 180;
+const CURSOR_BURST_MIN_BYTES = 12;
+const CURSOR_IDLE_SHOW_MS = 650;
 const SHOW_CURSOR_SEQ = '\x1b[?25h';
 const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
@@ -509,6 +511,23 @@ function scanCursorVisibility(data: Uint8Array, state: TerminalState): void {
   }
 }
 
+function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === 0x1b) {
+      return true;
+    }
+
+    if (data[i] === 0xc2 && i + 1 < data.length) {
+      const next = data[i + 1];
+      if (next === 0x90 || next === 0x9b || next === 0x9d || next === 0x9e || next === 0x9f) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 function hideBurstCursor(state: TerminalState): void {
   if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
     return;
@@ -546,9 +565,31 @@ function scheduleBurstCursorShow(state: TerminalState): void {
     return;
   }
 
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+  }
+
   state.burstCursorRestoreTimer = window.setTimeout(() => {
     showBurstCursor(state);
   }, CURSOR_IDLE_SHOW_MS);
+}
+
+function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): boolean {
+  if (data.length <= 0) {
+    return false;
+  }
+
+  if (containsImmediateHideTerminalControl(data) || state.burstCursorHidden) {
+    return true;
+  }
+
+  const now = performance.now();
+  const last = state.lastBurstOutputAtMs ?? 0;
+  state.lastBurstOutputAtMs = now;
+
+  return (
+    data.length >= CURSOR_BURST_MIN_BYTES || (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS)
+  );
 }
 
 /**
@@ -567,8 +608,11 @@ function writeToTerminal(
     scanCursorVisibility(data, state);
   }
 
-  if (data.length > 0) {
+  if (shouldHideCursorForOutput(state, data)) {
     hideBurstCursor(state);
+  }
+
+  if (data.length > 0) {
     scheduleBurstCursorShow(state);
   }
 
