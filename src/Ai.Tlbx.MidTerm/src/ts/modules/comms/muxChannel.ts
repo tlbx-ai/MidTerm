@@ -341,9 +341,9 @@ const MAX_QUEUE_SIZE = 10000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const COMPACT_THRESHOLD = 1000;
 const YIELD_BUDGET_MS = 8;
-const CURSOR_BURST_WINDOW_MS = 75;
-const CURSOR_BURST_HIDE_MS = 140;
-const CURSOR_BURST_MIN_BYTES = 24;
+const CURSOR_BURST_WINDOW_MS = 250;
+const CURSOR_BURST_HIDE_MS = 325;
+const CURSOR_BURST_MIN_BYTES = 1;
 const SHOW_CURSOR_SEQ = '\x1b[?25h';
 const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
@@ -532,11 +532,17 @@ function maybeHideCursorForBurst(state: TerminalState, dataLength: number): void
     return;
   }
 
+  if (dataLength <= 0) {
+    return;
+  }
+
   const now = performance.now();
   const last = state.lastBurstOutputAtMs ?? 0;
   state.lastBurstOutputAtMs = now;
   const isBurst =
-    dataLength >= CURSOR_BURST_MIN_BYTES || (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS);
+    dataLength >= CURSOR_BURST_MIN_BYTES ||
+    state.burstCursorHidden ||
+    (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS);
 
   if (!isBurst && !state.burstCursorHidden) {
     return;
