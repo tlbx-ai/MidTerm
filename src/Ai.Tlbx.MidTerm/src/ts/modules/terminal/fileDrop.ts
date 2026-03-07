@@ -19,6 +19,8 @@ const log = createLogger('fileDrop');
 // =============================================================================
 
 const TEXT_FILE_SIZE_LIMIT = 40 * 1024; // 40KB
+const LONG_TRANSFER_TEXT_THRESHOLD = 1024;
+const TRANSFER_OVERLAY_CLASS = 'terminal-transfer-active';
 
 const IMAGE_EXTENSIONS = new Set([
   '.png',
@@ -97,6 +99,11 @@ export interface ClipboardPasteContext {
 interface ClipboardImageData {
   blob: Blob;
   type: string;
+}
+
+interface TransferOverlayController {
+  setLabel: (label: string) => void;
+  close: () => void;
 }
 
 // =============================================================================
@@ -189,6 +196,71 @@ function showHttpsRequiredToast(): void {
   toast.appendChild(content);
   toast.appendChild(close);
   document.body.appendChild(toast);
+}
+
+function getTerminalContainer(sessionId: string): HTMLElement | null {
+  const container = document.getElementById(`terminal-${sessionId}`);
+  return container instanceof HTMLElement ? container : null;
+}
+
+function ensureTransferOverlay(container: HTMLElement): HTMLElement {
+  let overlay = container.querySelector<HTMLElement>('.terminal-transfer-overlay');
+  if (overlay) {
+    return overlay;
+  }
+
+  overlay = document.createElement('div');
+  overlay.className = 'terminal-transfer-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+
+  const spinner = document.createElement('div');
+  spinner.className = 'terminal-transfer-spinner';
+
+  const label = document.createElement('div');
+  label.className = 'terminal-transfer-label';
+
+  overlay.appendChild(spinner);
+  overlay.appendChild(label);
+  container.appendChild(overlay);
+  return overlay;
+}
+
+function showTransferOverlay(sessionId: string, initialLabel: string): TransferOverlayController {
+  const container = getTerminalContainer(sessionId);
+  if (!container) {
+    return {
+      setLabel: () => {},
+      close: () => {},
+    };
+  }
+
+  const overlay = ensureTransferOverlay(container);
+  const label = overlay.querySelector<HTMLElement>('.terminal-transfer-label');
+  const nextCount = Number(container.dataset.transferCount ?? '0') + 1;
+  container.dataset.transferCount = String(nextCount);
+  container.classList.add(TRANSFER_OVERLAY_CLASS);
+
+  const setLabel = (text: string): void => {
+    if (label) {
+      label.textContent = text;
+    }
+  };
+
+  setLabel(initialLabel);
+
+  return {
+    setLabel,
+    close: () => {
+      const currentCount = Number(container.dataset.transferCount ?? '1');
+      const next = Math.max(0, currentCount - 1);
+      if (next === 0) {
+        delete container.dataset.transferCount;
+        container.classList.remove(TRANSFER_OVERLAY_CLASS);
+      } else {
+        container.dataset.transferCount = String(next);
+      }
+    },
+  };
 }
 
 async function readFileAsText(file: File): Promise<string> {
@@ -312,7 +384,16 @@ async function pasteClipboardText(sessionId: string): Promise<ClipboardPasteResu
     const text = await navigator.clipboard.readText();
     if (text) {
       const sanitized = sanitizePasteContent(text);
-      pasteToTerminal(sessionId, sanitized);
+      if (sanitized.length > LONG_TRANSFER_TEXT_THRESHOLD) {
+        const overlay = showTransferOverlay(sessionId, t('fileDrop.transferringText'));
+        try {
+          await pasteToTerminal(sessionId, sanitized);
+        } finally {
+          overlay.close();
+        }
+      } else {
+        await pasteToTerminal(sessionId, sanitized);
+      }
       return 'text';
     }
   } catch {
@@ -326,20 +407,27 @@ async function pasteClipboardImageAsPath(
   sessionId: string,
   imageData: ClipboardImageData,
 ): Promise<ClipboardPasteResult> {
+  const overlay = showTransferOverlay(sessionId, t('fileDrop.uploadingToTerminal'));
   const file = buildClipboardImageFile(imageData);
-  const path = await uploadFile(sessionId, file);
-  if (!path) {
-    return 'unavailable';
-  }
+  try {
+    const path = await uploadFile(sessionId, file);
+    if (!path) {
+      return 'unavailable';
+    }
 
-  pasteToTerminal(sessionId, sanitizePasteContent(path), true);
-  return 'image';
+    overlay.setLabel(t('fileDrop.transferringToTerminal'));
+    await pasteToTerminal(sessionId, sanitizePasteContent(path), true);
+    return 'image';
+  } finally {
+    overlay.close();
+  }
 }
 
 async function sendNativeClipboardImage(
   sessionId: string,
   imageData: ClipboardImageData,
 ): Promise<ClipboardPasteResult> {
+  const overlay = showTransferOverlay(sessionId, t('fileDrop.uploadingToTerminal'));
   const file = buildClipboardImageFile(imageData);
   const formData = new FormData();
   formData.append('file', file);
@@ -355,6 +443,8 @@ async function sendNativeClipboardImage(
     showDropToast(`${t('fileDrop.clipboardFailed')}: ${resp.status}`);
   } catch {
     // network error
+  } finally {
+    overlay.close();
   }
 
   return 'unavailable';
@@ -370,44 +460,69 @@ export async function handleFileDrop(files: FileList): Promise<void> {
   const activeId = $activeSessionId.get();
   if (!activeId || files.length === 0) return;
 
+  const fileList = Array.from(files);
+  const needsUpload = fileList.some((file) => isImageFile(file.name) || isRejectedFile(file.name));
+  const needsLongTextTransfer = fileList.some(
+    (file) =>
+      !isImageFile(file.name) &&
+      !isRejectedFile(file.name) &&
+      file.size > LONG_TRANSFER_TEXT_THRESHOLD,
+  );
+  const overlay =
+    needsUpload || needsLongTextTransfer
+      ? showTransferOverlay(
+          activeId,
+          needsUpload ? t('fileDrop.uploadingToTerminal') : t('fileDrop.transferringText'),
+        )
+      : null;
   const uploadedPaths: string[] = [];
 
-  for (const file of Array.from(files)) {
-    // Image files: upload and collect path
-    if (isImageFile(file.name)) {
-      const path = await uploadFile(activeId, file);
-      if (path) uploadedPaths.push(path);
-      continue;
+  try {
+    for (const file of fileList) {
+      // Image files: upload and collect path
+      if (isImageFile(file.name)) {
+        const path = await uploadFile(activeId, file);
+        if (path) uploadedPaths.push(path);
+        continue;
+      }
+
+      // Binary/document files: upload and paste path (PDFs, archives, etc.)
+      if (isRejectedFile(file.name)) {
+        const path = await uploadFile(activeId, file);
+        if (path) uploadedPaths.push(path);
+        continue;
+      }
+
+      // Text files: check size limit
+      if (file.size > TEXT_FILE_SIZE_LIMIT) {
+        showDropToast(`${t('fileDrop.fileTooLarge')}: ${file.name}`);
+        continue;
+      }
+
+      // Read and paste text content
+      try {
+        const content = await readFileAsText(file);
+        const sanitized = sanitizePasteContent(content);
+        if (overlay) {
+          overlay.setLabel(t('fileDrop.transferringText'));
+        }
+        await pasteToTerminal(activeId, sanitized, false);
+      } catch (_err) {
+        log.error(() => `Failed to read file: ${file.name}`);
+        showDropToast(`${t('fileDrop.failedToRead')}: ${file.name}`);
+      }
     }
 
-    // Binary/document files: upload and paste path (PDFs, archives, etc.)
-    if (isRejectedFile(file.name)) {
-      const path = await uploadFile(activeId, file);
-      if (path) uploadedPaths.push(path);
-      continue;
+    // Paste collected file paths (if any)
+    if (uploadedPaths.length > 0) {
+      if (overlay) {
+        overlay.setLabel(t('fileDrop.transferringToTerminal'));
+      }
+      const joined = sanitizePasteContent(uploadedPaths.join(' '));
+      await pasteToTerminal(activeId, joined, true);
     }
-
-    // Text files: check size limit
-    if (file.size > TEXT_FILE_SIZE_LIMIT) {
-      showDropToast(`${t('fileDrop.fileTooLarge')}: ${file.name}`);
-      continue;
-    }
-
-    // Read and paste text content
-    try {
-      const content = await readFileAsText(file);
-      const sanitized = sanitizePasteContent(content);
-      pasteToTerminal(activeId, sanitized, false);
-    } catch (_err) {
-      log.error(() => `Failed to read file: ${file.name}`);
-      showDropToast(`${t('fileDrop.failedToRead')}: ${file.name}`);
-    }
-  }
-
-  // Paste collected file paths (if any)
-  if (uploadedPaths.length > 0) {
-    const joined = sanitizePasteContent(uploadedPaths.join(' '));
-    pasteToTerminal(activeId, joined, true);
+  } finally {
+    overlay?.close();
   }
 }
 

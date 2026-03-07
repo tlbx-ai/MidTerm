@@ -1257,6 +1257,56 @@ html, body {
     pointer-events: none;
 }
 
+.terminal-transfer-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: linear-gradient(180deg, rgba(9, 14, 24, 0.76), rgba(9, 14, 24, 0.9));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease;
+    z-index: 120;
+}
+
+.terminal-container.terminal-transfer-active .terminal-transfer-overlay {
+    opacity: 1;
+}
+
+.terminal-transfer-spinner {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 3px solid rgba(124, 171, 255, 0.18);
+    border-top-color: var(--accent-blue);
+    border-right-color: rgba(124, 171, 255, 0.82);
+    animation: terminal-transfer-spin 0.85s linear infinite;
+    box-shadow: 0 0 0 10px rgba(124, 171, 255, 0.08);
+}
+
+.terminal-transfer-label {
+    max-width: min(80%, 420px);
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(124, 171, 255, 0.24);
+    color: var(--text-primary);
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-wrap: balance;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
+}
+
+@keyframes terminal-transfer-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* xterm sizing - natural size based on rows/cols */
 .terminal-container .xterm {
     flex-shrink: 0;

@@ -625,7 +625,7 @@ export function setupTerminalEvents(
     if (!window.isSecureContext && e.clipboardData) {
       const text = e.clipboardData.getData('text/plain');
       if (text) {
-        pasteToTerminal(sessionId, sanitizePasteContent(text));
+        void pasteToTerminal(sessionId, sanitizePasteContent(text));
       }
     }
     // On secure contexts, paste is handled by keyboard shortcut via handleClipboardPaste
@@ -817,11 +817,11 @@ function hidePasteIndicatorDelayed(startTime: number): void {
  *
  * @param isFilePath - If true, wrap content in quotes for file path handling.
  */
-export function pasteToTerminal(
+export async function pasteToTerminal(
   sessionId: string,
   data: string,
   isFilePath: boolean = false,
-): void {
+): Promise<void> {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
@@ -851,14 +851,14 @@ export function pasteToTerminal(
     if (showIndicator) {
       hidePasteIndicatorDelayed(startTime);
     }
+    return;
   } else {
     // Non-BPM: chunk with delays to prevent PTY overflow
     if (content.length > NON_BPM_CHUNK_SIZE) {
-      void sendChunkedWithDelay(sessionId, content).then(() => {
-        if (showIndicator) {
-          hidePasteIndicatorDelayed(startTime);
-        }
-      });
+      await sendChunkedWithDelay(sessionId, content);
+      if (showIndicator) {
+        hidePasteIndicatorDelayed(startTime);
+      }
     } else {
       sendInput(sessionId, content);
       if (showIndicator) {

@@ -317,7 +317,7 @@ async function handleScreenshot(download = false): Promise<void> {
     }
     const result = (await resp.json()) as UploadResponse;
     if (result.path) {
-      pasteToTerminal(sessionId, result.path, true);
+      void pasteToTerminal(sessionId, result.path, true);
       log.info(() => 'Screenshot pasted to terminal');
     }
   } catch (err) {
