@@ -244,6 +244,44 @@ public class Program
 
         var shutdownService = new ShutdownService();
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+        var cleanupStarted = 0;
+
+        async Task CleanupAsync()
+        {
+            if (Interlocked.Exchange(ref cleanupStarted, 1) != 0)
+            {
+                return;
+            }
+
+            Log.Info(() => "Disposing managers...");
+
+            try
+            {
+                using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                await muxManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
+                await sessionManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Log.Warn(() => "Cleanup timed out after 8 seconds");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Cleanup error: {ex.Message}");
+            }
+            finally
+            {
+                gitWatcher.Dispose();
+                TmuxLog.Shutdown();
+                TmuxScriptWriter.Cleanup();
+                BrowserLog.Shutdown();
+                BrowserScriptWriter.Cleanup();
+                tempCleanupService.CleanupAllMidTermFiles();
+                Log.Shutdown();
+                instanceGuard.Dispose();
+                shutdownService.Dispose();
+            }
+        }
 
         _ = EndpointSetup.DetectGitAsync();
         EndpointSetup.DetectCodeSigning();
@@ -276,52 +314,19 @@ public class Program
         lifetime.ApplicationStopping.Register(() =>
         {
             Log.Info(() => "Shutdown requested, signaling components...");
-
             shutdownService.SignalShutdown();
-
-            Thread.Sleep(200);
-
-            Log.Info(() => "Disposing managers...");
-
-            try
-            {
-                using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                muxManager.DisposeAsync().AsTask().Wait(cleanupCts.Token);
-                sessionManager.DisposeAsync().AsTask().Wait(cleanupCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                Log.Warn(() => "Cleanup timed out after 8 seconds");
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(() => $"Cleanup error: {ex.Message}");
-            }
-            finally
-            {
-                gitWatcher.Dispose();
-                TmuxLog.Shutdown();
-                TmuxScriptWriter.Cleanup();
-                BrowserLog.Shutdown();
-                BrowserScriptWriter.Cleanup();
-                tempCleanupService.CleanupAllMidTermFiles();
-                Log.Shutdown();
-                instanceGuard.Dispose();
-                shutdownService.Dispose();
-            }
         });
 
         shutdownService.Token.Register(() =>
         {
-            var timer = new Timer(_ =>
+            DelayedActionScheduler.Schedule(TimeSpan.FromSeconds(10), () =>
             {
                 if (shutdownService.IsShuttingDown)
                 {
                     Log.Error(() => "Shutdown timeout exceeded (10s), forcing exit");
                     Environment.Exit(1);
                 }
-            }, null, 10000, Timeout.Infinite);
-            GC.KeepAlive(timer);
+            });
         });
 
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
@@ -330,6 +335,13 @@ public class Program
 
         WriteEventLog($"MainCore: Starting server on https://{bindAddress}:{port}");
 
-        WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
+        try
+        {
+            WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
+        }
+        finally
+        {
+            await CleanupAsync();
+        }
     }
 }

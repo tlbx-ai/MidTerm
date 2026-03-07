@@ -72,8 +72,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         try
         {
-            using var updateService = new UpdateService();
-            return updateService.InstalledManifest.MinCompatiblePty;
+            return UpdateService.ReadInstalledManifest().MinCompatiblePty;
         }
         catch
         {

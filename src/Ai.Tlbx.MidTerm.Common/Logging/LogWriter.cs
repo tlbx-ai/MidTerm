@@ -9,6 +9,7 @@ internal sealed class LogWriter : IDisposable
     private const int BufferSizeBytes = 65536;
     private const int FlushIntervalMs = 100;
     private const int PeriodicCleanupIntervalMs = 60 * 60 * 1000; // 1 hour
+    private const int SegmentDigits = 3;
 
     private readonly Channel<LogEntry> _queue;
     private readonly CancellationTokenSource _cts = new();
@@ -23,6 +24,7 @@ internal sealed class LogWriter : IDisposable
     private string? _currentFilePath;
     private long _currentFileSize;
     private DateOnly _currentDate;
+    private int _currentSegment;
 
     public LogWriter(string filePrefix, string logDirectory, LogRotationPolicy policy)
     {
@@ -181,15 +183,15 @@ internal sealed class LogWriter : IDisposable
 
         try
         {
-            EnsureFileOpen();
-            RotateIfNeeded();
-
             var text = buffer.ToString();
+            var textSize = Encoding.UTF8.GetByteCount(text);
+            EnsureFileOpen();
+            RotateIfNeeded(textSize);
             buffer.Clear();
 
             await _currentWriter!.WriteAsync(text).ConfigureAwait(false);
             await _currentWriter.FlushAsync().ConfigureAwait(false);
-            _currentFileSize += Encoding.UTF8.GetByteCount(text);
+            _currentFileSize += textSize;
         }
         catch
         {
@@ -212,7 +214,8 @@ internal sealed class LogWriter : IDisposable
 
         _currentDate = today;
         Directory.CreateDirectory(_logDirectory);
-        _currentFilePath = Path.Combine(_logDirectory, $"{_filePrefix}-{today:yyyy-MM-dd}.log");
+        _currentSegment = GetCurrentSegment(today);
+        _currentFilePath = BuildLogFilePath(today, _currentSegment);
 
         _currentFile = new FileStream(
             _currentFilePath,
@@ -226,16 +229,69 @@ internal sealed class LogWriter : IDisposable
         _currentFileSize = _currentFile.Length;
     }
 
-    private void RotateIfNeeded()
+    private void RotateIfNeeded(int pendingWriteBytes)
     {
-        if (_currentFileSize < _policy.MaxFileSizeBytes)
+        if (_currentFileSize == 0)
+        {
+            return;
+        }
+
+        if (_currentFileSize + pendingWriteBytes <= _policy.MaxFileSizeBytes)
         {
             return;
         }
 
         CloseCurrentFile();
-        EnsureFileOpen();
+        _currentSegment++;
+        _currentFilePath = BuildLogFilePath(_currentDate, _currentSegment);
+
+        _currentFile = new FileStream(
+            _currentFilePath,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 4096,
+            useAsync: true);
+
+        _currentWriter = new StreamWriter(_currentFile, Encoding.UTF8, leaveOpen: false);
+        _currentFileSize = _currentFile.Length;
         EnforceDirectorySizeLimit();
+    }
+
+    private int GetCurrentSegment(DateOnly today)
+    {
+        var pattern = $"{_filePrefix}-{today:yyyy-MM-dd}*.log";
+        var files = Directory.EnumerateFiles(_logDirectory, pattern)
+            .Select(path => (Path: path, Segment: TryParseSegment(Path.GetFileName(path))))
+            .Where(item => item.Segment >= 0)
+            .OrderByDescending(item => item.Segment)
+            .ToList();
+
+        if (files.Count == 0)
+        {
+            return 0;
+        }
+
+        var latest = files[0];
+        var latestSize = new FileInfo(latest.Path).Length;
+        return latestSize >= _policy.MaxFileSizeBytes ? latest.Segment + 1 : latest.Segment;
+    }
+
+    private string BuildLogFilePath(DateOnly today, int segment)
+    {
+        return Path.Combine(_logDirectory, $"{_filePrefix}-{today:yyyy-MM-dd}.{segment.ToString($"D{SegmentDigits}")}.log");
+    }
+
+    private static int TryParseSegment(string fileName)
+    {
+        var dotIndex = fileName.LastIndexOf('.', fileName.Length - 5);
+        if (dotIndex < 0)
+        {
+            return -1;
+        }
+
+        var segmentText = fileName[(dotIndex + 1)..^4];
+        return int.TryParse(segmentText, out var segment) ? segment : -1;
     }
 
     private void EnforceDirectorySizeLimit()

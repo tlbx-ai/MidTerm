@@ -178,10 +178,14 @@ internal static class GitCommandRunner
     {
         var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);
 
-        var (_, unstaged, _) = await RunGitAsync(repoRoot, "diff", "--numstat");
+        var unstagedTask = RunGitAsync(repoRoot, "diff", "--numstat");
+        var stagedTask = RunGitAsync(repoRoot, "diff", "--cached", "--numstat");
+        await Task.WhenAll(unstagedTask, stagedTask);
+
+        var (_, unstaged, _) = await unstagedTask;
         ParseNumStat(result, unstaged);
 
-        var (_, staged, _) = await RunGitAsync(repoRoot, "diff", "--cached", "--numstat");
+        var (_, staged, _) = await stagedTask;
         ParseNumStat(result, staged);
 
         return result;
