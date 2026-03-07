@@ -28,6 +28,7 @@ let keysExpanded = localStorage.getItem('smartinput-keys-expanded') === 'true';
 let isRecording = false;
 let touchControllerOriginalParent: HTMLElement | null = null;
 let touchControllerOriginalNext: Node | null = null;
+const MAX_TEXTAREA_LINES = 5;
 
 export function isSmartInputMode(): boolean {
   const mode = $currentSettings.get()?.inputMode;
@@ -215,6 +216,7 @@ function createInputElements(): {
   textarea.className = 'smart-input-textarea';
   textarea.rows = 1;
   textarea.placeholder = 'Type here...';
+  resizeTextarea(textarea);
 
   const sendBtn = document.createElement('button');
   sendBtn.className = 'smart-input-send-btn';
@@ -239,9 +241,7 @@ function createInputElements(): {
 
   // Auto-grow textarea
   textarea.addEventListener('input', () => {
-    textarea.style.height = 'auto';
-    const maxHeight = parseInt(getComputedStyle(textarea).lineHeight, 10) * 3;
-    textarea.style.height = `${String(Math.min(textarea.scrollHeight, maxHeight))}px`;
+    resizeTextarea(textarea);
   });
 
   // Enter to send, Shift+Enter for newline
@@ -330,8 +330,23 @@ function sendText(ta: HTMLTextAreaElement): void {
   }, 50);
 
   ta.value = '';
-  ta.style.height = 'auto';
+  ta.scrollTop = 0;
+  resizeTextarea(ta);
   ta.focus();
+}
+
+function resizeTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto';
+
+  const computedStyle = getComputedStyle(textarea);
+  const lineHeight = Number.parseFloat(computedStyle.lineHeight);
+  const fallbackFontSize = Number.parseFloat(computedStyle.fontSize) || 16;
+  const effectiveLineHeight = Number.isFinite(lineHeight) ? lineHeight : fallbackFontSize * 1.2;
+  const maxHeight = effectiveLineHeight * MAX_TEXTAREA_LINES;
+  const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+
+  textarea.style.height = `${String(nextHeight)}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
 }
 
 function beginRecording(): void {

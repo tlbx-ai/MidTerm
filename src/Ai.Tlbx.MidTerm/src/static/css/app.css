@@ -5738,8 +5738,8 @@ html, body {
     font-family: inherit;
     font-size: 15px;
     line-height: 1.4;
-    max-height: calc(1.4em * 3 + 16px);
-    overflow-y: auto;
+    max-height: calc(1.4em * 5 + 16px);
+    overflow-y: hidden;
     outline: none;
 }
 
