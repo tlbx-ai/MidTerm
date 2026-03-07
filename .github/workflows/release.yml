@@ -123,15 +123,10 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Restore mt + mthost
-        run: |
-          dotnet restore src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet restore src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-
       - name: Build mt + mthost
         run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --no-restore --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --no-restore --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -223,7 +218,7 @@ jobs:
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
-        run: security delete-keychain "$KEYCHAIN_PATH"
+        run: security delete-keychain "$KEYCHAIN_PATH" || true
 
   # ── Build Windows: hosted runner for dev, self-hosted with signing for stable ─
   build-windows:
@@ -247,17 +242,11 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Restore mt + mthost
-        shell: pwsh
-        run: |
-          dotnet restore src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet restore src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-
       - name: Build mt + mthost
         shell: pwsh
         run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --no-restore --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --no-restore --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Stage artifacts
         shell: pwsh
