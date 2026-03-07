@@ -12,15 +12,18 @@ const log = createLogger('process');
 
 const processStates = new Map<string, ProcessState>();
 
-const processStateListeners: ((sessionId: string, state: ProcessState) => void)[] = [];
+const processStateListeners = new Set<(sessionId: string, state: ProcessState) => void>();
 
 /**
  * Add a listener for process state changes.
  */
 export function addProcessStateListener(
   callback: (sessionId: string, state: ProcessState) => void,
-): void {
-  processStateListeners.push(callback);
+): () => void {
+  processStateListeners.add(callback);
+  return () => {
+    processStateListeners.delete(callback);
+  };
 }
 
 /**

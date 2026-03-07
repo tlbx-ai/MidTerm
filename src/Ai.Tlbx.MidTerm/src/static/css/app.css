@@ -6705,40 +6705,34 @@ body.has-app-background::after {
 }
 
 /* Accessibility: Focus states for keyboard navigation */
-.session-item:focus-visible,
-.topbar-btn:focus-visible,
-.touch-key:focus-visible,
-.sidebar-btn:focus-visible,
-.sidebar-nav-btn:focus-visible,
-.btn-history:focus-visible,
-.history-item:focus-visible,
-.session-pin:focus-visible,
-.session-resize:focus-visible,
-.session-rename:focus-visible,
-.session-inject:focus-visible,
-.session-undock:focus-visible,
-.session-close:focus-visible,
-.add-session-btn:focus-visible,
-.settings-tab:focus-visible {
+:where(
+  button,
+  input:not([type='hidden']),
+  select,
+  textarea,
+  a[href],
+  summary,
+  [role='button'],
+  [tabindex]:not([tabindex='-1'])
+):focus-visible {
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
 }
 
-.session-item:focus,
-.topbar-btn:focus,
-.touch-key:focus,
-.sidebar-btn:focus,
-.sidebar-nav-btn:focus,
-.btn-history:focus,
-.history-item:focus,
-.session-pin:focus,
-.session-resize:focus,
-.session-rename:focus,
-.session-inject:focus,
-.session-undock:focus,
-.session-close:focus,
-.add-session-btn:focus,
-.settings-tab:focus {
+:where(
+  button,
+  input:not([type='hidden']),
+  select,
+  textarea,
+  a[href],
+  summary,
+  [role='button'],
+  [tabindex]:not([tabindex='-1'])
+):focus {
+  outline: none;
+}
+
+.xterm-helper-textarea:focus-visible {
   outline: none;
 }
 
@@ -7058,23 +7052,23 @@ body.has-app-background::after {
 
 /* Syntax Highlighting */
 .hl-keyword {
-  color: #569cd6;
+  color: var(--accent-blue);
 }
 .hl-string {
-  color: #ce9178;
+  color: var(--accent-orange);
 }
 .hl-comment {
-  color: #6a9955;
+  color: var(--text-muted);
   font-style: italic;
 }
 .hl-number {
-  color: #b5cea8;
+  color: var(--accent-green);
 }
 .hl-function {
-  color: #dcdcaa;
+  color: var(--accent-violet);
 }
 .hl-type {
-  color: #4ec9b0;
+  color: var(--accent-cyan);
 }
 
 /* Code line numbers */

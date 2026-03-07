@@ -430,9 +430,9 @@ async function createSession(): Promise<void> {
       removeSession(tempId);
 
       if (!data) return;
+      setSession(data);
       newlyCreatedSessions.add(data.id);
-      // Wait for session to appear in store (WebSocket update race condition)
-      selectSessionWithRetry(data.id);
+      selectSession(data.id);
     })
     .catch((e: unknown) => {
       // Remove temporary session on error
@@ -441,34 +441,6 @@ async function createSession(): Promise<void> {
       // Subscription handles renderSessionList and updateEmptyState via store change
       log.error(() => `Failed to create session: ${String(e)}`);
     });
-}
-
-/**
- * Select session with retry - handles race condition where WebSocket
- * state update hasn't arrived yet after API creates the session.
- */
-function selectSessionWithRetry(sessionId: string, attempt = 0): void {
-  const maxAttempts = 10;
-  const retryDelay = 100;
-
-  // Check if session exists in store
-  if (getSession(sessionId)) {
-    selectSession(sessionId);
-    return;
-  }
-
-  // Retry if not found yet
-  if (attempt < maxAttempts) {
-    setTimeout(() => {
-      selectSessionWithRetry(sessionId, attempt + 1);
-    }, retryDelay);
-  } else {
-    // Give up after max attempts - select anyway, terminal will work once WS update arrives
-    log.warn(
-      () => `Session ${sessionId} not in store after ${maxAttempts} attempts, selecting anyway`,
-    );
-    selectSession(sessionId);
-  }
 }
 
 function selectSession(sessionId: string, options?: { closeSettingsPanel?: boolean }): void {
@@ -801,6 +773,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
   })
     .then(({ data }) => {
       if (!data) return;
+      setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
 

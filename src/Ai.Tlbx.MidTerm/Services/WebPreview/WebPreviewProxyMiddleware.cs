@@ -516,7 +516,9 @@ public sealed partial class WebPreviewProxyMiddleware
         // Guard: if web preview is active and a proxied page's JS leaks calls to
         // /api/webpreview/* (e.g. inner MidTerm calling DELETE /api/webpreview/target),
         // proxy those upstream instead of letting them hit our local handlers.
-        if (_service.IsActive && path.StartsWithSegments("/api/webpreview"))
+        if (_service.IsActive
+            && path.StartsWithSegments("/api/webpreview")
+            && ShouldProxyWebPreviewApiRequest(context.Request))
         {
             var targetUri = _service.TargetUri!;
             if (context.WebSockets.IsWebSocketRequest)
@@ -546,6 +548,23 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         await _next(context);
+    }
+
+    private static bool ShouldProxyWebPreviewApiRequest(HttpRequest request)
+    {
+        if (!request.Headers.TryGetValue("Referer", out var refererValues))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
+        {
+            return false;
+        }
+
+        var refererPath = refererUri.AbsolutePath;
+        return refererPath.Equals(ProxyPrefix, StringComparison.OrdinalIgnoreCase)
+            || refererPath.StartsWith(ProxyPrefix + "/", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

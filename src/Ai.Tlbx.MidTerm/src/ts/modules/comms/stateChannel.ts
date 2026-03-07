@@ -11,6 +11,7 @@ import type {
   Session,
   UpdateInfo,
   WsCommand,
+  WsCommandAction,
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
@@ -413,9 +414,20 @@ function handleCommandResponse(response: WsCommandResponse): void {
  * Send a command to the server over the state WebSocket.
  * Returns a promise that resolves with the response data or rejects on error.
  */
+export function sendCommand<T = unknown>(
+  action: 'browser.claimMain' | 'browser.releaseMain',
+): Promise<T>;
+export function sendCommand<T = unknown>(
+  action: 'session.rename',
+  payload: WsCommandPayload<'session.rename'>,
+): Promise<T>;
+export function sendCommand<T = unknown>(
+  action: 'session.reorder',
+  payload: WsCommandPayload<'session.reorder'>,
+): Promise<T>;
 export async function sendCommand<T = unknown>(
-  action: string,
-  payload?: WsCommandPayload,
+  action: WsCommandAction,
+  payload?: WsCommandPayload<'session.rename'> | WsCommandPayload<'session.reorder'>,
 ): Promise<T> {
   const ws = stateWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -423,12 +435,33 @@ export async function sendCommand<T = unknown>(
   }
 
   const id = crypto.randomUUID();
-  const command: WsCommand = {
-    type: 'command',
-    id,
-    action,
-    payload,
-  };
+  let command: WsCommand;
+  switch (action) {
+    case 'browser.claimMain':
+    case 'browser.releaseMain':
+      command = {
+        type: 'command',
+        id,
+        action,
+      };
+      break;
+    case 'session.rename':
+      command = {
+        type: 'command',
+        id,
+        action,
+        payload: payload as WsCommandPayload<'session.rename'>,
+      };
+      break;
+    case 'session.reorder':
+      command = {
+        type: 'command',
+        id,
+        action,
+        payload: payload as WsCommandPayload<'session.reorder'>,
+      };
+      break;
+  }
 
   return new Promise<T>((resolve, reject) => {
     const timeout = window.setTimeout(() => {

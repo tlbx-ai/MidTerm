@@ -19,7 +19,7 @@ public sealed class HistoryService
     private static readonly TimeSpan SaveDebounceDelay = TimeSpan.FromMilliseconds(250);
 
     private readonly string _historyPath;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private readonly Timer _saveTimer;
     private LaunchHistory _history = new();
     private bool _savePending;

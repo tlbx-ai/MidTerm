@@ -37,6 +37,9 @@ let initialized = false;
 
 /** Previously active sidebar item so we can update active state surgically */
 let previousActiveItem: HTMLElement | null = null;
+let unsubscribeSessions: (() => void) | null = null;
+let unsubscribeActiveSession: (() => void) | null = null;
+let unsubscribeLayout: (() => void) | null = null;
 
 // =============================================================================
 // Change Detection
@@ -254,7 +257,7 @@ export function initializeSidebarUpdater(): void {
   previousActiveItem = document.querySelector<HTMLElement>('.session-item.active');
 
   // Subscribe to session changes
-  $sessions.subscribe((sessions) => {
+  unsubscribeSessions = $sessions.subscribe((sessions) => {
     const changeType = detectChangeType(sessions);
     if (changeType === 'none') return;
 
@@ -264,14 +267,14 @@ export function initializeSidebarUpdater(): void {
   });
 
   // Subscribe to active session changes for active class and title updates
-  $activeSessionId.subscribe((activeId) => {
+  unsubscribeActiveSession = $activeSessionId.subscribe((activeId) => {
     updateActiveStates(activeId);
     updateMobileTitle();
   });
 
   // Layout changes affect both in-layout state and sidebar grouping/order.
   // Re-render whenever layout leaf membership/order changes.
-  $layout.subscribe((layout) => {
+  unsubscribeLayout = $layout.subscribe((layout) => {
     const nextSignature = getLayoutSignature(layout.root);
     if (nextSignature === previousLayoutSignature) return;
     previousLayoutSignature = nextSignature;
@@ -281,4 +284,15 @@ export function initializeSidebarUpdater(): void {
   });
 
   log.info(() => 'Sidebar updater initialized');
+}
+
+export function cleanupSidebarUpdater(): void {
+  unsubscribeSessions?.();
+  unsubscribeSessions = null;
+  unsubscribeActiveSession?.();
+  unsubscribeActiveSession = null;
+  unsubscribeLayout?.();
+  unsubscribeLayout = null;
+  previousActiveItem = null;
+  initialized = false;
 }

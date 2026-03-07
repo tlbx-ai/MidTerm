@@ -157,13 +157,13 @@ public class Program
 
         MidtermDirectory.Initialize(port, authService);
 
-        var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService);
-        var muxManager = new TtyHostMuxConnectionManager(sessionManager);
-        var historyService = new HistoryService(settingsService);
-        var sessionPathAllowlistService = new SessionPathAllowlistService();
-        var gitWatcher = new GitWatcherService();
+        var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
+        var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
+        var historyService = app.Services.GetRequiredService<HistoryService>();
+        var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
+        var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
         GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
-        var commandService = new CommandService();
+        var commandService = app.Services.GetRequiredService<CommandService>();
 
         // Tmux compatibility layer (conditional on setting)
         TmuxCommandDispatcher? tmuxDispatcher = null;
@@ -193,8 +193,8 @@ public class Program
 
         // Browser control (agent-driven web preview interaction)
         BrowserLog.Initialize(logDirectory);
-        var browserCommandService = new BrowserCommandService();
-        var browserUiBridge = new BrowserUiBridge();
+        var browserCommandService = app.Services.GetRequiredService<BrowserCommandService>();
+        var browserUiBridge = app.Services.GetRequiredService<BrowserUiBridge>();
         BrowserScriptWriter.WriteScript(port);
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
@@ -242,7 +242,7 @@ public class Program
             }
         });
 
-        var shutdownService = new ShutdownService();
+        var shutdownService = app.Services.GetRequiredService<ShutdownService>();
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
         var cleanupStarted = 0;
 

@@ -99,25 +99,51 @@ export interface TerminalState {
 // =============================================================================
 
 /** WebSocket command from client to server */
-export interface WsCommand {
-  type: 'command';
-  id: string;
-  action: string;
-  payload?: WsCommandPayload | undefined;
+export type WsCommand =
+  | {
+      type: 'command';
+      id: string;
+      action: 'session.rename';
+      payload: {
+        sessionId: string;
+        name: string | null;
+        auto?: boolean;
+      };
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'session.reorder';
+      payload: {
+        sessionIds: string[];
+      };
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'browser.claimMain';
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'browser.releaseMain';
+    };
+
+export type WsCommandAction = WsCommand['action'];
+interface WsCommandPayloadMap {
+  'session.rename': {
+    sessionId: string;
+    name: string | null;
+    auto?: boolean;
+  };
+  'session.reorder': {
+    sessionIds: string[];
+  };
+  'browser.claimMain': undefined;
+  'browser.releaseMain': undefined;
 }
 
-/** Payload for WebSocket commands */
-export interface WsCommandPayload {
-  cols?: number;
-  rows?: number;
-  shell?: string;
-  workingDirectory?: string;
-  sessionId?: string;
-  name?: string | null;
-  auto?: boolean;
-  sessionIds?: string[];
-  settings?: MidTermSettingsPublicType;
-}
+export type WsCommandPayload<A extends WsCommandAction> = WsCommandPayloadMap[A];
 
 /** WebSocket command response from server */
 export interface WsCommandResponse {

@@ -3,7 +3,7 @@ namespace Ai.Tlbx.MidTerm.Common.Logging;
 public static class Log
 {
     private static Logger? _instance;
-    private static readonly object _lock = new();
+    private static readonly Lock _lock = new();
 
     public static LogSeverity MinLevel
     {

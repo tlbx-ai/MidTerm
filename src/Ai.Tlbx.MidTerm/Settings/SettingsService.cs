@@ -12,7 +12,7 @@ public sealed class SettingsService
     private readonly string _settingsPath;
     private readonly ISecretStorage _secretStorage;
     private MidTermSettings? _cached;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private readonly ConcurrentDictionary<string, Action<MidTermSettings>> _settingsListeners = new();
 
     public SettingsLoadStatus LoadStatus { get; private set; } = SettingsLoadStatus.Default;

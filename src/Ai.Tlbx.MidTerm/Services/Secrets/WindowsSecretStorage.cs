@@ -12,7 +12,7 @@ public sealed class WindowsSecretStorage : ISecretStorage
 {
     private readonly string _secretsPath;
     private readonly DataProtectionScope _scope;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private Dictionary<string, string>? _cache;
 
     public bool LoadFailed { get; private set; }

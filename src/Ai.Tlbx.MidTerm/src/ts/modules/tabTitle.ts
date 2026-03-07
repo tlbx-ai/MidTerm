@@ -9,6 +9,10 @@ import type { Session, TabTitleMode, ProcessState } from '../types';
 import { $activeSession, $activeSessionId, $currentSettings, $serverHostname } from '../stores';
 import { addProcessStateListener } from './process';
 
+let initialized = false;
+let unsubscribeActiveSession: (() => void) | null = null;
+let unsubscribeProcessState: (() => void) | null = null;
+
 /**
  * Get the current tab title based on mode and active session
  */
@@ -55,13 +59,16 @@ export function updateTabTitle(): void {
  * Initialize tab title subscriptions
  */
 export function initTabTitle(): void {
+  if (initialized) return;
+  initialized = true;
+
   // React to active session changes (covers session switch + data sync)
-  $activeSession.subscribe(() => {
+  unsubscribeActiveSession = $activeSession.subscribe(() => {
     updateTabTitle();
   });
 
   // React to immediate foreground process changes (fast path for "foregroundProcess" mode)
-  addProcessStateListener((sessionId: string, _state: ProcessState) => {
+  unsubscribeProcessState = addProcessStateListener((sessionId: string, _state: ProcessState) => {
     if (sessionId === $activeSessionId.get()) {
       updateTabTitle();
     }
@@ -69,4 +76,12 @@ export function initTabTitle(): void {
 
   // Initial update
   updateTabTitle();
+}
+
+export function cleanupTabTitle(): void {
+  unsubscribeActiveSession?.();
+  unsubscribeActiveSession = null;
+  unsubscribeProcessState?.();
+  unsubscribeProcessState = null;
+  initialized = false;
 }

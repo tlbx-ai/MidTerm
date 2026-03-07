@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Ai.Tlbx.MidTerm.Common.Ipc;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
@@ -23,25 +22,27 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private const int SessionIdLength = 8;
     private const string FallbackMinCompatibleVersion = "2.0.0";
 
-    private readonly ConcurrentDictionary<string, TtyHostClient> _clients = new();
-    private readonly ConcurrentDictionary<string, SessionInfo> _sessionCache = new();
-    private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
-    private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
-    private readonly ConcurrentDictionary<string, int> _sessionOrder = new();
-    private readonly ConcurrentDictionary<string, byte> _tmuxCreatedSessions = new();
-    private readonly ConcurrentDictionary<string, byte> _tmuxCommandStarted = new();
-    private readonly ConcurrentDictionary<string, byte> _hiddenSessions = new();
-    private readonly ConcurrentDictionary<string, string> _tmuxParentSessions = new();
-    private readonly ConcurrentDictionary<string, string> _bookmarkLinks = new();
-    private int _nextOrder;
+    private readonly SessionRegistry _registry;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
-    private readonly string _dropsBasePath;
     private string? _runAsUser;
     private bool _disposed;
     private int? _mtPort;
     private Func<string>? _generateToken;
     private string? _tmuxBinDir;
+    private readonly ConcurrentDictionary<string, TtyHostClient> _clients;
+    private readonly ConcurrentDictionary<string, SessionInfo> _sessionCache;
+    private ConcurrentDictionary<string, int> _sessionOrder => _registry.SessionOrder;
+    private ConcurrentDictionary<string, byte> _tmuxCreatedSessions => _registry.TmuxCreatedSessions;
+    private ConcurrentDictionary<string, byte> _tmuxCommandStarted => _registry.TmuxCommandStarted;
+    private ConcurrentDictionary<string, byte> _hiddenSessions => _registry.HiddenSessions;
+    private ConcurrentDictionary<string, string> _tmuxParentSessions => _registry.TmuxParentSessions;
+    private ConcurrentDictionary<string, string> _bookmarkLinks => _registry.BookmarkLinks;
+    private int _nextOrder
+    {
+        get => _registry.NextOrder;
+        set => _registry.SetNextOrder(value);
+    }
 
     public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
@@ -52,20 +53,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
     {
+        _registry = new SessionRegistry(isServiceMode);
+        _clients = _registry.Clients;
+        _sessionCache = _registry.SessionCache;
         _expectedTtyHostVersion = expectedVersion ?? TtyHostSpawner.GetTtyHostVersion();
         _minCompatibleVersion = minCompatibleVersion ?? GetMinCompatibleVersionFromManifest();
         _runAsUser = runAsUser;
-        _dropsBasePath = GetDropsBasePath(isServiceMode);
-    }
-
-    private static string GetDropsBasePath(bool isServiceMode)
-    {
-        if (isServiceMode && OperatingSystem.IsWindows())
-        {
-            var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-            return Path.Combine(programData, "MidTerm", "drops");
-        }
-        return Path.Combine(Path.GetTempPath(), "mt-drops");
     }
 
     private static string? GetMinCompatibleVersionFromManifest()
@@ -102,7 +95,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         Log.Info(() => "TtyHostSessionManager: Discovering existing sessions...");
 
-        var existingEndpoints = GetExistingEndpoints();
+        var existingEndpoints = SessionEndpointDiscovery.GetExistingEndpoints();
         Log.Info(() => $"TtyHostSessionManager: Found {existingEndpoints.Count} IPC endpoints");
 
         var discoveredOrders = new List<int>();
@@ -110,7 +103,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         foreach (var (sessionId, hostPid) in existingEndpoints)
         {
             if (ct.IsCancellationRequested) break;
-            if (_clients.ContainsKey(sessionId)) continue;
+            if (_registry.Clients.ContainsKey(sessionId)) continue;
 
             var result = await TryConnectToSessionAsync(sessionId, hostPid, ct).ConfigureAwait(false);
 
@@ -123,26 +116,26 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 case DiscoveryResult.Incompatible incompatible:
                     Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} incompatible (v{incompatible.Version}), killing PID {hostPid}");
                     KillProcess(hostPid);
-                    CleanupEndpoint(sessionId, hostPid);
+                    SessionEndpointDiscovery.CleanupEndpoint(sessionId, hostPid);
                     break;
 
                 case DiscoveryResult.Unresponsive:
                     Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} unresponsive, killing PID {hostPid}");
                     KillProcess(hostPid);
-                    CleanupEndpoint(sessionId, hostPid);
+                    SessionEndpointDiscovery.CleanupEndpoint(sessionId, hostPid);
                     break;
 
                 case DiscoveryResult.NoProcess:
                     Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} has stale endpoint (PID {hostPid} not running)");
-                    CleanupEndpoint(sessionId, hostPid);
+                    SessionEndpointDiscovery.CleanupEndpoint(sessionId, hostPid);
                     break;
             }
         }
 
         // Set _nextOrder to max discovered + 1 to avoid collisions
-        _nextOrder = discoveredOrders.Count > 0 ? discoveredOrders.Max() + 1 : 0;
+        _registry.SetNextOrder(discoveredOrders.Count > 0 ? discoveredOrders.Max() + 1 : 0);
 
-        Log.Info(() => $"TtyHostSessionManager: Discovered {_clients.Count} active sessions, nextOrder={_nextOrder}");
+        Log.Info(() => $"TtyHostSessionManager: Discovered {_registry.ClientCount} active sessions, nextOrder={_registry.NextOrder}");
     }
 
     private async Task<DiscoveryResult> TryConnectToSessionAsync(string sessionId, int hostPid, CancellationToken ct)
@@ -175,12 +168,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             // Success - register the client
             SubscribeToClient(client);
             client.StartReadLoop();
-            _clients[sessionId] = client;
-            _sessionCache[sessionId] = info;
+            _registry.Clients[sessionId] = client;
+            _registry.SessionCache[sessionId] = info;
 
             // Use order from mthost if available, otherwise use discovery sequence
             var order = info.Order;
-            _sessionOrder.TryAdd(sessionId, order);
+            _registry.SessionOrder.TryAdd(sessionId, order);
             OnSessionCreated?.Invoke(sessionId, order);
             Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid}, order={order})");
 
@@ -203,127 +196,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         return UpdateService.CompareVersions(conHostVersion, _minCompatibleVersion) >= 0;
     }
-    private static List<(string sessionId, int hostPid)> GetExistingEndpoints()
-    {
-        var endpoints = new List<(string, int)>();
-
-        try
-        {
-#if WINDOWS
-            var pipeDir = @"\\.\pipe\";
-            foreach (var pipePath in Directory.GetFiles(pipeDir))
-            {
-                var pipeName = Path.GetFileName(pipePath);
-                var parsed = IpcEndpoint.ParseEndpoint(pipeName);
-                if (parsed.HasValue)
-                {
-                    endpoints.Add(parsed.Value);
-                }
-            }
-#else
-            var socketDir = IpcEndpoint.GetUnixSocketDirectory();
-            if (Directory.Exists(socketDir))
-            {
-                foreach (var socketPath in Directory.GetFiles(socketDir, $"{IpcEndpoint.Prefix}*.sock"))
-                {
-                    var parsed = IpcEndpoint.ParseEndpoint(socketPath);
-                    if (parsed.HasValue)
-                    {
-                        endpoints.Add(parsed.Value);
-                    }
-                }
-            }
-#endif
-        }
-        catch (Exception ex)
-        {
-            Log.Warn(() => $"TtyHostSessionManager: Endpoint enumeration failed: {ex.Message}");
-        }
-
-        return endpoints;
-    }
-
-    private static bool EndpointExists(string sessionId, int hostPid)
-    {
-        try
-        {
-#if WINDOWS
-            // Named pipes appear in \\.\pipe\ directory - enumerate to check existence
-            var pipeName = IpcEndpoint.GetSessionEndpoint(sessionId, hostPid);
-            var pipeDir = @"\\.\pipe\";
-            return Directory.GetFiles(pipeDir, pipeName).Length > 0;
-#else
-            var socketPath = IpcEndpoint.GetSessionEndpoint(sessionId, hostPid);
-            return File.Exists(socketPath);
-#endif
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Find endpoint by sessionId pattern and return the actual host PID.
-    /// Used when spawning via sudo where the returned PID is sudo's PID, not mthost's.
-    /// </summary>
-    private static int? FindEndpointPid(string sessionId)
-    {
-        try
-        {
-#if WINDOWS
-            var pipeDir = @"\\.\pipe\";
-            var pattern = $"mthost-{sessionId}-*";
-            var matches = Directory.GetFiles(pipeDir, pattern);
-            if (matches.Length == 0) return null;
-
-            var pipeName = Path.GetFileName(matches[0]);
-            var parts = pipeName.Split('-');
-            if (parts.Length >= 3 && int.TryParse(parts[2], out var pid))
-            {
-                return pid;
-            }
-#else
-            var socketDir = IpcEndpoint.GetUnixSocketDirectory();
-            var matches = Directory.GetFiles(socketDir, $"mthost-{sessionId}-*.sock");
-            if (matches.Length == 0) return null;
-
-            var fileName = Path.GetFileNameWithoutExtension(matches[0]);
-            var parts = fileName.Split('-');
-            if (parts.Length >= 3 && int.TryParse(parts[2], out var pid))
-            {
-                return pid;
-            }
-#endif
-        }
-        catch
-        {
-            // Ignore errors during scan
-        }
-        return null;
-    }
-
-    private static void CleanupEndpoint(string sessionId, int hostPid)
-    {
-        try
-        {
-#if WINDOWS
-            // Named pipes are automatically cleaned up when the process exits
-#else
-            var socketPath = IpcEndpoint.GetSessionEndpoint(sessionId, hostPid);
-            if (File.Exists(socketPath))
-            {
-                File.Delete(socketPath);
-                Log.Info(() => $"TtyHostSessionManager: Removed stale socket: {socketPath}");
-            }
-#endif
-        }
-        catch (Exception ex)
-        {
-            Log.Warn(() => $"TtyHostSessionManager: Failed to cleanup endpoint {sessionId}: {ex.Message}");
-        }
-    }
-
     private abstract record DiscoveryResult
     {
         public sealed record Connected(int Order) : DiscoveryResult;
@@ -339,7 +211,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? workingDirectory,
         CancellationToken ct = default)
     {
-        if (_sessionCache.Count >= MaxSessions)
+        if (_registry.SessionCount >= MaxSessions)
         {
             Log.Warn(() => $"Session limit reached ({MaxSessions})");
             return null;
@@ -347,7 +219,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         var sessionId = Guid.NewGuid().ToString("N")[..SessionIdLength];
 
-        var paneIndex = Interlocked.Increment(ref _nextOrder);
+        var paneIndex = _registry.ReserveNextOrder();
         var mtToken = _generateToken?.Invoke();
 
         if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid,
@@ -364,13 +236,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         for (var wait = 50; wait < 500; wait *= 2)
         {
             // First try exact PID (direct spawn without sudo)
-            if (EndpointExists(sessionId, hostPid))
+            if (SessionEndpointDiscovery.EndpointExists(sessionId, hostPid))
             {
                 actualPid = hostPid;
                 break;
             }
             // Then scan for any matching socket (sudo spawn case)
-            actualPid = FindEndpointPid(sessionId);
+            actualPid = SessionEndpointDiscovery.FindEndpointPid(sessionId);
             if (actualPid is not null) break;
             await Task.Delay(wait, ct).ConfigureAwait(false);
         }
@@ -415,10 +287,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         // Start read loop after handshake completes (avoids race condition with GetInfoAsync)
         SubscribeToClient(client);
         client.StartReadLoop();
-        _clients[sessionId] = client;
-        _sessionCache[sessionId] = info;
-
-        _sessionOrder[sessionId] = paneIndex;
+        _registry.Clients[sessionId] = client;
+        _registry.SessionCache[sessionId] = info;
+        _registry.SessionOrder[sessionId] = paneIndex;
 
         await client.SetOrderAsync((byte)(paneIndex % 256), ct).ConfigureAwait(false);
 
@@ -432,22 +303,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public SessionInfo? GetSession(string sessionId)
     {
-        return _sessionCache.TryGetValue(sessionId, out var info) ? info : null;
+        return _registry.GetSession(sessionId);
     }
 
     public void MarkTmuxCreated(string sessionId)
     {
-        _tmuxCreatedSessions.TryAdd(sessionId, 0);
+        _registry.MarkTmuxCreated(sessionId);
     }
 
     public void SetTmuxParent(string childSessionId, string parentSessionId)
     {
-        while (_tmuxParentSessions.TryGetValue(parentSessionId, out var grandparent))
-        {
-            parentSessionId = grandparent;
-        }
-
-        _tmuxParentSessions[childSessionId] = parentSessionId;
+        _registry.SetTmuxParent(childSessionId, parentSessionId);
     }
 
     public async Task<SessionInfo?> GetSessionFreshAsync(string sessionId, CancellationToken ct = default)
@@ -474,75 +340,32 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     /// </summary>
     public string GetTempDirectory(string sessionId)
     {
-        return _tempDirectories.GetOrAdd(sessionId, id =>
-        {
-            var tempPath = Path.Combine(_dropsBasePath, id);
-            Directory.CreateDirectory(tempPath);
-            return tempPath;
-        });
+        return _registry.GetTempDirectory(sessionId);
     }
 
     private void CleanupTempDirectory(string sessionId)
     {
-        if (_tempDirectories.TryRemove(sessionId, out var tempPath))
-        {
-            try
-            {
-                if (Directory.Exists(tempPath))
-                {
-                    Directory.Delete(tempPath, recursive: true);
-                }
-            }
-            catch
-            {
-                // Best effort cleanup - files may be locked
-            }
-        }
+        _registry.CleanupTempDirectory(sessionId);
     }
 
     public void MarkHidden(string sessionId)
     {
-        _hiddenSessions.TryAdd(sessionId, 0);
+        _registry.MarkHidden(sessionId);
     }
 
     public bool IsHidden(string sessionId)
     {
-        return _hiddenSessions.ContainsKey(sessionId);
+        return _registry.IsHidden(sessionId);
     }
 
     public IReadOnlyList<SessionInfo> GetAllSessions()
     {
-        return _sessionCache.Values.ToList();
+        return _registry.GetAllSessions();
     }
 
     public SessionListDto GetSessionList()
     {
-        return new SessionListDto
-        {
-            Sessions = _sessionCache.Values
-                .Where(s => !_hiddenSessions.ContainsKey(s.Id))
-                .Select(s => new SessionInfoDto
-            {
-                Id = s.Id,
-                Pid = s.Pid,
-                CreatedAt = s.CreatedAt,
-                IsRunning = s.IsRunning,
-                ExitCode = s.ExitCode,
-                Cols = s.Cols,
-                Rows = s.Rows,
-                ShellType = s.ShellType,
-                Name = s.Name,
-                TerminalTitle = s.TerminalTitle,
-                ManuallyNamed = s.ManuallyNamed,
-                CurrentDirectory = s.CurrentDirectory,
-                ForegroundPid = s.ForegroundPid,
-                ForegroundName = s.ForegroundName,
-                ForegroundCommandLine = s.ForegroundCommandLine,
-                Order = _sessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
-                ParentSessionId = _tmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
-                BookmarkId = _bookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null
-            }).OrderBy(s => s.Order).ToList()
-        };
+        return _registry.GetSessionList();
     }
 
     public async Task<bool> CloseSessionAsync(string sessionId, CancellationToken ct = default)
@@ -552,24 +375,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return false;
         }
 
-        _sessionCache.TryRemove(sessionId, out _);
-        _sessionOrder.TryRemove(sessionId, out _);
-        _tmuxCreatedSessions.TryRemove(sessionId, out _);
-        _tmuxCommandStarted.TryRemove(sessionId, out _);
-        _hiddenSessions.TryRemove(sessionId, out _);
-        _tmuxParentSessions.TryRemove(sessionId, out _);
-        _bookmarkLinks.TryRemove(sessionId, out _);
-
-        // Orphan children whose parent is being closed
-        foreach (var kvp in _tmuxParentSessions)
-        {
-            if (kvp.Value == sessionId)
-            {
-                _tmuxParentSessions.TryRemove(kvp.Key, out _);
-            }
-        }
-
-        CleanupTempDirectory(sessionId);
+        _registry.RemoveSessionState(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
@@ -665,63 +471,20 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public bool SetBookmarkId(string sessionId, string bookmarkId)
     {
-        if (!_sessionCache.ContainsKey(sessionId))
-        {
-            return false;
-        }
-
-        _bookmarkLinks[sessionId] = bookmarkId;
-        NotifyStateChange();
-        return true;
+        return _registry.SetBookmarkId(sessionId, bookmarkId);
     }
 
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
-        if (string.IsNullOrWhiteSpace(bookmarkId))
-        {
-            return 0;
-        }
-
-        var removed = 0;
-        foreach (var link in _bookmarkLinks.ToArray())
-        {
-            if (!string.Equals(link.Value, bookmarkId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (_bookmarkLinks.TryRemove(link.Key, out _))
-            {
-                removed++;
-            }
-        }
-
-        if (removed > 0)
-        {
-            NotifyStateChange();
-        }
-
-        return removed;
+        return _registry.ClearBookmarksByHistoryId(bookmarkId);
     }
 
     public bool ReorderSessions(IList<string> sessionIds)
     {
-        // Validate all sessions exist
-        foreach (var id in sessionIds)
+        if (!_registry.ReorderSessions(sessionIds))
         {
-            if (!_sessionCache.ContainsKey(id))
-            {
-                return false;
-            }
+            return false;
         }
-
-        // Update local state immediately (UI responsiveness)
-        for (var i = 0; i < sessionIds.Count; i++)
-        {
-            _sessionOrder[sessionIds[i]] = i;
-        }
-
-        NotifyStateChange();
 
         _ = SendOrderUpdatesAsync(sessionIds).ContinueWith(
             t => Log.Exception(t.Exception!.InnerException!, "TtyHostSessionManager.SendOrderUpdates"),
@@ -751,23 +514,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public string AddStateListener(Action callback)
     {
-        var id = Guid.NewGuid().ToString("N");
-        _stateListeners[id] = callback;
-        return id;
+        return _registry.AddStateListener(callback);
     }
 
     public void RemoveStateListener(string id)
     {
-        _stateListeners.TryRemove(id, out _);
+        _registry.RemoveStateListener(id);
     }
 
     private void NotifyStateChange()
     {
-        foreach (var listener in _stateListeners.Values)
-        {
-            try { listener(); }
-            catch (Exception ex) { Log.Exception(ex, "TtyHostSessionManager.NotifyStateChange"); }
-        }
+        _registry.NotifyStateChange();
     }
 
     private void SubscribeToClient(TtyHostClient client)
@@ -1066,14 +823,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         // Clean up all temp directories
-        foreach (var sessionId in _tempDirectories.Keys.ToList())
+        foreach (var sessionId in _registry.TempDirectorySessionIds)
         {
             CleanupTempDirectory(sessionId);
         }
 
-        _clients.Clear();
-        _sessionCache.Clear();
-        _stateListeners.Clear();
+        _registry.ClearAll();
     }
 
     private static void KillProcess(int processId)

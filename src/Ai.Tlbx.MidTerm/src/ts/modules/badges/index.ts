@@ -13,6 +13,9 @@ let connectionBadge: HTMLElement | null = null;
 let pasteBadge: HTMLElement | null = null;
 let dataLossBadge: HTMLElement | null = null;
 let dataLossTimer: number | null = null;
+let initialized = false;
+let unsubscribeConnectionStatus: (() => void) | null = null;
+let unsubscribeDataLoss: (() => void) | null = null;
 
 const DATA_LOSS_DISPLAY_MS = 10000;
 
@@ -20,11 +23,14 @@ const DATA_LOSS_DISPLAY_MS = 10000;
  * Initialize all global badges. Call once during bootstrap.
  */
 export function initBadges(): void {
+  if (initialized) return;
+  initialized = true;
+
   connectionBadge = document.getElementById('connection-status');
   pasteBadge = document.getElementById('paste-indicator');
   dataLossBadge = document.getElementById('data-loss-warning');
 
-  $connectionStatus.subscribe((status) => {
+  unsubscribeConnectionStatus = $connectionStatus.subscribe((status) => {
     if (!connectionBadge) return;
 
     const text =
@@ -38,13 +44,22 @@ export function initBadges(): void {
     connectionBadge.textContent = text;
   });
 
-  $dataLossDetected.subscribe((loss) => {
+  unsubscribeDataLoss = $dataLossDetected.subscribe((loss) => {
     if (!loss) {
       hideDataLossWarning();
       return;
     }
     showDataLossWarning(loss.sessionId);
   });
+}
+
+export function cleanupBadges(): void {
+  unsubscribeConnectionStatus?.();
+  unsubscribeConnectionStatus = null;
+  unsubscribeDataLoss?.();
+  unsubscribeDataLoss = null;
+  hideDataLossWarning();
+  initialized = false;
 }
 
 /**
