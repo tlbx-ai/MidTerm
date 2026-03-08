@@ -1028,10 +1028,28 @@ body.has-app-background::after {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
-.session-pin {
+.session-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  font-size: inherit;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.session-action-icon.text-icon {
   font-size: var(--fs-lg);
+}
+
+.session-action-label {
+  display: none;
 }
 
 .session-pin.pinned {
@@ -2290,45 +2308,98 @@ body.has-app-background::after {
         overflow: hidden;
     }
 
-    /* Mobile: Hide session-actions by default, show menu button */
+    /* Mobile: convert session actions into a touch dropdown menu */
+    .session-item {
+        padding: 12px 12px 12px 8px;
+        min-height: 56px;
+    }
+
+    .session-item.menu-open {
+        z-index: 1003;
+    }
+
     .session-actions {
         position: fixed;
-        right: 0;
-        top: auto;
-        bottom: 0;
+        top: 0;
         left: 0;
-        background: var(--bg-sidebar);
-        border-top: 1px solid var(--border-color);
-        padding: 12px 16px;
-        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
-        gap: 8px;
-        justify-content: center;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        width: min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0) - env(safe-area-inset-right, 0)));
+        padding: 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        background: var(--bg-dropdown);
+        box-shadow: 0 18px 36px var(--shadow-color-lg);
         opacity: 0;
+        visibility: hidden;
         pointer-events: none;
-        transform: translateY(100%);
-        transition: transform 0.2s ease, opacity 0.2s ease;
-        z-index: 1001;
+        transform: translateY(-6px) scale(0.98);
+        transform-origin: top right;
+        transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+        gap: 4px;
+        max-height: min(60vh, 360px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        z-index: 1003;
+    }
+
+    .session-item.menu-open.menu-open-up .session-actions {
+        transform-origin: bottom right;
     }
 
     .session-item.menu-open .session-actions {
         opacity: 1;
+        visibility: visible;
         pointer-events: auto;
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
     }
 
-    /* Show all action buttons on mobile when menu is open */
     .session-actions .session-pin,
     .session-actions .session-resize,
     .session-actions .session-rename,
     .session-actions .session-inject,
     .session-actions .session-undock,
     .session-actions .session-close {
-        display: flex;
-        width: 56px;
-        height: 56px;
-        font-size: var(--fs-3xl);
-        border-radius: 8px;
-        background-color: var(--btn-secondary);
+        width: 100%;
+        min-height: 48px;
+        height: auto;
+        justify-content: flex-start;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: var(--text-primary);
+    }
+
+    .session-actions .session-action-label {
+        display: block;
+        flex: 1;
+        min-width: 0;
+        line-height: 1.25;
+        text-align: left;
+        white-space: normal;
+    }
+
+    .session-actions .session-action-icon {
+        width: 20px;
+        height: 20px;
+        font-size: var(--fs-xl);
+    }
+
+    .session-actions .session-pin .session-action-icon {
+        color: var(--accent-gold);
+    }
+
+    .session-actions .session-inject .session-action-icon {
+        color: var(--accent-blue);
+    }
+
+    .session-actions .session-undock .session-action-icon {
+        color: var(--accent-green);
+    }
+
+    .session-actions .session-close .session-action-icon {
+        color: var(--accent-red);
     }
 
     .session-actions .session-pin:active {
@@ -2336,13 +2407,8 @@ body.has-app-background::after {
         color: var(--text-on-accent);
     }
 
-    .session-actions .session-resize:active {
-        background-color: var(--accent-blue);
-        color: var(--text-on-accent);
-    }
-
     .session-actions .session-rename:active {
-        background-color: var(--btn-secondary-hover);
+        background-color: var(--btn-secondary);
     }
 
     .session-actions .session-inject:active {
@@ -2360,19 +2426,29 @@ body.has-app-background::after {
         color: var(--text-on-accent);
     }
 
+    .session-actions .session-pin:active .session-action-icon,
+    .session-actions .session-inject:active .session-action-icon,
+    .session-actions .session-close:active .session-action-icon {
+        color: inherit;
+    }
+
+    .session-actions .session-undock:active .session-action-icon {
+        color: var(--bg-primary);
+    }
+
     /* Mobile menu button */
     .session-menu-btn {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 36px;
-        height: 36px;
+        width: 44px;
+        height: 44px;
         border: none;
         background: transparent;
         color: var(--text-secondary);
         cursor: pointer;
         font-size: var(--fs-2xl);
-        border-radius: 6px;
+        border-radius: 10px;
         flex-shrink: 0;
         -webkit-tap-highlight-color: transparent;
     }
@@ -2392,12 +2468,6 @@ body.has-app-background::after {
         display: none;
     }
 
-    /* Larger session items for touch */
-    .session-item {
-        padding: 12px 16px;
-        min-height: 48px;
-    }
-
     .session-title {
         font-size: var(--fs-xl);
     }
@@ -2406,7 +2476,7 @@ body.has-app-background::after {
         font-size: var(--fs-md);
     }
 
-    /* Mobile action bar backdrop (created via JS) */
+    /* Mobile session action backdrop (created via JS) */
     .session-action-backdrop {
         position: fixed;
         top: 0;
@@ -2414,7 +2484,7 @@ body.has-app-background::after {
         right: 0;
         bottom: 0;
         background: var(--shadow-color-lg);
-        z-index: 1000;
+        z-index: 1002;
         -webkit-tap-highlight-color: transparent;
     }
 

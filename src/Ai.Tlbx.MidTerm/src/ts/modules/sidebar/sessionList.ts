@@ -15,7 +15,7 @@ import {
   getSession,
   isChildSession,
 } from '../../stores';
-import { icon } from '../../constants';
+import { MOBILE_BREAKPOINT, icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import {
   getLayoutSessionIds,
@@ -85,6 +85,7 @@ export interface SessionListCallbacks {
 
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
+let mobileMenuListenersBound = false;
 
 // =============================================================================
 // Initialization
@@ -95,6 +96,13 @@ let mobileActionBackdrop: HTMLDivElement | null = null;
  */
 export function initializeSessionList(): void {
   addProcessStateListener(handleProcessStateChange);
+
+  if (!mobileMenuListenersBound) {
+    document.addEventListener('keydown', handleMobileMenuKeydown);
+    window.addEventListener('resize', closeMobileActionMenu);
+    window.addEventListener('orientationchange', closeMobileActionMenu);
+    mobileMenuListenersBound = true;
+  }
 }
 
 /**
@@ -109,6 +117,49 @@ export function setSessionListCallbacks(cbs: SessionListCallbacks): void {
  */
 function handleProcessStateChange(sessionId: string, _state: ProcessState): void {
   updateSessionProcessInfo(sessionId);
+}
+
+/**
+ * Close the mobile action menu via keyboard.
+ */
+function handleMobileMenuKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    closeMobileActionMenu();
+  }
+}
+
+/**
+ * Session action dropdowns are only used on mobile layouts.
+ */
+function isMobileSessionMenuEnabled(): boolean {
+  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
+}
+
+/**
+ * Render shared icon + label content for session action buttons.
+ */
+function setActionButtonContent(
+  button: HTMLButtonElement,
+  label: string,
+  iconMarkupOrText: string,
+  useTextIcon: boolean = false,
+): void {
+  const iconEl = document.createElement('span');
+  iconEl.className = `session-action-icon${useTextIcon ? ' text-icon' : ''}`;
+
+  if (useTextIcon) {
+    iconEl.textContent = iconMarkupOrText;
+  } else {
+    iconEl.innerHTML = iconMarkupOrText;
+  }
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'session-action-label';
+  labelEl.textContent = label;
+
+  button.replaceChildren(iconEl, labelEl);
+  button.title = label;
+  button.setAttribute('aria-label', label);
 }
 
 /**
@@ -184,10 +235,10 @@ function renderProcessTitle(
  * Render pinned/unpinned state on a sidebar pin button.
  */
 export function applyPinButtonState(pinBtn: HTMLButtonElement, isPinned: boolean): void {
+  const label = t('session.pinToQuickLaunch');
   pinBtn.classList.toggle('pinned', isPinned);
-  pinBtn.textContent = isPinned ? '\u2605' : '\u2606';
+  setActionButtonContent(pinBtn, label, isPinned ? '\u2605' : '\u2606', true);
   pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
-  pinBtn.title = t('session.pinToQuickLaunch');
 }
 
 /**
@@ -242,8 +293,19 @@ function updateSessionProcessInfo(sessionId: string): void {
  * Close any open mobile action menus
  */
 export function closeMobileActionMenu(): void {
-  document.querySelectorAll('.session-item.menu-open').forEach((el) => {
+  document.querySelectorAll<HTMLElement>('.session-item.menu-open').forEach((el) => {
     el.classList.remove('menu-open');
+    el.classList.remove('menu-open-up');
+
+    const actions = el.querySelector<HTMLElement>('.session-actions');
+    if (actions) {
+      actions.style.removeProperty('left');
+      actions.style.removeProperty('top');
+      actions.style.removeProperty('max-height');
+    }
+
+    const menuBtn = el.querySelector<HTMLButtonElement>('.session-menu-btn');
+    menuBtn?.setAttribute('aria-expanded', 'false');
   });
   if (mobileActionBackdrop) {
     mobileActionBackdrop.remove();
@@ -262,6 +324,59 @@ function showMobileBackdrop(): void {
     closeMobileActionMenu();
   });
   document.body.appendChild(mobileActionBackdrop);
+}
+
+/**
+ * Position the mobile dropdown next to its trigger while keeping it on-screen.
+ */
+function positionMobileActionMenu(item: HTMLElement): void {
+  if (!isMobileSessionMenuEnabled()) {
+    return;
+  }
+
+  const actions = item.querySelector<HTMLElement>('.session-actions');
+  const menuBtn = item.querySelector<HTMLElement>('.session-menu-btn');
+  if (!actions || !menuBtn) {
+    return;
+  }
+
+  const viewportPadding = 12;
+  const gap = 8;
+  const triggerRect = menuBtn.getBoundingClientRect();
+
+  item.classList.remove('menu-open-up');
+  actions.style.removeProperty('max-height');
+
+  const initialRect = actions.getBoundingClientRect();
+  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+  const availableAbove = triggerRect.top - viewportPadding - gap;
+  const openUp =
+    availableBelow < Math.min(initialRect.height, 220) && availableAbove > availableBelow;
+
+  item.classList.toggle('menu-open-up', openUp);
+
+  const heightBudget = Math.max(
+    96,
+    Math.min(openUp ? availableAbove : availableBelow, window.innerHeight - viewportPadding * 2),
+  );
+  actions.style.maxHeight = `${heightBudget}px`;
+
+  const menuRect = actions.getBoundingClientRect();
+  const menuHeight = Math.min(menuRect.height, heightBudget);
+  const menuWidth = menuRect.width;
+
+  let left = triggerRect.right - menuWidth;
+  left = Math.max(viewportPadding, Math.min(left, window.innerWidth - viewportPadding - menuWidth));
+
+  let top = triggerRect.bottom + gap;
+  if (openUp) {
+    top = Math.max(viewportPadding, triggerRect.top - menuHeight - gap);
+  } else {
+    top = Math.min(top, window.innerHeight - viewportPadding - menuHeight);
+  }
+
+  actions.style.left = `${left}px`;
+  actions.style.top = `${top}px`;
 }
 
 // =============================================================================
@@ -454,11 +569,14 @@ function createSessionItem(
 
   const actions = document.createElement('div');
   actions.className = 'session-actions';
+  actions.id = `session-actions-${sessionId}`;
+  actions.setAttribute('role', 'menu');
 
   if (!isPending && sessionId) {
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
     applyPinButtonState(pinBtn, !!session.bookmarkId);
+    pinBtn.setAttribute('role', 'menuitem');
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -469,8 +587,8 @@ function createSessionItem(
 
     const renameBtn = document.createElement('button');
     renameBtn.className = 'session-rename';
-    renameBtn.innerHTML = icon('rename');
-    renameBtn.title = t('session.rename');
+    setActionButtonContent(renameBtn, t('session.rename'), icon('rename'));
+    renameBtn.setAttribute('role', 'menuitem');
     renameBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -481,8 +599,8 @@ function createSessionItem(
 
     const injectBtn = document.createElement('button');
     injectBtn.className = 'session-inject';
-    injectBtn.innerHTML = icon('inject');
-    injectBtn.title = t('session.injectGuidance');
+    setActionButtonContent(injectBtn, t('session.injectGuidance'), icon('inject'));
+    injectBtn.setAttribute('role', 'menuitem');
     injectBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -493,8 +611,8 @@ function createSessionItem(
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'session-close';
-    closeBtn.innerHTML = icon('close');
-    closeBtn.title = t('session.close');
+    setActionButtonContent(closeBtn, t('session.close'), icon('close'));
+    closeBtn.setAttribute('role', 'menuitem');
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -506,8 +624,8 @@ function createSessionItem(
     // Undock button (only shown when in layout)
     const undockBtn = document.createElement('button');
     undockBtn.className = 'session-undock';
-    undockBtn.innerHTML = icon('undock');
-    undockBtn.title = t('session.removeFromLayout');
+    setActionButtonContent(undockBtn, t('session.removeFromLayout'), icon('undock'));
+    undockBtn.setAttribute('role', 'menuitem');
     undockBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -535,13 +653,25 @@ function createSessionItem(
     menuBtn.className = 'session-menu-btn';
     menuBtn.innerHTML = icon('more');
     menuBtn.title = t('session.actions');
+    menuBtn.setAttribute('aria-label', t('session.actions'));
+    menuBtn.setAttribute('aria-haspopup', 'menu');
+    menuBtn.setAttribute('aria-controls', actions.id);
+    menuBtn.setAttribute('aria-expanded', 'false');
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (!isMobileSessionMenuEnabled()) {
+        return;
+      }
+
       const isOpen = item.classList.contains('menu-open');
       closeMobileActionMenu();
       if (!isOpen) {
         item.classList.add('menu-open');
+        menuBtn.setAttribute('aria-expanded', 'true');
         showMobileBackdrop();
+        requestAnimationFrame(() => {
+          positionMobileActionMenu(item);
+        });
       }
     });
     item.appendChild(menuBtn);
@@ -578,6 +708,9 @@ export function renderSessionList(): void {
   existingItems.forEach((item) => {
     const itemId = item.dataset.sessionId;
     if (itemId && !newIds.has(itemId)) {
+      if (item.classList.contains('menu-open')) {
+        closeMobileActionMenu();
+      }
       unregisterHeatCanvas(itemId);
       item.remove();
       existingItemsById.delete(itemId);
