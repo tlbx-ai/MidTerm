@@ -26,6 +26,7 @@ import {
 } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
+import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
 import { sendResize } from '../comms';
 import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
@@ -34,19 +35,11 @@ const SCALE_TOLERANCE = 0.97;
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 
-function isTerminalVisible(state: TerminalState): boolean {
-  return (
-    state.container.isConnected &&
-    !state.container.classList.contains('hidden') &&
-    state.container.getClientRects().length > 0
-  );
-}
-
 export function refreshTerminalPresentation(
-  sessionId: string,
+  _sessionId: string,
   providedState?: TerminalState,
 ): void {
-  const state = providedState ?? sessionTerminals.get(sessionId);
+  const state = providedState ?? sessionTerminals.get(_sessionId);
   if (!state) return;
 
   if (!state.opened || !isTerminalVisible(state)) {
@@ -57,7 +50,7 @@ export function refreshTerminalPresentation(
   state.pendingVisualRefresh = false;
 
   requestAnimationFrame(() => {
-    const currentState = providedState ?? sessionTerminals.get(sessionId);
+    const currentState = providedState ?? sessionTerminals.get(_sessionId);
     if (!currentState?.opened) return;
 
     if (!isTerminalVisible(currentState)) {
@@ -65,22 +58,7 @@ export function refreshTerminalPresentation(
       return;
     }
 
-    try {
-      currentState.terminal.refresh(0, Math.max(currentState.terminal.rows - 1, 0));
-    } catch {
-      // Terminal may have been disposed between frames.
-    }
-
-    const layoutPane = currentState.container.closest<HTMLElement>('.layout-leaf');
-    if ($isMainBrowser.get()) {
-      if (layoutPane) {
-        fitTerminalToContainer(sessionId, layoutPane);
-      } else {
-        fitSessionToScreen(sessionId);
-      }
-    } else {
-      applyTerminalScalingSync(currentState);
-    }
+    refreshTerminalRenderer(currentState);
   });
 }
 

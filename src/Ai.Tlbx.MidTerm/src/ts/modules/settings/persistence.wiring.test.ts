@@ -41,4 +41,9 @@ describe('settings persistence wiring', () => {
   it('auto-saves text and number settings on change', () => {
     expect(persistenceSource).toContain('input[type="text"], input[type="number"]');
   });
+
+  it('uses non-submit inline save buttons for text and number settings', () => {
+    const inlineSaveButtons = [...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g)];
+    expect(inlineSaveButtons).toHaveLength(3);
+  });
 });

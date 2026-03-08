@@ -11,6 +11,8 @@ x86/
 [Aa][Rr][Mm]64/
 bld/
 [Bb]in/
+!packages/npx-launcher/bin/
+!packages/npx-launcher/bin/midterm.js
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
