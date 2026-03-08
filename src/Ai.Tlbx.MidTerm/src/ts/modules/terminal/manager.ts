@@ -733,6 +733,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   if (state.burstCursorRestoreTimer != null) {
     clearTimeout(state.burstCursorRestoreTimer);
   }
+  state.reconnectFreezeOverlay?.remove();
 
   // Clean up pending title update timer
   const titleTimer = pendingTitleUpdates.get(sessionId);

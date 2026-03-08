@@ -113,6 +113,93 @@ function beginReplayHeatSuppressionForAllSessions(): void {
   });
 }
 
+function removeReconnectFreeze(state: TerminalState): void {
+  state.reconnectFreezeOverlay?.remove();
+  state.reconnectFreezeOverlay = null;
+}
+
+function freezeTerminalDuringReconnect(state: TerminalState): void {
+  removeReconnectFreeze(state);
+
+  if (!state.opened || state.container.classList.contains('hidden')) {
+    return;
+  }
+
+  const containerRect = state.container.getBoundingClientRect();
+  if (containerRect.width < 2 || containerRect.height < 2) {
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'terminal-reconnect-freeze';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.style.position = 'absolute';
+  overlay.style.inset = '0';
+  overlay.style.zIndex = '40';
+  overlay.style.pointerEvents = 'none';
+  overlay.style.overflow = 'hidden';
+
+  const viewport =
+    state.container.querySelector<HTMLElement>('.xterm-viewport') ??
+    state.container.querySelector<HTMLElement>('.xterm');
+  const backgroundColor =
+    viewport !== null
+      ? getComputedStyle(viewport).backgroundColor
+      : getComputedStyle(state.container).backgroundColor;
+  overlay.style.background = backgroundColor;
+
+  const snapshot = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  snapshot.width = Math.max(1, Math.round(containerRect.width * dpr));
+  snapshot.height = Math.max(1, Math.round(containerRect.height * dpr));
+  snapshot.style.width = '100%';
+  snapshot.style.height = '100%';
+  snapshot.style.display = 'block';
+
+  const ctx = snapshot.getContext('2d');
+  if (ctx !== null) {
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, containerRect.width, containerRect.height);
+
+    const canvases = state.container.querySelectorAll<HTMLCanvasElement>('.xterm-screen canvas');
+    canvases.forEach((canvas) => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+
+      try {
+        ctx.drawImage(
+          canvas,
+          rect.left - containerRect.left,
+          rect.top - containerRect.top,
+          rect.width,
+          rect.height,
+        );
+      } catch {
+        // Ignore snapshot copy errors and fall back to a solid background overlay.
+      }
+    });
+  }
+
+  overlay.appendChild(snapshot);
+  state.container.appendChild(overlay);
+  state.reconnectFreezeOverlay = overlay;
+}
+
+function freezeVisibleTerminalsDuringReconnect(): void {
+  sessionTerminals.forEach((state) => {
+    freezeTerminalDuringReconnect(state);
+  });
+}
+
+function thawReconnectFreeze(): void {
+  sessionTerminals.forEach((state) => {
+    removeReconnectFreeze(state);
+  });
+}
+
 function isSgrResetFrame(type: number, payload: Uint8Array): boolean {
   if (type !== MUX_TYPE_OUTPUT) return false;
   return (
@@ -673,6 +760,7 @@ export function connectMuxWebSocket(): void {
     _suppressHeatCallback?.(Number.MAX_SAFE_INTEGER);
     if (syncCompleteTimeout !== null) clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = window.setTimeout(() => {
+      thawReconnectFreeze();
       _suppressHeatCallback?.(0);
       setBellNotificationsSuppressed(false);
       syncCompleteTimeout = null;
@@ -688,6 +776,7 @@ export function connectMuxWebSocket(): void {
     if (isReconnect) {
       void checkVersionAndReload();
       log.info(() => `Reconnected - refreshing ${sessionTerminals.size} terminals`);
+      freezeVisibleTerminalsDuringReconnect();
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
@@ -769,6 +858,7 @@ export function connectMuxWebSocket(): void {
         clearTimeout(syncCompleteTimeout);
         syncCompleteTimeout = null;
       }
+      thawReconnectFreeze();
       _suppressHeatCallback?.(0);
       setBellNotificationsSuppressed(false);
       return;
@@ -846,6 +936,7 @@ export function connectMuxWebSocket(): void {
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
     replaySuppressedSessions.clear();
+    thawReconnectFreeze();
 
     // Log close reason
     if (event.code === WS_CLOSE_SERVER_SHUTDOWN) {

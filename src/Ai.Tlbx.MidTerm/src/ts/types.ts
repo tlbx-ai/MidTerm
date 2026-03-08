@@ -80,6 +80,7 @@ export interface TerminalState {
   serverCols: number;
   serverRows: number;
   opened: boolean;
+  reconnectFreezeOverlay?: HTMLDivElement | null;
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
   hasWebgl?: boolean;
