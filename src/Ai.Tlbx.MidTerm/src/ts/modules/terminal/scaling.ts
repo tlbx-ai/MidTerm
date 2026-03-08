@@ -34,6 +34,56 @@ const SCALE_TOLERANCE = 0.97;
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 
+function isTerminalVisible(state: TerminalState): boolean {
+  return (
+    state.container.isConnected &&
+    !state.container.classList.contains('hidden') &&
+    state.container.getClientRects().length > 0
+  );
+}
+
+export function refreshTerminalPresentation(
+  sessionId: string,
+  providedState?: TerminalState,
+): void {
+  const state = providedState ?? sessionTerminals.get(sessionId);
+  if (!state) return;
+
+  if (!state.opened || !isTerminalVisible(state)) {
+    state.pendingVisualRefresh = true;
+    return;
+  }
+
+  state.pendingVisualRefresh = false;
+
+  requestAnimationFrame(() => {
+    const currentState = providedState ?? sessionTerminals.get(sessionId);
+    if (!currentState?.opened) return;
+
+    if (!isTerminalVisible(currentState)) {
+      currentState.pendingVisualRefresh = true;
+      return;
+    }
+
+    try {
+      currentState.terminal.refresh(0, Math.max(currentState.terminal.rows - 1, 0));
+    } catch {
+      // Terminal may have been disposed between frames.
+    }
+
+    const layoutPane = currentState.container.closest<HTMLElement>('.layout-leaf');
+    if ($isMainBrowser.get()) {
+      if (layoutPane) {
+        fitTerminalToContainer(sessionId, layoutPane);
+      } else {
+        fitSessionToScreen(sessionId);
+      }
+    } else {
+      applyTerminalScalingSync(currentState);
+    }
+  });
+}
+
 /**
  * Get the total width of all visible dock panels.
  * Web preview can coexist with one other dock (commands, git, or file viewer).
@@ -537,6 +587,14 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     xterm.style.transformOrigin = 'center center';
     container.classList.add('scaled');
 
+    if ($isMainBrowser.get()) {
+      if (overlay) {
+        overlay.remove();
+      }
+      scheduleMainBrowserResize();
+      return;
+    }
+
     const el = ensureOverlay();
     positionOverlay(el);
 
@@ -563,10 +621,16 @@ export function applyTerminalScalingSync(state: TerminalState): void {
 
     const usage = Math.max(termWidth / availWidth, termHeight / availHeight);
     if (usage < 0.7) {
+      if ($isMainBrowser.get()) {
+        if (overlay) {
+          overlay.remove();
+        }
+        scheduleMainBrowserResize();
+        return;
+      }
       const el = ensureOverlay();
       positionOverlay(el);
-      const fitHint = $isMainBrowser.get() ? ' — click to fit' : '';
-      el.innerHTML = `${icon('resize')} Sized for smaller screen${fitHint}`;
+      el.innerHTML = `${icon('resize')} Sized for smaller screen`;
     } else if (overlay) {
       overlay.remove();
       overlay = null;
@@ -655,6 +719,18 @@ export function autoResizeAllTerminals(): void {
  */
 export function autoResizeAllTerminalsImmediate(): void {
   autoResizeAllTerminalsInternal();
+}
+
+let _mainResizeScheduled = false;
+
+function scheduleMainBrowserResize(): void {
+  if (_mainResizeScheduled) return;
+  _mainResizeScheduled = true;
+  requestAnimationFrame(() => {
+    _mainResizeScheduled = false;
+    if (!$isMainBrowser.get()) return;
+    autoResizeAllTerminalsImmediate();
+  });
 }
 
 /**

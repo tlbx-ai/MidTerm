@@ -89,6 +89,48 @@ public static class EndpointSetup
         }
     }
 
+    private static void SpawnReplacementProcess()
+    {
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+        {
+            Log.Error(() => "Cannot restart: unable to determine binary path");
+            return;
+        }
+
+        var cliArgs = Environment.GetCommandLineArgs();
+        var args = cliArgs.Length > 1
+            ? string.Join(" ", cliArgs.Skip(1))
+            : "";
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = exePath,
+            Arguments = args,
+            WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
+            CreateNoWindow = true,
+        };
+
+        if (OperatingSystem.IsWindows())
+        {
+            psi.UseShellExecute = true;
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+        }
+        else
+        {
+            psi.UseShellExecute = false;
+            psi.RedirectStandardInput = true;
+        }
+
+        var proc = Process.Start(psi);
+        if (proc is not null && !OperatingSystem.IsWindows())
+        {
+            try { proc.StandardInput.Close(); } catch { }
+        }
+
+        Log.Info(() => $"Replacement process spawned (PID {proc?.Id})");
+    }
+
     public static void MapBootstrapEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
@@ -183,6 +225,7 @@ public static class EndpointSetup
         string version)
     {
         var shellRegistry = app.Services.GetRequiredService<ShellRegistry>();
+        var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 
         // Consolidated system endpoint (replaces /api/version, /api/health, /api/version/details)
         app.MapGet("/api/system", () =>
@@ -342,55 +385,25 @@ public static class EndpointSetup
                 return Results.Problem($"Failed to regenerate certificate: {ex.Message}");
             }
 
-            _ = Task.Run(async () =>
+            DelayedActionScheduler.Schedule(TimeSpan.FromMilliseconds(1500), () =>
             {
-                await Task.Delay(1500);
-
                 if (!settingsService.IsRunningAsService)
                 {
                     try
                     {
-                        var exePath = Environment.ProcessPath;
-                        if (!string.IsNullOrEmpty(exePath))
-                        {
-                            var cliArgs = Environment.GetCommandLineArgs();
-                            var args = cliArgs.Length > 1
-                                ? string.Join(" ", cliArgs.Skip(1))
-                                : "";
-
-                            var psi = new ProcessStartInfo
-                            {
-                                FileName = exePath,
-                                Arguments = args,
-                                WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
-                                CreateNoWindow = true,
-                            };
-
-                            if (OperatingSystem.IsWindows())
-                            {
-                                psi.UseShellExecute = true;
-                                psi.WindowStyle = ProcessWindowStyle.Hidden;
-                            }
-                            else
-                            {
-                                psi.UseShellExecute = false;
-                                psi.RedirectStandardInput = true;
-                            }
-
-                            var proc = Process.Start(psi);
-                            if (proc is not null && !OperatingSystem.IsWindows())
-                            {
-                                try { proc.StandardInput.Close(); } catch { }
-                            }
-                        }
+                        SpawnReplacementProcess();
                     }
                     catch (Exception ex)
                     {
                         Log.Error(() => $"Failed to spawn replacement process: {ex.Message}");
                     }
                 }
+                else
+                {
+                    Log.Info(() => "Service mode: stopping after certificate regeneration");
+                }
 
-                Environment.Exit(0);
+                lifetime.StopApplication();
             });
 
             return Results.Ok("Certificate regenerated. Server is restarting...");
@@ -465,58 +478,13 @@ public static class EndpointSetup
             Log.Info(() => "Server restart requested via API");
 
             // Fire-and-forget: return response first, then exit after delay
-            _ = Task.Run(async () =>
+            DelayedActionScheduler.Schedule(TimeSpan.FromMilliseconds(1500), () =>
             {
-                await Task.Delay(1500);
-
                 if (!settingsService.IsRunningAsService)
                 {
-                    // User mode: no service manager to respawn, so launch a replacement process
                     try
                     {
-                        var exePath = Environment.ProcessPath;
-                        if (!string.IsNullOrEmpty(exePath))
-                        {
-                            var cliArgs = Environment.GetCommandLineArgs();
-                            // Skip first element (exe path itself)
-                            var args = cliArgs.Length > 1
-                                ? string.Join(" ", cliArgs.Skip(1))
-                                : "";
-
-                            var psi = new ProcessStartInfo
-                            {
-                                FileName = exePath,
-                                Arguments = args,
-                                WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
-                                CreateNoWindow = true,
-                            };
-
-                            if (OperatingSystem.IsWindows())
-                            {
-                                // Windows: UseShellExecute creates an independent process
-                                psi.UseShellExecute = true;
-                                psi.WindowStyle = ProcessWindowStyle.Hidden;
-                            }
-                            else
-                            {
-                                // macOS/Linux: detach from parent
-                                psi.UseShellExecute = false;
-                                psi.RedirectStandardInput = true;
-                            }
-
-                            var proc = Process.Start(psi);
-                            if (proc is not null && !OperatingSystem.IsWindows())
-                            {
-                                // Close redirected stdin so child doesn't hang
-                                try { proc.StandardInput.Close(); } catch { }
-                            }
-
-                            Log.Info(() => $"Replacement process spawned (PID {proc?.Id})");
-                        }
-                        else
-                        {
-                            Log.Error(() => "Cannot restart: unable to determine binary path");
-                        }
+                        SpawnReplacementProcess();
                     }
                     catch (Exception ex)
                     {
@@ -528,7 +496,7 @@ public static class EndpointSetup
                     Log.Info(() => "Service mode: exiting for service manager to respawn");
                 }
 
-                Environment.Exit(0);
+                lifetime.StopApplication();
             });
 
             return Results.Ok("Server is restarting...");
@@ -539,10 +507,9 @@ public static class EndpointSetup
         {
             Log.Info(() => "Server shutdown requested via API");
 
-            _ = Task.Run(async () =>
+            DelayedActionScheduler.Schedule(TimeSpan.FromMilliseconds(500), () =>
             {
-                await Task.Delay(500);
-                Environment.Exit(0);
+                lifetime.StopApplication();
             });
 
             return Results.Ok("Server is shutting down...");
@@ -601,6 +568,58 @@ public static class EndpointSetup
             return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
+        app.MapGet("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        {
+            var settings = settingsService.Load();
+            var imagePath = backgroundImageService.GetCurrentImagePath(settings);
+            if (imagePath is null)
+            {
+                return Results.NotFound();
+            }
+
+            var extension = Path.GetExtension(imagePath).ToLowerInvariant();
+            var contentType = extension switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                _ => "application/octet-stream"
+            };
+
+            return Results.File(imagePath, contentType, enableRangeProcessing: false);
+        });
+
+        app.MapPost("/api/settings/background-image", async (IFormFile file, BackgroundImageService backgroundImageService) =>
+        {
+            try
+            {
+                var info = await backgroundImageService.SaveAsync(file);
+                return Results.Json(info, AppJsonContext.Default.BackgroundImageInfoResponse);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 400);
+            }
+            catch (Exception ex)
+            {
+                Common.Logging.Log.Exception(ex, "POST /api/settings/background-image");
+                return Results.Problem($"Failed to save background image: {ex.Message}");
+            }
+        }).DisableAntiforgery();
+
+        app.MapDelete("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        {
+            try
+            {
+                var info = backgroundImageService.Delete();
+                return Results.Json(info, AppJsonContext.Default.BackgroundImageInfoResponse);
+            }
+            catch (Exception ex)
+            {
+                Common.Logging.Log.Exception(ex, "DELETE /api/settings/background-image");
+                return Results.Problem($"Failed to delete background image: {ex.Message}");
+            }
+        });
+
         app.MapGet("/api/paths", () =>
         {
             var settings = settingsService.Load();
@@ -639,10 +658,11 @@ public static class EndpointSetup
         MainBrowserService mainBrowserService,
         GitWatcherService gitWatcher,
         BrowserCommandService browserCommandService,
-        TmuxLayoutBridge? tmuxLayoutBridge = null)
+        TmuxLayoutBridge? tmuxLayoutBridge = null,
+        BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge);
+        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
         var browserHandler = new BrowserWebSocketHandler(browserCommandService, settingsService, authService, shutdownService);

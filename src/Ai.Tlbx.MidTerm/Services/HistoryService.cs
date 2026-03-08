@@ -15,14 +15,19 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class HistoryService
 {
-    private readonly string _historyPath;
-    private readonly object _lock = new();
-    private LaunchHistory _history = new();
     private const int MaxRecentEntries = 50;
+    private static readonly TimeSpan SaveDebounceDelay = TimeSpan.FromMilliseconds(250);
+
+    private readonly string _historyPath;
+    private readonly Lock _lock = new();
+    private readonly Timer _saveTimer;
+    private LaunchHistory _history = new();
+    private bool _savePending;
 
     public HistoryService(SettingsService settingsService)
     {
         _historyPath = Path.Combine(settingsService.SettingsDirectory, "history.json");
+        _saveTimer = new Timer(_ => FlushPendingSave(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         Log.Info(() => $"HistoryService: path={_historyPath}");
         Load();
         MigrateStarredOrder();
@@ -52,26 +57,74 @@ public sealed class HistoryService
         }
     }
 
-    private void Save()
+    private void ScheduleSave()
     {
         lock (_lock)
         {
-            try
-            {
-                var dir = Path.GetDirectoryName(_historyPath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-
-                var json = JsonSerializer.Serialize(_history, HistoryJsonContext.Default.LaunchHistory);
-                File.WriteAllText(_historyPath, json);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(() => $"Failed to save history: {ex.Message}");
-            }
+            _savePending = true;
+            _saveTimer.Change(SaveDebounceDelay, Timeout.InfiniteTimeSpan);
         }
+    }
+
+    private void FlushPendingSave()
+    {
+        LaunchHistory? snapshot = null;
+
+        lock (_lock)
+        {
+            if (!_savePending)
+            {
+                return;
+            }
+
+            _savePending = false;
+            snapshot = CloneHistory(_history);
+        }
+
+        PersistSnapshot(snapshot);
+    }
+
+    private void PersistSnapshot(LaunchHistory snapshot)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(_historyPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            var json = JsonSerializer.Serialize(snapshot, HistoryJsonContext.Default.LaunchHistory);
+            File.WriteAllText(_historyPath, json);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"Failed to save history: {ex.Message}");
+        }
+    }
+
+    private static LaunchHistory CloneHistory(LaunchHistory history)
+    {
+        return new LaunchHistory
+        {
+            Entries = history.Entries.Select(CloneEntry).ToList()
+        };
+    }
+
+    private static LaunchEntry CloneEntry(LaunchEntry entry)
+    {
+        return new LaunchEntry
+        {
+            Id = entry.Id,
+            ShellType = entry.ShellType,
+            Executable = entry.Executable,
+            CommandLine = entry.CommandLine,
+            WorkingDirectory = entry.WorkingDirectory,
+            IsStarred = entry.IsStarred,
+            Label = entry.Label,
+            LastUsed = entry.LastUsed,
+            Order = entry.Order
+        };
     }
 
     public string? RecordEntry(
@@ -138,8 +191,9 @@ public sealed class HistoryService
             }
 
             Prune();
-            Save();
         }
+
+        ScheduleSave();
 
         Log.Verbose(() => $"Recorded history: {executable} in {workingDirectory}");
         return id;
@@ -203,9 +257,10 @@ public sealed class HistoryService
             {
                 entry.Order = NextStarredOrder();
             }
-            Save();
-            return true;
         }
+
+        ScheduleSave();
+        return true;
     }
 
     public bool SetStarred(string id, bool starred)
@@ -223,9 +278,10 @@ public sealed class HistoryService
             {
                 entry.Order = NextStarredOrder();
             }
-            Save();
-            return true;
         }
+
+        ScheduleSave();
+        return true;
     }
 
     public bool SetLabel(string id, string? label)
@@ -239,23 +295,27 @@ public sealed class HistoryService
             }
 
             entry.Label = string.IsNullOrWhiteSpace(label) ? null : label;
-            Save();
-            return true;
         }
+
+        ScheduleSave();
+        return true;
     }
 
     public bool RemoveEntry(string id)
     {
+        var removed = false;
+
         lock (_lock)
         {
-            var removed = _history.Entries.RemoveAll(e => e.Id == id);
-            if (removed > 0)
-            {
-                Save();
-                return true;
-            }
-            return false;
+            removed = _history.Entries.RemoveAll(e => e.Id == id) > 0;
         }
+
+        if (removed)
+        {
+            ScheduleSave();
+        }
+
+        return removed;
     }
 
     public bool ReorderStarred(List<string> orderedIds)
@@ -270,9 +330,10 @@ public sealed class HistoryService
                     entry.Order = i;
                 }
             }
-            Save();
-            return true;
         }
+
+        ScheduleSave();
+        return true;
     }
 
     private int NextStarredOrder()
@@ -283,6 +344,9 @@ public sealed class HistoryService
 
     private void MigrateStarredOrder()
     {
+        LaunchHistory? snapshot = null;
+        var migratedCount = 0;
+
         lock (_lock)
         {
             var starred = _history.Entries.Where(e => e.IsStarred).ToList();
@@ -295,8 +359,15 @@ public sealed class HistoryService
             {
                 starred[i].Order = i;
             }
-            Save();
-            Log.Info(() => $"Migrated {starred.Count} starred history entries with sequential order");
+
+            migratedCount = starred.Count;
+            snapshot = CloneHistory(_history);
+        }
+
+        if (snapshot is not null)
+        {
+            PersistSnapshot(snapshot);
+            Log.Info(() => $"Migrated {migratedCount} starred history entries with sequential order");
         }
     }
 

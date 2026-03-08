@@ -10,7 +10,7 @@ public sealed class TmuxPaneMapper
     private readonly TtyHostSessionManager _sessionManager;
     private readonly Dictionary<int, string> _paneToSession = new();
     private readonly Dictionary<string, int> _sessionToPane = new();
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
 
     public TmuxPaneMapper(TtyHostSessionManager sessionManager)
     {

@@ -290,7 +290,7 @@ public enum TtyHostMessageType : byte
 public sealed class SessionInfo
 {
     [JsonIgnore]
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
 
     private int _cols;
     private int _rows;

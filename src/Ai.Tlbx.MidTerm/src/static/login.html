@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MidTerm" />
 
-    <link rel="stylesheet" href="css/app.css?v=20260224a" />
+    <link rel="stylesheet" href="css/app.css?v=__MIDTERM_ASSET_VERSION__" />
 </head>
 <body class="login-page">
     <div class="login-container">
@@ -25,7 +25,7 @@
                 <p class="login-tagline" data-i18n="auth.terminalMultiplexer">Terminal Multiplexer</p>
             </div>
 
-            <form id="login-form" class="login-form">
+            <form id="login-form" class="login-form" method="post">
                 <input type="text" name="username" autocomplete="username" tabindex="-1" style="position:absolute;left:-9999px;opacity:0" aria-hidden="true" />
                 <div class="form-group">
                     <label for="password" data-i18n="auth.password">Password</label>
@@ -59,6 +59,6 @@
     <!-- Insider info: visible only when selecting all text (Ctrl+A) -->
     <div class="login-insider" id="login-insider" aria-hidden="true"></div>
 
-    <script src="js/terminal.min.js?v=20260224a"></script>
+    <script src="js/terminal.min.js?v=__MIDTERM_ASSET_VERSION__"></script>
 </body>
 </html>

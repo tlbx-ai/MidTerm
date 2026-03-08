@@ -42,6 +42,11 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.True(settings.ManagerBarEnabled);
+        Assert.True(settings.TmuxCompatibility);
+        Assert.True(settings.IdeMode);
+        Assert.True(settings.ShowChangelogAfterUpdate);
+        Assert.True(settings.ShowUpdateNotification);
     }
 
     [Fact]
@@ -58,6 +63,11 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.True(settings.ManagerBarEnabled);
+        Assert.True(settings.TmuxCompatibility);
+        Assert.True(settings.IdeMode);
+        Assert.True(settings.ShowChangelogAfterUpdate);
+        Assert.True(settings.ShowUpdateNotification);
     }
 
     [Fact]
@@ -70,7 +80,12 @@ public sealed class SettingsServiceTests : IDisposable
           "useWebGL": false,
           "cursorBlink": false,
           "rightClickPaste": false,
-          "fileRadar": false
+          "fileRadar": false,
+          "managerBarEnabled": false,
+          "tmuxCompatibility": false,
+          "ideMode": false,
+          "showChangelogAfterUpdate": false,
+          "showUpdateNotification": false
         }
         """;
         File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
@@ -82,6 +97,11 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.False(settings.CursorBlink);
         Assert.False(settings.RightClickPaste);
         Assert.False(settings.FileRadar);
+        Assert.False(settings.ManagerBarEnabled);
+        Assert.False(settings.TmuxCompatibility);
+        Assert.False(settings.IdeMode);
+        Assert.False(settings.ShowChangelogAfterUpdate);
+        Assert.False(settings.ShowUpdateNotification);
     }
 
     [Fact]
@@ -246,8 +266,15 @@ public sealed class SettingsServiceTests : IDisposable
         var old = new MidTermSettings
         {
             FontSize = 22,
+            HideCursorOnInputBursts = true,
             RightClickPaste = false,
             Theme = ThemeSetting.Light,
+            BackgroundImageEnabled = true,
+            BackgroundImageFileName = "wallpaper.png",
+            BackgroundImageRevision = 12345,
+            BackgroundImageFit = "contain",
+            UiTransparency = 40,
+            TerminalEnterMode = TerminalEnterModeSetting.ShiftEnterLineFeed,
             CertificatePath = @"C:\legacy\midterm.pem",
             KeyProtection = KeyProtectionMethod.OsProtected
         };
@@ -259,8 +286,15 @@ public sealed class SettingsServiceTests : IDisposable
         var loaded = service.Load();
 
         Assert.Equal(22, loaded.FontSize);
+        Assert.True(loaded.HideCursorOnInputBursts);
         Assert.False(loaded.RightClickPaste);
         Assert.Equal(ThemeSetting.Light, loaded.Theme);
+        Assert.True(loaded.BackgroundImageEnabled);
+        Assert.Equal("wallpaper.png", loaded.BackgroundImageFileName);
+        Assert.Equal(12345, loaded.BackgroundImageRevision);
+        Assert.Equal("contain", loaded.BackgroundImageFit);
+        Assert.Equal(40, loaded.UiTransparency);
+        Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, loaded.TerminalEnterMode);
         Assert.Equal(@"C:\legacy\midterm.pem", loaded.CertificatePath);
         Assert.False(File.Exists(oldPath));
         Assert.Equal(SettingsLoadStatus.MigratedFromOld, service.LoadStatus);

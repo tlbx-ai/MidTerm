@@ -42,6 +42,10 @@ public static class FileEndpointDefinitions
             await handler.ResolvePathAsync(sessionId, path, deep))
             .Produces<FileResolveResponse>(StatusCodes.Status200OK, "application/json");
 
+        app.MapPut("/api/files/save", async (FileSaveRequest request, IFileHandler handler, string? sessionId) =>
+            await handler.SaveFileAsync(request, sessionId))
+            .Produces<FileSaveResponse>(StatusCodes.Status200OK, "application/json");
+
         return app;
     }
 }

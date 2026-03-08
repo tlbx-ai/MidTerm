@@ -1,9 +1,9 @@
 /**
  * Smart Input Module
  *
- * Floating text input overlay for mobile devices.
- * Prevents on-screen keyboard from appearing by keeping
- * terminal unfocused while providing a text input + mic button.
+ * Docked text input for Smart Input and Both modes.
+ * Keeps terminal and text-entry behavior coordinated without
+ * relying on direct terminal keyboard focus.
  */
 
 export {
@@ -12,5 +12,6 @@ export {
   hideSmartInput,
   isSmartInputMode,
   isBothMode,
+  removeSmartInputSessionState,
 } from './smartInput';
 export { startTranscription, stopTranscription } from './transcription';

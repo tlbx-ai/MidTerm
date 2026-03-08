@@ -8,7 +8,7 @@
 
 import type { ThemeName } from '../../types';
 
-type CssThemePalette = Record<string, string>;
+export type CssThemePalette = Record<string, string>;
 
 const light: CssThemePalette = {
   '--bg-terminal': '#F5F0E8',
@@ -361,6 +361,20 @@ export function applyCssTheme(themeName: ThemeName): void {
     }
     updateThemeColor('#0D0E14');
   }
+}
+
+export function getCssThemePalette(themeName: ThemeName): CssThemePalette {
+  const palette = CSS_THEMES[themeName];
+  if (palette) {
+    return palette;
+  }
+
+  const fallback = CSS_THEMES['dark'];
+  if (!fallback) {
+    throw new Error("Theme palette 'dark' not found");
+  }
+
+  return fallback;
 }
 
 function updateThemeColor(color: string): void {

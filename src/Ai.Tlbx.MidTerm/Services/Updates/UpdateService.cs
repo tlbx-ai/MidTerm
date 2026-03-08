@@ -49,7 +49,7 @@ public sealed partial class UpdateService : IDisposable
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "MidTerm-UpdateCheck");
 
         _currentVersion = GetCurrentVersion();
-        _installedManifest = GetInstalledManifest();
+        _installedManifest = ReadInstalledManifest();
         var interval = (IsDevEnvironment || settingsService.Load().DevMode) ? DevCheckInterval : CheckInterval;
         _checkTimer = new Timer(OnCheckTimer, null, TimeSpan.FromSeconds(10), interval);
     }
@@ -64,7 +64,7 @@ public sealed partial class UpdateService : IDisposable
         return plusIndex > 0 ? version[..plusIndex] : version;
     }
 
-    private static VersionManifest GetInstalledManifest()
+    internal static VersionManifest ReadInstalledManifest()
     {
         var version = GetCurrentVersion();
 

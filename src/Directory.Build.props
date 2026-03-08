@@ -3,6 +3,7 @@
   <PropertyGroup>
     <!-- Deterministic is already true by default in SDK-style projects, but be explicit -->
     <Deterministic>true</Deterministic>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- Detect CI environments automatically -->
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>

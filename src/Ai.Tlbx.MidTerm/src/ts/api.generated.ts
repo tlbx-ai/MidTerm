@@ -861,6 +861,47 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/files/save': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: {
+          sessionId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['FileSaveRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileSaveResponse'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/logs/files': {
     parameters: {
       query?: never;
@@ -1840,6 +1881,15 @@ export interface components {
       modified: null | string;
       isText: null | boolean;
     };
+    FileSaveRequest: {
+      path: string;
+      content: string;
+    };
+    FileSaveResponse: {
+      success: boolean;
+      /** Format: int64 */
+      size: number;
+    };
     FileUploadResponse: {
       path: string;
     };
@@ -1921,8 +1971,16 @@ export interface components {
       cursorStyle: components['schemas']['CursorStyleSetting'];
       cursorBlink: boolean;
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];
+      hideCursorOnInputBursts: boolean;
       theme: components['schemas']['ThemeSetting'];
       terminalColorScheme: components['schemas']['TerminalColorSchemeSetting'];
+      backgroundImageEnabled: boolean;
+      backgroundImageFileName: null | string;
+      /** Format: int64 */
+      backgroundImageRevision: number;
+      backgroundImageFit: string;
+      /** Format: int32 */
+      uiTransparency: number;
       tabTitleMode: components['schemas']['TabTitleModeSetting'];
       /** Format: double */
       minimumContrastRatio: number;
@@ -1935,6 +1993,7 @@ export interface components {
       copyOnSelect: boolean;
       rightClickPaste: boolean;
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
+      terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
       inputMode: string;
       fileRadar: boolean;
@@ -2085,6 +2144,8 @@ export interface components {
       | 'solarizedDark'
       | 'solarizedLight'
       | 'matrix';
+    /** @enum {unknown} */
+    TerminalEnterModeSetting: 'default' | 'shiftEnterLineFeed';
     /** @enum {unknown} */
     ThemeSetting: 'dark' | 'light' | 'solarizedDark' | 'solarizedLight';
     TtyHostInfo: {

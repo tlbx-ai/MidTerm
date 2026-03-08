@@ -165,6 +165,6 @@ public sealed class CircularByteBuffer : IDisposable
         }
 
         _disposed = true;
-        ArrayPool<byte>.Shared.Return(_buffer, clearArray: false);
+        ArrayPool<byte>.Shared.Return(_buffer, clearArray: true);
     }
 }

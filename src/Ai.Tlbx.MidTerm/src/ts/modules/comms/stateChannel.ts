@@ -11,6 +11,7 @@ import type {
   Session,
   UpdateInfo,
   WsCommand,
+  WsCommandAction,
   WsCommandPayload,
   WsCommandResponse,
 } from '../../types';
@@ -24,6 +25,11 @@ import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
 import { renderUpdatePanel } from '../updating/checker';
 import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
+import { detachPreview, dockBack } from '../web/webDetach';
+import { setViewportSize, openWebPreviewDock } from '../web/webDock';
+import { setWebPreviewTarget } from '../web/webApi';
+import { setActiveUrl, setActiveMode } from '../web/webSessionState';
+import { loadPreview } from '../web/webPanel';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -49,6 +55,14 @@ interface MainBrowserStatusMessage {
   showButton: boolean;
 }
 
+interface BrowserUiMessage {
+  type: 'browser-ui';
+  command: string;
+  width?: number;
+  height?: number;
+  url?: string;
+}
+
 interface StateUpdateMessage {
   type?: undefined;
   sessions?: { sessions: Session[] };
@@ -68,6 +82,7 @@ type StateWsMessage =
   | TmuxFocusMessage
   | TmuxSwapMessage
   | MainBrowserStatusMessage
+  | BrowserUiMessage
   | StateUpdateMessage
   | CommandResponseMessage;
 
@@ -98,6 +113,7 @@ import {
   $updateInfo,
   $isMainBrowser,
   $showMainBrowserButton,
+  $webPreviewUrl,
   setSessions,
   getParentSessionId,
 } from '../../stores';
@@ -217,6 +233,12 @@ export function connectStateWebSocket(): void {
       if (data.type === 'main-browser-status') {
         $isMainBrowser.set(data.isMain);
         $showMainBrowserButton.set(data.showButton);
+        return;
+      }
+
+      // Handle browser UI commands (detach/dock/viewport from mtcli)
+      if (data.type === 'browser-ui') {
+        handleBrowserUiCommand(data);
         return;
       }
 
@@ -392,9 +414,20 @@ function handleCommandResponse(response: WsCommandResponse): void {
  * Send a command to the server over the state WebSocket.
  * Returns a promise that resolves with the response data or rejects on error.
  */
+export function sendCommand<T = unknown>(
+  action: 'browser.claimMain' | 'browser.releaseMain',
+): Promise<T>;
+export function sendCommand<T = unknown>(
+  action: 'session.rename',
+  payload: WsCommandPayload<'session.rename'>,
+): Promise<T>;
+export function sendCommand<T = unknown>(
+  action: 'session.reorder',
+  payload: WsCommandPayload<'session.reorder'>,
+): Promise<T>;
 export async function sendCommand<T = unknown>(
-  action: string,
-  payload?: WsCommandPayload,
+  action: WsCommandAction,
+  payload?: WsCommandPayload<'session.rename'> | WsCommandPayload<'session.reorder'>,
 ): Promise<T> {
   const ws = stateWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -402,12 +435,33 @@ export async function sendCommand<T = unknown>(
   }
 
   const id = crypto.randomUUID();
-  const command: WsCommand = {
-    type: 'command',
-    id,
-    action,
-    payload,
-  };
+  let command: WsCommand;
+  switch (action) {
+    case 'browser.claimMain':
+    case 'browser.releaseMain':
+      command = {
+        type: 'command',
+        id,
+        action,
+      };
+      break;
+    case 'session.rename':
+      command = {
+        type: 'command',
+        id,
+        action,
+        payload: payload as WsCommandPayload<'session.rename'>,
+      };
+      break;
+    case 'session.reorder':
+      command = {
+        type: 'command',
+        id,
+        action,
+        payload: payload as WsCommandPayload<'session.reorder'>,
+      };
+      break;
+  }
 
   return new Promise<T>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
@@ -429,6 +483,40 @@ export async function sendCommand<T = unknown>(
       reject(new Error(e instanceof Error ? e.message : String(e)));
     }
   });
+}
+
+/**
+ * Handle browser UI commands from the server (detach, dock, viewport).
+ */
+function handleBrowserUiCommand(msg: BrowserUiMessage): void {
+  switch (msg.command) {
+    case 'detach':
+      detachPreview();
+      break;
+    case 'dock':
+      dockBack();
+      break;
+    case 'viewport':
+      setViewportSize(msg.width ?? 0, msg.height ?? 0);
+      break;
+    case 'open':
+      if (msg.url) {
+        void handleBrowserOpen(msg.url);
+      }
+      break;
+    default:
+      log.warn(() => `Unknown browser-ui command: ${msg.command}`);
+  }
+}
+
+async function handleBrowserOpen(url: string): Promise<void> {
+  const result = await setWebPreviewTarget(url);
+  if (!result?.active) return;
+  setActiveUrl(url);
+  setActiveMode('docked');
+  $webPreviewUrl.set(url);
+  openWebPreviewDock();
+  loadPreview();
 }
 
 /**

@@ -3,7 +3,7 @@
  *
  * Creates and manages the tab bar UI for each session.
  * Tabs: Terminal | Files
- * Right-aligned actions: Commands (⚡) | Git status indicator
+ * Right-aligned actions: Web Preview | Commands | Git status indicator
  */
 
 import type { GitStatusResponse } from '../git/types';
@@ -13,11 +13,32 @@ export type SessionTabId = 'terminal' | 'files';
 
 export type IdeBarActionId = 'git' | 'commands' | 'web';
 
+const WEB_BUTTON_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="3.5" y="5" width="17" height="14" rx="2.5"></rect>' +
+  '<path d="M3.5 8.5h17"></path>' +
+  '<path d="m10 11-2.5 2.5L10 16"></path>' +
+  '<path d="m14 11 2.5 2.5L14 16"></path>' +
+  '<path d="m13 10-2 7"></path>' +
+  '</svg>';
+
+const COMMANDS_BUTTON_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect>' +
+  '<path d="m7.5 10 3 2.5-3 2.5"></path>' +
+  '<path d="M12.5 15h4.5"></path>' +
+  '<path d="M12.5 10h5"></path>' +
+  '</svg>';
+
 function getTabLabels(): Record<SessionTabId, string> {
   return {
     terminal: t('session.terminal'),
     files: t('sessionTabs.files'),
   };
+}
+
+function createActionIcon(svgMarkup: string): string {
+  return `<span class="ide-bar-btn-icon" aria-hidden="true">${svgMarkup}</span>`;
 }
 
 let commandsClickHandler: (() => void) | null = null;
@@ -46,6 +67,14 @@ export function createTabBar(
 
   const cwdSpan = document.createElement('span');
   cwdSpan.className = 'session-cwd';
+  cwdSpan.addEventListener('click', () => {
+    const cwd = cwdSpan.textContent.trim();
+    if (!cwd || typeof navigator.clipboard === 'undefined') {
+      return;
+    }
+
+    void navigator.clipboard.writeText(cwd).catch(() => {});
+  });
   bar.appendChild(cwdSpan);
 
   for (const [tabId, label] of Object.entries(getTabLabels())) {
@@ -67,7 +96,8 @@ export function createTabBar(
   webBtn.className = 'ide-bar-btn ide-bar-web';
   webBtn.dataset.action = 'web';
   webBtn.title = t('sessionTabs.web');
-  webBtn.innerHTML = '<span class="ide-bar-btn-icon">\u{1F310}</span>';
+  webBtn.setAttribute('aria-label', t('sessionTabs.web'));
+  webBtn.innerHTML = createActionIcon(WEB_BUTTON_ICON);
   webBtn.addEventListener('click', () => webClickHandler?.());
   actions.appendChild(webBtn);
 
@@ -75,7 +105,8 @@ export function createTabBar(
   cmdBtn.className = 'ide-bar-btn ide-bar-commands';
   cmdBtn.dataset.action = 'commands';
   cmdBtn.title = t('sessionTabs.commands');
-  cmdBtn.innerHTML = '<span class="ide-bar-btn-icon">\u26A1</span>';
+  cmdBtn.setAttribute('aria-label', t('sessionTabs.commands'));
+  cmdBtn.innerHTML = createActionIcon(COMMANDS_BUTTON_ICON);
   cmdBtn.addEventListener('click', () => commandsClickHandler?.());
   actions.appendChild(cmdBtn);
 
@@ -83,6 +114,7 @@ export function createTabBar(
   gitBtn.className = 'ide-bar-btn git-indicator';
   gitBtn.dataset.action = 'git';
   gitBtn.title = t('sessionTabs.git');
+  gitBtn.setAttribute('aria-label', t('sessionTabs.git'));
   gitBtn.innerHTML =
     '<span class="git-indicator-branch">\u2387</span>' +
     '<span class="git-indicator-stats"></span>';
@@ -113,6 +145,7 @@ export function updateCwd(bar: HTMLDivElement, cwd: string): void {
   const cwdSpan = bar.querySelector('.session-cwd');
   if (cwdSpan) {
     cwdSpan.textContent = cwd;
+    cwdSpan.setAttribute('title', cwd);
   }
 }
 

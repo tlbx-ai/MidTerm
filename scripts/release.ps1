@@ -246,6 +246,9 @@ if ($isPtyBreaking) {
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray
+node "$PSScriptRoot\sync-npx-launcher-version.mjs" $newVersion
+if ($LASTEXITCODE -ne 0) { throw "Failed to sync npx launcher version" }
+Write-Host "  Synced: packages/npx-launcher/package.json" -ForegroundColor Gray
 
 # Web csproj reads version dynamically from version.json - no update needed
 

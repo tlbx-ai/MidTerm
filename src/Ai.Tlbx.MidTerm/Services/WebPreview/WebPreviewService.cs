@@ -105,6 +105,17 @@ public sealed class WebPreviewService
         return true;
     }
 
+    public bool ClearAllCookies()
+    {
+        var target = _targetUri;
+        if (target is null)
+            return false;
+
+        DeleteCookieFile(target);
+        ResetCookieJar();
+        return true;
+    }
+
     public WebPreviewCookiesResponse GetCookies()
     {
         var target = _targetUri;
@@ -115,7 +126,7 @@ public sealed class WebPreviewService
 
         lock (_clientLock)
         {
-            var cookies = _cookieContainer.GetCookies(target);
+            var cookies = _cookieContainer.GetAllCookies();
             var result = new WebPreviewCookiesResponse
             {
                 Header = _cookieContainer.GetCookieHeader(target)

@@ -345,6 +345,16 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result=parts.join("\n");
                   res.matchCount=parts.length;
                   break;}
+                case"submit":{
+                  var fsel=msg.selector||"form";
+                  var f=document.querySelector(fsel);
+                  if(!f){res.success=false;res.error="form not found: "+fsel;break;}
+                  rc().finally(function(){
+                    res.result="submitted";
+                    bws.send(JSON.stringify(res));
+                    setTimeout(function(){try{f.requestSubmit();}catch(e){f.submit();}},50);
+                  });
+                  return;}
                 case"forms":{
                   var fsel=msg.selector||"form";
                   var forms=document.querySelectorAll(fsel);
@@ -375,6 +385,17 @@ public sealed partial class WebPreviewProxyMiddleware
                     parts.push(flines.join("\n"));
                   }
                   res.result=parts.join("\n---\n");
+                  break;}
+                case"url":{
+                  var path=location.pathname;
+                  if(path.indexOf(P+"/")==0)path=path.substring(P.length);
+                  else if(path===P)path="/";
+                  res.result=(window.__mtTargetOrigin||"")+path+location.search+location.hash;
+                  break;}
+                case"clearcookies":{
+                  var all=document.cookie.split(";");
+                  for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
+                  cc="";res.result="cleared";
                   break;}
                 default:res.success=false;res.error="unknown command: "+msg.command;
               }
@@ -492,6 +513,21 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
+        // Guard: if web preview is active and a proxied page's JS leaks calls to
+        // /api/webpreview/* (e.g. inner MidTerm calling DELETE /api/webpreview/target),
+        // proxy those upstream instead of letting them hit our local handlers.
+        if (_service.IsActive
+            && path.StartsWithSegments("/api/webpreview")
+            && ShouldProxyWebPreviewApiRequest(context.Request))
+        {
+            var targetUri = _service.TargetUri!;
+            if (context.WebSockets.IsWebSocketRequest)
+                await ProxyWebSocketAsync(context, targetUri, path.Value ?? "/");
+            else
+                await ProxyHttpAsync(context, targetUri, path.Value ?? "/");
+            return;
+        }
+
         // Catch-all: if web preview is active and this isn't a known MidTerm path,
         // it's likely a leaked root-relative URL from the proxied site (e.g. /s/player/...,
         // /youtubei/v1/...). Proxy it to the upstream target directly.
@@ -512,6 +548,23 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         await _next(context);
+    }
+
+    private static bool ShouldProxyWebPreviewApiRequest(HttpRequest request)
+    {
+        if (!request.Headers.TryGetValue("Referer", out var refererValues))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
+        {
+            return false;
+        }
+
+        var refererPath = refererUri.AbsolutePath;
+        return refererPath.Equals(ProxyPrefix, StringComparison.OrdinalIgnoreCase)
+            || refererPath.StartsWith(ProxyPrefix + "/", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -733,7 +786,9 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
-        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">" + UrlRewriteScript, 1);
+        var targetOrigin = _service.TargetUri?.GetLeftPart(UriPartial.Authority) ?? "";
+        var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
+        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + UrlRewriteScript, 1);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");

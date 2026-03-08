@@ -17,8 +17,14 @@ public sealed partial class MidTermSettingsPublic
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
             CursorInactiveStyle = settings.CursorInactiveStyle,
+            HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
             Theme = settings.Theme,
             TerminalColorScheme = settings.TerminalColorScheme,
+            BackgroundImageEnabled = settings.BackgroundImageEnabled,
+            BackgroundImageFileName = settings.BackgroundImageFileName,
+            BackgroundImageRevision = settings.BackgroundImageRevision,
+            BackgroundImageFit = settings.BackgroundImageFit,
+            UiTransparency = settings.UiTransparency,
             TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
@@ -29,6 +35,7 @@ public sealed partial class MidTermSettingsPublic
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
             ClipboardShortcuts = settings.ClipboardShortcuts,
+            TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
@@ -59,8 +66,15 @@ public sealed partial class MidTermSettingsPublic
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
         settings.CursorInactiveStyle = CursorInactiveStyle;
+        settings.HideCursorOnInputBursts = HideCursorOnInputBursts;
         settings.Theme = Theme;
         settings.TerminalColorScheme = TerminalColorScheme;
+        settings.BackgroundImageEnabled = BackgroundImageEnabled;
+        if (BackgroundImageFit is "cover" or "contain")
+        {
+            settings.BackgroundImageFit = BackgroundImageFit;
+        }
+        settings.UiTransparency = Math.Clamp(UiTransparency, 0, 85);
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
         settings.SmoothScrolling = SmoothScrolling;
@@ -71,6 +85,7 @@ public sealed partial class MidTermSettingsPublic
         settings.CopyOnSelect = CopyOnSelect;
         settings.RightClickPaste = RightClickPaste;
         settings.ClipboardShortcuts = ClipboardShortcuts;
+        settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
@@ -100,6 +115,7 @@ public sealed partial class MidTermSettingsPublic
         // RunAsUserSid is derived server-side from RunAsUser (Windows only)
         // AuthenticationEnabled is managed by the auth endpoint
         // CertificatePath is set via install/CLI
+        // Background image metadata is managed by the background image endpoints
         // These fields are read-only in the GET response and ignored on PUT.
     }
 }

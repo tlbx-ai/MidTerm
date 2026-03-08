@@ -114,6 +114,40 @@ export async function updateSettings(settings: MidTermSettingsUpdate) {
   });
 }
 
+export interface BackgroundImageInfo {
+  hasImage: boolean;
+  fileName: string | null;
+  revision: number;
+}
+
+export async function uploadBackgroundImage(file: File): Promise<BackgroundImageInfo> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch('/api/settings/background-image', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as BackgroundImageInfo;
+}
+
+export async function deleteBackgroundImage(): Promise<BackgroundImageInfo> {
+  const response = await fetch('/api/settings/background-image', {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as BackgroundImageInfo;
+}
+
 export async function reloadSettings() {
   return client.POST('/api/settings/reload');
 }

@@ -28,6 +28,8 @@ You type "yes, commit that." You go back to eating.
 
 ## Install
 
+Recommended for real installs: use the native installer below. It handles password setup, service mode, and self-update.
+
 **macOS / Linux:**
 ```bash
 curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
@@ -38,7 +40,14 @@ curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 ```
 
-Open [http://localhost:2000](http://localhost:2000). Click **+**. You have a terminal.
+**Quick launch alternative via `npx` (requires Node.js):**
+```bash
+npx @tlbx-ai/midterm
+```
+
+That downloads the native binary for your platform, runs MidTerm in user mode, and opens it in your browser. Use the installer above if you want the normal persistent install and update path.
+
+Open [https://localhost:2000](https://localhost:2000). Click **+**. You have a terminal.
 
 The installer asks for a password — nobody gets in without it.
 

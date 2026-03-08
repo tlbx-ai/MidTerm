@@ -210,6 +210,18 @@ export function buildViewUrl(path: string, sessionId: string): string {
   return url;
 }
 
+export function escapeBinaryContent(bytes: Uint8Array): string {
+  const parts: string[] = [];
+  for (const b of bytes) {
+    if ((b >= 0x20 && b <= 0x7e) || b === 0x0a || b === 0x0d || b === 0x09) {
+      parts.push(String.fromCharCode(b));
+    } else {
+      parts.push('\u00b7');
+    }
+  }
+  return parts.join('');
+}
+
 // Universal syntax highlighting
 
 const UNIVERSAL_KEYWORDS = [

@@ -6,7 +6,12 @@
  * The web preview dock sits as the outermost (rightmost) panel.
  */
 
-import { $activeSessionId, $webPreviewDocked, $isMainBrowser } from '../../stores';
+import {
+  $activeSessionId,
+  $webPreviewDocked,
+  $webPreviewViewport,
+  $isMainBrowser,
+} from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { restoreLastUrl, showIframe, unloadIframe } from './webPanel';
@@ -200,6 +205,8 @@ export function setupWebPreviewDockResize(): void {
   let startX = 0;
   let startWidth = 0;
 
+  const iframe = panel.querySelector<HTMLIFrameElement>('iframe');
+
   function beginResize(clientX: number): void {
     isResizing = true;
     startX = clientX;
@@ -207,6 +214,7 @@ export function setupWebPreviewDockResize(): void {
     grip.classList.add('active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
+    if (iframe) iframe.style.pointerEvents = 'none';
   }
 
   function updateResize(clientX: number): void {
@@ -214,8 +222,6 @@ export function setupWebPreviewDockResize(): void {
     const delta = startX - clientX;
     const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
     panel.style.width = `${newWidth}px`;
-    adjustInnerDockPositions();
-    updateAllDockMargins();
   }
 
   function endResize(): void {
@@ -224,6 +230,9 @@ export function setupWebPreviewDockResize(): void {
     grip.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+    if (iframe) iframe.style.pointerEvents = '';
+    adjustInnerDockPositions();
+    updateAllDockMargins();
     localStorage.setItem(DOCK_WIDTH_KEY, String(panel.offsetWidth));
     handleDockLayoutChange();
   }
@@ -261,4 +270,51 @@ export function setupWebPreviewDockResize(): void {
 
   document.addEventListener('touchend', endResize);
   document.addEventListener('touchcancel', endResize);
+}
+
+/**
+ * Set the web preview iframe to a fixed viewport size for responsive testing.
+ * Pass width=0, height=0 to reset to full size.
+ */
+export function setViewportSize(width: number, height: number): void {
+  const iframe = document.getElementById('web-preview-iframe');
+  const body = document.querySelector<HTMLElement>('.web-preview-dock-body');
+  const badge = document.getElementById('web-preview-viewport-badge');
+  if (!iframe || !body) return;
+
+  if (width <= 0 && height <= 0) {
+    iframe.style.width = '';
+    iframe.style.height = '';
+    iframe.style.maxWidth = '';
+    iframe.style.maxHeight = '';
+    body.classList.remove('viewport-constrained');
+    $webPreviewViewport.set(null);
+    if (badge) badge.classList.add('hidden');
+    log.info(() => 'Viewport reset to full size');
+    return;
+  }
+
+  iframe.style.width = `${width}px`;
+  iframe.style.height = `${height}px`;
+  iframe.style.maxWidth = `${width}px`;
+  iframe.style.maxHeight = `${height}px`;
+  body.classList.add('viewport-constrained');
+  $webPreviewViewport.set({ width, height });
+
+  if (badge) {
+    badge.textContent = `${width}\u00D7${height}`;
+    badge.classList.remove('hidden');
+  }
+
+  log.info(() => `Viewport set to ${width}\u00D7${height}`);
+}
+
+/** Wire up the viewport reset badge click handler. */
+export function initViewportReset(): void {
+  const badge = document.getElementById('web-preview-viewport-badge');
+  if (badge) {
+    badge.addEventListener('click', () => {
+      setViewportSize(0, 0);
+    });
+  }
 }

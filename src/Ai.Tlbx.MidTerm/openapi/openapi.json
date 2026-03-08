@@ -704,6 +704,44 @@
         }
       }
     },
+    "/api/files/save": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileSaveResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/logs/files": {
       "get": {
         "tags": [
@@ -1779,6 +1817,37 @@
           }
         }
       },
+      "FileSaveRequest": {
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "FileSaveResponse": {
+        "required": [
+          "success",
+          "size"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "FileUploadResponse": {
         "required": [
           "path"
@@ -2065,8 +2134,14 @@
           "cursorStyle",
           "cursorBlink",
           "cursorInactiveStyle",
+          "hideCursorOnInputBursts",
           "theme",
           "terminalColorScheme",
+          "backgroundImageEnabled",
+          "backgroundImageFileName",
+          "backgroundImageRevision",
+          "backgroundImageFit",
+          "uiTransparency",
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
@@ -2077,6 +2152,7 @@
           "copyOnSelect",
           "rightClickPaste",
           "clipboardShortcuts",
+          "terminalEnterMode",
           "scrollbackProtection",
           "inputMode",
           "fileRadar",
@@ -2133,11 +2209,34 @@
           "cursorInactiveStyle": {
             "$ref": "#/components/schemas/CursorInactiveStyleSetting"
           },
+          "hideCursorOnInputBursts": {
+            "type": "boolean"
+          },
           "theme": {
             "$ref": "#/components/schemas/ThemeSetting"
           },
           "terminalColorScheme": {
             "$ref": "#/components/schemas/TerminalColorSchemeSetting"
+          },
+          "backgroundImageEnabled": {
+            "type": "boolean"
+          },
+          "backgroundImageFileName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "backgroundImageRevision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "backgroundImageFit": {
+            "type": "string"
+          },
+          "uiTransparency": {
+            "type": "integer",
+            "format": "int32"
           },
           "tabTitleMode": {
             "$ref": "#/components/schemas/TabTitleModeSetting"
@@ -2170,6 +2269,9 @@
           },
           "clipboardShortcuts": {
             "$ref": "#/components/schemas/ClipboardShortcutsSetting"
+          },
+          "terminalEnterMode": {
+            "$ref": "#/components/schemas/TerminalEnterModeSetting"
           },
           "scrollbackProtection": {
             "type": "boolean"
@@ -2702,6 +2804,12 @@
           "solarizedDark",
           "solarizedLight",
           "matrix"
+        ]
+      },
+      "TerminalEnterModeSetting": {
+        "enum": [
+          "default",
+          "shiftEnterLineFeed"
         ]
       },
       "ThemeSetting": {

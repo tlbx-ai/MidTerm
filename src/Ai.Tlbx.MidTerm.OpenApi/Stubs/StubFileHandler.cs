@@ -31,4 +31,7 @@ public class StubFileHandler : IFileHandler
 
     public Task<IResult> ResolvePathAsync(string sessionId, string path, bool deep) =>
         Task.FromResult<IResult>(Results.Json(new FileResolveResponse { Exists = false }));
+
+    public Task<IResult> SaveFileAsync(FileSaveRequest request, string? sessionId) =>
+        Task.FromResult<IResult>(Results.Json(new FileSaveResponse { Success = true, Size = 0 }));
 }

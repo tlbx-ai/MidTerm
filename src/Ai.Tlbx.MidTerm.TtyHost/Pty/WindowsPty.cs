@@ -12,7 +12,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost.Pty;
 [SupportedOSPlatform("windows")]
 public sealed class WindowsPty : IPtyConnection
 {
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private IntPtr _pseudoConsoleHandle;
     private IntPtr _processHandle;
     private IntPtr _threadHandle;

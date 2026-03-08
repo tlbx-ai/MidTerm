@@ -66,6 +66,7 @@ export const $sessionList = computed($sessions, (sessions) => {
   const topLevel = all
     .filter((s) => !s.parentSessionId)
     .sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+  const allSessionIds = new Set(all.map((s) => s.id));
   const childrenByParent = new Map<string, Session[]>();
   for (const s of all) {
     if (s.parentSessionId) {
@@ -88,7 +89,7 @@ export const $sessionList = computed($sessions, (sessions) => {
   }
   // Orphaned children (parent no longer exists) go at the end
   for (const s of all) {
-    if (s.parentSessionId && !all.some((p) => p.id === s.parentSessionId)) {
+    if (s.parentSessionId && !allSessionIds.has(s.parentSessionId)) {
       result.push(s);
     }
   }
@@ -162,6 +163,9 @@ export const $webPreviewUrl = atom<string | null>(null);
 
 /** Whether web preview is detached to popup window */
 export const $webPreviewDetached = atom<boolean>(false);
+
+/** Custom viewport size for responsive testing (null = full size) */
+export const $webPreviewViewport = atom<{ width: number; height: number } | null>(null);
 
 // =============================================================================
 // Connection State Stores

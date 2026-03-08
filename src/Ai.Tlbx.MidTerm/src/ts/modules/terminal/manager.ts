@@ -33,7 +33,13 @@ import {
   sanitizePasteContent,
   sanitizeCopyContent,
 } from './fileDrop';
-import { isBracketedPasteEnabled, sendCommand, sendInput, requestBufferRefresh } from '../comms';
+import {
+  isBracketedPasteEnabled,
+  reconcileSynchronizedOutputCursor,
+  requestBufferRefresh,
+  sendCommand,
+  sendInput,
+} from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
 import { Terminal, type ITerminalOptions } from '@xterm/xterm';
@@ -51,6 +57,7 @@ import {
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
+import { getTerminalEnterOverride } from './enterBehavior';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -88,6 +95,62 @@ export function refreshCursorBlink(terminal: Terminal): void {
     terminal.options.cursorBlink = false;
     terminal.options.cursorBlink = true;
   }
+}
+
+function detachWebglAddon(sessionId: string, state: TerminalState): void {
+  const addon = state.webglAddon;
+  state.webglAddon = null;
+
+  if (state.hasWebgl) {
+    terminalsWithWebgl.delete(sessionId);
+    state.hasWebgl = false;
+  }
+
+  if (addon) {
+    try {
+      addon.dispose();
+    } catch {
+      // Renderer was already torn down.
+    }
+  }
+}
+
+function attachWebglAddon(sessionId: string, state: TerminalState): void {
+  if (!state.opened || state.hasWebgl || terminalsWithWebgl.size >= MAX_WEBGL_CONTEXTS) {
+    return;
+  }
+
+  try {
+    const webglAddon = new WebglAddon();
+    webglAddon.onContextLoss(() => {
+      if (state.webglAddon !== webglAddon) {
+        return;
+      }
+
+      detachWebglAddon(sessionId, state);
+      requestBufferRefresh(sessionId);
+    });
+    state.terminal.loadAddon(webglAddon);
+    state.webglAddon = webglAddon;
+    terminalsWithWebgl.add(sessionId);
+    state.hasWebgl = true;
+  } catch {
+    state.webglAddon = null;
+    state.hasWebgl = false;
+  }
+}
+
+export function syncTerminalWebglState(
+  sessionId: string,
+  state: TerminalState,
+  enabled: boolean,
+): void {
+  if (!enabled) {
+    detachWebglAddon(sessionId, state);
+    return;
+  }
+
+  attachWebglAddon(sessionId, state);
 }
 
 /**
@@ -186,9 +249,9 @@ export function getTerminalOptions(): ITerminalOptions {
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
 
   const options: ITerminalOptions = {
-    cursorBlink: currentSettings?.cursorBlink ?? true,
-    cursorStyle: currentSettings?.cursorStyle ?? 'bar',
-    cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'outline',
+    cursorBlink: currentSettings?.cursorBlink ?? false,
+    cursorStyle: currentSettings?.cursorStyle ?? 'block',
+    cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'none',
     fontFamily: `'${fontFamily}', ${TERMINAL_FONT_STACK}`,
     fontSize: fontSize,
     letterSpacing: 0,
@@ -266,6 +329,9 @@ export function createTerminalForSession(
     serverCols: serverCols > 0 ? serverCols : 0,
     serverRows: serverRows > 0 ? serverRows : 0,
     opened: false,
+    hasWebgl: false,
+    webglAddon: null,
+    pendingVisualRefresh: false,
   };
 
   sessionTerminals.set(sessionId, state);
@@ -306,25 +372,7 @@ export function createTerminalForSession(
 
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
-    if (
-      $currentSettings.get()?.useWebGL !== false &&
-      terminalsWithWebgl.size < MAX_WEBGL_CONTEXTS
-    ) {
-      try {
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          terminalsWithWebgl.delete(sessionId);
-          state.hasWebgl = false;
-          webglAddon.dispose();
-          requestBufferRefresh(sessionId);
-        });
-        terminal.loadAddon(webglAddon);
-        terminalsWithWebgl.add(sessionId);
-        state.hasWebgl = true;
-      } catch {
-        // WebGL not available, using canvas renderer
-      }
-    }
+    syncTerminalWebglState(sessionId, state, $currentSettings.get()?.useWebGL !== false);
 
     // Load Web-Links addon for clickable URLs
     try {
@@ -485,6 +533,12 @@ export function setupTerminalEvents(
     }),
   );
 
+  disposables.push(
+    terminal.onWriteParsed(() => {
+      reconcileSynchronizedOutputCursor(sessionId);
+    }),
+  );
+
   // OSC 52 clipboard: programs in the terminal can set the browser clipboard
   // Format: ESC ] 52 ; <selection> ; <base64-data> BEL/ST
   // This enables remote clipboard for tools like Claude Code, vim, tmux
@@ -543,9 +597,12 @@ export function setupTerminalEvents(
     // F12: let browser handle it (open DevTools)
     if (e.key === 'F12') return false;
 
-    // Ctrl+Enter: Send LF (\n) instead of CR (\r) for TUI apps that use it for line breaks
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === 'Enter') {
-      sendInput(sessionId, '\n');
+    const enterOverride = getTerminalEnterOverride(
+      e,
+      $currentSettings.get()?.terminalEnterMode ?? 'default',
+    );
+    if (enterOverride !== null) {
+      sendInput(sessionId, enterOverride);
       return false;
     }
 
@@ -621,7 +678,7 @@ export function setupTerminalEvents(
     if (!window.isSecureContext && e.clipboardData) {
       const text = e.clipboardData.getData('text/plain');
       if (text) {
-        pasteToTerminal(sessionId, sanitizePasteContent(text));
+        void pasteToTerminal(sessionId, sanitizePasteContent(text));
       }
     }
     // On secure contexts, paste is handled by keyboard shortcut via handleClipboardPaste
@@ -726,6 +783,10 @@ export function destroyTerminalForSession(sessionId: string): void {
   if (state.cursorHideTimer != null) {
     clearTimeout(state.cursorHideTimer);
   }
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+  }
+  state.reconnectFreezeOverlay?.remove();
 
   // Clean up pending title update timer
   const titleTimer = pendingTitleUpdates.get(sessionId);
@@ -738,9 +799,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   teardownTouchScrolling(sessionId);
 
   // Clean up WebGL context tracking
-  if (state.hasWebgl) {
-    terminalsWithWebgl.delete(sessionId);
-  }
+  syncTerminalWebglState(sessionId, state, false);
 
   // Clean up file path allowlist
   clearPathAllowlist(sessionId);
@@ -810,11 +869,11 @@ function hidePasteIndicatorDelayed(startTime: number): void {
  *
  * @param isFilePath - If true, wrap content in quotes for file path handling.
  */
-export function pasteToTerminal(
+export async function pasteToTerminal(
   sessionId: string,
   data: string,
   isFilePath: boolean = false,
-): void {
+): Promise<void> {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
@@ -844,14 +903,14 @@ export function pasteToTerminal(
     if (showIndicator) {
       hidePasteIndicatorDelayed(startTime);
     }
+    return;
   } else {
     // Non-BPM: chunk with delays to prevent PTY overflow
     if (content.length > NON_BPM_CHUNK_SIZE) {
-      void sendChunkedWithDelay(sessionId, content).then(() => {
-        if (showIndicator) {
-          hidePasteIndicatorDelayed(startTime);
-        }
-      });
+      await sendChunkedWithDelay(sessionId, content);
+      if (showIndicator) {
+        hidePasteIndicatorDelayed(startTime);
+      }
     } else {
       sendInput(sessionId, content);
       if (showIndicator) {

@@ -1,0 +1,34 @@
+{
+  "name": "@tlbx-ai/midterm",
+  "version": "8.2.0-dev",
+  "description": "Launch MidTerm via npx by downloading the native binary for your platform",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tlbx-ai/MidTerm.git"
+  },
+  "homepage": "https://github.com/tlbx-ai/MidTerm",
+  "bugs": {
+    "url": "https://github.com/tlbx-ai/MidTerm/issues"
+  },
+  "bin": {
+    "midterm": "bin/midterm.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "midterm",
+    "terminal",
+    "remote-terminal",
+    "browser-terminal",
+    "npx"
+  ]
+}

@@ -35,6 +35,12 @@ let previousLayoutSignature = '';
 /** Whether the updater has been initialized */
 let initialized = false;
 
+/** Previously active sidebar item so we can update active state surgically */
+let previousActiveItem: HTMLElement | null = null;
+let unsubscribeSessions: (() => void) | null = null;
+let unsubscribeActiveSession: (() => void) | null = null;
+let unsubscribeLayout: (() => void) | null = null;
+
 // =============================================================================
 // Change Detection
 // =============================================================================
@@ -153,10 +159,7 @@ function updateSessionItemContent(sessionId: string, session: Session): void {
  * Update active state on all session items without re-rendering
  */
 function updateActiveStates(activeId: string | null): void {
-  document.querySelectorAll('.session-item').forEach((item) => {
-    const itemId = (item as HTMLElement).dataset.sessionId;
-    item.classList.toggle('active', itemId === activeId);
-  });
+  previousActiveItem?.classList.remove('active');
 
   if (!activeId) return;
 
@@ -168,6 +171,8 @@ function updateActiveStates(activeId: string | null): void {
   );
   if (!activeItem) return;
 
+  activeItem.classList.add('active');
+  previousActiveItem = activeItem;
   activeItem.scrollIntoView({
     behavior: 'auto',
     block: 'nearest',
@@ -249,9 +254,10 @@ export function initializeSidebarUpdater(): void {
   previousSessions = { ...initialSessions };
   previousSessionIds = new Set(Object.keys(initialSessions));
   previousLayoutSignature = getLayoutSignature($layout.get().root);
+  previousActiveItem = document.querySelector<HTMLElement>('.session-item.active');
 
   // Subscribe to session changes
-  $sessions.subscribe((sessions) => {
+  unsubscribeSessions = $sessions.subscribe((sessions) => {
     const changeType = detectChangeType(sessions);
     if (changeType === 'none') return;
 
@@ -261,14 +267,14 @@ export function initializeSidebarUpdater(): void {
   });
 
   // Subscribe to active session changes for active class and title updates
-  $activeSessionId.subscribe((activeId) => {
+  unsubscribeActiveSession = $activeSessionId.subscribe((activeId) => {
     updateActiveStates(activeId);
     updateMobileTitle();
   });
 
   // Layout changes affect both in-layout state and sidebar grouping/order.
   // Re-render whenever layout leaf membership/order changes.
-  $layout.subscribe((layout) => {
+  unsubscribeLayout = $layout.subscribe((layout) => {
     const nextSignature = getLayoutSignature(layout.root);
     if (nextSignature === previousLayoutSignature) return;
     previousLayoutSignature = nextSignature;
@@ -278,4 +284,15 @@ export function initializeSidebarUpdater(): void {
   });
 
   log.info(() => 'Sidebar updater initialized');
+}
+
+export function cleanupSidebarUpdater(): void {
+  unsubscribeSessions?.();
+  unsubscribeSessions = null;
+  unsubscribeActiveSession?.();
+  unsubscribeActiveSession = null;
+  unsubscribeLayout?.();
+  unsubscribeLayout = null;
+  previousActiveItem = null;
+  initialized = false;
 }

@@ -7,6 +7,7 @@
  */
 
 import { getCookie, setCookie } from '../../utils';
+import { JS_BUILD_VERSION } from '../../constants';
 
 const SUPPORTED_LOCALES = ['en', 'zh', 'es', 'hi', 'fr', 'bn', 'pt', 'ru', 'ja', 'de'];
 const LOCALE_COOKIE = 'mm-language';
@@ -159,7 +160,8 @@ function detectBrowserLocale(): string {
  */
 async function loadTranslations(locale: string): Promise<Record<string, string>> {
   try {
-    const resp = await fetch(`/locales/${locale}.json`);
+    const version = encodeURIComponent(JS_BUILD_VERSION);
+    const resp = await fetch(`/locales/${locale}.json?v=${version}`);
     if (resp.ok) {
       return (await resp.json()) as Record<string, string>;
     }

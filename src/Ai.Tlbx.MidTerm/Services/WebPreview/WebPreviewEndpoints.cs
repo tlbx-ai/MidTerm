@@ -83,6 +83,13 @@ public static partial class WebPreviewEndpoints
             var response = service.GetCookies();
             return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
         });
+
+        app.MapPost("/api/webpreview/cookies/clear", () =>
+        {
+            if (!service.ClearAllCookies())
+                return Results.BadRequest("No active target.");
+            return Results.Ok();
+        });
     }
 
     private static void MapActionEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)

@@ -11,6 +11,9 @@ using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.StaticFiles;
 using Ai.Tlbx.MidTerm.Services.Certificates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Services.Git;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -102,15 +105,26 @@ public static class ServerSetup
             options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
         });
 
+        builder.Services.AddSingleton(settingsService);
         builder.Services.AddSingleton<ShellRegistry>();
-        builder.Services.AddSingleton<SettingsService>();
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
         builder.Services.AddSingleton<TempCleanupService>();
         builder.Services.AddSingleton<CertificateInfoService>();
         builder.Services.AddSingleton<SecurityStatusService>();
         builder.Services.AddSingleton<MainBrowserService>();
+        builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();
+        builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
+            new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService));
+        builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
+        builder.Services.AddSingleton<HistoryService>();
+        builder.Services.AddSingleton<SessionPathAllowlistService>();
+        builder.Services.AddSingleton<GitWatcherService>();
+        builder.Services.AddSingleton<CommandService>();
+        builder.Services.AddSingleton<ShutdownService>();
+        builder.Services.AddSingleton<BrowserCommandService>();
+        builder.Services.AddSingleton<BrowserUiBridge>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>
         {
             var (port, _) = ArgumentParser.Parse(args);

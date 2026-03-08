@@ -14,6 +14,7 @@ import { t } from '../i18n';
 const log = createLogger('chat');
 const STORAGE_KEY = 'midterm.chatPanelOpen';
 const MAX_CHAT_ELEMENTS = 69;
+const MAX_CHAT_MESSAGES = 200;
 
 const chatMessages: ChatMessage[] = [];
 let autoAcceptEnabled = false;
@@ -89,6 +90,7 @@ export function toggleChatPanel(): void {
  */
 export function addChatMessage(message: ChatMessage): void {
   chatMessages.push(message);
+  trimChatHistory();
 
   if (message.role === 'assistant' && isToolCallMessage(message.content)) {
     const toolName = extractToolName(message.content);
@@ -119,6 +121,13 @@ export function addChatMessage(message: ChatMessage): void {
   trimChatDom();
   scrollToBottom();
   log.info(() => `Chat message added: ${message.role}`);
+}
+
+function trimChatHistory(): void {
+  const overflow = chatMessages.length - MAX_CHAT_MESSAGES;
+  if (overflow > 0) {
+    chatMessages.splice(0, overflow);
+  }
 }
 
 /**

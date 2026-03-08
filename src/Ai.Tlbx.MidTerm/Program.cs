@@ -157,13 +157,13 @@ public class Program
 
         MidtermDirectory.Initialize(port, authService);
 
-        var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService);
-        var muxManager = new TtyHostMuxConnectionManager(sessionManager);
-        var historyService = new HistoryService(settingsService);
-        var sessionPathAllowlistService = new SessionPathAllowlistService();
-        var gitWatcher = new GitWatcherService();
+        var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
+        var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
+        var historyService = app.Services.GetRequiredService<HistoryService>();
+        var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
+        var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
         GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
-        var commandService = new CommandService();
+        var commandService = app.Services.GetRequiredService<CommandService>();
 
         // Tmux compatibility layer (conditional on setting)
         TmuxCommandDispatcher? tmuxDispatcher = null;
@@ -193,7 +193,8 @@ public class Program
 
         // Browser control (agent-driven web preview interaction)
         BrowserLog.Initialize(logDirectory);
-        var browserCommandService = new BrowserCommandService();
+        var browserCommandService = app.Services.GetRequiredService<BrowserCommandService>();
+        var browserUiBridge = app.Services.GetRequiredService<BrowserUiBridge>();
         BrowserScriptWriter.WriteScript(port);
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
@@ -241,52 +242,24 @@ public class Program
             }
         });
 
-        var shutdownService = new ShutdownService();
+        var shutdownService = app.Services.GetRequiredService<ShutdownService>();
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+        var cleanupStarted = 0;
 
-        _ = EndpointSetup.DetectGitAsync();
-        EndpointSetup.DetectCodeSigning();
-
-        AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
-        EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
-        EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
-        var clipboardService = app.Services.GetRequiredService<ClipboardService>();
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, authService, port);
-        if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
+        async Task CleanupAsync()
         {
-            TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
-        }
-        TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
-        HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
-        FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService);
-        GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
-        CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
-        var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
-        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService);
-        var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, browserCommandService, tmuxLayoutBridge);
-
-        lifetime.ApplicationStarted.Register(() =>
-        {
-            Log.Info(() => $"Server fully operational - listening on https://{bindAddress}:{port}");
-        });
-
-        lifetime.ApplicationStopping.Register(() =>
-        {
-            Log.Info(() => "Shutdown requested, signaling components...");
-
-            shutdownService.SignalShutdown();
-
-            Thread.Sleep(200);
+            if (Interlocked.Exchange(ref cleanupStarted, 1) != 0)
+            {
+                return;
+            }
 
             Log.Info(() => "Disposing managers...");
 
             try
             {
                 using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                muxManager.DisposeAsync().AsTask().Wait(cleanupCts.Token);
-                sessionManager.DisposeAsync().AsTask().Wait(cleanupCts.Token);
+                await muxManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
+                await sessionManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -308,19 +281,52 @@ public class Program
                 instanceGuard.Dispose();
                 shutdownService.Dispose();
             }
+        }
+
+        _ = EndpointSetup.DetectGitAsync();
+        EndpointSetup.DetectCodeSigning();
+
+        AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
+        EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
+        EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
+        var clipboardService = app.Services.GetRequiredService<ClipboardService>();
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, authService, port);
+        if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
+        {
+            TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
+        }
+        TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
+        HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
+        FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService);
+        GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
+        CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
+        var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
+        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
+        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService, browserUiBridge);
+        var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
+        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, browserCommandService, tmuxLayoutBridge, browserUiBridge);
+
+        lifetime.ApplicationStarted.Register(() =>
+        {
+            Log.Info(() => $"Server fully operational - listening on https://{bindAddress}:{port}");
+        });
+
+        lifetime.ApplicationStopping.Register(() =>
+        {
+            Log.Info(() => "Shutdown requested, signaling components...");
+            shutdownService.SignalShutdown();
         });
 
         shutdownService.Token.Register(() =>
         {
-            var timer = new Timer(_ =>
+            DelayedActionScheduler.Schedule(TimeSpan.FromSeconds(10), () =>
             {
                 if (shutdownService.IsShuttingDown)
                 {
                     Log.Error(() => "Shutdown timeout exceeded (10s), forcing exit");
                     Environment.Exit(1);
                 }
-            }, null, 10000, Timeout.Infinite);
-            GC.KeepAlive(timer);
+            });
         });
 
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
@@ -329,6 +335,13 @@ public class Program
 
         WriteEventLog($"MainCore: Starting server on https://{bindAddress}:{port}");
 
-        WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
+        try
+        {
+            WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
+        }
+        finally
+        {
+            await CleanupAsync();
+        }
     }
 }

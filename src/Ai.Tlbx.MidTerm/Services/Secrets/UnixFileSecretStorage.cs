@@ -13,7 +13,7 @@ public sealed class UnixFileSecretStorage : ISecretStorage
     private const int OwnerReadWrite = 0b110_000_000; // 0600 octal
 
     private readonly string _secretsPath;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private Dictionary<string, string>? _cache;
 
     public bool LoadFailed { get; private set; }

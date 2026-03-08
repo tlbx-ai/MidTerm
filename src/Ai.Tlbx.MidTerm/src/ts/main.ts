@@ -9,6 +9,7 @@ import { initLoginPage } from './modules/login';
 import { initTrustPage } from './modules/trust';
 import { initThemeFromCookie } from './modules/theming';
 import { createLogger, initLogConcerns } from './modules/logging';
+import { JS_BUILD_VERSION } from './constants';
 import {
   connectStateWebSocket,
   connectMuxWebSocket,
@@ -33,6 +34,7 @@ import {
   bindSearchEvents,
   scrollToBottom,
   focusActiveTerminal,
+  refreshTerminalPresentation,
   setupGlobalFocusReclaim,
   calculateOptimalDimensions,
   getEffectiveTerminalFontSize,
@@ -124,7 +126,7 @@ import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './
 import { closeGitDock } from './modules/git/gitDock';
 import { initWebPreview, closeWebPreviewDock } from './modules/web';
 import { initDockState, removeSessionDockState } from './modules/dockState';
-import { initSmartInput } from './modules/smartInput';
+import { initSmartInput, removeSmartInputSessionState } from './modules/smartInput';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -153,6 +155,7 @@ import {
 import type { Session } from './types';
 import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
 import { bindClick, getOrCreateClientId } from './utils';
+import { showAlert } from './utils/dialog';
 import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
@@ -292,7 +295,9 @@ async function init(): Promise<void> {
   initPwaInstall();
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/js/sw.js').catch(() => {});
+    navigator.serviceWorker
+      .register(`/js/sw.js?v=${encodeURIComponent(JS_BUILD_VERSION)}`)
+      .catch(() => {});
   }
 
   log.info(() => 'MidTerm frontend initialized');
@@ -426,9 +431,9 @@ async function createSession(): Promise<void> {
       removeSession(tempId);
 
       if (!data) return;
+      setSession(data);
       newlyCreatedSessions.add(data.id);
-      // Wait for session to appear in store (WebSocket update race condition)
-      selectSessionWithRetry(data.id);
+      selectSession(data.id);
     })
     .catch((e: unknown) => {
       // Remove temporary session on error
@@ -437,34 +442,6 @@ async function createSession(): Promise<void> {
       // Subscription handles renderSessionList and updateEmptyState via store change
       log.error(() => `Failed to create session: ${String(e)}`);
     });
-}
-
-/**
- * Select session with retry - handles race condition where WebSocket
- * state update hasn't arrived yet after API creates the session.
- */
-function selectSessionWithRetry(sessionId: string, attempt = 0): void {
-  const maxAttempts = 10;
-  const retryDelay = 100;
-
-  // Check if session exists in store
-  if (getSession(sessionId)) {
-    selectSession(sessionId);
-    return;
-  }
-
-  // Retry if not found yet
-  if (attempt < maxAttempts) {
-    setTimeout(() => {
-      selectSessionWithRetry(sessionId, attempt + 1);
-    }, retryDelay);
-  } else {
-    // Give up after max attempts - select anyway, terminal will work once WS update arrives
-    log.warn(
-      () => `Session ${sessionId} not in store after ${maxAttempts} attempts, selecting anyway`,
-    );
-    selectSession(sessionId);
-  }
 }
 
 function selectSession(sessionId: string, options?: { closeSettingsPanel?: boolean }): void {
@@ -524,6 +501,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   }
 
   requestAnimationFrame(() => {
+    refreshTerminalPresentation(sessionId, state);
     state.terminal.focus();
     scrollToBottom(sessionId);
 
@@ -542,6 +520,7 @@ function deleteSession(sessionId: string): void {
 
   // Remove session tab wrapper, feature panels, and dock state
   removeSessionDockState(sessionId);
+  removeSmartInputSessionState(sessionId);
   destroyFileBrowser(sessionId);
   destroyGitSession(sessionId);
   destroyCommandsSession(sessionId);
@@ -796,6 +775,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
   })
     .then(({ data }) => {
       if (!data) return;
+      setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
 
@@ -904,19 +884,15 @@ function initMainBrowserButton(): void {
     const isMain = $isMainBrowser.get();
     const showButton = $showMainBrowserButton.get();
 
-    if (!showButton) {
+    if (!showButton || isMain) {
       btn.style.display = 'none';
+      btn.classList.remove('main-browser-active');
       return;
     }
 
     btn.style.display = '';
-    if (isMain) {
-      btn.classList.add('main-browser-active');
-      btn.title = t('sidebar.leadingBrowser');
-    } else {
-      btn.classList.remove('main-browser-active');
-      btn.title = t('sidebar.claimMainBrowser');
-    }
+    btn.classList.remove('main-browser-active');
+    btn.title = t('sidebar.claimMainBrowser');
   }
 
   updateState();
@@ -946,30 +922,89 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
+interface NavigatorWithStandalone extends Navigator {
+  standalone?: boolean;
+}
+
 function initPwaInstall(): void {
   let deferredPrompt: BeforeInstallPromptEvent | null = null;
   const row = document.getElementById('pwa-install-row');
-  const btn = document.getElementById('btn-install-pwa');
+  const btn = document.getElementById('btn-install-pwa') as HTMLButtonElement | null;
   if (!row || !btn) return;
+
+  const rowEl = row;
+  const btnEl = btn;
+  const isIos = isIosInstallableDevice();
+
+  function showRow(): void {
+    rowEl.classList.remove('hidden');
+  }
+
+  function hideRow(): void {
+    rowEl.classList.add('hidden');
+  }
+
+  function setButtonLabel(key: string): void {
+    btnEl.dataset.i18n = key;
+    btnEl.textContent = t(key);
+  }
+
+  if (isRunningAsInstalledPwa()) {
+    hideRow();
+    return;
+  }
+
+  if (isIos) {
+    showRow();
+    setButtonLabel('settings.behavior.showInstallSteps');
+  }
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e as BeforeInstallPromptEvent;
-    row.classList.remove('hidden');
+    setButtonLabel('settings.behavior.install');
+    showRow();
   });
 
   btn.addEventListener('click', () => {
-    if (!deferredPrompt) return;
-    void deferredPrompt.prompt().then(() => {
-      deferredPrompt = null;
-      row.classList.add('hidden');
+    if (deferredPrompt) {
+      void deferredPrompt.prompt().then(() => {
+        deferredPrompt = null;
+        hideRow();
+      });
+      return;
+    }
+
+    if (!isIos) return;
+
+    void showAlert(t('settings.behavior.installIosMessage'), {
+      title: t('settings.behavior.installIosTitle'),
     });
   });
 
   window.addEventListener('appinstalled', () => {
-    row.classList.add('hidden');
+    hideRow();
     deferredPrompt = null;
   });
+}
+
+function isIosInstallableDevice(): boolean {
+  const ua = navigator.userAgent.toLowerCase();
+  return (
+    /iphone|ipad|ipod/.test(ua) ||
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
+function isRunningAsInstalledPwa(): boolean {
+  const standaloneNavigator = navigator as NavigatorWithStandalone;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    window.matchMedia('(display-mode: window-controls-overlay)').matches ||
+    standaloneNavigator.standalone === true
+  );
 }
 
 function getActiveSessionTabBar(): HTMLDivElement | null {

@@ -22,6 +22,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SystemHealth))]
 [JsonSerializable(typeof(TtyHostInfo))]
 [JsonSerializable(typeof(PathsResponse))]
+[JsonSerializable(typeof(BackgroundImageInfoResponse))]
 [JsonSerializable(typeof(List<NetworkInterfaceDto>))]
 [JsonSerializable(typeof(ShellInfoDto))]
 [JsonSerializable(typeof(List<ShellInfoDto>))]
@@ -58,6 +59,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(FileTreeResponse))]
 [JsonSerializable(typeof(FileTreeEntry))]
 [JsonSerializable(typeof(FileTreeEntry[]))]
+[JsonSerializable(typeof(FileSaveRequest))]
+[JsonSerializable(typeof(FileSaveResponse))]
 
 // --- History ---
 [JsonSerializable(typeof(HistoryPatchRequest))]
@@ -119,6 +122,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(BrowserCommandResponse))]
 [JsonSerializable(typeof(BrowserWsMessage))]
 [JsonSerializable(typeof(BrowserWsResult))]
+[JsonSerializable(typeof(BrowserUiInstruction))]
+[JsonSerializable(typeof(ViewportRequest))]
 
 // --- WebSocket Protocol ---
 [JsonSerializable(typeof(WsCommand))]

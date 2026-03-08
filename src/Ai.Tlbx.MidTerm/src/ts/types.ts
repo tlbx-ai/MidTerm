@@ -7,6 +7,7 @@
 
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
+import type { WebglAddon } from '@xterm/addon-webgl';
 
 // Import types needed for local use
 import type {
@@ -80,14 +81,23 @@ export interface TerminalState {
   serverCols: number;
   serverRows: number;
   opened: boolean;
+  reconnectFreezeOverlay?: HTMLDivElement | null;
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
   hasWebgl?: boolean;
+  webglAddon?: WebglAddon | null;
   disposables?: Array<{ dispose: () => void }>;
   mouseMoveHandler?: () => void;
   mouseLeaveHandler?: () => void;
   earlyDataDisposable?: { dispose: () => void };
   cursorHideTimer?: number | null;
+  burstCursorRestoreTimer?: number | null;
+  lastBurstOutputAtMs?: number | null;
+  lastLocalInputAtMs?: number | null;
+  remoteCursorVisible?: boolean;
+  burstCursorHidden?: boolean;
+  syncOutputCursorHidden?: boolean;
+  pendingVisualRefresh?: boolean;
 }
 
 // =============================================================================
@@ -95,25 +105,51 @@ export interface TerminalState {
 // =============================================================================
 
 /** WebSocket command from client to server */
-export interface WsCommand {
-  type: 'command';
-  id: string;
-  action: string;
-  payload?: WsCommandPayload | undefined;
+export type WsCommand =
+  | {
+      type: 'command';
+      id: string;
+      action: 'session.rename';
+      payload: {
+        sessionId: string;
+        name: string | null;
+        auto?: boolean;
+      };
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'session.reorder';
+      payload: {
+        sessionIds: string[];
+      };
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'browser.claimMain';
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'browser.releaseMain';
+    };
+
+export type WsCommandAction = WsCommand['action'];
+interface WsCommandPayloadMap {
+  'session.rename': {
+    sessionId: string;
+    name: string | null;
+    auto?: boolean;
+  };
+  'session.reorder': {
+    sessionIds: string[];
+  };
+  'browser.claimMain': undefined;
+  'browser.releaseMain': undefined;
 }
 
-/** Payload for WebSocket commands */
-export interface WsCommandPayload {
-  cols?: number;
-  rows?: number;
-  shell?: string;
-  workingDirectory?: string;
-  sessionId?: string;
-  name?: string | null;
-  auto?: boolean;
-  sessionIds?: string[];
-  settings?: MidTermSettingsPublicType;
-}
+export type WsCommandPayload<A extends WsCommandAction> = WsCommandPayloadMap[A];
 
 /** WebSocket command response from server */
 export interface WsCommandResponse {

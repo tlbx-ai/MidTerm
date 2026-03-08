@@ -7,6 +7,7 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 
 public sealed class GitWatcherService : IDisposable
 {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
     private readonly ConcurrentDictionary<string, RepoWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _sessionToRepo = new();
     private static readonly SemaphoreSlim _globalRefreshThrottle = new(2, 2);
@@ -106,10 +107,17 @@ public sealed class GitWatcherService : IDisposable
     {
         try
         {
-            var status = await GitCommandRunner.GetStatusAsync(repoRoot);
-            status.RecentCommits = await GitCommandRunner.GetLogAsync(repoRoot);
-            status.StashCount = await GitCommandRunner.GetStashCountAsync(repoRoot);
-            var numStat = await GitCommandRunner.GetNumStatAsync(repoRoot);
+            var statusTask = GitCommandRunner.GetStatusAsync(repoRoot);
+            var recentCommitsTask = GitCommandRunner.GetLogAsync(repoRoot);
+            var stashCountTask = GitCommandRunner.GetStashCountAsync(repoRoot);
+            var numStatTask = GitCommandRunner.GetNumStatAsync(repoRoot);
+
+            await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, numStatTask);
+
+            var status = await statusTask;
+            status.RecentCommits = await recentCommitsTask;
+            status.StashCount = await stashCountTask;
+            var numStat = await numStatTask;
             MergeNumStat(status, numStat);
 
             if (_watchers.TryGetValue(repoRoot, out var watcher))
@@ -279,7 +287,7 @@ public sealed class GitWatcherService : IDisposable
         {
             try
             {
-                await Task.Delay(5000, ct);
+                await Task.Delay(PollInterval, ct);
                 await CoalescedRefreshAsync(repoRoot, watcher);
             }
             catch (OperationCanceledException)

@@ -8,8 +8,14 @@
 import type { Session, ProcessState } from '../../types';
 import { t } from '../i18n';
 import { pendingSessions, dom } from '../../state';
-import { $settingsOpen, $activeSessionId, $sessionList, isChildSession } from '../../stores';
-import { icon } from '../../constants';
+import {
+  $settingsOpen,
+  $activeSessionId,
+  $sessionList,
+  getSession,
+  isChildSession,
+} from '../../stores';
+import { MOBILE_BREAKPOINT, icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import {
   getLayoutSessionIds,
@@ -19,6 +25,49 @@ import {
 } from '../layout/layoutStore';
 import { formatRuntimeDisplay } from './processDisplay';
 import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Check if a foreground process name is just the session's own shell.
+ * Compares basename + extensionless identity of both values, handling
+ * full paths, quoted command lines, and command arguments.
+ */
+function isShellProcess(processName: string, sessionId: string): boolean {
+  const session = getSession(sessionId);
+  if (!session?.shellType) return false;
+  const normalizedProcess = normalizeExecutableName(processName);
+  const normalizedShell = normalizeExecutableName(session.shellType);
+  return normalizedProcess !== '' && normalizedProcess === normalizedShell;
+}
+
+/**
+ * Normalize a shell/process identifier to a comparable executable identity.
+ * - strips command-line arguments
+ * - strips quotes
+ * - extracts basename from paths
+ * - removes ".exe" extension
+ */
+function normalizeExecutableName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  let candidate = trimmed;
+  const firstChar = candidate[0] ?? '';
+  if (firstChar === '"' || firstChar === "'") {
+    const quote = firstChar;
+    const closingQuote = candidate.indexOf(quote, 1);
+    if (closingQuote > 1) {
+      candidate = candidate.slice(1, closingQuote);
+    }
+  }
+
+  const basename = candidate.replace(/\\/g, '/').split('/').pop() ?? candidate;
+  const token = basename.trim().split(/\s+/)[0] ?? basename.trim();
+  return token.replace(/\.exe$/i, '').toLowerCase();
+}
 
 // =============================================================================
 // Callback Types
@@ -36,6 +85,7 @@ export interface SessionListCallbacks {
 
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
+let mobileMenuListenersBound = false;
 
 // =============================================================================
 // Initialization
@@ -46,6 +96,13 @@ let mobileActionBackdrop: HTMLDivElement | null = null;
  */
 export function initializeSessionList(): void {
   addProcessStateListener(handleProcessStateChange);
+
+  if (!mobileMenuListenersBound) {
+    document.addEventListener('keydown', handleMobileMenuKeydown);
+    window.addEventListener('resize', closeMobileActionMenu);
+    window.addEventListener('orientationchange', closeMobileActionMenu);
+    mobileMenuListenersBound = true;
+  }
 }
 
 /**
@@ -60,6 +117,49 @@ export function setSessionListCallbacks(cbs: SessionListCallbacks): void {
  */
 function handleProcessStateChange(sessionId: string, _state: ProcessState): void {
   updateSessionProcessInfo(sessionId);
+}
+
+/**
+ * Close the mobile action menu via keyboard.
+ */
+function handleMobileMenuKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    closeMobileActionMenu();
+  }
+}
+
+/**
+ * Session action dropdowns are only used on mobile layouts.
+ */
+function isMobileSessionMenuEnabled(): boolean {
+  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
+}
+
+/**
+ * Render shared icon + label content for session action buttons.
+ */
+function setActionButtonContent(
+  button: HTMLButtonElement,
+  label: string,
+  iconMarkupOrText: string,
+  useTextIcon: boolean = false,
+): void {
+  const iconEl = document.createElement('span');
+  iconEl.className = `session-action-icon${useTextIcon ? ' text-icon' : ''}`;
+
+  if (useTextIcon) {
+    iconEl.textContent = iconMarkupOrText;
+  } else {
+    iconEl.innerHTML = iconMarkupOrText;
+  }
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'session-action-label';
+  labelEl.textContent = label;
+
+  button.replaceChildren(iconEl, labelEl);
+  button.title = label;
+  button.setAttribute('aria-label', label);
 }
 
 /**
@@ -107,7 +207,7 @@ function renderProcessTitle(
   fgInfo: { cwd?: string | null; name?: string | null; commandLine?: string | null },
   sessionId: string,
 ): void {
-  if (fgInfo.name && fgInfo.name !== 'shell') {
+  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     fgIndicator.classList.add('process-title');
     titleRow.appendChild(fgIndicator);
@@ -122,8 +222,7 @@ function renderProcessTitle(
     titleRow.appendChild(cwdSpan);
   } else {
     // Fallback: show shell type while process info is not yet available
-    const sessions = $sessionList.get();
-    const session = sessions.find((s) => s.id === sessionId);
+    const session = getSession(sessionId);
     const fallback = session?.shellType || t('session.terminal');
     const title = document.createElement('span');
     title.className = 'session-title truncate';
@@ -136,10 +235,10 @@ function renderProcessTitle(
  * Render pinned/unpinned state on a sidebar pin button.
  */
 export function applyPinButtonState(pinBtn: HTMLButtonElement, isPinned: boolean): void {
+  const label = t('session.pinToQuickLaunch');
   pinBtn.classList.toggle('pinned', isPinned);
-  pinBtn.textContent = isPinned ? '\u2605' : '\u2606';
+  setActionButtonContent(pinBtn, label, isPinned ? '\u2605' : '\u2606', true);
   pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
-  pinBtn.title = t('session.pinToQuickLaunch');
 }
 
 /**
@@ -171,7 +270,7 @@ function updateSessionProcessInfo(sessionId: string): void {
 
   processInfoEl.innerHTML = '';
 
-  if (fgInfo.name && fgInfo.name !== 'shell') {
+  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
     const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
   } else if (fgInfo.cwd) {
@@ -194,8 +293,19 @@ function updateSessionProcessInfo(sessionId: string): void {
  * Close any open mobile action menus
  */
 export function closeMobileActionMenu(): void {
-  document.querySelectorAll('.session-item.menu-open').forEach((el) => {
+  document.querySelectorAll<HTMLElement>('.session-item.menu-open').forEach((el) => {
     el.classList.remove('menu-open');
+    el.classList.remove('menu-open-up');
+
+    const actions = el.querySelector<HTMLElement>('.session-actions');
+    if (actions) {
+      actions.style.removeProperty('left');
+      actions.style.removeProperty('top');
+      actions.style.removeProperty('max-height');
+    }
+
+    const menuBtn = el.querySelector<HTMLButtonElement>('.session-menu-btn');
+    menuBtn?.setAttribute('aria-expanded', 'false');
   });
   if (mobileActionBackdrop) {
     mobileActionBackdrop.remove();
@@ -214,6 +324,59 @@ function showMobileBackdrop(): void {
     closeMobileActionMenu();
   });
   document.body.appendChild(mobileActionBackdrop);
+}
+
+/**
+ * Position the mobile dropdown next to its trigger while keeping it on-screen.
+ */
+function positionMobileActionMenu(item: HTMLElement): void {
+  if (!isMobileSessionMenuEnabled()) {
+    return;
+  }
+
+  const actions = item.querySelector<HTMLElement>('.session-actions');
+  const menuBtn = item.querySelector<HTMLElement>('.session-menu-btn');
+  if (!actions || !menuBtn) {
+    return;
+  }
+
+  const viewportPadding = 12;
+  const gap = 8;
+  const triggerRect = menuBtn.getBoundingClientRect();
+
+  item.classList.remove('menu-open-up');
+  actions.style.removeProperty('max-height');
+
+  const initialRect = actions.getBoundingClientRect();
+  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+  const availableAbove = triggerRect.top - viewportPadding - gap;
+  const openUp =
+    availableBelow < Math.min(initialRect.height, 220) && availableAbove > availableBelow;
+
+  item.classList.toggle('menu-open-up', openUp);
+
+  const heightBudget = Math.max(
+    96,
+    Math.min(openUp ? availableAbove : availableBelow, window.innerHeight - viewportPadding * 2),
+  );
+  actions.style.maxHeight = `${heightBudget}px`;
+
+  const menuRect = actions.getBoundingClientRect();
+  const menuHeight = Math.min(menuRect.height, heightBudget);
+  const menuWidth = menuRect.width;
+
+  let left = triggerRect.right - menuWidth;
+  left = Math.max(viewportPadding, Math.min(left, window.innerWidth - viewportPadding - menuWidth));
+
+  let top = triggerRect.bottom + gap;
+  if (openUp) {
+    top = Math.max(viewportPadding, triggerRect.top - menuHeight - gap);
+  } else {
+    top = Math.min(top, window.innerHeight - viewportPadding - menuHeight);
+  }
+
+  actions.style.left = `${left}px`;
+  actions.style.top = `${top}px`;
 }
 
 // =============================================================================
@@ -235,7 +398,7 @@ export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
     return { primary: session.name, secondary: termTitle };
   }
   // Process set a console title — show it as the primary title with process info below
-  if (session.terminalTitle) {
+  if (session.terminalTitle && !isShellProcess(session.terminalTitle, session.id)) {
     return { primary: session.terminalTitle, secondary: null };
   }
   // No name, no console title: show cwd + process as the title row
@@ -386,7 +549,7 @@ function createSessionItem(
 
   if (!displayInfo.useProcessAsTitle) {
     const fgInfo = getForegroundInfo(sessionId);
-    if (fgInfo.name && fgInfo.name !== 'shell') {
+    if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
       const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
       processInfo.appendChild(fgIndicator);
     } else if (fgInfo.cwd) {
@@ -406,11 +569,14 @@ function createSessionItem(
 
   const actions = document.createElement('div');
   actions.className = 'session-actions';
+  actions.id = `session-actions-${sessionId}`;
+  actions.setAttribute('role', 'menu');
 
   if (!isPending && sessionId) {
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
     applyPinButtonState(pinBtn, !!session.bookmarkId);
+    pinBtn.setAttribute('role', 'menuitem');
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -421,8 +587,8 @@ function createSessionItem(
 
     const renameBtn = document.createElement('button');
     renameBtn.className = 'session-rename';
-    renameBtn.innerHTML = icon('rename');
-    renameBtn.title = t('session.rename');
+    setActionButtonContent(renameBtn, t('session.rename'), icon('rename'));
+    renameBtn.setAttribute('role', 'menuitem');
     renameBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -433,8 +599,8 @@ function createSessionItem(
 
     const injectBtn = document.createElement('button');
     injectBtn.className = 'session-inject';
-    injectBtn.innerHTML = icon('inject');
-    injectBtn.title = t('session.injectGuidance');
+    setActionButtonContent(injectBtn, t('session.injectGuidance'), icon('inject'));
+    injectBtn.setAttribute('role', 'menuitem');
     injectBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -445,8 +611,8 @@ function createSessionItem(
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'session-close';
-    closeBtn.innerHTML = icon('close');
-    closeBtn.title = t('session.close');
+    setActionButtonContent(closeBtn, t('session.close'), icon('close'));
+    closeBtn.setAttribute('role', 'menuitem');
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -458,8 +624,8 @@ function createSessionItem(
     // Undock button (only shown when in layout)
     const undockBtn = document.createElement('button');
     undockBtn.className = 'session-undock';
-    undockBtn.innerHTML = icon('undock');
-    undockBtn.title = t('session.removeFromLayout');
+    setActionButtonContent(undockBtn, t('session.removeFromLayout'), icon('undock'));
+    undockBtn.setAttribute('role', 'menuitem');
     undockBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMobileActionMenu();
@@ -487,13 +653,25 @@ function createSessionItem(
     menuBtn.className = 'session-menu-btn';
     menuBtn.innerHTML = icon('more');
     menuBtn.title = t('session.actions');
+    menuBtn.setAttribute('aria-label', t('session.actions'));
+    menuBtn.setAttribute('aria-haspopup', 'menu');
+    menuBtn.setAttribute('aria-controls', actions.id);
+    menuBtn.setAttribute('aria-expanded', 'false');
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (!isMobileSessionMenuEnabled()) {
+        return;
+      }
+
       const isOpen = item.classList.contains('menu-open');
       closeMobileActionMenu();
       if (!isOpen) {
         item.classList.add('menu-open');
+        menuBtn.setAttribute('aria-expanded', 'true');
         showMobileBackdrop();
+        requestAnimationFrame(() => {
+          positionMobileActionMenu(item);
+        });
       }
     });
     item.appendChild(menuBtn);
@@ -513,17 +691,29 @@ export function renderSessionList(): void {
   const sessionList = dom.sessionList;
   const sessions = getSidebarDisplaySessions();
   const activeSessionId = $activeSessionId.get();
+  const existingItems = Array.from(sessionList.querySelectorAll<HTMLElement>('.session-item'));
+  const existingItemsById = new Map<string, HTMLElement>();
+
+  existingItems.forEach((item) => {
+    const itemId = item.dataset.sessionId;
+    if (itemId) {
+      existingItemsById.set(itemId, item);
+    }
+  });
 
   // Build set of current session IDs
   const newIds = new Set(sessions.map((s) => s.id));
 
   // Remove items that no longer exist
-  const existingItems = sessionList.querySelectorAll('.session-item');
   existingItems.forEach((item) => {
-    const itemId = (item as HTMLElement).dataset.sessionId;
+    const itemId = item.dataset.sessionId;
     if (itemId && !newIds.has(itemId)) {
+      if (item.classList.contains('menu-open')) {
+        closeMobileActionMenu();
+      }
       unregisterHeatCanvas(itemId);
       item.remove();
+      existingItemsById.delete(itemId);
     }
   });
 
@@ -531,7 +721,7 @@ export function renderSessionList(): void {
   let previousElement: Element | null = null;
   sessions.forEach((session) => {
     const id = session.id;
-    const existingItem = sessionList.querySelector(`[data-session-id="${id}"]`);
+    const existingItem = existingItemsById.get(id);
     const isPending = pendingSessions.has(id);
 
     if (existingItem) {
@@ -541,7 +731,7 @@ export function renderSessionList(): void {
       existingItem.classList.toggle('in-layout', isSessionInLayout(id));
       const isChild = isChildSession(id);
       existingItem.classList.toggle('tmux-child', isChild);
-      const htmlItem = existingItem as HTMLElement;
+      const htmlItem = existingItem;
       if (isChild) {
         htmlItem.dataset.parentId = session.parentSessionId ?? '';
       } else {
@@ -571,10 +761,10 @@ export function renderSessionList(): void {
   });
 
   // Mark last child in each tmux group
-  const allItems = sessionList.querySelectorAll('.session-item');
+  const allItems = sessionList.querySelectorAll<HTMLElement>('.session-item');
   allItems.forEach((item) => {
-    (item as HTMLElement).classList.remove('tmux-last-child');
-    (item as HTMLElement).classList.remove(
+    item.classList.remove('tmux-last-child');
+    item.classList.remove(
       'layout-group-start',
       'layout-group-middle',
       'layout-group-end',
@@ -582,36 +772,35 @@ export function renderSessionList(): void {
     );
   });
   allItems.forEach((item, idx) => {
-    if ((item as HTMLElement).classList.contains('tmux-child')) {
-      const nextItem = allItems[idx + 1] as HTMLElement | undefined;
+    if (item.classList.contains('tmux-child')) {
+      const nextItem = allItems[idx + 1];
       if (
         !nextItem ||
         !nextItem.classList.contains('tmux-child') ||
-        nextItem.dataset.parentId !== (item as HTMLElement).dataset.parentId
+        nextItem.dataset.parentId !== item.dataset.parentId
       ) {
-        (item as HTMLElement).classList.add('tmux-last-child');
+        item.classList.add('tmux-last-child');
       }
     }
   });
 
   // Mark contiguous layout groups in sidebar order for explicit visual grouping
   allItems.forEach((item, idx) => {
-    const current = item as HTMLElement;
-    if (!current.classList.contains('in-layout')) return;
+    if (!item.classList.contains('in-layout')) return;
 
-    const prev = allItems[idx - 1] as HTMLElement | undefined;
-    const next = allItems[idx + 1] as HTMLElement | undefined;
+    const prev = allItems[idx - 1];
+    const next = allItems[idx + 1];
     const prevInLayout = !!prev?.classList.contains('in-layout');
     const nextInLayout = !!next?.classList.contains('in-layout');
 
     if (!prevInLayout && !nextInLayout) {
-      current.classList.add('layout-group-single');
+      item.classList.add('layout-group-single');
     } else if (!prevInLayout) {
-      current.classList.add('layout-group-start');
+      item.classList.add('layout-group-start');
     } else if (!nextInLayout) {
-      current.classList.add('layout-group-end');
+      item.classList.add('layout-group-end');
     } else {
-      current.classList.add('layout-group-middle');
+      item.classList.add('layout-group-middle');
     }
   });
 }

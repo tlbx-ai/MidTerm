@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost.Pty;
 public sealed class UnixPty : IPtyConnection
 {
     private static readonly object s_ptsnameLock = new();
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private int _masterFd = -1;
     private System.Diagnostics.Process? _process;
     private Microsoft.Win32.SafeHandles.SafeFileHandle? _masterHandle; // Single handle for both streams

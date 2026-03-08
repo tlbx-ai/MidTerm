@@ -234,7 +234,10 @@ git pull origin main 2>&1 | Out-Null
 Write-Host "Updating version to $stableVersion..." -ForegroundColor Gray
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $versionJson.web = $stableVersion
+$versionJson.pty = $versionJson.pty -replace '-dev(\.\d+)?$', ''
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
+node "$PSScriptRoot\sync-npx-launcher-version.mjs" $stableVersion
+if ($LASTEXITCODE -ne 0) { throw "Failed to sync npx launcher version" }
 
 # Commit, tag, and push
 Write-Host "Committing and tagging v$stableVersion..." -ForegroundColor Gray

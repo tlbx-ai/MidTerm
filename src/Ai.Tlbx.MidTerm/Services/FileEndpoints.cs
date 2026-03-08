@@ -126,6 +126,45 @@ public static class FileEndpoints
             }
         });
 
+        app.MapPut("/api/files/save", async (FileSaveRequest request, string? sessionId) =>
+        {
+            if (!FileService.ValidatePath(request.Path, out var errorResult))
+            {
+                return errorResult!;
+            }
+
+            var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
+            if (!string.IsNullOrEmpty(sessionId) &&
+                !fileService.IsPathAccessible(sessionId, request.Path, workingDir))
+            {
+                return Results.StatusCode(403);
+            }
+
+            var fullPath = Path.GetFullPath(request.Path);
+
+            if (!File.Exists(fullPath))
+            {
+                return Results.NotFound("File not found");
+            }
+
+            try
+            {
+                await File.WriteAllTextAsync(fullPath, request.Content);
+                var fileInfo = new FileInfo(fullPath);
+                return Results.Json(
+                    new FileSaveResponse { Success = true, Size = fileInfo.Length },
+                    AppJsonContext.Default.FileSaveResponse);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.StatusCode(403);
+            }
+            catch (IOException ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        });
+
         app.MapGet("/api/files/view", async (string path, string? sessionId) =>
         {
             return await ServeFileAsync(path, inline: true, sessionId, fileService);
