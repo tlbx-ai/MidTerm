@@ -349,3 +349,32 @@ jobs:
             Compress-Archive -Path "./staging/win-x64/*" -DestinationPath $archive -Force
           }
           gh release upload "${{ github.ref_name }}" $archive --clobber
+
+  publish-npm:
+    needs: [prepare, build, build-windows]
+    if: needs.prepare.outputs.is_dev != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Sync launcher version
+        run: node ./scripts/sync-npx-launcher-version.mjs
+
+      - name: Publish npm launcher
+        shell: bash
+        working-directory: packages/npx-launcher
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "@tlbx-ai/midterm@$VERSION" version >/dev/null 2>&1; then
+            echo "@tlbx-ai/midterm@$VERSION is already published, skipping"
+            exit 0
+          fi
+          npm publish --access public --provenance --tag latest
