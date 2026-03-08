@@ -33,7 +33,13 @@ import {
   sanitizePasteContent,
   sanitizeCopyContent,
 } from './fileDrop';
-import { isBracketedPasteEnabled, sendCommand, sendInput, requestBufferRefresh } from '../comms';
+import {
+  isBracketedPasteEnabled,
+  reconcileSynchronizedOutputCursor,
+  requestBufferRefresh,
+  sendCommand,
+  sendInput,
+} from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
 import { Terminal, type ITerminalOptions } from '@xterm/xterm';
@@ -89,6 +95,62 @@ export function refreshCursorBlink(terminal: Terminal): void {
     terminal.options.cursorBlink = false;
     terminal.options.cursorBlink = true;
   }
+}
+
+function detachWebglAddon(sessionId: string, state: TerminalState): void {
+  const addon = state.webglAddon;
+  state.webglAddon = null;
+
+  if (state.hasWebgl) {
+    terminalsWithWebgl.delete(sessionId);
+    state.hasWebgl = false;
+  }
+
+  if (addon) {
+    try {
+      addon.dispose();
+    } catch {
+      // Renderer was already torn down.
+    }
+  }
+}
+
+function attachWebglAddon(sessionId: string, state: TerminalState): void {
+  if (!state.opened || state.hasWebgl || terminalsWithWebgl.size >= MAX_WEBGL_CONTEXTS) {
+    return;
+  }
+
+  try {
+    const webglAddon = new WebglAddon();
+    webglAddon.onContextLoss(() => {
+      if (state.webglAddon !== webglAddon) {
+        return;
+      }
+
+      detachWebglAddon(sessionId, state);
+      requestBufferRefresh(sessionId);
+    });
+    state.terminal.loadAddon(webglAddon);
+    state.webglAddon = webglAddon;
+    terminalsWithWebgl.add(sessionId);
+    state.hasWebgl = true;
+  } catch {
+    state.webglAddon = null;
+    state.hasWebgl = false;
+  }
+}
+
+export function syncTerminalWebglState(
+  sessionId: string,
+  state: TerminalState,
+  enabled: boolean,
+): void {
+  if (!enabled) {
+    detachWebglAddon(sessionId, state);
+    return;
+  }
+
+  attachWebglAddon(sessionId, state);
 }
 
 /**
@@ -267,6 +329,9 @@ export function createTerminalForSession(
     serverCols: serverCols > 0 ? serverCols : 0,
     serverRows: serverRows > 0 ? serverRows : 0,
     opened: false,
+    hasWebgl: false,
+    webglAddon: null,
+    pendingVisualRefresh: false,
   };
 
   sessionTerminals.set(sessionId, state);
@@ -307,25 +372,7 @@ export function createTerminalForSession(
 
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
-    if (
-      $currentSettings.get()?.useWebGL !== false &&
-      terminalsWithWebgl.size < MAX_WEBGL_CONTEXTS
-    ) {
-      try {
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          terminalsWithWebgl.delete(sessionId);
-          state.hasWebgl = false;
-          webglAddon.dispose();
-          requestBufferRefresh(sessionId);
-        });
-        terminal.loadAddon(webglAddon);
-        terminalsWithWebgl.add(sessionId);
-        state.hasWebgl = true;
-      } catch {
-        // WebGL not available, using canvas renderer
-      }
-    }
+    syncTerminalWebglState(sessionId, state, $currentSettings.get()?.useWebGL !== false);
 
     // Load Web-Links addon for clickable URLs
     try {
@@ -483,6 +530,12 @@ export function setupTerminalEvents(
   disposables.push(
     terminal.onBell(() => {
       showBellNotification(sessionId);
+    }),
+  );
+
+  disposables.push(
+    terminal.onWriteParsed(() => {
+      reconcileSynchronizedOutputCursor(sessionId);
     }),
   );
 
@@ -746,9 +799,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   teardownTouchScrolling(sessionId);
 
   // Clean up WebGL context tracking
-  if (state.hasWebgl) {
-    terminalsWithWebgl.delete(sessionId);
-  }
+  syncTerminalWebglState(sessionId, state, false);
 
   // Clean up file path allowlist
   clearPathAllowlist(sessionId);

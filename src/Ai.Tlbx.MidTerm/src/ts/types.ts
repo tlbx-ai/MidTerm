@@ -7,6 +7,7 @@
 
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
+import type { WebglAddon } from '@xterm/addon-webgl';
 
 // Import types needed for local use
 import type {
@@ -84,6 +85,7 @@ export interface TerminalState {
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
   hasWebgl?: boolean;
+  webglAddon?: WebglAddon | null;
   disposables?: Array<{ dispose: () => void }>;
   mouseMoveHandler?: () => void;
   mouseLeaveHandler?: () => void;
@@ -94,6 +96,8 @@ export interface TerminalState {
   lastLocalInputAtMs?: number | null;
   remoteCursorVisible?: boolean;
   burstCursorHidden?: boolean;
+  syncOutputCursorHidden?: boolean;
+  pendingVisualRefresh?: boolean;
 }
 
 // =============================================================================

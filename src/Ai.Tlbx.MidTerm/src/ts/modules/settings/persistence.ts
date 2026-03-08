@@ -37,11 +37,12 @@ import {
 } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
 import { getEffectiveTerminalFontSize } from '../terminal/fontSize';
-import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
+import { refreshTerminalPresentation } from '../terminal/scaling';
 import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
 } from '../terminal/scrollbarStyle';
+import { syncTerminalWebglState } from '../terminal/manager';
 import { setLocale, t } from '../i18n';
 import type { LanguageSetting } from '../../api/types';
 import { renderUpdatePanel } from '../updating/checker';
@@ -51,6 +52,16 @@ const log = createLogger('settings');
 
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
+let settingsSaveVersion = 0;
+
+function applySettingsLocally(settings: MidTermSettingsPublic): void {
+  $currentSettings.set(settings);
+  applyCssTheme(settings.theme);
+  applySettingsToTerminals();
+  updateTabTitle();
+  void setLocale(settings.language);
+  renderUpdatePanel();
+}
 
 /**
  * Set the value of a form element by ID
@@ -268,7 +279,7 @@ export function applySettingsToTerminals(): void {
 
   const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);
 
-  sessionTerminals.forEach((state: TerminalState) => {
+  sessionTerminals.forEach((state: TerminalState, sessionId: string) => {
     state.terminal.options.cursorBlink = settings.cursorBlink;
     state.terminal.options.cursorStyle = settings.cursorStyle;
     state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
@@ -278,6 +289,7 @@ export function applySettingsToTerminals(): void {
     state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
     state.terminal.options.scrollback = settings.scrollbackLines;
+    syncTerminalWebglState(sessionId, state, settings.useWebGL);
 
     applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
 
@@ -291,9 +303,9 @@ export function applySettingsToTerminals(): void {
         state.terminal.write('\x1b[?25h');
       }
     }
-  });
 
-  rescaleAllTerminalsImmediate();
+    refreshTerminalPresentation(sessionId, state);
+  });
 }
 
 /**
@@ -403,22 +415,37 @@ export function saveAllSettings(): void {
 
   setCookie('mm-language', settings.language);
 
+  const saveVersion = ++settingsSaveVersion;
+  const nextSettings = prevSettings ? { ...prevSettings, ...settings } : null;
+
+  if (nextSettings) {
+    applySettingsLocally(nextSettings);
+  }
+
   updateSettings(settings)
     .then(({ response, error }) => {
       if (response.ok) {
-        if (prevSettings) {
-          $currentSettings.set({ ...prevSettings, ...settings });
+        if (!nextSettings && prevSettings) {
+          applySettingsLocally({ ...prevSettings, ...settings });
         }
-        applyCssTheme(settings.theme);
-        applySettingsToTerminals();
-        updateTabTitle();
-        void setLocale(settings.language);
       } else {
         log.error(() => `Settings save failed: ${response.status} ${String(error)}`);
+        if (prevSettings && settingsSaveVersion === saveVersion) {
+          applySettingsLocally(prevSettings);
+          if ($settingsOpen.get()) {
+            populateSettingsForm(prevSettings);
+          }
+        }
       }
     })
     .catch((e: unknown) => {
       log.error(() => `Error saving settings: ${String(e)}`);
+      if (prevSettings && settingsSaveVersion === saveVersion) {
+        applySettingsLocally(prevSettings);
+        if ($settingsOpen.get()) {
+          populateSettingsForm(prevSettings);
+        }
+      }
     });
 }
 
@@ -442,6 +469,20 @@ export function bindSettingsAutoSave(): void {
 
   settingsView.querySelectorAll('input[type="range"]').forEach((el) => {
     el.addEventListener('change', saveAllSettings, { signal });
+  });
+
+  settingsView.querySelectorAll('input[type="text"], input[type="number"]').forEach((el) => {
+    el.addEventListener(
+      'change',
+      () => {
+        saveAllSettings();
+        const wrapper = el.closest('.text-input-wrapper');
+        if (wrapper instanceof HTMLElement) {
+          wrapper.classList.remove('unsaved');
+        }
+      },
+      { signal },
+    );
   });
 
   const transparencySlider = document.getElementById(

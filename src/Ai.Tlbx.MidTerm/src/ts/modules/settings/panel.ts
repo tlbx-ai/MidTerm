@@ -11,6 +11,7 @@ import { $settingsOpen, $activeSessionId, $sessionList, $windowsBuildNumber } fr
 import { fetchSettings, unbindSettingsAutoSave } from './persistence';
 import { initSettingsTabs } from './tabs';
 import { stopLatencyMeasurement } from '../diagnostics';
+import { refreshTerminalPresentation } from '../terminal/scaling';
 import { createLogger } from '../logging';
 import { getHealth, getSharePacket, regenerateCertificate } from '../../api/client';
 import { showConfirm } from '../../utils/dialog';
@@ -77,6 +78,7 @@ export function closeSettings(): void {
     if (state) {
       state.container.classList.remove('hidden');
       requestAnimationFrame(() => {
+        refreshTerminalPresentation(activeId, state);
         state.terminal.focus();
       });
     }

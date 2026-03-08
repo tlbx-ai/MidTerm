@@ -614,7 +614,9 @@ function hideBurstCursor(state: TerminalState): void {
   }
 
   if (!state.burstCursorHidden) {
-    state.terminal.write(HIDE_CURSOR_SEQ);
+    if (!state.syncOutputCursorHidden) {
+      state.terminal.write(HIDE_CURSOR_SEQ);
+    }
     state.burstCursorHidden = true;
   }
 
@@ -625,7 +627,11 @@ function hideBurstCursor(state: TerminalState): void {
 }
 
 function showBurstCursor(state: TerminalState): void {
-  if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
+  if (
+    !isHideCursorOnInputBurstsEnabled() ||
+    state.remoteCursorVisible === false ||
+    state.syncOutputCursorHidden === true
+  ) {
     return;
   }
 
@@ -641,7 +647,11 @@ function showBurstCursor(state: TerminalState): void {
 }
 
 function scheduleBurstCursorShow(state: TerminalState): void {
-  if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
+  if (
+    !isHideCursorOnInputBurstsEnabled() ||
+    state.remoteCursorVisible === false ||
+    state.syncOutputCursorHidden === true
+  ) {
     return;
   }
 
@@ -675,6 +685,42 @@ function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): bool
   return (
     data.length >= CURSOR_BURST_MIN_BYTES || (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS)
   );
+}
+
+function hideSynchronizedOutputCursor(state: TerminalState): void {
+  if (state.syncOutputCursorHidden) {
+    return;
+  }
+
+  state.syncOutputCursorHidden = true;
+  state.terminal.write(HIDE_CURSOR_SEQ);
+}
+
+function showSynchronizedOutputCursor(state: TerminalState): void {
+  if (!state.syncOutputCursorHidden) {
+    return;
+  }
+
+  state.syncOutputCursorHidden = false;
+  if (!state.burstCursorHidden && state.remoteCursorVisible !== false) {
+    state.terminal.write(SHOW_CURSOR_SEQ);
+  }
+}
+
+export function reconcileSynchronizedOutputCursor(sessionId: string): void {
+  const state = sessionTerminals.get(sessionId);
+  if (!state?.opened) {
+    return;
+  }
+
+  // Codex and similar TUIs wrap redraws in DEC synchronized output. xterm buffers row
+  // paints for that mode, but the visible cursor can still appear to jump around unless we
+  // suppress it until the synchronized update completes.
+  if (state.terminal.modes.synchronizedOutputMode) {
+    hideSynchronizedOutputCursor(state);
+  } else {
+    showSynchronizedOutputCursor(state);
+  }
 }
 
 /**

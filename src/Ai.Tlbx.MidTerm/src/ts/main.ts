@@ -34,6 +34,7 @@ import {
   bindSearchEvents,
   scrollToBottom,
   focusActiveTerminal,
+  refreshTerminalPresentation,
   setupGlobalFocusReclaim,
   calculateOptimalDimensions,
   getEffectiveTerminalFontSize,
@@ -500,6 +501,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   }
 
   requestAnimationFrame(() => {
+    refreshTerminalPresentation(sessionId, state);
     state.terminal.focus();
     scrollToBottom(sessionId);
 

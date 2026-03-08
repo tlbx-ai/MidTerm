@@ -242,6 +242,31 @@ public sealed class SettingsService
         {
             settings.FileRadar = true;
         }
+
+        if (!json.Contains("\"managerBarEnabled\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.ManagerBarEnabled = true;
+        }
+
+        if (!json.Contains("\"tmuxCompatibility\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TmuxCompatibility = true;
+        }
+
+        if (!json.Contains("\"ideMode\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.IdeMode = true;
+        }
+
+        if (!json.Contains("\"showChangelogAfterUpdate\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.ShowChangelogAfterUpdate = true;
+        }
+
+        if (!json.Contains("\"showUpdateNotification\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.ShowUpdateNotification = true;
+        }
     }
 
     private void MigrateServiceInstallFlag(MidTermSettings settings, string json)
@@ -349,8 +374,14 @@ public sealed class SettingsService
         current.CursorStyle = old.CursorStyle;
         current.CursorBlink = old.CursorBlink;
         current.CursorInactiveStyle = old.CursorInactiveStyle;
+        current.HideCursorOnInputBursts = old.HideCursorOnInputBursts;
         current.Theme = old.Theme;
         current.TerminalColorScheme = old.TerminalColorScheme;
+        current.BackgroundImageEnabled = old.BackgroundImageEnabled;
+        current.BackgroundImageFileName = old.BackgroundImageFileName;
+        current.BackgroundImageRevision = old.BackgroundImageRevision;
+        current.BackgroundImageFit = old.BackgroundImageFit;
+        current.UiTransparency = old.UiTransparency;
         current.TabTitleMode = old.TabTitleMode;
         current.MinimumContrastRatio = old.MinimumContrastRatio;
         current.SmoothScrolling = old.SmoothScrolling;
@@ -361,6 +392,7 @@ public sealed class SettingsService
         current.CopyOnSelect = old.CopyOnSelect;
         current.RightClickPaste = old.RightClickPaste;
         current.ClipboardShortcuts = old.ClipboardShortcuts;
+        current.TerminalEnterMode = old.TerminalEnterMode;
         current.ScrollbackProtection = old.ScrollbackProtection;
         current.InputMode = old.InputMode;
         current.FileRadar = old.FileRadar;
