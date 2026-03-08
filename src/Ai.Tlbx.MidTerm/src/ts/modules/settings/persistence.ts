@@ -47,6 +47,7 @@ import { setLocale, t } from '../i18n';
 import type { LanguageSetting } from '../../api/types';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
+import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 
 const log = createLogger('settings');
 
@@ -61,6 +62,10 @@ function applySettingsLocally(settings: MidTermSettingsPublic): void {
   updateTabTitle();
   void setLocale(settings.language);
   renderUpdatePanel();
+
+  if ($settingsOpen.get() && dom.settingsView) {
+    syncInlineTextInputWrappers(dom.settingsView);
+  }
 }
 
 /**
@@ -210,6 +215,9 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   setElementValue('setting-run-as-user', settings.runAsUser ?? '');
   updateTransparencyValue(settings.uiTransparency);
   updateBackgroundImageUi(settings);
+  if (dom.settingsView) {
+    syncInlineTextInputWrappers(dom.settingsView);
+  }
 }
 
 /**
@@ -472,14 +480,15 @@ export function bindSettingsAutoSave(): void {
   });
 
   settingsView.querySelectorAll('input[type="text"], input[type="number"]').forEach((el) => {
+    if (!(el instanceof HTMLInputElement)) {
+      return;
+    }
+
     el.addEventListener(
       'change',
       () => {
         saveAllSettings();
-        const wrapper = el.closest('.text-input-wrapper');
-        if (wrapper instanceof HTMLElement) {
-          wrapper.classList.remove('unsaved');
-        }
+        syncInlineTextInputWrappers(settingsView);
       },
       { signal },
     );
@@ -536,24 +545,24 @@ export function bindSettingsAutoSave(): void {
   );
 
   settingsView.querySelectorAll('.text-input-wrapper').forEach((wrapper) => {
-    const input = wrapper.querySelector('input');
+    const input = wrapper.querySelector('input[type="text"], input[type="number"]');
     const saveBtn = wrapper.querySelector('.inline-save-btn');
-    if (!input || !saveBtn) return;
-
-    let originalValue = '';
-
-    input.addEventListener(
-      'focus',
-      () => {
-        originalValue = input.value;
-      },
-      { signal },
-    );
+    if (!(wrapper instanceof HTMLElement) || !(input instanceof HTMLInputElement) || !saveBtn) {
+      return;
+    }
 
     input.addEventListener(
       'input',
       () => {
-        wrapper.classList.toggle('unsaved', input.value !== originalValue);
+        updateInlineTextInputWrapperState(input);
+      },
+      { signal },
+    );
+
+    saveBtn.addEventListener(
+      'mousedown',
+      (event) => {
+        event.preventDefault();
       },
       { signal },
     );
@@ -562,8 +571,7 @@ export function bindSettingsAutoSave(): void {
       'click',
       () => {
         saveAllSettings();
-        wrapper.classList.remove('unsaved');
-        originalValue = input.value;
+        syncInlineTextInputWrappers(settingsView);
       },
       { signal },
     );
@@ -574,8 +582,7 @@ export function bindSettingsAutoSave(): void {
         if (e.key === 'Enter') {
           e.preventDefault();
           saveAllSettings();
-          wrapper.classList.remove('unsaved');
-          originalValue = input.value;
+          syncInlineTextInputWrappers(settingsView);
         }
       },
       { signal },
