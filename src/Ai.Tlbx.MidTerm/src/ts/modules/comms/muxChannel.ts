@@ -432,6 +432,9 @@ const YIELD_BUDGET_MS = 8;
 const CURSOR_BURST_WINDOW_MS = 180;
 const CURSOR_BURST_MIN_BYTES = 12;
 const CURSOR_IDLE_SHOW_MS = 650;
+// Keep the cursor visible briefly after local input so TUI redraws triggered by typing
+// do not look like "remote output" bursts.
+const CURSOR_LOCAL_INPUT_GRACE_MS = 250;
 const SHOW_CURSOR_SEQ = '\x1b[?25h';
 const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
@@ -656,11 +659,16 @@ function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): bool
     return false;
   }
 
+  const now = performance.now();
+  const lastLocalInputAtMs = state.lastLocalInputAtMs ?? null;
+  if (lastLocalInputAtMs !== null && now - lastLocalInputAtMs <= CURSOR_LOCAL_INPUT_GRACE_MS) {
+    return false;
+  }
+
   if (containsImmediateHideTerminalControl(data) || state.burstCursorHidden) {
     return true;
   }
 
-  const now = performance.now();
   const last = state.lastBurstOutputAtMs ?? 0;
   state.lastBurstOutputAtMs = now;
 
@@ -969,6 +977,7 @@ function sendFrame(frame: Uint8Array): void {
 export function sendInput(sessionId: string, data: string): void {
   const state = sessionTerminals.get(sessionId);
   if (state) {
+    state.lastLocalInputAtMs = performance.now();
     showBurstCursor(state);
     scheduleBurstCursorShow(state);
   }

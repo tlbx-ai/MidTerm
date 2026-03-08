@@ -1,11 +1,11 @@
 /**
  * Smart Input UI
  *
- * Creates and manages a text input bar for terminal sessions.
+ * Creates and manages a docked text input bar for terminal sessions.
  * Three modes:
  * - "keyboard": no smart input bar (default)
- * - "smartinput": floating overlay that replaces terminal keyboard focus (mobile)
- * - "both": docked bar below manager bar, terminal keeps keyboard focus (desktop)
+ * - "smartinput": docked bar below the terminal that replaces terminal keyboard focus
+ * - "both": docked bar below the terminal while direct terminal keyboard input still works
  *
  * Right Ctrl push-to-talk: hold to record, release to transcribe.
  * Auto-send toggle: when active, transcribed text is sent immediately.
@@ -15,11 +15,10 @@
 import { $currentSettings, $activeSessionId } from '../../stores';
 import { sendInput } from '../comms';
 import { t } from '../i18n';
-import { handleFileDrop } from '../terminal';
+import { handleFileDrop, pasteToTerminal } from '../terminal';
 import { hideTouchController } from '../touchController';
 import { startTranscription, stopTranscription } from './transcription';
 
-let overlay: HTMLDivElement | null = null;
 let dockedBar: HTMLDivElement | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
 let activeMicBtn: HTMLButtonElement | null = null;
@@ -30,6 +29,7 @@ let touchControllerOriginalParent: HTMLElement | null = null;
 let touchControllerOriginalNext: Node | null = null;
 let lastSessionId: string | null = null;
 const MAX_TEXTAREA_LINES = 5;
+const SMART_INPUT_SUBMIT_DELAY_MS = 200;
 const sessionDrafts = new Map<string, string>();
 
 export function isSmartInputMode(): boolean {
@@ -57,7 +57,7 @@ export function initSmartInput(): void {
     if (!settings) return;
     persistDraftForSession($activeSessionId.get());
     if (settings.inputMode === 'smartinput') {
-      hideDockedBar();
+      hideSmartInput();
       const activeId = $activeSessionId.get();
       if (activeId) {
         showSmartInput();
@@ -89,26 +89,17 @@ export function initSmartInput(): void {
 }
 
 export function showSmartInput(): void {
-  if (!overlay) createOverlayDOM();
-  overlay?.classList.add('visible');
-  activeTextarea = overlay?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
-  activeMicBtn = overlay?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
-  if (activeTextarea) {
-    applyDraftToTextarea(activeTextarea, $activeSessionId.get());
-    resizeTextarea(activeTextarea);
-  }
-  embedTouchController(overlay);
-  activeTextarea?.focus();
+  showDockedBar(true);
 }
 
 export function hideSmartInput(): void {
-  if (overlay?.classList.contains('visible')) {
+  if (dockedBar?.classList.contains('visible')) {
     releaseTouchController();
   }
-  overlay?.classList.remove('visible');
+  dockedBar?.classList.remove('visible');
 }
 
-function showDockedBar(): void {
+function showDockedBar(focusTextarea: boolean = false): void {
   if (!dockedBar) createDockedDOM();
   dockedBar?.classList.add('visible');
   activeTextarea = dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
@@ -118,6 +109,9 @@ function showDockedBar(): void {
     resizeTextarea(activeTextarea);
   }
   embedTouchController(dockedBar);
+  if (focusTextarea) {
+    activeTextarea?.focus({ preventScroll: true });
+  }
 }
 
 function hideDockedBar(): void {
@@ -252,7 +246,7 @@ function createInputElements(): {
     keysExpanded = !keysExpanded;
     toggleKeysBtn.classList.toggle('expanded', keysExpanded);
     localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
-    const container = toggleKeysBtn.closest('.smart-input-overlay, .smart-input-docked');
+    const container = toggleKeysBtn.closest('.smart-input-docked');
     container?.classList.toggle('keys-expanded', keysExpanded);
   });
 
@@ -303,22 +297,6 @@ function createInputElements(): {
   return { inputRow };
 }
 
-function createOverlayDOM(): void {
-  overlay = document.createElement('div');
-  overlay.className = 'smart-input-overlay';
-
-  const { inputRow } = createInputElements();
-  overlay.appendChild(inputRow);
-
-  const terminalsArea = document.getElementById('terminals-area');
-  if (terminalsArea) {
-    terminalsArea.appendChild(overlay);
-  } else {
-    document.body.appendChild(overlay);
-  }
-  updateAutoSendVisibility();
-}
-
 function createDockedDOM(): void {
   dockedBar = document.createElement('div');
   dockedBar.className = 'smart-input-docked';
@@ -342,10 +320,7 @@ function sendText(ta: HTMLTextAreaElement): void {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
 
-  sendInput(sessionId, text);
-  setTimeout(() => {
-    sendInput(sessionId, '\r');
-  }, 50);
+  void submitSmartInput(sessionId, text);
 
   ta.value = '';
   persistDraftForSession(sessionId, '');
@@ -383,10 +358,6 @@ function applyDraftToTextarea(
 
 function syncDraftForActiveSession(): void {
   const sessionId = $activeSessionId.get();
-  applyDraftToTextarea(
-    overlay?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null,
-    sessionId,
-  );
   applyDraftToTextarea(
     dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null,
     sessionId,
@@ -445,10 +416,7 @@ function beginRecording(): void {
 function sendDirectly(text: string): void {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
-  sendInput(sessionId, text);
-  setTimeout(() => {
-    sendInput(sessionId, '\r');
-  }, 50);
+  void submitSmartInput(sessionId, text);
 }
 
 function endRecording(): void {
@@ -459,10 +427,19 @@ function endRecording(): void {
 }
 
 function updateAutoSendVisibility(): void {
-  for (const container of [overlay, dockedBar]) {
+  for (const container of [dockedBar]) {
     if (!container) continue;
     container.classList.toggle('autosend-active', autoSendEnabled);
   }
+}
+
+async function submitSmartInput(sessionId: string, text: string): Promise<void> {
+  // Smart Input is closer to a paste/submit workflow than raw keyboard input.
+  // Using the shared paste path preserves BPM handling, and a short settle
+  // delay before Enter is more reliable for JS TUIs such as Codex.
+  await pasteToTerminal(sessionId, text);
+  await new Promise((resolve) => window.setTimeout(resolve, SMART_INPUT_SUBMIT_DELAY_MS));
+  sendInput(sessionId, '\r');
 }
 
 function isTouchDevice(): boolean {

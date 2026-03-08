@@ -91,6 +91,7 @@ export interface TerminalState {
   cursorHideTimer?: number | null;
   burstCursorRestoreTimer?: number | null;
   lastBurstOutputAtMs?: number | null;
+  lastLocalInputAtMs?: number | null;
   remoteCursorVisible?: boolean;
   burstCursorHidden?: boolean;
 }
