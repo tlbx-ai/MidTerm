@@ -205,11 +205,25 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
  * Fetch settings, users, version, and health from server and populate the form
  */
 export async function fetchSettings(): Promise<void> {
+  const cachedSettings = $currentSettings.get();
+  if (cachedSettings) {
+    populateSettingsForm(cachedSettings);
+    bindSettingsAutoSave();
+  }
+
   try {
-    const { data: settingsData, response } = await getSettings();
-    if (!settingsData || !response.ok) {
-      log.error(() => `Error fetching settings: ${response.status}`);
-      return;
+    let settingsData = cachedSettings;
+    if (!settingsData) {
+      const { data, response } = await getSettings();
+      if (!data || !response.ok) {
+        log.error(() => `Error fetching settings: ${response.status}`);
+        return;
+      }
+
+      settingsData = data;
+      $currentSettings.set(settingsData);
+      populateSettingsForm(settingsData);
+      bindSettingsAutoSave();
     }
 
     const [usersRes, versionRes, healthRes] = await Promise.all([
@@ -225,9 +239,7 @@ export async function fetchSettings(): Promise<void> {
     const version = versionRes.data ?? null;
     const health = healthRes.data;
 
-    $currentSettings.set(settingsData);
     populateUserDropdown(users, settingsData.runAsUser ?? null);
-    populateSettingsForm(settingsData);
     populateVersionInfo(
       version,
       health?.ttyHostVersion ?? null,
@@ -236,7 +248,6 @@ export async function fetchSettings(): Promise<void> {
     );
 
     applySettingsToTerminals();
-    bindSettingsAutoSave();
   } catch (e) {
     log.error(() => `Error fetching settings: ${String(e)}`);
   }
