@@ -2577,6 +2577,14 @@ body.has-app-background::after {
         flex: 1;
     }
 
+    .text-input-wrapper.unsaved input {
+        padding-right: 32px;
+    }
+
+    .inline-save-btn {
+        right: 4px;
+    }
+
     .setting-row input[type="checkbox"] {
         flex-shrink: 0;
         margin-left: auto;
