@@ -31,6 +31,7 @@ import {
 import type { ForegroundChangePayload } from '../../types';
 import { handleForegroundChange } from '../process';
 import { scanOutputForPaths } from '../terminal/fileLinks';
+import { processCursorVisibilityControls } from './cursorVisibility';
 import {
   parseOutputFrame,
   parseCompressedOutputFrame,
@@ -492,32 +493,21 @@ function isHideCursorOnInputBurstsEnabled(): boolean {
   return $currentSettings.get()?.hideCursorOnInputBursts === true;
 }
 
-function scanCursorVisibility(data: Uint8Array, state: TerminalState): void {
-  for (let i = 0, end = data.length - 6; i <= end; i++) {
-    if (
-      data[i] === 0x1b &&
-      data[i + 1] === 0x5b &&
-      data[i + 2] === 0x3f &&
-      data[i + 3] === 0x32 &&
-      data[i + 4] === 0x35
-    ) {
-      const final = data[i + 5];
-      if (final === 0x68) {
-        state.remoteCursorVisible = true;
-      } else if (final === 0x6c) {
-        state.remoteCursorVisible = false;
-      }
-    }
-  }
-}
-
 function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
   for (let i = 0; i < data.length; i++) {
-    if (data[i] === 0x1b) {
+    const byte = data[i];
+    if (
+      byte === 0x1b ||
+      byte === 0x90 ||
+      byte === 0x9b ||
+      byte === 0x9d ||
+      byte === 0x9e ||
+      byte === 0x9f
+    ) {
       return true;
     }
 
-    if (data[i] === 0xc2 && i + 1 < data.length) {
+    if (byte === 0xc2 && i + 1 < data.length) {
       const next = data[i + 1];
       if (next === 0x90 || next === 0x9b || next === 0x9d || next === 0x9e || next === 0x9f) {
         return true;
@@ -529,7 +519,7 @@ function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
 }
 
 function hideBurstCursor(state: TerminalState): void {
-  if (!isHideCursorOnInputBurstsEnabled() || state.remoteCursorVisible === false) {
+  if (!isHideCursorOnInputBurstsEnabled()) {
     return;
   }
 
@@ -605,10 +595,21 @@ function writeToTerminal(
   // Track bracketed paste mode by scanning raw bytes (no string allocation)
   if (data.length >= 8) {
     scanBracketedPaste(data, sessionId);
-    scanCursorVisibility(data, state);
   }
 
-  if (shouldHideCursorForOutput(state, data)) {
+  const shouldHideCursor = shouldHideCursorForOutput(state, data);
+  // Codex emits cursor show/hide commands inside redraw frames, so strip them while the
+  // burst-hider is active and restore the last requested visibility after the burst settles.
+  const cursorVisibility = processCursorVisibilityControls(
+    data,
+    shouldHideCursor || state.burstCursorHidden === true,
+  );
+
+  if (cursorVisibility.remoteCursorVisible !== null) {
+    state.remoteCursorVisible = cursorVisibility.remoteCursorVisible;
+  }
+
+  if (shouldHideCursor) {
     hideBurstCursor(state);
   }
 
@@ -635,11 +636,11 @@ function writeToTerminal(
   }
 
   // Always write data if present
-  if (data.length > 0) {
-    state.terminal.write(data);
+  if (cursorVisibility.data.length > 0) {
+    state.terminal.write(cursorVisibility.data);
     // Scan for file paths only on active session (avoids decode+concat for background frames)
     if (sessionId === $activeSessionId.get()) {
-      scanOutputForPaths(sessionId, data);
+      scanOutputForPaths(sessionId, cursorVisibility.data);
     }
   }
 
