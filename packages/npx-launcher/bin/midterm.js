@@ -5,12 +5,14 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const https = require('node:https');
+const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const { version: PACKAGE_VERSION } = require('../package.json');
 const DEFAULT_PORT = 2000;
+const MAX_PORT_SCAN_ATTEMPTS = 100;
 const SERVER_READY_TIMEOUT_MS = 15000;
 const SERVER_READY_INTERVAL_MS = 500;
 const REPO_OWNER = 'tlbx-ai';
@@ -33,14 +35,30 @@ async function main() {
     : await ensureInstalledRelease(release, target);
 
   const childArgs = passthrough.slice();
+  const hasExplicitPort = hasArg(childArgs, '--port');
   const explicitBind = getArgValue(childArgs, '--bind');
   const explicitPort = parsePortArg(getArgValue(childArgs, '--port'));
+  const effectiveBind = explicitBind ?? '127.0.0.1';
+  const startsServer = shouldStartServer(childArgs);
+
+  let effectivePort = explicitPort ?? DEFAULT_PORT;
 
   if (!explicitBind) {
     childArgs.push('--bind', '127.0.0.1');
   }
 
-  const browserUrl = buildBrowserUrl(explicitBind ?? '127.0.0.1', explicitPort ?? DEFAULT_PORT);
+  if (startsServer && !hasExplicitPort) {
+    effectivePort = await findAvailablePort(effectiveBind, DEFAULT_PORT);
+    childArgs.push('--port', String(effectivePort));
+
+    if (effectivePort !== DEFAULT_PORT) {
+      console.error(`@tlbx-ai/midterm: port ${DEFAULT_PORT} is unavailable, using ${effectivePort}`);
+    }
+  }
+
+  const browserUrl = startsServer
+    ? buildBrowserUrl(effectiveBind, effectivePort)
+    : null;
   const childEnv = {
     ...process.env,
     MIDTERM_LAUNCH_MODE: 'npx',
@@ -57,7 +75,7 @@ async function main() {
         env: childEnv
       });
 
-  if (launcher.openBrowser) {
+  if (launcher.openBrowser && browserUrl) {
     void openBrowserWhenReady(browserUrl);
   }
 
@@ -148,7 +166,7 @@ async function detectWslInteropContext() {
     return null;
   }
 
-  const parsed = parseWslUncPath(process.cwd());
+  const parsed = findWslInteropPath();
   if (!parsed) {
     return null;
   }
@@ -168,6 +186,32 @@ async function detectWslInteropContext() {
     uncRoot: parsed.uncRoot,
     arch: normalizeWslArchitecture(archRaw)
   };
+}
+
+function findWslInteropPath() {
+  const candidates = [
+    process.cwd(),
+    process.env.INIT_CWD,
+    process.env.npm_config_local_prefix,
+    getPackageDirectory(process.env.npm_package_json)
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = parseWslUncPath(candidate);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function getPackageDirectory(packageJsonPath) {
+  if (!packageJsonPath) {
+    return '';
+  }
+
+  return path.win32.dirname(packageJsonPath);
 }
 
 function parseWslUncPath(value) {
@@ -474,6 +518,68 @@ function parsePortArg(value) {
   }
 
   return parsed;
+}
+
+function shouldStartServer(args) {
+  const nonServerFlags = [
+    '--check-update',
+    '--update',
+    '--apply-update',
+    '--version',
+    '-v',
+    '--help',
+    '-h',
+    '--hash-password',
+    '--write-secret',
+    '--generate-cert'
+  ];
+
+  return !nonServerFlags.some((flag) => hasArg(args, flag));
+}
+
+async function findAvailablePort(bindAddress, preferredPort) {
+  for (let offset = 0; offset < MAX_PORT_SCAN_ATTEMPTS; offset++) {
+    const port = preferredPort + offset;
+    if (port > 65535) {
+      break;
+    }
+
+    if (await isPortAvailable(bindAddress, port)) {
+      return port;
+    }
+  }
+
+  throw new Error(`Could not find a free port starting at ${preferredPort}`);
+}
+
+function isPortAvailable(bindAddress, port) {
+  const host = normalizeBindForNetProbe(bindAddress);
+
+  return new Promise((resolve) => {
+    const server = net.createServer();
+
+    server.once('error', (error) => {
+      if (error && (error.code === 'EADDRINUSE' || error.code === 'EACCES')) {
+        resolve(false);
+        return;
+      }
+
+      resolve(false);
+    });
+
+    server.listen(port, host, () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+function normalizeBindForNetProbe(bindAddress) {
+  const raw = String(bindAddress || '').trim();
+  if (!raw || raw === 'localhost') {
+    return '127.0.0.1';
+  }
+
+  return raw.replace(/^\[(.*)\]$/, '$1');
 }
 
 function buildBrowserUrl(bindAddress, port) {
