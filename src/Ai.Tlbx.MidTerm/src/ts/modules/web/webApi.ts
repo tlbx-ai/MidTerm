@@ -93,12 +93,18 @@ export async function createBrowserPreviewClient(
 }
 
 /** Capture a screenshot through the injected browser bridge and return its data URL. */
-export async function captureBrowserScreenshotRaw(sessionId: string): Promise<string | null> {
+export async function captureBrowserScreenshotRaw(
+  sessionId: string,
+  previewId?: string,
+): Promise<string | null> {
   try {
     const res = await fetch('/api/browser/screenshot-raw', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({
+        sessionId,
+        ...(previewId ? { previewId } : {}),
+      }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {

@@ -670,6 +670,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
     {
+        SyncSelfTargetAuthCookie(context.Request, targetUri);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
         var targetBase = targetUri.AbsolutePath.TrimEnd('/');
         var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
@@ -1369,6 +1370,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task ProxyWebSocketAsync(HttpContext context, Uri targetUri, string path)
     {
+        SyncSelfTargetAuthCookie(context.Request, targetUri);
         var targetBase = targetUri.AbsolutePath.TrimEnd('/');
         var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
 
@@ -1545,6 +1547,19 @@ public sealed partial class WebPreviewProxyMiddleware
             sb.Append(queryString);
         }
         return sb.ToString();
+    }
+
+    private void SyncSelfTargetAuthCookie(HttpRequest request, Uri targetUri)
+    {
+        if (!_service.IsSelfTarget(targetUri))
+        {
+            return;
+        }
+
+        if (request.Cookies.TryGetValue(AuthService.SessionCookieName, out var token))
+        {
+            _service.SyncSessionCookieForSelfTarget(token, targetUri);
+        }
     }
 
     private static string BuildUpstreamWsUrl(Uri target, string path, string? queryString)

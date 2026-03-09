@@ -79,6 +79,7 @@ Browser automation is now scoped per preview client instead of "whichever iframe
 - only one browser bridge connection is accepted per preview id; later duplicates are rejected
 - commands without `--session` only run when exactly one preview is connected
 - commands with `--session` route only to that session's preview
+- docked UI screenshot capture sends the active docked `previewId`, so nested previews under the same terminal session do not collide
 
 The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
@@ -101,6 +102,17 @@ When MidTerm can reserve `port + 1`, preview clients now receive a dedicated fra
 - preview client registration returns that origin to the docked panel and detached popup
 
 The preview listener blocks normal MidTerm app pages and non-browser WebSockets on the secondary port, so leaked navigations do not fall back into the MidTerm application on the preview origin. If the extra port is unavailable, MidTerm falls back to the primary origin and keeps the sandbox protections from step 3.
+
+## MidTerm-In-MidTerm
+
+Self-preview is supported only when the dedicated preview origin is active:
+
+- target the main app origin (`https://host:port`), not the preview origin (`port + 1`)
+- the preview-origin listener itself is still rejected as a web-preview target, so the proxy never points at its own isolated frame host
+- proxied requests to MidTerm itself mirror the current `mm-session` auth cookie from the browser request into the in-memory proxy cookie jar before each upstream HTTP/WebSocket hop
+- that mirrored auth cookie is deliberately excluded from cookie-disk persistence, so nested MidTerm stays authenticated without writing MidTerm session tokens into the preview cookie files
+
+This is what keeps nested MidTerm from falling into `/login.html` once its own `/api/*` and `/ws/*` traffic starts flowing through the dev browser.
 
 ## Canonical Host Adoption
 

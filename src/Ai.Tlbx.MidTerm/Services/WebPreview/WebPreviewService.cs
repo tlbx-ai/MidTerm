@@ -5,6 +5,8 @@ using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Browser;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
@@ -13,6 +15,7 @@ public sealed class WebPreviewService
     private volatile string? _targetUrl;
     private volatile Uri? _targetUri;
     private readonly int _serverPort;
+    private readonly BrowserPreviewOriginService? _previewOriginService;
     private readonly string? _cookiesDirectory;
 
     private HttpClient _httpClient;
@@ -28,14 +31,25 @@ public sealed class WebPreviewService
     public bool IsActive => _targetUri is not null;
 
     public WebPreviewService(int serverPort, string? cookiesDirectory = null)
+        : this(serverPort, previewOriginService: null, cookiesDirectory)
+    {
+    }
+
+    public WebPreviewService(
+        int serverPort,
+        BrowserPreviewOriginService? previewOriginService,
+        string? cookiesDirectory = null)
     {
         _serverPort = serverPort;
+        _previewOriginService = previewOriginService;
         _cookiesDirectory = cookiesDirectory;
         _cookieContainer = new CookieContainer();
         _httpClient = CreateHttpClient(_cookieContainer);
     }
 
     public HttpClient HttpClient => _httpClient;
+
+    public bool IsSelfTarget(Uri uri) => IsMainServerTarget(uri);
 
     public void AddLogEntry(WebPreviewProxyLogEntry entry)
     {
@@ -72,8 +86,12 @@ public sealed class WebPreviewService
         if (uri.Scheme is not ("http" or "https"))
             return false;
 
-        // Prevent self-proxying
-        if (IsThisServerTarget(uri))
+        var isMainServerTarget = IsMainServerTarget(uri);
+        if (IsPreviewServerTarget(uri))
+            return false;
+
+        // Allow MidTerm-in-MidTerm only when the dedicated preview origin is active.
+        if (isMainServerTarget && (_previewOriginService?.IsEnabled != true))
             return false;
 
         var oldTarget = _targetUri;
@@ -296,6 +314,37 @@ public sealed class WebPreviewService
         }
     }
 
+    public void SyncSessionCookieForSelfTarget(string? token, Uri? target = null)
+    {
+        var effectiveTarget = target ?? _targetUri;
+        if (effectiveTarget is null
+            || !IsMainServerTarget(effectiveTarget)
+            || string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        var cookie = new Cookie(AuthService.SessionCookieName, token)
+        {
+            Domain = effectiveTarget.Host,
+            Path = "/",
+            Secure = effectiveTarget.Scheme == Uri.UriSchemeHttps,
+            HttpOnly = true
+        };
+
+        lock (_clientLock)
+        {
+            try
+            {
+                _cookieContainer.Add(effectiveTarget, cookie);
+            }
+            catch (CookieException)
+            {
+                // Best-effort sync for self-preview auth.
+            }
+        }
+    }
+
     private void PersistCookiesLocked(Uri target)
     {
         var filePath = GetCookieFilePath(target);
@@ -309,6 +358,8 @@ public sealed class WebPreviewService
             foreach (Cookie cookie in cookies)
             {
                 if (cookie.Expired)
+                    continue;
+                if (!ShouldPersistCookie(target, cookie))
                     continue;
                 lines.Add(FormatCookie(cookie));
             }
@@ -348,6 +399,8 @@ public sealed class WebPreviewService
                         continue;
 
                     if (cookie.Expired)
+                        continue;
+                    if (!ShouldPersistCookie(target, cookie))
                         continue;
 
                     try
@@ -522,9 +575,20 @@ public sealed class WebPreviewService
         return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
     }
 
-    private bool IsThisServerTarget(Uri uri)
+    private bool IsMainServerTarget(Uri uri)
     {
-        if (uri.Port != _serverPort)
+        return IsThisServerTarget(uri, _serverPort);
+    }
+
+    private bool IsPreviewServerTarget(Uri uri)
+    {
+        return _previewOriginService is { IsEnabled: true }
+            && IsThisServerTarget(uri, _previewOriginService.PreviewPort);
+    }
+
+    private bool IsThisServerTarget(Uri uri, int port)
+    {
+        if (uri.Port != port)
             return false;
 
         if (IsLocalAddress(uri.Host))
@@ -561,6 +625,12 @@ public sealed class WebPreviewService
         }
 
         return false;
+    }
+
+    private bool ShouldPersistCookie(Uri target, Cookie cookie)
+    {
+        return !(IsMainServerTarget(target)
+            && string.Equals(cookie.Name, AuthService.SessionCookieName, StringComparison.Ordinal));
     }
 
     private static IEnumerable<IPAddress> ResolveHostAddresses(string host)

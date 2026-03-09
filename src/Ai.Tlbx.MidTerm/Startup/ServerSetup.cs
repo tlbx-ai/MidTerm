@@ -136,7 +136,10 @@ public static class ServerSetup
         {
             var (port, _) = ArgumentParser.Parse(args);
             var cookiesDir = Path.Combine(settingsService.SettingsDirectory, "cookies");
-            return new WebPreviewService(port, cookiesDir);
+            return new WebPreviewService(
+                port,
+                sp.GetRequiredService<BrowserPreviewOriginService>(),
+                cookiesDir);
         });
 
         builder.Services.AddResponseCompression(options =>

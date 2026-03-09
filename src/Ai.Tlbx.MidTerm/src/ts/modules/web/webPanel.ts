@@ -452,11 +452,12 @@ function decodeScreenshotDataUrl(dataUrl: string): Blob | null {
 async function handleScreenshot(download = false): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId || !iframe || iframe.src === 'about:blank') return;
+  const previewId = getActiveDockedClient()?.previewId;
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screenshot_${ts}.png`;
 
-  const dataUrl = await captureBrowserScreenshotRaw(sessionId);
+  const dataUrl = await captureBrowserScreenshotRaw(sessionId, previewId);
   if (!dataUrl) {
     log.warn(() => 'Browser screenshot capture failed');
     return;
