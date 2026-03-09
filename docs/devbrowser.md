@@ -87,11 +87,14 @@ The injected browser bridge now connects immediately from the server-injected he
 
 In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox:
 
-- `sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"`
-- no `allow-same-origin`, so the proxied page runs with an opaque origin
+- baseline flags: `allow-scripts allow-forms allow-popups allow-modals allow-downloads`
+- when the preview is loaded from the dedicated preview origin (`https://host:port+1`), MidTerm also adds `allow-same-origin`
+- when MidTerm falls back to the primary app origin, it still omits `allow-same-origin`, so the proxied page runs with an opaque origin
 - MidTerm's own `localStorage`, `CacheStorage`, and service-worker scope are no longer shared with the previewed app
 
-Because opaque-origin sandboxed frames become cross-site from the browser's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs. Production/stable-style runs keep `SameSite=Lax`.
+The dedicated preview origin makes `allow-same-origin` safe for self-preview and similar apps that require `localStorage` or `navigator.serviceWorker`: the iframe becomes same-origin with `port + 1`, not with the main MidTerm shell on `port`.
+
+Because sandboxed preview frames are cross-site from the main app's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs. Production/stable-style runs keep `SameSite=Lax`.
 
 ## Dedicated Preview Origin
 

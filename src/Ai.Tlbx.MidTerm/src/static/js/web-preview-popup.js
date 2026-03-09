@@ -5,7 +5,13 @@
   var previewToken = params.get('previewToken') || '';
   var previewOrigin = params.get('origin') || window.location.origin;
   var sandboxEnabled = params.get('sandbox') === '1';
-  var sandboxFlags = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+  var sandboxBaseFlags = [
+    'allow-scripts',
+    'allow-forms',
+    'allow-popups',
+    'allow-modals',
+    'allow-downloads'
+  ];
   var previewContext = previewId && previewToken
     ? { sessionId: sessionId, previewId: previewId, previewToken: previewToken }
     : null;
@@ -22,6 +28,17 @@
     proxyUrl.search = parsed.search;
     proxyUrl.hash = parsed.hash;
     return proxyUrl.toString();
+  }
+
+  function getSandboxFlags() {
+    var flags = sandboxBaseFlags.slice();
+    try {
+      if (new URL(previewOrigin, window.location.origin).origin !== window.location.origin) {
+        flags.push('allow-same-origin');
+      }
+    } catch (_) {
+    }
+    return flags.join(' ');
   }
 
   function setCurrentUrl(url) {
@@ -124,7 +141,7 @@
     setCurrentUrl(url);
     try {
       if (sandboxEnabled) {
-        frame.setAttribute('sandbox', sandboxFlags);
+        frame.setAttribute('sandbox', getSandboxFlags());
       } else {
         frame.removeAttribute('sandbox');
       }

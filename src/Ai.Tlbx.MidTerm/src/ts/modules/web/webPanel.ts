@@ -60,7 +60,13 @@ interface PreviewCookieResponseMessage extends PreviewBridgeMessage {
 }
 
 const COOKIE_BRIDGE_PATH = '/webpreview/_cookies';
-const SANDBOX_FLAGS = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+const SANDBOX_BASE_FLAGS = [
+  'allow-scripts',
+  'allow-forms',
+  'allow-popups',
+  'allow-modals',
+  'allow-downloads',
+];
 
 const log = createLogger('webPanel');
 let urlInput: HTMLInputElement | null = null;
@@ -142,10 +148,30 @@ function normalizeUrl(raw: string): string {
   return raw;
 }
 
-function applyIframeSandbox(): void {
+function shouldAllowSameOriginSandbox(frameOrigin?: string): boolean {
+  if (!frameOrigin) {
+    return false;
+  }
+
+  try {
+    return new URL(frameOrigin).origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function getSandboxFlags(frameOrigin?: string): string {
+  const flags = [...SANDBOX_BASE_FLAGS];
+  if (shouldAllowSameOriginSandbox(frameOrigin)) {
+    flags.push('allow-same-origin');
+  }
+  return flags.join(' ');
+}
+
+function applyIframeSandbox(frameOrigin?: string): void {
   if (!iframe) return;
   if (isDevMode()) {
-    iframe.setAttribute('sandbox', SANDBOX_FLAGS);
+    iframe.setAttribute('sandbox', getSandboxFlags(frameOrigin));
     return;
   }
   iframe.removeAttribute('sandbox');
@@ -328,6 +354,7 @@ export async function loadPreview(): Promise<void> {
   }
 
   try {
+    applyIframeSandbox(previewClient.origin);
     iframe.name = JSON.stringify(previewClient);
     iframe.src = buildProxyUrl(currentUrl, previewClient.origin ?? window.location.origin);
   } catch {

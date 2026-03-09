@@ -214,6 +214,7 @@ public static class ServerSetup
                 if (isFont)
                 {
                     ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+                    ctx.Context.Response.Headers["Access-Control-Allow-Origin"] = "*";
                 }
                 else
                 {

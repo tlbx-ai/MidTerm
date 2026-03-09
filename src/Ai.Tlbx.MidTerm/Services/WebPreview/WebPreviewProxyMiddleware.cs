@@ -132,9 +132,11 @@ public sealed partial class WebPreviewProxyMiddleware
           if(window.Worker){var OW=window.Worker;window.Worker=function(u,o){return new OW(r(u),o);};window.Worker.prototype=OW.prototype;}
           if(window.SharedWorker){var OSW=window.SharedWorker;window.SharedWorker=function(u,o){return new OSW(r(u),o);};window.SharedWorker.prototype=OSW.prototype;}
           // Service worker registration
-          if(navigator.serviceWorker&&navigator.serviceWorker.register){
-            var swr=navigator.serviceWorker.register.bind(navigator.serviceWorker);
-            navigator.serviceWorker.register=function(u,o){return swr(r(u),o);};
+          var mtsw=null;
+          try{mtsw=navigator.serviceWorker;}catch(e){mtsw=null;}
+          if(mtsw&&mtsw.register){
+            var swr=mtsw.register.bind(mtsw);
+            mtsw.register=function(u,o){return swr(r(u),o);};
           }
           // === Navigation APIs ===
           function curU(){
@@ -1180,6 +1182,11 @@ public sealed partial class WebPreviewProxyMiddleware
     private async Task DispatchResponseBodyAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
+        if (IsFontResponse(contentType, context.Request.Path.Value))
+        {
+            context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+        }
+
         if (contentType is "text/html")
         {
             await ProxyHtmlResponseAsync(context, upstreamResponse, finalUrl);
@@ -1797,5 +1804,26 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return prefix + "/webpreview/_ext?u=" + Uri.EscapeDataString(url);
+    }
+
+    private static bool IsFontResponse(string? contentType, string? path)
+    {
+        if (!string.IsNullOrEmpty(contentType)
+            && (contentType.StartsWith("font/", StringComparison.OrdinalIgnoreCase)
+                || contentType.Contains("font", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+
+        return path.EndsWith(".woff", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".otf", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".eot", StringComparison.OrdinalIgnoreCase);
     }
 }
