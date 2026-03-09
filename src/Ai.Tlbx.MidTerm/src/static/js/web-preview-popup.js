@@ -3,6 +3,7 @@
   var sessionId = params.get('session') || '';
   var previewId = params.get('previewId') || '';
   var previewToken = params.get('previewToken') || '';
+  var previewOrigin = params.get('origin') || window.location.origin;
   var sandboxEnabled = params.get('sandbox') === '1';
   var sandboxFlags = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
   var previewContext = previewId && previewToken
@@ -17,10 +18,10 @@
   function buildProxyUrl(targetUrl) {
     var parsed = new URL(targetUrl);
     var path = parsed.pathname || '/';
-    var proxyUrl = new URL(path === '/' ? '/webpreview/' : '/webpreview' + path, window.location.origin);
+    var proxyUrl = new URL(path === '/' ? '/webpreview/' : '/webpreview' + path, previewOrigin);
     proxyUrl.search = parsed.search;
     proxyUrl.hash = parsed.hash;
-    return proxyUrl.pathname + proxyUrl.search + proxyUrl.hash;
+    return proxyUrl.toString();
   }
 
   function setCurrentUrl(url) {

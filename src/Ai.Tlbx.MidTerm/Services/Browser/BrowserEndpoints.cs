@@ -12,11 +12,12 @@ public static class BrowserEndpoints
         WebApplication app,
         BrowserCommandService commandService,
         BrowserPreviewRegistry previewRegistry,
+        BrowserPreviewOriginService previewOriginService,
         TtyHostSessionManager sessionManager,
         WebPreviewService webPreviewService,
         BrowserUiBridge? uiBridge = null)
     {
-        MapPreviewClientEndpoint(app, previewRegistry);
+        MapPreviewClientEndpoint(app, previewRegistry, previewOriginService);
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
 
@@ -26,11 +27,21 @@ public static class BrowserEndpoints
         }
     }
 
-    private static void MapPreviewClientEndpoint(WebApplication app, BrowserPreviewRegistry previewRegistry)
+    private static void MapPreviewClientEndpoint(
+        WebApplication app,
+        BrowserPreviewRegistry previewRegistry,
+        BrowserPreviewOriginService previewOriginService)
     {
-        app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request) =>
+        app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request, HttpContext ctx) =>
         {
-            var response = previewRegistry.Create(request.SessionId);
+            var created = previewRegistry.Create(request.SessionId);
+            var response = new BrowserPreviewClientResponse
+            {
+                SessionId = created.SessionId,
+                PreviewId = created.PreviewId,
+                PreviewToken = created.PreviewToken,
+                Origin = previewOriginService.GetOrigin(ctx.Request)
+            };
             return Results.Json(response, AppJsonContext.Default.BrowserPreviewClientResponse);
         });
     }

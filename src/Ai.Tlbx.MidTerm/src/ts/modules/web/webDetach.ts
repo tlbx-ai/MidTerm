@@ -70,6 +70,7 @@ export async function detachPreview(): Promise<void> {
     `?session=${encodeURIComponent(activeSessionId)}` +
     `&previewId=${encodeURIComponent(previewClient.previewId)}` +
     `&previewToken=${encodeURIComponent(previewClient.previewToken)}` +
+    (previewClient.origin ? `&origin=${encodeURIComponent(previewClient.origin)}` : '') +
     (isDevMode() ? '&sandbox=1' : '') +
     (url ? `&url=${encodeURIComponent(url)}` : '');
 

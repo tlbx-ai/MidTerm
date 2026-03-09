@@ -169,16 +169,13 @@ async function handleGo(): Promise<void> {
   }
 }
 
-function buildProxyUrl(targetUrl: string): string {
+function buildProxyUrl(targetUrl: string, frameOrigin = window.location.origin): string {
   const parsed = new URL(targetUrl);
   const path = parsed.pathname || '/';
-  const proxyUrl = new URL(
-    path === '/' ? '/webpreview/' : `/webpreview${path}`,
-    window.location.origin,
-  );
+  const proxyUrl = new URL(path === '/' ? '/webpreview/' : `/webpreview${path}`, frameOrigin);
   proxyUrl.search = parsed.search;
   proxyUrl.hash = parsed.hash;
-  return `${proxyUrl.pathname}${proxyUrl.search}${proxyUrl.hash}`;
+  return proxyUrl.toString();
 }
 
 function decodeIframeNavigationUrl(iframeUrl: string, targetOrigin?: string): string | null {
@@ -332,7 +329,7 @@ export async function loadPreview(): Promise<void> {
 
   try {
     iframe.name = JSON.stringify(previewClient);
-    iframe.src = buildProxyUrl(currentUrl);
+    iframe.src = buildProxyUrl(currentUrl, previewClient.origin ?? window.location.origin);
   } catch {
     iframe.name = '';
     iframe.src = 'about:blank';

@@ -91,6 +91,16 @@ In dev-mode and local-dev runs, the docked preview iframe and detached popup ifr
 
 Because opaque-origin sandboxed frames become cross-site from the browser's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs. Production/stable-style runs keep `SameSite=Lax`.
 
+## Dedicated Preview Origin
+
+When MidTerm can reserve `port + 1`, preview clients now receive a dedicated frame origin on that secondary listener:
+
+- the main app stays on `https://host:port`
+- the iframe loads proxied content from `https://host:port+1`
+- preview client registration returns that origin to the docked panel and detached popup
+
+The preview listener blocks normal MidTerm app pages and non-browser WebSockets on the secondary port, so leaked navigations do not fall back into the MidTerm application on the preview origin. If the extra port is unavailable, MidTerm falls back to the primary origin and keeps the sandbox protections from step 3.
+
 ## Canonical Host Adoption
 
 MidTerm only auto-updates the stored preview target when a **document/iframe HTML navigation** lands on a different authority:

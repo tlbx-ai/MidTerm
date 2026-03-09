@@ -5,4 +5,5 @@ public sealed class BrowserPreviewClientResponse
     public string? SessionId { get; init; }
     public string PreviewId { get; init; } = "";
     public string PreviewToken { get; init; } = "";
+    public string? Origin { get; init; }
 }

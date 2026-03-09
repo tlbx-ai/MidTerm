@@ -153,7 +153,8 @@ public class Program
         WelcomeScreen.LogStartupStatus(settingsService, settings, port, bindAddress,
             ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
 
-        ServerSetup.ConfigureMiddleware(app, settingsService, authService);
+        var browserPreviewOriginService = app.Services.GetRequiredService<BrowserPreviewOriginService>();
+        ServerSetup.ConfigureMiddleware(app, settingsService, authService, browserPreviewOriginService);
 
         MidtermDirectory.Initialize(port, authService);
 
@@ -307,6 +308,7 @@ public class Program
             app,
             browserCommandService,
             browserPreviewRegistry,
+            browserPreviewOriginService,
             sessionManager,
             webPreviewService,
             browserUiBridge);
@@ -357,6 +359,7 @@ public class Program
 
         try
         {
+            browserPreviewOriginService.ApplyUrls(app, bindAddress);
             WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
         }
         finally

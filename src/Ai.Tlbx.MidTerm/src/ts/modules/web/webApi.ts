@@ -13,6 +13,7 @@ export interface BrowserPreviewClientResponse {
   sessionId: string | null;
   previewId: string;
   previewToken: string;
+  origin?: string;
 }
 
 /** Set the reverse proxy target URL for the web preview. */

@@ -124,6 +124,11 @@ public static class ServerSetup
         builder.Services.AddSingleton<GitWatcherService>();
         builder.Services.AddSingleton<CommandService>();
         builder.Services.AddSingleton<ShutdownService>();
+        builder.Services.AddSingleton(sp =>
+        {
+            var (port, bindAddress) = ArgumentParser.Parse(args);
+            return BrowserPreviewOriginService.Create(port, bindAddress);
+        });
         builder.Services.AddSingleton<BrowserPreviewRegistry>();
         builder.Services.AddSingleton<BrowserCommandService>();
         builder.Services.AddSingleton<BrowserUiBridge>();
@@ -229,7 +234,11 @@ public static class ServerSetup
 
     }
 
-    public static void ConfigureMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
+    public static void ConfigureMiddleware(
+        WebApplication app,
+        SettingsService settingsService,
+        AuthService authService,
+        BrowserPreviewOriginService previewOriginService)
     {
         app.UseResponseCompression();
 
@@ -237,6 +246,18 @@ public static class ServerSetup
         app.Use(async (context, next) =>
         {
             context.Response.Headers.StrictTransportSecurity = "max-age=31536000; includeSubDomains";
+            await next();
+        });
+
+        app.Use(async (context, next) =>
+        {
+            if (previewOriginService.IsPreviewRequest(context)
+                && previewOriginService.ShouldBlockPath(context.Request.Path.Value ?? "/"))
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+
             await next();
         });
 
