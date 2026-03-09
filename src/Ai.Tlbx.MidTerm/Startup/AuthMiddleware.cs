@@ -1,5 +1,6 @@
 using System.Net;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -37,7 +38,10 @@ public static class AuthMiddleware
                 if (!context.WebSockets.IsWebSocketRequest)
                 {
                     var freshToken = authService.CreateSessionToken();
-                    context.Response.Cookies.Append(AuthService.SessionCookieName, freshToken, GetSessionCookieOptions());
+                    context.Response.Cookies.Append(
+                        AuthService.SessionCookieName,
+                        freshToken,
+                        GetSessionCookieOptions(settingsService));
                 }
                 await next();
                 return;
@@ -53,12 +57,14 @@ public static class AuthMiddleware
         });
     }
 
-    private static CookieOptions GetSessionCookieOptions() => new()
+    private static CookieOptions GetSessionCookieOptions(SettingsService settingsService) => new()
     {
         HttpOnly = true,
-        // Lax keeps CSRF protection for subresource requests while allowing
-        // top-level navigations from installed PWAs/home-screen launches.
-        SameSite = SameSiteMode.Lax,
+        // Sandboxed previews use an opaque origin, so their subresource requests only
+        // carry the auth cookie when dev mode intentionally relaxes SameSite.
+        SameSite = UpdateService.IsDevEnvironment || settingsService.Load().DevMode
+            ? SameSiteMode.None
+            : SameSiteMode.Lax,
         Secure = true,
         Path = "/",
         MaxAge = TimeSpan.FromDays(3)

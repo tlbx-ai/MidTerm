@@ -17,6 +17,7 @@ import { pasteToTerminal } from '../terminal';
 import { sendInput } from '../comms/muxChannel';
 import { getForegroundInfo } from '../process';
 import { createLogger } from '../logging';
+import { isDevMode } from '../sidebar/voiceSection';
 import {
   getActiveDockedClient,
   getActiveUrl,
@@ -59,6 +60,7 @@ interface PreviewCookieResponseMessage extends PreviewBridgeMessage {
 }
 
 const COOKIE_BRIDGE_PATH = '/webpreview/_cookies';
+const SANDBOX_FLAGS = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
 
 const log = createLogger('webPanel');
 let urlInput: HTMLInputElement | null = null;
@@ -78,6 +80,8 @@ export function initWebPanel(): void {
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
   const screenshotBtn = document.getElementById('web-preview-screenshot');
+
+  applyIframeSandbox();
 
   goBtn?.addEventListener('click', () => {
     void handleGo();
@@ -136,6 +140,15 @@ function normalizeUrl(raw: string): string {
     return (isLocal ? 'http://' : 'https://') + raw;
   }
   return raw;
+}
+
+function applyIframeSandbox(): void {
+  if (!iframe) return;
+  if (isDevMode()) {
+    iframe.setAttribute('sandbox', SANDBOX_FLAGS);
+    return;
+  }
+  iframe.removeAttribute('sandbox');
 }
 
 async function handleGo(): Promise<void> {
@@ -294,6 +307,7 @@ async function handleCookieBridgeRequest(
 /** Load the current web preview URL into the iframe. */
 export async function loadPreview(): Promise<void> {
   if (!iframe) return;
+  applyIframeSandbox();
   const sessionId = $activeSessionId.get();
   const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
   loadedUrl = currentUrl;

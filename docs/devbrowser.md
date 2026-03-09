@@ -81,6 +81,16 @@ Browser automation is now scoped per preview client instead of "whichever iframe
 
 The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
+## Dev-Mode Sandbox
+
+In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox:
+
+- `sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"`
+- no `allow-same-origin`, so the proxied page runs with an opaque origin
+- MidTerm's own `localStorage`, `CacheStorage`, and service-worker scope are no longer shared with the previewed app
+
+Because opaque-origin sandboxed frames become cross-site from the browser's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs. Production/stable-style runs keep `SameSite=Lax`.
+
 ## Canonical Host Adoption
 
 MidTerm only auto-updates the stored preview target when a **document/iframe HTML navigation** lands on a different authority:

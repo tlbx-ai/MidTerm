@@ -11,6 +11,7 @@ import { hideDetachedPlaceholder, loadPreview } from './webPanel';
 import { createLogger } from '../logging';
 import { getActiveUrl, setActiveMode, setSessionMode, setSessionUrl } from './webSessionState';
 import { createBrowserPreviewClient } from './webApi';
+import { isDevMode } from '../sidebar/voiceSection';
 
 const log = createLogger('webDetach');
 
@@ -69,6 +70,7 @@ export async function detachPreview(): Promise<void> {
     `?session=${encodeURIComponent(activeSessionId)}` +
     `&previewId=${encodeURIComponent(previewClient.previewId)}` +
     `&previewToken=${encodeURIComponent(previewClient.previewToken)}` +
+    (isDevMode() ? '&sandbox=1' : '') +
     (url ? `&url=${encodeURIComponent(url)}` : '');
 
   const popup = window.open(

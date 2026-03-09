@@ -3,6 +3,8 @@
   var sessionId = params.get('session') || '';
   var previewId = params.get('previewId') || '';
   var previewToken = params.get('previewToken') || '';
+  var sandboxEnabled = params.get('sandbox') === '1';
+  var sandboxFlags = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
   var previewContext = previewId && previewToken
     ? { sessionId: sessionId, previewId: previewId, previewToken: previewToken }
     : null;
@@ -112,6 +114,7 @@
 
   function loadFrame(url) {
     if (!url) {
+      frame.removeAttribute('sandbox');
       frame.name = '';
       frame.src = 'about:blank';
       return;
@@ -119,9 +122,15 @@
 
     setCurrentUrl(url);
     try {
+      if (sandboxEnabled) {
+        frame.setAttribute('sandbox', sandboxFlags);
+      } else {
+        frame.removeAttribute('sandbox');
+      }
       frame.name = previewContext ? JSON.stringify(previewContext) : '';
       frame.src = buildProxyUrl(url);
     } catch (_) {
+      frame.removeAttribute('sandbox');
       frame.name = '';
       frame.src = 'about:blank';
     }
