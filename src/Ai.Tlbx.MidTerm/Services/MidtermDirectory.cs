@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "10";
+    private const string GuidanceVersion = "11";
 
     private static int _port;
     private static AuthService? _authService;
@@ -208,6 +208,7 @@ public static class MidtermDirectory
         | `mt_cookies` | All cookies in proxy jar |
         | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
         | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
+        | `mt_apply_update [source]` | Apply pending update and wait for server |
         | `mt_sessions` | List terminal sessions |
         | `mt_buffer <id>` | Terminal buffer content |
         | `mt_new_session [shell] [cwd]` | Create a new terminal session |
@@ -270,6 +271,10 @@ public static class MidtermDirectory
         ## Responsive testing
 
         mt_viewport 375 667 → mt_outline → mt_query ".menu" --text → mt_viewport 0 0
+
+        ## Apply a pending update
+
+        mt_apply_update → wait for "Current version:" → continue with the new build
 
         ## Detach/dock preview
 

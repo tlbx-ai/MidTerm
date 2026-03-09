@@ -88,6 +88,25 @@ public static class MtcliScriptWriter
         mt_hardreload() { mt_clearcookies; mt_reload; }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
         mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?limit=$n"; }
+        # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
+        mt_apply_update() {
+          local source="${1:-}" url="$_MT/api/update/apply"
+          if [ -n "$source" ]; then
+            url="$url?source=$(_ME "$source")"
+          fi
+          _MC -X POST "$url" || return $?
+          sleep 3
+          local i version
+          for ((i=0; i<90; i++)); do
+            version=$(curl -sfk "$_MT/api/version" 2>/dev/null) && break
+            sleep 1
+          done
+          if [ -n "$version" ]; then
+            printf 'Current version: %s\n' "$version"
+          else
+            echo "Update triggered. Server restart still in progress."
+          fi
+        }
 
         # Session management
         mt_sessions()   { _MC "$_MT/api/sessions"; }
@@ -222,6 +241,25 @@ public static class MtcliScriptWriter
         function Mt-HardReload { Mt-ClearCookies; Mt-Reload }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
         function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog?limit=$Limit" }
+        # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return
+        function Mt-ApplyUpdate {
+            param([string]$Source)
+            $url = "$script:_MT/api/update/apply"
+            if ($Source) {
+                $url += "?source=$([Uri]::EscapeDataString($Source))"
+            }
+            _MC -X POST $url
+            Start-Sleep -Seconds 3
+            for ($i = 0; $i -lt 90; $i++) {
+                $version = & curl.exe -sfk "$script:_MT/api/version" 2>$null
+                if ($LASTEXITCODE -eq 0 -and $version) {
+                    Write-Output "Current version: $version"
+                    return
+                }
+                Start-Sleep -Seconds 1
+            }
+            Write-Output "Update triggered. Server restart still in progress."
+        }
 
         # Session management
         function Mt-Sessions   { _MC "$script:_MT/api/sessions" }

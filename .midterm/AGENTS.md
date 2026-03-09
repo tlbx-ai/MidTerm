@@ -43,6 +43,10 @@ mt_log error — check browser console
 
 mt_viewport 375 667 → mt_outline → mt_query ".menu" --text → mt_viewport 0 0
 
+## Apply a pending update
+
+mt_apply_update → wait for "Current version:" → continue with the new build
+
 ## Detach/dock preview
 
 mt_detach → (preview opens in popup) → mt_dock → (back in panel)
