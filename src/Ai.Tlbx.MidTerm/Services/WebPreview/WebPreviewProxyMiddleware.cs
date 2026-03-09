@@ -482,7 +482,7 @@ public sealed partial class WebPreviewProxyMiddleware
               bws.onerror=function(){};
             }catch(e){}
           }
-          setTimeout(connectBws,500);
+          connectBws();
         })();</script>
         """;
 

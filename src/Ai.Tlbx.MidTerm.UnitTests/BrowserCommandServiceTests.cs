@@ -7,13 +7,25 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class BrowserCommandServiceTests
 {
     [Fact]
+    public void TryRegisterClient_RejectsDuplicatePreviewIds()
+    {
+        var service = new BrowserCommandService();
+
+        var first = service.TryRegisterClient("c1", "session-a", "preview-a", _ => { });
+        var duplicate = service.TryRegisterClient("c2", "session-a", "preview-a", _ => { });
+
+        Assert.True(first);
+        Assert.False(duplicate);
+    }
+
+    [Fact]
     public async Task ExecuteCommandAsync_WithMatchingSession_RoutesToCorrectPreview()
     {
         var service = new BrowserCommandService();
         BrowserWsMessage? captured = null;
 
-        service.RegisterClient("c1", "session-a", "preview-a", _ => { });
-        service.RegisterClient("c2", "session-b", "preview-b", msg =>
+        Assert.True(service.TryRegisterClient("c1", "session-a", "preview-a", _ => { }));
+        Assert.True(service.TryRegisterClient("c2", "session-b", "preview-b", msg =>
         {
             captured = msg;
             service.ReceiveResult(new BrowserWsResult
@@ -23,7 +35,7 @@ public class BrowserCommandServiceTests
                 Result = "ok",
                 PreviewId = "preview-b"
             });
-        });
+        }));
 
         var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
         {
@@ -42,8 +54,8 @@ public class BrowserCommandServiceTests
     public async Task ExecuteCommandAsync_WithMultipleClientsAndNoSession_ReturnsHelpfulError()
     {
         var service = new BrowserCommandService();
-        service.RegisterClient("c1", "session-a", "preview-a", _ => { });
-        service.RegisterClient("c2", "session-b", "preview-b", _ => { });
+        Assert.True(service.TryRegisterClient("c1", "session-a", "preview-a", _ => { }));
+        Assert.True(service.TryRegisterClient("c2", "session-b", "preview-b", _ => { }));
 
         var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
         {
@@ -60,11 +72,11 @@ public class BrowserCommandServiceTests
         var service = new BrowserCommandService();
         BrowserWsMessage? keptMessage = null;
 
-        service.RegisterClient("c1", "session-a", "preview-a", _ => { });
-        service.RegisterClient("c2", "session-b", "preview-b", msg =>
+        Assert.True(service.TryRegisterClient("c1", "session-a", "preview-a", _ => { }));
+        Assert.True(service.TryRegisterClient("c2", "session-b", "preview-b", msg =>
         {
             keptMessage = msg;
-        });
+        }));
 
         var disconnectedTask = service.ExecuteCommandAsync(new BrowserCommandRequest
         {

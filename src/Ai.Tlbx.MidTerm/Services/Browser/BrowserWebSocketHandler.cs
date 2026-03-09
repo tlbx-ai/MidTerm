@@ -56,7 +56,16 @@ public sealed class BrowserWebSocketHandler
         var sessionId = previewClient?.SessionId ?? context.Request.Query["sessionId"].FirstOrDefault();
         var previewId = previewClient?.PreviewId ?? queryPreviewId;
 
-        _commandService.RegisterClient(connectionId, sessionId, previewId, OnCommandReady);
+        if (!_commandService.TryRegisterClient(connectionId, sessionId, previewId, OnCommandReady))
+        {
+            BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
+            await ws.CloseAsync(
+                WebSocketCloseStatus.PolicyViolation,
+                "Duplicate preview connection",
+                CancellationToken.None);
+            return;
+        }
+
         BrowserLog.Info("Browser WebSocket connected");
 
         async Task SendCommandAsync(BrowserWsMessage message)

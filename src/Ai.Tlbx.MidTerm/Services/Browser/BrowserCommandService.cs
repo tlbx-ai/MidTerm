@@ -5,6 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public sealed class BrowserCommandService
 {
+    private readonly Lock _clientGate = new();
     private readonly ConcurrentDictionary<string, PendingCommand> _pending = new();
     private readonly ConcurrentDictionary<string, BrowserClient> _clients = new();
 
@@ -12,25 +13,41 @@ public sealed class BrowserCommandService
 
     public int ConnectedClientCount => _clients.Count;
 
-    public void RegisterClient(
+    public bool TryRegisterClient(
         string connectionId,
         string? sessionId,
         string? previewId,
         Action<BrowserWsMessage> listener)
     {
-        _clients[connectionId] = new BrowserClient
+        lock (_clientGate)
         {
-            ConnectionId = connectionId,
-            SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId,
-            PreviewId = string.IsNullOrWhiteSpace(previewId) ? null : previewId,
-            Listener = listener,
-            ConnectedAtUtc = DateTimeOffset.UtcNow
-        };
+            if (!string.IsNullOrWhiteSpace(previewId)
+                && _clients.Values.Any(c => string.Equals(c.PreviewId, previewId, StringComparison.Ordinal)))
+            {
+                return false;
+            }
+
+            _clients[connectionId] = new BrowserClient
+            {
+                ConnectionId = connectionId,
+                SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId,
+                PreviewId = string.IsNullOrWhiteSpace(previewId) ? null : previewId,
+                Listener = listener,
+                ConnectedAtUtc = DateTimeOffset.UtcNow
+            };
+            return true;
+        }
     }
 
     public void UnregisterClient(string connectionId)
     {
-        if (_clients.TryRemove(connectionId, out var client))
+        BrowserClient? client = null;
+        lock (_clientGate)
+        {
+            _clients.TryRemove(connectionId, out client);
+        }
+
+        if (client is not null)
         {
             CancelPendingForClient(client.ConnectionId);
         }

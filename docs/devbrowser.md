@@ -76,10 +76,11 @@ Browser automation is now scoped per preview client instead of "whichever iframe
 
 - `/ws/browser` accepts preview-scoped connections with `previewId` / `token`
 - `BrowserCommandService` keeps one command listener per connected preview client
+- only one browser bridge connection is accepted per preview id; later duplicates are rejected
 - commands without `--session` only run when exactly one preview is connected
 - commands with `--session` route only to that session's preview
 
-The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
+The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
 ## Dev-Mode Sandbox
 
