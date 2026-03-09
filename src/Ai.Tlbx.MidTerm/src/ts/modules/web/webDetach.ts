@@ -10,6 +10,7 @@ import { $activeSessionId, $webPreviewDetached, $webPreviewUrl } from '../../sto
 import { hideDetachedPlaceholder, loadPreview } from './webPanel';
 import { createLogger } from '../logging';
 import { getActiveUrl, setActiveMode, setSessionMode, setSessionUrl } from './webSessionState';
+import { createBrowserPreviewClient } from './webApi';
 
 const log = createLogger('webDetach');
 
@@ -22,7 +23,9 @@ function channelName(sessionId: string): string {
 
 /** Initialize the detach system: wire up detach/dock-back buttons. */
 export function initDetach(): void {
-  document.getElementById('web-preview-detach')?.addEventListener('click', detachPreview);
+  document.getElementById('web-preview-detach')?.addEventListener('click', () => {
+    void detachPreview();
+  });
   document.getElementById('web-preview-dock-back')?.addEventListener('click', () => {
     dockBack();
   });
@@ -44,7 +47,7 @@ function handleMessage(e: MessageEvent<{ type: string; sessionId?: string; url?:
 }
 
 /** Open the web preview in a chromeless popup window and hide the dock panel. */
-export function detachPreview(): void {
+export async function detachPreview(): Promise<void> {
   const activeSessionId = $activeSessionId.get();
   if (!activeSessionId) return;
 
@@ -55,9 +58,17 @@ export function detachPreview(): void {
   }
 
   const url = getActiveUrl() ?? $webPreviewUrl.get();
+  const previewClient = await createBrowserPreviewClient(activeSessionId);
+  if (!previewClient) {
+    log.warn(() => `Failed to create detached browser client for session ${activeSessionId}`);
+    return;
+  }
+
   const popupUrl =
     '/web-preview-popup.html' +
     `?session=${encodeURIComponent(activeSessionId)}` +
+    `&previewId=${encodeURIComponent(previewClient.previewId)}` +
+    `&previewToken=${encodeURIComponent(previewClient.previewToken)}` +
     (url ? `&url=${encodeURIComponent(url)}` : '');
 
   const popup = window.open(
@@ -100,7 +111,7 @@ export function dockBack(sessionId?: string): void {
     if (dockPanel) {
       dockPanel.classList.remove('hidden');
     }
-    loadPreview();
+    void loadPreview();
     log.info(() => 'Web preview docked back');
   }
 }

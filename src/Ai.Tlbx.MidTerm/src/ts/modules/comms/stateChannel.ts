@@ -491,7 +491,7 @@ export async function sendCommand<T = unknown>(
 function handleBrowserUiCommand(msg: BrowserUiMessage): void {
   switch (msg.command) {
     case 'detach':
-      detachPreview();
+      void detachPreview();
       break;
     case 'dock':
       dockBack();
@@ -516,7 +516,7 @@ async function handleBrowserOpen(url: string): Promise<void> {
   setActiveMode('docked');
   $webPreviewUrl.set(url);
   openWebPreviewDock();
-  loadPreview();
+  void loadPreview();
 }
 
 /**

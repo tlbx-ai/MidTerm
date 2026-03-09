@@ -9,6 +9,12 @@ export interface WebPreviewTargetResponse {
   active: boolean;
 }
 
+export interface BrowserPreviewClientResponse {
+  sessionId: string | null;
+  previewId: string;
+  previewToken: string;
+}
+
 /** Set the reverse proxy target URL for the web preview. */
 export async function setWebPreviewTarget(url: string): Promise<WebPreviewTargetResponse | null> {
   try {
@@ -65,5 +71,41 @@ export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> 
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Register a preview client identity for iframe/popup browser bridge traffic. */
+export async function createBrowserPreviewClient(
+  sessionId: string,
+): Promise<BrowserPreviewClientResponse | null> {
+  try {
+    const res = await fetch('/api/browser/preview-client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BrowserPreviewClientResponse;
+  } catch {
+    return null;
+  }
+}
+
+/** Capture a screenshot through the injected browser bridge and return its data URL. */
+export async function captureBrowserScreenshotRaw(sessionId: string): Promise<string | null> {
+  try {
+    const res = await fetch('/api/browser/screenshot-raw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      success?: boolean;
+      result?: string;
+    };
+    return data.success && typeof data.result === 'string' ? data.result : null;
+  } catch {
+    return null;
   }
 }

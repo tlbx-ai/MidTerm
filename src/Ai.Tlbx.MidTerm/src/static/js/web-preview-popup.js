@@ -1,6 +1,11 @@
 (function () {
   var params = new URLSearchParams(window.location.search);
   var sessionId = params.get('session') || '';
+  var previewId = params.get('previewId') || '';
+  var previewToken = params.get('previewToken') || '';
+  var previewContext = previewId && previewToken
+    ? { sessionId: sessionId, previewId: previewId, previewToken: previewToken }
+    : null;
   var channelName = sessionId ? 'midterm-web-preview-' + sessionId : 'midterm-web-preview';
   var channel = new BroadcastChannel(channelName);
   var frame = document.getElementById('preview-frame');
@@ -48,27 +53,85 @@
     return baseOrigin + path + parsed.search + parsed.hash;
   }
 
+  function matchesPreviewMessage(data) {
+    return !!previewContext
+      && data.previewId === previewContext.previewId
+      && data.previewToken === previewContext.previewToken;
+  }
+
+  function postCookieBridgeResponse(target, message) {
+    if (!target) return;
+    target.postMessage(message, '*');
+  }
+
+  function handleCookieBridgeRequest(event, data) {
+    var target = event.source;
+    var url = new URL('/webpreview/_cookies', window.location.origin);
+    var upstreamUrl = typeof data.upstreamUrl === 'string' && data.upstreamUrl
+      ? data.upstreamUrl
+      : currentUrl;
+    if (upstreamUrl) {
+      url.searchParams.set('u', upstreamUrl);
+    }
+
+    var responseMessage = {
+      type: 'mt-cookie-response',
+      requestId: data.requestId,
+      previewId: data.previewId,
+      previewToken: data.previewToken,
+      sessionId: data.sessionId
+    };
+
+    var request = data.action === 'set'
+      ? fetch(url.toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw: typeof data.raw === 'string' ? data.raw : '' })
+        })
+      : fetch(url.toString(), { method: 'GET' });
+
+    request
+      .then(function (response) {
+        if (!response.ok) {
+          responseMessage.error = 'Cookie bridge failed: ' + response.status;
+          postCookieBridgeResponse(target, responseMessage);
+          return null;
+        }
+        return response.json();
+      })
+      .then(function (json) {
+        if (!json) return;
+        responseMessage.header = typeof json.header === 'string' ? json.header : '';
+        postCookieBridgeResponse(target, responseMessage);
+      })
+      .catch(function (error) {
+        responseMessage.error = String(error);
+        postCookieBridgeResponse(target, responseMessage);
+      });
+  }
+
   function loadFrame(url) {
     if (!url) {
+      frame.name = '';
       frame.src = 'about:blank';
       return;
     }
 
     setCurrentUrl(url);
     try {
+      frame.name = previewContext ? JSON.stringify(previewContext) : '';
       frame.src = buildProxyUrl(url);
     } catch (_) {
+      frame.name = '';
       frame.src = 'about:blank';
     }
   }
 
-  // Get URL from query parameter
   var initialUrl = params.get('url');
   if (initialUrl) {
     loadFrame(initialUrl);
   }
 
-  // Listen for messages from parent
   channel.onmessage = function (e) {
     if (e.data.type === 'set-url') {
       loadFrame(e.data.url);
@@ -78,22 +141,31 @@
   };
 
   window.addEventListener('message', function (e) {
-    if (e.source !== frame.contentWindow) return;
-    if (!e.data || e.data.type !== 'mt-navigation' || typeof e.data.url !== 'string') return;
+    if (e.source !== frame.contentWindow || !e.data || typeof e.data.type !== 'string') return;
 
-    try {
-      var displayUrl = decodeIframeNavigationUrl(
-        e.data.url,
-        typeof e.data.targetOrigin === 'string' ? e.data.targetOrigin : ''
-      );
-      if (!displayUrl) return;
-      setCurrentUrl(displayUrl);
-      channel.postMessage({ type: 'navigation', sessionId: sessionId, url: displayUrl });
-    } catch (_) {
+    if (e.data.type === 'mt-navigation') {
+      if (typeof e.data.url !== 'string' || !matchesPreviewMessage(e.data)) return;
+
+      try {
+        var displayUrl = typeof e.data.upstreamUrl === 'string' && e.data.upstreamUrl
+          ? e.data.upstreamUrl
+          : decodeIframeNavigationUrl(
+              e.data.url,
+              typeof e.data.targetOrigin === 'string' ? e.data.targetOrigin : ''
+            );
+        if (!displayUrl) return;
+        setCurrentUrl(displayUrl);
+        channel.postMessage({ type: 'navigation', sessionId: sessionId, url: displayUrl });
+      } catch (_) {
+      }
+      return;
+    }
+
+    if (e.data.type === 'mt-cookie-request' && matchesPreviewMessage(e.data)) {
+      handleCookieBridgeRequest(e, e.data);
     }
   });
 
-  // Refresh button
   document.getElementById('refresh-btn').addEventListener('click', function (e) {
     var mode = (e.shiftKey || e.ctrlKey || e.altKey) ? 'hard' : 'soft';
     if (currentUrl) {
@@ -111,13 +183,11 @@
     loadFrame(currentUrl);
   });
 
-  // Dock back button
   document.getElementById('dock-back-btn').addEventListener('click', function () {
     channel.postMessage({ type: 'dock-back', sessionId: sessionId });
     window.close();
   });
 
-  // Notify parent on close
   window.addEventListener('beforeunload', function () {
     channel.postMessage({ type: 'popup-closed', sessionId: sessionId });
   });

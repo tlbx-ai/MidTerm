@@ -658,6 +658,7 @@ public static class EndpointSetup
         MainBrowserService mainBrowserService,
         GitWatcherService gitWatcher,
         BrowserCommandService browserCommandService,
+        BrowserPreviewRegistry browserPreviewRegistry,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
@@ -665,7 +666,12 @@ public static class EndpointSetup
         var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
-        var browserHandler = new BrowserWebSocketHandler(browserCommandService, settingsService, authService, shutdownService);
+        var browserHandler = new BrowserWebSocketHandler(
+            browserCommandService,
+            browserPreviewRegistry,
+            settingsService,
+            authService,
+            shutdownService);
 
         app.Use(async (context, next) =>
         {

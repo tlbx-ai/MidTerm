@@ -11,10 +11,12 @@ public static class BrowserEndpoints
     public static void MapBrowserEndpoints(
         WebApplication app,
         BrowserCommandService commandService,
+        BrowserPreviewRegistry previewRegistry,
         TtyHostSessionManager sessionManager,
         WebPreviewService webPreviewService,
         BrowserUiBridge? uiBridge = null)
     {
+        MapPreviewClientEndpoint(app, previewRegistry);
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
 
@@ -22,6 +24,15 @@ public static class BrowserEndpoints
         {
             MapUiEndpoints(app, uiBridge);
         }
+    }
+
+    private static void MapPreviewClientEndpoint(WebApplication app, BrowserPreviewRegistry previewRegistry)
+    {
+        app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request) =>
+        {
+            var response = previewRegistry.Create(request.SessionId);
+            return Results.Json(response, AppJsonContext.Default.BrowserPreviewClientResponse);
+        });
     }
 
     private static void MapUiEndpoints(WebApplication app, BrowserUiBridge uiBridge)
@@ -171,6 +182,13 @@ public static class BrowserEndpoints
                 }
             }
 
+            return ToJsonResult(result);
+        });
+
+        app.MapPost("/api/browser/screenshot-raw", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "screenshot");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
             return ToJsonResult(result);
         });
 
@@ -421,7 +439,8 @@ public static class BrowserEndpoints
             MaxDepth = request.MaxDepth,
             TextOnly = request.TextOnly,
             Timeout = request.Timeout,
-            SessionId = request.SessionId
+            SessionId = request.SessionId,
+            PreviewId = request.PreviewId
         };
 
     private static IResult ToJsonResult(BrowserWsResult result)

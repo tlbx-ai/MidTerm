@@ -13,6 +13,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 namespace Ai.Tlbx.MidTerm.Tests;
 
@@ -174,6 +175,24 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
         Assert.NotNull(bridgeCookies);
         Assert.DoesNotContain("session=abc123", bridgeCookies.Header ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BrowserPreviewClient_Create_ReturnsPreviewIdentity()
+    {
+        var response = await _client.PostAsJsonAsync("/api/browser/preview-client", new BrowserPreviewClientRequest
+        {
+            SessionId = "session-123"
+        }, AppJsonContext.Default.BrowserPreviewClientRequest);
+
+        response.EnsureSuccessStatusCode();
+        var previewClient = await response.Content.ReadFromJsonAsync(
+            AppJsonContext.Default.BrowserPreviewClientResponse);
+
+        Assert.NotNull(previewClient);
+        Assert.Equal("session-123", previewClient.SessionId);
+        Assert.False(string.IsNullOrWhiteSpace(previewClient.PreviewId));
+        Assert.False(string.IsNullOrWhiteSpace(previewClient.PreviewToken));
     }
 
     private async Task<WebSocket> ConnectWebSocketAsync(string path)

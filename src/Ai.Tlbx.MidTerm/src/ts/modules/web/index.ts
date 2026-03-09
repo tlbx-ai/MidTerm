@@ -87,7 +87,7 @@ export function initWebPreview(): void {
       $webPreviewDetached.set(false);
       openWebPreviewDock();
       restoreLastUrl();
-      loadPreview();
+      await loadPreview();
       return;
     }
 

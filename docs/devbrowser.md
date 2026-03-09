@@ -28,13 +28,15 @@ The `<base href="/webpreview/">` tag is injected into every HTML response, so:
 
 ### Navigation Notifications
 
-The injected script sends `postMessage({type: "mt-navigation", url: location.href, targetOrigin: window.__mtTargetOrigin})` to the parent window whenever in-iframe navigation occurs:
+Each docked or detached preview now gets a registered preview identity (`sessionId`, `previewId`, `previewToken`) from `POST /api/browser/preview-client`. The parent writes that identity into `iframe.name` before loading the proxied page, and the injected script uses it for all bridge traffic.
+
+The injected script sends `postMessage({type: "mt-navigation", url: location.href, upstreamUrl: ..., targetOrigin: window.__mtTargetOrigin, previewId, previewToken})` to the parent window whenever in-iframe navigation occurs:
 
 - `history.pushState` / `history.replaceState` — SPA navigation
 - `popstate` / `hashchange` events — back/forward navigation
 - Initial page load (`setTimeout(ntfy, 0)`) — captures redirects
 
-The parent `webPanel.ts` listens for these messages and updates the URL bar, stripping the `/webpreview` prefix and reconstructing the upstream URL. The notification also includes `targetOrigin` so normal host redirects (not just `/_ext` navigations) can update the displayed upstream origin correctly.
+The parent `webPanel.ts` / detached popup listener accepts these messages only when the preview identity matches the current iframe. It prefers the injected `upstreamUrl` field, so redirects and `_ext` navigations no longer need to be reverse-engineered from the iframe URL bar.
 
 ### Why No Read-Side Spoofing?
 
@@ -64,7 +66,20 @@ Upstream cookies are stored in MidTerm's server-side `CookieContainer`. The brow
 - `document.cookie` inside the proxied page sees only non-`HttpOnly` cookies
 - `document.cookie = ...` writes also behave like a browser: `HttpOnly` is ignored on writes from page JavaScript
 
-The bridge resolves cookies against the current proxied page URL (using the iframe referer), so domain/path matching follows the current page rather than always using the original target root.
+The proxied page no longer calls `/webpreview/_cookies` directly. Instead, the injected script posts `mt-cookie-request` messages to its parent window, and the parent performs the authenticated fetch on the page's behalf. This removes the last iframe dependency on `contentWindow`/same-origin access and keeps the cookie bridge working once the iframe is sandboxed.
+
+The bridge resolves cookies against the current upstream page URL either from the explicit `?u=` query parameter supplied by the parent or, as a fallback, the iframe referer.
+
+## Browser Bridge Targeting
+
+Browser automation is now scoped per preview client instead of "whichever iframe connected last":
+
+- `/ws/browser` accepts preview-scoped connections with `previewId` / `token`
+- `BrowserCommandService` keeps one command listener per connected preview client
+- commands without `--session` only run when exactly one preview is connected
+- commands with `--session` route only to that session's preview
+
+The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
 ## Canonical Host Adoption
 

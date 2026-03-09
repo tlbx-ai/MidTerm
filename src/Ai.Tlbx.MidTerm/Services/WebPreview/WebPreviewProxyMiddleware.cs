@@ -25,6 +25,17 @@ public sealed partial class WebPreviewProxyMiddleware
           if(window.__mtProxy)return;window.__mtProxy=1;
           // Save real parent before cloaking (used for navigation notifications)
           var _realParent=window.parent;
+          var mtCtx=null;
+          try{mtCtx=window.name?JSON.parse(window.name):null;}catch(e){mtCtx=null;}
+          function mtMsg(type,extra){
+            if(!mtCtx)return null;
+            var msg=extra||{};
+            msg.type=type;
+            if(mtCtx.sessionId)msg.sessionId=mtCtx.sessionId;
+            if(mtCtx.previewId)msg.previewId=mtCtx.previewId;
+            if(mtCtx.previewToken)msg.previewToken=mtCtx.previewToken;
+            return msg;
+          }
           // Iframe cloaking: make the page think it's top-level
           try{Object.defineProperty(window,"top",{get:function(){return window},configurable:true});}catch(e){}
           try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
@@ -124,7 +135,24 @@ public sealed partial class WebPreviewProxyMiddleware
             navigator.serviceWorker.register=function(u,o){return swr(r(u),o);};
           }
           // === Navigation APIs ===
-          function ntfy(){try{_realParent.postMessage({type:"mt-navigation",url:location.href,targetOrigin:window.__mtTargetOrigin||""},"*");}catch(e){}}
+          function curU(){
+            if(location.pathname===P+"/_ext"){
+              try{
+                var ext=new URLSearchParams(location.search).get("u");
+                if(ext)return ext;
+              }catch(e){}
+            }
+            var path=location.pathname;
+            if(path.indexOf(P+"/")==0)path=path.substring(P.length);
+            else if(path===P)path="/";
+            return (window.__mtTargetOrigin||"")+path+location.search+location.hash;
+          }
+          function postMt(type,extra){
+            var msg=mtMsg(type,extra);
+            if(!msg)return;
+            try{_realParent.postMessage(msg,"*");}catch(e){}
+          }
+          function ntfy(){postMt("mt-navigation",{url:location.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:curU()});}
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
           history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
           history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
@@ -135,8 +163,31 @@ public sealed partial class WebPreviewProxyMiddleware
           window.addEventListener("hashchange",ntfy);
           setTimeout(ntfy,0);
           // === Cookie bridge ===
-          var C=P+"/_cookies",cc="";
-          function rc(){return fetch(C,{credentials:"same-origin"}).then(function(x){return x.ok?x.json():null;}).then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
+          var cc="",cookieSeq=0,cookiePending={};
+          window.addEventListener("message",function(ev){
+            var d=ev.data;
+            if(!d||d.type!=="mt-cookie-response")return;
+            if(mtCtx&&((mtCtx.previewId||"")!==(d.previewId||"")||(mtCtx.previewToken||"")!==(d.previewToken||"")))return;
+            var done=cookiePending[d.requestId];
+            if(!done)return;
+            delete cookiePending[d.requestId];
+            done(d.error?null:d);
+          });
+          function reqCookie(action,raw){
+            return new Promise(function(resolve){
+              var msg=mtMsg("mt-cookie-request",{requestId:"c"+(++cookieSeq),action:action,raw:raw||"",upstreamUrl:curU()});
+              if(!msg){resolve(null);return;}
+              cookiePending[msg.requestId]=resolve;
+              try{_realParent.postMessage(msg,"*");}catch(e){delete cookiePending[msg.requestId];resolve(null);return;}
+              setTimeout(function(){
+                if(cookiePending[msg.requestId]){
+                  delete cookiePending[msg.requestId];
+                  resolve(null);
+                }
+              },5000);
+            });
+          }
+          function rc(){return reqCookie("get").then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
           rc();
           try{
             var d=Object.getOwnPropertyDescriptor(Document.prototype,"cookie")||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,"cookie");
@@ -144,7 +195,7 @@ public sealed partial class WebPreviewProxyMiddleware
               Object.defineProperty(document,"cookie",{configurable:true,get:function(){return cc;},set:function(v){
                 if(typeof v!=="string")return;
                 var n=v.split(";")[0]||"";if(n){var i=n.indexOf("="),k=i>0?n.slice(0,i).trim():"";if(k){var p=cc?cc.split(/;\s*/):[];var nx=[];for(var z=0;z<p.length;z++){if(!p[z].startsWith(k+"="))nx.push(p[z]);}nx.push(n.trim());cc=nx.join("; ");}}
-                fetch(C,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({raw:v})}).then(rc).catch(function(){});
+                reqCookie("set",v).then(function(j){if(j&&typeof j.header==="string")cc=j.header;}).catch(function(){});
               }});
             }
           }catch(e){}
@@ -178,7 +229,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
           }).observe(document.documentElement,{childList:true,subtree:true});
           // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
-          var bws,bwsReady=false;
+          var bws,bwsReady=false,h2cLoad=null;
           function truncDom(el,d,mx){
             if(d>=mx)return"<!-- ... -->";
             var t=el.cloneNode(false);
@@ -197,8 +248,27 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             trim(clone,0);return clone.outerHTML;
           }
+          function ensureH2c(){
+            if(window.html2canvas)return Promise.resolve(window.html2canvas);
+            if(h2cLoad)return h2cLoad;
+            h2cLoad=F.call(window,"/js/html2canvas.min.js",{credentials:"same-origin"}).then(function(resp){
+              if(!resp.ok)throw new Error("failed to fetch html2canvas");
+              return resp.text();
+            }).then(function(text){
+              return new Promise(function(resolve,reject){
+                var blob=new Blob([text],{type:"text/javascript"});
+                var blobUrl=URL.createObjectURL(blob);
+                var scr=document.createElement("script");
+                scr.src=blobUrl;
+                scr.onload=function(){URL.revokeObjectURL(blobUrl);resolve(window.html2canvas);};
+                scr.onerror=function(){URL.revokeObjectURL(blobUrl);reject(new Error("failed to load html2canvas"));};
+                document.head.appendChild(scr);
+              });
+            }).catch(function(err){h2cLoad=null;throw err;});
+            return h2cLoad;
+          }
           function handleBCmd(msg){
-            var res={id:msg.id,success:true,result:null,error:null,matchCount:null};
+            var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null};
             try{
               switch(msg.command){
                 case"query":{
@@ -243,15 +313,12 @@ public sealed partial class WebPreviewProxyMiddleware
                     else setTimeout(poll,200);
                   })();return;}
                 case"screenshot":{
-                  var scr=document.createElement("script");
-                  scr.src="/js/html2canvas.min.js";
-                  scr.onload=function(){
-                    html2canvas(document.documentElement,{useCORS:true,logging:false,scale:1}).then(function(canvas){
+                  ensureH2c().then(function(){
+                    return window.html2canvas(document.documentElement,{useCORS:true,logging:false,scale:1});
+                  }).then(function(canvas){
                       res.result=canvas.toDataURL("image/png");bws.send(JSON.stringify(res));
-                    }).catch(function(e){res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));});
-                  };
-                  scr.onerror=function(){res.success=false;res.error="failed to load html2canvas";bws.send(JSON.stringify(res));};
-                  document.head.appendChild(scr);return;}
+                  }).catch(function(e){res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));});
+                  return;}
                 case"snapshot":{
                   res.result=document.documentElement.outerHTML;
                   break;}
@@ -388,10 +455,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result=parts.join("\n---\n");
                   break;}
                 case"url":{
-                  var path=location.pathname;
-                  if(path.indexOf(P+"/")==0)path=path.substring(P.length);
-                  else if(path===P)path="/";
-                  res.result=(window.__mtTargetOrigin||"")+path+location.search+location.hash;
+                  res.result=curU();
                   break;}
                 case"clearcookies":{
                   var all=document.cookie.split(";");
@@ -406,7 +470,12 @@ public sealed partial class WebPreviewProxyMiddleware
           function connectBws(){
             try{
               var proto=location.protocol==="https:"?"wss:":"ws:";
-              bws=new OWS(proto+"//"+location.host+"/ws/browser");
+              var wsUrl=proto+"//"+location.host+"/ws/browser";
+              if(mtCtx&&mtCtx.previewId&&mtCtx.previewToken){
+                wsUrl+="?previewId="+encodeURIComponent(mtCtx.previewId)+"&token="+encodeURIComponent(mtCtx.previewToken);
+                if(mtCtx.sessionId)wsUrl+="&sessionId="+encodeURIComponent(mtCtx.sessionId);
+              }
+              bws=new OWS(wsUrl);
               bws.onopen=function(){bwsReady=true;};
               bws.onmessage=function(e){try{handleBCmd(JSON.parse(e.data));}catch(ex){}};
               bws.onclose=function(){bwsReady=false;setTimeout(connectBws,3000);};
@@ -1189,6 +1258,13 @@ public sealed partial class WebPreviewProxyMiddleware
         var targetUri = _service.TargetUri;
         if (targetUri is null)
             return null;
+
+        var requestedUrl = request.Query["u"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(requestedUrl)
+            && Uri.TryCreate(requestedUrl, UriKind.Absolute, out var explicitUri))
+        {
+            return explicitUri;
+        }
 
         if (!request.Headers.TryGetValue("Referer", out var refererValues))
             return targetUri;
