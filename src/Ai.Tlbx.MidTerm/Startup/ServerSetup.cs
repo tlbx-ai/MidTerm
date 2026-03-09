@@ -99,6 +99,7 @@ public static class ServerSetup
             });
         });
         builder.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning);
+        builder.Logging.AddFilter("Microsoft.Extensions.Hosting.Internal.Host", Microsoft.Extensions.Logging.LogLevel.Critical);
 
         builder.Services.ConfigureHttpJsonOptions(options =>
         {

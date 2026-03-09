@@ -1,4 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
+using System.Net.Sockets;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
@@ -167,19 +168,32 @@ public static class WelcomeScreen
             app.Run($"https://{bindAddress}:{port}");
             writeEventLog?.Invoke("RunWithPortErrorHandling: app.Run completed normally", false);
         }
-        catch (IOException ex) when (ex.InnerException is System.Net.Sockets.SocketException socketEx &&
-            socketEx.SocketErrorCode == System.Net.Sockets.SocketError.AddressAlreadyInUse)
+        catch (Exception ex) when (TryGetPortBindSocketException(ex, out var socketEx) &&
+            IsPortBindFailure(socketEx.SocketErrorCode))
         {
-            writeEventLog?.Invoke($"RunWithPortErrorHandling: Port {port} already in use", true);
-            Log.Error(() => $"Port {port} is already in use. Exiting.");
+            var launchMode = Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE");
+            var manualCommand = launchMode == "npx"
+                ? "npx @tlbx-ai/midterm -- --port 2001"
+                : "mt --port 2001";
+
+            writeEventLog?.Invoke(
+                $"RunWithPortErrorHandling: Failed to bind https://{bindAddress}:{port} ({socketEx.SocketErrorCode})",
+                true);
+            Log.Error(() => $"Failed to bind https://{bindAddress}:{port}: {socketEx.SocketErrorCode}. Exiting.");
 
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"  Error: Port {port} is already in use by another process.");
+            Console.WriteLine($"  Error: MidTerm could not bind to https://{bindAddress}:{port}.");
             Console.ResetColor();
             Console.WriteLine();
-            Console.WriteLine($"  Try one of the following:");
+            Console.WriteLine("  The port is already in use, reserved, or blocked by OS permissions.");
+            Console.WriteLine();
+            Console.WriteLine("  Try one of the following:");
+            if (launchMode == "npx")
+            {
+                Console.WriteLine("    - Run npx without --port to let the launcher choose a free port");
+            }
+            Console.WriteLine($"    - Use a different port manually: {manualCommand}");
             Console.WriteLine($"    - Close the application using port {port}");
-            Console.WriteLine($"    - Use a different port: mt --port 2001");
             Console.WriteLine();
             Environment.Exit(1);
         }
@@ -188,5 +202,35 @@ public static class WelcomeScreen
             writeEventLog?.Invoke($"RunWithPortErrorHandling: UNEXPECTED ERROR - {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", true);
             throw;
         }
+    }
+
+    private static bool TryGetPortBindSocketException(Exception ex, out SocketException socketException)
+    {
+        if (ex is SocketException directSocketException)
+        {
+            socketException = directSocketException;
+            return true;
+        }
+
+        if (ex is IOException ioException && ioException.InnerException is SocketException innerSocketException)
+        {
+            socketException = innerSocketException;
+            return true;
+        }
+
+        if (ex.InnerException is SocketException nestedSocketException)
+        {
+            socketException = nestedSocketException;
+            return true;
+        }
+
+        socketException = null!;
+        return false;
+    }
+
+    private static bool IsPortBindFailure(SocketError socketErrorCode)
+    {
+        return socketErrorCode == SocketError.AddressAlreadyInUse ||
+            socketErrorCode == SocketError.AccessDenied;
     }
 }
