@@ -42,7 +42,11 @@ export type ResizeResponse = Schemas['ResizeResponse'];
 export type MidTermSettingsPublic = Schemas['MidTermSettingsPublic'];
 export type MidTermSettingsUpdate = Omit<
   MidTermSettingsPublic,
-  'authenticationEnabled' | 'runAsUserSid' | 'certificatePath'
+  | 'authenticationEnabled'
+  | 'backgroundImageFileName'
+  | 'backgroundImageRevision'
+  | 'runAsUserSid'
+  | 'certificatePath'
 >;
 
 // System

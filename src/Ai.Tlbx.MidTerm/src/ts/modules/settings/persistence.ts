@@ -6,20 +6,8 @@
  */
 
 import type { TerminalState } from '../../types';
-import type {
-  MidTermSettingsPublic,
-  MidTermSettingsUpdate,
-  UserInfo,
-  ThemeSetting,
-  CursorStyleSetting,
-  CursorInactiveStyleSetting,
-  BellStyleSetting,
-  ClipboardShortcutsSetting,
-  TabTitleModeSetting,
-  ScrollbarStyleSetting,
-  TerminalColorSchemeSetting,
-} from '../../api/types';
-import { TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
+import type { MidTermSettingsPublic, MidTermSettingsUpdate, UserInfo } from '../../api/types';
+import { JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
 import { getEffectiveXtermTheme } from '../theming/themes';
@@ -37,6 +25,7 @@ import {
 } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
 import { getEffectiveTerminalFontSize } from '../terminal/fontSize';
+import { buildTerminalFontStack, ensureTerminalFontLoaded } from '../terminal/fontConfig';
 import { refreshTerminalPresentation } from '../terminal/scaling';
 import {
   applyTerminalScrollbarStyleClass,
@@ -44,9 +33,15 @@ import {
 } from '../terminal/scrollbarStyle';
 import { syncTerminalWebglState } from '../terminal/manager';
 import { setLocale, t } from '../i18n';
-import type { LanguageSetting } from '../../api/types';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
+import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
+import {
+  getSettingsRegistryControlEntries,
+  getSettingsRegistryWritableEntries,
+  type SettingsRegistryEntry,
+  VALID_SETTING_SHELLS,
+} from './registry';
 import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 
 const log = createLogger('settings');
@@ -54,6 +49,7 @@ const log = createLogger('settings');
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
 let settingsSaveVersion = 0;
+let fontSizeSaveTimer: number | null = null;
 
 function applySettingsLocally(settings: MidTermSettingsPublic): void {
   $currentSettings.set(settings);
@@ -98,6 +94,91 @@ export function getElementValue(id: string, defaultValue: string): string {
 export function getElementChecked(id: string): boolean {
   const el = document.getElementById(id) as HTMLInputElement | null;
   return el ? el.checked : false;
+}
+
+function getRegistryFallbackValue(entry: SettingsRegistryEntry): string | number | boolean {
+  if (typeof entry.fallbackValue === 'number') {
+    return entry.fallbackValue;
+  }
+
+  if (typeof entry.fallbackValue === 'boolean') {
+    return entry.fallbackValue;
+  }
+
+  if (typeof entry.fallbackValue === 'string') {
+    return entry.fallbackValue;
+  }
+
+  return '';
+}
+
+function setRegistryControlValue(
+  entry: SettingsRegistryEntry,
+  value: MidTermSettingsPublic[keyof MidTermSettingsPublic],
+): void {
+  if (!entry.controlId || !entry.controlType) {
+    return;
+  }
+
+  if (entry.controlType === 'checkbox') {
+    setElementChecked(entry.controlId, Boolean(value ?? entry.fallbackValue));
+    return;
+  }
+
+  const fallback = getRegistryFallbackValue(entry);
+  setElementValue(entry.controlId, (value ?? fallback) as string | number);
+}
+
+function readRegistryControlValue(
+  entry: SettingsRegistryEntry,
+  prevSettings: MidTermSettingsPublic | null,
+): unknown {
+  if (entry.saveStrategy === 'preserve') {
+    return prevSettings?.[entry.key] ?? entry.fallbackValue;
+  }
+
+  if (!entry.controlId || !entry.controlType) {
+    return entry.fallbackValue;
+  }
+
+  if (entry.controlType === 'checkbox') {
+    return getElementChecked(entry.controlId);
+  }
+
+  const rawValue = getElementValue(entry.controlId, String(getRegistryFallbackValue(entry)));
+
+  switch (entry.controlType) {
+    case 'nullable-string':
+      return rawValue || null;
+    case 'int': {
+      const parsed = Number.parseInt(rawValue, 10);
+      return Number.isFinite(parsed) ? parsed : entry.fallbackValue;
+    }
+    case 'float': {
+      const parsed = Number.parseFloat(rawValue);
+      return Number.isFinite(parsed) ? parsed : entry.fallbackValue;
+    }
+    case 'shell-select':
+      return VALID_SETTING_SHELLS.includes(rawValue as (typeof VALID_SETTING_SHELLS)[number])
+        ? rawValue
+        : null;
+    case 'text':
+    case 'select':
+    default:
+      return rawValue;
+  }
+}
+
+function buildSettingsUpdateFromRegistry(
+  prevSettings: MidTermSettingsPublic | null,
+): MidTermSettingsUpdate {
+  const result: Partial<MidTermSettingsUpdate> = {};
+
+  getSettingsRegistryWritableEntries().forEach((entry) => {
+    (result as Record<string, unknown>)[entry.key] = readRegistryControlValue(entry, prevSettings);
+  });
+
+  return result as MidTermSettingsUpdate;
 }
 
 /**
@@ -178,41 +259,9 @@ export function populateUserDropdown(
  * Populate the settings form with current settings
  */
 export function populateSettingsForm(settings: MidTermSettingsPublic): void {
-  setElementValue('setting-default-shell', settings.defaultShell ?? 'Pwsh');
-  setElementValue('setting-working-dir', settings.defaultWorkingDirectory);
-  setElementValue('setting-font-size', settings.fontSize);
-  setElementValue('setting-font-family', settings.fontFamily);
-  setElementValue('setting-cursor-style', settings.cursorStyle);
-  setElementChecked('setting-cursor-blink', settings.cursorBlink);
-  setElementValue('setting-cursor-inactive', settings.cursorInactiveStyle);
-  setElementChecked('setting-hide-cursor-on-input-bursts', settings.hideCursorOnInputBursts);
-  setElementValue('setting-theme', settings.theme);
-  setElementValue('setting-terminal-color-scheme', settings.terminalColorScheme);
-  setElementChecked('setting-background-image-enabled', settings.backgroundImageEnabled);
-  setElementValue('setting-background-fit', settings.backgroundImageFit);
-  setElementValue('setting-ui-transparency', settings.uiTransparency);
-  setElementValue('setting-tab-title', settings.tabTitleMode);
-  setElementValue('setting-contrast', String(settings.minimumContrastRatio));
-  setElementValue('setting-scrollback', settings.scrollbackLines);
-  setElementValue('setting-bell-style', settings.bellStyle);
-  setElementChecked('setting-copy-on-select', settings.copyOnSelect);
-  setElementChecked('setting-right-click-paste', settings.rightClickPaste);
-  setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts);
-  setElementValue('setting-terminal-enter-mode', settings.terminalEnterMode);
-  setElementChecked('setting-smooth-scrolling', settings.smoothScrolling);
-  setElementValue('setting-scrollbar-style', settings.scrollbarStyle);
-  setElementChecked('setting-webgl', settings.useWebGL);
-  setElementChecked('setting-scrollback-protection', settings.scrollbackProtection);
-  setElementValue('setting-input-mode', settings.inputMode);
-  setElementChecked('setting-file-radar', settings.fileRadar);
-  setElementChecked('setting-manager-bar', settings.managerBarEnabled);
-  setElementChecked('setting-tmux-compatibility', settings.tmuxCompatibility);
-  setElementChecked('setting-ide-mode', settings.ideMode);
-  setElementChecked('setting-changelog-after-update', settings.showChangelogAfterUpdate);
-  setElementChecked('setting-show-update-notification', settings.showUpdateNotification);
-  setElementValue('setting-update-channel', settings.updateChannel);
-  setElementValue('setting-language', settings.language);
-  setElementValue('setting-run-as-user', settings.runAsUser ?? '');
+  getSettingsRegistryControlEntries().forEach((entry) => {
+    setRegistryControlValue(entry, settings[entry.key]);
+  });
   updateTransparencyValue(settings.uiTransparency);
   updateBackgroundImageUi(settings);
   if (dom.settingsView) {
@@ -275,19 +324,28 @@ export async function fetchSettings(): Promise<void> {
 /**
  * Apply current settings to all open terminals
  */
-export function applySettingsToTerminals(): void {
-  const settings = $currentSettings.get();
+export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPublic): void {
+  const settings = settingsOverride ?? $currentSettings.get();
   if (!settings) return;
 
   applyBackgroundAppearance(settings);
   const theme = getEffectiveXtermTheme();
-  const fontFamily = `'${settings.fontFamily}', ${TERMINAL_FONT_STACK}`;
+  const fontFamily = buildTerminalFontStack(settings.fontFamily);
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
   const contrastRatio = settings.minimumContrastRatio;
+  const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
+  let hasFontChanges = false;
 
   const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);
 
-  sessionTerminals.forEach((state: TerminalState, sessionId: string) => {
+  for (const [sessionId, state] of sessionTerminals.entries()) {
+    if (
+      state.terminal.options.fontFamily !== fontFamily ||
+      state.terminal.options.fontSize !== fontSize
+    ) {
+      hasFontChanges = true;
+    }
+
     state.terminal.options.cursorBlink = settings.cursorBlink;
     state.terminal.options.cursorStyle = settings.cursorStyle;
     state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
@@ -313,7 +371,15 @@ export function applySettingsToTerminals(): void {
     }
 
     refreshTerminalPresentation(sessionId, state);
-  });
+  }
+
+  if (hasFontChanges) {
+    void fontLoadPromise.then(() => {
+      sessionTerminals.forEach((state: TerminalState, sessionId: string) => {
+        refreshTerminalPresentation(sessionId, state);
+      });
+    });
+  }
 }
 
 /**
@@ -352,72 +418,8 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
  * Save all settings to the server
  */
 export function saveAllSettings(): void {
-  const runAsUserValue = getElementValue('setting-run-as-user', '');
   const prevSettings = $currentSettings.get();
-  const prevDefaultCols = prevSettings?.defaultCols ?? 120;
-  const prevDefaultRows = prevSettings?.defaultRows ?? 30;
-
-  const defaultShellValue = getElementValue('setting-default-shell', 'Pwsh');
-  const validShells = ['Pwsh', 'PowerShell', 'Cmd', 'Bash', 'Zsh'];
-  const defaultShell = validShells.includes(defaultShellValue)
-    ? (defaultShellValue as 'Pwsh' | 'PowerShell' | 'Cmd' | 'Bash' | 'Zsh')
-    : null;
-
-  const settings: MidTermSettingsUpdate = {
-    defaultShell,
-    defaultCols: prevDefaultCols,
-    defaultRows: prevDefaultRows,
-    defaultWorkingDirectory: getElementValue('setting-working-dir', ''),
-    fontSize: parseInt(getElementValue('setting-font-size', '14'), 10) || 14,
-    fontFamily: getElementValue('setting-font-family', 'Cascadia Code'),
-    cursorStyle: getElementValue('setting-cursor-style', 'block') as CursorStyleSetting,
-    cursorBlink: getElementChecked('setting-cursor-blink'),
-    hideCursorOnInputBursts: getElementChecked('setting-hide-cursor-on-input-bursts'),
-    cursorInactiveStyle: getElementValue(
-      'setting-cursor-inactive',
-      'none',
-    ) as CursorInactiveStyleSetting,
-    theme: getElementValue('setting-theme', 'dark') as ThemeSetting,
-    terminalColorScheme: getElementValue(
-      'setting-terminal-color-scheme',
-      'auto',
-    ) as TerminalColorSchemeSetting,
-    backgroundImageEnabled: getElementChecked('setting-background-image-enabled'),
-    backgroundImageFileName: prevSettings?.backgroundImageFileName ?? null,
-    backgroundImageRevision: prevSettings?.backgroundImageRevision ?? 0,
-    backgroundImageFit: getElementValue('setting-background-fit', 'cover'),
-    uiTransparency: parseInt(getElementValue('setting-ui-transparency', '0'), 10) || 0,
-    tabTitleMode: getElementValue('setting-tab-title', 'hostname') as TabTitleModeSetting,
-    minimumContrastRatio: parseFloat(getElementValue('setting-contrast', '1')) || 1,
-    smoothScrolling: getElementChecked('setting-smooth-scrolling'),
-    scrollbarStyle: getElementValue('setting-scrollbar-style', 'off') as ScrollbarStyleSetting,
-    useWebGL: getElementChecked('setting-webgl'),
-    scrollbackLines: parseInt(getElementValue('setting-scrollback', '10000'), 10) || 10000,
-    bellStyle: getElementValue('setting-bell-style', 'notification') as BellStyleSetting,
-    copyOnSelect: getElementChecked('setting-copy-on-select'),
-    rightClickPaste: getElementChecked('setting-right-click-paste'),
-    clipboardShortcuts: getElementValue(
-      'setting-clipboard-shortcuts',
-      'auto',
-    ) as ClipboardShortcutsSetting,
-    terminalEnterMode: getElementValue(
-      'setting-terminal-enter-mode',
-      'default',
-    ) as MidTermSettingsUpdate['terminalEnterMode'],
-    scrollbackProtection: getElementChecked('setting-scrollback-protection'),
-    inputMode: getElementValue('setting-input-mode', 'keyboard'),
-    fileRadar: getElementChecked('setting-file-radar'),
-    managerBarEnabled: getElementChecked('setting-manager-bar'),
-    managerBarButtons: prevSettings?.managerBarButtons ?? [],
-    devMode: prevSettings?.devMode ?? false,
-    tmuxCompatibility: getElementChecked('setting-tmux-compatibility'),
-    ideMode: getElementChecked('setting-ide-mode'),
-    showChangelogAfterUpdate: getElementChecked('setting-changelog-after-update'),
-    showUpdateNotification: getElementChecked('setting-show-update-notification'),
-    updateChannel: getElementValue('setting-update-channel', 'stable'),
-    language: getElementValue('setting-language', 'auto') as LanguageSetting,
-    runAsUser: runAsUserValue || null,
-  };
+  const settings = buildSettingsUpdateFromRegistry(prevSettings);
 
   setCookie('mm-theme', settings.theme);
 
@@ -511,6 +513,36 @@ export function bindSettingsAutoSave(): void {
     );
   }
 
+  const fontSizeInput = document.getElementById('setting-font-size') as HTMLInputElement | null;
+  if (fontSizeInput) {
+    fontSizeInput.addEventListener(
+      'input',
+      () => {
+        if (!fontSizeInput.validity.valid) {
+          return;
+        }
+
+        const current = $currentSettings.get();
+        const fontSize = Number.parseInt(fontSizeInput.value, 10);
+        if (!current || !Number.isFinite(fontSize)) {
+          return;
+        }
+
+        applySettingsToTerminals({ ...current, fontSize });
+
+        if (fontSizeSaveTimer !== null) {
+          window.clearTimeout(fontSizeSaveTimer);
+        }
+
+        fontSizeSaveTimer = window.setTimeout(() => {
+          fontSizeSaveTimer = null;
+          saveAllSettings();
+        }, 150);
+      },
+      { signal },
+    );
+  }
+
   const uploadInput = document.getElementById(
     'setting-background-upload',
   ) as HTMLInputElement | null;
@@ -597,6 +629,11 @@ export function unbindSettingsAutoSave(): void {
   if (settingsAbortController) {
     settingsAbortController.abort();
     settingsAbortController = null;
+  }
+
+  if (fontSizeSaveTimer !== null) {
+    window.clearTimeout(fontSizeSaveTimer);
+    fontSizeSaveTimer = null;
   }
 }
 

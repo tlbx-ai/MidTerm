@@ -6,7 +6,6 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { TERMINAL_FONT_STACK } from '../../constants';
 import { getEffectiveXtermTheme } from '../theming/themes';
 import {
   sessionTerminals,
@@ -62,6 +61,12 @@ import { getTerminalEnterOverride } from './enterBehavior';
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
 import { getEffectiveTerminalFontSize } from './fontSize';
+import {
+  buildTerminalFontStack,
+  ensureTerminalFontLoaded,
+  getBundledTerminalFontFamilies,
+  getConfiguredTerminalFontFamily,
+} from './fontConfig';
 import { getForegroundInfo } from '../process';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
 
@@ -79,7 +84,12 @@ export function setShowBellCallback(cb: (sessionId: string) => void): void {
 const pendingTitleUpdates = new Map<string, number>();
 
 // Calibration measurement from hidden terminal (accurate cell dimensions)
-let calibrationMeasurement: { cellWidth: number; cellHeight: number } | null = null;
+let calibrationMeasurement: {
+  cellWidth: number;
+  cellHeight: number;
+  fontFamily: string;
+  fontSize: number;
+} | null = null;
 let calibrationPromise: Promise<void> | null = null;
 
 // Debounce timer for focus operations
@@ -244,7 +254,7 @@ export function getTerminalOptions(): ITerminalOptions {
   const windowsBuildNumber = $windowsBuildNumber.get();
   const baseFontSize = currentSettings?.fontSize ?? 14;
   const fontSize = getEffectiveTerminalFontSize(baseFontSize);
-  const fontFamily = currentSettings?.fontFamily ?? 'Cascadia Code';
+  const fontFamily = getConfiguredTerminalFontFamily();
   const scrollback = currentSettings?.scrollbackLines ?? 10000;
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
 
@@ -252,7 +262,7 @@ export function getTerminalOptions(): ITerminalOptions {
     cursorBlink: currentSettings?.cursorBlink ?? false,
     cursorStyle: currentSettings?.cursorStyle ?? 'block',
     cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'none',
-    fontFamily: `'${fontFamily}', ${TERMINAL_FONT_STACK}`,
+    fontFamily: buildTerminalFontStack(fontFamily),
     fontSize: fontSize,
     letterSpacing: 0,
     lineHeight: 1,
@@ -949,22 +959,30 @@ export function refreshActiveTerminalBuffer(): void {
  */
 export function preloadTerminalFont(): Promise<void> {
   const FONT_TIMEOUT_MS = 3000;
+  const baseFontSize = $currentSettings.get()?.fontSize ?? 14;
+  const fontSize = getEffectiveTerminalFontSize(baseFontSize);
 
-  const fontLoadPromise = document.fonts.ready.then(() => {
-    const testSpan = document.createElement('span');
-    testSpan.style.fontFamily = TERMINAL_FONT_STACK;
-    testSpan.style.position = 'absolute';
-    testSpan.style.left = '-9999px';
-    testSpan.textContent = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    document.body.appendChild(testSpan);
+  const fontLoadPromise = Promise.allSettled(
+    getBundledTerminalFontFamilies().map((fontFamily) =>
+      ensureTerminalFontLoaded(fontFamily, fontSize),
+    ),
+  )
+    .then(() => document.fonts.ready)
+    .then(() => {
+      const testSpan = document.createElement('span');
+      testSpan.style.fontFamily = buildTerminalFontStack(getConfiguredTerminalFontFamily());
+      testSpan.style.position = 'absolute';
+      testSpan.style.left = '-9999px';
+      testSpan.textContent = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      document.body.appendChild(testSpan);
 
-    return new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
-        testSpan.remove();
-        resolve();
+      return new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          testSpan.remove();
+          resolve();
+        });
       });
     });
-  });
 
   const timeoutPromise = new Promise<void>((resolve) => {
     setTimeout(resolve, FONT_TIMEOUT_MS);
@@ -1007,7 +1025,12 @@ export function initCalibrationTerminal(): Promise<void> {
         const cellWidth = screen.offsetWidth / terminal.cols;
         const cellHeight = screen.offsetHeight / terminal.rows;
         if (cellWidth >= 1 && cellHeight >= 1) {
-          calibrationMeasurement = { cellWidth, cellHeight };
+          calibrationMeasurement = {
+            cellWidth,
+            cellHeight,
+            fontFamily: terminal.options.fontFamily ?? buildTerminalFontStack(),
+            fontSize: terminal.options.fontSize ?? 14,
+          };
         }
       }
 
@@ -1023,7 +1046,12 @@ export function initCalibrationTerminal(): Promise<void> {
  * Get the calibration measurement from the hidden terminal.
  * Returns null if calibration hasn't run or failed.
  */
-export function getCalibrationMeasurement(): { cellWidth: number; cellHeight: number } | null {
+export function getCalibrationMeasurement(): {
+  cellWidth: number;
+  cellHeight: number;
+  fontFamily: string;
+  fontSize: number;
+} | null {
   return calibrationMeasurement;
 }
 

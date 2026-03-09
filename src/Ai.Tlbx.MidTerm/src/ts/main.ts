@@ -42,6 +42,7 @@ import {
   initMobilePiP,
   recordMobilePiPBytes,
 } from './modules/terminal';
+import { getConfiguredTerminalFontFamily } from './modules/terminal/fontConfig';
 import {
   getSessionDisplayName,
   setSessionListCallbacks,
@@ -391,7 +392,12 @@ async function createSession(): Promise<void> {
 
   if (dom.terminalsArea) {
     const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
-    const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
+    const dims = await calculateOptimalDimensions(
+      dom.terminalsArea,
+      fontSize,
+      getConfiguredTerminalFontFamily(),
+      tempId,
+    );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;
@@ -424,7 +430,12 @@ async function createSession(): Promise<void> {
   // Subscription handles renderSessionList via store change
   closeSidebar();
 
-  apiCreateSession({ cols, rows })
+  apiCreateSession({
+    cols,
+    rows,
+    shell: settings?.defaultShell ?? null,
+    workingDirectory: settings?.defaultWorkingDirectory || null,
+  })
     .then(({ data }) => {
       // Remove temporary session
       pendingSessions.delete(tempId);
@@ -758,7 +769,12 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
   if (dom.terminalsArea) {
     const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
     const logId = 'history-' + crypto.randomUUID().slice(0, 8);
-    const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
+    const dims = await calculateOptimalDimensions(
+      dom.terminalsArea,
+      fontSize,
+      getConfiguredTerminalFontFamily(),
+      logId,
+    );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;
