@@ -9,7 +9,7 @@
 import { $activeSessionId, $webPreviewDetached, $webPreviewUrl } from '../../stores';
 import { hideDetachedPlaceholder, loadPreview } from './webPanel';
 import { createLogger } from '../logging';
-import { getActiveUrl, setActiveMode, setSessionMode } from './webSessionState';
+import { getActiveUrl, setActiveMode, setSessionMode, setSessionUrl } from './webSessionState';
 
 const log = createLogger('webDetach');
 
@@ -28,8 +28,16 @@ export function initDetach(): void {
   });
 }
 
-function handleMessage(e: MessageEvent<{ type: string; sessionId?: string }>): void {
-  const { type, sessionId } = e.data;
+function handleMessage(e: MessageEvent<{ type: string; sessionId?: string; url?: string }>): void {
+  const { type, sessionId, url } = e.data;
+  if (type === 'navigation' && sessionId && typeof url === 'string') {
+    setSessionUrl(sessionId, url);
+    if (sessionId === $activeSessionId.get()) {
+      $webPreviewUrl.set(url);
+    }
+    return;
+  }
+
   if (type === 'dock-back' || type === 'popup-closed') {
     dockBack(sessionId ?? undefined);
   }

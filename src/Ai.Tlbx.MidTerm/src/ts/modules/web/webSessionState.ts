@@ -36,6 +36,11 @@ export function setActiveUrl(url: string | null): void {
   ensureState(sessionId).url = url;
 }
 
+/** Set the web preview URL for a specific session by ID. */
+export function setSessionUrl(sessionId: string, url: string | null): void {
+  ensureState(sessionId).url = url;
+}
+
 /** Get the web preview display mode (hidden, docked, or detached) for the active session. */
 export function getActiveMode(): WebPreviewMode {
   const sessionId = getActiveSessionId();

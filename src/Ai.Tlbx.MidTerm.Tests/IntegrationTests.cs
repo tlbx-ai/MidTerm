@@ -150,6 +150,32 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         Assert.True(string.IsNullOrEmpty(cookies.Header));
     }
 
+    [Fact]
+    public async Task WebPreview_CookieBridge_HidesHttpOnlyCookies()
+    {
+        var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
+        {
+            Url = "https://example.com"
+        }, AppJsonContext.Default.WebPreviewTargetRequest);
+        targetRes.EnsureSuccessStatusCode();
+
+        var setRes = await _client.PostAsJsonAsync("/api/webpreview/cookies", new WebPreviewCookieSetRequest
+        {
+            Raw = "session=abc123; Path=/; HttpOnly"
+        }, AppJsonContext.Default.WebPreviewCookieSetRequest);
+        setRes.EnsureSuccessStatusCode();
+
+        using var bridgeRequest = new HttpRequestMessage(HttpMethod.Get, "/webpreview/_cookies");
+        bridgeRequest.Headers.Referrer = new Uri("https://localhost/webpreview/");
+        var bridgeRes = await _client.SendAsync(bridgeRequest);
+        bridgeRes.EnsureSuccessStatusCode();
+        var bridgeCookies = await bridgeRes.Content.ReadFromJsonAsync(
+            AppJsonContext.Default.WebPreviewCookiesResponse);
+
+        Assert.NotNull(bridgeCookies);
+        Assert.DoesNotContain("session=abc123", bridgeCookies.Header ?? "", StringComparison.Ordinal);
+    }
+
     private async Task<WebSocket> ConnectWebSocketAsync(string path)
     {
         var wsClient = _factory.Server.CreateWebSocketClient();

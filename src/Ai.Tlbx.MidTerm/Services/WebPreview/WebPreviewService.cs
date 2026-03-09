@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
@@ -58,7 +59,7 @@ public sealed class WebPreviewService
         while (_proxyLog.TryDequeue(out _)) { }
     }
 
-    public bool SetTarget(string url)
+    public bool SetTarget(string url, bool preserveCookies = false)
     {
         if (string.IsNullOrWhiteSpace(url))
             return false;
@@ -72,13 +73,16 @@ public sealed class WebPreviewService
             return false;
 
         // Prevent self-proxying
-        if (IsLocalAddress(uri.Host) && uri.Port == _serverPort)
+        if (IsThisServerTarget(uri))
             return false;
 
         var oldTarget = _targetUri;
-        if (oldTarget is null || !oldTarget.Host.Equals(uri.Host, StringComparison.OrdinalIgnoreCase))
+        if (oldTarget is null || !TargetsShareCookieScope(oldTarget, uri))
         {
-            ResetCookieJar();
+            if (!preserveCookies)
+            {
+                ResetCookieJar();
+            }
         }
 
         _targetUri = uri;
@@ -152,14 +156,55 @@ public sealed class WebPreviewService
         }
     }
 
-    public bool SetCookieFromRaw(string rawCookie)
+    public WebPreviewCookiesResponse GetBrowserCookies(Uri? requestUri = null)
     {
-        var target = _targetUri;
+        var target = requestUri ?? _targetUri;
+        if (target is null)
+        {
+            return new WebPreviewCookiesResponse();
+        }
+
+        lock (_clientLock)
+        {
+            var cookies = GetMatchingCookiesLocked(target, includeHttpOnly: false);
+            var result = new WebPreviewCookiesResponse
+            {
+                Header = BuildCookieHeader(cookies)
+            };
+
+            foreach (var cookie in cookies)
+            {
+                result.Cookies.Add(new WebPreviewCookieInfo
+                {
+                    Name = cookie.Name,
+                    Value = cookie.Value,
+                    Domain = cookie.Domain,
+                    Path = cookie.Path,
+                    Secure = cookie.Secure,
+                    HttpOnly = cookie.HttpOnly,
+                    ExpiresUtc = cookie.Expires == DateTime.MinValue
+                        ? null
+                        : new DateTimeOffset(cookie.Expires.ToUniversalTime())
+                });
+            }
+
+            return result;
+        }
+    }
+
+    public bool SetCookieFromRaw(string rawCookie, Uri? requestUri = null, bool allowHttpOnly = true)
+    {
+        var target = requestUri ?? _targetUri;
         if (target is null || string.IsNullOrWhiteSpace(rawCookie))
             return false;
 
         if (!TryParseCookie(rawCookie, target, out var cookie))
             return false;
+
+        if (!allowHttpOnly && cookie.HttpOnly)
+        {
+            cookie.HttpOnly = false;
+        }
 
         lock (_clientLock)
         {
@@ -370,6 +415,78 @@ public sealed class WebPreviewService
         return string.Join("; ", parts);
     }
 
+    private List<Cookie> GetMatchingCookiesLocked(Uri requestUri, bool includeHttpOnly)
+    {
+        var cookies = new List<Cookie>();
+        foreach (Cookie cookie in _cookieContainer.GetAllCookies())
+        {
+            if (cookie.Expired)
+                continue;
+            if (!includeHttpOnly && cookie.HttpOnly)
+                continue;
+            if (!CookieMatchesRequestUri(cookie, requestUri))
+                continue;
+            cookies.Add(cookie);
+        }
+
+        cookies.Sort((a, b) =>
+        {
+            var pathCompare = (b.Path?.Length ?? 0).CompareTo(a.Path?.Length ?? 0);
+            if (pathCompare != 0)
+                return pathCompare;
+            return string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+        });
+
+        return cookies;
+    }
+
+    private static string BuildCookieHeader(IEnumerable<Cookie> cookies)
+    {
+        return string.Join("; ", cookies.Select(cookie => $"{cookie.Name}={cookie.Value}"));
+    }
+
+    private static bool CookieMatchesRequestUri(Cookie cookie, Uri requestUri)
+    {
+        if (cookie.Secure && requestUri.Scheme != Uri.UriSchemeHttps)
+            return false;
+
+        if (!DomainMatches(cookie.Domain, requestUri.Host))
+            return false;
+
+        return PathMatches(cookie.Path, requestUri.AbsolutePath);
+    }
+
+    private static bool DomainMatches(string cookieDomain, string requestHost)
+    {
+        var normalizedDomain = cookieDomain.Trim().TrimStart('.');
+        if (string.IsNullOrEmpty(normalizedDomain))
+            return false;
+
+        return requestHost.Equals(normalizedDomain, StringComparison.OrdinalIgnoreCase)
+            || requestHost.EndsWith("." + normalizedDomain, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool PathMatches(string cookiePath, string requestPath)
+    {
+        var normalizedCookiePath = string.IsNullOrWhiteSpace(cookiePath) ? "/" : cookiePath;
+        if (!normalizedCookiePath.StartsWith('/'))
+            normalizedCookiePath = "/" + normalizedCookiePath;
+
+        var normalizedRequestPath = string.IsNullOrEmpty(requestPath) ? "/" : requestPath;
+        if (!normalizedRequestPath.StartsWith('/'))
+            normalizedRequestPath = "/" + normalizedRequestPath;
+
+        if (normalizedRequestPath.Equals(normalizedCookiePath, StringComparison.Ordinal))
+            return true;
+
+        if (!normalizedRequestPath.StartsWith(normalizedCookiePath, StringComparison.Ordinal))
+            return false;
+
+        return normalizedCookiePath.EndsWith("/", StringComparison.Ordinal)
+            || normalizedRequestPath.Length > normalizedCookiePath.Length
+            && normalizedRequestPath[normalizedCookiePath.Length] == '/';
+    }
+
     private bool ValidateCertificate(
         object sender,
         X509Certificate? certificate,
@@ -403,6 +520,101 @@ public sealed class WebPreviewService
         };
 
         return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+    }
+
+    private bool IsThisServerTarget(Uri uri)
+    {
+        if (uri.Port != _serverPort)
+            return false;
+
+        if (IsLocalAddress(uri.Host))
+            return true;
+
+        if (uri.Host.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        string? dnsHostName = null;
+        try
+        {
+            dnsHostName = Dns.GetHostName();
+        }
+        catch (SocketException)
+        {
+        }
+
+        if (!string.IsNullOrEmpty(dnsHostName)
+            && uri.Host.Equals(dnsHostName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        foreach (var address in ResolveHostAddresses(uri.Host))
+        {
+            if (IPAddress.IsLoopback(address))
+                return true;
+
+            foreach (var localAddress in ResolveLocalAddresses(dnsHostName))
+            {
+                if (address.Equals(localAddress))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<IPAddress> ResolveHostAddresses(string host)
+    {
+        if (IPAddress.TryParse(host, out var parsed))
+        {
+            yield return parsed;
+            yield break;
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = Dns.GetHostAddresses(host);
+        }
+        catch (SocketException)
+        {
+            yield break;
+        }
+        catch (ArgumentException)
+        {
+            yield break;
+        }
+
+        foreach (var address in addresses)
+        {
+            yield return address;
+        }
+    }
+
+    private static IEnumerable<IPAddress> ResolveLocalAddresses(string? dnsHostName)
+    {
+        if (string.IsNullOrEmpty(dnsHostName))
+            yield break;
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = Dns.GetHostAddresses(dnsHostName);
+        }
+        catch (SocketException)
+        {
+            yield break;
+        }
+
+        foreach (var address in addresses)
+        {
+            yield return address;
+        }
+    }
+
+    private static bool TargetsShareCookieScope(Uri left, Uri right)
+    {
+        return left.Authority.Equals(right.Authority, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsLocalAddress(string host)

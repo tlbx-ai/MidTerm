@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Services;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
@@ -123,7 +124,7 @@ public sealed partial class WebPreviewProxyMiddleware
             navigator.serviceWorker.register=function(u,o){return swr(r(u),o);};
           }
           // === Navigation APIs ===
-          function ntfy(){try{_realParent.postMessage({type:"mt-navigation",url:location.href},"*");}catch(e){}}
+          function ntfy(){try{_realParent.postMessage({type:"mt-navigation",url:location.href,targetOrigin:window.__mtTargetOrigin||""},"*");}catch(e){}}
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
           history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
           history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
@@ -687,15 +688,11 @@ public sealed partial class WebPreviewProxyMiddleware
 
         _service.PersistCookies();
 
-        // If a redirect changed the host (e.g. wikipedia.de → www.wikipedia.de),
-        // update the target so subsequent asset requests go to the canonical host.
-        if (finalUrl is not null
-            && Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri)
-            && !finalUri.Authority.Equals(targetUri.Authority, StringComparison.OrdinalIgnoreCase))
+        if (upstreamResponse is not null
+            && ShouldAdoptCanonicalTarget(context.Request, upstreamResponse, finalUrl, targetUri.Authority, out var canonicalUri))
         {
-            var canonicalTarget = finalUri.GetLeftPart(UriPartial.Authority)
-                + targetUri.AbsolutePath;
-            _service.SetTarget(canonicalTarget);
+            var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + targetUri.AbsolutePath;
+            _service.SetTarget(canonicalTarget, preserveCookies: true);
         }
 
         if (upstreamResponse is null)
@@ -745,9 +742,9 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Rewrite absolute external URLs (https://cdn.example.com/...) to go through _ext proxy.
         // This allows MT to fetch third-party resources server-side, bypassing CORS/ad blockers.
-        var targetHost = _service.TargetUri?.Host;
-        html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetHost));
-        html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetHost));
+        var targetAuthority = _service.TargetUri?.Authority;
+        html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetAuthority));
+        html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetAuthority));
 
         // Extract the original <base href> value before removing — Blazor and other
         // frameworks rely on precise base URI (e.g., <base href="/kicoach/">).
@@ -876,6 +873,12 @@ public sealed partial class WebPreviewProxyMiddleware
 
         using (upstreamResponse)
         {
+            if (ShouldAdoptCanonicalTarget(context.Request, upstreamResponse, finalUrl, _service.TargetUri?.Authority, out var canonicalUri))
+            {
+                var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + "/";
+                _service.SetTarget(canonicalTarget, preserveCookies: true);
+            }
+
             context.Response.StatusCode = (int)upstreamResponse.StatusCode;
             CopyResponseHeaders(upstreamResponse, context.Response);
             await DispatchResponseBodyAsync(context, upstreamResponse, finalUrl);
@@ -1133,9 +1136,10 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task HandleCookieBridgeAsync(HttpContext context)
     {
+        var cookieRequestUri = ResolveCookieBridgeRequestUri(context.Request);
         if (context.Request.Method == HttpMethods.Get)
         {
-            var response = _service.GetCookies();
+            var response = _service.GetBrowserCookies(cookieRequestUri);
             context.Response.ContentType = "application/json";
             await JsonSerializer.SerializeAsync(
                 context.Response.Body,
@@ -1161,13 +1165,13 @@ public sealed partial class WebPreviewProxyMiddleware
                 return;
             }
 
-            if (request is null || !_service.SetCookieFromRaw(request.Raw))
+            if (request is null || !_service.SetCookieFromRaw(request.Raw, cookieRequestUri, allowHttpOnly: false))
             {
                 context.Response.StatusCode = 400;
                 return;
             }
 
-            var response = _service.GetCookies();
+            var response = _service.GetBrowserCookies(cookieRequestUri);
             context.Response.ContentType = "application/json";
             await JsonSerializer.SerializeAsync(
                 context.Response.Body,
@@ -1178,6 +1182,92 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         context.Response.StatusCode = 405;
+    }
+
+    private Uri? ResolveCookieBridgeRequestUri(HttpRequest request)
+    {
+        var targetUri = _service.TargetUri;
+        if (targetUri is null)
+            return null;
+
+        if (!request.Headers.TryGetValue("Referer", out var refererValues))
+            return targetUri;
+
+        if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
+            return targetUri;
+
+        if (!refererUri.AbsolutePath.StartsWith(ProxyPrefix, StringComparison.OrdinalIgnoreCase))
+            return targetUri;
+
+        if (refererUri.AbsolutePath.Equals(ProxyPrefix + "/_ext", StringComparison.OrdinalIgnoreCase))
+        {
+            var externalUrl = QueryHelpers.ParseQuery(refererUri.Query)["u"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(externalUrl)
+                && Uri.TryCreate(externalUrl, UriKind.Absolute, out var externalUri))
+            {
+                return externalUri;
+            }
+
+            return targetUri;
+        }
+
+        var proxyPath = refererUri.PathAndQuery;
+        var upstreamPath = proxyPath.StartsWith(ProxyPrefix + "/", StringComparison.OrdinalIgnoreCase)
+            ? proxyPath[ProxyPrefix.Length..]
+            : "/";
+
+        var upstreamUrl = BuildUpstreamUrlFromPath(targetUri, upstreamPath, null);
+        return Uri.TryCreate(upstreamUrl, UriKind.Absolute, out var upstreamUri)
+            ? upstreamUri
+            : targetUri;
+    }
+
+    private static bool ShouldAdoptCanonicalTarget(
+        HttpRequest request,
+        HttpResponseMessage upstreamResponse,
+        string? finalUrl,
+        string? currentAuthority,
+        out Uri canonicalUri)
+    {
+        canonicalUri = null!;
+
+        if (string.IsNullOrWhiteSpace(finalUrl))
+            return false;
+
+        if (!HttpMethods.IsGet(request.Method))
+            return false;
+
+        var mediaType = upstreamResponse.Content.Headers.ContentType?.MediaType;
+        if (!string.Equals(mediaType, "text/html", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (request.Headers.TryGetValue("Sec-Fetch-Mode", out var mode)
+            && !string.Equals(mode.ToString(), "navigate", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (request.Headers.TryGetValue("Sec-Fetch-Dest", out var destination))
+        {
+            var destValue = destination.ToString();
+            if (!string.Equals(destValue, "document", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(destValue, "iframe", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        if (!Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(currentAuthority)
+            || finalUri.Authority.Equals(currentAuthority, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        canonicalUri = finalUri;
+        return true;
     }
 
     private static async Task<string> DecompressTextAsync(
@@ -1563,18 +1653,18 @@ public sealed partial class WebPreviewProxyMiddleware
 
     /// <summary>
     /// Rewrite absolute external URL in an HTML attribute to go through the _ext proxy.
-    /// URLs pointing to the target host are rewritten to /webpreview/ (same-origin proxy).
+    /// URLs pointing to the target authority are rewritten to /webpreview/ (same-origin proxy).
     /// URLs pointing to other hosts go through /webpreview/_ext?u=...
     /// </summary>
-    private static string RewriteExternalUrl(Match match, string? targetHost)
+    private static string RewriteExternalUrl(Match match, string? targetAuthority)
     {
         var prefix = match.Groups[1].Value;  // e.g. src="
         var url = match.Groups[2].Value;     // e.g. https://cdn.example.com/script.js
 
-        // Same-host URLs → /webpreview/path (already handled by root-relative rewriting,
-        // but absolute same-host URLs need rewriting too)
-        if (targetHost is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            && uri.Host.Equals(targetHost, StringComparison.OrdinalIgnoreCase))
+        // Same-authority URLs → /webpreview/path (already handled by root-relative rewriting,
+        // but absolute same-authority URLs need rewriting too)
+        if (targetAuthority is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && uri.Authority.Equals(targetAuthority, StringComparison.OrdinalIgnoreCase))
         {
             return prefix + "/webpreview" + uri.PathAndQuery;
         }
@@ -1583,13 +1673,13 @@ public sealed partial class WebPreviewProxyMiddleware
         return prefix + "/webpreview/_ext?u=" + Uri.EscapeDataString(url);
     }
 
-    private static string RewriteExternalCssUrl(Match match, string? targetHost)
+    private static string RewriteExternalCssUrl(Match match, string? targetAuthority)
     {
         var prefix = match.Groups[1].Value;  // e.g. url(
         var url = match.Groups[2].Value;     // e.g. https://fonts.googleapis.com/css
 
-        if (targetHost is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            && uri.Host.Equals(targetHost, StringComparison.OrdinalIgnoreCase))
+        if (targetAuthority is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && uri.Authority.Equals(targetAuthority, StringComparison.OrdinalIgnoreCase))
         {
             return prefix + "/webpreview" + uri.PathAndQuery;
         }

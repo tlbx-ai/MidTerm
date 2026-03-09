@@ -60,9 +60,13 @@ export function initWebPanel(): void {
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
 
   window.addEventListener('message', (e: MessageEvent<unknown>) => {
+    if (iframe && e.source !== iframe.contentWindow) return;
     const d = e.data as Record<string, unknown> | null;
     if (d && d.type === 'mt-navigation' && typeof d.url === 'string') {
-      updateUrlBarFromIframe(d.url);
+      updateUrlBarFromIframe(
+        d.url,
+        typeof d.targetOrigin === 'string' ? d.targetOrigin : undefined,
+      );
     }
   });
 }
@@ -95,31 +99,93 @@ async function handleGo(): Promise<void> {
   const result = await setWebPreviewTarget(url);
   if (result?.active) {
     setActiveMode('docked');
-    setActiveUrl(url);
-    $webPreviewUrl.set(url);
+    setCurrentPreviewUrl(url);
     loadPreview();
   } else {
     log.warn(() => 'Failed to set web preview target');
   }
 }
 
-/** Reload the web preview iframe with a cache-busting query parameter. */
+function buildProxyUrl(targetUrl: string): string {
+  const parsed = new URL(targetUrl);
+  const path = parsed.pathname || '/';
+  const proxyUrl = new URL(
+    path === '/' ? '/webpreview/' : `/webpreview${path}`,
+    window.location.origin,
+  );
+  proxyUrl.search = parsed.search;
+  proxyUrl.hash = parsed.hash;
+  return `${proxyUrl.pathname}${proxyUrl.search}${proxyUrl.hash}`;
+}
+
+function decodeIframeNavigationUrl(iframeUrl: string, targetOrigin?: string): string | null {
+  const parsed = new URL(iframeUrl);
+
+  if (parsed.pathname === '/webpreview/_ext') {
+    const externalUrl = parsed.searchParams.get('u');
+    return externalUrl ? externalUrl : null;
+  }
+
+  let path = parsed.pathname;
+  if (path.startsWith('/webpreview/')) {
+    path = path.slice('/webpreview'.length);
+  } else if (path === '/webpreview') {
+    path = '/';
+  } else {
+    return parsed.toString();
+  }
+
+  const baseOrigin =
+    targetOrigin ||
+    (() => {
+      const target = getActiveUrl() ?? $webPreviewUrl.get();
+      if (!target) return null;
+      return new URL(target).origin;
+    })();
+
+  if (!baseOrigin) return null;
+  return `${baseOrigin}${path}${parsed.search}${parsed.hash}`;
+}
+
+function setCurrentPreviewUrl(url: string, updateInput = true): void {
+  loadedUrl = url;
+  setActiveUrl(url);
+  $webPreviewUrl.set(url);
+  if (updateInput && urlInput) {
+    urlInput.value = url;
+  }
+}
+
+/** Load the current web preview URL into the iframe. */
 export function loadPreview(): void {
   if (!iframe) return;
-  loadedUrl = $webPreviewUrl.get();
-  let targetPath = '';
-  try {
-    const url = new URL(loadedUrl ?? '');
-    targetPath = url.pathname.replace(/\/$/, '');
-  } catch {
-    /* ignore invalid URLs */
+  const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
+  loadedUrl = currentUrl;
+  if (!currentUrl) {
+    iframe.src = 'about:blank';
+    return;
   }
-  iframe.src = `/webpreview${targetPath}/?${Date.now()}`;
+
+  try {
+    iframe.src = buildProxyUrl(currentUrl);
+  } catch {
+    iframe.src = 'about:blank';
+  }
 }
 
 async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
   if (mode === 'hard') {
     await clearWebPreviewBrowserStateAsync();
+  }
+
+  const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
+  if (currentUrl) {
+    const result = await setWebPreviewTarget(currentUrl);
+    if (!result?.active) {
+      log.warn(() => 'Failed to refresh web preview target');
+      return;
+    }
+    setCurrentPreviewUrl(currentUrl, false);
   }
 
   await reloadWebPreview(mode);
@@ -130,21 +196,11 @@ async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
  * Update the URL bar to reflect in-iframe navigation (redirects, pushState, etc.).
  * Strips the /webpreview prefix and reconstructs the upstream URL.
  */
-function updateUrlBarFromIframe(iframeUrl: string): void {
-  if (!urlInput) return;
+function updateUrlBarFromIframe(iframeUrl: string, targetOrigin?: string): void {
   try {
-    const parsed = new URL(iframeUrl);
-    let path = parsed.pathname;
-    if (path.startsWith('/webpreview/')) {
-      path = path.slice('/webpreview'.length);
-    } else if (path === '/webpreview') {
-      path = '/';
-    }
-    const target = $webPreviewUrl.get();
-    if (!target) return;
-    const targetUrl = new URL(target);
-    const displayUrl = targetUrl.origin + path + parsed.search + parsed.hash;
-    urlInput.value = displayUrl;
+    const displayUrl = decodeIframeNavigationUrl(iframeUrl, targetOrigin);
+    if (!displayUrl) return;
+    setCurrentPreviewUrl(displayUrl);
   } catch {
     // ignore malformed URLs
   }

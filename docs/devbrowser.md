@@ -28,13 +28,13 @@ The `<base href="/webpreview/">` tag is injected into every HTML response, so:
 
 ### Navigation Notifications
 
-The injected script sends `postMessage({type: "mt-navigation", url: location.href})` to the parent window whenever in-iframe navigation occurs:
+The injected script sends `postMessage({type: "mt-navigation", url: location.href, targetOrigin: window.__mtTargetOrigin})` to the parent window whenever in-iframe navigation occurs:
 
 - `history.pushState` / `history.replaceState` — SPA navigation
 - `popstate` / `hashchange` events — back/forward navigation
 - Initial page load (`setTimeout(ntfy, 0)`) — captures redirects
 
-The parent `webPanel.ts` listens for these messages and updates the URL bar, stripping the `/webpreview` prefix and reconstructing the upstream URL.
+The parent `webPanel.ts` listens for these messages and updates the URL bar, stripping the `/webpreview` prefix and reconstructing the upstream URL. The notification also includes `targetOrigin` so normal host redirects (not just `/_ext` navigations) can update the displayed upstream origin correctly.
 
 ### Why No Read-Side Spoofing?
 
@@ -55,6 +55,25 @@ This works because:
 If the upstream server independently generates URLs using its own origin (not from client state), those URLs would point to the upstream directly. The client's `fetch`/`XHR` interceptors would route them through the `/_ext` external proxy. This is functional, though slightly less efficient than direct `/webpreview/` routing.
 
 In practice, Blazor and most SPA frameworks derive all URLs from client-provided state, so this edge case rarely occurs.
+
+## Cookie Bridge
+
+Upstream cookies are stored in MidTerm's server-side `CookieContainer`. The browser bridge under `/webpreview/_cookies` intentionally exposes only **script-visible** cookies:
+
+- `HttpOnly` cookies stay server-only and are still forwarded upstream on HTTP/WebSocket requests
+- `document.cookie` inside the proxied page sees only non-`HttpOnly` cookies
+- `document.cookie = ...` writes also behave like a browser: `HttpOnly` is ignored on writes from page JavaScript
+
+The bridge resolves cookies against the current proxied page URL (using the iframe referer), so domain/path matching follows the current page rather than always using the original target root.
+
+## Canonical Host Adoption
+
+MidTerm only auto-updates the stored preview target when a **document/iframe HTML navigation** lands on a different authority:
+
+- asset redirects no longer rewrite the preview target
+- same-host/different-port URLs are treated as different authorities
+- host canonicalization preserves the current preview base path for normal `/webpreview/*` navigations
+- `/_ext` HTML navigations switch the stored target to the new authority root so refresh/detach continue from the external site instead of the previous host
 
 ## Proxy Log
 
