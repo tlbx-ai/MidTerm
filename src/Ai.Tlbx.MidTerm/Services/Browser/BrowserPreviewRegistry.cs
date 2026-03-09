@@ -10,7 +10,7 @@ public sealed class BrowserPreviewRegistry
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromHours(8);
     private readonly ConcurrentDictionary<string, RegisteredPreview> _previews = new();
 
-    public BrowserPreviewClientResponse Create(string? sessionId)
+    public BrowserPreviewClientResponse Create(string? sessionId, string? browserId = null)
     {
         CleanupExpired();
 
@@ -19,6 +19,7 @@ public sealed class BrowserPreviewRegistry
             SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId,
             PreviewId = Guid.NewGuid().ToString("N"),
             PreviewToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24)),
+            BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
             ExpiresAtUtc = DateTimeOffset.UtcNow.Add(PreviewLifetime)
         };
 
@@ -35,7 +36,7 @@ public sealed class BrowserPreviewRegistry
     public bool TryValidate(
         string? previewId,
         string? previewToken,
-        [NotNullWhen(true)] out BrowserPreviewClientResponse? preview)
+        [NotNullWhen(true)] out BrowserPreviewRegistration? preview)
     {
         CleanupExpired();
         preview = null;
@@ -49,11 +50,12 @@ public sealed class BrowserPreviewRegistry
         if (!registered.PreviewToken.Equals(previewToken, StringComparison.Ordinal))
             return false;
 
-        preview = new BrowserPreviewClientResponse
+        preview = new BrowserPreviewRegistration
         {
             SessionId = registered.SessionId,
             PreviewId = registered.PreviewId,
-            PreviewToken = registered.PreviewToken
+            PreviewToken = registered.PreviewToken,
+            BrowserId = registered.BrowserId
         };
         return true;
     }
@@ -75,6 +77,7 @@ public sealed class BrowserPreviewRegistry
         public string? SessionId { get; init; }
         public string PreviewId { get; init; } = "";
         public string PreviewToken { get; init; } = "";
+        public string? BrowserId { get; init; }
         public DateTimeOffset ExpiresAtUtc { get; init; }
     }
 }

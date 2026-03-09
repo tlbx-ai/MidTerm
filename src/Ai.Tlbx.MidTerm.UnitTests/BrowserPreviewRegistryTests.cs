@@ -31,4 +31,17 @@ public class BrowserPreviewRegistryTests
 
         Assert.False(ok);
     }
+
+    [Fact]
+    public void TryValidate_RetainsBrowserIdentity()
+    {
+        var registry = new BrowserPreviewRegistry();
+        var created = registry.Create("session-1", "browser-1");
+
+        var ok = registry.TryValidate(created.PreviewId, created.PreviewToken, out var validated);
+
+        Assert.True(ok);
+        Assert.NotNull(validated);
+        Assert.Equal("browser-1", validated!.BrowserId);
+    }
 }

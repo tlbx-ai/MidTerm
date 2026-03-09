@@ -77,11 +77,21 @@ Browser automation is now scoped per preview client instead of "whichever iframe
 - `/ws/browser` accepts preview-scoped connections with `previewId` / `token`
 - `BrowserCommandService` keeps one command listener per connected preview client
 - only one browser bridge connection is accepted per preview id; later duplicates are rejected
-- commands without `--session` only run when exactly one preview is connected
+- commands without `--session` prefer the main browser's newest preview-scoped client when same-browser duplicates exist
 - commands with `--session` route only to that session's preview
 - docked UI screenshot capture sends the active docked `previewId`, so nested previews under the same terminal session do not collide
 
 The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
+
+## Embedded MidTerm Guardrails
+
+When MidTerm itself is running inside `/webpreview/`, the nested MidTerm UI now treats its own web-preview controls as inactive:
+
+- embedded MidTerm pages no-op frontend calls that mutate `/api/webpreview/*`
+- embedded MidTerm pages do not create nested browser preview clients through the normal docked-preview path
+- browser-ui `open` / `dock` / `detach` / `viewport` instructions are ignored inside embedded MidTerm pages
+
+This prevents the previewed MidTerm app from clearing or repointing the host MidTerm dev-browser target during bootstrap.
 
 ## Dev-Mode Sandbox
 

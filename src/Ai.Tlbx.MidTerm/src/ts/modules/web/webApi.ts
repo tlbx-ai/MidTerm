@@ -4,6 +4,8 @@
  * REST wrappers for setting/getting/clearing the reverse proxy target.
  */
 
+import { isEmbeddedWebPreviewContext } from './webContext';
+
 export interface WebPreviewTargetResponse {
   url: string | null;
   active: boolean;
@@ -18,6 +20,10 @@ export interface BrowserPreviewClientResponse {
 
 /** Set the reverse proxy target URL for the web preview. */
 export async function setWebPreviewTarget(url: string): Promise<WebPreviewTargetResponse | null> {
+  if (isEmbeddedWebPreviewContext()) {
+    return null;
+  }
+
   try {
     const res = await fetch('/api/webpreview/target', {
       method: 'PUT',
@@ -44,6 +50,10 @@ export async function getWebPreviewTarget(): Promise<WebPreviewTargetResponse | 
 
 /** Clear the reverse proxy target, stopping the web preview proxy. */
 export async function clearWebPreviewTarget(): Promise<void> {
+  if (isEmbeddedWebPreviewContext()) {
+    return;
+  }
+
   try {
     await fetch('/api/webpreview/target', { method: 'DELETE' });
   } catch {
@@ -53,6 +63,10 @@ export async function clearWebPreviewTarget(): Promise<void> {
 
 /** Clear all cookies in the server-side proxy cookie jar and on disk. */
 export async function clearWebPreviewCookies(): Promise<boolean> {
+  if (isEmbeddedWebPreviewContext()) {
+    return false;
+  }
+
   try {
     const res = await fetch('/api/webpreview/cookies/clear', { method: 'POST' });
     return res.ok;
@@ -63,6 +77,10 @@ export async function clearWebPreviewCookies(): Promise<boolean> {
 
 /** Trigger a soft or hard reload of the web preview on the server. */
 export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> {
+  if (isEmbeddedWebPreviewContext()) {
+    return false;
+  }
+
   try {
     const res = await fetch('/api/webpreview/reload', {
       method: 'POST',
@@ -79,6 +97,10 @@ export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> 
 export async function createBrowserPreviewClient(
   sessionId: string,
 ): Promise<BrowserPreviewClientResponse | null> {
+  if (isEmbeddedWebPreviewContext()) {
+    return null;
+  }
+
   try {
     const res = await fetch('/api/browser/preview-client', {
       method: 'POST',

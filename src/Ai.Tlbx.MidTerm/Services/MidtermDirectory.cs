@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "12";
+    private const string GuidanceVersion = "13";
 
     private static int _port;
     private static AuthService? _authService;
@@ -291,6 +291,8 @@ public static class MidtermDirectory
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
         - If mt_status still shows "disconnected" after mt_open, treat that as a MidTerm bug and inspect mt_proxylog plus mt_log error
+        - Browser command failures now print the server error body instead of silently returning nothing
+        - If mt_status reports multiple clients, MidTerm prefers the main browser's newest preview connection by default
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
         """;
 }

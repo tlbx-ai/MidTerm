@@ -30,8 +30,9 @@ public static class MtcliScriptWriter
         _MK="mm-session={{token}}"
         _MC() { curl -sfk -b "$_MK" "$@" 2>/dev/null; }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
+        _MBR() { curl -sk -b "$_MK" "$@" 2>/dev/null; }
         # Send null-delimited args to text CLI endpoint (browser commands)
-        _MB() { printf '%s\0' "$@" | _MC --data-binary @- -X POST "$_MT/api/browser"; }
+        _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # mt_query SELECTOR [--text]  — query DOM; --text for text-only (smaller output)
@@ -159,6 +160,7 @@ public static class MtcliScriptWriter
 
         function script:_MC { & curl.exe -sfk -b $script:_MK @args 2>$null }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
+        function script:_MBR { & curl.exe -sk -b $script:_MK @args 2>$null }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         # Send null-delimited args to text CLI endpoint (browser commands)
@@ -171,7 +173,7 @@ public static class MtcliScriptWriter
             $tmp = [System.IO.Path]::GetTempFileName()
             try {
                 [System.IO.File]::WriteAllBytes($tmp, $bytes.ToArray())
-                _MC --data-binary "@$tmp" -X POST "$script:_MT/api/browser"
+                _MBR --data-binary "@$tmp" -X POST "$script:_MT/api/browser"
             } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
         }
 

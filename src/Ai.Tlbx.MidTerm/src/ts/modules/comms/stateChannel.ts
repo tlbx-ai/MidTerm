@@ -30,6 +30,7 @@ import { setViewportSize, openWebPreviewDock } from '../web/webDock';
 import { setWebPreviewTarget } from '../web/webApi';
 import { setActiveUrl, setActiveMode } from '../web/webSessionState';
 import { loadPreview } from '../web/webPanel';
+import { isEmbeddedWebPreviewContext } from '../web/webContext';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -489,6 +490,11 @@ export async function sendCommand<T = unknown>(
  * Handle browser UI commands from the server (detach, dock, viewport).
  */
 function handleBrowserUiCommand(msg: BrowserUiMessage): void {
+  if (isEmbeddedWebPreviewContext()) {
+    log.verbose(() => `Ignoring browser-ui command inside embedded preview: ${msg.command}`);
+    return;
+  }
+
   switch (msg.command) {
     case 'detach':
       void detachPreview();

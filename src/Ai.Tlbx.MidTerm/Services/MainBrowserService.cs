@@ -109,6 +109,14 @@ public sealed class MainBrowserService
         }
     }
 
+    public string? GetMainBrowserId()
+    {
+        lock (_lock)
+        {
+            return _mainBrowserId;
+        }
+    }
+
     /// <summary>
     /// Whether the main browser button should be visible for this browser.
     /// True when 2+ browsers are connected, or when main is set to a different

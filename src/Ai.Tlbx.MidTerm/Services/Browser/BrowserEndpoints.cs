@@ -34,7 +34,7 @@ public static class BrowserEndpoints
     {
         app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request, HttpContext ctx) =>
         {
-            var created = previewRegistry.Create(request.SessionId);
+            var created = previewRegistry.Create(request.SessionId, ctx.Request.Cookies["mt-client-id"]);
             var response = new BrowserPreviewClientResponse
             {
                 SessionId = created.SessionId,
@@ -96,12 +96,7 @@ public static class BrowserEndpoints
 
             if (command == "status")
             {
-                var connected = commandService.HasConnectedClient;
-                var target = webPreviewService.TargetUrl;
-                var status = connected
-                    ? $"connected\ntarget: {target ?? "(none)"}\n"
-                    : "disconnected\nOpen the web preview panel in MidTerm to enable browser commands.\n";
-                return Results.Text(status);
+                return Results.Text(commandService.GetStatusText(webPreviewService.TargetUrl));
             }
 
             var request = ParseCliArgs(command, args);
