@@ -25,15 +25,12 @@ async function main() {
     return;
   }
 
-  const target = getPlatformTarget();
+  const runtime = await detectRuntime();
+  const target = await getPlatformTarget(runtime);
   const release = await resolveRelease(launcher.channel);
-  const installDir = await ensureInstalledRelease(release, target);
-  const mtPath = path.join(installDir, target.binaryName);
-  const mthostPath = path.join(installDir, target.hostBinaryName);
-
-  if (!fs.existsSync(mtPath) || !fs.existsSync(mthostPath)) {
-    throw new Error(`Downloaded release is incomplete: expected ${target.binaryName} and ${target.hostBinaryName}`);
-  }
+  const install = runtime.kind === 'wsl-interop'
+    ? await ensureInstalledReleaseInWsl(release, target, runtime)
+    : await ensureInstalledRelease(release, target);
 
   const childArgs = passthrough.slice();
   const explicitBind = getArgValue(childArgs, '--bind');
@@ -49,13 +46,16 @@ async function main() {
     MIDTERM_LAUNCH_MODE: 'npx',
     MIDTERM_NPX: '1',
     MIDTERM_NPX_CHANNEL: launcher.channel,
-    MIDTERM_NPX_PACKAGE_VERSION: PACKAGE_VERSION
+    MIDTERM_NPX_PACKAGE_VERSION: PACKAGE_VERSION,
+    MIDTERM_NPX_RUNTIME: runtime.kind
   };
 
-  const child = spawn(mtPath, childArgs, {
-    stdio: 'inherit',
-    env: childEnv
-  });
+  const child = runtime.kind === 'wsl-interop'
+    ? spawnMidTermInWsl(runtime, install.mtPath, childArgs, childEnv)
+    : spawn(install.mtPath, childArgs, {
+        stdio: 'inherit',
+        env: childEnv
+      });
 
   if (launcher.openBrowser) {
     void openBrowserWhenReady(browserUrl);
@@ -130,7 +130,79 @@ function printHelp() {
   console.log('All other arguments are passed to mt.');
 }
 
-function getPlatformTarget() {
+async function detectRuntime() {
+  const wslContext = await detectWslInteropContext();
+  if (wslContext) {
+    return wslContext;
+  }
+
+  return {
+    kind: 'native',
+    platform: process.platform,
+    arch: process.arch
+  };
+}
+
+async function detectWslInteropContext() {
+  if (process.platform !== 'win32') {
+    return null;
+  }
+
+  const parsed = parseWslUncPath(process.cwd());
+  if (!parsed) {
+    return null;
+  }
+
+  const linuxHome = getWslCommandOutput(parsed.distroName, ['pwd'], '~');
+  if (!linuxHome.startsWith('/')) {
+    throw new Error(`Failed to determine WSL home directory for ${parsed.distroName}`);
+  }
+
+  const archRaw = getWslCommandOutput(parsed.distroName, ['uname', '-m'], '/');
+
+  return {
+    kind: 'wsl-interop',
+    distroName: parsed.distroName,
+    linuxCwd: parsed.linuxPath,
+    linuxHome,
+    uncRoot: parsed.uncRoot,
+    arch: normalizeWslArchitecture(archRaw)
+  };
+}
+
+function parseWslUncPath(value) {
+  const normalized = String(value || '');
+  const match = normalized.match(/^\\\\wsl(?:\.localhost|\$)\\([^\\]+)(\\.*)?$/i);
+  if (!match) {
+    return null;
+  }
+
+  const distroName = match[1];
+  const suffix = match[2] || '';
+  const linuxPath = suffix
+    ? suffix.replace(/\\/g, '/')
+    : '/';
+
+  return {
+    distroName,
+    linuxPath,
+    uncRoot: `\\\\wsl.localhost\\${distroName}`
+  };
+}
+
+async function getPlatformTarget(runtime) {
+  if (runtime.kind === 'wsl-interop') {
+    if (runtime.arch === 'x64') {
+      return {
+        assetName: 'mt-linux-x64.tar.gz',
+        binaryName: 'mt',
+        hostBinaryName: 'mthost'
+      };
+    }
+
+    throw new Error(`Unsupported WSL platform: linux ${runtime.arch}`);
+  }
+
   if (process.platform === 'win32' && process.arch === 'x64') {
     return {
       assetName: 'mt-win-x64.zip',
@@ -208,8 +280,12 @@ async function ensureInstalledRelease(release, target) {
     throw new Error(`Release ${release.tag} does not contain ${target.assetName}`);
   }
 
+  const mtPath = path.join(versionDir, target.binaryName);
+  const mthostPath = path.join(versionDir, target.hostBinaryName);
+
   if (fs.existsSync(completeMarker)) {
-    return versionDir;
+    ensureInstalledFilesExist(mtPath, mthostPath, target);
+    return { mtPath, mthostPath };
   }
 
   await fsp.mkdir(cacheRoot, { recursive: true });
@@ -228,12 +304,65 @@ async function ensureInstalledRelease(release, target) {
     await fsp.rm(versionDir, { recursive: true, force: true });
     await fsp.rename(extractDir, versionDir);
     await fsp.writeFile(completeMarker, `${release.tag}\n`, 'utf8');
-    return versionDir;
+    ensureInstalledFilesExist(mtPath, mthostPath, target);
+    return { mtPath, mthostPath };
   } catch (error) {
     await fsp.rm(versionDir, { recursive: true, force: true }).catch(() => {});
     throw error;
   } finally {
     await fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function ensureInstalledReleaseInWsl(release, target, runtime) {
+  const cacheRootLinux = path.posix.join(runtime.linuxHome, '.cache', 'midterm', 'npx-cache');
+  const cacheRootUnc = toWslUncPath(runtime, cacheRootLinux);
+  const versionDirLinux = path.posix.join(cacheRootLinux, sanitizeTag(release.tag));
+  const versionDirUnc = toWslUncPath(runtime, versionDirLinux);
+  const completeMarkerUnc = toWslUncPath(runtime, path.posix.join(versionDirLinux, '.complete'));
+  const targetAsset = release.assets.find((asset) => asset.name === target.assetName);
+
+  if (!targetAsset || !targetAsset.browser_download_url) {
+    throw new Error(`Release ${release.tag} does not contain ${target.assetName}`);
+  }
+
+  const mtPath = path.posix.join(versionDirLinux, target.binaryName);
+  const mthostPath = path.posix.join(versionDirLinux, target.hostBinaryName);
+  const mtPathUnc = toWslUncPath(runtime, mtPath);
+  const mthostPathUnc = toWslUncPath(runtime, mthostPath);
+
+  if (fs.existsSync(completeMarkerUnc)) {
+    ensureInstalledFilesExist(mtPathUnc, mthostPathUnc, target);
+    return { mtPath, mthostPath };
+  }
+
+  await fsp.mkdir(cacheRootUnc, { recursive: true });
+
+  const tempName = `staging-${Date.now()}-${process.pid}-${Math.random().toString(16).slice(2)}`;
+  const tempRootLinux = path.posix.join(cacheRootLinux, tempName);
+  const tempRootUnc = toWslUncPath(runtime, tempRootLinux);
+  const archiveLinux = path.posix.join(tempRootLinux, target.assetName);
+  const archiveUnc = toWslUncPath(runtime, archiveLinux);
+  const extractLinux = path.posix.join(tempRootLinux, 'extract');
+  const extractUnc = toWslUncPath(runtime, extractLinux);
+
+  try {
+    await fsp.mkdir(extractUnc, { recursive: true });
+    console.error(`MidTerm ${release.tag}: downloading ${target.assetName}`);
+    await downloadFile(targetAsset.browser_download_url, archiveUnc);
+    console.error(`MidTerm ${release.tag}: extracting`);
+    runWslCommand(runtime, ['tar', '-xzf', archiveLinux, '-C', extractLinux], '/');
+    runWslCommand(runtime, ['chmod', '755', path.posix.join(extractLinux, target.binaryName), path.posix.join(extractLinux, target.hostBinaryName)], '/');
+    await fsp.rm(versionDirUnc, { recursive: true, force: true });
+    await fsp.rename(extractUnc, versionDirUnc);
+    await fsp.writeFile(completeMarkerUnc, `${release.tag}\n`, 'utf8');
+    ensureInstalledFilesExist(mtPathUnc, mthostPathUnc, target);
+    return { mtPath, mthostPath };
+  } catch (error) {
+    await fsp.rm(versionDirUnc, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  } finally {
+    await fsp.rm(tempRootUnc, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -286,14 +415,20 @@ function extractArchive(archivePath, destinationPath) {
       '-Command',
       `Expand-Archive -LiteralPath '${escapePowerShell(archivePath)}' -DestinationPath '${escapePowerShell(destinationPath)}' -Force`
     ];
-    const result = spawnSync('powershell', command, { stdio: 'inherit' });
+    const result = spawnSync('powershell', command, {
+      stdio: 'inherit',
+      cwd: getWindowsSubprocessCwd()
+    });
     if (result.status !== 0) {
       throw new Error(`Failed to extract ${path.basename(archivePath)} with PowerShell`);
     }
     return;
   }
 
-  const result = spawnSync('tar', ['-xzf', archivePath, '-C', destinationPath], { stdio: 'inherit' });
+  const result = spawnSync('tar', ['-xzf', archivePath, '-C', destinationPath], {
+    stdio: 'inherit',
+    cwd: getWindowsSubprocessCwd()
+  });
   if (result.status !== 0) {
     throw new Error(`Failed to extract ${path.basename(archivePath)} with tar`);
   }
@@ -427,12 +562,44 @@ function openUrl(url) {
   const result = spawn(command, args, {
     detached: true,
     stdio: 'ignore',
-    windowsHide: true
+    windowsHide: true,
+    cwd: getWindowsSubprocessCwd()
   });
   result.on('error', (error) => {
     console.error(`@tlbx-ai/midterm: failed to open browser automatically: ${error.message}`);
   });
   result.unref();
+}
+
+function spawnMidTermInWsl(runtime, mtPath, childArgs, childEnv) {
+  const envArgs = ['env'];
+  const passthroughEnv = [
+    'MIDTERM_LAUNCH_MODE',
+    'MIDTERM_NPX',
+    'MIDTERM_NPX_CHANNEL',
+    'MIDTERM_NPX_PACKAGE_VERSION',
+    'MIDTERM_NPX_RUNTIME'
+  ];
+
+  for (const key of passthroughEnv) {
+    if (childEnv[key]) {
+      envArgs.push(`${key}=${childEnv[key]}`);
+    }
+  }
+
+  envArgs.push(mtPath, ...childArgs);
+
+  return spawn('wsl.exe', [
+    '--distribution',
+    runtime.distroName,
+    '--cd',
+    runtime.linuxCwd,
+    '--exec',
+    ...envArgs
+  ], {
+    stdio: 'inherit',
+    cwd: getWindowsSubprocessCwd()
+  });
 }
 
 function forwardSignal(child, signal) {
@@ -445,6 +612,93 @@ function forwardSignal(child, signal) {
 
 function escapePowerShell(value) {
   return value.replace(/'/g, "''");
+}
+
+function ensureInstalledFilesExist(mtPath, mthostPath, target) {
+  if (!fs.existsSync(mtPath) || !fs.existsSync(mthostPath)) {
+    throw new Error(`Downloaded release is incomplete: expected ${target.binaryName} and ${target.hostBinaryName}`);
+  }
+}
+
+function toWslUncPath(runtime, linuxPath) {
+  const normalized = String(linuxPath || '/');
+  const suffix = normalized === '/'
+    ? ''
+    : normalized.replace(/\//g, '\\');
+  return `${runtime.uncRoot}${suffix}`;
+}
+
+function getWslCommandOutput(distroName, commandArgs, cwd) {
+  const result = spawnSync('wsl.exe', [
+    '--distribution',
+    distroName,
+    '--cd',
+    cwd,
+    '--exec',
+    ...commandArgs
+  ], {
+    encoding: 'utf8',
+    cwd: getWindowsSubprocessCwd()
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const stderr = String(result.stderr || '').trim();
+    throw new Error(`WSL command failed: ${stderr || commandArgs.join(' ')}`);
+  }
+
+  return String(result.stdout || '').trim();
+}
+
+function runWslCommand(runtime, commandArgs, cwd) {
+  const result = spawnSync('wsl.exe', [
+    '--distribution',
+    runtime.distroName,
+    '--cd',
+    cwd,
+    '--exec',
+    ...commandArgs
+  ], {
+    stdio: 'inherit',
+    cwd: getWindowsSubprocessCwd()
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`WSL command failed: ${commandArgs.join(' ')}`);
+  }
+}
+
+function normalizeWslArchitecture(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'x86_64' || normalized === 'amd64') {
+    return 'x64';
+  }
+
+  if (normalized === 'aarch64' || normalized === 'arm64') {
+    return 'arm64';
+  }
+
+  return normalized || process.arch;
+}
+
+function getWindowsSubprocessCwd() {
+  if (process.platform !== 'win32') {
+    return undefined;
+  }
+
+  const cwd = process.cwd();
+  if (/^\\\\/.test(cwd)) {
+    return process.env.SystemRoot || 'C:\\Windows';
+  }
+
+  return undefined;
 }
 
 function compareVersions(leftTag, rightTag) {

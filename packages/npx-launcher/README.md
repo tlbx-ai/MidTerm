@@ -33,3 +33,4 @@ Notes:
 - If you do not pass `--bind`, the launcher forces `127.0.0.1`
 - If you do not pass `--port`, the launcher opens `https://127.0.0.1:2000`
 - The launcher sets `MIDTERM_LAUNCH_MODE=npx` for the child process
+- If you invoke `npx` from WSL but it resolves to Windows `node/npm`, the launcher detects the WSL working directory and runs the Linux MidTerm build inside that distro
