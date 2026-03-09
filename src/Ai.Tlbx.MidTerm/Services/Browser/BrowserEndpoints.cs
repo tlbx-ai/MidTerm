@@ -18,7 +18,7 @@ public static class BrowserEndpoints
         BrowserUiBridge? uiBridge = null)
     {
         MapPreviewClientEndpoint(app, previewRegistry, previewOriginService);
-        MapCliEndpoint(app, commandService, sessionManager, webPreviewService);
+        MapCliEndpoint(app, commandService, sessionManager, webPreviewService, uiBridge);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
 
         if (uiBridge is not null)
@@ -50,26 +50,30 @@ public static class BrowserEndpoints
     {
         app.MapPost("/api/browser/detach", () =>
         {
-            uiBridge.RequestDetach();
-            return Results.Ok();
+            return uiBridge.RequestDetach(out var error)
+                ? Results.Ok()
+                : Results.Text(error + "\n", statusCode: 409);
         });
 
         app.MapPost("/api/browser/dock", () =>
         {
-            uiBridge.RequestDock();
-            return Results.Ok();
+            return uiBridge.RequestDock(out var error)
+                ? Results.Ok()
+                : Results.Text(error + "\n", statusCode: 409);
         });
 
         app.MapPost("/api/browser/viewport", (Models.Browser.ViewportRequest request) =>
         {
-            uiBridge.RequestViewport(request.Width, request.Height);
-            return Results.Ok();
+            return uiBridge.RequestViewport(request.Width, request.Height, out var error)
+                ? Results.Ok()
+                : Results.Text(error + "\n", statusCode: 409);
         });
 
         app.MapPost("/api/browser/open", (Models.WebPreview.WebPreviewTargetRequest request) =>
         {
-            uiBridge.RequestOpen(request.Url ?? "");
-            return Results.Ok();
+            return uiBridge.RequestOpen(request.Url ?? "", out var error)
+                ? Results.Ok()
+                : Results.Text(error + "\n", statusCode: 409);
         });
     }
 
@@ -77,7 +81,8 @@ public static class BrowserEndpoints
         WebApplication app,
         BrowserCommandService commandService,
         TtyHostSessionManager sessionManager,
-        WebPreviewService webPreviewService)
+        WebPreviewService webPreviewService,
+        BrowserUiBridge? uiBridge)
     {
         app.MapPost("/api/browser", async (HttpContext ctx) =>
         {
@@ -96,7 +101,9 @@ public static class BrowserEndpoints
 
             if (command == "status")
             {
-                return Results.Text(commandService.GetStatusText(webPreviewService.TargetUrl));
+                var status = commandService.GetStatusText(webPreviewService.TargetUrl).TrimEnd('\n', '\r');
+                status += $"\nui clients: {uiBridge?.ConnectedBrowserCount ?? 0}\n";
+                return Results.Text(status);
             }
 
             var request = ParseCliArgs(command, args);

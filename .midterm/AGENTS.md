@@ -64,4 +64,5 @@ mt_detach → (preview opens in popup) → mt_dock → (back in panel)
 - If mt_status still shows "disconnected" after mt_open, treat that as a MidTerm bug and inspect mt_proxylog plus mt_log error
 - Browser command failures now print the server error body instead of silently returning nothing
 - If mt_status reports multiple clients, MidTerm prefers the main browser's newest preview connection by default
+- If mt_open returns "No MidTerm browser UI is connected", there is no live browser tab attached to /ws/state
 - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane

@@ -31,6 +31,7 @@ public static class MtcliScriptWriter
         _MC() { curl -sfk -b "$_MK" "$@" 2>/dev/null; }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
         _MBR() { curl -sk -b "$_MK" "$@" 2>/dev/null; }
+        _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
 
@@ -77,7 +78,7 @@ public static class MtcliScriptWriter
         mt_navigate()   { _MJ -d "{\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
         # mt_open URL  — open URL in web preview panel and dock it
-        mt_open()       { mt_navigate "$1"; _MJ -d "{\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
+        mt_open()       { mt_navigate "$1"; _MJR -d "{\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
         # mt_close_preview  — close web preview panel
         mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target"; }
         mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
@@ -161,6 +162,7 @@ public static class MtcliScriptWriter
         function script:_MC { & curl.exe -sfk -b $script:_MK @args 2>$null }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
         function script:_MBR { & curl.exe -sk -b $script:_MK @args 2>$null }
+        function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         # Send null-delimited args to text CLI endpoint (browser commands)
@@ -230,7 +232,7 @@ public static class MtcliScriptWriter
         function Mt-Open {
             param([string]$Url)
             Mt-Navigate -Url $Url
-            _MJ -d (_MH @{url=$Url}) "$script:_MT/api/browser/open"
+            _MJR -d (_MH @{url=$Url}) "$script:_MT/api/browser/open"
         }
         # Mt-ClosePreview  — close web preview panel
         function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target" }

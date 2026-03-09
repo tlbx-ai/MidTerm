@@ -43,6 +43,66 @@ public sealed partial class WebPreviewProxyMiddleware
           try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
           try{Object.defineProperty(window,"frameElement",{get:function(){return null},configurable:true});}catch(e){}
           var P="/webpreview",E=P+"/_ext?u=";
+          function dprop(target,name,getter){
+            if(!target)return false;
+            try{Object.defineProperty(target,name,{configurable:true,get:getter});return true;}catch(e){}
+            try{
+              var proto=Object.getPrototypeOf(target);
+              if(proto){Object.defineProperty(proto,name,{configurable:true,get:getter});return true;}
+            }catch(e){}
+            return false;
+          }
+          function mkStore(){
+            var data=Object.create(null);
+            var api={
+              getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null;},
+              setItem:function(k,v){data[String(k)]=String(v);},
+              removeItem:function(k){delete data[String(k)];},
+              clear:function(){data=Object.create(null);},
+              key:function(i){var keys=Object.keys(data);return i>=0&&i<keys.length?keys[i]:null;}
+            };
+            try{Object.defineProperty(api,"length",{configurable:true,get:function(){return Object.keys(data).length;}});}catch(e){}
+            return api;
+          }
+          function ensureStore(name){
+            try{var existing=window[name];if(existing)return existing;}catch(e){}
+            var fallback=mkStore();
+            if(!dprop(window,name,function(){return fallback;})){
+              try{window[name]=fallback;}catch(e){}
+            }
+            return fallback;
+          }
+          function mkSwContainer(){
+            var reg={
+              scope:(location.origin||"null")+P+"/",
+              active:null,installing:null,waiting:null,
+              update:function(){return Promise.resolve();},
+              unregister:function(){return Promise.resolve(false);},
+              addEventListener:function(){},
+              removeEventListener:function(){}
+            };
+            return {
+              controller:null,
+              ready:Promise.resolve(reg),
+              register:function(){return Promise.resolve(reg);},
+              getRegistration:function(){return Promise.resolve(undefined);},
+              getRegistrations:function(){return Promise.resolve([]);},
+              startMessages:function(){},
+              addEventListener:function(){},
+              removeEventListener:function(){},
+              dispatchEvent:function(){return false;}
+            };
+          }
+          function ensureServiceWorker(){
+            try{var existing=navigator.serviceWorker;if(existing)return existing;}catch(e){}
+            var fallback=mkSwContainer();
+            if(!dprop(navigator,"serviceWorker",function(){return fallback;})){
+              try{navigator.serviceWorker=fallback;}catch(e){}
+            }
+            return fallback;
+          }
+          ensureStore("localStorage");
+          ensureStore("sessionStorage");
           // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
           function r(u){
             if(typeof u!=="string")return u;
@@ -132,8 +192,7 @@ public sealed partial class WebPreviewProxyMiddleware
           if(window.Worker){var OW=window.Worker;window.Worker=function(u,o){return new OW(r(u),o);};window.Worker.prototype=OW.prototype;}
           if(window.SharedWorker){var OSW=window.SharedWorker;window.SharedWorker=function(u,o){return new OSW(r(u),o);};window.SharedWorker.prototype=OSW.prototype;}
           // Service worker registration
-          var mtsw=null;
-          try{mtsw=navigator.serviceWorker;}catch(e){mtsw=null;}
+          var mtsw=ensureServiceWorker();
           if(mtsw&&mtsw.register){
             var swr=mtsw.register.bind(mtsw);
             mtsw.register=function(u,o){return swr(r(u),o);};

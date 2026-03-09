@@ -70,6 +70,15 @@ The proxied page no longer calls `/webpreview/_cookies` directly. Instead, the i
 
 The bridge resolves cookies against the current upstream page URL either from the explicit `?u=` query parameter supplied by the parent or, as a fallback, the iframe referer.
 
+## Sandboxed Runtime Compatibility
+
+When the preview iframe is sandboxed without a usable same-origin storage context, the injected runtime now provides safe compatibility fallbacks before any upstream JavaScript runs:
+
+- `localStorage` and `sessionStorage` fall back to per-frame in-memory stores instead of throwing `SecurityError`
+- `navigator.serviceWorker` falls back to a no-op container that resolves registration calls without taking over the real page scope
+
+These shims exist specifically so MidTerm-in-MidTerm and similar apps can still bootstrap inside an opaque-origin sandbox. They do **not** provide persistence across reloads, and they are intentionally weaker than a real same-origin browser context.
+
 ## Browser Bridge Targeting
 
 Browser automation is now scoped per preview client instead of "whichever iframe connected last":
@@ -82,6 +91,8 @@ Browser automation is now scoped per preview client instead of "whichever iframe
 - docked UI screenshot capture sends the active docked `previewId`, so nested previews under the same terminal session do not collide
 
 The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
+
+Browser UI instructions (`open`, `dock`, `detach`, `viewport`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no MidTerm browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
 
 ## Embedded MidTerm Guardrails
 

@@ -295,10 +295,15 @@ async function init(): Promise<void> {
   setupVisibilityChangeHandler();
   initPwaInstall();
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker
-      .register(`/js/sw.js?v=${encodeURIComponent(JS_BUILD_VERSION)}`)
-      .catch(() => {});
+  let serviceWorker: ServiceWorkerContainer | undefined;
+  try {
+    serviceWorker = navigator.serviceWorker;
+  } catch {
+    serviceWorker = undefined;
+  }
+
+  if (serviceWorker?.register) {
+    serviceWorker.register(`/js/sw.js?v=${encodeURIComponent(JS_BUILD_VERSION)}`).catch(() => {});
   }
 
   log.info(() => 'MidTerm frontend initialized');

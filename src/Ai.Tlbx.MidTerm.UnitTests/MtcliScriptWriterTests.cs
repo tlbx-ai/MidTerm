@@ -26,8 +26,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("$script:_MT/api/update/apply", powershell, StringComparison.Ordinal);
         Assert.Contains("Current version:", powershell, StringComparison.Ordinal);
         Assert.Contains("_MBR", shell, StringComparison.Ordinal);
+        Assert.Contains("_MJR", shell, StringComparison.Ordinal);
         Assert.Contains("curl -sk -b", shell, StringComparison.Ordinal);
         Assert.Contains("function script:_MBR", powershell, StringComparison.Ordinal);
+        Assert.Contains("function script:_MJR", powershell, StringComparison.Ordinal);
     }
 
     [Fact]

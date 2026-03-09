@@ -169,6 +169,7 @@ public sealed class StateWebSocketHandler
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         var shutdownToken = _shutdownService.Token;
+        var browserUiListenerId = Guid.NewGuid().ToString("N");
 
         void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
         {
@@ -229,13 +230,13 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        if (_browserUiBridge is not null)
-        {
-            _browserUiBridge.OnDetachRequested += OnBrowserDetach;
-            _browserUiBridge.OnDockRequested += OnBrowserDock;
-            _browserUiBridge.OnViewportRequested += OnBrowserViewport;
-            _browserUiBridge.OnOpenRequested += OnBrowserOpen;
-        }
+        _browserUiBridge?.RegisterListener(
+            connectionId: browserUiListenerId,
+            browserId: browserId,
+            detach: OnBrowserDetach,
+            dock: OnBrowserDock,
+            viewport: OnBrowserViewport,
+            open: OnBrowserOpen);
 
         try
         {
@@ -300,10 +301,7 @@ public sealed class StateWebSocketHandler
 
             if (_browserUiBridge is not null)
             {
-                _browserUiBridge.OnDetachRequested -= OnBrowserDetach;
-                _browserUiBridge.OnDockRequested -= OnBrowserDock;
-                _browserUiBridge.OnViewportRequested -= OnBrowserViewport;
-                _browserUiBridge.OnOpenRequested -= OnBrowserOpen;
+                _browserUiBridge.UnregisterListener(browserUiListenerId);
             }
 
             sendLock.Dispose();
