@@ -416,3 +416,5 @@ New code should be easy to find by folder, file name, and type name alone.
 - Endpoint files stay thin; heavy logic belongs in services.
 - Extract duplicated logic instead of maintaining parallel copies.
 - Keep one concern per file.
+
+This terminal runs inside MidTerm (web terminal multiplexer) — see .midterm/CLAUDE.md for browser control, tmux split-pane, and DOM inspection tools.
