@@ -31,7 +31,6 @@ import {
   ensureTerminalFontLoaded,
   getConfiguredTerminalFontFamily,
 } from './fontConfig';
-import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
 import { sendResize } from '../comms';
 import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';

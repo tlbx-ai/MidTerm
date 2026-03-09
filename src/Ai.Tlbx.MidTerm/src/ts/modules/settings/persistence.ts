@@ -42,7 +42,6 @@ import {
   type SettingsRegistryEntry,
   VALID_SETTING_SHELLS,
 } from './registry';
-import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 
 const log = createLogger('settings');
 
