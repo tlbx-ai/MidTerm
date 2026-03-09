@@ -1,4 +1,6 @@
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Browser;
+using Microsoft.AspNetCore.Http;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -53,5 +55,28 @@ public class WebPreviewProxyMiddlewareTests
         var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/");
 
         Assert.Equal("/dashboard/", result);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_InternalSelfProxyRequest_BypassesCatchAllLoop()
+    {
+        var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
+        var service = new WebPreviewService(serverPort: 2000, previewOriginService: previewOrigin);
+        Assert.True(service.SetTarget("https://localhost:2000/"));
+
+        var nextCalled = false;
+        var middleware = new WebPreviewProxyMiddleware(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        }, service);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/site.webmanifest";
+        context.Request.Headers["X-MidTerm-Internal-Proxy"] = "1";
+
+        await middleware.InvokeAsync(context);
+
+        Assert.True(nextCalled);
     }
 }

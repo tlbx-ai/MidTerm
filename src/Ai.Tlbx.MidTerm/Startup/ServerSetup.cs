@@ -285,17 +285,8 @@ public static class ServerSetup
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
-            // Content Security Policy - strict but allows xterm.js inline styles
-            var csp = "default-src 'self'; " +
-                      "script-src 'self'; " +
-                      "worker-src 'self' blob:; " +
-                      "style-src 'self' 'unsafe-inline'; " +
-                      "img-src 'self' data:; " +
-                      "font-src 'self' data:; " +
-                      "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
-                      "frame-src 'self' blob: data:; " +
-                      "frame-ancestors 'self'";
-            headers.ContentSecurityPolicy = csp;
+            headers.ContentSecurityPolicy = BuildContentSecurityPolicy(
+                previewOriginService.GetOrigin(context.Request));
 
             await next();
         });
@@ -310,5 +301,24 @@ public static class ServerSetup
         var plusIndex = version.IndexOf('+');
         if (plusIndex > 0) version = version[..plusIndex];
         return $"\"{version}\"";
+    }
+
+    internal static string BuildContentSecurityPolicy(string? previewOrigin = null)
+    {
+        var frameSources = new List<string> { "'self'", "blob:", "data:" };
+        if (!string.IsNullOrWhiteSpace(previewOrigin))
+        {
+            frameSources.Add(previewOrigin);
+        }
+
+        return "default-src 'self'; " +
+               "script-src 'self'; " +
+               "worker-src 'self' blob:; " +
+               "style-src 'self' 'unsafe-inline'; " +
+               "img-src 'self' data:; " +
+               "font-src 'self' data:; " +
+               "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
+               $"frame-src {string.Join(' ', frameSources)}; " +
+               "frame-ancestors 'self'";
     }
 }

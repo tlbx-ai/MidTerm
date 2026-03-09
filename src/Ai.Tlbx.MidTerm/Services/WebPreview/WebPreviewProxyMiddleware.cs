@@ -13,6 +13,8 @@ namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 public sealed partial class WebPreviewProxyMiddleware
 {
     private const string ProxyPrefix = "/webpreview";
+    private const string InternalProxyRequestHeaderName = "X-MidTerm-Internal-Proxy";
+    private const string InternalProxyRequestHeaderValue = "1";
     private const int WsBufferSize = 8192;
     private static readonly TimeSpan WsCloseTimeout = TimeSpan.FromSeconds(5);
 
@@ -512,6 +514,10 @@ public sealed partial class WebPreviewProxyMiddleware
         "Host",
         // Browser cookies are MT session cookies — upstream cookies come from CookieContainer
         "Cookie",
+        // MidTerm owns forwarded headers and must not let them accumulate across self-proxy hops
+        "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host",
+        // Internal loop-prevention header is for server-originated requests only
+        InternalProxyRequestHeaderName,
         // WebSocket negotiation headers managed by ClientWebSocket
         "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions",
         "Sec-WebSocket-Protocol",
@@ -601,7 +607,9 @@ public sealed partial class WebPreviewProxyMiddleware
         // Catch-all: if web preview is active and this isn't a known MidTerm path,
         // it's likely a leaked root-relative URL from the proxied site (e.g. /s/player/...,
         // /youtubei/v1/...). Proxy it to the upstream target directly.
-        if (_service.IsActive && !IsMidTermPath(path.Value ?? "/"))
+        if (_service.IsActive
+            && !IsInternalProxyRequest(context.Request)
+            && !IsMidTermPath(path.Value ?? "/"))
         {
             var targetUri = _service.TargetUri!;
             var proxyPath = path.Value ?? "/";
@@ -635,6 +643,13 @@ public sealed partial class WebPreviewProxyMiddleware
         var refererPath = refererUri.AbsolutePath;
         return refererPath.Equals(ProxyPrefix, StringComparison.OrdinalIgnoreCase)
             || refererPath.StartsWith(ProxyPrefix + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsInternalProxyRequest(HttpRequest request)
+    {
+        return request.Headers.TryGetValue(InternalProxyRequestHeaderName, out var values)
+            && values.Count > 0
+            && string.Equals(values[0], InternalProxyRequestHeaderValue, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -705,6 +720,12 @@ public sealed partial class WebPreviewProxyMiddleware
                 context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1");
             msg.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
             msg.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
+            if (_service.IsSelfTarget(msg.RequestUri!))
+            {
+                msg.Headers.TryAddWithoutValidation(
+                    InternalProxyRequestHeaderName,
+                    InternalProxyRequestHeaderValue);
+            }
             AttachRequestBody(msg, method, requestBodyBuffer, context.Request.ContentType, context.Request.ContentLength);
             return msg;
         }

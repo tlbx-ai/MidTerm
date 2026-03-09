@@ -359,6 +359,7 @@ public class Program
 
         try
         {
+            app.Urls.Add($"https://{bindAddress}:{port}");
             browserPreviewOriginService.ApplyUrls(app, bindAddress);
             WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
         }

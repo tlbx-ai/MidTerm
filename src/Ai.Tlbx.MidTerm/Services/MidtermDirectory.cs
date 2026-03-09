@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "11";
+    private const string GuidanceVersion = "12";
 
     private static int _port;
     private static AuthService? _authService;
@@ -253,7 +253,10 @@ public static class MidtermDirectory
 
         ## Open web preview
 
-        mt_open "http://localhost:3000" → mt_outline → mt_query ".error" --text
+        mt_open "http://localhost:3000" → mt_status → mt_outline → mt_query ".error" --text
+
+        `mt_open` both sets the target and asks MidTerm to open/dock the preview panel.
+        Use `mt_navigate` only when the panel is already open and you just want to change the target URL.
 
         ## Fresh session (clear cookies + reload)
 
@@ -284,9 +287,10 @@ public static class MidtermDirectory
 
         - mt_outline is 10x smaller than mt_query — always start there
         - mt_text is shorter than mt_query SEL --text — use it for page text
+        - mt_open is the CLI command that opens/docks the preview; you do not need to click the panel first
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
-        - If mt_status shows "disconnected", the web preview panel needs to be open in MidTerm
+        - If mt_status still shows "disconnected" after mt_open, treat that as a MidTerm bug and inspect mt_proxylog plus mt_log error
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
         """;
 }

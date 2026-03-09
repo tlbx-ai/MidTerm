@@ -103,6 +103,8 @@ When MidTerm can reserve `port + 1`, preview clients now receive a dedicated fra
 
 The preview listener blocks normal MidTerm app pages and non-browser WebSockets on the secondary port, so leaked navigations do not fall back into the MidTerm application on the preview origin. If the extra port is unavailable, MidTerm falls back to the primary origin and keeps the sandbox protections from step 3.
 
+The server must bind both the main app URL and the preview URL explicitly at startup. Advertising a preview origin without listening on `port + 1` breaks MidTerm-in-MidTerm immediately once the iframe tries to navigate to the isolated frame host.
+
 ## MidTerm-In-MidTerm
 
 Self-preview is supported only when the dedicated preview origin is active:
@@ -113,6 +115,10 @@ Self-preview is supported only when the dedicated preview origin is active:
 - that mirrored auth cookie is deliberately excluded from cookie-disk persistence, so nested MidTerm stays authenticated without writing MidTerm session tokens into the preview cookie files
 
 This is what keeps nested MidTerm from falling into `/login.html` once its own `/api/*` and `/ws/*` traffic starts flowing through the dev browser.
+
+The main MidTerm shell also has to allow that isolated frame host in its own CSP `frame-src`. Without that, the browser blocks `https://host:port+1/webpreview/...` before the nested app can render.
+
+For self-targets, internal upstream hops must not re-enter the catch-all "leaked root-relative URL" proxy path. MidTerm marks those server-originated self-proxy requests and lets them fall through to local static files and normal handlers, which prevents recursive `/site.webmanifest` and `/favicon.ico` loops that otherwise explode into `431 Request Header Fields Too Large`.
 
 ## Canonical Host Adoption
 
