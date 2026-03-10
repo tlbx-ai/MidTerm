@@ -26,8 +26,8 @@ function openShareDialog(sessionId: string): void {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal dialog-modal share-dialog-modal">
-      <div class="modal-content dialog-content">
+    <div class="modal dialog-modal">
+      <div class="modal-content dialog-content share-dialog-modal">
         <div class="modal-header">
           <h3>${escapeHtml(t('share.dialog.title'))}</h3>
           <button class="modal-close" data-role="close">&times;</button>
@@ -43,7 +43,7 @@ function openShareDialog(sessionId: string): void {
             <span>${escapeHtml(t('share.dialog.viewOnly'))}</span>
           </label>
           <p class="share-dialog-hint">${escapeHtml(t('share.dialog.hint'))}</p>
-          <div class="share-dialog-result hidden">
+          <div class="share-dialog-result">
             <label for="share-link-output">${escapeHtml(t('share.dialog.link'))}</label>
             <input id="share-link-output" class="share-link-output" type="text" readonly />
             <p class="share-dialog-expiry"></p>
@@ -51,7 +51,7 @@ function openShareDialog(sessionId: string): void {
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" data-role="cancel">${escapeHtml(t('dialog.cancel'))}</button>
-          <button class="btn-primary" data-role="create">${escapeHtml(t('share.dialog.create'))}</button>
+          <button class="btn-primary" data-role="create">${escapeHtml(t('share.dialog.creating'))}</button>
         </div>
       </div>
     </div>
@@ -68,6 +68,10 @@ function openShareDialog(sessionId: string): void {
     overlay.remove();
     return;
   }
+
+  let currentShareUrl = '';
+  let currentMode: ShareMode | null = null;
+  let requestGeneration = 0;
 
   function close(): void {
     document.removeEventListener('keydown', onKey);
@@ -94,46 +98,87 @@ function openShareDialog(sessionId: string): void {
     }
   });
 
-  const handleCreateClick = async (): Promise<void> => {
+  const getSelectedMode = (): ShareMode => {
     const selected = overlay.querySelector<HTMLInputElement>('input[name="share-mode"]:checked');
-    const mode = (selected?.value as ShareMode | undefined) ?? 'FullControl';
+    return (selected?.value as ShareMode | undefined) ?? 'FullControl';
+  };
 
+  const copyCurrentLink = async (): Promise<void> => {
+    if (!currentShareUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(currentShareUrl);
+      createBtn.textContent = t('share.dialog.copied');
+    } catch (clipboardError) {
+      log.warn(() => `Share link copy failed: ${String(clipboardError)}`);
+      outputEl.focus();
+      outputEl.select();
+    }
+  };
+
+  const loadShareLink = async (mode: ShareMode): Promise<void> => {
+    const requestId = ++requestGeneration;
+    currentShareUrl = '';
+    currentMode = mode;
+    resultEl.classList.remove('hidden');
+    outputEl.value = '';
+    outputEl.placeholder = t('share.dialog.creating');
+    expiryEl.textContent = '';
     createBtn.disabled = true;
     createBtn.textContent = t('share.dialog.creating');
 
     try {
       const response = await createShareLink({ sessionId, mode });
+      if (requestId !== requestGeneration) {
+        return;
+      }
+
+      currentShareUrl = response.shareUrl;
       outputEl.value = response.shareUrl;
-      resultEl.classList.remove('hidden');
       expiryEl.textContent =
         t('share.dialog.expiresAt') + ': ' + new Date(response.expiresAtUtc).toLocaleString();
-      createBtn.textContent = t('share.dialog.create');
-
-      try {
-        await navigator.clipboard.writeText(response.shareUrl);
-        createBtn.textContent = t('share.dialog.copied');
-      } catch (clipboardError) {
-        log.warn(() => `Share link created but clipboard copy failed: ${String(clipboardError)}`);
-        outputEl.focus();
-        outputEl.select();
-      }
+      createBtn.textContent = t('trust.copy');
     } catch (error) {
+      if (requestId !== requestGeneration) {
+        return;
+      }
+
       log.error(() => `Failed to create share link: ${String(error)}`);
+      currentShareUrl = '';
+      outputEl.placeholder = t('share.failedToGenerate');
       createBtn.textContent = t('share.failedToGenerate');
     } finally {
-      createBtn.disabled = false;
+      if (requestId === requestGeneration) {
+        createBtn.disabled = false;
+      }
     }
   };
 
   createBtn.addEventListener('click', () => {
-    void handleCreateClick();
+    const selectedMode = getSelectedMode();
+    if (currentShareUrl !== '' && currentMode === selectedMode) {
+      void copyCurrentLink();
+      return;
+    }
+
+    void loadShareLink(selectedMode);
   });
   cancelBtn.addEventListener('click', close);
   closeBtn.addEventListener('click', close);
 
+  const modeOptions = overlay.querySelectorAll<HTMLInputElement>('input[name="share-mode"]');
+  modeOptions.forEach((option) => {
+    option.addEventListener('change', () => {
+      void loadShareLink(getSelectedMode());
+    });
+  });
+
   document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
-  createBtn.focus();
+  cancelBtn.focus();
+  void loadShareLink(getSelectedMode());
 }
 
 function escapeHtml(value: string): string {

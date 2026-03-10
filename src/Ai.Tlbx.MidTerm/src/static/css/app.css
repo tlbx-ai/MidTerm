@@ -4620,6 +4620,13 @@ body.has-app-background::after {
   flex-direction: column;
 }
 
+.modal-overlay > .modal.dialog-modal {
+  position: static;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .modal-overlay > .modal .modal-header {
   display: flex;
   justify-content: space-between;
