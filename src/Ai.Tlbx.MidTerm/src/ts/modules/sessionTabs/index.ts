@@ -26,6 +26,6 @@ export type { IdeBarActionId } from './tabBar';
 export {
   setCommandsClickHandler,
   setGitClickHandler,
-  setWebClickHandler,
   setShareClickHandler,
+  setWebClickHandler,
 } from './tabBar';

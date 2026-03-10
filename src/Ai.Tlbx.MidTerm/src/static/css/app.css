@@ -7974,14 +7974,14 @@ body.shared-session-mode .session-tab-bar {
   font-size: var(--fs-base);
   font-family: inherit;
   cursor: pointer;
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-bottom: 1px solid transparent;
   transition:
     color 0.15s,
     border-color 0.15s;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   white-space: nowrap;
   height: 100%;
   box-sizing: border-box;
@@ -8004,30 +8004,36 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .ide-bar-btn-icon {
-    width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .ide-bar-btn-icon svg {
-    width: 100%;
-    height: 100%;
-    display: block;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
-.git-indicator-branch {
-  font-size: var(--fs-lg);
-  opacity: 0.7;
+.ide-bar-btn-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.git-indicator {
+  gap: 8px;
 }
 
 .git-indicator-stats {
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   font-family: var(--font-mono);
   display: flex;
   gap: 6px;
+  opacity: 0.9;
 }
 
 .git-indicator-added {

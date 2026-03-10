@@ -1224,6 +1224,9 @@ function bindEvents(): void {
   bindClick('btn-mobile-commands', () => {
     clickActiveSessionTabBarControl('[data-action="commands"]');
   });
+  bindClick('btn-mobile-share', () => {
+    clickActiveSessionTabBarControl('[data-action="share"]');
+  });
   bindClick('btn-mobile-git', () => {
     clickActiveSessionTabBarControl('[data-action="git"]');
   });

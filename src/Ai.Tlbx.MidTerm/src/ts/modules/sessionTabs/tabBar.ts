@@ -3,7 +3,7 @@
  *
  * Creates and manages the tab bar UI for each session.
  * Tabs: Terminal | Files
- * Right-aligned actions: Web Preview | Commands | Git status indicator
+ * Right-aligned actions: WEB | Commands | Share | Git
  */
 
 import type { GitStatusResponse } from '../git/types';
@@ -14,29 +14,35 @@ export type SessionTabId = 'terminal' | 'files';
 export type IdeBarActionId = 'git' | 'commands' | 'web' | 'share';
 
 const WEB_BUTTON_ICON =
-  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
-  '<rect x="3.5" y="5" width="17" height="14" rx="2.5"></rect>' +
-  '<path d="M3.5 8.5h17"></path>' +
-  '<path d="m10 11-2.5 2.5L10 16"></path>' +
-  '<path d="m14 11 2.5 2.5L14 16"></path>' +
-  '<path d="m13 10-2 7"></path>' +
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="8"></circle>' +
+  '<path d="M4 12h16"></path>' +
+  '<path d="M12 4a11.5 11.5 0 0 1 0 16"></path>' +
+  '<path d="M12 4a11.5 11.5 0 0 0 0 16"></path>' +
   '</svg>';
 
 const COMMANDS_BUTTON_ICON =
-  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
-  '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect>' +
-  '<path d="m7.5 10 3 2.5-3 2.5"></path>' +
-  '<path d="M12.5 15h4.5"></path>' +
-  '<path d="M12.5 10h5"></path>' +
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M12 5.5v8"></path>' +
+  '<circle cx="12" cy="18" r="1.25" fill="currentColor" stroke="none"></circle>' +
   '</svg>';
 
 const SHARE_BUTTON_ICON =
-  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M15 8a3 3 0 1 0-2.83-4H12a3 3 0 0 0 0 6 3 3 0 0 0 3-2Z"></path>' +
-  '<path d="m8.5 13.5 6-3"></path>' +
-  '<path d="m8.5 10.5 6 3"></path>' +
-  '<path d="M6 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>' +
-  '<path d="M18 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>' +
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="18" cy="5.5" r="2"></circle>' +
+  '<circle cx="6" cy="12" r="2"></circle>' +
+  '<circle cx="18" cy="18.5" r="2"></circle>' +
+  '<path d="m7.75 11 8-4.25"></path>' +
+  '<path d="m7.75 13 8 4.25"></path>' +
+  '</svg>';
+
+const GIT_BUTTON_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="7" cy="6" r="1.75"></circle>' +
+  '<circle cx="7" cy="18" r="1.75"></circle>' +
+  '<circle cx="17" cy="12" r="1.75"></circle>' +
+  '<path d="M8.75 6h3a4 4 0 0 1 4 4v2"></path>' +
+  '<path d="M8.75 18h3a4 4 0 0 0 4-4v-2"></path>' +
   '</svg>';
 
 function getTabLabels(): Record<SessionTabId, string> {
@@ -46,8 +52,45 @@ function getTabLabels(): Record<SessionTabId, string> {
   };
 }
 
-function createActionIcon(svgMarkup: string): string {
-  return `<span class="ide-bar-btn-icon" aria-hidden="true">${svgMarkup}</span>`;
+function createActionIcon(svgMarkup: string): HTMLSpanElement {
+  const icon = document.createElement('span');
+  icon.className = 'ide-bar-btn-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = svgMarkup;
+  return icon;
+}
+
+function createActionLabel(text: string): HTMLSpanElement {
+  const label = document.createElement('span');
+  label.className = 'ide-bar-btn-label';
+  label.textContent = text;
+  return label;
+}
+
+function buildGitStatsMarkup(additions: number, deletions: number): string {
+  return (
+    `<span class="git-indicator-added">+${additions}</span>` +
+    `<span class="git-indicator-deleted">-${deletions}</span>`
+  );
+}
+
+function createActionButton(
+  actionId: IdeBarActionId,
+  className: string,
+  title: string,
+  label: string,
+  iconMarkup: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.className = className;
+  btn.dataset.action = actionId;
+  btn.title = title;
+  btn.setAttribute('aria-label', title);
+  btn.appendChild(createActionIcon(iconMarkup));
+  btn.appendChild(createActionLabel(label));
+  btn.addEventListener('click', onClick);
+  return btn;
 }
 
 let commandsClickHandler: (() => void) | null = null;
@@ -106,43 +149,49 @@ export function createTabBar(
   const actions = document.createElement('div');
   actions.className = 'ide-bar-actions';
 
-  const webBtn = document.createElement('button');
-  webBtn.className = 'ide-bar-btn ide-bar-web';
-  webBtn.dataset.action = 'web';
-  webBtn.title = t('sessionTabs.web');
-  webBtn.setAttribute('aria-label', t('sessionTabs.web'));
-  webBtn.innerHTML = createActionIcon(WEB_BUTTON_ICON);
-  webBtn.addEventListener('click', () => webClickHandler?.());
+  const webBtn = createActionButton(
+    'web',
+    'ide-bar-btn ide-bar-web',
+    t('sessionTabs.web'),
+    t('sessionTabs.webShort'),
+    WEB_BUTTON_ICON,
+    () => webClickHandler?.(),
+  );
   actions.appendChild(webBtn);
 
-  const cmdBtn = document.createElement('button');
-  cmdBtn.className = 'ide-bar-btn ide-bar-commands';
-  cmdBtn.dataset.action = 'commands';
-  cmdBtn.title = t('sessionTabs.commands');
-  cmdBtn.setAttribute('aria-label', t('sessionTabs.commands'));
-  cmdBtn.innerHTML = createActionIcon(COMMANDS_BUTTON_ICON);
-  cmdBtn.addEventListener('click', () => commandsClickHandler?.());
+  const cmdBtn = createActionButton(
+    'commands',
+    'ide-bar-btn ide-bar-commands',
+    t('sessionTabs.commands'),
+    t('sessionTabs.commands'),
+    COMMANDS_BUTTON_ICON,
+    () => commandsClickHandler?.(),
+  );
   actions.appendChild(cmdBtn);
 
-  const gitBtn = document.createElement('button');
-  gitBtn.className = 'ide-bar-btn git-indicator';
-  gitBtn.dataset.action = 'git';
-  gitBtn.title = t('sessionTabs.git');
-  gitBtn.setAttribute('aria-label', t('sessionTabs.git'));
-  gitBtn.innerHTML =
-    '<span class="git-indicator-branch">\u2387</span>' +
-    '<span class="git-indicator-stats"></span>';
-  gitBtn.addEventListener('click', () => gitClickHandler?.());
-  actions.appendChild(gitBtn);
-
-  const shareBtn = document.createElement('button');
-  shareBtn.className = 'ide-bar-btn ide-bar-share';
-  shareBtn.dataset.action = 'share';
-  shareBtn.title = t('sessionTabs.share');
-  shareBtn.setAttribute('aria-label', t('sessionTabs.share'));
-  shareBtn.innerHTML = createActionIcon(SHARE_BUTTON_ICON);
-  shareBtn.addEventListener('click', () => shareClickHandler?.(sessionId));
+  const shareBtn = createActionButton(
+    'share',
+    'ide-bar-btn ide-bar-share',
+    t('sessionTabs.share'),
+    t('sessionTabs.share'),
+    SHARE_BUTTON_ICON,
+    () => shareClickHandler?.(sessionId),
+  );
   actions.appendChild(shareBtn);
+
+  const gitBtn = createActionButton(
+    'git',
+    'ide-bar-btn git-indicator',
+    t('sessionTabs.git'),
+    t('sessionTabs.git'),
+    GIT_BUTTON_ICON,
+    () => gitClickHandler?.(),
+  );
+  const gitStats = document.createElement('span');
+  gitStats.className = 'git-indicator-stats';
+  gitStats.innerHTML = buildGitStatsMarkup(0, 0);
+  gitBtn.appendChild(gitStats);
+  actions.appendChild(gitBtn);
 
   bar.appendChild(actions);
 
@@ -173,26 +222,16 @@ export function updateCwd(bar: HTMLDivElement, cwd: string): void {
 }
 
 export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusResponse | null): void {
-  const branchSpan = bar.querySelector('.git-indicator-branch');
   const statsSpan = bar.querySelector('.git-indicator-stats');
   if (!statsSpan) return;
 
   if (!status) {
-    if (branchSpan) branchSpan.textContent = '\u2387';
-    statsSpan.innerHTML =
-      '<span class="git-indicator-added">+0</span> ' +
-      '<span class="git-indicator-deleted">-0</span>';
+    statsSpan.innerHTML = buildGitStatsMarkup(0, 0);
     return;
-  }
-
-  if (branchSpan) {
-    branchSpan.textContent = '\u2387';
   }
 
   const additions = status.totalAdditions;
   const deletions = status.totalDeletions;
 
-  statsSpan.innerHTML =
-    `<span class="git-indicator-added">+${additions}</span> ` +
-    `<span class="git-indicator-deleted">-${deletions}</span>`;
+  statsSpan.innerHTML = buildGitStatsMarkup(additions, deletions);
 }

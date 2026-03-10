@@ -1,0 +1,178 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+class FakeClassList {
+  private readonly owner: FakeElement;
+
+  public constructor(owner: FakeElement) {
+    this.owner = owner;
+  }
+
+  public add(...tokens: string[]): void {
+    const classes = new Set(this.owner.className.split(/\s+/).filter(Boolean));
+    for (const token of tokens) {
+      classes.add(token);
+    }
+    this.owner.className = Array.from(classes).join(' ');
+  }
+
+  public toggle(token: string, force?: boolean): boolean {
+    const classes = new Set(this.owner.className.split(/\s+/).filter(Boolean));
+    const shouldAdd = force ?? !classes.has(token);
+    if (shouldAdd) {
+      classes.add(token);
+    } else {
+      classes.delete(token);
+    }
+    this.owner.className = Array.from(classes).join(' ');
+    return shouldAdd;
+  }
+}
+
+class FakeElement {
+  public readonly tagName: string;
+  public className = '';
+  public textContent = '';
+  public title = '';
+  public innerHTML = '';
+  public readonly dataset: Record<string, string> = {};
+  public readonly children: FakeElement[] = [];
+  public readonly classList: FakeClassList;
+  private readonly listeners = new Map<string, Array<() => void>>();
+
+  public constructor(tagName: string) {
+    this.tagName = tagName.toUpperCase();
+    this.classList = new FakeClassList(this);
+  }
+
+  public appendChild<T extends FakeElement>(child: T): T {
+    this.children.push(child);
+    return child;
+  }
+
+  public addEventListener(type: string, handler: () => void): void {
+    const handlers = this.listeners.get(type) ?? [];
+    handlers.push(handler);
+    this.listeners.set(type, handlers);
+  }
+
+  public click(): void {
+    const handlers = this.listeners.get('click') ?? [];
+    for (const handler of handlers) {
+      handler();
+    }
+  }
+
+  public setAttribute(name: string, value: string): void {
+    if (name === 'title') {
+      this.title = value;
+    }
+  }
+
+  public querySelector(selector: string): FakeElement | null {
+    return findMatchingElement(this.children, selector);
+  }
+}
+
+function findMatchingElement(elements: FakeElement[], selector: string): FakeElement | null {
+  for (const element of elements) {
+    if (matchesSelector(element, selector)) {
+      return element;
+    }
+
+    const nestedMatch = findMatchingElement(element.children, selector);
+    if (nestedMatch) {
+      return nestedMatch;
+    }
+  }
+
+  return null;
+}
+
+function matchesSelector(element: FakeElement, selector: string): boolean {
+  if (selector.startsWith('.')) {
+    const className = selector.slice(1);
+    return element.className.split(/\s+/).includes(className);
+  }
+
+  return false;
+}
+
+const translations: Record<string, string> = {
+  'session.terminal': 'Terminal',
+  'sessionTabs.files': 'Files',
+  'sessionTabs.commands': 'Commands',
+  'sessionTabs.git': 'Git',
+  'sessionTabs.share': 'Share',
+  'sessionTabs.web': 'Web Preview',
+  'sessionTabs.webShort': 'WEB',
+};
+
+const originalDocument = globalThis.document;
+
+vi.mock('../i18n', () => ({
+  t: (key: string) => translations[key] ?? key,
+}));
+
+describe('tabBar', () => {
+  beforeAll(() => {
+    Object.assign(globalThis, {
+      document: {
+        createElement: (tagName: string) => new FakeElement(tagName),
+      },
+    });
+  });
+
+  afterAll(() => {
+    Object.assign(globalThis, {
+      document: originalDocument,
+    });
+  });
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('renders IDE actions in the requested order with visible labels', async () => {
+    const { createTabBar } = await import('./tabBar');
+
+    const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
+    const actions = bar.children[3];
+    const buttons = actions.children;
+
+    expect(buttons.map((button) => button.dataset.action)).toEqual([
+      'web',
+      'commands',
+      'share',
+      'git',
+    ]);
+    expect(buttons.map((button) => button.children[1]?.textContent)).toEqual([
+      'WEB',
+      'Commands',
+      'Share',
+      'Git',
+    ]);
+  });
+
+  it('uses the registered share handler and updates git stats', async () => {
+    const shareClick = vi.fn();
+    const { createTabBar, setShareClickHandler, updateGitIndicator } = await import('./tabBar');
+
+    setShareClickHandler(shareClick);
+
+    const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
+    const actions = bar.children[3];
+    const shareButton = actions.children[2];
+    const gitButton = actions.children[3];
+
+    shareButton.click();
+    expect(shareClick).toHaveBeenCalledTimes(1);
+
+    updateGitIndicator(bar as unknown as HTMLDivElement, {
+      totalAdditions: 7,
+      totalDeletions: 3,
+    } as { totalAdditions: number; totalDeletions: number });
+
+    expect(gitButton.children[2]?.innerHTML).toContain('+7');
+    expect(gitButton.children[2]?.innerHTML).toContain('-3');
+  });
+});
