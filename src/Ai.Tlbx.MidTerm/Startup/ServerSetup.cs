@@ -23,8 +23,6 @@ public static class ServerSetup
     public static X509Certificate2? LoadedCertificate { get; private set; }
     public static bool IsFallbackCertificate { get; private set; }
 
-    private static readonly string AssetVersionETag = ComputeVersionETag();
-
     public static WebApplicationBuilder CreateBuilder(string[] args, Action<string, bool>? writeEventLog = null)
     {
         writeEventLog?.Invoke("CreateBuilder: Starting", false);
@@ -207,9 +205,7 @@ public static class ServerSetup
             OnPrepareResponse = ctx =>
             {
                 var path = ctx.Context.Request.Path.Value ?? "";
-                var isFont = path.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase)
-                          || path.EndsWith(".woff", StringComparison.OrdinalIgnoreCase)
-                          || path.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase);
+                var isFont = StaticAssetCacheHeaders.IsFontAsset(path);
 
                 if (isFont)
                 {
@@ -223,14 +219,8 @@ public static class ServerSetup
                     ctx.Context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
                     ctx.Context.Response.Headers.Pragma = "no-cache";
 #else
-                    ctx.Context.Response.Headers.ETag = AssetVersionETag;
-                    var isEntryPointAsset = path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
-                        || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
-                        || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
-                        || path.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase);
-                    ctx.Context.Response.Headers.CacheControl = isEntryPointAsset
-                        ? "public, max-age=0, must-revalidate"
-                        : "public, max-age=86400";
+                    // Let StaticFileMiddleware keep its built-in per-file validators.
+                    ctx.Context.Response.Headers.CacheControl = StaticAssetCacheHeaders.GetCacheControl(path);
 #endif
                 }
             }
@@ -293,15 +283,6 @@ public static class ServerSetup
         });
 
         ConfigureStaticFiles(app);
-    }
-
-    private static string ComputeVersionETag()
-    {
-        var version = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-        var plusIndex = version.IndexOf('+');
-        if (plusIndex > 0) version = version[..plusIndex];
-        return $"\"{version}\"";
     }
 
     internal static string BuildContentSecurityPolicy(string? previewOrigin = null)

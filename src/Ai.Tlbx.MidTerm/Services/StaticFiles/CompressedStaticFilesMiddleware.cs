@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Reflection;
 using Microsoft.Extensions.FileProviders;
 
 namespace Ai.Tlbx.MidTerm.Services.StaticFiles;
@@ -8,7 +7,6 @@ public sealed class CompressedStaticFilesMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly IFileProvider _fileProvider;
-    private readonly string _versionETag;
 
     private static readonly Dictionary<string, string> CompressibleExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,12 +27,6 @@ public sealed class CompressedStaticFilesMiddleware
     {
         _next = next;
         _fileProvider = fileProvider;
-
-        var version = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-        var plusIndex = version.IndexOf('+');
-        if (plusIndex > 0) version = version[..plusIndex];
-        _versionETag = $"\"{version}\"";
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -82,12 +74,19 @@ public sealed class CompressedStaticFilesMiddleware
             return;
         }
 
+        var eTag = StaticAssetCacheHeaders.CreateETag(path, fileInfo);
+        var cacheControl = StaticAssetCacheHeaders.GetCacheControl(path);
+        context.Response.Headers.ETag = eTag;
+        context.Response.Headers.CacheControl = cacheControl;
+        context.Response.Headers.Vary = "Accept-Encoding";
+
         // ETag-based 304 Not Modified
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
-        if (!string.IsNullOrEmpty(ifNoneMatch) && ifNoneMatch.Contains(_versionETag))
+        if (!string.IsNullOrEmpty(ifNoneMatch)
+            && (ifNoneMatch.Contains('*', StringComparison.Ordinal)
+                || ifNoneMatch.Split(',').Any(tag => string.Equals(tag.Trim(), eTag, StringComparison.Ordinal))))
         {
             context.Response.StatusCode = StatusCodes.Status304NotModified;
-            context.Response.Headers.ETag = _versionETag;
             return;
         }
 
@@ -95,17 +94,6 @@ public sealed class CompressedStaticFilesMiddleware
         var clientSupportsBrotli = acceptEncoding.Contains("br", StringComparison.OrdinalIgnoreCase);
 
         context.Response.ContentType = contentType;
-        context.Response.Headers.ETag = _versionETag;
-
-        // Revalidate entry-point assets on every navigation so UI updates are visible
-        // immediately after an app update, even in PWA mode.
-        var shouldRevalidate = extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".css", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".js", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".webmanifest", StringComparison.OrdinalIgnoreCase);
-        context.Response.Headers.CacheControl = shouldRevalidate
-            ? "public, max-age=0, must-revalidate"
-            : "public, max-age=86400";
 
         await using var fileStream = fileInfo.CreateReadStream();
 

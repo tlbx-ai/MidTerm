@@ -12,10 +12,15 @@ import type { TerminalTheme } from './types';
 
 /** Version injected at build time - DO NOT MODIFY, replaced by esbuild */
 declare const BUILD_VERSION: string;
+declare const BUILD_ASSET_VERSION: string;
 
 /** The version this JavaScript was compiled for */
 export const JS_BUILD_VERSION: string =
   typeof BUILD_VERSION !== 'undefined' ? BUILD_VERSION : 'dev';
+
+/** Fingerprint for cache-busting static assets without forcing app version bumps */
+export const ASSET_VERSION: string =
+  typeof BUILD_ASSET_VERSION !== 'undefined' ? BUILD_ASSET_VERSION : JS_BUILD_VERSION;
 
 // =============================================================================
 // Mux Protocol Constants

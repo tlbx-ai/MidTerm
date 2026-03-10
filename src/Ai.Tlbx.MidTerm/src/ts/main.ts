@@ -9,7 +9,7 @@ import { initLoginPage } from './modules/login';
 import { initTrustPage } from './modules/trust';
 import { initThemeFromCookie } from './modules/theming';
 import { createLogger, initLogConcerns } from './modules/logging';
-import { JS_BUILD_VERSION } from './constants';
+import { ASSET_VERSION } from './constants';
 import {
   connectStateWebSocket,
   connectMuxWebSocket,
@@ -303,7 +303,7 @@ async function init(): Promise<void> {
   }
 
   if (serviceWorker?.register) {
-    serviceWorker.register(`/js/sw.js?v=${encodeURIComponent(JS_BUILD_VERSION)}`).catch(() => {});
+    serviceWorker.register(`/js/sw.js?v=${encodeURIComponent(ASSET_VERSION)}`).catch(() => {});
   }
 
   log.info(() => 'MidTerm frontend initialized');

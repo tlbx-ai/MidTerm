@@ -10,6 +10,7 @@ import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { addProcessStateListener } from '../process';
 import { createTreeView, setTreeRoot, destroyTreeView } from './treeView';
 import { renderPreview, clearPreview } from './filePreview';
+import { $processStates } from '../../stores';
 
 const log = createLogger('fileBrowser');
 
@@ -55,8 +56,9 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
     clearPreview(previewContainer);
   }
 
-  const cwd = sessionCwds.get(sessionId);
+  const cwd = sessionCwds.get(sessionId) ?? $processStates.get()[sessionId]?.foregroundCwd ?? null;
   if (cwd) {
+    sessionCwds.set(sessionId, cwd);
     void setTreeRoot(sessionId, cwd);
   }
 }
