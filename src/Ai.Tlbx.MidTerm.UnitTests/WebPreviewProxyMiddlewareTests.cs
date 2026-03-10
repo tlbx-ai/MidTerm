@@ -94,4 +94,32 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("return q.clone().arrayBuffer().then(function(body){", script, StringComparison.Ordinal);
         Assert.DoesNotContain("new Request(r(u.url),u)", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void CollectProxyPathPrefixes_RewrittenHtml_PrimesServerRootAssetPrefixes()
+    {
+        const string html = """
+            <link rel="stylesheet" href="/webpreview/_astro/DocsStatic.css">
+            <script type="module" src="/webpreview/_astro/page.js"></script>
+            <img src="/webpreview/OpenAI_Developers.svg">
+            <a href="/webpreview/api/reference/resources/audio/index.md">Markdown</a>
+            <style>
+              @font-face { src: url(/webpreview/_astro/fonts/site.woff2); }
+              .hero { background-image: url('/webpreview/img/logo.png'); }
+            </style>
+            <a href="/webpreview/_ext?u=https%3A%2F%2Fcdn.openai.com%2Ffont.woff2">External</a>
+            """;
+
+        var prefixes = WebPreviewProxyMiddleware.CollectProxyPathPrefixes(html);
+
+        Assert.Equal(
+            new[]
+            {
+                "/api/",
+                "/img/",
+                "/OpenAI_Developers.svg/",
+                "/_astro/"
+            },
+            prefixes);
+    }
 }

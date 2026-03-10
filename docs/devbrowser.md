@@ -205,3 +205,5 @@ When a website doesn't load through the web preview:
 **No WebSocket content rewriting.** Frameworks use relative paths for routing. The absolute origin in URLs doesn't matter as long as `baseUri` and `currentUri` share the same origin. Relaying messages untouched eliminates an entire class of bugs (JSON corruption, MessagePack header mismatch, VarInt framing errors).
 
 **Write-side interception is sufficient.** Outgoing APIs (fetch, XHR, WebSocket, history, element setters) are patched to add `/webpreview` before requests leave JS. This ensures all requests route through the proxy middleware.
+
+For targets that live under a deep document path but serve assets from the origin root (for example docs sites that load `/_astro/*` from a page under `/foo/bar/...`), MidTerm now primes its root-fallback cache directly from the rewritten HTML before the browser requests those assets. That avoids the first-wave `404` noise where the proxy would otherwise try `targetBase + /_astro/...` once and only then learn to retry the server-root path.

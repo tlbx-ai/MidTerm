@@ -609,8 +609,9 @@ public sealed partial class WebPreviewProxyMiddleware
     private readonly RequestDelegate _next;
     private readonly WebPreviewService _service;
 
-    // Learned path prefixes where subpath-prefixed requests returned 404 but server-root
-    // succeeded. Keyed by prefix (e.g. "/_framework/"), value is true = prefer root.
+    // Learned path prefixes that should bypass subpath-prefixing and go to the
+    // upstream server root. Seeded from rewritten HTML and reinforced by 404→root
+    // fallback wins. Keyed by prefix (e.g. "/_framework/"), value is true = prefer root.
     // Reset when the target URL changes.
     private readonly Dictionary<string, bool> _rootFallbackPrefixes = new(StringComparer.OrdinalIgnoreCase);
     private string? _rootFallbackTarget;
@@ -916,6 +917,11 @@ public sealed partial class WebPreviewProxyMiddleware
         html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetAuthority));
         html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetAuthority));
 
+        // Prime the root-fallback cache from rewritten HTML before the browser starts
+        // requesting assets. This avoids the first-wave 404s on deep document targets
+        // whose HTML points at server-root assets like /_astro/*.
+        PrimeRootFallbacksFromHtml(html);
+
         // Extract the original <base href> value before removing — Blazor and other
         // frameworks rely on precise base URI (e.g., <base href="/kicoach/">).
         // Recomputing from the final URL loses trailing-slash semantics when the server
@@ -973,6 +979,58 @@ public sealed partial class WebPreviewProxyMiddleware
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return "/webpreview" + directory;
+    }
+
+    internal void PrimeRootFallbacksFromHtml(string html)
+    {
+        var targetUri = _service.TargetUri;
+        if (targetUri is null)
+        {
+            return;
+        }
+
+        var targetBase = targetUri.AbsolutePath.TrimEnd('/');
+        if (string.IsNullOrEmpty(targetBase) || targetBase == "/")
+        {
+            return;
+        }
+
+        ResetFallbackCacheIfTargetChanged();
+        _rootFallbackTarget = targetUri.ToString();
+
+        foreach (var prefix in CollectProxyPathPrefixes(html))
+        {
+            _rootFallbackPrefixes[prefix] = true;
+        }
+    }
+
+    internal static string[] CollectProxyPathPrefixes(string html)
+    {
+        if (string.IsNullOrEmpty(html))
+        {
+            return Array.Empty<string>();
+        }
+
+        var prefixes = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match match in ProxiedPathRegex().Matches(html))
+        {
+            var proxiedPath = match.Groups[1].Value;
+            if (!proxiedPath.StartsWith(ProxyPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var upstreamPath = proxiedPath[ProxyPrefix.Length..];
+            var prefix = GetPathPrefix(upstreamPath);
+            if (prefix is null || prefix.Equals("/_ext/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            prefixes.Add(prefix);
+        }
+
+        return prefixes.Count == 0 ? Array.Empty<string>() : [.. prefixes];
     }
 
     private async Task ProxyCssResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
@@ -1846,6 +1904,11 @@ public sealed partial class WebPreviewProxyMiddleware
     // Matches absolute http(s) URLs in CSS url(): url(https://...) or url("https://...")
     [GeneratedRegex(@"(url\(\s*[""']?)(https?://[^""')>\s]+)", RegexOptions.IgnoreCase)]
     private static partial Regex AbsoluteUrlCssRegex();
+
+    // Matches rewritten proxy paths in HTML/CSS attributes so we can prime root
+    // fallback prefixes before the browser requests them.
+    [GeneratedRegex(@"[""'(=]\s*(/webpreview/[^""')\s,>]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex ProxiedPathRegex();
 
     /// <summary>
     /// Rewrite absolute external URL in an HTML attribute to go through the _ext proxy.
