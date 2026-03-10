@@ -7,10 +7,12 @@ public static class EndpointExtensions
     public static IEndpointRouteBuilder MapAllApiEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapAuthApiEndpoints();
+        app.MapSecurityApiEndpoints();
         app.MapSessionApiEndpoints();
         app.MapHistoryApiEndpoints();
         app.MapFileApiEndpoints();
         app.MapLogApiEndpoints();
+        app.MapShareApiEndpoints();
         app.MapSystemApiEndpoints();
 
         return app;

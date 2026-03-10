@@ -5,7 +5,7 @@
  * and health check functionality.
  */
 
-import type { SystemHealth } from '../../types';
+import type { FirewallRuleStatusResponse, SystemHealth } from '../../types';
 import { sessionTerminals, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList, $windowsBuildNumber } from '../../stores';
 import { fetchSettings, unbindSettingsAutoSave } from './persistence';
@@ -13,8 +13,15 @@ import { initSettingsTabs } from './tabs';
 import { stopLatencyMeasurement } from '../diagnostics';
 import { refreshTerminalPresentation } from '../terminal/scaling';
 import { createLogger } from '../logging';
-import { getHealth, getSharePacket, regenerateCertificate } from '../../api/client';
-import { showConfirm } from '../../utils/dialog';
+import {
+  addFirewallRule,
+  getFirewallRuleStatus,
+  getHealth,
+  getSharePacket,
+  regenerateCertificate,
+  removeFirewallRule,
+} from '../../api/client';
+import { showAlert, showConfirm } from '../../utils/dialog';
 import { t } from '../i18n';
 
 const log = createLogger('settings');
@@ -60,6 +67,8 @@ export function openSettings(): void {
   fetchSystemStatus();
   fetchCertificateInfo();
   bindRegenerateCertButton();
+  bindFirewallButtons();
+  void fetchFirewallRuleStatus();
 }
 
 /**
@@ -243,6 +252,7 @@ export function fetchCertificateInfo(): void {
 }
 
 let regenerateCertBound = false;
+let firewallButtonsBound = false;
 
 function bindRegenerateCertButton(): void {
   const btn = document.getElementById('btn-regenerate-cert') as HTMLButtonElement | null;
@@ -267,6 +277,138 @@ function bindRegenerateCertButton(): void {
       }
 
       showRestartOverlay();
+    })();
+  });
+}
+
+async function fetchFirewallRuleStatus(): Promise<void> {
+  const section = document.getElementById('windows-firewall-section');
+  const statusEl = document.getElementById('settings-firewall-status');
+  const portEl = document.getElementById('settings-firewall-port');
+  const bindEl = document.getElementById('settings-firewall-bind');
+  const noteEl = document.getElementById('settings-firewall-note');
+  const addBtn = document.getElementById('btn-add-firewall-rule') as HTMLButtonElement | null;
+  const removeBtn = document.getElementById('btn-remove-firewall-rule') as HTMLButtonElement | null;
+
+  if (!section || !statusEl || !portEl || !bindEl || !noteEl || !addBtn || !removeBtn) return;
+
+  statusEl.textContent = t('settings.security.checking');
+  portEl.textContent = '-';
+  bindEl.textContent = '-';
+
+  try {
+    const { data, response } = await getFirewallRuleStatus();
+    if (!response.ok || !data) {
+      throw new Error(t('settings.security.firewallError'));
+    }
+
+    applyFirewallStatus(section, data, statusEl, portEl, bindEl, noteEl, addBtn, removeBtn);
+  } catch (err) {
+    section.classList.remove('hidden');
+    statusEl.textContent = t('settings.security.firewallError');
+    noteEl.textContent =
+      err instanceof Error ? err.message : t('settings.security.firewallActionFailed');
+    addBtn.disabled = true;
+    removeBtn.disabled = true;
+  }
+}
+
+function applyFirewallStatus(
+  section: HTMLElement,
+  status: FirewallRuleStatusResponse,
+  statusEl: HTMLElement,
+  portEl: HTMLElement,
+  bindEl: HTMLElement,
+  noteEl: HTMLElement,
+  addBtn: HTMLButtonElement,
+  removeBtn: HTMLButtonElement,
+): void {
+  if (!status.supported) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+  portEl.textContent = String(status.port);
+  bindEl.textContent = status.loopbackOnly
+    ? t('settings.security.firewallExposureLoopback')
+    : t('settings.security.firewallExposureNetwork');
+
+  if (
+    status.rulePresent &&
+    status.ruleEnabled &&
+    status.matchesCurrentPort &&
+    status.matchesCurrentProgram
+  ) {
+    statusEl.textContent = t('settings.security.firewallStatusActive');
+  } else if (status.rulePresent) {
+    statusEl.textContent = t('settings.security.firewallStatusOutOfDate');
+  } else {
+    statusEl.textContent = t('settings.security.firewallStatusMissing');
+  }
+
+  if (!status.canManage) {
+    noteEl.textContent = t('settings.security.firewallAdminRequired');
+  } else if (status.loopbackOnly) {
+    noteEl.textContent = t('settings.security.firewallLoopbackHint');
+  } else {
+    noteEl.textContent = t('settings.security.firewallHint');
+  }
+
+  addBtn.disabled = !status.canManage;
+  removeBtn.disabled = !status.canManage || !status.rulePresent;
+}
+
+function bindFirewallButtons(): void {
+  if (firewallButtonsBound) return;
+
+  const addBtn = document.getElementById('btn-add-firewall-rule') as HTMLButtonElement | null;
+  const removeBtn = document.getElementById('btn-remove-firewall-rule') as HTMLButtonElement | null;
+  if (!addBtn || !removeBtn) return;
+
+  firewallButtonsBound = true;
+
+  addBtn.addEventListener('click', () => {
+    void (async () => {
+      const previousText = addBtn.textContent;
+      addBtn.disabled = true;
+      addBtn.textContent = t('settings.security.firewallAdding');
+
+      try {
+        const { response } = await addFirewallRule();
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : t('settings.security.firewallActionFailed');
+        await showAlert(message, { title: t('settings.security.firewallTitle') });
+      } finally {
+        addBtn.textContent = previousText;
+        await fetchFirewallRuleStatus();
+      }
+    })();
+  });
+
+  removeBtn.addEventListener('click', () => {
+    void (async () => {
+      const previousText = removeBtn.textContent;
+      removeBtn.disabled = true;
+      removeBtn.textContent = t('settings.security.firewallRemoving');
+
+      try {
+        const { response } = await removeFirewallRule();
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : t('settings.security.firewallActionFailed');
+        await showAlert(message, { title: t('settings.security.firewallTitle') });
+      } finally {
+        removeBtn.textContent = previousText;
+        await fetchFirewallRuleStatus();
+      }
     })();
   });
 }

@@ -14,6 +14,9 @@ using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Hosting;
+using Ai.Tlbx.MidTerm.Services.Share;
+using Ai.Tlbx.MidTerm.Services.Security;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -105,12 +108,20 @@ public static class ServerSetup
         });
 
         builder.Services.AddSingleton(settingsService);
+        builder.Services.AddSingleton(sp =>
+        {
+            var (port, bindAddress) = ArgumentParser.Parse(args);
+            return new ServerBindingInfo(port, bindAddress);
+        });
         builder.Services.AddSingleton<ShellRegistry>();
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
+        builder.Services.AddSingleton<ShareGrantService>();
         builder.Services.AddSingleton<TempCleanupService>();
         builder.Services.AddSingleton<CertificateInfoService>();
         builder.Services.AddSingleton<SecurityStatusService>();
+        builder.Services.AddSingleton<IPowerShellCommandRunner, WindowsPowerShellCommandRunner>();
+        builder.Services.AddSingleton<WindowsFirewallService>();
         builder.Services.AddSingleton<MainBrowserService>();
         builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();
@@ -172,6 +183,10 @@ public static class ServerSetup
             {
                 context.Request.Path = path + ".html";
             }
+            else if (path == "/shared" || (path?.StartsWith("/shared/", StringComparison.Ordinal) ?? false))
+            {
+                context.Request.Path = "/index.html";
+            }
             else if (path == "/apple-touch-icon.png" ||
                      path == "/favicon-16x16.png" ||
                      path == "/favicon-32x32.png")
@@ -232,6 +247,7 @@ public static class ServerSetup
         WebApplication app,
         SettingsService settingsService,
         AuthService authService,
+        ShareGrantService shareGrantService,
         BrowserPreviewOriginService previewOriginService)
     {
         app.UseResponseCompression();
@@ -256,7 +272,7 @@ public static class ServerSetup
         });
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
-        AuthMiddleware.ConfigureAuthMiddleware(app, settingsService, authService);
+        AuthMiddleware.ConfigureAuthMiddleware(app, settingsService, authService, shareGrantService);
 
         // WebSockets must be enabled before the web preview proxy middleware so that
         // context.WebSockets.IsWebSocketRequest is true for proxied WebSocket upgrades

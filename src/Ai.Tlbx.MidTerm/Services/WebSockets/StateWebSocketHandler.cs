@@ -7,6 +7,7 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -26,6 +27,7 @@ public sealed class StateWebSocketHandler
     private readonly UpdateService _updateService;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
+    private readonly ShareGrantService _shareGrantService;
     private readonly ShutdownService _shutdownService;
     private readonly MainBrowserService _mainBrowserService;
     private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
@@ -36,6 +38,7 @@ public sealed class StateWebSocketHandler
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
+        ShareGrantService shareGrantService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
@@ -45,6 +48,7 @@ public sealed class StateWebSocketHandler
         _updateService = updateService;
         _settingsService = settingsService;
         _authService = authService;
+        _shareGrantService = shareGrantService;
         _shutdownService = shutdownService;
         _mainBrowserService = mainBrowserService;
         _tmuxLayoutBridge = tmuxLayoutBridge;
@@ -53,20 +57,36 @@ public sealed class StateWebSocketHandler
 
     public async Task HandleAsync(HttpContext context)
     {
-        // SECURITY: Validate auth before accepting WebSocket
-        var settings = _settingsService.Load();
-        if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
+        var path = context.Request.Path.Value ?? "";
+        var shareAccess = RequestAccessContext.GetShareAccess(context);
+        var isShareConnection = string.Equals(path, "/ws/share/state", StringComparison.Ordinal);
+
+        if (isShareConnection)
         {
-            var token = context.Request.Cookies[AuthService.SessionCookieName];
-            if (token is null || !_authService.ValidateSessionToken(token))
+            if (shareAccess is null || shareAccess.IsExpired(DateTime.UtcNow))
             {
                 context.Response.StatusCode = 401;
                 return;
             }
         }
+        else
+        {
+            var settings = _settingsService.Load();
+            if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
+            {
+                var token = context.Request.Cookies[AuthService.SessionCookieName];
+                if (token is null || !_authService.ValidateSessionToken(token))
+                {
+                    context.Response.StatusCode = 401;
+                    return;
+                }
+            }
+        }
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         var sendLock = new SemaphoreSlim(1, 1);
+        Timer? expiryTimer = null;
+        Action<string>? revokeHandler = null;
         UpdateInfo? lastUpdate = null;
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
@@ -94,10 +114,16 @@ public sealed class StateWebSocketHandler
         async Task SendStateAsync()
         {
             var sessionList = _sessionManager.GetSessionList();
+            if (shareAccess is not null)
+            {
+                sessionList.Sessions = sessionList.Sessions
+                    .Where(s => string.Equals(s.Id, shareAccess.SessionId, StringComparison.Ordinal))
+                    .ToList();
+            }
             var state = new StateUpdate
             {
                 Sessions = sessionList,
-                Update = lastUpdate
+                Update = shareAccess is null ? lastUpdate : null
             };
             await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
         }
@@ -194,7 +220,7 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxSwapInstruction);
         }
 
-        if (_tmuxLayoutBridge is not null)
+        if (shareAccess is null && _tmuxLayoutBridge is not null)
         {
             _tmuxLayoutBridge.OnDockRequested += OnDockRequested;
             _tmuxLayoutBridge.OnFocusRequested += OnFocusRequested;
@@ -230,21 +256,63 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        _browserUiBridge?.RegisterListener(
-            connectionId: browserUiListenerId,
-            browserId: browserId,
-            detach: OnBrowserDetach,
-            dock: OnBrowserDock,
-            viewport: OnBrowserViewport,
-            open: OnBrowserOpen);
+        if (shareAccess is null)
+        {
+            _browserUiBridge?.RegisterListener(
+                connectionId: browserUiListenerId,
+                browserId: browserId,
+                detach: OnBrowserDetach,
+                dock: OnBrowserDock,
+                viewport: OnBrowserViewport,
+                open: OnBrowserOpen);
+        }
 
         try
         {
-            lastUpdate = _updateService.LatestUpdate;
+            if (shareAccess is not null)
+            {
+                revokeHandler = grantId =>
+                {
+                    if (string.Equals(grantId, shareAccess.GrantId, StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            ws.Abort();
+                        }
+                        catch
+                        {
+                        }
+                    }
+                };
+                _shareGrantService.OnGrantRevoked += revokeHandler;
+
+                var delay = shareAccess.ExpiresAtUtc - DateTime.UtcNow;
+                if (delay <= TimeSpan.Zero)
+                {
+                    ws.Abort();
+                    return;
+                }
+
+                expiryTimer = new Timer(_ =>
+                {
+                    try
+                    {
+                        ws.Abort();
+                    }
+                    catch
+                    {
+                    }
+                }, null, delay, Timeout.InfiniteTimeSpan);
+            }
+
+            lastUpdate = shareAccess is null ? _updateService.LatestUpdate : null;
             await SendStateAsync();
-            _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
-            _mainBrowserService.Register(browserId, connectionToken);
-            await SendMainBrowserStatusAsync();
+            if (shareAccess is null)
+            {
+                _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
+                _mainBrowserService.Register(browserId, connectionToken);
+                await SendMainBrowserStatusAsync();
+            }
 
             var buffer = new byte[8192];
             var messageBuffer = new List<byte>();
@@ -271,7 +339,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, shareAccess);
                         }
                     }
                 }
@@ -289,21 +357,29 @@ public sealed class StateWebSocketHandler
         {
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
-            _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
-            _mainBrowserService.Unregister(browserId, connectionToken);
+            if (shareAccess is null)
+            {
+                _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
+                _mainBrowserService.Unregister(browserId, connectionToken);
+            }
 
-            if (_tmuxLayoutBridge is not null)
+            if (shareAccess is null && _tmuxLayoutBridge is not null)
             {
                 _tmuxLayoutBridge.OnDockRequested -= OnDockRequested;
                 _tmuxLayoutBridge.OnFocusRequested -= OnFocusRequested;
                 _tmuxLayoutBridge.OnSwapRequested -= OnSwapRequested;
             }
 
-            if (_browserUiBridge is not null)
+            if (shareAccess is null && _browserUiBridge is not null)
             {
                 _browserUiBridge.UnregisterListener(browserUiListenerId);
             }
 
+            if (revokeHandler is not null)
+            {
+                _shareGrantService.OnGrantRevoked -= revokeHandler;
+            }
+            expiryTimer?.Dispose();
             sendLock.Dispose();
 
             if (ws.State == WebSocketState.Open)
@@ -326,7 +402,11 @@ public sealed class StateWebSocketHandler
         }
     }
 
-    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse, string browserId)
+    private async Task HandleCommandAsync(
+        string json,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        string browserId,
+        ShareAccessContext? shareAccess)
     {
         WsCommand? cmd;
         try
@@ -340,6 +420,12 @@ public sealed class StateWebSocketHandler
 
         if (cmd is null || cmd.Type != "command" || string.IsNullOrEmpty(cmd.Id))
         {
+            return;
+        }
+
+        if (shareAccess is not null)
+        {
+            await sendResponse(cmd.Id, false, null, "Shared sessions do not allow control commands");
             return;
         }
 

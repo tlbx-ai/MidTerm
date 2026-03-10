@@ -31,6 +31,7 @@ import { setWebPreviewTarget } from '../web/webApi';
 import { setActiveUrl, setActiveMode } from '../web/webSessionState';
 import { loadPreview } from '../web/webPanel';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
+import { isSharedSessionRoute } from '../share';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -154,7 +155,8 @@ export function setSelectSessionCallback(
 export function connectStateWebSocket(): void {
   closeWebSocket(stateWs, setStateWs);
 
-  const ws = new WebSocket(createWsUrl('/ws/state'));
+  const wsPath = isSharedSessionRoute() ? '/ws/share/state' : '/ws/state';
+  const ws = new WebSocket(createWsUrl(wsPath));
   setStateWs(ws);
 
   ws.onopen = () => {

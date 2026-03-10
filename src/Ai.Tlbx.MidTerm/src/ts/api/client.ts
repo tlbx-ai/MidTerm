@@ -16,6 +16,11 @@ import type {
   CreateSessionRequest,
   CreateHistoryRequest,
   HistoryPatchRequest,
+  CreateShareLinkRequest,
+  CreateShareLinkResponse,
+  ClaimShareRequest,
+  ClaimShareResponse,
+  ShareBootstrapResponse,
 } from './types';
 
 const client = createClient<paths>({ baseUrl: '' });
@@ -51,6 +56,18 @@ export async function getAuthStatus() {
 
 export async function getSecurityStatus() {
   return client.GET('/api/security/status');
+}
+
+export async function getFirewallRuleStatus() {
+  return client.GET('/api/security/firewall');
+}
+
+export async function addFirewallRule() {
+  return client.POST('/api/security/firewall');
+}
+
+export async function removeFirewallRule() {
+  return client.DELETE('/api/security/firewall');
 }
 
 // --- Bootstrap ---
@@ -198,6 +215,45 @@ export async function getCertificateInfo() {
 
 export async function getSharePacket() {
   return client.GET('/api/certificate/share-packet');
+}
+
+export async function createShareLink(
+  request: CreateShareLinkRequest,
+): Promise<CreateShareLinkResponse> {
+  const response = await fetch('/api/share/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as CreateShareLinkResponse;
+}
+
+export async function claimShareLink(request: ClaimShareRequest): Promise<ClaimShareResponse> {
+  const response = await fetch('/api/share/claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as ClaimShareResponse;
+}
+
+export async function getShareBootstrap(): Promise<ShareBootstrapResponse> {
+  const response = await fetch('/api/share/bootstrap');
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as ShareBootstrapResponse;
 }
 
 export async function regenerateCertificate(): Promise<Response> {

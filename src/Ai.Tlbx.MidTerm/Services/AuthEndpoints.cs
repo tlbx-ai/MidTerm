@@ -116,13 +116,6 @@ public static class AuthEndpoints
             }, AppJsonContext.Default.AuthStatusResponse);
         });
 
-        // Security status endpoint - reports password/certificate health
-        // Accessible without authentication to allow monitoring
-        var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();
-        app.MapGet("/api/security/status", () =>
-        {
-            return Results.Json(securityStatusService.GetStatus(), AppJsonContext.Default.SecurityStatus);
-        });
     }
 
 }

@@ -2279,10 +2279,6 @@ body.has-app-background::after {
         display: none;
     }
 
-    body.ide-mode-off .topbar-ide-action {
-        display: none;
-    }
-
     /* Main content fills viewport */
     .main-content {
         width: 100%;
@@ -4181,6 +4177,13 @@ body.has-app-background::after {
   font-size: var(--fs-base);
 }
 
+.firewall-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 @media (max-width: 600px) {
   .status-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -4658,6 +4661,70 @@ body.has-app-background::after {
   color: var(--text-secondary);
   line-height: 1.5;
   white-space: pre-line;
+}
+
+.share-dialog-modal {
+  width: min(520px, 92vw);
+}
+
+.share-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-dialog-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+}
+
+.share-dialog-hint,
+.share-dialog-expiry {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.share-link-output {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+body.shared-session-mode .sidebar,
+body.shared-session-mode .sidebar-overlay,
+body.shared-session-mode .chat-panel,
+body.shared-session-mode .collapsed-title-bar,
+body.shared-session-mode .mobile-topbar,
+body.shared-session-mode .manager-bar,
+body.shared-session-mode #settings-view {
+  display: none !important;
+}
+
+body.shared-session-mode .main-content,
+body.shared-session-mode .terminals-area {
+  width: 100%;
+}
+
+body.shared-session-mode .session-tab:not([data-tab='terminal']),
+body.shared-session-mode .ide-bar-actions {
+  display: none;
+}
+
+body.shared-session-mode .session-cwd {
+  max-width: none;
+  margin-left: auto;
+}
+
+body.shared-session-mode .session-tab-bar {
+  padding-inline: 12px;
 }
 
 /* Update Log Modal */
@@ -7983,11 +8050,6 @@ body.has-app-background::after {
 
 /* Hide tabs in layout/split-pane mode */
 .layout-leaf .session-tab-bar {
-  display: none;
-}
-
-/* Hide tabs when IDE mode is disabled */
-body.ide-mode-off .session-tab-bar {
   display: none;
 }
 

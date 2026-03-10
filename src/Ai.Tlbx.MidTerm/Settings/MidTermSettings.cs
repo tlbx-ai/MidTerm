@@ -66,8 +66,6 @@ public sealed class MidTermSettings
     // Tmux Compatibility - Injects tmux shim into spawned terminals for AI tool integration
     public bool TmuxCompatibility { get; set; } = true;
 
-    public bool IdeMode { get; set; } = true;
-
     // Developer mode - enables dev features (voice sync, faster update checks, etc.)
     public bool DevMode { get; set; } = false;
 

@@ -25,7 +25,4 @@ public class StubAuthHandler : IAuthHandler
 
     public IResult GetStatus() =>
         Results.Json(new AuthStatusResponse { AuthenticationEnabled = true, PasswordSet = true });
-
-    public IResult GetSecurityStatus() =>
-        Results.Json(new SecurityStatus { PasswordProtected = true, CertificateTrusted = true });
 }

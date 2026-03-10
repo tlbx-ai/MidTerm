@@ -20,6 +20,7 @@ import type {
   AuthStatusResponse,
   ProcessState,
   DisplayLayout,
+  ShareAccessMode,
 } from '../types';
 
 // =============================================================================
@@ -220,6 +221,18 @@ export const $voiceServerPassword = atom<string | null>(null);
 
 /** Settings WebSocket connected flag */
 export const $settingsWsConnected = atom<boolean>(false);
+
+/** Whether the app is running in shared-session mode */
+export const $sharedSessionMode = atom<boolean>(false);
+
+/** Shared session ID for capability-scoped mode */
+export const $sharedSessionId = atom<string | null>(null);
+
+/** Shared session access mode */
+export const $sharedAccessMode = atom<ShareAccessMode | null>(null);
+
+/** Shared session link expiry */
+export const $sharedExpiresAt = atom<string | null>(null);
 
 // =============================================================================
 // Helper Functions

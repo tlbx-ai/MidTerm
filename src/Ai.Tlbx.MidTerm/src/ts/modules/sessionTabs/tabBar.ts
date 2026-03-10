@@ -11,7 +11,7 @@ import { t } from '../i18n';
 
 export type SessionTabId = 'terminal' | 'files';
 
-export type IdeBarActionId = 'git' | 'commands' | 'web';
+export type IdeBarActionId = 'git' | 'commands' | 'web' | 'share';
 
 const WEB_BUTTON_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
@@ -30,6 +30,15 @@ const COMMANDS_BUTTON_ICON =
   '<path d="M12.5 10h5"></path>' +
   '</svg>';
 
+const SHARE_BUTTON_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M15 8a3 3 0 1 0-2.83-4H12a3 3 0 0 0 0 6 3 3 0 0 0 3-2Z"></path>' +
+  '<path d="m8.5 13.5 6-3"></path>' +
+  '<path d="m8.5 10.5 6 3"></path>' +
+  '<path d="M6 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>' +
+  '<path d="M18 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>' +
+  '</svg>';
+
 function getTabLabels(): Record<SessionTabId, string> {
   return {
     terminal: t('session.terminal'),
@@ -44,6 +53,7 @@ function createActionIcon(svgMarkup: string): string {
 let commandsClickHandler: (() => void) | null = null;
 let gitClickHandler: (() => void) | null = null;
 let webClickHandler: (() => void) | null = null;
+let shareClickHandler: ((sessionId: string) => void) | null = null;
 
 export function setCommandsClickHandler(handler: () => void): void {
   commandsClickHandler = handler;
@@ -55,6 +65,10 @@ export function setGitClickHandler(handler: () => void): void {
 
 export function setWebClickHandler(handler: () => void): void {
   webClickHandler = handler;
+}
+
+export function setShareClickHandler(handler: (sessionId: string) => void): void {
+  shareClickHandler = handler;
 }
 
 export function createTabBar(
@@ -120,6 +134,15 @@ export function createTabBar(
     '<span class="git-indicator-stats"></span>';
   gitBtn.addEventListener('click', () => gitClickHandler?.());
   actions.appendChild(gitBtn);
+
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'ide-bar-btn ide-bar-share';
+  shareBtn.dataset.action = 'share';
+  shareBtn.title = t('sessionTabs.share');
+  shareBtn.setAttribute('aria-label', t('sessionTabs.share'));
+  shareBtn.innerHTML = createActionIcon(SHARE_BUTTON_ICON);
+  shareBtn.addEventListener('click', () => shareClickHandler?.(sessionId));
+  actions.appendChild(shareBtn);
 
   bar.appendChild(actions);
 

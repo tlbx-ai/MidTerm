@@ -1402,6 +1402,51 @@
                       will need to re-trust the new certificate.
                     </p>
                   </div>
+
+                  <div class="settings-section hidden" id="windows-firewall-section">
+                    <h3 data-i18n="settings.security.firewallTitle">Windows Firewall</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.firewallStatus">Status</label>
+                      <span id="settings-firewall-status" data-i18n="settings.security.checking"
+                        >Checking...</span
+                      >
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.firewallPort">Port</label>
+                      <code class="path-value" id="settings-firewall-port">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.security.firewallExposure">Exposure</label>
+                      <span id="settings-firewall-bind">-</span>
+                    </div>
+                    <div class="setting-row firewall-actions-row">
+                      <label data-i18n="settings.security.firewallRule">Firewall Rule</label>
+                      <div class="firewall-actions">
+                        <button
+                          id="btn-add-firewall-rule"
+                          class="btn-secondary"
+                          data-i18n="settings.security.firewallAdd"
+                        >
+                          Add Rule
+                        </button>
+                        <button
+                          id="btn-remove-firewall-rule"
+                          class="btn-secondary btn-danger"
+                          data-i18n="settings.security.firewallRemove"
+                        >
+                          Remove Rule
+                        </button>
+                      </div>
+                    </div>
+                    <p
+                      class="setting-hint"
+                      id="settings-firewall-note"
+                      data-i18n="settings.security.firewallHint"
+                    >
+                      Windows Firewall can allow other PCs on your network to reach the current
+                      MidTerm HTTPS port.
+                    </p>
+                  </div>
                 </section>
 
                 <!-- IDE Mode Panel -->
@@ -1410,16 +1455,9 @@
 
                   <div class="settings-section">
                     <h3 data-i18n="settings.ide.overview">Overview</h3>
-                    <div class="setting-row">
-                      <label for="setting-ide-mode" data-i18n="settings.ide.enableIdeMode"
-                        >Enable IDE Mode</label
-                      >
-                      <input type="checkbox" id="setting-ide-mode" checked />
-                    </div>
-                    <p class="setting-hint" data-i18n="settings.ide.overviewHint">
-                      IDE Mode adds per-session tabs (Terminal, Files, Git, Commands) above the
-                      terminal area. When disabled, sessions show only the terminal with no tab bar,
-                      file browser, git panel, or command runner.
+                    <p class="setting-hint" data-i18n="settings.ide.overviewHintAlwaysOn">
+                      The IDE bar is always available above each terminal session. It provides
+                      terminal and files tabs, Git and command shortcuts, and session sharing.
                     </p>
                   </div>
 

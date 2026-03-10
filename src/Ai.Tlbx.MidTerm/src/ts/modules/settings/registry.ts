@@ -277,12 +277,6 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'server-only',
   }),
-  controlEntry('ideMode', 'setting-ide-mode', 'checkbox', true, {
-    editable: true,
-    storage: 'settings.json',
-    validation: 'boolean',
-    applyMode: 'immediate',
-  }),
   controlEntry('managerBarEnabled', 'setting-manager-bar', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

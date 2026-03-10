@@ -114,6 +114,59 @@
         }
       }
     },
+    "/api/security/firewall": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirewallRuleStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirewallRuleStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirewallRuleStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions": {
       "get": {
         "tags": [
@@ -842,6 +895,83 @@
         }
       }
     },
+    "/api/share/create": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateShareLinkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/claim": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimShareResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/bootstrap": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareBootstrapResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bootstrap": {
       "get": {
         "tags": [
@@ -1514,6 +1644,45 @@
           }
         }
       },
+      "ClaimShareRequest": {
+        "required": [
+          "grantId",
+          "secret"
+        ],
+        "type": "object",
+        "properties": {
+          "grantId": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          }
+        }
+      },
+      "ClaimShareResponse": {
+        "required": [
+          "grantId",
+          "sessionId",
+          "mode",
+          "expiresAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "grantId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ShareAccessMode"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ClipboardShortcutsSetting": {
         "enum": [
           "auto",
@@ -1588,6 +1757,45 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "CreateShareLinkRequest": {
+        "required": [
+          "sessionId",
+          "mode"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ShareAccessMode"
+          }
+        }
+      },
+      "CreateShareLinkResponse": {
+        "required": [
+          "shareUrl",
+          "grantId",
+          "mode",
+          "expiresAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "shareUrl": {
+            "type": "string"
+          },
+          "grantId": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ShareAccessMode"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -1856,6 +2064,68 @@
         "properties": {
           "path": {
             "type": "string"
+          }
+        }
+      },
+      "FirewallRuleStatusResponse": {
+        "required": [
+          "supported",
+          "canManage",
+          "rulePresent",
+          "ruleEnabled",
+          "matchesCurrentPort",
+          "matchesCurrentProgram",
+          "port",
+          "bindAddress",
+          "loopbackOnly",
+          "ruleName",
+          "ruleLocalPort",
+          "ruleProgramPath"
+        ],
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "rulePresent": {
+            "type": "boolean"
+          },
+          "ruleEnabled": {
+            "type": "boolean"
+          },
+          "matchesCurrentPort": {
+            "type": "boolean"
+          },
+          "matchesCurrentProgram": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bindAddress": {
+            "type": "string"
+          },
+          "loopbackOnly": {
+            "type": "boolean"
+          },
+          "ruleName": {
+            "type": "string"
+          },
+          "ruleLocalPort": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ruleProgramPath": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2157,7 +2427,6 @@
           "inputMode",
           "fileRadar",
           "tmuxCompatibility",
-          "ideMode",
           "managerBarEnabled",
           "devMode",
           "showChangelogAfterUpdate",
@@ -2283,9 +2552,6 @@
             "type": "boolean"
           },
           "tmuxCompatibility": {
-            "type": "boolean"
-          },
-          "ideMode": {
             "type": "boolean"
           },
           "managerBarEnabled": {
@@ -2607,6 +2873,47 @@
         "properties": {
           "bookmarkId": {
             "type": "string"
+          }
+        }
+      },
+      "ShareAccessMode": {
+        "enum": [
+          "ViewOnly",
+          "FullControl"
+        ]
+      },
+      "ShareBootstrapResponse": {
+        "required": [
+          "hostname",
+          "session",
+          "settings",
+          "mode",
+          "expiresAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "session": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionInfoDto"
+              }
+            ]
+          },
+          "settings": {
+            "$ref": "#/components/schemas/MidTermSettingsPublic"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ShareAccessMode"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

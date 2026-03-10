@@ -11,7 +11,10 @@ using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.Browser;
+using Ai.Tlbx.MidTerm.Models.Share;
+using Ai.Tlbx.MidTerm.Models.Security;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
 
 // --- Bootstrap & System ---
@@ -36,6 +39,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(AuthResponse))]
 [JsonSerializable(typeof(AuthStatusResponse))]
 [JsonSerializable(typeof(SecurityStatus))]
+[JsonSerializable(typeof(FirewallRuleStatusResponse))]
+[JsonSerializable(typeof(FirewallRuleSnapshot))]
 
 // --- Sessions ---
 [JsonSerializable(typeof(SessionListDto))]
@@ -85,6 +90,14 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SharePacketInfo))]
 [JsonSerializable(typeof(NetworkEndpointInfo))]
 [JsonSerializable(typeof(NetworkEndpointInfo[]))]
+
+// --- Share ---
+[JsonSerializable(typeof(CreateShareLinkRequest))]
+[JsonSerializable(typeof(CreateShareLinkResponse))]
+[JsonSerializable(typeof(ClaimShareRequest))]
+[JsonSerializable(typeof(ClaimShareResponse))]
+[JsonSerializable(typeof(ShareBootstrapResponse))]
+[JsonSerializable(typeof(ShareAccessMode))]
 
 // --- Settings ---
 [JsonSerializable(typeof(MidTermSettings))]

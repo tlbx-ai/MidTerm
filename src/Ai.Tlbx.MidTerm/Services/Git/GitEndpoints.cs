@@ -8,7 +8,6 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 public sealed class GitDebugResponse
 {
     public string? MidTermVersion { get; set; }
-    public bool IdeMode { get; set; }
     public string? RequestedSessionId { get; set; }
     public bool SessionFound { get; set; }
     public string? CurrentDirectory { get; set; }
@@ -44,9 +43,8 @@ public static class GitEndpoints
 {
     public static void MapGitEndpoints(WebApplication app, GitWatcherService gitWatcher, TtyHostSessionManager sessionManager)
     {
-        app.MapGet("/api/git/debug", async (string? sessionId, SettingsService settingsService) =>
+        app.MapGet("/api/git/debug", async (string? sessionId) =>
         {
-            var settings = settingsService.Load();
             var session = string.IsNullOrEmpty(sessionId) ? null : sessionManager.GetSession(sessionId);
             var cwd = session?.CurrentDirectory;
             string? repoRoot = null;
@@ -64,7 +62,6 @@ public static class GitEndpoints
             var debug = new GitDebugResponse
             {
                 MidTermVersion = CliCommands.GetVersion(),
-                IdeMode = settings.IdeMode,
                 RequestedSessionId = sessionId,
                 SessionFound = session is not null,
                 CurrentDirectory = cwd,

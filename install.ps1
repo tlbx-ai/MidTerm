@@ -9,6 +9,7 @@ param(
     [int]$Port = 2000,
     [string]$BindAddress = "",
     [switch]$ServiceMode,
+    [switch]$ConfigureFirewall,
     [switch]$TrustCert,
     [string]$LogFile,
     [switch]$Dev
@@ -622,6 +623,72 @@ function Get-LatestRelease
     }
 }
 
+function Test-NetworkBinding
+{
+    param(
+        [string]$BindAddress
+    )
+
+    return $BindAddress -ne "localhost" -and $BindAddress -ne "127.0.0.1" -and $BindAddress -ne "::1"
+}
+
+function Prompt-FirewallConfig
+{
+    param(
+        [string]$BindAddress,
+        [int]$Port
+    )
+
+    if (-not (Test-NetworkBinding -BindAddress $BindAddress))
+    {
+        return $false
+    }
+
+    Write-Host ""
+    Write-Host "  Windows Firewall:" -ForegroundColor Cyan
+    Write-Host "  Allow other PCs to reach MidTerm on TCP port $Port?" -ForegroundColor Yellow
+    Write-Host "  (Creates or updates the inbound rule named 'MidTerm HTTPS')" -ForegroundColor Gray
+    $choice = Read-Host "  Add firewall rule? [Y/n]"
+    return ($choice -ne "n" -and $choice -ne "N")
+}
+
+function Ensure-FirewallRule
+{
+    param(
+        [int]$Port,
+        [string]$InstallDir
+    )
+
+    $displayName = "MidTerm HTTPS"  # Sync with WindowsFirewallService.ManagedRuleName
+    $programPath = Join-Path $InstallDir $WebBinaryName
+
+    try
+    {
+        Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue |
+            Remove-NetFirewallRule -ErrorAction SilentlyContinue
+
+        New-NetFirewallRule `
+            -DisplayName $displayName `
+            -Group "MidTerm" `
+            -Direction Inbound `
+            -Action Allow `
+            -Enabled True `
+            -Profile Any `
+            -Protocol TCP `
+            -LocalPort $Port `
+            -Program $programPath `
+            -Description "Allows inbound HTTPS access to MidTerm." | Out-Null
+
+        Write-Log "Windows firewall rule ensured for TCP port $Port"
+        Write-Host "  Firewall: added rule '$displayName' for TCP port $Port" -ForegroundColor Gray
+    }
+    catch
+    {
+        Write-Log "Failed to configure Windows firewall rule: $_" "WARN"
+        Write-Host "  Warning: Failed to configure Windows firewall rule: $_" -ForegroundColor Yellow
+    }
+}
+
 function Get-AssetUrl
 {
     param($Release)
@@ -717,6 +784,7 @@ function Install-MidTerm
         [string]$PasswordHash,
         [int]$Port = 2000,
         [string]$BindAddress = "*",
+        [bool]$ConfigureFirewall = $false,
         [bool]$TrustCert = $false
     )
 
@@ -953,6 +1021,11 @@ function Install-MidTerm
         Write-Log "Installing as Windows service..."
         Install-AsService -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
 
+        if ($ConfigureFirewall -and (Test-NetworkBinding -BindAddress $BindAddress))
+        {
+            Ensure-FirewallRule -Port $Port -InstallDir $installDir
+        }
+
         # Wait for mt.exe to spawn
         Start-Sleep -Seconds 2
 
@@ -1083,6 +1156,10 @@ public class TrustAllCerts {
     Write-Host "  Location: $installDir" -ForegroundColor Gray
     Write-Host "  URL:      https://localhost:$Port" -ForegroundColor Cyan
     Write-Host "  Note:     Browser may show certificate warning until trusted" -ForegroundColor Yellow
+    if ($AsService -and (Test-NetworkBinding -BindAddress $BindAddress) -and -not $ConfigureFirewall)
+    {
+        Write-Host "  Network:  Windows Firewall may still block other PCs from reaching this port" -ForegroundColor Yellow
+    }
     Write-Host ""
 }
 
@@ -1311,7 +1388,7 @@ if ($ServiceMode)
             $channelLabel = if ($Dev) { "dev" } else { "stable" }
             Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
             Write-Host ""
-            Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -TrustCert:$TrustCert
+            Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
         } *>&1 | ForEach-Object {
             $line = $_.ToString()
             Write-Host $_
@@ -1328,7 +1405,7 @@ if ($ServiceMode)
         $channelLabel = if ($Dev) { "dev" } else { "stable" }
         Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
         Write-Host ""
-        Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -TrustCert:$TrustCert
+        Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
     }
     return
 }
@@ -1431,6 +1508,7 @@ if ($asService)
     Write-Host "  (Adds self-signed certificate to Windows trusted root store)" -ForegroundColor Gray
     $trustChoice = Read-Host "  Trust certificate? [Y/n]"
     $trustCert = ($trustChoice -ne "n" -and $trustChoice -ne "N")
+    $configureFirewall = Prompt-FirewallConfig -BindAddress $bindAddress -Port $port
 
     # Check if we need to elevate
     if (-not (Test-Administrator))
@@ -1456,10 +1534,15 @@ if ($asService)
             "-Port", $port
             "-BindAddress", $bindAddress
         )
+        if ($configureFirewall) { $baseArguments += "-ConfigureFirewall" }
         if ($trustCert) { $baseArguments += "-TrustCert" }
         if ($Dev) { $baseArguments += "-Dev" }
 
-        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+            (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+        } else {
+            (Get-Command powershell -ErrorAction Stop).Source
+        }
         $elevated = $false
 
         # Strategy 1: Try sudo (Windows 11 24H2+, keeps output in same terminal)
@@ -1469,7 +1552,14 @@ if ($asService)
             {
                 Write-Host "  Using sudo for elevation..." -ForegroundColor Gray
                 & sudo $psExe @baseArguments
-                $elevated = $true
+                if ($LASTEXITCODE -eq 0)
+                {
+                    $elevated = $true
+                }
+                else
+                {
+                    Write-Host "  sudo exited with code $LASTEXITCODE, trying UAC elevation..." -ForegroundColor Yellow
+                }
             }
             catch
             {
@@ -1487,7 +1577,7 @@ if ($asService)
 
             try
             {
-                $elevatedProcess = Start-Process $psExe -ArgumentList $runAsArguments -Verb RunAs -WindowStyle Hidden -PassThru
+                $elevatedProcess = Start-Process $psExe -ArgumentList $runAsArguments -Verb RunAs -WindowStyle Minimized -PassThru
                 $elevated = $true
 
                 # Stream output from log file to original terminal
@@ -1517,6 +1607,16 @@ if ($asService)
                     }
                 }
 
+                $elevatedProcess.WaitForExit()
+                if ($elevatedProcess.ExitCode -ne 0)
+                {
+                    Write-Host ""
+                    Write-Host "  Elevated installer exited with code $($elevatedProcess.ExitCode)." -ForegroundColor Red
+                    Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
+                    Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+                    exit $elevatedProcess.ExitCode
+                }
+
                 Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
             }
             catch
@@ -1544,7 +1644,7 @@ if ($asService)
     }
 
     # Already admin, proceed with install
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -TrustCert $trustCert
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -ConfigureFirewall:$configureFirewall -TrustCert $trustCert
 }
 else
 {

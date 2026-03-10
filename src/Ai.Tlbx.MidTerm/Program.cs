@@ -12,6 +12,8 @@ using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.Certificates;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Share;
+using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program
@@ -117,6 +119,7 @@ public class Program
         var settingsService = app.Services.GetRequiredService<SettingsService>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
+        var shareGrantService = app.Services.GetRequiredService<ShareGrantService>();
         var tempCleanupService = app.Services.GetRequiredService<TempCleanupService>();
         var certInfoService = app.Services.GetRequiredService<CertificateInfoService>();
 
@@ -154,7 +157,7 @@ public class Program
             ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
 
         var browserPreviewOriginService = app.Services.GetRequiredService<BrowserPreviewOriginService>();
-        ServerSetup.ConfigureMiddleware(app, settingsService, authService, browserPreviewOriginService);
+        ServerSetup.ConfigureMiddleware(app, settingsService, authService, shareGrantService, browserPreviewOriginService);
 
         MidtermDirectory.Initialize(port, authService);
 
@@ -210,7 +213,7 @@ public class Program
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
-            if (!string.IsNullOrEmpty(payload.Cwd) && settingsService.Load().IdeMode)
+            if (!string.IsNullOrEmpty(payload.Cwd))
             {
                 _ = gitWatcher.RegisterSessionAsync(sessionId, payload.Cwd);
             }
@@ -218,16 +221,14 @@ public class Program
 
         sessionManager.OnCwdChanged += (sessionId, cwd) =>
         {
-            if (settingsService.Load().IdeMode)
-            {
-                _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
-            }
+            _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
         sessionManager.OnSessionClosed += sessionId =>
         {
             sessionPathAllowlistService.ClearSession(sessionId);
             gitWatcher.UnregisterSession(sessionId);
+            shareGrantService.RevokeBySession(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -289,8 +290,10 @@ public class Program
         EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
+        SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
+        ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, authService, port);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
@@ -320,6 +323,7 @@ public class Program
             updateService,
             settingsService,
             authService,
+            shareGrantService,
             shutdownService,
             mainBrowserService,
             gitWatcher,

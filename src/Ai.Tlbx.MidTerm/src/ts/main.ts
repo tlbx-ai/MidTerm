@@ -112,20 +112,21 @@ import {
   initSessionTabs,
   ensureSessionWrapper,
   destroySessionWrapper,
-  setIdeModeEnabled,
   reparentTerminalContainer,
   switchTab,
 } from './modules/sessionTabs';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
+import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
+import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
+import { initWebPreview } from './modules/web';
 import {
-  initGitPanel,
-  connectGitWebSocket,
-  disconnectGitWebSocket,
-  destroyGitSession,
-} from './modules/git';
-import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
-import { closeGitDock } from './modules/git/gitDock';
-import { initWebPreview, closeWebPreviewDock } from './modules/web';
+  initSessionShareButton,
+  isSharedSessionRoute,
+  claimSharedSessionAccess,
+  fetchSharedBootstrap,
+  applySharedSessionMode,
+  showSharedSessionError,
+} from './modules/share';
 import { initDockState, removeSessionDockState } from './modules/dockState';
 import { initSmartInput, removeSmartInputSessionState } from './modules/smartInput';
 import {
@@ -193,6 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
     void initLoginPage();
   } else if (path === '/trust' || path === '/trust.html') {
     void initTrustPage();
+  } else if (isSharedSessionRoute()) {
+    void initShared();
   } else {
     void init();
   }
@@ -264,27 +267,11 @@ async function init(): Promise<void> {
   initSessionTabs();
   initFileBrowser();
   initGitPanel();
+  connectGitWebSocket();
   initCommandsPanel();
   initWebPreview();
+  initSessionShareButton();
   initDockState();
-
-  // React to ideMode setting: toggle tab bar visibility and git WS connection
-  let gitWsConnected = false;
-  $currentSettings.subscribe((settings) => {
-    if (!settings) return;
-    const ideEnabled = settings.ideMode;
-    setIdeModeEnabled(ideEnabled);
-    if (ideEnabled && !gitWsConnected) {
-      connectGitWebSocket();
-      gitWsConnected = true;
-    } else if (!ideEnabled && gitWsConnected) {
-      disconnectGitWebSocket();
-      gitWsConnected = false;
-      closeGitDock();
-      closeCommandsDock();
-      closeWebPreviewDock();
-    }
-  });
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
@@ -307,6 +294,45 @@ async function init(): Promise<void> {
   }
 
   log.info(() => 'MidTerm frontend initialized');
+}
+
+async function initShared(): Promise<void> {
+  initLogConcerns();
+  log.info(() => 'MidTerm shared frontend initializing');
+
+  cacheDOMElements();
+  await initI18n();
+
+  const fontPromise = preloadTerminalFont();
+  setFontsReadyPromise(fontPromise);
+  void fontPromise.then(() => initCalibrationTerminal());
+
+  try {
+    await claimSharedSessionAccess();
+    const bootstrap = await fetchSharedBootstrap();
+    applySharedSessionMode(bootstrap);
+  } catch (error) {
+    log.error(() => `Shared session bootstrap failed: ${String(error)}`);
+    showSharedSessionError(t('share.shared.invalid'));
+    return;
+  }
+
+  setSelectSessionCallback(selectSession);
+  setShowBellCallback(showBellNotification);
+  addProcessStateListener((sessionId, state) => {
+    setProcessState(sessionId, { ...state });
+  });
+
+  connectStateWebSocket();
+  connectMuxWebSocket();
+  initSessionTabs();
+  bindSearchEvents();
+  setupGlobalFocusReclaim();
+  setupResizeObserver();
+  setupVisualViewport();
+  setupVisibilityChangeHandler();
+
+  log.info(() => 'MidTerm shared frontend initialized');
 }
 
 // =============================================================================
