@@ -123,9 +123,27 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           // === Network APIs ===
           var F=window.fetch;
+          function rfq(self,q,o){
+            var ru=r(q.url),init={
+              method:q.method,headers:q.headers,mode:q.mode,credentials:q.credentials,cache:q.cache,
+              redirect:q.redirect,referrer:q.referrer,referrerPolicy:q.referrerPolicy,
+              integrity:q.integrity,keepalive:q.keepalive,signal:q.signal
+            };
+            if(o)for(var k in o)init[k]=o[k];
+            if(init.body!==undefined){
+              try{if(q.duplex&&init.duplex===undefined)init.duplex=q.duplex;}catch(e){}
+              return F.call(self,ru,init);
+            }
+            if(q.method==="GET"||q.method==="HEAD")return F.call(self,ru,init);
+            return q.clone().arrayBuffer().then(function(body){
+              init.body=body;
+              try{if(q.duplex&&init.duplex===undefined)init.duplex=q.duplex;}catch(e){}
+              return F.call(self,ru,init);
+            },function(){return F.call(self,ru,init);});
+          }
           window.fetch=function(u,o){
             if(typeof u==="string")return F.call(this,r(u),o);
-            if(u&&typeof u==="object"&&u.url){try{return F.call(this,new Request(r(u.url),u),o);}catch(e){}}
+            if(u&&typeof u==="object"&&u.url){try{return rfq(this,u,o);}catch(e){}}
             return F.call(this,u,o);
           };
           var X=XMLHttpRequest.prototype.open;

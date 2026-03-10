@@ -13,6 +13,8 @@ The proxy uses a **write-only interception** strategy. The injected `UrlRewriteS
 - Element `.src`, `.href`, `.action` setters — DOM properties
 - `setAttribute` — attribute writes
 
+For `fetch(Request)` calls, the injected shim now rebuilds the request from the original method/headers/body instead of relying on `new Request(rewrittenUrl, request)`. In Chromium, rewriting a `Request` URL that way can drop or corrupt non-`GET` bodies, which breaks generated API clients that send JSON via `fetch(new Request(...))`.
+
 Read-side APIs (`location.href`, `location.pathname`, `document.URL`, `document.baseURI`) are **not spoofed**. The page sees its real URL including `/webpreview/`.
 
 | Layer | URL the code sees | Example |

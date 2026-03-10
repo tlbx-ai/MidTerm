@@ -1,6 +1,7 @@
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Http;
+using System.Reflection;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -78,5 +79,19 @@ public class WebPreviewProxyMiddlewareTests
         await middleware.InvokeAsync(context);
 
         Assert.True(nextCalled);
+    }
+
+    [Fact]
+    public void UrlRewriteScript_RequestFetchRewrite_PreservesRequestBodies()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("function rfq(self,q,o)", script, StringComparison.Ordinal);
+        Assert.Contains("return q.clone().arrayBuffer().then(function(body){", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("new Request(r(u.url),u)", script, StringComparison.Ordinal);
     }
 }
