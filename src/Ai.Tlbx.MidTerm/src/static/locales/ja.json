@@ -125,6 +125,8 @@
   "settings.behavior.inputMode": "入力モード",
   "settings.behavior.inputModeHint": "スマート入力は直接キーボード入力の代わりにテキストボックスを使用します。両方モードでは入力バーをターミナルの下に固定します。",
   "settings.behavior.scrollbackProtection": "Claude Codeスクロールバックグリッチ保護",
+  "settings.behavior.keepAwake": "セッションがある間はコンピューターをスリープさせない",
+  "settings.behavior.keepAwakeHint": "MidTerm に少なくとも 1 つのアクティブなセッションがある間は、スリープやスタンバイを防ぎます。画面はオフになってもかまいません。",
   "settings.behavior.fileRadar": "File Radar",
   "settings.behavior.managerBar": "Middle Manager Bar",
   "settings.behavior.changelogAfterUpdate": "アップデート後に変更履歴を表示",

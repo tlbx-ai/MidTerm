@@ -125,6 +125,8 @@
   "settings.behavior.inputMode": "इनपुट मोड",
   "settings.behavior.inputModeHint": "स्मार्ट इनपुट सीधे कीबोर्ड इनपुट के बजाय टेक्स्ट बॉक्स का उपयोग करता है। दोनों मोड इनपुट बार को टर्मिनल के नीचे डॉक करता है।",
   "settings.behavior.scrollbackProtection": "Claude Code स्क्रॉलबैक ग्लिच सुरक्षा",
+  "settings.behavior.keepAwake": "जब तक सत्र मौजूद हों, कंप्यूटर को जागृत रखें",
+  "settings.behavior.keepAwakeHint": "जब तक MidTerm में कम से कम एक सक्रिय सत्र है, स्लीप या स्टैंडबाय को रोकता है। स्क्रीन फिर भी बंद हो सकती है।",
   "settings.behavior.fileRadar": "File Radar",
   "settings.behavior.managerBar": "Middle Manager Bar",
   "settings.behavior.changelogAfterUpdate": "अपडेट के बाद बदलाव सूची दिखाएं",

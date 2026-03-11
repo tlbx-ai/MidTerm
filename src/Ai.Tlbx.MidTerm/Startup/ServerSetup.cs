@@ -17,6 +17,7 @@ using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Security;
+using Ai.Tlbx.MidTerm.Services.Power;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -125,6 +126,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<MainBrowserService>();
         builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();
+        builder.Services.AddSingleton<SystemSleepInhibitorService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
             new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();

@@ -2218,6 +2218,7 @@ export interface components {
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
+      keepSystemAwakeWithActiveSessions: boolean;
       inputMode: string;
       fileRadar: boolean;
       tmuxCompatibility: boolean;
