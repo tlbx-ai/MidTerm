@@ -442,6 +442,7 @@
   "share.dialog.sessionPrefix": "সেশন",
   "share.dialog.fullControl": "পূর্ণ নিয়ন্ত্রণ",
   "share.dialog.viewOnly": "শুধু দেখুন",
+  "share.dialog.network": "নেটওয়ার্ক",
   "share.dialog.hint": "এই লিংকটি ১ ঘণ্টার জন্য এই টার্মিনাল সেশনে প্রবেশাধিকার দেয়।",
   "share.dialog.link": "শেয়ার লিংক",
   "share.dialog.create": "লিংক তৈরি করুন",

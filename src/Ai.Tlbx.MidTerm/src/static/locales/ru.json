@@ -442,6 +442,7 @@
   "share.dialog.sessionPrefix": "Сессия",
   "share.dialog.fullControl": "Полный доступ",
   "share.dialog.viewOnly": "Только просмотр",
+  "share.dialog.network": "Сеть",
   "share.dialog.hint": "Ссылка дает доступ к этой терминальной сессии на 1 час.",
   "share.dialog.link": "Ссылка для обмена",
   "share.dialog.create": "Создать ссылку",

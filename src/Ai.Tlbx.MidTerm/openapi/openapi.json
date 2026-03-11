@@ -1772,6 +1772,12 @@
           },
           "mode": {
             "$ref": "#/components/schemas/ShareAccessMode"
+          },
+          "shareHost": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

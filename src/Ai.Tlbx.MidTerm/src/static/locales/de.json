@@ -442,6 +442,7 @@
   "share.dialog.sessionPrefix": "Sitzung",
   "share.dialog.fullControl": "Volle Steuerung",
   "share.dialog.viewOnly": "Nur ansehen",
+  "share.dialog.network": "Netzwerk",
   "share.dialog.hint": "Der Link gewährt 1 Stunde lang Zugriff auf diese Terminalsitzung.",
   "share.dialog.link": "Freigabelink",
   "share.dialog.create": "Link erstellen",

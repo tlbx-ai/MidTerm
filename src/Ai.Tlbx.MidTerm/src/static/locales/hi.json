@@ -442,6 +442,7 @@
   "share.dialog.sessionPrefix": "सत्र",
   "share.dialog.fullControl": "पूरा नियंत्रण",
   "share.dialog.viewOnly": "केवल देखें",
+  "share.dialog.network": "नेटवर्क",
   "share.dialog.hint": "यह लिंक इस टर्मिनल सत्र का 1 घंटे के लिए एक्सेस देता है।",
   "share.dialog.link": "शेयर लिंक",
   "share.dialog.create": "लिंक बनाएं",

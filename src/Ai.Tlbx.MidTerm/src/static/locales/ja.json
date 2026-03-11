@@ -442,6 +442,7 @@
   "share.dialog.sessionPrefix": "セッション",
   "share.dialog.fullControl": "フルコントロール",
   "share.dialog.viewOnly": "表示のみ",
+  "share.dialog.network": "ネットワーク",
   "share.dialog.hint": "このリンクは 1 時間このターミナルセッションへのアクセスを提供します。",
   "share.dialog.link": "共有リンク",
   "share.dialog.create": "リンクを作成",

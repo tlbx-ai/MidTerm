@@ -446,6 +446,7 @@
   "share.dialog.sessionPrefix": "Session",
   "share.dialog.fullControl": "Full control",
   "share.dialog.viewOnly": "View only",
+  "share.dialog.network": "Network",
   "share.dialog.hint": "The link grants access to this terminal session for 1 hour.",
   "share.dialog.link": "Share link",
   "share.dialog.create": "Create link",

@@ -4691,6 +4691,37 @@ body.has-app-background::after {
   color: var(--text-primary);
 }
 
+.share-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.share-dialog-field-label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.share-network-select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.share-network-select:hover {
+  border-color: var(--border-strong);
+}
+
+.share-network-select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
 .share-dialog-hint,
 .share-dialog-expiry {
   margin: 0;

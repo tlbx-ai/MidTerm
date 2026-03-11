@@ -2028,6 +2028,7 @@ export interface components {
     CreateShareLinkRequest: {
       sessionId: string;
       mode: components['schemas']['ShareAccessMode'];
+      shareHost?: null | string;
     };
     CreateShareLinkResponse: {
       shareUrl: string;

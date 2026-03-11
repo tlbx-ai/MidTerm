@@ -4,15 +4,27 @@
  * Creates scoped one-hour share links for the current terminal session.
  */
 
-import { createShareLink, type CreateShareLinkRequest } from '../../api/client';
+import {
+  createShareLink,
+  getNetworks,
+  getSharePacket,
+  type CreateShareLinkRequest,
+  type NetworkInterfaceDto,
+} from '../../api/client';
 import { getSession } from '../../stores';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { setShareClickHandler } from '../sessionTabs';
+import { getBootstrapData } from '../bootstrap';
 
 const log = createLogger('shareDialog');
 
 type ShareMode = CreateShareLinkRequest['mode'];
+
+interface ShareNetworkOption {
+  name: string;
+  host: string;
+}
 
 export function initSessionShareButton(): void {
   setShareClickHandler((sessionId) => {
@@ -42,6 +54,10 @@ function openShareDialog(sessionId: string): void {
             <input type="radio" name="share-mode" value="ViewOnly" />
             <span>${escapeHtml(t('share.dialog.viewOnly'))}</span>
           </label>
+          <div class="share-dialog-field">
+            <label class="share-dialog-field-label" for="share-network-select">${escapeHtml(t('share.dialog.network'))}</label>
+            <select id="share-network-select" class="share-network-select"></select>
+          </div>
           <p class="share-dialog-hint">${escapeHtml(t('share.dialog.hint'))}</p>
           <div class="share-dialog-result">
             <label for="share-link-output">${escapeHtml(t('share.dialog.link'))}</label>
@@ -63,8 +79,17 @@ function openShareDialog(sessionId: string): void {
   const resultEl = overlay.querySelector<HTMLElement>('.share-dialog-result');
   const outputEl = overlay.querySelector<HTMLInputElement>('#share-link-output');
   const expiryEl = overlay.querySelector<HTMLElement>('.share-dialog-expiry');
+  const networkSelectEl = overlay.querySelector<HTMLSelectElement>('#share-network-select');
 
-  if (!createBtn || !cancelBtn || !closeBtn || !resultEl || !outputEl || !expiryEl) {
+  if (
+    !createBtn ||
+    !cancelBtn ||
+    !closeBtn ||
+    !resultEl ||
+    !outputEl ||
+    !expiryEl ||
+    !networkSelectEl
+  ) {
     overlay.remove();
     return;
   }
@@ -72,6 +97,7 @@ function openShareDialog(sessionId: string): void {
   let currentShareUrl = '';
   let currentMode: ShareMode | null = null;
   let requestGeneration = 0;
+  let networkOptions: ShareNetworkOption[] = [];
 
   function close(): void {
     document.removeEventListener('keydown', onKey);
@@ -103,6 +129,50 @@ function openShareDialog(sessionId: string): void {
     return (selected?.value as ShareMode | undefined) ?? 'FullControl';
   };
 
+  const getSelectedHost = (): string | null => {
+    const selected = networkSelectEl.value.trim();
+    return selected === '' ? null : selected;
+  };
+
+  const populateNetworkSelect = (options: ShareNetworkOption[], selectedHost: string): void => {
+    const portSuffix = location.port ? `:${location.port}` : '';
+    networkSelectEl.innerHTML = '';
+
+    options.forEach((option) => {
+      const el = document.createElement('option');
+      el.value = option.host;
+      el.textContent = `${option.name}  ${option.host}${portSuffix}`;
+      if (option.host === selectedHost) {
+        el.selected = true;
+      }
+      networkSelectEl.appendChild(el);
+    });
+  };
+
+  const loadNetworkOptions = async (): Promise<void> => {
+    const bootstrapNetworks = getBootstrapData()?.networks;
+    const networkPromise = bootstrapNetworks
+      ? Promise.resolve(bootstrapNetworks)
+      : getNetworks().then(({ data, response }) => {
+          if (!response.ok || !data) {
+            throw new Error(`Failed to load networks: ${response.status}`);
+          }
+          return data;
+        });
+
+    const sharePacketPromise = getSharePacket().catch((error: unknown) => {
+      log.warn(() => `Failed to load share packet: ${String(error)}`);
+      return null;
+    });
+
+    const [networks, sharePacket] = await Promise.all([networkPromise, sharePacketPromise]);
+    networkOptions = buildNetworkOptions(networks);
+
+    const recommendedHost = getRecommendedHost(sharePacket?.data?.trustPageUrl ?? null);
+    const selectedHost = chooseInitialHost(networkOptions, recommendedHost);
+    populateNetworkSelect(networkOptions, selectedHost);
+  };
+
   const copyCurrentLink = async (): Promise<void> => {
     if (!currentShareUrl) {
       return;
@@ -130,7 +200,11 @@ function openShareDialog(sessionId: string): void {
     createBtn.textContent = t('share.dialog.creating');
 
     try {
-      const response = await createShareLink({ sessionId, mode });
+      const shareHost = getSelectedHost();
+      const request: CreateShareLinkRequest = shareHost
+        ? { sessionId, mode, shareHost }
+        : { sessionId, mode };
+      const response = await createShareLink(request);
       if (requestId !== requestGeneration) {
         return;
       }
@@ -174,11 +248,77 @@ function openShareDialog(sessionId: string): void {
       void loadShareLink(getSelectedMode());
     });
   });
+  networkSelectEl.addEventListener('change', () => {
+    void loadShareLink(getSelectedMode());
+  });
 
   document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
   cancelBtn.focus();
-  void loadShareLink(getSelectedMode());
+  createBtn.disabled = true;
+  void loadNetworkOptions()
+    .then(() => {
+      if (networkOptions.length === 0) {
+        throw new Error('No share networks available');
+      }
+      return loadShareLink(getSelectedMode());
+    })
+    .catch((error: unknown) => {
+      log.error(() => `Failed to initialize share dialog: ${String(error)}`);
+      outputEl.placeholder = t('share.failedToGenerate');
+      createBtn.disabled = false;
+      createBtn.textContent = t('share.failedToGenerate');
+    });
+}
+
+function buildNetworkOptions(networks: NetworkInterfaceDto[]): ShareNetworkOption[] {
+  const seenHosts = new Set<string>();
+  const options: ShareNetworkOption[] = [];
+
+  networks.forEach((network) => {
+    const host = network.ip.trim();
+    if (!host || seenHosts.has(host)) {
+      return;
+    }
+
+    seenHosts.add(host);
+    options.push({
+      name: network.name,
+      host,
+    });
+  });
+
+  if (options.length === 0) {
+    options.push({
+      name: location.hostname,
+      host: location.hostname,
+    });
+  }
+
+  return options;
+}
+
+function chooseInitialHost(options: ShareNetworkOption[], recommendedHost: string | null): string {
+  const currentHost = location.hostname;
+  return (
+    options.find((option) => option.host === recommendedHost)?.host ??
+    options.find((option) => option.host === currentHost)?.host ??
+    options.find((option) => option.host !== 'localhost')?.host ??
+    options[0]?.host ??
+    currentHost
+  );
+}
+
+function getRecommendedHost(trustPageUrl: string | null): string | null {
+  if (!trustPageUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(trustPageUrl).hostname;
+  } catch {
+    return null;
+  }
 }
 
 function escapeHtml(value: string): string {
