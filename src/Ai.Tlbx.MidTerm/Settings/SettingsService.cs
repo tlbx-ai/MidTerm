@@ -253,11 +253,6 @@ public sealed class SettingsService
             settings.TmuxCompatibility = true;
         }
 
-        if (!json.Contains("\"ideMode\"", StringComparison.OrdinalIgnoreCase))
-        {
-            settings.IdeMode = true;
-        }
-
         if (!json.Contains("\"showChangelogAfterUpdate\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.ShowChangelogAfterUpdate = true;
@@ -399,7 +394,6 @@ public sealed class SettingsService
         current.ManagerBarEnabled = old.ManagerBarEnabled;
         current.ManagerBarButtons = old.ManagerBarButtons;
         current.TmuxCompatibility = old.TmuxCompatibility;
-        current.IdeMode = old.IdeMode;
         current.DevMode = old.DevMode;
         current.ShowChangelogAfterUpdate = old.ShowChangelogAfterUpdate;
         current.ShowUpdateNotification = old.ShowUpdateNotification;

@@ -6,6 +6,8 @@ using Ai.Tlbx.MidTerm.Models.Certificates;
 using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.Share;
+using Ai.Tlbx.MidTerm.Models.Security;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Settings;
@@ -54,9 +56,16 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(CertificateInfoResponse))]
 [JsonSerializable(typeof(CertificateDownloadInfo))]
 [JsonSerializable(typeof(SecurityStatus))]
+[JsonSerializable(typeof(FirewallRuleStatusResponse))]
 [JsonSerializable(typeof(SharePacketInfo))]
 [JsonSerializable(typeof(NetworkEndpointInfo))]
 [JsonSerializable(typeof(NetworkEndpointInfo[]))]
+[JsonSerializable(typeof(CreateShareLinkRequest))]
+[JsonSerializable(typeof(CreateShareLinkResponse))]
+[JsonSerializable(typeof(ClaimShareRequest))]
+[JsonSerializable(typeof(ClaimShareResponse))]
+[JsonSerializable(typeof(ShareBootstrapResponse))]
+[JsonSerializable(typeof(ShareAccessMode))]
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]

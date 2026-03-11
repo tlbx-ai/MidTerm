@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Settings;
 
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -13,6 +14,7 @@ public sealed class MuxWebSocketHandler
     private readonly TtyHostMuxConnectionManager _muxManager;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
+    private readonly ShareGrantService _shareGrantService;
     private readonly ShutdownService _shutdownService;
 
     public MuxWebSocketHandler(
@@ -20,45 +22,104 @@ public sealed class MuxWebSocketHandler
         TtyHostMuxConnectionManager muxManager,
         SettingsService settingsService,
         AuthService authService,
+        ShareGrantService shareGrantService,
         ShutdownService shutdownService)
     {
         _sessionManager = sessionManager;
         _muxManager = muxManager;
         _settingsService = settingsService;
         _authService = authService;
+        _shareGrantService = shareGrantService;
         _shutdownService = shutdownService;
     }
 
     public async Task HandleAsync(HttpContext context)
     {
-        // SECURITY: Validate auth before accepting WebSocket
-        var settings = _settingsService.Load();
-        if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
+        var path = context.Request.Path.Value ?? "";
+        var shareAccess = RequestAccessContext.GetShareAccess(context);
+        var isShareConnection = string.Equals(path, "/ws/share/mux", StringComparison.Ordinal);
+
+        if (isShareConnection)
         {
-            var token = context.Request.Cookies[AuthService.SessionCookieName];
-            if (token is null || !_authService.ValidateSessionToken(token))
+            if (shareAccess is null || shareAccess.IsExpired(DateTime.UtcNow))
             {
                 context.Response.StatusCode = 401;
                 return;
             }
         }
+        else
+        {
+            var settings = _settingsService.Load();
+            if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
+            {
+                var token = context.Request.Cookies[AuthService.SessionCookieName];
+                if (token is null || !_authService.ValidateSessionToken(token))
+                {
+                    context.Response.StatusCode = 401;
+                    return;
+                }
+            }
+        }
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         var clientId = Guid.NewGuid().ToString("N");
+        Timer? expiryTimer = null;
+        Action<string>? revokeHandler = null;
 
-        var client = _muxManager.AddClient(clientId, ws);
+        var client = _muxManager.AddClient(clientId, ws, shareAccess?.SessionId);
 
         try
         {
+            if (shareAccess is not null)
+            {
+                revokeHandler = grantId =>
+                {
+                    if (string.Equals(grantId, shareAccess.GrantId, StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            ws.Abort();
+                        }
+                        catch
+                        {
+                        }
+                    }
+                };
+                _shareGrantService.OnGrantRevoked += revokeHandler;
+
+                var delay = shareAccess.ExpiresAtUtc - DateTime.UtcNow;
+                if (delay <= TimeSpan.Zero)
+                {
+                    ws.Abort();
+                    return;
+                }
+
+                expiryTimer = new Timer(_ =>
+                {
+                    try
+                    {
+                        ws.Abort();
+                    }
+                    catch
+                    {
+                    }
+                }, null, delay, Timeout.InfiniteTimeSpan);
+            }
+
             client.SuspendFlush();
             await SendInitFrameAsync(client, clientId);
-            await SendInitialBuffersAsync(client);
+            await SendInitialBuffersAsync(client, shareAccess?.SessionId);
             await client.TrySendAsync(MuxProtocol.CreateSyncCompleteFrame());
             client.ResumeFlush();
-            await ProcessMessagesAsync(ws, clientId, client);
+            await ProcessMessagesAsync(ws, clientId, client, shareAccess);
         }
         finally
         {
+            if (revokeHandler is not null)
+            {
+                _shareGrantService.OnGrantRevoked -= revokeHandler;
+            }
+            expiryTimer?.Dispose();
             await _muxManager.RemoveClientAsync(clientId);
             await CloseWebSocketAsync(ws);
         }
@@ -83,12 +144,17 @@ public sealed class MuxWebSocketHandler
         await client.TrySendAsync(frame);
     }
 
-    private async Task SendInitialBuffersAsync(MuxClient client)
+    private async Task SendInitialBuffersAsync(MuxClient client, string? allowedSessionId)
     {
         var sessions = _sessionManager.GetAllSessions();
 
         foreach (var sessionInfo in sessions)
         {
+            if (allowedSessionId is not null &&
+                !string.Equals(sessionInfo.Id, allowedSessionId, StringComparison.Ordinal))
+            {
+                continue;
+            }
             try
             {
                 var buffer = await _sessionManager.GetBufferAsync(sessionInfo.Id);
@@ -134,7 +200,11 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private async Task ProcessMessagesAsync(WebSocket ws, string clientId, MuxClient client)
+    private async Task ProcessMessagesAsync(
+        WebSocket ws,
+        string clientId,
+        MuxClient client,
+        ShareAccessContext? shareAccess)
     {
         var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
         var shutdownToken = _shutdownService.Token;
@@ -162,7 +232,7 @@ public sealed class MuxWebSocketHandler
 
             if (result.MessageType == WebSocketMessageType.Binary && result.Count >= MuxProtocol.HeaderSize)
             {
-                await ProcessFrameAsync(new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count), client);
+                await ProcessFrameAsync(new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count), client, shareAccess);
             }
 
             var droppedSessions = client.DrainDroppedSessions();
@@ -177,9 +247,18 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private async Task ProcessFrameAsync(ReadOnlyMemory<byte> data, MuxClient client)
+    private async Task ProcessFrameAsync(
+        ReadOnlyMemory<byte> data,
+        MuxClient client,
+        ShareAccessContext? shareAccess)
     {
         if (!MuxProtocol.TryParseFrame(data.Span, out var type, out var sessionId, out var payload))
+        {
+            return;
+        }
+
+        if (shareAccess is not null &&
+            !string.Equals(sessionId, shareAccess.SessionId, StringComparison.Ordinal))
         {
             return;
         }
@@ -187,6 +266,10 @@ public sealed class MuxWebSocketHandler
         switch (type)
         {
             case MuxProtocol.TypeTerminalInput:
+                if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess))
+                {
+                    return;
+                }
                 client.SetActiveSession(sessionId);
                 var payloadMemory = data.Slice(MuxProtocol.HeaderSize);
                 if (payloadMemory.Length < 20)
@@ -197,6 +280,10 @@ public sealed class MuxWebSocketHandler
                 break;
 
             case MuxProtocol.TypeResize:
+                if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess))
+                {
+                    return;
+                }
                 var (cols, rows) = MuxProtocol.ParseResizePayload(payload);
                 await _muxManager.HandleResizeAsync(sessionId, cols, rows);
                 break;

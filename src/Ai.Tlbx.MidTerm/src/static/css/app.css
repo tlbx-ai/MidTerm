@@ -5,7 +5,7 @@
 /* Terminal Fonts */
 @font-face {
   font-family: 'JetBrains Mono';
-  src: url('../fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  src: url('../fonts/JetBrainsMono-Regular.woff2?v=__MIDTERM_ASSET_VERSION__') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -13,7 +13,7 @@
 
 @font-face {
   font-family: 'Cascadia Code';
-  src: url('../fonts/CascadiaCode-Regular.woff2') format('woff2');
+  src: url('../fonts/CascadiaCode-Regular.woff2?v=__MIDTERM_ASSET_VERSION__') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -21,7 +21,7 @@
 
 @font-face {
   font-family: 'Terminus';
-  src: url('../fonts/Terminus.woff2') format('woff2');
+  src: url('../fonts/Terminus.woff2?v=__MIDTERM_ASSET_VERSION__') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -30,7 +30,7 @@
 /* Icon Font */
 @font-face {
   font-family: 'midFont';
-  src: url('../fonts/midFont.woff') format('woff');
+  src: url('../fonts/midFont.woff?v=__MIDTERM_ASSET_VERSION__') format('woff');
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -2279,10 +2279,6 @@ body.has-app-background::after {
         display: none;
     }
 
-    body.ide-mode-off .topbar-ide-action {
-        display: none;
-    }
-
     /* Main content fills viewport */
     .main-content {
         width: 100%;
@@ -4181,6 +4177,13 @@ body.has-app-background::after {
   font-size: var(--fs-base);
 }
 
+.firewall-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 @media (max-width: 600px) {
   .status-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -4617,6 +4620,13 @@ body.has-app-background::after {
   flex-direction: column;
 }
 
+.modal-overlay > .modal.dialog-modal {
+  position: static;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .modal-overlay > .modal .modal-header {
   display: flex;
   justify-content: space-between;
@@ -4658,6 +4668,70 @@ body.has-app-background::after {
   color: var(--text-secondary);
   line-height: 1.5;
   white-space: pre-line;
+}
+
+.share-dialog-modal {
+  width: min(520px, 92vw);
+}
+
+.share-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-dialog-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+}
+
+.share-dialog-hint,
+.share-dialog-expiry {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.share-link-output {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+body.shared-session-mode .sidebar,
+body.shared-session-mode .sidebar-overlay,
+body.shared-session-mode .chat-panel,
+body.shared-session-mode .collapsed-title-bar,
+body.shared-session-mode .mobile-topbar,
+body.shared-session-mode .manager-bar,
+body.shared-session-mode #settings-view {
+  display: none !important;
+}
+
+body.shared-session-mode .main-content,
+body.shared-session-mode .terminals-area {
+  width: 100%;
+}
+
+body.shared-session-mode .session-tab:not([data-tab='terminal']),
+body.shared-session-mode .ide-bar-actions {
+  display: none;
+}
+
+body.shared-session-mode .session-cwd {
+  max-width: none;
+  margin-left: auto;
+}
+
+body.shared-session-mode .session-tab-bar {
+  padding-inline: 12px;
 }
 
 /* Update Log Modal */
@@ -7900,14 +7974,14 @@ body.has-app-background::after {
   font-size: var(--fs-base);
   font-family: inherit;
   cursor: pointer;
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-bottom: 1px solid transparent;
   transition:
     color 0.15s,
     border-color 0.15s;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   white-space: nowrap;
   height: 100%;
   box-sizing: border-box;
@@ -7930,30 +8004,36 @@ body.has-app-background::after {
 }
 
 .ide-bar-btn-icon {
-    width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .ide-bar-btn-icon svg {
-    width: 100%;
-    height: 100%;
-    display: block;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
-.git-indicator-branch {
-  font-size: var(--fs-lg);
-  opacity: 0.7;
+.ide-bar-btn-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.git-indicator {
+  gap: 8px;
 }
 
 .git-indicator-stats {
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   font-family: var(--font-mono);
   display: flex;
   gap: 6px;
+  opacity: 0.9;
 }
 
 .git-indicator-added {
@@ -7983,11 +8063,6 @@ body.has-app-background::after {
 
 /* Hide tabs in layout/split-pane mode */
 .layout-leaf .session-tab-bar {
-  display: none;
-}
-
-/* Hide tabs when IDE mode is disabled */
-body.ide-mode-off .session-tab-bar {
   display: none;
 }
 
@@ -8139,6 +8214,81 @@ body.ide-mode-off .session-tab-bar {
   height: 100%;
   color: var(--accent-red);
   font-size: var(--fs-base);
+}
+
+.preview-text-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.preview-toolbar-meta {
+  min-width: 0;
+}
+
+.preview-toolbar-name {
+  display: block;
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.preview-editor-btn,
+.preview-save-btn {
+  padding: 6px 16px;
+  background: var(--btn-secondary);
+  color: var(--text-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+
+.preview-editor-btn:hover,
+.preview-save-btn:hover:not(:disabled) {
+  background: var(--btn-secondary-hover);
+}
+
+.preview-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.preview-text-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.preview-text-body .file-viewer-text {
+  margin: 0;
+  padding: 16px;
+}
+
+.preview-textarea {
+  min-height: 0;
+  height: 100%;
 }
 
 .preview-image-container {

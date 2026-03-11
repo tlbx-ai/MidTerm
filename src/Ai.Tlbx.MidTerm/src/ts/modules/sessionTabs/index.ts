@@ -13,7 +13,6 @@ export {
   getTabPanel,
   getActiveTab,
   getTabBarHeight,
-  setIdeModeEnabled,
   setActionButtonActive,
   updateAllGitIndicators,
   switchTab,
@@ -24,4 +23,9 @@ export {
 } from './tabManager';
 export type { SessionTabId } from './tabBar';
 export type { IdeBarActionId } from './tabBar';
-export { setCommandsClickHandler, setGitClickHandler, setWebClickHandler } from './tabBar';
+export {
+  setCommandsClickHandler,
+  setGitClickHandler,
+  setShareClickHandler,
+  setWebClickHandler,
+} from './tabBar';

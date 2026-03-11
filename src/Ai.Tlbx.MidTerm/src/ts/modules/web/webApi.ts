@@ -4,13 +4,26 @@
  * REST wrappers for setting/getting/clearing the reverse proxy target.
  */
 
+import { isEmbeddedWebPreviewContext } from './webContext';
+
 export interface WebPreviewTargetResponse {
   url: string | null;
   active: boolean;
 }
 
+export interface BrowserPreviewClientResponse {
+  sessionId: string | null;
+  previewId: string;
+  previewToken: string;
+  origin?: string;
+}
+
 /** Set the reverse proxy target URL for the web preview. */
 export async function setWebPreviewTarget(url: string): Promise<WebPreviewTargetResponse | null> {
+  if (isEmbeddedWebPreviewContext()) {
+    return null;
+  }
+
   try {
     const res = await fetch('/api/webpreview/target', {
       method: 'PUT',
@@ -37,6 +50,10 @@ export async function getWebPreviewTarget(): Promise<WebPreviewTargetResponse | 
 
 /** Clear the reverse proxy target, stopping the web preview proxy. */
 export async function clearWebPreviewTarget(): Promise<void> {
+  if (isEmbeddedWebPreviewContext()) {
+    return;
+  }
+
   try {
     await fetch('/api/webpreview/target', { method: 'DELETE' });
   } catch {
@@ -46,6 +63,10 @@ export async function clearWebPreviewTarget(): Promise<void> {
 
 /** Clear all cookies in the server-side proxy cookie jar and on disk. */
 export async function clearWebPreviewCookies(): Promise<boolean> {
+  if (isEmbeddedWebPreviewContext()) {
+    return false;
+  }
+
   try {
     const res = await fetch('/api/webpreview/cookies/clear', { method: 'POST' });
     return res.ok;
@@ -56,6 +77,10 @@ export async function clearWebPreviewCookies(): Promise<boolean> {
 
 /** Trigger a soft or hard reload of the web preview on the server. */
 export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> {
+  if (isEmbeddedWebPreviewContext()) {
+    return false;
+  }
+
   try {
     const res = await fetch('/api/webpreview/reload', {
       method: 'POST',
@@ -65,5 +90,51 @@ export async function reloadWebPreview(mode: 'soft' | 'hard'): Promise<boolean> 
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Register a preview client identity for iframe/popup browser bridge traffic. */
+export async function createBrowserPreviewClient(
+  sessionId: string,
+): Promise<BrowserPreviewClientResponse | null> {
+  if (isEmbeddedWebPreviewContext()) {
+    return null;
+  }
+
+  try {
+    const res = await fetch('/api/browser/preview-client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BrowserPreviewClientResponse;
+  } catch {
+    return null;
+  }
+}
+
+/** Capture a screenshot through the injected browser bridge and return its data URL. */
+export async function captureBrowserScreenshotRaw(
+  sessionId: string,
+  previewId?: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch('/api/browser/screenshot-raw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        ...(previewId ? { previewId } : {}),
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      success?: boolean;
+      result?: string;
+    };
+    return data.success && typeof data.result === 'string' ? data.result : null;
+  } catch {
+    return null;
   }
 }

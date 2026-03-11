@@ -1,0 +1,56 @@
+using Ai.Tlbx.MidTerm.Api.Handlers;
+using Ai.Tlbx.MidTerm.Models.Share;
+using Microsoft.AspNetCore.Http;
+
+namespace Ai.Tlbx.MidTerm.OpenApi.Stubs;
+
+public sealed class StubShareHandler : IShareHandler
+{
+    public IResult CreateShareLink(CreateShareLinkRequest request) =>
+        Results.Json(new CreateShareLinkResponse
+        {
+            ShareUrl = "https://localhost:2000/shared/grant-id#secret",
+            GrantId = "grant-id",
+            Mode = request.Mode,
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(1)
+        });
+
+    public IResult ClaimShareLink(ClaimShareRequest request) =>
+        Results.Json(new ClaimShareResponse
+        {
+            GrantId = request.GrantId,
+            SessionId = "session-id",
+            Mode = ShareAccessMode.ViewOnly,
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(1)
+        });
+
+    public IResult GetShareBootstrap() =>
+        Results.Json(new ShareBootstrapResponse
+        {
+            Hostname = "midterm",
+            Session = new Models.Sessions.SessionInfoDto
+            {
+                Id = "session-id",
+                CreatedAt = DateTime.UtcNow,
+                Pid = 0,
+                IsRunning = true,
+                ExitCode = null,
+                Cols = 120,
+                Rows = 30,
+                ShellType = "Pwsh",
+                Name = "Shared",
+                TerminalTitle = "Shared",
+                ManuallyNamed = true,
+                CurrentDirectory = "",
+                ForegroundPid = null,
+                ForegroundName = null,
+                ForegroundCommandLine = null,
+                Order = 0,
+                ParentSessionId = null,
+                BookmarkId = null
+            },
+            Settings = new Settings.MidTermSettingsPublic(),
+            Mode = ShareAccessMode.ViewOnly,
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(1)
+        });
+}

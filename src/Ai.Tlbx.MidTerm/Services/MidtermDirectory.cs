@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "10";
+    private const string GuidanceVersion = "13";
 
     private static int _port;
     private static AuthService? _authService;
@@ -208,6 +208,7 @@ public static class MidtermDirectory
         | `mt_cookies` | All cookies in proxy jar |
         | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
         | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
+        | `mt_apply_update [source]` | Apply pending update and wait for server |
         | `mt_sessions` | List terminal sessions |
         | `mt_buffer <id>` | Terminal buffer content |
         | `mt_new_session [shell] [cwd]` | Create a new terminal session |
@@ -252,7 +253,10 @@ public static class MidtermDirectory
 
         ## Open web preview
 
-        mt_open "http://localhost:3000" → mt_outline → mt_query ".error" --text
+        mt_open "http://localhost:3000" → mt_status → mt_outline → mt_query ".error" --text
+
+        `mt_open` both sets the target and asks MidTerm to open/dock the preview panel.
+        Use `mt_navigate` only when the panel is already open and you just want to change the target URL.
 
         ## Fresh session (clear cookies + reload)
 
@@ -271,6 +275,10 @@ public static class MidtermDirectory
 
         mt_viewport 375 667 → mt_outline → mt_query ".menu" --text → mt_viewport 0 0
 
+        ## Apply a pending update
+
+        mt_apply_update → wait for "Current version:" → continue with the new build
+
         ## Detach/dock preview
 
         mt_detach → (preview opens in popup) → mt_dock → (back in panel)
@@ -279,9 +287,13 @@ public static class MidtermDirectory
 
         - mt_outline is 10x smaller than mt_query — always start there
         - mt_text is shorter than mt_query SEL --text — use it for page text
+        - mt_open is the CLI command that opens/docks the preview; you do not need to click the panel first
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
-        - If mt_status shows "disconnected", the web preview panel needs to be open in MidTerm
+        - If mt_status still shows "disconnected" after mt_open, treat that as a MidTerm bug and inspect mt_proxylog plus mt_log error
+        - Browser command failures now print the server error body instead of silently returning nothing
+        - If mt_status reports multiple clients, MidTerm prefers the main browser's newest preview connection by default
+        - If mt_open returns "No MidTerm browser UI is connected", there is no live browser tab attached to /ws/state
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
         """;
 }

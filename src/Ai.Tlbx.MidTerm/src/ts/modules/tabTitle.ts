@@ -12,6 +12,8 @@ import { addProcessStateListener } from './process';
 let initialized = false;
 let unsubscribeActiveSession: (() => void) | null = null;
 let unsubscribeProcessState: (() => void) | null = null;
+let unsubscribeSettings: (() => void) | null = null;
+let unsubscribeServerHostname: (() => void) | null = null;
 
 /**
  * Get the current tab title based on mode and active session
@@ -67,6 +69,14 @@ export function initTabTitle(): void {
     updateTabTitle();
   });
 
+  unsubscribeSettings = $currentSettings.subscribe(() => {
+    updateTabTitle();
+  });
+
+  unsubscribeServerHostname = $serverHostname.subscribe(() => {
+    updateTabTitle();
+  });
+
   // React to immediate foreground process changes (fast path for "foregroundProcess" mode)
   unsubscribeProcessState = addProcessStateListener((sessionId: string, _state: ProcessState) => {
     if (sessionId === $activeSessionId.get()) {
@@ -81,6 +91,10 @@ export function initTabTitle(): void {
 export function cleanupTabTitle(): void {
   unsubscribeActiveSession?.();
   unsubscribeActiveSession = null;
+  unsubscribeSettings?.();
+  unsubscribeSettings = null;
+  unsubscribeServerHostname?.();
+  unsubscribeServerHostname = null;
   unsubscribeProcessState?.();
   unsubscribeProcessState = null;
   initialized = false;

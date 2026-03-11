@@ -75,6 +75,35 @@ function Get-MissingFrontendDeps {
     return $missing
 }
 
+function Get-AssetFingerprint {
+    param([string[]]$Paths)
+
+    $files = foreach ($path in $Paths) {
+        if (Test-Path $path -PathType Container) {
+            Get-ChildItem -Path $path -File -Recurse
+        }
+        elseif (Test-Path $path -PathType Leaf) {
+            Get-Item $path
+        }
+    }
+
+    $entries = $files |
+        Sort-Object FullName -Unique |
+        ForEach-Object {
+            $relativePath = [System.IO.Path]::GetRelativePath($RepoRoot, $_.FullName).Replace('\', '/')
+            $fileHash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$relativePath|$fileHash"
+        }
+
+    if (-not $entries) {
+        return "dev"
+    }
+
+    $manifest = [string]::Join("`n", $entries)
+    $hash = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($manifest))
+    return [Convert]::ToHexString($hash).ToLowerInvariant().Substring(0, 12)
+}
+
 $missingDeps = Get-MissingFrontendDeps -Deps $requiredNodeDeps
 if ($missingDeps.Count -gt 0) {
     Write-Host ("Missing frontend npm dependencies: {0}" -f ($missingDeps -join ", ")) -ForegroundColor Yellow
@@ -148,6 +177,15 @@ if ($LASTEXITCODE -ne 0) { Write-Error "prettier formatting failed"; exit $LASTE
 
 Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
 
+$AssetVersion = Get-AssetFingerprint -Paths @(
+    $TsSource,
+    $StaticSource,
+    (Join-Path $RepoRoot "package.json"),
+    (Join-Path $RepoRoot "package-lock.json")
+)
+
+Write-Host "Asset fingerprint: $AssetVersion" -ForegroundColor DarkGray
+
 # ===========================================
 # PHASE 1+2: TypeScript type-check + ESLint (parallel)
 # ===========================================
@@ -191,15 +229,16 @@ if ($eslintResult.ExitCode -ne 0) {
 # ===========================================
 # PHASE 3: Bundle with esbuild
 # ===========================================
-Write-Host "Bundling with esbuild (version: $Version)..." -ForegroundColor Cyan
+Write-Host "Bundling with esbuild (version: $Version, assets: $AssetVersion)..." -ForegroundColor Cyan
 
 $mainTs = Join-Path $TsSource "main.ts"
 $includeSourceMap = -not $Publish -or $DevRelease
 $sourcemapArg = if ($includeSourceMap) { "--sourcemap=linked" } else { $null }
 # esbuild --define requires a valid JS expression. Use single quotes for the string
 # literal to avoid double-quote escaping issues across PowerShell + Windows cmd.exe.
-$defineArg = "--define:BUILD_VERSION='$Version'"
-$esbuildArgs = @($mainTs, "--bundle", "--minify", "--outfile=$OutFile", "--target=es2020", $defineArg)
+$defineVersionArg = "--define:BUILD_VERSION='$Version'"
+$defineAssetVersionArg = "--define:BUILD_ASSET_VERSION='$AssetVersion'"
+$esbuildArgs = @($mainTs, "--bundle", "--minify", "--outfile=$OutFile", "--target=es2020", $defineVersionArg, $defineAssetVersionArg)
 if ($sourcemapArg) { $esbuildArgs += $sourcemapArg }
 & npx esbuild @esbuildArgs
 
@@ -309,7 +348,7 @@ function Process-TextFile {
     param([string]$Source, [string]$Destination, [bool]$Compress)
 
     $content = [System.IO.File]::ReadAllText($Source)
-    $processedContent = $content.Replace($AssetVersionPlaceholder, $Version)
+    $processedContent = $content.Replace($AssetVersionPlaceholder, $AssetVersion)
     $tempPath = $null
 
     if ($Compress) {
@@ -377,7 +416,9 @@ Get-ChildItem -Path "$cssSource\*" -Include @('*.css') | ForEach-Object {
 
     # Minify with esbuild
     $null = & npx esbuild $_.FullName --minify --outfile=$dstPath 2>&1
-    $minSize = (Get-Item $dstPath).Length
+    $minifiedContent = [System.IO.File]::ReadAllText($dstPath).Replace($AssetVersionPlaceholder, $AssetVersion)
+    [System.IO.File]::WriteAllText($dstPath, $minifiedContent, [System.Text.Encoding]::UTF8)
+    $minSize = [System.Text.Encoding]::UTF8.GetByteCount($minifiedContent)
 
     if ($Publish) {
         # Brotli compress the minified file

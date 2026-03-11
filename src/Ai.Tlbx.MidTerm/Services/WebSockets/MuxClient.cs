@@ -82,6 +82,7 @@ public sealed class MuxClient : IAsyncDisposable
     private volatile string? _activeSessionId;
     private volatile bool _flushSuspended;
     private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new();
+    private readonly string? _allowedSessionId;
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
@@ -162,10 +163,11 @@ public sealed class MuxClient : IAsyncDisposable
         }
     }
 
-    public MuxClient(string id, WebSocket webSocket)
+    public MuxClient(string id, WebSocket webSocket, string? allowedSessionId = null)
     {
         Id = id;
         WebSocket = webSocket;
+        _allowedSessionId = allowedSessionId;
         _inputChannel = Channel.CreateBounded<OutputItem>(new BoundedChannelOptions(MaxQueuedItems)
         {
             SingleReader = true,
@@ -182,6 +184,11 @@ public sealed class MuxClient : IAsyncDisposable
     internal void QueueOutput(string sessionId, int cols, int rows, SharedOutputBuffer buffer)
     {
         if (_cts.IsCancellationRequested)
+        {
+            buffer.Release();
+            return;
+        }
+        if (!CanAccessSession(sessionId))
         {
             buffer.Release();
             return;
@@ -205,7 +212,7 @@ public sealed class MuxClient : IAsyncDisposable
     /// </summary>
     public void SetActiveSession(string? sessionId)
     {
-        _activeSessionId = sessionId;
+        _activeSessionId = sessionId is not null && CanAccessSession(sessionId) ? sessionId : null;
     }
 
     public int GetFlushDelay(string sessionId)
@@ -469,12 +476,18 @@ public sealed class MuxClient : IAsyncDisposable
     /// Queue a pre-built frame to be sent immediately (fire-and-forget).
     /// Used for process events and foreground changes.
     /// </summary>
-    public void QueueFrame(byte[] frame)
+    public void QueueFrame(byte[] frame, string? sessionId = null)
     {
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
+        if (sessionId is not null && !CanAccessSession(sessionId)) return;
 
         _ = SendFrameAsync(frame);
+    }
+
+    private bool CanAccessSession(string sessionId)
+    {
+        return _allowedSessionId is null || string.Equals(_allowedSessionId, sessionId, StringComparison.Ordinal);
     }
 
     /// <summary>

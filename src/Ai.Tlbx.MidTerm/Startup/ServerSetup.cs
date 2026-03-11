@@ -14,6 +14,9 @@ using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Hosting;
+using Ai.Tlbx.MidTerm.Services.Share;
+using Ai.Tlbx.MidTerm.Services.Security;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -22,8 +25,6 @@ public static class ServerSetup
 {
     public static X509Certificate2? LoadedCertificate { get; private set; }
     public static bool IsFallbackCertificate { get; private set; }
-
-    private static readonly string AssetVersionETag = ComputeVersionETag();
 
     public static WebApplicationBuilder CreateBuilder(string[] args, Action<string, bool>? writeEventLog = null)
     {
@@ -107,12 +108,20 @@ public static class ServerSetup
         });
 
         builder.Services.AddSingleton(settingsService);
+        builder.Services.AddSingleton(sp =>
+        {
+            var (port, bindAddress) = ArgumentParser.Parse(args);
+            return new ServerBindingInfo(port, bindAddress);
+        });
         builder.Services.AddSingleton<ShellRegistry>();
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
+        builder.Services.AddSingleton<ShareGrantService>();
         builder.Services.AddSingleton<TempCleanupService>();
         builder.Services.AddSingleton<CertificateInfoService>();
         builder.Services.AddSingleton<SecurityStatusService>();
+        builder.Services.AddSingleton<IPowerShellCommandRunner, WindowsPowerShellCommandRunner>();
+        builder.Services.AddSingleton<WindowsFirewallService>();
         builder.Services.AddSingleton<MainBrowserService>();
         builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();
@@ -124,13 +133,22 @@ public static class ServerSetup
         builder.Services.AddSingleton<GitWatcherService>();
         builder.Services.AddSingleton<CommandService>();
         builder.Services.AddSingleton<ShutdownService>();
+        builder.Services.AddSingleton(sp =>
+        {
+            var (port, bindAddress) = ArgumentParser.Parse(args);
+            return BrowserPreviewOriginService.Create(port, bindAddress);
+        });
+        builder.Services.AddSingleton<BrowserPreviewRegistry>();
         builder.Services.AddSingleton<BrowserCommandService>();
         builder.Services.AddSingleton<BrowserUiBridge>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>
         {
             var (port, _) = ArgumentParser.Parse(args);
             var cookiesDir = Path.Combine(settingsService.SettingsDirectory, "cookies");
-            return new WebPreviewService(port, cookiesDir);
+            return new WebPreviewService(
+                port,
+                sp.GetRequiredService<BrowserPreviewOriginService>(),
+                cookiesDir);
         });
 
         builder.Services.AddResponseCompression(options =>
@@ -165,6 +183,10 @@ public static class ServerSetup
             {
                 context.Request.Path = path + ".html";
             }
+            else if (path == "/shared" || (path?.StartsWith("/shared/", StringComparison.Ordinal) ?? false))
+            {
+                context.Request.Path = "/index.html";
+            }
             else if (path == "/apple-touch-icon.png" ||
                      path == "/favicon-16x16.png" ||
                      path == "/favicon-32x32.png")
@@ -198,13 +220,12 @@ public static class ServerSetup
             OnPrepareResponse = ctx =>
             {
                 var path = ctx.Context.Request.Path.Value ?? "";
-                var isFont = path.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase)
-                          || path.EndsWith(".woff", StringComparison.OrdinalIgnoreCase)
-                          || path.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase);
+                var isFont = StaticAssetCacheHeaders.IsFontAsset(path);
 
                 if (isFont)
                 {
                     ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+                    ctx.Context.Response.Headers["Access-Control-Allow-Origin"] = "*";
                 }
                 else
                 {
@@ -213,14 +234,8 @@ public static class ServerSetup
                     ctx.Context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
                     ctx.Context.Response.Headers.Pragma = "no-cache";
 #else
-                    ctx.Context.Response.Headers.ETag = AssetVersionETag;
-                    var isEntryPointAsset = path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
-                        || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
-                        || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
-                        || path.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase);
-                    ctx.Context.Response.Headers.CacheControl = isEntryPointAsset
-                        ? "public, max-age=0, must-revalidate"
-                        : "public, max-age=86400";
+                    // Let StaticFileMiddleware keep its built-in per-file validators.
+                    ctx.Context.Response.Headers.CacheControl = StaticAssetCacheHeaders.GetCacheControl(path);
 #endif
                 }
             }
@@ -228,7 +243,12 @@ public static class ServerSetup
 
     }
 
-    public static void ConfigureMiddleware(WebApplication app, SettingsService settingsService, AuthService authService)
+    public static void ConfigureMiddleware(
+        WebApplication app,
+        SettingsService settingsService,
+        AuthService authService,
+        ShareGrantService shareGrantService,
+        BrowserPreviewOriginService previewOriginService)
     {
         app.UseResponseCompression();
 
@@ -239,8 +259,20 @@ public static class ServerSetup
             await next();
         });
 
+        app.Use(async (context, next) =>
+        {
+            if (previewOriginService.IsPreviewRequest(context)
+                && previewOriginService.ShouldBlockPath(context.Request.Path.Value ?? "/"))
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+
+            await next();
+        });
+
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
-        AuthMiddleware.ConfigureAuthMiddleware(app, settingsService, authService);
+        AuthMiddleware.ConfigureAuthMiddleware(app, settingsService, authService, shareGrantService);
 
         // WebSockets must be enabled before the web preview proxy middleware so that
         // context.WebSockets.IsWebSocketRequest is true for proxied WebSocket upgrades
@@ -260,17 +292,8 @@ public static class ServerSetup
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
-            // Content Security Policy - strict but allows xterm.js inline styles
-            var csp = "default-src 'self'; " +
-                      "script-src 'self'; " +
-                      "worker-src 'self' blob:; " +
-                      "style-src 'self' 'unsafe-inline'; " +
-                      "img-src 'self' data:; " +
-                      "font-src 'self' data:; " +
-                      "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
-                      "frame-src 'self' blob: data:; " +
-                      "frame-ancestors 'self'";
-            headers.ContentSecurityPolicy = csp;
+            headers.ContentSecurityPolicy = BuildContentSecurityPolicy(
+                previewOriginService.GetOrigin(context.Request));
 
             await next();
         });
@@ -278,12 +301,22 @@ public static class ServerSetup
         ConfigureStaticFiles(app);
     }
 
-    private static string ComputeVersionETag()
+    internal static string BuildContentSecurityPolicy(string? previewOrigin = null)
     {
-        var version = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-        var plusIndex = version.IndexOf('+');
-        if (plusIndex > 0) version = version[..plusIndex];
-        return $"\"{version}\"";
+        var frameSources = new List<string> { "'self'", "blob:", "data:" };
+        if (!string.IsNullOrWhiteSpace(previewOrigin))
+        {
+            frameSources.Add(previewOrigin);
+        }
+
+        return "default-src 'self'; " +
+               "script-src 'self'; " +
+               "worker-src 'self' blob:; " +
+               "style-src 'self' 'unsafe-inline'; " +
+               "img-src 'self' data:; " +
+               "font-src 'self' data:; " +
+               "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
+               $"frame-src {string.Join(' ', frameSources)}; " +
+               "frame-ancestors 'self'";
     }
 }

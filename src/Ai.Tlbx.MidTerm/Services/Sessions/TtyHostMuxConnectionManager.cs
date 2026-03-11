@@ -87,7 +87,7 @@ public sealed class TtyHostMuxConnectionManager
         {
             if (client.WebSocket.State == WebSocketState.Open)
             {
-                client.QueueFrame(frame);
+                client.QueueFrame(frame, sessionId);
             }
         }
     }
@@ -120,9 +120,9 @@ public sealed class TtyHostMuxConnectionManager
         }
     }
 
-    public MuxClient AddClient(string clientId, WebSocket webSocket)
+    public MuxClient AddClient(string clientId, WebSocket webSocket, string? allowedSessionId = null)
     {
-        var client = new MuxClient(clientId, webSocket);
+        var client = new MuxClient(clientId, webSocket, allowedSessionId);
         _clients[clientId] = client;
         return client;
     }

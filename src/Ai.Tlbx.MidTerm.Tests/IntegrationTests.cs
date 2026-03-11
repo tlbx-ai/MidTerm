@@ -13,6 +13,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 namespace Ai.Tlbx.MidTerm.Tests;
 
@@ -148,6 +149,50 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
             AppJsonContext.Default.WebPreviewCookiesResponse);
         Assert.NotNull(cookies);
         Assert.True(string.IsNullOrEmpty(cookies.Header));
+    }
+
+    [Fact]
+    public async Task WebPreview_CookieBridge_HidesHttpOnlyCookies()
+    {
+        var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
+        {
+            Url = "https://example.com"
+        }, AppJsonContext.Default.WebPreviewTargetRequest);
+        targetRes.EnsureSuccessStatusCode();
+
+        var setRes = await _client.PostAsJsonAsync("/api/webpreview/cookies", new WebPreviewCookieSetRequest
+        {
+            Raw = "session=abc123; Path=/; HttpOnly"
+        }, AppJsonContext.Default.WebPreviewCookieSetRequest);
+        setRes.EnsureSuccessStatusCode();
+
+        using var bridgeRequest = new HttpRequestMessage(HttpMethod.Get, "/webpreview/_cookies");
+        bridgeRequest.Headers.Referrer = new Uri("https://localhost/webpreview/");
+        var bridgeRes = await _client.SendAsync(bridgeRequest);
+        bridgeRes.EnsureSuccessStatusCode();
+        var bridgeCookies = await bridgeRes.Content.ReadFromJsonAsync(
+            AppJsonContext.Default.WebPreviewCookiesResponse);
+
+        Assert.NotNull(bridgeCookies);
+        Assert.DoesNotContain("session=abc123", bridgeCookies.Header ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BrowserPreviewClient_Create_ReturnsPreviewIdentity()
+    {
+        var response = await _client.PostAsJsonAsync("/api/browser/preview-client", new BrowserPreviewClientRequest
+        {
+            SessionId = "session-123"
+        }, AppJsonContext.Default.BrowserPreviewClientRequest);
+
+        response.EnsureSuccessStatusCode();
+        var previewClient = await response.Content.ReadFromJsonAsync(
+            AppJsonContext.Default.BrowserPreviewClientResponse);
+
+        Assert.NotNull(previewClient);
+        Assert.Equal("session-123", previewClient.SessionId);
+        Assert.False(string.IsNullOrWhiteSpace(previewClient.PreviewId));
+        Assert.False(string.IsNullOrWhiteSpace(previewClient.PreviewToken));
     }
 
     private async Task<WebSocket> ConnectWebSocketAsync(string path)

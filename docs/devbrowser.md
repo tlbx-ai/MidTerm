@@ -13,6 +13,8 @@ The proxy uses a **write-only interception** strategy. The injected `UrlRewriteS
 - Element `.src`, `.href`, `.action` setters — DOM properties
 - `setAttribute` — attribute writes
 
+For `fetch(Request)` calls, the injected shim now rebuilds the request from the original method/headers/body instead of relying on `new Request(rewrittenUrl, request)`. In Chromium, rewriting a `Request` URL that way can drop or corrupt non-`GET` bodies, which breaks generated API clients that send JSON via `fetch(new Request(...))`.
+
 Read-side APIs (`location.href`, `location.pathname`, `document.URL`, `document.baseURI`) are **not spoofed**. The page sees its real URL including `/webpreview/`.
 
 | Layer | URL the code sees | Example |
@@ -28,13 +30,15 @@ The `<base href="/webpreview/">` tag is injected into every HTML response, so:
 
 ### Navigation Notifications
 
-The injected script sends `postMessage({type: "mt-navigation", url: location.href})` to the parent window whenever in-iframe navigation occurs:
+Each docked or detached preview now gets a registered preview identity (`sessionId`, `previewId`, `previewToken`) from `POST /api/browser/preview-client`. The parent writes that identity into `iframe.name` before loading the proxied page, and the injected script uses it for all bridge traffic.
+
+The injected script sends `postMessage({type: "mt-navigation", url: location.href, upstreamUrl: ..., targetOrigin: window.__mtTargetOrigin, previewId, previewToken})` to the parent window whenever in-iframe navigation occurs:
 
 - `history.pushState` / `history.replaceState` — SPA navigation
 - `popstate` / `hashchange` events — back/forward navigation
 - Initial page load (`setTimeout(ntfy, 0)`) — captures redirects
 
-The parent `webPanel.ts` listens for these messages and updates the URL bar, stripping the `/webpreview` prefix and reconstructing the upstream URL.
+The parent `webPanel.ts` / detached popup listener accepts these messages only when the preview identity matches the current iframe. It prefers the injected `upstreamUrl` field, so redirects and `_ext` navigations no longer need to be reverse-engineered from the iframe URL bar.
 
 ### Why No Read-Side Spoofing?
 
@@ -55,6 +59,101 @@ This works because:
 If the upstream server independently generates URLs using its own origin (not from client state), those URLs would point to the upstream directly. The client's `fetch`/`XHR` interceptors would route them through the `/_ext` external proxy. This is functional, though slightly less efficient than direct `/webpreview/` routing.
 
 In practice, Blazor and most SPA frameworks derive all URLs from client-provided state, so this edge case rarely occurs.
+
+## Cookie Bridge
+
+Upstream cookies are stored in MidTerm's server-side `CookieContainer`. The browser bridge under `/webpreview/_cookies` intentionally exposes only **script-visible** cookies:
+
+- `HttpOnly` cookies stay server-only and are still forwarded upstream on HTTP/WebSocket requests
+- `document.cookie` inside the proxied page sees only non-`HttpOnly` cookies
+- `document.cookie = ...` writes also behave like a browser: `HttpOnly` is ignored on writes from page JavaScript
+
+The proxied page no longer calls `/webpreview/_cookies` directly. Instead, the injected script posts `mt-cookie-request` messages to its parent window, and the parent performs the authenticated fetch on the page's behalf. This removes the last iframe dependency on `contentWindow`/same-origin access and keeps the cookie bridge working once the iframe is sandboxed.
+
+The bridge resolves cookies against the current upstream page URL either from the explicit `?u=` query parameter supplied by the parent or, as a fallback, the iframe referer.
+
+## Sandboxed Runtime Compatibility
+
+When the preview iframe is sandboxed without a usable same-origin storage context, the injected runtime now provides safe compatibility fallbacks before any upstream JavaScript runs:
+
+- `localStorage` and `sessionStorage` fall back to per-frame in-memory stores instead of throwing `SecurityError`
+- `navigator.serviceWorker` falls back to a no-op container that resolves registration calls without taking over the real page scope
+
+These shims exist specifically so MidTerm-in-MidTerm and similar apps can still bootstrap inside an opaque-origin sandbox. They do **not** provide persistence across reloads, and they are intentionally weaker than a real same-origin browser context.
+
+## Browser Bridge Targeting
+
+Browser automation is now scoped per preview client instead of "whichever iframe connected last":
+
+- `/ws/browser` accepts preview-scoped connections with `previewId` / `token`
+- `BrowserCommandService` keeps one command listener per connected preview client
+- only one browser bridge connection is accepted per preview id; later duplicates are rejected
+- commands without `--session` prefer the main browser's newest preview-scoped client when same-browser duplicates exist
+- commands with `--session` route only to that session's preview
+- docked UI screenshot capture sends the active docked `previewId`, so nested previews under the same terminal session do not collide
+
+The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
+
+Browser UI instructions (`open`, `dock`, `detach`, `viewport`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no MidTerm browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
+
+## Embedded MidTerm Guardrails
+
+When MidTerm itself is running inside `/webpreview/`, the nested MidTerm UI now treats its own web-preview controls as inactive:
+
+- embedded MidTerm pages no-op frontend calls that mutate `/api/webpreview/*`
+- embedded MidTerm pages do not create nested browser preview clients through the normal docked-preview path
+- browser-ui `open` / `dock` / `detach` / `viewport` instructions are ignored inside embedded MidTerm pages
+
+This prevents the previewed MidTerm app from clearing or repointing the host MidTerm dev-browser target during bootstrap.
+
+## Dev-Mode Sandbox
+
+In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox:
+
+- baseline flags: `allow-scripts allow-forms allow-popups allow-modals allow-downloads`
+- when the preview is loaded from the dedicated preview origin (`https://host:port+1`), MidTerm also adds `allow-same-origin`
+- when MidTerm falls back to the primary app origin, it still omits `allow-same-origin`, so the proxied page runs with an opaque origin
+- MidTerm's own `localStorage`, `CacheStorage`, and service-worker scope are no longer shared with the previewed app
+
+The dedicated preview origin makes `allow-same-origin` safe for self-preview and similar apps that require `localStorage` or `navigator.serviceWorker`: the iframe becomes same-origin with `port + 1`, not with the main MidTerm shell on `port`.
+
+Because sandboxed preview frames are cross-site from the main app's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs. Production/stable-style runs keep `SameSite=Lax`.
+
+## Dedicated Preview Origin
+
+When MidTerm can reserve `port + 1`, preview clients now receive a dedicated frame origin on that secondary listener:
+
+- the main app stays on `https://host:port`
+- the iframe loads proxied content from `https://host:port+1`
+- preview client registration returns that origin to the docked panel and detached popup
+
+The preview listener blocks normal MidTerm app pages and non-browser WebSockets on the secondary port, so leaked navigations do not fall back into the MidTerm application on the preview origin. If the extra port is unavailable, MidTerm falls back to the primary origin and keeps the sandbox protections from step 3.
+
+The server must bind both the main app URL and the preview URL explicitly at startup. Advertising a preview origin without listening on `port + 1` breaks MidTerm-in-MidTerm immediately once the iframe tries to navigate to the isolated frame host.
+
+## MidTerm-In-MidTerm
+
+Self-preview is supported only when the dedicated preview origin is active:
+
+- target the main app origin (`https://host:port`), not the preview origin (`port + 1`)
+- the preview-origin listener itself is still rejected as a web-preview target, so the proxy never points at its own isolated frame host
+- proxied requests to MidTerm itself mirror the current `mm-session` auth cookie from the browser request into the in-memory proxy cookie jar before each upstream HTTP/WebSocket hop
+- that mirrored auth cookie is deliberately excluded from cookie-disk persistence, so nested MidTerm stays authenticated without writing MidTerm session tokens into the preview cookie files
+
+This is what keeps nested MidTerm from falling into `/login.html` once its own `/api/*` and `/ws/*` traffic starts flowing through the dev browser.
+
+The main MidTerm shell also has to allow that isolated frame host in its own CSP `frame-src`. Without that, the browser blocks `https://host:port+1/webpreview/...` before the nested app can render.
+
+For self-targets, internal upstream hops must not re-enter the catch-all "leaked root-relative URL" proxy path. MidTerm marks those server-originated self-proxy requests and lets them fall through to local static files and normal handlers, which prevents recursive `/site.webmanifest` and `/favicon.ico` loops that otherwise explode into `431 Request Header Fields Too Large`.
+
+## Canonical Host Adoption
+
+MidTerm only auto-updates the stored preview target when a **document/iframe HTML navigation** lands on a different authority:
+
+- asset redirects no longer rewrite the preview target
+- same-host/different-port URLs are treated as different authorities
+- host canonicalization preserves the current preview base path for normal `/webpreview/*` navigations
+- `/_ext` HTML navigations switch the stored target to the new authority root so refresh/detach continue from the external site instead of the previous host
 
 ## Proxy Log
 
@@ -106,3 +205,5 @@ When a website doesn't load through the web preview:
 **No WebSocket content rewriting.** Frameworks use relative paths for routing. The absolute origin in URLs doesn't matter as long as `baseUri` and `currentUri` share the same origin. Relaying messages untouched eliminates an entire class of bugs (JSON corruption, MessagePack header mismatch, VarInt framing errors).
 
 **Write-side interception is sufficient.** Outgoing APIs (fetch, XHR, WebSocket, history, element setters) are patched to add `/webpreview` before requests leave JS. This ensures all requests route through the proxy middleware.
+
+For targets that live under a deep document path but serve assets from the origin root (for example docs sites that load `/_astro/*` from a page under `/foo/bar/...`), MidTerm now primes its root-fallback cache directly from the rewritten HTML before the browser requests those assets. That avoids the first-wave `404` noise where the proxy would otherwise try `targetBase + /_astro/...` once and only then learn to retry the server-root path.

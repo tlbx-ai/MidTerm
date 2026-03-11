@@ -6,6 +6,7 @@ using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Git;
+using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -654,18 +655,25 @@ public static class EndpointSetup
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
+        ShareGrantService shareGrantService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
         GitWatcherService gitWatcher,
         BrowserCommandService browserCommandService,
+        BrowserPreviewRegistry browserPreviewRegistry,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
-        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
+        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
+        var stateHandler = new StateWebSocketHandler(sessionManager, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
-        var browserHandler = new BrowserWebSocketHandler(browserCommandService, settingsService, authService, shutdownService);
+        var browserHandler = new BrowserWebSocketHandler(
+            browserCommandService,
+            browserPreviewRegistry,
+            settingsService,
+            authService,
+            shutdownService);
 
         app.Use(async (context, next) =>
         {
@@ -689,6 +697,12 @@ public static class EndpointSetup
                 return;
             }
 
+            if (path == "/ws/share/state")
+            {
+                await stateHandler.HandleAsync(context);
+                return;
+            }
+
             if (path == "/ws/settings")
             {
                 await settingsHandler.HandleAsync(context);
@@ -702,6 +716,12 @@ public static class EndpointSetup
             }
 
             if (path == "/ws/mux")
+            {
+                await muxHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/share/mux")
             {
                 await muxHandler.HandleAsync(context);
                 return;

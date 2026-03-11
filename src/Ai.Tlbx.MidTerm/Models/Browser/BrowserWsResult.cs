@@ -7,4 +7,6 @@ public sealed class BrowserWsResult
     public string? Result { get; init; }
     public string? Error { get; init; }
     public int? MatchCount { get; init; }
+    public string? SessionId { get; init; }
+    public string? PreviewId { get; init; }
 }

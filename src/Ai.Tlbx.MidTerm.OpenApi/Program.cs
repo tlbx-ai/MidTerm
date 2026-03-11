@@ -8,10 +8,12 @@ using Microsoft.OpenApi;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<IAuthHandler, StubAuthHandler>();
+builder.Services.AddSingleton<ISecurityHandler, StubSecurityHandler>();
 builder.Services.AddSingleton<ISessionHandler, StubSessionHandler>();
 builder.Services.AddSingleton<IHistoryHandler, StubHistoryHandler>();
 builder.Services.AddSingleton<IFileHandler, StubFileHandler>();
 builder.Services.AddSingleton<ILogHandler, StubLogHandler>();
+builder.Services.AddSingleton<IShareHandler, StubShareHandler>();
 builder.Services.AddSingleton<ISystemHandler, StubSystemHandler>();
 
 builder.Services.AddOpenApi(options =>

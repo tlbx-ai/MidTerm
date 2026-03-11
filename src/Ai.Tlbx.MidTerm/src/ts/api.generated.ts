@@ -185,6 +185,79 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/security/firewall': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FirewallRuleStatusResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FirewallRuleStatusResponse'];
+          };
+        };
+      };
+    };
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FirewallRuleStatusResponse'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sessions': {
     parameters: {
       query?: never;
@@ -1014,6 +1087,119 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/share/create': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CreateShareLinkRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CreateShareLinkResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/share/claim': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['ClaimShareRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ClaimShareResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/share/bootstrap': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ShareBootstrapResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/bootstrap': {
     parameters: {
       query?: never;
@@ -1809,6 +1995,17 @@ export interface components {
       currentPassword?: null | string;
       newPassword: string;
     };
+    ClaimShareRequest: {
+      grantId: string;
+      secret: string;
+    };
+    ClaimShareResponse: {
+      grantId: string;
+      sessionId: string;
+      mode: components['schemas']['ShareAccessMode'];
+      /** Format: date-time */
+      expiresAtUtc: string;
+    };
     /** @enum {unknown} */
     ClipboardShortcutsSetting: 'auto' | 'windows' | 'unix';
     CreateHistoryRequest: {
@@ -1827,6 +2024,17 @@ export interface components {
       rows: number;
       shell?: null | string;
       workingDirectory?: null | string;
+    };
+    CreateShareLinkRequest: {
+      sessionId: string;
+      mode: components['schemas']['ShareAccessMode'];
+    };
+    CreateShareLinkResponse: {
+      shareUrl: string;
+      grantId: string;
+      mode: components['schemas']['ShareAccessMode'];
+      /** Format: date-time */
+      expiresAtUtc: string;
     };
     /** @enum {unknown} */
     CursorInactiveStyleSetting: 'outline' | 'block' | 'bar' | 'underline' | 'none';
@@ -1892,6 +2100,21 @@ export interface components {
     };
     FileUploadResponse: {
       path: string;
+    };
+    FirewallRuleStatusResponse: {
+      supported: boolean;
+      canManage: boolean;
+      rulePresent: boolean;
+      ruleEnabled: boolean;
+      matchesCurrentPort: boolean;
+      matchesCurrentProgram: boolean;
+      /** Format: int32 */
+      port: number;
+      bindAddress: string;
+      loopbackOnly: boolean;
+      ruleName: string;
+      ruleLocalPort: null | string;
+      ruleProgramPath: null | string;
     };
     HistoryPatchRequest: {
       isStarred?: null | boolean;
@@ -1998,7 +2221,6 @@ export interface components {
       inputMode: string;
       fileRadar: boolean;
       tmuxCompatibility: boolean;
-      ideMode: boolean;
       managerBarEnabled: boolean;
       devMode: boolean;
       showChangelogAfterUpdate: boolean;
@@ -2081,6 +2303,16 @@ export interface components {
     };
     SetBookmarkRequest: {
       bookmarkId: string;
+    };
+    /** @enum {unknown} */
+    ShareAccessMode: 'ViewOnly' | 'FullControl';
+    ShareBootstrapResponse: {
+      hostname: string;
+      session: null | components['schemas']['SessionInfoDto'];
+      settings: components['schemas']['MidTermSettingsPublic'];
+      mode: components['schemas']['ShareAccessMode'];
+      /** Format: date-time */
+      expiresAtUtc: string;
     };
     SharePacketInfo: {
       certificate: components['schemas']['CertificateDownloadInfo'];

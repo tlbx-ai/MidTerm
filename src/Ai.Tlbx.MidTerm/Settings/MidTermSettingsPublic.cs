@@ -41,7 +41,6 @@ public sealed partial class MidTermSettingsPublic
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
     public bool TmuxCompatibility { get; set; } = true;
-    public bool IdeMode { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
     public bool DevMode { get; set; } = false;
     public bool ShowChangelogAfterUpdate { get; set; } = true;

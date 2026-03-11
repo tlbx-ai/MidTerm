@@ -9,4 +9,6 @@ public sealed class BrowserWsMessage
     public int? MaxDepth { get; init; }
     public bool TextOnly { get; init; }
     public int? Timeout { get; init; }
+    public string? SessionId { get; init; }
+    public string? PreviewId { get; init; }
 }

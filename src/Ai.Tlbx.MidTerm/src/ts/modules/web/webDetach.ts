@@ -9,7 +9,9 @@
 import { $activeSessionId, $webPreviewDetached, $webPreviewUrl } from '../../stores';
 import { hideDetachedPlaceholder, loadPreview } from './webPanel';
 import { createLogger } from '../logging';
-import { getActiveUrl, setActiveMode, setSessionMode } from './webSessionState';
+import { getActiveUrl, setActiveMode, setSessionMode, setSessionUrl } from './webSessionState';
+import { createBrowserPreviewClient } from './webApi';
+import { isDevMode } from '../sidebar/voiceSection';
 
 const log = createLogger('webDetach');
 
@@ -22,21 +24,31 @@ function channelName(sessionId: string): string {
 
 /** Initialize the detach system: wire up detach/dock-back buttons. */
 export function initDetach(): void {
-  document.getElementById('web-preview-detach')?.addEventListener('click', detachPreview);
+  document.getElementById('web-preview-detach')?.addEventListener('click', () => {
+    void detachPreview();
+  });
   document.getElementById('web-preview-dock-back')?.addEventListener('click', () => {
     dockBack();
   });
 }
 
-function handleMessage(e: MessageEvent<{ type: string; sessionId?: string }>): void {
-  const { type, sessionId } = e.data;
+function handleMessage(e: MessageEvent<{ type: string; sessionId?: string; url?: string }>): void {
+  const { type, sessionId, url } = e.data;
+  if (type === 'navigation' && sessionId && typeof url === 'string') {
+    setSessionUrl(sessionId, url);
+    if (sessionId === $activeSessionId.get()) {
+      $webPreviewUrl.set(url);
+    }
+    return;
+  }
+
   if (type === 'dock-back' || type === 'popup-closed') {
     dockBack(sessionId ?? undefined);
   }
 }
 
 /** Open the web preview in a chromeless popup window and hide the dock panel. */
-export function detachPreview(): void {
+export async function detachPreview(): Promise<void> {
   const activeSessionId = $activeSessionId.get();
   if (!activeSessionId) return;
 
@@ -47,9 +59,19 @@ export function detachPreview(): void {
   }
 
   const url = getActiveUrl() ?? $webPreviewUrl.get();
+  const previewClient = await createBrowserPreviewClient(activeSessionId);
+  if (!previewClient) {
+    log.warn(() => `Failed to create detached browser client for session ${activeSessionId}`);
+    return;
+  }
+
   const popupUrl =
     '/web-preview-popup.html' +
     `?session=${encodeURIComponent(activeSessionId)}` +
+    `&previewId=${encodeURIComponent(previewClient.previewId)}` +
+    `&previewToken=${encodeURIComponent(previewClient.previewToken)}` +
+    (previewClient.origin ? `&origin=${encodeURIComponent(previewClient.origin)}` : '') +
+    (isDevMode() ? '&sandbox=1' : '') +
     (url ? `&url=${encodeURIComponent(url)}` : '');
 
   const popup = window.open(
@@ -92,7 +114,7 @@ export function dockBack(sessionId?: string): void {
     if (dockPanel) {
       dockPanel.classList.remove('hidden');
     }
-    loadPreview();
+    void loadPreview();
     log.info(() => 'Web preview docked back');
   }
 }

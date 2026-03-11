@@ -6,4 +6,5 @@
 
 export * from './panel';
 export * from './persistence';
+export * from './registry';
 export * from './tabs';

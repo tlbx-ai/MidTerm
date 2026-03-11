@@ -44,7 +44,6 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.FileRadar);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);
-        Assert.True(settings.IdeMode);
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
     }
@@ -65,7 +64,6 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.FileRadar);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);
-        Assert.True(settings.IdeMode);
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
     }
@@ -83,7 +81,6 @@ public sealed class SettingsServiceTests : IDisposable
           "fileRadar": false,
           "managerBarEnabled": false,
           "tmuxCompatibility": false,
-          "ideMode": false,
           "showChangelogAfterUpdate": false,
           "showUpdateNotification": false
         }
@@ -99,7 +96,6 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.False(settings.FileRadar);
         Assert.False(settings.ManagerBarEnabled);
         Assert.False(settings.TmuxCompatibility);
-        Assert.False(settings.IdeMode);
         Assert.False(settings.ShowChangelogAfterUpdate);
         Assert.False(settings.ShowUpdateNotification);
     }

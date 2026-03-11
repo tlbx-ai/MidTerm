@@ -42,13 +42,18 @@ export type ResizeResponse = Schemas['ResizeResponse'];
 export type MidTermSettingsPublic = Schemas['MidTermSettingsPublic'];
 export type MidTermSettingsUpdate = Omit<
   MidTermSettingsPublic,
-  'authenticationEnabled' | 'runAsUserSid' | 'certificatePath'
+  | 'authenticationEnabled'
+  | 'backgroundImageFileName'
+  | 'backgroundImageRevision'
+  | 'runAsUserSid'
+  | 'certificatePath'
 >;
 
 // System
 export type SystemHealth = Schemas['SystemHealth'];
 export type SystemResponse = Schemas['SystemResponse'];
 export type SecurityStatus = Schemas['SecurityStatus'];
+export type FirewallRuleStatusResponse = Schemas['FirewallRuleStatusResponse'];
 export type TtyHostInfo = Schemas['TtyHostInfo'];
 export type VersionManifest = Schemas['VersionManifest'];
 export type PathsResponse = Schemas['PathsResponse'];
@@ -66,6 +71,14 @@ export type CertificateDownloadInfo = Schemas['CertificateDownloadInfo'];
 // Share
 export type SharePacketInfo = Schemas['SharePacketInfo'];
 export type NetworkEndpointInfo = Schemas['NetworkEndpointInfo'];
+
+// Shared sessions
+export type ShareAccessMode = Schemas['ShareAccessMode'];
+export type CreateShareLinkRequest = Schemas['CreateShareLinkRequest'];
+export type CreateShareLinkResponse = Schemas['CreateShareLinkResponse'];
+export type ClaimShareRequest = Schemas['ClaimShareRequest'];
+export type ClaimShareResponse = Schemas['ClaimShareResponse'];
+export type ShareBootstrapResponse = Schemas['ShareBootstrapResponse'];
 
 // Files
 export type FilePathInfo = Schemas['FilePathInfo'];

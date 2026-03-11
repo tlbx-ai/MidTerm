@@ -1,16 +1,19 @@
 using Ai.Tlbx.MidTerm.Models.Auth;
+using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
 public static class AuthEndpoints
 {
-    private static CookieOptions GetSessionCookieOptions() => new()
+    private static CookieOptions GetSessionCookieOptions(SettingsService settingsService) => new()
     {
         HttpOnly = true,
-        // Lax keeps CSRF protection for subresource requests while allowing
-        // top-level navigations from installed PWAs/home-screen launches.
-        SameSite = SameSiteMode.Lax,
+        // Sandboxed previews use an opaque origin, so their subresource requests only
+        // carry the auth cookie when dev mode intentionally relaxes SameSite.
+        SameSite = UpdateService.IsDevEnvironment || settingsService.Load().DevMode
+            ? SameSiteMode.None
+            : SameSiteMode.Lax,
         Secure = true,
         Path = "/",
         MaxAge = TimeSpan.FromDays(3)
@@ -51,14 +54,17 @@ public static class AuthEndpoints
 
             authService.ResetAttempts(ip);
             var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append(AuthService.SessionCookieName, token, GetSessionCookieOptions());
+            ctx.Response.Cookies.Append(
+                AuthService.SessionCookieName,
+                token,
+                GetSessionCookieOptions(settingsService));
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
 
         app.MapPost("/api/auth/logout", (HttpContext ctx) =>
         {
-            ctx.Response.Cookies.Delete(AuthService.SessionCookieName, GetSessionCookieOptions());
+            ctx.Response.Cookies.Delete(AuthService.SessionCookieName, GetSessionCookieOptions(settingsService));
             return Results.Ok();
         });
 
@@ -92,7 +98,10 @@ public static class AuthEndpoints
             settingsService.Save(pwSettings);
 
             var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append(AuthService.SessionCookieName, token, GetSessionCookieOptions());
+            ctx.Response.Cookies.Append(
+                AuthService.SessionCookieName,
+                token,
+                GetSessionCookieOptions(settingsService));
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
@@ -107,13 +116,6 @@ public static class AuthEndpoints
             }, AppJsonContext.Default.AuthStatusResponse);
         });
 
-        // Security status endpoint - reports password/certificate health
-        // Accessible without authentication to allow monitoring
-        var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();
-        app.MapGet("/api/security/status", () =>
-        {
-            return Results.Json(securityStatusService.GetStatus(), AppJsonContext.Default.SecurityStatus);
-        });
     }
 
 }

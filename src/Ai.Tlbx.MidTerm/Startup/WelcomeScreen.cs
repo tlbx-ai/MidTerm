@@ -161,11 +161,11 @@ public static class WelcomeScreen
         string bindAddress,
         Action<string, bool>? writeEventLog = null)
     {
-        writeEventLog?.Invoke($"RunWithPortErrorHandling: About to call app.Run on https://{bindAddress}:{port}", false);
+        writeEventLog?.Invoke($"RunWithPortErrorHandling: About to call app.Run with configured URLs (main https://{bindAddress}:{port})", false);
 
         try
         {
-            app.Run($"https://{bindAddress}:{port}");
+            app.Run();
             writeEventLog?.Invoke("RunWithPortErrorHandling: app.Run completed normally", false);
         }
         catch (Exception ex) when (TryGetPortBindSocketException(ex, out var socketEx) &&

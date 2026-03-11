@@ -9,7 +9,7 @@ import { initLoginPage } from './modules/login';
 import { initTrustPage } from './modules/trust';
 import { initThemeFromCookie } from './modules/theming';
 import { createLogger, initLogConcerns } from './modules/logging';
-import { JS_BUILD_VERSION } from './constants';
+import { ASSET_VERSION } from './constants';
 import {
   connectStateWebSocket,
   connectMuxWebSocket,
@@ -42,6 +42,7 @@ import {
   initMobilePiP,
   recordMobilePiPBytes,
 } from './modules/terminal';
+import { getConfiguredTerminalFontFamily } from './modules/terminal/fontConfig';
 import {
   getSessionDisplayName,
   setSessionListCallbacks,
@@ -111,20 +112,21 @@ import {
   initSessionTabs,
   ensureSessionWrapper,
   destroySessionWrapper,
-  setIdeModeEnabled,
   reparentTerminalContainer,
   switchTab,
 } from './modules/sessionTabs';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
+import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
+import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
+import { initWebPreview } from './modules/web';
 import {
-  initGitPanel,
-  connectGitWebSocket,
-  disconnectGitWebSocket,
-  destroyGitSession,
-} from './modules/git';
-import { initCommandsPanel, destroyCommandsSession, closeCommandsDock } from './modules/commands';
-import { closeGitDock } from './modules/git/gitDock';
-import { initWebPreview, closeWebPreviewDock } from './modules/web';
+  initSessionShareButton,
+  isSharedSessionRoute,
+  claimSharedSessionAccess,
+  fetchSharedBootstrap,
+  applySharedSessionMode,
+  showSharedSessionError,
+} from './modules/share';
 import { initDockState, removeSessionDockState } from './modules/dockState';
 import { initSmartInput, removeSmartInputSessionState } from './modules/smartInput';
 import {
@@ -192,6 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
     void initLoginPage();
   } else if (path === '/trust' || path === '/trust.html') {
     void initTrustPage();
+  } else if (isSharedSessionRoute()) {
+    void initShared();
   } else {
     void init();
   }
@@ -263,27 +267,11 @@ async function init(): Promise<void> {
   initSessionTabs();
   initFileBrowser();
   initGitPanel();
+  connectGitWebSocket();
   initCommandsPanel();
   initWebPreview();
+  initSessionShareButton();
   initDockState();
-
-  // React to ideMode setting: toggle tab bar visibility and git WS connection
-  let gitWsConnected = false;
-  $currentSettings.subscribe((settings) => {
-    if (!settings) return;
-    const ideEnabled = settings.ideMode;
-    setIdeModeEnabled(ideEnabled);
-    if (ideEnabled && !gitWsConnected) {
-      connectGitWebSocket();
-      gitWsConnected = true;
-    } else if (!ideEnabled && gitWsConnected) {
-      disconnectGitWebSocket();
-      gitWsConnected = false;
-      closeGitDock();
-      closeCommandsDock();
-      closeWebPreviewDock();
-    }
-  });
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
@@ -294,13 +282,57 @@ async function init(): Promise<void> {
   setupVisibilityChangeHandler();
   initPwaInstall();
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker
-      .register(`/js/sw.js?v=${encodeURIComponent(JS_BUILD_VERSION)}`)
-      .catch(() => {});
+  let serviceWorker: ServiceWorkerContainer | undefined;
+  try {
+    serviceWorker = navigator.serviceWorker;
+  } catch {
+    serviceWorker = undefined;
+  }
+
+  if (serviceWorker?.register) {
+    serviceWorker.register(`/js/sw.js?v=${encodeURIComponent(ASSET_VERSION)}`).catch(() => {});
   }
 
   log.info(() => 'MidTerm frontend initialized');
+}
+
+async function initShared(): Promise<void> {
+  initLogConcerns();
+  log.info(() => 'MidTerm shared frontend initializing');
+
+  cacheDOMElements();
+  await initI18n();
+
+  const fontPromise = preloadTerminalFont();
+  setFontsReadyPromise(fontPromise);
+  void fontPromise.then(() => initCalibrationTerminal());
+
+  try {
+    await claimSharedSessionAccess();
+    const bootstrap = await fetchSharedBootstrap();
+    applySharedSessionMode(bootstrap);
+  } catch (error) {
+    log.error(() => `Shared session bootstrap failed: ${String(error)}`);
+    showSharedSessionError(t('share.shared.invalid'));
+    return;
+  }
+
+  setSelectSessionCallback(selectSession);
+  setShowBellCallback(showBellNotification);
+  addProcessStateListener((sessionId, state) => {
+    setProcessState(sessionId, { ...state });
+  });
+
+  connectStateWebSocket();
+  connectMuxWebSocket();
+  initSessionTabs();
+  bindSearchEvents();
+  setupGlobalFocusReclaim();
+  setupResizeObserver();
+  setupVisualViewport();
+  setupVisibilityChangeHandler();
+
+  log.info(() => 'MidTerm shared frontend initialized');
 }
 
 // =============================================================================
@@ -391,7 +423,12 @@ async function createSession(): Promise<void> {
 
   if (dom.terminalsArea) {
     const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
-    const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, tempId);
+    const dims = await calculateOptimalDimensions(
+      dom.terminalsArea,
+      fontSize,
+      getConfiguredTerminalFontFamily(),
+      tempId,
+    );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;
@@ -424,7 +461,12 @@ async function createSession(): Promise<void> {
   // Subscription handles renderSessionList via store change
   closeSidebar();
 
-  apiCreateSession({ cols, rows })
+  apiCreateSession({
+    cols,
+    rows,
+    shell: settings?.defaultShell ?? null,
+    workingDirectory: settings?.defaultWorkingDirectory || null,
+  })
     .then(({ data }) => {
       // Remove temporary session
       pendingSessions.delete(tempId);
@@ -758,7 +800,12 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
   if (dom.terminalsArea) {
     const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
     const logId = 'history-' + crypto.randomUUID().slice(0, 8);
-    const dims = await calculateOptimalDimensions(dom.terminalsArea, fontSize, logId);
+    const dims = await calculateOptimalDimensions(
+      dom.terminalsArea,
+      fontSize,
+      getConfiguredTerminalFontFamily(),
+      logId,
+    );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
       rows = dims.rows;
@@ -1176,6 +1223,9 @@ function bindEvents(): void {
   });
   bindClick('btn-mobile-commands', () => {
     clickActiveSessionTabBarControl('[data-action="commands"]');
+  });
+  bindClick('btn-mobile-share', () => {
+    clickActiveSessionTabBarControl('[data-action="share"]');
   });
   bindClick('btn-mobile-git', () => {
     clickActiveSessionTabBarControl('[data-action="git"]');

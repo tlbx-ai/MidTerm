@@ -17,5 +17,4 @@ public interface IAuthHandler
     IResult Logout(HttpContext ctx);
     IResult ChangePassword(ChangePasswordRequest request, HttpContext ctx);
     IResult GetStatus();
-    IResult GetSecurityStatus();
 }

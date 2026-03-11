@@ -13,7 +13,6 @@ import {
   MIN_TERMINAL_ROWS,
   MAX_TERMINAL_COLS,
   MAX_TERMINAL_ROWS,
-  TERMINAL_FONT_STACK,
   icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
@@ -27,6 +26,11 @@ import {
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
 import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
+import {
+  buildTerminalFontStack,
+  ensureTerminalFontLoaded,
+  getConfiguredTerminalFontFamily,
+} from './fontConfig';
 import { sendResize } from '../comms';
 import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
@@ -97,6 +101,7 @@ function logResizeDiagnostics(
   operation: 'create' | 'manual-resize',
   sessionId: string,
   container: HTMLElement,
+  fontFamily: string,
   fontSize: number,
   cellWidth: number,
   cellHeight: number,
@@ -135,7 +140,7 @@ function logResizeDiagnostics(
       `[RESIZE DIAG] ${operation}\n` +
         `  Session: "${session?.name ?? sessionId}" (${session?.terminalTitle ?? 'no title'})\n` +
         `  Container: ${containerRect.width.toFixed(0)}×${containerRect.height.toFixed(0)} px\n` +
-        `  Font: ${TERMINAL_FONT_STACK.split(',')[0]}, ${fontSize}px\n` +
+        `  Font: ${fontFamily}, ${fontSize}px\n` +
         `  Cell size: ${cellWidth.toFixed(2)}×${cellHeight.toFixed(2)} px (from: ${measurementSource})\n` +
         `  Calculated fit: ${cols}×${rows}\n` +
         `  Assumed size: ${assumedWidth.toFixed(0)}×${assumedHeight.toFixed(0)} px\n` +
@@ -151,12 +156,19 @@ function logResizeDiagnostics(
  */
 function measureFromExistingTerminal(
   fontSize: number,
+  fontFamily: string,
 ): { cellWidth: number; cellHeight: number } | null {
+  const expectedFontStack = buildTerminalFontStack(fontFamily);
+
   for (const state of sessionTerminals.values()) {
     if (!state.opened) continue;
 
     // Only trust measurements from terminals using the same font size we plan to apply.
     if (state.terminal.options.fontSize !== fontSize) continue;
+    const terminalFontFamily = state.terminal.options.fontFamily ?? '';
+    if (terminalFontFamily !== expectedFontStack && !terminalFontFamily.includes(fontFamily)) {
+      continue;
+    }
 
     // Prefer xterm.js internal dimensions (accurate, not affected by CSS layout)
     const xtermDims = getXtermCellDimensions(state.terminal);
@@ -183,12 +195,15 @@ function measureFromExistingTerminal(
  * Measure cell dimensions by creating a temporary element with the terminal font.
  * Used when no existing terminal is available to measure from.
  */
-function measureFromFont(fontSize: number): { cellWidth: number; cellHeight: number } {
+function measureFromFont(
+  fontSize: number,
+  fontFamily: string,
+): { cellWidth: number; cellHeight: number } {
   const measureEl = document.createElement('span');
   measureEl.style.cssText = `
     position: absolute;
     visibility: hidden;
-    font-family: ${TERMINAL_FONT_STACK};
+    font-family: ${buildTerminalFontStack(fontFamily)};
     font-size: ${fontSize}px;
     line-height: 1;
     white-space: pre;
@@ -215,6 +230,7 @@ function measureFromFont(fontSize: number): { cellWidth: number; cellHeight: num
 export async function calculateOptimalDimensions(
   container: HTMLElement,
   fontSize: number,
+  fontFamily: string,
   sessionIdForLog?: string,
 ): Promise<{ cols: number; rows: number } | null> {
   // Allow layout to settle for very small containers before giving up
@@ -231,7 +247,7 @@ export async function calculateOptimalDimensions(
   // 1. Existing open terminal (most accurate, already rendered)
   // 2. Calibration measurement (accurate, from hidden terminal at startup)
   // 3. Font probe (fallback, less accurate)
-  const existingMeasurement = measureFromExistingTerminal(fontSize);
+  const existingMeasurement = measureFromExistingTerminal(fontSize, fontFamily);
 
   let measurementSource: MeasurementSource;
   let cellWidth: number;
@@ -249,7 +265,12 @@ export async function calculateOptimalDimensions(
     }
 
     const calibration = getCalibrationMeasurement();
-    if (calibration) {
+    if (
+      calibration &&
+      calibration.fontSize === fontSize &&
+      (calibration.fontFamily === buildTerminalFontStack(fontFamily) ||
+        calibration.fontFamily.includes(fontFamily))
+    ) {
       measurementSource = 'calibration';
       cellWidth = calibration.cellWidth;
       cellHeight = calibration.cellHeight;
@@ -259,7 +280,8 @@ export async function calculateOptimalDimensions(
       if (fontsReadyPromise) {
         await fontsReadyPromise;
       }
-      const fontMeasurement = measureFromFont(fontSize);
+      await ensureTerminalFontLoaded(fontFamily, fontSize);
+      const fontMeasurement = measureFromFont(fontSize, fontFamily);
       cellWidth = fontMeasurement.cellWidth;
       cellHeight = fontMeasurement.cellHeight;
     }
@@ -288,6 +310,7 @@ export async function calculateOptimalDimensions(
       'create',
       sessionIdForLog,
       container,
+      fontFamily,
       fontSize,
       cellWidth,
       cellHeight,
@@ -314,6 +337,7 @@ export function fitSessionToScreen(sessionId: string): void {
 
   // Capture fontSize for diagnostics
   const fontSize = $currentSettings.get()?.fontSize ?? 14;
+  const fontFamily = getConfiguredTerminalFontFamily();
 
   // Wait for terminal to be opened before fitting
   if (!state.opened) {
@@ -413,6 +437,7 @@ export function fitSessionToScreen(sessionId: string): void {
     'manual-resize',
     sessionId,
     dom.terminalsArea,
+    fontFamily,
     fontSize,
     cellWidth,
     cellHeight,

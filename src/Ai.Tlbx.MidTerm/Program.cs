@@ -12,6 +12,8 @@ using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.Certificates;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Share;
+using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program
@@ -117,6 +119,7 @@ public class Program
         var settingsService = app.Services.GetRequiredService<SettingsService>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
+        var shareGrantService = app.Services.GetRequiredService<ShareGrantService>();
         var tempCleanupService = app.Services.GetRequiredService<TempCleanupService>();
         var certInfoService = app.Services.GetRequiredService<CertificateInfoService>();
 
@@ -153,7 +156,8 @@ public class Program
         WelcomeScreen.LogStartupStatus(settingsService, settings, port, bindAddress,
             ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
 
-        ServerSetup.ConfigureMiddleware(app, settingsService, authService);
+        var browserPreviewOriginService = app.Services.GetRequiredService<BrowserPreviewOriginService>();
+        ServerSetup.ConfigureMiddleware(app, settingsService, authService, shareGrantService, browserPreviewOriginService);
 
         MidtermDirectory.Initialize(port, authService);
 
@@ -194,6 +198,7 @@ public class Program
         // Browser control (agent-driven web preview interaction)
         BrowserLog.Initialize(logDirectory);
         var browserCommandService = app.Services.GetRequiredService<BrowserCommandService>();
+        var browserPreviewRegistry = app.Services.GetRequiredService<BrowserPreviewRegistry>();
         var browserUiBridge = app.Services.GetRequiredService<BrowserUiBridge>();
         BrowserScriptWriter.WriteScript(port);
 
@@ -208,7 +213,7 @@ public class Program
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
-            if (!string.IsNullOrEmpty(payload.Cwd) && settingsService.Load().IdeMode)
+            if (!string.IsNullOrEmpty(payload.Cwd))
             {
                 _ = gitWatcher.RegisterSessionAsync(sessionId, payload.Cwd);
             }
@@ -216,16 +221,14 @@ public class Program
 
         sessionManager.OnCwdChanged += (sessionId, cwd) =>
         {
-            if (settingsService.Load().IdeMode)
-            {
-                _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
-            }
+            _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
         sessionManager.OnSessionClosed += sessionId =>
         {
             sessionPathAllowlistService.ClearSession(sessionId);
             gitWatcher.UnregisterSession(sessionId);
+            shareGrantService.RevokeBySession(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -287,8 +290,10 @@ public class Program
         EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
+        SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
+        ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, authService, port);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
@@ -302,9 +307,30 @@ public class Program
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
         WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
-        BrowserEndpoints.MapBrowserEndpoints(app, browserCommandService, sessionManager, webPreviewService, browserUiBridge);
+        BrowserEndpoints.MapBrowserEndpoints(
+            app,
+            browserCommandService,
+            browserPreviewRegistry,
+            browserPreviewOriginService,
+            sessionManager,
+            webPreviewService,
+            browserUiBridge);
         var mainBrowserService = app.Services.GetRequiredService<MainBrowserService>();
-        EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, mainBrowserService, gitWatcher, browserCommandService, tmuxLayoutBridge, browserUiBridge);
+        EndpointSetup.MapWebSocketMiddleware(
+            app,
+            sessionManager,
+            muxManager,
+            updateService,
+            settingsService,
+            authService,
+            shareGrantService,
+            shutdownService,
+            mainBrowserService,
+            gitWatcher,
+            browserCommandService,
+            browserPreviewRegistry,
+            tmuxLayoutBridge,
+            browserUiBridge);
 
         lifetime.ApplicationStarted.Register(() =>
         {
@@ -337,6 +363,8 @@ public class Program
 
         try
         {
+            app.Urls.Add($"https://{bindAddress}:{port}");
+            browserPreviewOriginService.ApplyUrls(app, bindAddress);
             WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
         }
         finally

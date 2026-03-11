@@ -30,8 +30,10 @@ public static class MtcliScriptWriter
         _MK="mm-session={{token}}"
         _MC() { curl -sfk -b "$_MK" "$@" 2>/dev/null; }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
+        _MBR() { curl -sk -b "$_MK" "$@" 2>/dev/null; }
+        _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
         # Send null-delimited args to text CLI endpoint (browser commands)
-        _MB() { printf '%s\0' "$@" | _MC --data-binary @- -X POST "$_MT/api/browser"; }
+        _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # mt_query SELECTOR [--text]  — query DOM; --text for text-only (smaller output)
@@ -76,7 +78,7 @@ public static class MtcliScriptWriter
         mt_navigate()   { _MJ -d "{\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
         # mt_open URL  — open URL in web preview panel and dock it
-        mt_open()       { mt_navigate "$1"; _MJ -d "{\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
+        mt_open()       { mt_navigate "$1"; _MJR -d "{\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
         # mt_close_preview  — close web preview panel
         mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target"; }
         mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
@@ -88,6 +90,25 @@ public static class MtcliScriptWriter
         mt_hardreload() { mt_clearcookies; mt_reload; }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
         mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?limit=$n"; }
+        # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
+        mt_apply_update() {
+          local source="${1:-}" url="$_MT/api/update/apply"
+          if [ -n "$source" ]; then
+            url="$url?source=$(_ME "$source")"
+          fi
+          _MC -X POST "$url" || return $?
+          sleep 3
+          local i version
+          for ((i=0; i<90; i++)); do
+            version=$(curl -sfk "$_MT/api/version" 2>/dev/null) && break
+            sleep 1
+          done
+          if [ -n "$version" ]; then
+            printf 'Current version: %s\n' "$version"
+          else
+            echo "Update triggered. Server restart still in progress."
+          fi
+        }
 
         # Session management
         mt_sessions()   { _MC "$_MT/api/sessions"; }
@@ -140,6 +161,8 @@ public static class MtcliScriptWriter
 
         function script:_MC { & curl.exe -sfk -b $script:_MK @args 2>$null }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
+        function script:_MBR { & curl.exe -sk -b $script:_MK @args 2>$null }
+        function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         # Send null-delimited args to text CLI endpoint (browser commands)
@@ -152,7 +175,7 @@ public static class MtcliScriptWriter
             $tmp = [System.IO.Path]::GetTempFileName()
             try {
                 [System.IO.File]::WriteAllBytes($tmp, $bytes.ToArray())
-                _MC --data-binary "@$tmp" -X POST "$script:_MT/api/browser"
+                _MBR --data-binary "@$tmp" -X POST "$script:_MT/api/browser"
             } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
         }
 
@@ -209,7 +232,7 @@ public static class MtcliScriptWriter
         function Mt-Open {
             param([string]$Url)
             Mt-Navigate -Url $Url
-            _MJ -d (_MH @{url=$Url}) "$script:_MT/api/browser/open"
+            _MJR -d (_MH @{url=$Url}) "$script:_MT/api/browser/open"
         }
         # Mt-ClosePreview  — close web preview panel
         function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target" }
@@ -222,6 +245,25 @@ public static class MtcliScriptWriter
         function Mt-HardReload { Mt-ClearCookies; Mt-Reload }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
         function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog?limit=$Limit" }
+        # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return
+        function Mt-ApplyUpdate {
+            param([string]$Source)
+            $url = "$script:_MT/api/update/apply"
+            if ($Source) {
+                $url += "?source=$([Uri]::EscapeDataString($Source))"
+            }
+            _MC -X POST $url
+            Start-Sleep -Seconds 3
+            for ($i = 0; $i -lt 90; $i++) {
+                $version = & curl.exe -sfk "$script:_MT/api/version" 2>$null
+                if ($LASTEXITCODE -eq 0 -and $version) {
+                    Write-Output "Current version: $version"
+                    return
+                }
+                Start-Sleep -Seconds 1
+            }
+            Write-Output "Update triggered. Server restart still in progress."
+        }
 
         # Session management
         function Mt-Sessions   { _MC "$script:_MT/api/sessions" }

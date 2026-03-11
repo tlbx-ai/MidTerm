@@ -33,7 +33,6 @@ import {
   getFileIcon,
   formatSize,
   isTextFile,
-  renderMarkdown,
   escapeBinaryContent,
 } from './rendering';
 
@@ -487,13 +486,6 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
     const text = await resp.text();
     currentContent = text;
     isDirty = false;
-
-    const ext = getExtension(path).toLowerCase();
-    if (ext === '.md') {
-      container.innerHTML = `<div class="md-content">${renderMarkdown(text)}${!isFullContentLoaded ? `<p><em>${t('fileViewer.truncated')}</em></p>` : ''}</div>`;
-      updateSaveButtonVisibility(false);
-      return;
-    }
 
     const textarea = document.createElement('textarea');
     textarea.className = 'file-viewer-textarea';

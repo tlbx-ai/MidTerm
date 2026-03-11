@@ -40,7 +40,6 @@ public sealed partial class MidTermSettingsPublic
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             TmuxCompatibility = settings.TmuxCompatibility,
-            IdeMode = settings.IdeMode,
             ManagerBarEnabled = settings.ManagerBarEnabled,
             ManagerBarButtons = settings.ManagerBarButtons,
             DevMode = settings.DevMode,
@@ -91,7 +90,6 @@ public sealed partial class MidTermSettingsPublic
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
         settings.TmuxCompatibility = TmuxCompatibility;
-        settings.IdeMode = IdeMode;
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.ManagerBarButtons = ManagerBarButtons;
         settings.DevMode = DevMode;

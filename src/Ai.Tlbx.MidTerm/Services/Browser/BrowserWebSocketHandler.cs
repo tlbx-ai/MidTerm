@@ -10,17 +10,20 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 public sealed class BrowserWebSocketHandler
 {
     private readonly BrowserCommandService _commandService;
+    private readonly BrowserPreviewRegistry _previewRegistry;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
 
     public BrowserWebSocketHandler(
         BrowserCommandService commandService,
+        BrowserPreviewRegistry previewRegistry,
         SettingsService settingsService,
         AuthService authService,
         ShutdownService shutdownService)
     {
         _commandService = commandService;
+        _previewRegistry = previewRegistry;
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
@@ -28,23 +31,44 @@ public sealed class BrowserWebSocketHandler
 
     public async Task HandleAsync(HttpContext context)
     {
-        var settings = _settingsService.Load();
-        if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
+        var queryPreviewId = context.Request.Query["previewId"].FirstOrDefault();
+        var queryPreviewToken = context.Request.Query["token"].FirstOrDefault();
+        var hasPreviewAuth = _previewRegistry.TryValidate(queryPreviewId, queryPreviewToken, out var previewClient);
+
+        if (!hasPreviewAuth)
         {
-            var token = context.Request.Cookies[AuthService.SessionCookieName];
-            if (token is null || !_authService.ValidateSessionToken(token))
+            var settings = _settingsService.Load();
+            if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
             {
-                context.Response.StatusCode = 401;
-                return;
+                var token = context.Request.Cookies[AuthService.SessionCookieName];
+                if (token is null || !_authService.ValidateSessionToken(token))
+                {
+                    context.Response.StatusCode = 401;
+                    return;
+                }
             }
         }
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         var sendLock = new SemaphoreSlim(1, 1);
         var shutdownToken = _shutdownService.Token;
+        var connectionId = Guid.NewGuid().ToString("N");
+        var sessionId = previewClient?.SessionId ?? context.Request.Query["sessionId"].FirstOrDefault();
+        var previewId = previewClient?.PreviewId ?? queryPreviewId;
+        var browserId = previewClient?.BrowserId ?? context.Request.Cookies["mt-client-id"];
 
-        _commandService.SetClientConnected(true);
-        BrowserLog.Info("Browser WebSocket connected");
+        if (!_commandService.TryRegisterClient(connectionId, sessionId, previewId, OnCommandReady, browserId))
+        {
+            BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
+            await ws.CloseAsync(
+                WebSocketCloseStatus.PolicyViolation,
+                "Duplicate preview connection",
+                CancellationToken.None);
+            return;
+        }
+
+        BrowserLog.Info(
+            $"Browser WebSocket connected (preview={previewId ?? "(anonymous)"}, session={sessionId ?? "(none)"}, browser={browserId ?? "(none)"})");
 
         async Task SendCommandAsync(BrowserWsMessage message)
         {
@@ -71,8 +95,6 @@ public sealed class BrowserWebSocketHandler
         }
 
         void OnCommandReady(BrowserWsMessage msg) => _ = SendCommandAsync(msg);
-
-        _commandService.SetCommandListener(OnCommandReady);
 
         try
         {
@@ -126,11 +148,10 @@ public sealed class BrowserWebSocketHandler
         }
         finally
         {
-            _commandService.SetCommandListener(null);
-            _commandService.SetClientConnected(false);
-            _commandService.CancelAllPending();
+            _commandService.UnregisterClient(connectionId);
             sendLock.Dispose();
-            BrowserLog.Info("Browser WebSocket disconnected");
+            BrowserLog.Info(
+                $"Browser WebSocket disconnected (preview={previewId ?? "(anonymous)"}, session={sessionId ?? "(none)"}, browser={browserId ?? "(none)"})");
 
             if (ws.State == WebSocketState.Open)
             {

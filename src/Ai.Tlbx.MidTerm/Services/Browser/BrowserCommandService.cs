@@ -5,46 +5,81 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public sealed class BrowserCommandService
 {
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<BrowserWsResult>> _pending = new();
-    private volatile Action<BrowserWsMessage>? _commandListener;
-    private volatile bool _clientConnected;
+    private readonly Lock _clientGate = new();
+    private readonly ConcurrentDictionary<string, PendingCommand> _pending = new();
+    private readonly ConcurrentDictionary<string, BrowserClient> _clients = new();
+    private readonly MainBrowserService? _mainBrowserService;
 
-    public bool HasConnectedClient => _clientConnected;
-
-    public void SetClientConnected(bool connected)
+    public BrowserCommandService(MainBrowserService? mainBrowserService = null)
     {
-        _clientConnected = connected;
+        _mainBrowserService = mainBrowserService;
     }
 
-    public void SetCommandListener(Action<BrowserWsMessage>? listener)
+    public bool HasConnectedClient => !_clients.IsEmpty;
+
+    public int ConnectedClientCount => _clients.Count;
+
+    public bool TryRegisterClient(
+        string connectionId,
+        string? sessionId,
+        string? previewId,
+        Action<BrowserWsMessage> listener,
+        string? browserId = null)
     {
-        _commandListener = listener;
+        lock (_clientGate)
+        {
+            if (!string.IsNullOrWhiteSpace(previewId)
+                && _clients.Values.Any(c => string.Equals(c.PreviewId, previewId, StringComparison.Ordinal)))
+            {
+                return false;
+            }
+
+            _clients[connectionId] = new BrowserClient
+            {
+                ConnectionId = connectionId,
+                SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId,
+                PreviewId = string.IsNullOrWhiteSpace(previewId) ? null : previewId,
+                BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
+                Listener = listener,
+                ConnectedAtUtc = DateTimeOffset.UtcNow
+            };
+            return true;
+        }
+    }
+
+    public void UnregisterClient(string connectionId)
+    {
+        BrowserClient? client = null;
+        lock (_clientGate)
+        {
+            _clients.TryRemove(connectionId, out client);
+        }
+
+        if (client is not null)
+        {
+            CancelPendingForClient(client.ConnectionId);
+        }
     }
 
     public async Task<BrowserWsResult> ExecuteCommandAsync(BrowserCommandRequest request, CancellationToken ct)
     {
-        if (!_clientConnected)
+        if (!TryResolveClient(request, out var client, out var error))
         {
             return new BrowserWsResult
             {
                 Success = false,
-                Error = "No browser connected. Open the web preview panel in MidTerm to enable browser commands."
-            };
-        }
-
-        var listener = _commandListener;
-        if (listener is null)
-        {
-            return new BrowserWsResult
-            {
-                Success = false,
-                Error = "No browser WebSocket connected."
+                Error = error
             };
         }
 
         var id = Guid.NewGuid().ToString("N")[..12];
         var tcs = new TaskCompletionSource<BrowserWsResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending[id] = tcs;
+        _pending[id] = new PendingCommand
+        {
+            ConnectionId = client.ConnectionId,
+            PreviewId = client.PreviewId,
+            CompletionSource = tcs
+        };
 
         var message = new BrowserWsMessage
         {
@@ -54,14 +89,16 @@ public sealed class BrowserCommandService
             Value = request.Value,
             MaxDepth = request.MaxDepth,
             TextOnly = request.TextOnly,
-            Timeout = request.Timeout
+            Timeout = request.Timeout,
+            SessionId = client.SessionId,
+            PreviewId = client.PreviewId
         };
 
         BrowserLog.Command(request.Command, request.Selector ?? request.Value);
 
         try
         {
-            listener(message);
+            client.Listener(message);
         }
         catch (Exception ex)
         {
@@ -103,19 +140,34 @@ public sealed class BrowserCommandService
 
     public void ReceiveResult(BrowserWsResult result)
     {
-        if (_pending.TryRemove(result.Id, out var tcs))
+        if (!_pending.TryRemove(result.Id, out var pending))
         {
-            tcs.TrySetResult(result);
+            return;
         }
+
+        if (!string.IsNullOrWhiteSpace(pending.PreviewId)
+            && !string.IsNullOrWhiteSpace(result.PreviewId)
+            && !string.Equals(pending.PreviewId, result.PreviewId, StringComparison.Ordinal))
+        {
+            pending.CompletionSource.TrySetResult(new BrowserWsResult
+            {
+                Id = result.Id,
+                Success = false,
+                Error = "Browser preview mismatch."
+            });
+            return;
+        }
+
+        pending.CompletionSource.TrySetResult(result);
     }
 
     public void CancelAllPending()
     {
         foreach (var kvp in _pending)
         {
-            if (_pending.TryRemove(kvp.Key, out var tcs))
+            if (_pending.TryRemove(kvp.Key, out var pending))
             {
-                tcs.TrySetResult(new BrowserWsResult
+                pending.CompletionSource.TrySetResult(new BrowserWsResult
                 {
                     Id = kvp.Key,
                     Success = false,
@@ -123,5 +175,197 @@ public sealed class BrowserCommandService
                 });
             }
         }
+    }
+
+    public string GetStatusText(string? targetUrl)
+    {
+        var clients = _clients.Values
+            .OrderByDescending(c => c.ConnectedAtUtc)
+            .ToArray();
+
+        if (clients.Length == 0)
+        {
+            return "disconnected\nOpen the web preview panel in MidTerm to enable browser commands.\n";
+        }
+
+        var lines = new List<string>
+        {
+            "connected",
+            $"target: {targetUrl ?? "(none)"}",
+            $"clients: {clients.Length}"
+        };
+
+        if (TryResolveDefaultClient(clients, out var client))
+        {
+            lines.Add($"default preview: {client.PreviewId ?? "(anonymous)"}");
+            lines.Add($"default session: {client.SessionId ?? "(none)"}");
+            lines.Add($"default browser: {client.BrowserId ?? "(none)"}");
+        }
+        else
+        {
+            lines.Add("default preview: ambiguous");
+        }
+
+        return string.Join('\n', lines) + "\n";
+    }
+
+    private void CancelPendingForClient(string connectionId)
+    {
+        foreach (var kvp in _pending)
+        {
+            if (!string.Equals(kvp.Value.ConnectionId, connectionId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (_pending.TryRemove(kvp.Key, out var pending))
+            {
+                pending.CompletionSource.TrySetResult(new BrowserWsResult
+                {
+                    Id = kvp.Key,
+                    Success = false,
+                    Error = "Browser disconnected."
+                });
+            }
+        }
+    }
+
+    private bool TryResolveClient(
+        BrowserCommandRequest request,
+        out BrowserClient client,
+        out string error)
+    {
+        error = "";
+        client = null!;
+
+        var clients = _clients.Values.ToArray();
+        if (clients.Length == 0)
+        {
+            error = "No browser connected. Open the web preview panel in MidTerm to enable browser commands.";
+            return false;
+        }
+
+        BrowserClient[] matches;
+        if (!string.IsNullOrWhiteSpace(request.PreviewId))
+        {
+            matches = clients
+                .Where(c => string.Equals(c.PreviewId, request.PreviewId, StringComparison.Ordinal))
+                .OrderByDescending(c => c.ConnectedAtUtc)
+                .ToArray();
+
+            if (matches.Length == 0)
+            {
+                error = $"No browser preview connected for preview '{request.PreviewId}'.";
+                return false;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.SessionId))
+        {
+            matches = clients
+                .Where(c => string.Equals(c.SessionId, request.SessionId, StringComparison.Ordinal))
+                .OrderByDescending(c => c.ConnectedAtUtc)
+                .ToArray();
+
+            if (matches.Length == 0)
+            {
+                error = $"No browser preview connected for session '{request.SessionId}'.";
+                return false;
+            }
+        }
+        else
+        {
+            matches = clients
+                .OrderByDescending(c => c.ConnectedAtUtc)
+                .ToArray();
+        }
+
+        matches = PreferPreviewScoped(matches);
+        matches = PreferMainBrowser(matches);
+
+        if (matches.Length > 1)
+        {
+            if (TryResolveDefaultClient(matches, out client))
+            {
+                return true;
+            }
+
+            error = string.IsNullOrWhiteSpace(request.SessionId)
+                ? "Multiple browser previews are connected. Re-run the command with --session <id>."
+                : $"Multiple browser previews are connected for session '{request.SessionId}'.";
+            return false;
+        }
+
+        client = matches[0];
+        return true;
+    }
+
+    private BrowserClient[] PreferPreviewScoped(BrowserClient[] clients)
+    {
+        var scoped = clients
+            .Where(c => !string.IsNullOrWhiteSpace(c.PreviewId))
+            .ToArray();
+        return scoped.Length > 0 ? scoped : clients;
+    }
+
+    private BrowserClient[] PreferMainBrowser(BrowserClient[] clients)
+    {
+        var mainBrowserId = _mainBrowserService?.GetMainBrowserId();
+        if (string.IsNullOrWhiteSpace(mainBrowserId))
+        {
+            return clients;
+        }
+
+        var main = clients
+            .Where(c => string.Equals(c.BrowserId, mainBrowserId, StringComparison.Ordinal))
+            .ToArray();
+        return main.Length > 0 ? main : clients;
+    }
+
+    private bool TryResolveDefaultClient(BrowserClient[] clients, out BrowserClient client)
+    {
+        client = null!;
+        if (clients.Length == 0)
+        {
+            return false;
+        }
+
+        var preferred = PreferMainBrowser(PreferPreviewScoped(clients));
+        if (preferred.Length == 0)
+        {
+            return false;
+        }
+
+        var distinctBrowserIds = preferred
+            .Select(c => c.BrowserId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (distinctBrowserIds.Length > 1)
+        {
+            return false;
+        }
+
+        client = preferred
+            .OrderByDescending(c => c.ConnectedAtUtc)
+            .First();
+        return true;
+    }
+
+    private sealed class BrowserClient
+    {
+        public string ConnectionId { get; init; } = "";
+        public string? SessionId { get; init; }
+        public string? PreviewId { get; init; }
+        public string? BrowserId { get; init; }
+        public required Action<BrowserWsMessage> Listener { get; init; }
+        public DateTimeOffset ConnectedAtUtc { get; init; }
+    }
+
+    private sealed class PendingCommand
+    {
+        public string ConnectionId { get; init; } = "";
+        public string? PreviewId { get; init; }
+        public required TaskCompletionSource<BrowserWsResult> CompletionSource { get; init; }
     }
 }

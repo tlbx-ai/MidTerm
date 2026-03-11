@@ -184,18 +184,6 @@ export function updateAllGitIndicators(status: GitStatusResponse | null): void {
   }
 }
 
-export function setIdeModeEnabled(enabled: boolean): void {
-  document.body.classList.toggle('ide-mode-off', !enabled);
-
-  if (!enabled) {
-    for (const [sessionId, state] of sessionTabStates) {
-      if (state.activeTab !== 'terminal') {
-        switchTab(sessionId, 'terminal');
-      }
-    }
-  }
-}
-
 export function initSessionTabs(): void {
   $processStates.subscribe((states) => {
     for (const [sessionId, processState] of Object.entries(states)) {

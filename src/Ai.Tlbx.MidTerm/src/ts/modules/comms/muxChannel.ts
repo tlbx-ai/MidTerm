@@ -43,6 +43,7 @@ import {
 import { handleStateUpdate } from './stateChannel';
 import { getSessions } from '../../api/client';
 import { applyTerminalScaling } from '../terminal/scaling';
+import { isSharedSessionRoute } from '../share';
 import {
   muxWs,
   sessionTerminals,
@@ -802,7 +803,8 @@ function writeToTerminal(
 export function connectMuxWebSocket(): void {
   closeWebSocket(muxWs, setMuxWs);
 
-  const ws = new WebSocket(createWsUrl('/ws/mux'));
+  const wsPath = isSharedSessionRoute() ? '/ws/share/mux' : '/ws/mux';
+  const ws = new WebSocket(createWsUrl(wsPath));
   ws.binaryType = 'arraybuffer';
   setMuxWs(ws);
 
