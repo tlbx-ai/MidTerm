@@ -715,7 +715,7 @@ body.has-app-background::after {
 
 .history-dropdown {
   position: absolute;
-  top: 100%;
+  top: 0;
   left: 8px;
   right: 8px;
   background: var(--bg-input);
@@ -764,7 +764,7 @@ body.has-app-background::after {
 .history-item {
   display: flex;
   align-items: center;
-  padding: 2px 6px;
+  padding: 3px 8px;
   cursor: pointer;
   transition: background 0.1s;
   position: relative;
@@ -843,7 +843,7 @@ body.has-app-background::after {
 
 .history-item-actions {
   position: absolute;
-  right: 6px;
+  right: 8px;
   display: flex;
   align-items: center;
   gap: 2px;
