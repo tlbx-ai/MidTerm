@@ -39,6 +39,13 @@ const SCALE_TOLERANCE = 0.97;
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 
+export function isTerminalViewingScrollback(
+  state: Pick<TerminalState, 'terminal'>,
+): boolean {
+  const buffer = state.terminal.buffer.active;
+  return buffer.viewportY < buffer.baseY;
+}
+
 export function refreshTerminalPresentation(
   _sessionId: string,
   providedState?: TerminalState,
@@ -691,6 +698,13 @@ function autoResizeAllTerminalsInternal(): void {
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
+    // Never auto-resize while the user is reading scrollback. Keep the server-side
+    // size stable and only refresh CSS scaling for the current container.
+    if (isTerminalViewingScrollback(state)) {
+      applyTerminalScaling(sessionId, state);
+      return;
+    }
+
     const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
     if (layoutPane) {
       fitTerminalToContainer(sessionId, layoutPane);
@@ -777,6 +791,11 @@ function periodicResizeCheck(): void {
 
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
+
+    if (isTerminalViewingScrollback(state)) {
+      applyTerminalScaling(sessionId, state);
+      return;
+    }
 
     const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
 
