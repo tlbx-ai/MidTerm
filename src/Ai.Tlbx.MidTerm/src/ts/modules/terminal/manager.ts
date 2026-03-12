@@ -609,7 +609,7 @@ export function setupTerminalEvents(
 
     const enterOverride = getTerminalEnterOverride(
       e,
-      $currentSettings.get()?.terminalEnterMode ?? 'default',
+      $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
     );
     if (enterOverride !== null) {
       sendInput(sessionId, enterOverride);

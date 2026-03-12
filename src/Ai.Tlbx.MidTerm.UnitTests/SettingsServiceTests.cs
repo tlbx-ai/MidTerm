@@ -46,6 +46,7 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.TmuxCompatibility);
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
+        Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
     }
 
     [Fact]
@@ -66,6 +67,25 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.TmuxCompatibility);
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
+        Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
+    }
+
+    [Fact]
+    public void Load_ExplicitTerminalEnterModeDefault_IsPreserved()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "terminalEnterMode": "default"
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.Equal(TerminalEnterModeSetting.Default, settings.TerminalEnterMode);
     }
 
     [Fact]

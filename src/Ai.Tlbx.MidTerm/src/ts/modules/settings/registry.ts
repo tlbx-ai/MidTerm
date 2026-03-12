@@ -247,7 +247,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known clipboard shortcut mode',
     applyMode: 'lazy',
   }),
-  controlEntry('terminalEnterMode', 'setting-terminal-enter-mode', 'select', 'default', {
+  controlEntry('terminalEnterMode', 'setting-terminal-enter-mode', 'select', 'shiftEnterLineFeed', {
     editable: true,
     storage: 'settings.json',
     validation: 'known Enter-key mode',

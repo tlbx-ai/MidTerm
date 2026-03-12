@@ -262,6 +262,11 @@ public sealed class SettingsService
         {
             settings.ShowUpdateNotification = true;
         }
+
+        if (!json.Contains("\"terminalEnterMode\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalEnterMode = TerminalEnterModeSetting.ShiftEnterLineFeed;
+        }
     }
 
     private void MigrateServiceInstallFlag(MidTermSettings settings, string json)
