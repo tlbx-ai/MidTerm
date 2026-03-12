@@ -39,9 +39,7 @@ const SCALE_TOLERANCE = 0.97;
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 
-export function isTerminalViewingScrollback(
-  state: Pick<TerminalState, 'terminal'>,
-): boolean {
+export function isTerminalViewingScrollback(state: Pick<TerminalState, 'terminal'>): boolean {
   const buffer = state.terminal.buffer.active;
   return buffer.viewportY < buffer.baseY;
 }
