@@ -6,14 +6,20 @@ namespace Ai.Tlbx.MidTerm.OpenApi.Stubs;
 
 public sealed class StubShareHandler : IShareHandler
 {
-    public IResult CreateShareLink(CreateShareLinkRequest request) =>
-        Results.Json(new CreateShareLinkResponse
+    public IResult CreateShareLink(CreateShareLinkRequest request)
+    {
+        var host = string.IsNullOrWhiteSpace(request.ShareHost)
+            ? "localhost"
+            : request.ShareHost;
+
+        return Results.Json(new CreateShareLinkResponse
         {
-            ShareUrl = "https://localhost:2000/shared/grant-id#secret",
+            ShareUrl = $"https://{host}:2000/shared/grant-id#secret",
             GrantId = "grant-id",
             Mode = request.Mode,
             ExpiresAtUtc = DateTime.UtcNow.AddHours(1)
         });
+    }
 
     public IResult ClaimShareLink(ClaimShareRequest request) =>
         Results.Json(new ClaimShareResponse

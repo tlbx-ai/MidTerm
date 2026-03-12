@@ -20,14 +20,19 @@ public static class ShareEndpoints
             }
 
             var issued = shareGrantService.CreateGrant(request.SessionId, request.Mode);
-            var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+            var networkInterfaces = NetworkInterfaceFilter.GetNetworkInterfaces();
 
             var response = new CreateShareLinkResponse
             {
                 GrantId = issued.GrantId,
                 Mode = issued.Mode,
                 ExpiresAtUtc = issued.ExpiresAtUtc,
-                ShareUrl = $"{baseUrl}/shared/{issued.GrantId}#{issued.Secret}"
+                ShareUrl = ShareUrlBuilder.BuildShareUrl(
+                    ctx.Request,
+                    networkInterfaces,
+                    issued.GrantId,
+                    issued.Secret,
+                    request.ShareHost)
             };
 
             return Results.Json(response, AppJsonContext.Default.CreateShareLinkResponse);

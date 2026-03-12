@@ -361,13 +361,12 @@ public static class EndpointSetup
                     Url = $"https://{n.Ip}:{hostPort}"
                 })
                 .ToArray();
-            var firstIp = interfaces.FirstOrDefault()?.Url.Split("://")[1].Split(":")[0] ?? "localhost";
 
             var sharePacket = new SharePacketInfo
             {
                 Certificate = downloadInfo,
                 Endpoints = interfaces,
-                TrustPageUrl = $"https://{firstIp}:{hostPort}/trust",
+                TrustPageUrl = ShareUrlBuilder.BuildTrustPageUrl(context.Request, networkList),
                 Port = hostPort
             };
 

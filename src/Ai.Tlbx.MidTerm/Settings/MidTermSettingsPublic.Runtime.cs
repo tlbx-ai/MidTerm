@@ -37,6 +37,7 @@ public sealed partial class MidTermSettingsPublic
             ClipboardShortcuts = settings.ClipboardShortcuts,
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
+            KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             TmuxCompatibility = settings.TmuxCompatibility,
@@ -86,6 +87,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
+        settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;

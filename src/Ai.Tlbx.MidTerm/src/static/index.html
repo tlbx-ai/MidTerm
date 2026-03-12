@@ -1263,6 +1263,18 @@
                     </div>
                     <div class="setting-row">
                       <label
+                        for="setting-keep-system-awake"
+                        data-i18n="settings.behavior.keepAwake"
+                        >Keep computer awake while sessions exist</label
+                      >
+                      <input type="checkbox" id="setting-keep-system-awake" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.keepAwakeHint">
+                      Prevents sleep or standby while MidTerm has at least one live session. The
+                      display may still turn off.
+                    </p>
+                    <div class="setting-row">
+                      <label
                         for="setting-file-radar"
                         title="Detects file paths in terminal output and makes them clickable. Click to view files remotely."
                         data-i18n="settings.behavior.fileRadar"
@@ -1713,6 +1725,7 @@
               <button class="btn-icon" id="web-preview-close" title="Close">&times;</button>
             </div>
           </div>
+          <div class="web-preview-tabs" id="web-preview-tabs"></div>
           <div class="web-preview-dock-url-bar">
             <input
               type="url"

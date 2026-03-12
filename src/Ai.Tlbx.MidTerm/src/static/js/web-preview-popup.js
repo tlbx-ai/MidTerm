@@ -1,6 +1,8 @@
 (function () {
   var params = new URLSearchParams(window.location.search);
   var sessionId = params.get('session') || '';
+  var previewName = params.get('preview') || 'default';
+  var routeKey = params.get('routeKey') || '';
   var previewId = params.get('previewId') || '';
   var previewToken = params.get('previewToken') || '';
   var previewOrigin = params.get('origin') || window.location.origin;
@@ -10,21 +12,35 @@
     'allow-forms',
     'allow-popups',
     'allow-modals',
-    'allow-downloads'
+    'allow-downloads',
   ];
-  var previewContext = previewId && previewToken
-    ? { sessionId: sessionId, previewId: previewId, previewToken: previewToken }
-    : null;
-  var channelName = sessionId ? 'midterm-web-preview-' + sessionId : 'midterm-web-preview';
+  var previewContext =
+    previewId && previewToken
+      ? {
+          sessionId: sessionId,
+          previewName: previewName,
+          routeKey: routeKey,
+          previewId: previewId,
+          previewToken: previewToken,
+        }
+      : null;
+  var channelName = sessionId
+    ? 'midterm-web-preview-' + sessionId + '-' + previewName
+    : 'midterm-web-preview';
   var channel = new BroadcastChannel(channelName);
   var frame = document.getElementById('preview-frame');
   var urlDisplay = document.getElementById('url-display');
   var currentUrl = null;
 
+  function getProxyPrefix() {
+    return '/webpreview/' + encodeURIComponent(routeKey);
+  }
+
   function buildProxyUrl(targetUrl) {
     var parsed = new URL(targetUrl);
     var path = parsed.pathname || '/';
-    var proxyUrl = new URL(path === '/' ? '/webpreview/' : '/webpreview' + path, previewOrigin);
+    var prefix = getProxyPrefix();
+    var proxyUrl = new URL(path === '/' ? prefix + '/' : prefix + path, previewOrigin);
     proxyUrl.search = parsed.search;
     proxyUrl.hash = parsed.hash;
     return proxyUrl.toString();
@@ -36,8 +52,7 @@
       if (new URL(previewOrigin, window.location.origin).origin !== window.location.origin) {
         flags.push('allow-same-origin');
       }
-    } catch (_) {
-    }
+    } catch (_) {}
     return flags.join(' ');
   }
 
@@ -48,14 +63,16 @@
 
   function decodeIframeNavigationUrl(iframeUrl, targetOrigin) {
     var parsed = new URL(iframeUrl, window.location.origin);
-    if (parsed.pathname === '/webpreview/_ext') {
+    var prefix = getProxyPrefix();
+
+    if (parsed.pathname === prefix + '/_ext') {
       return parsed.searchParams.get('u');
     }
 
     var path = parsed.pathname;
-    if (path.indexOf('/webpreview/') === 0) {
-      path = path.substring('/webpreview'.length);
-    } else if (path === '/webpreview') {
+    if (path.indexOf(prefix + '/') === 0) {
+      path = path.substring(prefix.length);
+    } else if (path === prefix) {
       path = '/';
     } else {
       return parsed.toString();
@@ -74,9 +91,11 @@
   }
 
   function matchesPreviewMessage(data) {
-    return !!previewContext
-      && data.previewId === previewContext.previewId
-      && data.previewToken === previewContext.previewToken;
+    return (
+      !!previewContext &&
+      data.previewId === previewContext.previewId &&
+      data.previewToken === previewContext.previewToken
+    );
   }
 
   function postCookieBridgeResponse(target, message) {
@@ -85,11 +104,23 @@
   }
 
   function handleCookieBridgeRequest(event, data) {
+    if (!routeKey) {
+      postCookieBridgeResponse(event.source, {
+        type: 'mt-cookie-response',
+        requestId: data.requestId,
+        previewId: data.previewId,
+        previewToken: data.previewToken,
+        sessionId: data.sessionId,
+        previewName: data.previewName,
+        error: 'No preview route',
+      });
+      return;
+    }
+
     var target = event.source;
-    var url = new URL('/webpreview/_cookies', window.location.origin);
-    var upstreamUrl = typeof data.upstreamUrl === 'string' && data.upstreamUrl
-      ? data.upstreamUrl
-      : currentUrl;
+    var url = new URL(getProxyPrefix() + '/_cookies', window.location.origin);
+    var upstreamUrl =
+      typeof data.upstreamUrl === 'string' && data.upstreamUrl ? data.upstreamUrl : currentUrl;
     if (upstreamUrl) {
       url.searchParams.set('u', upstreamUrl);
     }
@@ -99,16 +130,18 @@
       requestId: data.requestId,
       previewId: data.previewId,
       previewToken: data.previewToken,
-      sessionId: data.sessionId
+      sessionId: data.sessionId,
+      previewName: data.previewName,
     };
 
-    var request = data.action === 'set'
-      ? fetch(url.toString(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ raw: typeof data.raw === 'string' ? data.raw : '' })
-        })
-      : fetch(url.toString(), { method: 'GET' });
+    var request =
+      data.action === 'set'
+        ? fetch(url.toString(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ raw: typeof data.raw === 'string' ? data.raw : '' }),
+          })
+        : fetch(url.toString(), { method: 'GET' });
 
     request
       .then(function (response) {
@@ -131,7 +164,7 @@
   }
 
   function loadFrame(url) {
-    if (!url) {
+    if (!url || !routeKey) {
       frame.removeAttribute('sandbox');
       frame.name = '';
       frame.src = 'about:blank';
@@ -174,17 +207,22 @@
       if (typeof e.data.url !== 'string' || !matchesPreviewMessage(e.data)) return;
 
       try {
-        var displayUrl = typeof e.data.upstreamUrl === 'string' && e.data.upstreamUrl
-          ? e.data.upstreamUrl
-          : decodeIframeNavigationUrl(
-              e.data.url,
-              typeof e.data.targetOrigin === 'string' ? e.data.targetOrigin : ''
-            );
+        var displayUrl =
+          typeof e.data.upstreamUrl === 'string' && e.data.upstreamUrl
+            ? e.data.upstreamUrl
+            : decodeIframeNavigationUrl(
+                e.data.url,
+                typeof e.data.targetOrigin === 'string' ? e.data.targetOrigin : '',
+              );
         if (!displayUrl) return;
         setCurrentUrl(displayUrl);
-        channel.postMessage({ type: 'navigation', sessionId: sessionId, url: displayUrl });
-      } catch (_) {
-      }
+        channel.postMessage({
+          type: 'navigation',
+          sessionId: sessionId,
+          previewName: previewName,
+          url: displayUrl,
+        });
+      } catch (_) {}
       return;
     }
 
@@ -194,28 +232,44 @@
   });
 
   document.getElementById('refresh-btn').addEventListener('click', function (e) {
-    var mode = (e.shiftKey || e.ctrlKey || e.altKey) ? 'hard' : 'soft';
+    var mode = e.shiftKey || e.ctrlKey || e.altKey ? 'hard' : 'soft';
     if (currentUrl) {
       fetch('/api/webpreview/target', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: currentUrl })
+        body: JSON.stringify({
+          sessionId: sessionId,
+          previewName: previewName,
+          url: currentUrl,
+        }),
       }).catch(function () {});
     }
     fetch('/api/webpreview/reload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: mode })
+      body: JSON.stringify({
+        sessionId: sessionId,
+        previewName: previewName,
+        mode: mode,
+      }),
     }).catch(function () {});
     loadFrame(currentUrl);
   });
 
   document.getElementById('dock-back-btn').addEventListener('click', function () {
-    channel.postMessage({ type: 'dock-back', sessionId: sessionId });
+    channel.postMessage({
+      type: 'dock-back',
+      sessionId: sessionId,
+      previewName: previewName,
+    });
     window.close();
   });
 
   window.addEventListener('beforeunload', function () {
-    channel.postMessage({ type: 'popup-closed', sessionId: sessionId });
+    channel.postMessage({
+      type: 'popup-closed',
+      sessionId: sessionId,
+      previewName: previewName,
+    });
   });
 })();

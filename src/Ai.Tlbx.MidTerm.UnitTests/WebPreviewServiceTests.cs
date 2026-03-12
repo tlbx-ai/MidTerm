@@ -11,23 +11,25 @@ public class WebPreviewServiceTests
     {
         var service = new WebPreviewService(serverPort: 2000);
 
-        var ok = service.SetTarget("https://example.com/coaching/plans/");
+        var ok = service.SetTarget("session-1", null, "https://example.com/coaching/plans/");
 
         Assert.True(ok);
-        Assert.NotNull(service.TargetUri);
-        Assert.Equal("/coaching/plans/", service.TargetUri!.AbsolutePath);
+        var targetUri = service.GetTargetUri("session-1");
+        Assert.NotNull(targetUri);
+        Assert.Equal("/coaching/plans/", targetUri!.AbsolutePath);
     }
 
     [Fact]
     public void GetBrowserCookies_ExcludesHttpOnlyCookies()
     {
         var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("https://example.com"));
-        Assert.True(service.SetCookieFromRaw("theme=dark; Path=/"));
-        Assert.True(service.SetCookieFromRaw("session=abc123; Path=/; HttpOnly"));
+        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        Assert.True(service.SetCookieFromRaw(routeKey, "theme=dark; Path=/"));
+        Assert.True(service.SetCookieFromRaw(routeKey, "session=abc123; Path=/; HttpOnly"));
 
-        var browserCookies = service.GetBrowserCookies(new Uri("https://example.com/"));
-        var allCookies = service.GetCookies();
+        var browserCookies = service.GetBrowserCookies(routeKey, new Uri("https://example.com/"));
+        var allCookies = service.GetCookies("session-1");
 
         Assert.Contains("theme=dark", browserCookies.Header, StringComparison.Ordinal);
         Assert.DoesNotContain("session=abc123", browserCookies.Header, StringComparison.Ordinal);
@@ -38,12 +40,13 @@ public class WebPreviewServiceTests
     public void SetTarget_DifferentPort_ResetsCookieJar()
     {
         var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("https://example.com:3000"));
-        Assert.True(service.SetCookieFromRaw("theme=dark; Path=/"));
+        Assert.True(service.SetTarget("session-1", null, "https://example.com:3000"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        Assert.True(service.SetCookieFromRaw(routeKey, "theme=dark; Path=/"));
 
-        Assert.True(service.SetTarget("https://example.com:4000"));
+        Assert.True(service.SetTarget("session-1", null, "https://example.com:4000"));
 
-        var cookies = service.GetCookies();
+        var cookies = service.GetCookies("session-1");
         Assert.True(string.IsNullOrEmpty(cookies.Header));
         Assert.Empty(cookies.Cookies);
     }
@@ -54,10 +57,10 @@ public class WebPreviewServiceTests
         var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
         var service = new WebPreviewService(serverPort: 2000, previewOriginService: previewOrigin);
 
-        var ok = service.SetTarget("https://localhost:2000");
+        var ok = service.SetTarget("session-1", null, "https://localhost:2000");
 
         Assert.True(ok);
-        Assert.Equal("https://localhost:2000/", service.TargetUrl);
+        Assert.Equal("https://localhost:2000/", service.GetTargetUrl("session-1"));
     }
 
     [Fact]
@@ -65,7 +68,7 @@ public class WebPreviewServiceTests
     {
         var service = new WebPreviewService(serverPort: 2000);
 
-        var ok = service.SetTarget("https://localhost:2000");
+        var ok = service.SetTarget("session-1", null, "https://localhost:2000");
 
         Assert.False(ok);
     }
@@ -75,12 +78,13 @@ public class WebPreviewServiceTests
     {
         var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
         var service = new WebPreviewService(serverPort: 2000, previewOriginService: previewOrigin);
-        Assert.True(service.SetTarget("https://localhost:2000"));
+        Assert.True(service.SetTarget("session-1", null, "https://localhost:2000"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
 
-        service.SyncSessionCookieForSelfTarget("token-123");
+        service.SyncSessionCookieForSelfTarget(routeKey, "token-123");
 
-        var allCookies = service.GetCookies();
-        var browserCookies = service.GetBrowserCookies(new Uri("https://localhost:2000/"));
+        var allCookies = service.GetCookies("session-1");
+        var browserCookies = service.GetBrowserCookies(routeKey, new Uri("https://localhost:2000/"));
 
         Assert.Contains(allCookies.Cookies, cookie => cookie.Name == "mm-session" && cookie.HttpOnly);
         Assert.DoesNotContain("mm-session=token-123", browserCookies.Header ?? "", StringComparison.Ordinal);
@@ -96,15 +100,16 @@ public class WebPreviewServiceTests
         {
             var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
             var service = new WebPreviewService(serverPort: 2000, previewOriginService: previewOrigin, cookiesDirectory: tempDir);
-            Assert.True(service.SetTarget("https://localhost:2000"));
-            Assert.True(service.SetCookieFromRaw("theme=dark; Path=/"));
-            service.SyncSessionCookieForSelfTarget("token-123");
-            service.PersistCookies();
+            Assert.True(service.SetTarget("session-1", null, "https://localhost:2000"));
+            Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+            Assert.True(service.SetCookieFromRaw(routeKey, "theme=dark; Path=/"));
+            service.SyncSessionCookieForSelfTarget(routeKey, "token-123");
+            service.PersistCookies(routeKey);
 
             var reloaded = new WebPreviewService(serverPort: 2000, previewOriginService: previewOrigin, cookiesDirectory: tempDir);
-            Assert.True(reloaded.SetTarget("https://localhost:2000"));
+            Assert.True(reloaded.SetTarget("session-1", null, "https://localhost:2000"));
 
-            var cookies = reloaded.GetCookies();
+            var cookies = reloaded.GetCookies("session-1");
 
             Assert.Contains("theme=dark", cookies.Header ?? "", StringComparison.Ordinal);
             Assert.DoesNotContain("mm-session=token-123", cookies.Header ?? "", StringComparison.Ordinal);
@@ -113,5 +118,47 @@ public class WebPreviewServiceTests
         {
             Directory.Delete(tempDir, recursive: true);
         }
+    }
+
+    [Fact]
+    public void NamedPreviews_IsolateTargetsAndCookiesWithinOneTerminalSession()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+
+        Assert.True(service.SetTarget("session-1", "default", "https://example.com/app-a"));
+        Assert.True(service.SetTarget("session-1", "user2", "https://example.com/app-b"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", "default", out var defaultRouteKey));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", "user2", out var user2RouteKey));
+        Assert.True(service.SetCookieFromRaw(defaultRouteKey, "theme=dark; Path=/"));
+        Assert.True(service.SetCookieFromRaw(user2RouteKey, "theme=light; Path=/"));
+
+        var defaultCookies = service.GetCookies("session-1", "default");
+        var user2Cookies = service.GetCookies("session-1", "user2");
+
+        Assert.Equal("https://example.com/app-a", service.GetTargetUrl("session-1", "default"));
+        Assert.Equal("https://example.com/app-b", service.GetTargetUrl("session-1", "user2"));
+        Assert.Contains(defaultCookies.Cookies, cookie => cookie.Name == "theme" && cookie.Value == "dark");
+        Assert.DoesNotContain(defaultCookies.Cookies, cookie => cookie.Name == "theme" && cookie.Value == "light");
+        Assert.Contains(user2Cookies.Cookies, cookie => cookie.Name == "theme" && cookie.Value == "light");
+        Assert.DoesNotContain(user2Cookies.Cookies, cookie => cookie.Name == "theme" && cookie.Value == "dark");
+    }
+
+    [Fact]
+    public void ListPreviewSessions_ReturnsNamedPreviewEntriesPerTerminalSession()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+
+        service.EnsurePreviewSession("session-1", "default");
+        service.EnsurePreviewSession("session-1", "user2");
+        service.EnsurePreviewSession("session-2", "user2");
+
+        var session1Previews = service.ListPreviewSessions("session-1");
+        var session2Previews = service.ListPreviewSessions("session-2");
+
+        Assert.Equal(2, session1Previews.Previews.Count);
+        Assert.Contains(session1Previews.Previews, preview => preview.PreviewName == "default");
+        Assert.Contains(session1Previews.Previews, preview => preview.PreviewName == "user2");
+        Assert.Single(session2Previews.Previews);
+        Assert.Equal("user2", session2Previews.Previews[0].PreviewName);
     }
 }

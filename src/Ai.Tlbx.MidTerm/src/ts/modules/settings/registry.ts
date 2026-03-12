@@ -259,6 +259,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'lazy',
   }),
+  controlEntry(
+    'keepSystemAwakeWithActiveSessions',
+    'setting-keep-system-awake',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'server-only',
+    },
+  ),
   controlEntry('inputMode', 'setting-input-mode', 'select', 'keyboard', {
     editable: true,
     storage: 'settings.json',

@@ -14,6 +14,7 @@ import {
   connectStateWebSocket,
   connectMuxWebSocket,
   connectSettingsWebSocket,
+  handleStateUpdate,
   setSelectSessionCallback,
   sendInput,
   sendActiveSessionHint,
@@ -307,30 +308,32 @@ async function initShared(): Promise<void> {
   setFontsReadyPromise(fontPromise);
   void fontPromise.then(() => initCalibrationTerminal());
 
-  try {
-    await claimSharedSessionAccess();
-    const bootstrap = await fetchSharedBootstrap();
-    applySharedSessionMode(bootstrap);
-  } catch (error) {
-    log.error(() => `Shared session bootstrap failed: ${String(error)}`);
-    showSharedSessionError(t('share.shared.invalid'));
-    return;
-  }
-
   setSelectSessionCallback(selectSession);
   setShowBellCallback(showBellNotification);
   addProcessStateListener((sessionId, state) => {
     setProcessState(sessionId, { ...state });
   });
 
-  connectStateWebSocket();
-  connectMuxWebSocket();
   initSessionTabs();
   bindSearchEvents();
   setupGlobalFocusReclaim();
   setupResizeObserver();
   setupVisualViewport();
   setupVisibilityChangeHandler();
+
+  try {
+    await claimSharedSessionAccess();
+    const bootstrap = await fetchSharedBootstrap();
+    applySharedSessionMode(bootstrap);
+    handleStateUpdate(bootstrap.session ? [bootstrap.session] : []);
+  } catch (error) {
+    log.error(() => `Shared session bootstrap failed: ${String(error)}`);
+    showSharedSessionError(t('share.shared.invalid'));
+    return;
+  }
+
+  connectStateWebSocket();
+  connectMuxWebSocket();
 
   log.info(() => 'MidTerm shared frontend initialized');
 }

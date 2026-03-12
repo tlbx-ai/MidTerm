@@ -33,7 +33,33 @@ public sealed class MtcliScriptWriterTests : IDisposable
     }
 
     [Fact]
-    public void Ensure_WritesAgentsGuidanceWithApplyUpdateWorkflow()
+    public void WriteScripts_WritesSessionScopedPreviewHelpers()
+    {
+        Directory.CreateDirectory(_tempDir);
+
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+
+        Assert.Contains("MT_SESSION_ID", shell, StringComparison.Ordinal);
+        Assert.Contains("MT_PREVIEW_NAME", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_session()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_preview()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_previews()", shell, StringComparison.Ordinal);
+        Assert.Contains("sessionId", shell, StringComparison.Ordinal);
+        Assert.Contains("$(_MSID)", shell, StringComparison.Ordinal);
+        Assert.Contains("previewName", shell, StringComparison.Ordinal);
+        Assert.Contains("$(_MPREVIEW)", shell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Session", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Preview", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Previews", powershell, StringComparison.Ordinal);
+        Assert.Contains("$env:MT_SESSION_ID", powershell, StringComparison.Ordinal);
+        Assert.Contains("previewName=(_MPreview)", powershell, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ensure_WritesAgentsGuidanceWithSessionScopedPreviewWorkflow()
     {
         Directory.CreateDirectory(_tempDir);
 
@@ -42,12 +68,13 @@ public sealed class MtcliScriptWriterTests : IDisposable
         var agentsPath = Path.Combine(_tempDir, MidtermDirectory.DirectoryName, "AGENTS.md");
         var agents = File.ReadAllText(agentsPath);
 
-        Assert.Contains("guidance-version: 13", agents, StringComparison.Ordinal);
+        Assert.Contains("guidance-version: 14", agents, StringComparison.Ordinal);
         Assert.Contains("mt_apply_update", agents, StringComparison.Ordinal);
         Assert.Contains("continue with the new build", agents, StringComparison.Ordinal);
         Assert.Contains("mt_open` both sets the target", agents, StringComparison.Ordinal);
         Assert.Contains("mt_open is the CLI command that opens/docks the preview", agents, StringComparison.Ordinal);
-        Assert.Contains("Browser command failures now print the server error body", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_session prints the current MidTerm terminal session ID", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_preview user1", agents, StringComparison.Ordinal);
     }
 
     public void Dispose()

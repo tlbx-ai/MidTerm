@@ -1,10 +1,10 @@
-# Web Preview Dev Browser — Proxy Design
+# Web Preview Dev Browser — Route-Keyed Proxy Design
 
-The web preview reverse proxy (`/webpreview/*`) intercepts browser requests and forwards them to an upstream target. HTTP requests are straightforward (strip prefix, forward, return response). WebSocket connections are relayed without content modification.
+The web preview reverse proxy (`/webpreview/{routeKey}/*`) intercepts browser requests and forwards them to an upstream target that belongs to one named preview session under one MidTerm terminal session. HTTP requests are straightforward (strip prefix, forward, return response). WebSocket connections are relayed without content modification.
 
 ## URL Space Design
 
-The proxy uses a **write-only interception** strategy. The injected `UrlRewriteScript` patches outgoing APIs to add `/webpreview` to URLs before they leave JavaScript:
+The proxy uses a **write-only interception** strategy. Each preview gets its own route prefix (`/webpreview/{routeKey}`), and the injected `UrlRewriteScript` patches outgoing APIs to add that prefix to URLs before they leave JavaScript:
 
 - `fetch`, `XMLHttpRequest.open` — HTTP requests
 - `WebSocket`, `EventSource` — connection constructors
@@ -15,22 +15,22 @@ The proxy uses a **write-only interception** strategy. The injected `UrlRewriteS
 
 For `fetch(Request)` calls, the injected shim now rebuilds the request from the original method/headers/body instead of relying on `new Request(rewrittenUrl, request)`. In Chromium, rewriting a `Request` URL that way can drop or corrupt non-`GET` bodies, which breaks generated API clients that send JSON via `fetch(new Request(...))`.
 
-Read-side APIs (`location.href`, `location.pathname`, `document.URL`, `document.baseURI`) are **not spoofed**. The page sees its real URL including `/webpreview/`.
+Read-side APIs (`location.href`, `location.pathname`, `document.URL`, `document.baseURI`) are **not spoofed**. The page sees its real URL including `/webpreview/{routeKey}/`.
 
 | Layer | URL the code sees | Example |
 |-------|-------------------|---------|
-| **Browser** | `https://proxy:2000/webpreview/page` | Real browser URL |
-| **JavaScript** | `https://proxy:2000/webpreview/page` | `location.pathname` = `/webpreview/page` |
+| **Browser** | `https://proxy:2000/webpreview/{routeKey}/page` | Real browser URL |
+| **JavaScript** | `https://proxy:2000/webpreview/{routeKey}/page` | `location.pathname` = `/webpreview/{routeKey}/page` |
 | **Upstream** | `https://upstream.example.com/page` | What the real server knows |
 
-The `<base href="/webpreview/">` tag is injected into every HTML response, so:
-- `document.baseURI` = `https://proxy:2000/webpreview/` (from `<base>` tag)
-- `location.href` = `https://proxy:2000/webpreview/page` (real browser URL)
-- Both are consistent — frameworks see the app mounted at `/webpreview/`
+The `<base href="/webpreview/{routeKey}/">` tag is injected into every HTML response, so:
+- `document.baseURI` = `https://proxy:2000/webpreview/{routeKey}/` (from `<base>` tag)
+- `location.href` = `https://proxy:2000/webpreview/{routeKey}/page` (real browser URL)
+- Both are consistent — frameworks see the app mounted at `/webpreview/{routeKey}/`
 
 ### Navigation Notifications
 
-Each docked or detached preview now gets a registered preview identity (`sessionId`, `previewId`, `previewToken`) from `POST /api/browser/preview-client`. The parent writes that identity into `iframe.name` before loading the proxied page, and the injected script uses it for all bridge traffic.
+Each docked or detached preview now gets a registered preview identity (`sessionId`, `previewName`, `routeKey`, `previewId`, `previewToken`) from `POST /api/browser/preview-client`. The parent writes that identity into `iframe.name` before loading the proxied page, and the injected script uses it for all bridge traffic.
 
 The injected script sends `postMessage({type: "mt-navigation", url: location.href, upstreamUrl: ..., targetOrigin: window.__mtTargetOrigin, previewId, previewToken})` to the parent window whenever in-iframe navigation occurs:
 
@@ -49,26 +49,26 @@ Chrome's `Location.prototype` properties have `configurable: false`. `Object.def
 WebSocket messages are relayed **untouched** between client and upstream. No URL rewriting, no binary manipulation, no protocol-specific handling.
 
 This works because:
-- **Frameworks use relative paths for routing.** Blazor's `NavigationManager` computes routes as `currentUri` minus `baseUri`. If both are proxy URLs (`https://proxy:2000/webpreview/...`), the relative path is identical to what it would be with upstream URLs.
+- **Frameworks use relative paths for routing.** Blazor's `NavigationManager` computes routes as `currentUri` minus `baseUri`. If both are proxy URLs (`https://proxy:2000/webpreview/{routeKey}/...`), the relative path is identical to what it would be with upstream URLs.
 - **Server state comes from the client.** Blazor's `StartCircuit` receives `baseUri` and `currentUri` from the client. The server stores these and uses them for all subsequent URL operations. Since the client sends proxy URLs, the server's `NavigationManager` operates in the proxy URL space.
 - **Server echoes client-provided URLs.** When the server sends URLs back (e.g., `OnLocationChanged`), they're already proxy URLs. No rewriting needed.
 - **No message corruption risk.** Previous approaches rewrote URL strings inside JSON and MessagePack binary frames, which required: text `string.Replace`, MessagePack string header adjustment, SignalR VarInt length prefix re-encoding. Each layer was a source of bugs.
 
 ### What About Server-Generated URLs?
 
-If the upstream server independently generates URLs using its own origin (not from client state), those URLs would point to the upstream directly. The client's `fetch`/`XHR` interceptors would route them through the `/_ext` external proxy. This is functional, though slightly less efficient than direct `/webpreview/` routing.
+If the upstream server independently generates URLs using its own origin (not from client state), those URLs would point to the upstream directly. The client's `fetch`/`XHR` interceptors would route them through the `/_ext` external proxy. This is functional, though slightly less efficient than direct `/webpreview/{routeKey}/` routing.
 
 In practice, Blazor and most SPA frameworks derive all URLs from client-provided state, so this edge case rarely occurs.
 
 ## Cookie Bridge
 
-Upstream cookies are stored in MidTerm's server-side `CookieContainer`. The browser bridge under `/webpreview/_cookies` intentionally exposes only **script-visible** cookies:
+Upstream cookies are stored in MidTerm's server-side `CookieContainer`. The browser bridge under `/webpreview/{routeKey}/_cookies` intentionally exposes only **script-visible** cookies:
 
 - `HttpOnly` cookies stay server-only and are still forwarded upstream on HTTP/WebSocket requests
 - `document.cookie` inside the proxied page sees only non-`HttpOnly` cookies
 - `document.cookie = ...` writes also behave like a browser: `HttpOnly` is ignored on writes from page JavaScript
 
-The proxied page no longer calls `/webpreview/_cookies` directly. Instead, the injected script posts `mt-cookie-request` messages to its parent window, and the parent performs the authenticated fetch on the page's behalf. This removes the last iframe dependency on `contentWindow`/same-origin access and keeps the cookie bridge working once the iframe is sandboxed.
+The proxied page no longer calls `/webpreview/{routeKey}/_cookies` directly. Instead, the injected script posts `mt-cookie-request` messages to its parent window, and the parent performs the authenticated fetch on the page's behalf. This removes the last iframe dependency on `contentWindow`/same-origin access and keeps the cookie bridge working once the iframe is sandboxed.
 
 The bridge resolves cookies against the current upstream page URL either from the explicit `?u=` query parameter supplied by the parent or, as a fallback, the iframe referer.
 
@@ -83,14 +83,16 @@ These shims exist specifically so MidTerm-in-MidTerm and similar apps can still 
 
 ## Browser Bridge Targeting
 
-Browser automation is now scoped per preview client instead of "whichever iframe connected last":
+Browser automation is now scoped per named preview session instead of "whichever iframe connected last":
 
 - `/ws/browser` accepts preview-scoped connections with `previewId` / `token`
 - `BrowserCommandService` keeps one command listener per connected preview client
 - only one browser bridge connection is accepted per preview id; later duplicates are rejected
-- commands without `--session` prefer the main browser's newest preview-scoped client when same-browser duplicates exist
-- commands with `--session` route only to that session's preview
-- docked UI screenshot capture sends the active docked `previewId`, so nested previews under the same terminal session do not collide
+- the shell now exposes `MT_SESSION_ID` automatically; `mt_session` prints it, `mt_preview [name]` switches the current named preview, and `mt_previews` lists the preview set for the current terminal
+- browser commands without explicit flags default to `--session $MT_SESSION_ID --preview $MT_PREVIEW_NAME`
+- commands with `--session` and `--preview` route only to that named preview
+- docked UI screenshot capture sends the active docked `previewId`, so sibling previews under the same terminal session do not collide
+- the MidTerm UI shows one tab per named preview under the active terminal session; each tab keeps its own target URL, cookies, proxy log, and detached popup state
 
 The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
@@ -152,7 +154,7 @@ MidTerm only auto-updates the stored preview target when a **document/iframe HTM
 
 - asset redirects no longer rewrite the preview target
 - same-host/different-port URLs are treated as different authorities
-- host canonicalization preserves the current preview base path for normal `/webpreview/*` navigations
+- host canonicalization preserves the current preview base path for normal `/webpreview/{routeKey}/*` navigations
 - `/_ext` HTML navigations switch the stored target to the new authority root so refresh/detach continue from the external site instead of the previous host
 
 ## Proxy Log
@@ -194,16 +196,16 @@ When a website doesn't load through the web preview:
 | File | Role |
 |------|------|
 | `WebPreviewProxyMiddleware.cs` | Core proxy: HTTP forwarding, WebSocket relay, injected JS |
-| `WebPreviewService.cs` | State: target URL, cookie jar, HTTP client, proxy log ring buffer |
+| `WebPreviewService.cs` | State: named preview sessions, target URLs, cookie jars, HTTP clients, proxy log ring buffers |
 | `WebPreviewEndpoints.cs` | REST API: target CRUD, cookie management, proxy log, snapshots |
-| `MtcliScriptWriter.cs` | CLI helpers: `mt_proxylog`, `mt_navigate`, etc. |
+| `MtcliScriptWriter.cs` | CLI helpers: `mt_session`, `mt_preview`, `mt_previews`, `mt_proxylog`, `mt_navigate`, etc. |
 
 ## Key Design Decisions
 
-**No read-side spoofing.** Chrome blocks overriding `Location.prototype` properties. Partial spoofing creates fatal inconsistencies. Let all URLs consistently include `/webpreview/`.
+**No read-side spoofing.** Chrome blocks overriding `Location.prototype` properties. Partial spoofing creates fatal inconsistencies. Let all URLs consistently include `/webpreview/{routeKey}/`.
 
 **No WebSocket content rewriting.** Frameworks use relative paths for routing. The absolute origin in URLs doesn't matter as long as `baseUri` and `currentUri` share the same origin. Relaying messages untouched eliminates an entire class of bugs (JSON corruption, MessagePack header mismatch, VarInt framing errors).
 
-**Write-side interception is sufficient.** Outgoing APIs (fetch, XHR, WebSocket, history, element setters) are patched to add `/webpreview` before requests leave JS. This ensures all requests route through the proxy middleware.
+**Write-side interception is sufficient.** Outgoing APIs (fetch, XHR, WebSocket, history, element setters) are patched to add `/webpreview/{routeKey}` before requests leave JS. This ensures all requests route through the correct preview-scoped proxy middleware.
 
 For targets that live under a deep document path but serve assets from the origin root (for example docs sites that load `/_astro/*` from a page under `/foo/bar/...`), MidTerm now primes its root-fallback cache directly from the rewritten HTML before the browser requests those assets. That avoids the first-wave `404` noise where the proxy would otherwise try `targetBase + /_astro/...` once and only then learn to retry the server-root path.

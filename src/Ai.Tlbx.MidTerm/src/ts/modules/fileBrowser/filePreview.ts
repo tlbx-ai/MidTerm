@@ -13,13 +13,14 @@ import {
   formatSize,
   getExtension,
   highlightCode,
-  renderMarkdown,
   isTextFile,
   isImageFile,
   isVideoFile,
   isAudioFile,
   buildViewUrl,
-  getFileIcon,
+  createLineNumberedEditor,
+  createLineNumberedViewer,
+  formatBinaryDump,
 } from '../fileViewer/rendering';
 
 const log = createLogger('filePreview');
@@ -69,13 +70,8 @@ export function renderPreview(
     return;
   }
 
-  container.innerHTML = `
-    <div class="preview-binary">
-      <div class="preview-binary-icon">${getFileIcon(entry.name, false)}</div>
-      <div class="preview-binary-name">${escapeHtml(entry.name)}</div>
-      <div class="preview-binary-size">${entry.size !== undefined ? formatSize(entry.size) : t('fileBrowser.unknownSize')}</div>
-      <a href="${escapeHtml(viewUrl)}" class="preview-download-btn" download>${t('fileBrowser.download')}</a>
-    </div>`;
+  container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
+  void fetchAndRenderBinary(container, viewUrl, entry);
 }
 
 async function fetchAndRenderText(
@@ -95,6 +91,42 @@ async function fetchAndRenderText(
     const text = await res.text();
     const isMarkdown = ext === '.md' || ext === '.markdown';
     renderTextContent(container, entry, sessionId, text, ext, isMarkdown);
+  } catch (e) {
+    log.error(() => `Failed to load preview: ${String(e)}`);
+    container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')}</div>`;
+  }
+}
+
+async function fetchAndRenderBinary(
+  container: HTMLElement,
+  url: string,
+  entry: FileTreeEntry,
+): Promise<void> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')} (${res.status})</div>`;
+      return;
+    }
+
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const shell = document.createElement('div');
+    shell.className = 'file-viewer-code-stack';
+
+    const infoBar = document.createElement('div');
+    infoBar.className = 'file-viewer-binary-bar';
+    infoBar.textContent = `${entry.mimeType || t('fileViewer.binaryFile')} \u2014 ${
+      entry.size !== undefined ? formatSize(entry.size) : t('fileBrowser.unknownSize')
+    }`;
+
+    const viewer = createLineNumberedViewer(formatBinaryDump(bytes), ['file-viewer-binary-shell']);
+    viewer.pre.classList.add('file-viewer-binary-text');
+
+    shell.appendChild(infoBar);
+    shell.appendChild(viewer.root);
+
+    container.innerHTML = '';
+    container.appendChild(shell);
   } catch (e) {
     log.error(() => `Failed to load preview: ${String(e)}`);
     container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')}</div>`;
@@ -187,28 +219,14 @@ function renderTextContent(
 
   const renderReadOnly = (): void => {
     body.innerHTML = '';
-
-    if (ext === '.md' || ext === '.markdown') {
-      const markdown = document.createElement('div');
-      markdown.className = 'md-content';
-      markdown.innerHTML = renderMarkdown(currentText);
-      body.appendChild(markdown);
-      return;
-    }
-
-    const pre = document.createElement('pre');
-    pre.className = 'file-viewer-text';
-    pre.innerHTML = highlightCode(currentText, ext);
-    body.appendChild(pre);
+    const viewer = createLineNumberedViewer(currentText, [], highlightCode(currentText, ext));
+    body.appendChild(viewer.root);
   };
 
   const renderEditor = (): void => {
     body.innerHTML = '';
-
-    const textarea = document.createElement('textarea');
-    textarea.className = 'file-viewer-textarea preview-textarea';
-    textarea.value = currentText;
-    textarea.spellcheck = false;
+    const editor = createLineNumberedEditor(currentText, ['preview-textarea']);
+    const textarea = editor.textarea;
     textarea.addEventListener('input', () => {
       currentText = textarea.value;
       updateDirtyState(currentText !== originalText);
@@ -219,7 +237,7 @@ function renderTextContent(
         void saveCurrentText();
       }
     });
-    body.appendChild(textarea);
+    body.appendChild(editor.root);
   };
 
   const renderMode = (): void => {

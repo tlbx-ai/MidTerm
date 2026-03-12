@@ -1,11 +1,15 @@
 /**
  * File Viewer Rendering Utilities
  *
- * Shared rendering functions, file type detection, and formatting helpers
- * used by both the file viewer and file browser modules.
+ * Shared rendering functions, file type detection, editor/viewer surface
+ * creation, and formatting helpers used by both the file viewer and file
+ * browser modules.
  */
 
+import { $currentSettings } from '../../stores';
 import { escapeHtml } from '../../utils';
+import { buildTerminalFontStack } from '../terminal/fontConfig';
+import { getEffectiveTerminalFontSize } from '../terminal/fontSize';
 
 export const TEXT_EXTENSIONS = new Set([
   '.txt',
@@ -135,6 +139,11 @@ export const VIDEO_MIMES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quick
 export const AUDIO_MIMES = ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/aac'];
 export const PDF_MIME = 'application/pdf';
 
+const DEFAULT_TERMINAL_FONT_SIZE = 14;
+const DEFAULT_VIEWPORT_WIDTH = 1024;
+const VIEWER_LINE_HEIGHT = 1.5;
+const BINARY_BYTES_PER_LINE = 16;
+
 export function getFileName(path: string): string {
   const parts = path.replace(/\\/g, '/').split('/');
   return parts[parts.length - 1] || path;
@@ -210,16 +219,172 @@ export function buildViewUrl(path: string, sessionId: string): string {
   return url;
 }
 
-export function escapeBinaryContent(bytes: Uint8Array): string {
-  const parts: string[] = [];
-  for (const b of bytes) {
-    if ((b >= 0x20 && b <= 0x7e) || b === 0x0a || b === 0x0d || b === 0x09) {
-      parts.push(String.fromCharCode(b));
-    } else {
-      parts.push('\u00b7');
-    }
+export function buildLineNumberText(lineCount: number): string {
+  const safeLineCount = Math.max(lineCount, 1);
+  const lines = new Array<string>(safeLineCount);
+  for (let i = 0; i < safeLineCount; i++) {
+    lines[i] = String(i + 1);
   }
-  return parts.join('');
+  return lines.join('\n');
+}
+
+export function getLineCount(text: string): number {
+  return Math.max(text.split('\n').length, 1);
+}
+
+export function formatBinaryDump(bytes: Uint8Array): string {
+  if (bytes.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+
+  for (let offset = 0; offset < bytes.length; offset += BINARY_BYTES_PER_LINE) {
+    const chunk = bytes.slice(offset, offset + BINARY_BYTES_PER_LINE);
+    const hex = Array.from(chunk, (value) => value.toString(16).toUpperCase().padStart(2, '0'))
+      .join(' ')
+      .padEnd(BINARY_BYTES_PER_LINE * 3 - 1, ' ');
+    const ascii = Array.from(chunk, (value) =>
+      value >= 0x20 && value <= 0x7e ? String.fromCharCode(value) : '.',
+    ).join('');
+
+    lines.push(`${offset.toString(16).toUpperCase().padStart(8, '0')}  ${hex}  ${ascii}`);
+  }
+
+  return lines.join('\n');
+}
+
+function getViewerFontMetrics(lineCount: number): {
+  fontFamily: string;
+  fontSizePx: number;
+  gutterWidthCh: number;
+} {
+  const settings = $currentSettings.get();
+  const viewportWidth = typeof window === 'undefined' ? DEFAULT_VIEWPORT_WIDTH : window.innerWidth;
+  const fontSizePx = getEffectiveTerminalFontSize(
+    settings?.fontSize ?? DEFAULT_TERMINAL_FONT_SIZE,
+    viewportWidth,
+  );
+
+  return {
+    fontFamily: buildTerminalFontStack(settings?.fontFamily),
+    fontSizePx,
+    gutterWidthCh: Math.max(String(Math.max(lineCount, 1)).length, 2),
+  };
+}
+
+function applyViewerFontMetrics(container: HTMLElement, lineCount: number): void {
+  const metrics = getViewerFontMetrics(lineCount);
+  container.style.setProperty('--file-viewer-font-family', metrics.fontFamily);
+  container.style.setProperty('--file-viewer-font-size', `${metrics.fontSizePx}px`);
+  container.style.setProperty('--file-viewer-line-height', String(VIEWER_LINE_HEIGHT));
+  container.style.setProperty('--file-viewer-gutter-width', `${metrics.gutterWidthCh}ch`);
+}
+
+export interface LineNumberedEditorHandle {
+  root: HTMLDivElement;
+  textarea: HTMLTextAreaElement;
+  setText: (text: string) => void;
+}
+
+export interface LineNumberedViewerHandle {
+  root: HTMLDivElement;
+  pre: HTMLPreElement;
+  setText: (text: string, html?: string) => void;
+}
+
+export function createLineNumberedEditor(
+  initialText: string,
+  extraClassNames: string[] = [],
+): LineNumberedEditorHandle {
+  const root = document.createElement('div');
+  root.className = ['file-viewer-editor-shell', ...extraClassNames].join(' ');
+
+  const gutter = document.createElement('div');
+  gutter.className = 'file-viewer-line-gutter';
+  gutter.setAttribute('aria-hidden', 'true');
+
+  const numbers = document.createElement('pre');
+  numbers.className = 'file-viewer-line-numbers';
+  gutter.appendChild(numbers);
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'file-viewer-textarea';
+  textarea.wrap = 'off';
+  textarea.spellcheck = false;
+
+  const updateMetrics = (text: string): void => {
+    const lineCount = getLineCount(text);
+    applyViewerFontMetrics(root, lineCount);
+    numbers.textContent = buildLineNumberText(lineCount);
+    gutter.scrollTop = textarea.scrollTop;
+  };
+
+  textarea.addEventListener('input', () => {
+    updateMetrics(textarea.value);
+  });
+  textarea.addEventListener('scroll', () => {
+    gutter.scrollTop = textarea.scrollTop;
+  });
+
+  const setText = (text: string): void => {
+    textarea.value = text;
+    updateMetrics(text);
+  };
+
+  setText(initialText);
+
+  root.appendChild(gutter);
+  root.appendChild(textarea);
+
+  return { root, textarea, setText };
+}
+
+export function createLineNumberedViewer(
+  text: string,
+  extraClassNames: string[] = [],
+  html?: string,
+): LineNumberedViewerHandle {
+  const root = document.createElement('div');
+  root.className = ['file-viewer-readonly-shell', ...extraClassNames].join(' ');
+
+  const gutter = document.createElement('div');
+  gutter.className = 'file-viewer-line-gutter';
+  gutter.setAttribute('aria-hidden', 'true');
+
+  const numbers = document.createElement('pre');
+  numbers.className = 'file-viewer-line-numbers';
+  gutter.appendChild(numbers);
+
+  const scroller = document.createElement('div');
+  scroller.className = 'file-viewer-text-scroller';
+
+  const pre = document.createElement('pre');
+  pre.className = 'file-viewer-text';
+  scroller.appendChild(pre);
+
+  const setText = (nextText: string, nextHtml?: string): void => {
+    const lineCount = getLineCount(nextText);
+    applyViewerFontMetrics(root, lineCount);
+    numbers.textContent = buildLineNumberText(lineCount);
+    if (nextHtml !== undefined) {
+      pre.innerHTML = nextHtml;
+    } else {
+      pre.textContent = nextText;
+    }
+    gutter.scrollTop = scroller.scrollTop;
+  };
+
+  scroller.addEventListener('scroll', () => {
+    gutter.scrollTop = scroller.scrollTop;
+  });
+
+  setText(text, html);
+
+  root.appendChild(gutter);
+  root.appendChild(scroller);
+
+  return { root, pre, setText };
 }
 
 // Universal syntax highlighting

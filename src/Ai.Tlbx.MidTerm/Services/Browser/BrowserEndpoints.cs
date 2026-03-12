@@ -17,7 +17,7 @@ public static class BrowserEndpoints
         WebPreviewService webPreviewService,
         BrowserUiBridge? uiBridge = null)
     {
-        MapPreviewClientEndpoint(app, previewRegistry, previewOriginService);
+        MapPreviewClientEndpoint(app, previewRegistry, previewOriginService, webPreviewService);
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService, uiBridge);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
 
@@ -30,14 +30,27 @@ public static class BrowserEndpoints
     private static void MapPreviewClientEndpoint(
         WebApplication app,
         BrowserPreviewRegistry previewRegistry,
-        BrowserPreviewOriginService previewOriginService)
+        BrowserPreviewOriginService previewOriginService,
+        WebPreviewService webPreviewService)
     {
         app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request, HttpContext ctx) =>
         {
-            var created = previewRegistry.Create(request.SessionId, ctx.Request.Cookies["mt-client-id"]);
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            var preview = webPreviewService.EnsurePreviewSession(request.SessionId, request.PreviewName);
+            var created = previewRegistry.Create(
+                preview.SessionId,
+                preview.PreviewName,
+                preview.RouteKey,
+                ctx.Request.Cookies["mt-client-id"]);
             var response = new BrowserPreviewClientResponse
             {
                 SessionId = created.SessionId,
+                PreviewName = created.PreviewName,
+                RouteKey = created.RouteKey,
                 PreviewId = created.PreviewId,
                 PreviewToken = created.PreviewToken,
                 Origin = previewOriginService.GetOrigin(ctx.Request)
@@ -48,30 +61,45 @@ public static class BrowserEndpoints
 
     private static void MapUiEndpoints(WebApplication app, BrowserUiBridge uiBridge)
     {
-        app.MapPost("/api/browser/detach", () =>
+        app.MapPost("/api/browser/detach", (Models.WebPreview.WebPreviewSessionRequest request) =>
         {
-            return uiBridge.RequestDetach(out var error)
+            return uiBridge.RequestDetach(
+                NormalizeOptional(request.SessionId),
+                NormalizeOptional(request.PreviewName),
+                out var error)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
         });
 
-        app.MapPost("/api/browser/dock", () =>
+        app.MapPost("/api/browser/dock", (Models.WebPreview.WebPreviewSessionRequest request) =>
         {
-            return uiBridge.RequestDock(out var error)
+            return uiBridge.RequestDock(
+                NormalizeOptional(request.SessionId),
+                NormalizeOptional(request.PreviewName),
+                out var error)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
         });
 
         app.MapPost("/api/browser/viewport", (Models.Browser.ViewportRequest request) =>
         {
-            return uiBridge.RequestViewport(request.Width, request.Height, out var error)
+            return uiBridge.RequestViewport(
+                NormalizeOptional(request.SessionId),
+                NormalizeOptional(request.PreviewName),
+                request.Width,
+                request.Height,
+                out var error)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
         });
 
         app.MapPost("/api/browser/open", (Models.WebPreview.WebPreviewTargetRequest request) =>
         {
-            return uiBridge.RequestOpen(request.Url ?? "", out var error)
+            return uiBridge.RequestOpen(
+                NormalizeOptional(request.SessionId),
+                NormalizeOptional(request.PreviewName),
+                request.Url ?? "",
+                out var error)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
         });
@@ -101,7 +129,12 @@ public static class BrowserEndpoints
 
             if (command == "status")
             {
-                var status = commandService.GetStatusText(webPreviewService.TargetUrl).TrimEnd('\n', '\r');
+                var sessionId = GetFlagValue(args, "--session");
+                var previewName = GetFlagValue(args, "--preview");
+                var targetUrl = sessionId is not null
+                    ? webPreviewService.GetTargetUrl(sessionId, previewName)
+                    : null;
+                var status = commandService.GetStatusText(targetUrl).TrimEnd('\n', '\r');
                 status += $"\nui clients: {uiBridge?.ConnectedBrowserCount ?? 0}\n";
                 return Results.Text(status);
             }
@@ -279,7 +312,7 @@ public static class BrowserEndpoints
 
     private static BrowserCommandRequest? ParseCliArgs(string command, List<string> args)
     {
-        return command switch
+        var request = command switch
         {
             "query" => new BrowserCommandRequest
             {
@@ -372,6 +405,21 @@ public static class BrowserEndpoints
             "clearcookies" => new BrowserCommandRequest { Command = "clearcookies" },
             _ => null
         };
+
+        return request is null
+            ? null
+            : new BrowserCommandRequest
+            {
+                Command = request.Command,
+                Selector = request.Selector,
+                Value = request.Value,
+                MaxDepth = request.MaxDepth,
+                TextOnly = request.TextOnly,
+                Timeout = request.Timeout,
+                SessionId = GetFlagValue(args, "--session"),
+                PreviewName = GetFlagValue(args, "--preview"),
+                PreviewId = request.PreviewId
+            };
     }
 
     private static async Task<string?> SaveResultToDiskAsync(
@@ -453,6 +501,7 @@ public static class BrowserEndpoints
             TextOnly = request.TextOnly,
             Timeout = request.Timeout,
             SessionId = request.SessionId,
+            PreviewName = request.PreviewName,
             PreviewId = request.PreviewId
         };
 
@@ -503,5 +552,10 @@ public static class BrowserEndpoints
     private static bool HasFlag(List<string> args, string flag)
     {
         return args.Any(a => a.Equals(flag, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

@@ -16,7 +16,6 @@ import { icon } from '../../constants';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
-import { showConfirm } from '../../utils/dialog';
 
 const log = createLogger('history-dropdown');
 
@@ -50,13 +49,20 @@ export function initHistoryDropdown(
   onRenameEntry = renameCallback ?? null;
   createDropdownElement();
   void loadHistory();
+  window.addEventListener('resize', handleViewportChange);
+  window.addEventListener('orientationchange', handleViewportChange);
 }
 
 /**
  * Refresh history from backend.
  */
 export function refreshHistory(): void {
-  void loadHistory();
+  void loadHistory().then(() => {
+    if (isOpen) {
+      positionDropdown();
+      renderDropdownContent();
+    }
+  });
 }
 
 /**
@@ -77,6 +83,7 @@ export function openHistoryDropdown(): void {
   if (!dropdownEl) return;
 
   void loadHistory().then(() => {
+    positionDropdown();
     renderDropdownContent();
     dropdownEl?.classList.add('visible');
     isOpen = true;
@@ -118,10 +125,30 @@ function createDropdownElement(): void {
     <div class="history-dropdown-empty">${t('history.noHistory')}</div>
   `;
 
-  const headerArea = document.querySelector('.sidebar-header');
-  if (headerArea) {
-    headerArea.appendChild(dropdownEl);
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) {
+    sidebar.appendChild(dropdownEl);
   }
+}
+
+function positionDropdown(): void {
+  if (!dropdownEl) return;
+
+  const trigger = document.getElementById('btn-history');
+  const sidebar = document.getElementById('sidebar');
+  if (!(trigger instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) {
+    return;
+  }
+
+  const triggerRect = trigger.getBoundingClientRect();
+  const sidebarRect = sidebar.getBoundingClientRect();
+  const top = Math.round(triggerRect.bottom - sidebarRect.top + 4);
+  const availableHeight = Math.max(160, Math.floor(sidebarRect.bottom - triggerRect.bottom - 12));
+
+  dropdownEl.style.top = `${top}px`;
+  dropdownEl.style.left = '8px';
+  dropdownEl.style.right = '8px';
+  dropdownEl.style.maxHeight = `${availableHeight}px`;
 }
 
 function renderDropdownContent(): void {
@@ -221,10 +248,6 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
     e.stopPropagation();
     if (!entry.id) return;
     void (async () => {
-      if (entry.isStarred) {
-        const ok = await showConfirm(t('history.deleteStarred'));
-        if (!ok) return;
-      }
       await removeHistoryEntry(entry.id);
       await loadHistory();
       renderDropdownContent();
@@ -583,6 +606,12 @@ function handleOutsideClick(e: MouseEvent): void {
   const target = e.target as Element;
   if (!dropdownEl.contains(target) && !target.closest('.btn-history')) {
     closeHistoryDropdown();
+  }
+}
+
+function handleViewportChange(): void {
+  if (isOpen) {
+    positionDropdown();
   }
 }
 

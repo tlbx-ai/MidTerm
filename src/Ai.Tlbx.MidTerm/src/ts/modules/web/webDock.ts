@@ -18,7 +18,7 @@ import { restoreLastUrl, showIframe, unloadIframe } from './webPanel';
 import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
-import { getActiveMode, setActiveMode } from './webSessionState';
+import { getActiveMode, getActivePreviewName, setActiveMode } from './webSessionState';
 import { isEmbeddedWebPreviewContext } from './webContext';
 
 const log = createLogger('webDock');
@@ -115,7 +115,8 @@ export function openWebPreviewDock(): void {
 /** Close the web preview dock panel and unload the iframe. */
 export function closeWebPreviewDock(): void {
   const activeId = $activeSessionId.get();
-  const detachedActive = isDetachedOpenForSession(activeId);
+  const activePreviewName = getActivePreviewName();
+  const detachedActive = isDetachedOpenForSession(activeId, activePreviewName);
   if (!detachedActive) {
     setActiveMode('hidden');
   }
@@ -124,8 +125,8 @@ export function closeWebPreviewDock(): void {
 
   // Unload iframe to stop all network activity
   unloadIframe();
-  if (!detachedActive && !isEmbeddedWebPreviewContext()) {
-    void clearWebPreviewTarget();
+  if (!detachedActive && !isEmbeddedWebPreviewContext() && activeId) {
+    void clearWebPreviewTarget(activeId, activePreviewName);
   }
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {
@@ -178,11 +179,13 @@ export function hideWebPreviewDockForDetach(): void {
 
 /** Fully hide the web preview: close dock, unload iframe, clear target, and clean up detach state. */
 export function applyWebPreviewHiddenState(): void {
+  const activeId = $activeSessionId.get();
+  const activePreviewName = getActivePreviewName();
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
   unloadIframe();
-  if (!isEmbeddedWebPreviewContext()) {
-    void clearWebPreviewTarget();
+  if (!isEmbeddedWebPreviewContext() && activeId) {
+    void clearWebPreviewTarget(activeId, activePreviewName);
   }
 
   const dockPanel = document.getElementById('web-preview-dock');

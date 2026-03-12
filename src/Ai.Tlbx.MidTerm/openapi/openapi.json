@@ -1772,6 +1772,12 @@
           },
           "mode": {
             "$ref": "#/components/schemas/ShareAccessMode"
+          },
+          "shareHost": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2424,6 +2430,7 @@
           "clipboardShortcuts",
           "terminalEnterMode",
           "scrollbackProtection",
+          "keepSystemAwakeWithActiveSessions",
           "inputMode",
           "fileRadar",
           "tmuxCompatibility",
@@ -2543,6 +2550,9 @@
             "$ref": "#/components/schemas/TerminalEnterModeSetting"
           },
           "scrollbackProtection": {
+            "type": "boolean"
+          },
+          "keepSystemAwakeWithActiveSessions": {
             "type": "boolean"
           },
           "inputMode": {

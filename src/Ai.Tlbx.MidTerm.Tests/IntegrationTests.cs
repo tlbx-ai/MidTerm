@@ -92,29 +92,34 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task WebPreview_CookieBridge_SetGetDelete_Works()
     {
+        const string sessionId = "session-a";
+        const string previewName = "default";
         var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
         {
+            SessionId = sessionId,
+            PreviewName = previewName,
             Url = "https://example.com"
         }, AppJsonContext.Default.WebPreviewTargetRequest);
         targetRes.EnsureSuccessStatusCode();
 
-        var setRes = await _client.PostAsJsonAsync("/api/webpreview/cookies", new WebPreviewCookieSetRequest
+        var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
+        var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
         {
             Raw = "theme=dark; Path=/"
         }, AppJsonContext.Default.WebPreviewCookieSetRequest);
         setRes.EnsureSuccessStatusCode();
 
-        var getRes = await _client.GetAsync("/api/webpreview/cookies");
+        var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
         getRes.EnsureSuccessStatusCode();
         var cookies = await getRes.Content.ReadFromJsonAsync(
             AppJsonContext.Default.WebPreviewCookiesResponse);
         Assert.NotNull(cookies);
         Assert.Contains("theme=dark", cookies.Header, StringComparison.Ordinal);
 
-        var delRes = await _client.DeleteAsync("/api/webpreview/cookies?name=theme");
+        var delRes = await _client.DeleteAsync($"/api/webpreview/cookies{previewQuery}&name=theme");
         delRes.EnsureSuccessStatusCode();
 
-        var afterDeleteRes = await _client.GetAsync("/api/webpreview/cookies");
+        var afterDeleteRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
         afterDeleteRes.EnsureSuccessStatusCode();
         var afterDelete = await afterDeleteRes.Content.ReadFromJsonAsync(
             AppJsonContext.Default.WebPreviewCookiesResponse);
@@ -125,13 +130,18 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task WebPreview_HardReload_ClearsCookieJar()
     {
+        const string sessionId = "session-a";
+        const string previewName = "default";
         var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
         {
+            SessionId = sessionId,
+            PreviewName = previewName,
             Url = "https://example.com"
         }, AppJsonContext.Default.WebPreviewTargetRequest);
         targetRes.EnsureSuccessStatusCode();
 
-        var setRes = await _client.PostAsJsonAsync("/api/webpreview/cookies", new WebPreviewCookieSetRequest
+        var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
+        var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
         {
             Raw = "session=abc123; Path=/"
         }, AppJsonContext.Default.WebPreviewCookieSetRequest);
@@ -139,11 +149,13 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
         var reloadRes = await _client.PostAsJsonAsync("/api/webpreview/reload", new WebPreviewReloadRequest
         {
+            SessionId = sessionId,
+            PreviewName = previewName,
             Mode = "hard"
         }, AppJsonContext.Default.WebPreviewReloadRequest);
         reloadRes.EnsureSuccessStatusCode();
 
-        var getRes = await _client.GetAsync("/api/webpreview/cookies");
+        var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
         getRes.EnsureSuccessStatusCode();
         var cookies = await getRes.Content.ReadFromJsonAsync(
             AppJsonContext.Default.WebPreviewCookiesResponse);
@@ -154,20 +166,27 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task WebPreview_CookieBridge_HidesHttpOnlyCookies()
     {
+        const string sessionId = "session-a";
+        const string previewName = "default";
         var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
         {
+            SessionId = sessionId,
+            PreviewName = previewName,
             Url = "https://example.com"
         }, AppJsonContext.Default.WebPreviewTargetRequest);
         targetRes.EnsureSuccessStatusCode();
+        var target = await targetRes.Content.ReadFromJsonAsync(AppJsonContext.Default.WebPreviewTargetResponse);
+        Assert.NotNull(target);
 
-        var setRes = await _client.PostAsJsonAsync("/api/webpreview/cookies", new WebPreviewCookieSetRequest
+        var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
+        var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
         {
             Raw = "session=abc123; Path=/; HttpOnly"
         }, AppJsonContext.Default.WebPreviewCookieSetRequest);
         setRes.EnsureSuccessStatusCode();
 
-        using var bridgeRequest = new HttpRequestMessage(HttpMethod.Get, "/webpreview/_cookies");
-        bridgeRequest.Headers.Referrer = new Uri("https://localhost/webpreview/");
+        using var bridgeRequest = new HttpRequestMessage(HttpMethod.Get, $"/webpreview/{target!.RouteKey}/_cookies");
+        bridgeRequest.Headers.Referrer = new Uri($"https://localhost/webpreview/{target.RouteKey}/");
         var bridgeRes = await _client.SendAsync(bridgeRequest);
         bridgeRes.EnsureSuccessStatusCode();
         var bridgeCookies = await bridgeRes.Content.ReadFromJsonAsync(

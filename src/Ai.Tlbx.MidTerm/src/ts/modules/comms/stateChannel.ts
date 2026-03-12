@@ -28,8 +28,12 @@ import { closeOverlay } from '../commands/outputPanel';
 import { detachPreview, dockBack } from '../web/webDetach';
 import { setViewportSize, openWebPreviewDock } from '../web/webDock';
 import { setWebPreviewTarget } from '../web/webApi';
-import { setActiveUrl, setActiveMode } from '../web/webSessionState';
-import { loadPreview } from '../web/webPanel';
+import {
+  getSessionSelectedPreviewName,
+  setSessionMode,
+  setSessionSelectedPreviewName,
+} from '../web/webSessionState';
+import { syncActiveWebPreview } from '../web';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 
@@ -63,6 +67,8 @@ interface BrowserUiMessage {
   width?: number;
   height?: number;
   url?: string;
+  sessionId?: string;
+  previewName?: string;
 }
 
 interface StateUpdateMessage {
@@ -498,33 +504,91 @@ function handleBrowserUiCommand(msg: BrowserUiMessage): void {
   }
 
   switch (msg.command) {
-    case 'detach':
-      void detachPreview();
+    case 'detach': {
+      const target = resolveBrowserUiTarget(msg);
+      if (!target) {
+        break;
+      }
+      setSessionMode(target.sessionId, target.previewName, 'detached');
+      void detachPreview(target.sessionId, target.previewName);
       break;
-    case 'dock':
-      dockBack();
+    }
+    case 'dock': {
+      const target = resolveBrowserUiTarget(msg);
+      if (!target) {
+        break;
+      }
+      setSessionMode(target.sessionId, target.previewName, 'docked');
+      dockBack(target.sessionId, target.previewName);
+      void syncActiveWebPreview();
       break;
-    case 'viewport':
-      setViewportSize(msg.width ?? 0, msg.height ?? 0);
+    }
+    case 'viewport': {
+      const target = resolveBrowserUiTarget(msg);
+      if (!target) {
+        break;
+      }
+      setSessionMode(target.sessionId, target.previewName, 'docked');
+      openWebPreviewDock();
+      void syncActiveWebPreview().finally(() => {
+        setViewportSize(msg.width ?? 0, msg.height ?? 0);
+      });
       break;
-    case 'open':
+    }
+    case 'open': {
+      const target = resolveBrowserUiTarget(msg);
+      if (!target || !msg.url) {
+        break;
+      }
+      setSessionMode(target.sessionId, target.previewName, 'docked');
       if (msg.url) {
-        void handleBrowserOpen(msg.url);
+        void handleBrowserOpen(target.sessionId, target.previewName, msg.url);
       }
       break;
+    }
     default:
       log.warn(() => `Unknown browser-ui command: ${msg.command}`);
   }
 }
 
-async function handleBrowserOpen(url: string): Promise<void> {
-  const result = await setWebPreviewTarget(url);
-  if (!result?.active) return;
-  setActiveUrl(url);
-  setActiveMode('docked');
+function resolveBrowserUiTarget(
+  msg: BrowserUiMessage,
+): { sessionId: string; previewName: string } | null {
+  const sessionId = msg.sessionId ?? $activeSessionId.get();
+  if (!sessionId) {
+    return null;
+  }
+
+  const previewName = setSessionSelectedPreviewName(
+    sessionId,
+    msg.previewName ?? getSessionSelectedPreviewName(sessionId),
+  );
+
+  if ($activeSessionId.get() !== sessionId) {
+    selectSession(sessionId, { closeSettingsPanel: false });
+  }
+
+  return { sessionId, previewName };
+}
+
+async function handleBrowserOpen(
+  sessionId: string,
+  previewName: string,
+  url: string,
+): Promise<void> {
+  const result = await setWebPreviewTarget(sessionId, previewName, url);
+  if (!result?.active) {
+    return;
+  }
+
+  setSessionSelectedPreviewName(sessionId, previewName);
+  setSessionMode(sessionId, previewName, 'docked');
+  if ($activeSessionId.get() !== sessionId) {
+    selectSession(sessionId, { closeSettingsPanel: false });
+  }
   $webPreviewUrl.set(url);
   openWebPreviewDock();
-  void loadPreview();
+  await syncActiveWebPreview();
 }
 
 /**

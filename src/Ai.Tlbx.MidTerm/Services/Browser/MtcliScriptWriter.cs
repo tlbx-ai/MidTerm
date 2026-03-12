@@ -34,62 +34,89 @@ public static class MtcliScriptWriter
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
+        _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
+        _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
+        _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
+        _MBB() {
+          local args=("$@")
+          if [ -n "$(_MSID)" ] && ! _MHAS "--session" "${args[@]}"; then
+            args+=("--session" "$(_MSID)")
+          fi
+          if [ -n "$(_MPREVIEW)" ] && ! _MHAS "--preview" "${args[@]}"; then
+            args+=("--preview" "$(_MPREVIEW)")
+          fi
+          _MB "${args[@]}"
+        }
+        _MQ() {
+          if [ -n "$(_MSID)" ]; then
+            printf '?sessionId=%s&previewName=%s' "$(_MSID)" "$(_MPREVIEW)"
+          fi
+        }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # mt_query SELECTOR [--text]  — query DOM; --text for text-only (smaller output)
-        mt_query() { _MB query "$@"; }
+        mt_query() { _MBB query "$@"; }
         # mt_click SELECTOR
-        mt_click() { _MB click "$1"; }
+        mt_click() { _MBB click "$1"; }
         # mt_fill SELECTOR VALUE
-        mt_fill()  { _MB fill "$1" "$2"; }
+        mt_fill()  { _MBB fill "$1" "$2"; }
+        mt_session() { _MSID; echo; }
+        mt_preview() {
+          if [ -n "${1:-}" ]; then
+            export MT_PREVIEW_NAME="$1"
+          fi
+          _MPREVIEW
+          echo
+        }
         # mt_exec JS_CODE  — or pipe: echo 'code' | mt_exec
         mt_exec() {
           local code="$1"
           if [ -z "$code" ] && [ ! -t 0 ]; then code=$(cat); fi
-          _MB exec "$code"
+          _MBB exec "$code"
         }
         # mt_wait SELECTOR [TIMEOUT]  — wait for element (default 5s)
         mt_wait() {
           local t=${2:-5}
-          _MB wait "$1" --timeout "$t"
+          _MBB wait "$1" --timeout "$t"
         }
-        mt_screenshot() { _MB screenshot; }
-        mt_snapshot()   { _MB snapshot; }
+        mt_screenshot() { _MBB screenshot; }
+        mt_snapshot()   { _MBB snapshot; }
         # mt_outline [DEPTH]  — page structure tree (default depth 4)
-        mt_outline() { local d=${1:-4}; _MB outline "$d"; }
+        mt_outline() { local d=${1:-4}; _MBB outline "$d"; }
         # mt_attrs SELECTOR  — element attributes (no children)
-        mt_attrs()   { _MB attrs "$1"; }
+        mt_attrs()   { _MBB attrs "$1"; }
         # mt_css SELECTOR PROPS  — computed CSS (comma-separated property names)
-        mt_css()     { _MB css "$1" "$2"; }
+        mt_css()     { _MBB css "$1" "$2"; }
         # mt_log [error|warn|all]  — console log buffer (default: all)
-        mt_log()     { local f=${1:-all}; _MB log "$f"; }
+        mt_log()     { local f=${1:-all}; _MBB log "$f"; }
         # mt_text [SELECTOR]  — page text content (default: body)
-        mt_text()    { local s="${1:-body}"; _MB query "$s" --text; }
+        mt_text()    { local s="${1:-body}"; _MBB query "$s" --text; }
         # mt_submit [FORM_SELECTOR]  — submit form via JS (default: first form)
-        mt_submit()  { local s="${1:-form}"; _MB submit "$s"; }
+        mt_submit()  { local s="${1:-form}"; _MBB submit "$s"; }
         # mt_url  — upstream page URL (not proxy URL)
-        mt_url()     { _MB url; }
+        mt_url()     { _MBB url; }
         # mt_links  — all links on page
-        mt_links()   { _MB links; }
+        mt_links()   { _MBB links; }
         # mt_forms [SELECTOR]  — form structure and values (default: all forms)
-        mt_forms()   { local s="${1:-form}"; _MB forms "$s"; }
+        mt_forms()   { local s="${1:-form}"; _MBB forms "$s"; }
 
         # Web preview (dev browser)
-        mt_navigate()   { _MJ -d "{\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
+        mt_navigate()   { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         # mt_open URL  — open URL in web preview panel and dock it
-        mt_open()       { mt_navigate "$1"; _MJR -d "{\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
+        mt_open()       { mt_navigate "$1"; _MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
         # mt_close_preview  — close web preview panel
-        mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target"; }
-        mt_reload()     { _MJ -d '{"mode":"soft"}' "$_MT/api/webpreview/reload"; }
-        mt_target()     { _MC "$_MT/api/webpreview/target"; }
-        mt_cookies()    { _MC "$_MT/api/webpreview/cookies"; }
+        mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
+        mt_reload()     { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"soft\"}" "$_MT/api/webpreview/reload"; }
+        mt_target()     { _MC "$_MT/api/webpreview/target$(_MQ)"; }
+        mt_cookies()    { _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
+        mt_previews()   { _MC "$_MT/api/webpreview/previews?sessionId=$(_MSID)"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
-        mt_clearcookies() { _MB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear"; }
+        mt_clearcookies() { _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
         # mt_hardreload  — clear cookies + reload (fresh session)
-        mt_hardreload() { mt_clearcookies; mt_reload; }
+        mt_hardreload() { mt_clearcookies; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"; }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
-        mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?limit=$n"; }
+        mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MSID)&previewName=$(_MPREVIEW)&limit=$n"; }
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
         mt_apply_update() {
           local source="${1:-}" url="$_MT/api/update/apply"
@@ -131,17 +158,17 @@ public static class MtcliScriptWriter
 
         # Panel control
         # mt_detach  — detach web preview to a popup window
-        mt_detach()    { _MJ -d '{}' "$_MT/api/browser/detach"; }
+        mt_detach()    { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\"}" "$_MT/api/browser/detach"; }
         # mt_dock  — dock web preview back from popup
-        mt_dock()      { _MJ -d '{}' "$_MT/api/browser/dock"; }
+        mt_dock()      { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\"}" "$_MT/api/browser/dock"; }
         # mt_viewport WIDTH HEIGHT  — set iframe viewport size (0 0 to reset)
         mt_viewport() {
           local w=${1:-0} h=${2:-0}
-          _MJ -d "{\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
         }
 
         # Status
-        mt_status()     { mtbrowser status 2>/dev/null || _MC "$_MT/api/webpreview/target"; }
+        mt_status()     { mtbrowser status 2>/dev/null || _MC "$_MT/api/webpreview/target$(_MQ)"; }
 
         # Direct execution: .midterm/mtcli.sh query ".error"
         if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
@@ -165,6 +192,11 @@ public static class MtcliScriptWriter
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
+        function script:_MSID { $env:MT_SESSION_ID }
+        function script:_MPreview {
+            if ($env:MT_PREVIEW_NAME) { return $env:MT_PREVIEW_NAME }
+            return "default"
+        }
         # Send null-delimited args to text CLI endpoint (browser commands)
         function script:_MB {
             $bytes = [System.Collections.Generic.List[byte]]::new()
@@ -178,73 +210,94 @@ public static class MtcliScriptWriter
                 _MBR --data-binary "@$tmp" -X POST "$script:_MT/api/browser"
             } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
         }
+        function script:_MBB {
+            $allArgs = @($args)
+            if ($env:MT_SESSION_ID -and -not ($allArgs -contains "--session")) {
+                $allArgs += @("--session", $env:MT_SESSION_ID)
+            }
+            if (-not ($allArgs -contains "--preview")) {
+                $allArgs += @("--preview", (_MPreview))
+            }
+            _MB @allArgs
+        }
+        function script:_MQuery {
+            if (-not $env:MT_SESSION_ID) { return "" }
+            "?sessionId=$([Uri]::EscapeDataString($env:MT_SESSION_ID))&previewName=$([Uri]::EscapeDataString((_MPreview)))"
+        }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # Mt-Query -Selector CSS_SELECTOR [-Text]  — query DOM; -Text for text-only
         function Mt-Query {
             param([string]$Selector, [switch]$Text)
-            if ($Text) { _MB query $Selector --text } else { _MB query $Selector }
+            if ($Text) { _MBB query $Selector --text } else { _MBB query $Selector }
         }
         # Mt-Click -Selector CSS_SELECTOR
-        function Mt-Click { param([string]$Selector) _MB click $Selector }
+        function Mt-Click { param([string]$Selector) _MBB click $Selector }
         # Mt-Fill -Selector CSS_SELECTOR -Value TEXT
-        function Mt-Fill { param([string]$Selector, [string]$Value) _MB fill $Selector $Value }
+        function Mt-Fill { param([string]$Selector, [string]$Value) _MBB fill $Selector $Value }
+        function Mt-Session { _MSID }
+        function Mt-Preview {
+            param([string]$Name)
+            if ($Name) { $env:MT_PREVIEW_NAME = $Name }
+            _MPreview
+        }
         # Mt-Exec -Code JS_CODE  — or pipe: 'code' | Mt-Exec
         function Mt-Exec {
             param([Parameter(ValueFromPipeline)][string]$Code)
             process {
                 if (-not $Code) { return }
-                _MB exec $Code
+                _MBB exec $Code
             }
         }
         # Mt-Wait -Selector CSS_SELECTOR [-Timeout N]  — wait for element (default 5s)
         function Mt-Wait {
             param([string]$Selector, [int]$Timeout = 5)
-            _MB wait $Selector --timeout $Timeout
+            _MBB wait $Selector --timeout $Timeout
         }
-        function Mt-Screenshot { _MB screenshot }
-        function Mt-Snapshot   { _MB snapshot }
+        function Mt-Screenshot { _MBB screenshot }
+        function Mt-Snapshot   { _MBB snapshot }
         # Mt-Outline [-Depth N]  — page structure tree (default depth 4)
-        function Mt-Outline { param([int]$Depth = 4) _MB outline $Depth }
+        function Mt-Outline { param([int]$Depth = 4) _MBB outline $Depth }
         # Mt-Attrs -Selector CSS_SELECTOR  — element attributes (no children)
-        function Mt-Attrs   { param([string]$Selector) _MB attrs $Selector }
+        function Mt-Attrs   { param([string]$Selector) _MBB attrs $Selector }
         # Mt-Css -Selector CSS_SELECTOR -Props COMMA_SEPARATED  — computed CSS values
-        function Mt-Css     { param([string]$Selector, [string]$Props) _MB css $Selector $Props }
+        function Mt-Css     { param([string]$Selector, [string]$Props) _MBB css $Selector $Props }
         # Mt-Log [-Filter error|warn|all]  — console log buffer (default: all)
-        function Mt-Log     { param([string]$Filter = "all") _MB log $Filter }
+        function Mt-Log     { param([string]$Filter = "all") _MBB log $Filter }
         # Mt-Text [-Selector CSS_SELECTOR]  — page text content (default: body)
-        function Mt-Text    { param([string]$Selector = "body") _MB query $Selector --text }
+        function Mt-Text    { param([string]$Selector = "body") _MBB query $Selector --text }
         # Mt-Submit [-Selector FORM_SELECTOR]  — submit form via JS (default: first form)
-        function Mt-Submit  { param([string]$Selector = "form") _MB submit $Selector }
+        function Mt-Submit  { param([string]$Selector = "form") _MBB submit $Selector }
         # Mt-Url  — upstream page URL (not proxy URL)
-        function Mt-Url     { _MB url }
+        function Mt-Url     { _MBB url }
         # Mt-Links  — all links on page
-        function Mt-Links   { _MB links }
+        function Mt-Links   { _MBB links }
         # Mt-Forms [-Selector CSS_SELECTOR]  — form structure and values (default: all forms)
-        function Mt-Forms   { param([string]$Selector = "form") _MB forms $Selector }
+        function Mt-Forms   { param([string]$Selector = "form") _MBB forms $Selector }
 
         # Web preview (dev browser)
         function Mt-Navigate {
             param([string]$Url)
-            _MJ -d (_MH @{url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
+            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
         }
         # Mt-Open -Url URL  — open URL in web preview panel and dock it
         function Mt-Open {
             param([string]$Url)
             Mt-Navigate -Url $Url
-            _MJR -d (_MH @{url=$Url}) "$script:_MT/api/browser/open"
+            _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) "$script:_MT/api/browser/open"
         }
         # Mt-ClosePreview  — close web preview panel
-        function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target" }
-        function Mt-Reload     { _MJ -d '{"mode":"soft"}' "$script:_MT/api/webpreview/reload" }
-        function Mt-Target     { _MC "$script:_MT/api/webpreview/target" }
-        function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies" }
+        function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target$(_MQuery)" }
+        function Mt-Reload     { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="soft"}) "$script:_MT/api/webpreview/reload" }
+        function Mt-Target     { _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
+        function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
+        function Mt-Previews   { _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
-        function Mt-ClearCookies { _MB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear" }
+        function Mt-ClearCookies { _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
         # Mt-HardReload  — clear cookies + reload (fresh session)
-        function Mt-HardReload { Mt-ClearCookies; Mt-Reload }
+        function Mt-HardReload { Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
-        function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog?limit=$Limit" }
+        function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
         # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return
         function Mt-ApplyUpdate {
             param([string]$Source)
@@ -284,13 +337,13 @@ public static class MtcliScriptWriter
 
         # Panel control
         # Mt-Detach  — detach web preview to a popup window
-        function Mt-Detach   { _MJ -d '{}' "$script:_MT/api/browser/detach" }
+        function Mt-Detach   { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/detach" }
         # Mt-Dock  — dock web preview back from popup
-        function Mt-Dock     { _MJ -d '{}' "$script:_MT/api/browser/dock" }
+        function Mt-Dock     { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/dock" }
         # Mt-Viewport [-Width N] [-Height N]  — set iframe viewport size (0 0 to reset)
         function Mt-Viewport {
             param([int]$Width = 0, [int]$Height = 0)
-            _MJ -d (_MH @{width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
+            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
         }
 
         # Status

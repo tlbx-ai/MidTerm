@@ -114,6 +114,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- WebPreview ---
 [JsonSerializable(typeof(WebPreviewTargetRequest))]
 [JsonSerializable(typeof(WebPreviewTargetResponse))]
+[JsonSerializable(typeof(WebPreviewSessionRequest))]
+[JsonSerializable(typeof(WebPreviewSessionInfo))]
+[JsonSerializable(typeof(WebPreviewSessionListResponse))]
 [JsonSerializable(typeof(WebPreviewCookieSetRequest))]
 [JsonSerializable(typeof(WebPreviewCookiesResponse))]
 [JsonSerializable(typeof(WebPreviewCookieInfo))]

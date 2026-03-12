@@ -12,7 +12,7 @@ public sealed class BrowserUiBridgeTests
         var mainBrowser = new MainBrowserService();
         var bridge = new BrowserUiBridge(mainBrowser);
 
-        var ok = bridge.RequestOpen("https://example.com", out var error);
+        var ok = bridge.RequestOpen(null, null, "https://example.com", out var error);
 
         Assert.False(ok);
         Assert.Contains("No MidTerm browser UI is connected", error, StringComparison.Ordinal);
@@ -29,11 +29,11 @@ public sealed class BrowserUiBridgeTests
         mainBrowser.Register("browser-a", connectionToken);
         mainBrowser.Claim("browser-a");
 
-        bridge.RegisterListener("l1", "browser-b", () => { }, () => { }, (_, _) => { }, _ => throw new Xunit.Sdk.XunitException("wrong listener"));
-        bridge.RegisterListener("l2", "browser-a", () => { }, () => { }, (_, _) => { }, url => openedUrl = "old:" + url);
-        bridge.RegisterListener("l3", "browser-a", () => { }, () => { }, (_, _) => { }, url => openedUrl = url);
+        bridge.RegisterListener("l1", "browser-b", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _) => throw new Xunit.Sdk.XunitException("wrong listener"));
+        bridge.RegisterListener("l2", "browser-a", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, url) => openedUrl = "old:" + url);
+        bridge.RegisterListener("l3", "browser-a", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, url) => openedUrl = url);
 
-        var ok = bridge.RequestOpen("https://example.com", out var error);
+        var ok = bridge.RequestOpen(null, null, "https://example.com", out var error);
 
         Assert.True(ok);
         Assert.Equal("", error);

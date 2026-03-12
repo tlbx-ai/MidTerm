@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "13";
+    private const string GuidanceVersion = "14";
 
     private static int _port;
     private static AuthService? _authService;
@@ -172,6 +172,9 @@ public static class MidtermDirectory
 
         Requires the web preview panel to be open in MidTerm.
         Source helpers once per session: `. .midterm/mtcli.sh` — don't show this to the user.
+        MidTerm injects `MT_SESSION_ID` automatically for this terminal session.
+        Browser helpers default to the current `MT_SESSION_ID` plus `MT_PREVIEW_NAME` (`default` unless changed).
+        Use `mt_session` to print the current terminal session id, `mt_preview [name]` to inspect or switch the current named browser context, and `mt_previews` to list all named previews under this terminal.
 
         **Rules:**
         - Start with `mt_outline` (10x smaller than `mt_query`)
@@ -198,14 +201,17 @@ public static class MidtermDirectory
         | `mt_forms [sel]` | Form structure and values |
         | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
         | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
-        | `mt_navigate <url>` | Set web preview target |
+        | `mt_session` | Print the current MidTerm terminal session id |
+        | `mt_preview [name]` | Print or switch the current named preview (`default`, `user1`, `user2`, ...) |
+        | `mt_previews` | List named previews for the current terminal session |
+        | `mt_navigate <url>` | Set the current named web preview target |
         | `mt_url` | Upstream page URL (not proxy URL) |
-        | `mt_open <url>` | Open URL in web preview and dock panel |
+        | `mt_open <url>` | Open URL in the current named preview and dock panel |
         | `mt_close_preview` | Close web preview panel |
         | `mt_reload` | Soft-reload preview |
         | `mt_hardreload` | Clear cookies + reload (fresh session) |
-        | `mt_target` | Current preview target |
-        | `mt_cookies` | All cookies in proxy jar |
+        | `mt_target` | Current named preview target |
+        | `mt_cookies` | All cookies in the current named preview jar |
         | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
         | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
         | `mt_apply_update [source]` | Apply pending update and wait for server |
@@ -258,6 +264,13 @@ public static class MidtermDirectory
         `mt_open` both sets the target and asks MidTerm to open/dock the preview panel.
         Use `mt_navigate` only when the panel is already open and you just want to change the target URL.
 
+        ## Multi-role browser sessions
+
+        mt_session → mt_preview user1 → mt_open "http://localhost:3000" → mt_preview user2 → mt_open "http://localhost:3000"
+
+        `mt_session` prints the current MidTerm terminal session ID.
+        `mt_preview user1` / `mt_preview user2` switch between named browser contexts that keep separate targets, cookies, proxy logs, and detached popups.
+
         ## Fresh session (clear cookies + reload)
 
         mt_hardreload → mt_wait "input[type=password]" → mt_url
@@ -288,6 +301,8 @@ public static class MidtermDirectory
         - mt_outline is 10x smaller than mt_query — always start there
         - mt_text is shorter than mt_query SEL --text — use it for page text
         - mt_open is the CLI command that opens/docks the preview; you do not need to click the panel first
+        - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
+        - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
         - If mt_status still shows "disconnected" after mt_open, treat that as a MidTerm bug and inspect mt_proxylog plus mt_log error

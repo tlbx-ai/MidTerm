@@ -10,6 +10,15 @@ class FakeElement {
   public spellcheck = true;
   public readonly style: Record<string, string> = {};
   public children: FakeElement[] = [];
+  public readonly classList = {
+    add: (...tokens: string[]) => {
+      const values = new Set(this.className.split(/\s+/).filter(Boolean));
+      for (const token of tokens) {
+        values.add(token);
+      }
+      this.className = Array.from(values).join(' ');
+    },
+  };
   private _innerHTML = '';
   private readonly listeners = new Map<string, Array<(event?: any) => void>>();
 
@@ -36,6 +45,8 @@ class FakeElement {
     handlers.push(handler);
     this.listeners.set(type, handlers);
   }
+
+  public setAttribute(_name: string, _value: string): void {}
 
   public dispatchEvent(event: { type: string }): boolean {
     const handlers = this.listeners.get(event.type) ?? [];
@@ -80,6 +91,42 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 
 const originalDocument = globalThis.document;
 const originalFetch = globalThis.fetch;
+const isTextFileMock = vi.fn(() => true);
+const createLineNumberedEditorMock = vi.fn((text: string, extraClassNames: string[] = []) => {
+  const root = new FakeElement('div');
+  root.className = ['file-viewer-editor-shell', ...extraClassNames].join(' ');
+
+  const textarea = new FakeElement('textarea');
+  textarea.className = 'file-viewer-textarea';
+  textarea.value = text;
+  root.appendChild(textarea);
+
+  return {
+    root: root as unknown as HTMLDivElement,
+    textarea: textarea as unknown as HTMLTextAreaElement,
+    setText: (nextText: string) => {
+      textarea.value = nextText;
+    },
+  };
+});
+const createLineNumberedViewerMock = vi.fn((text: string) => {
+  const root = new FakeElement('div');
+  root.className = 'file-viewer-readonly-shell';
+
+  const pre = new FakeElement('pre');
+  pre.className = 'file-viewer-text';
+  pre.textContent = text;
+  root.appendChild(pre);
+
+  return {
+    root: root as unknown as HTMLDivElement,
+    pre: pre as unknown as HTMLPreElement,
+    setText: (nextText: string) => {
+      pre.textContent = nextText;
+    },
+  };
+});
+const formatBinaryDumpMock = vi.fn((bytes: Uint8Array) => `binary:${bytes.length}`);
 
 vi.mock('../logging', () => ({
   createLogger: () => ({
@@ -98,14 +145,15 @@ vi.mock('../fileViewer/rendering', () => ({
   formatSize: (size: number) => `${size}`,
   getExtension: (name: string) => name.slice(name.lastIndexOf('.')).toLowerCase(),
   highlightCode: (text: string) => `highlight:${text}`,
-  renderMarkdown: (text: string) => `markdown:${text}`,
-  isTextFile: () => true,
+  isTextFile: isTextFileMock,
   isImageFile: () => false,
   isVideoFile: () => false,
   isAudioFile: () => false,
   buildViewUrl: (path: string, sessionId: string) =>
     `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`,
-  getFileIcon: () => 'file',
+  createLineNumberedEditor: createLineNumberedEditorMock,
+  createLineNumberedViewer: createLineNumberedViewerMock,
+  formatBinaryDump: formatBinaryDumpMock,
 }));
 
 async function flushPromises(): Promise<void> {
@@ -131,6 +179,10 @@ describe('filePreview', () => {
 
   beforeEach(() => {
     globalThis.fetch = vi.fn();
+    isTextFileMock.mockReturnValue(true);
+    createLineNumberedEditorMock.mockClear();
+    createLineNumberedViewerMock.mockClear();
+    formatBinaryDumpMock.mockClear();
   });
 
   it('opens markdown files in editor mode with a save button', async () => {
@@ -208,5 +260,30 @@ describe('filePreview', () => {
       }),
     );
     expect(saveBtn!.disabled).toBe(true);
+  });
+
+  it('renders binary files through the shared line-numbered viewer', async () => {
+    isTextFileMock.mockReturnValue(false);
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([0x41, 0x42]).buffer,
+    } as Response);
+
+    const container = new FakeElement('div');
+    const entry = {
+      name: 'archive.bin',
+      fullPath: 'Q:\\repos\\MidTerm\\archive.bin',
+      isDirectory: false,
+      mimeType: 'application/octet-stream',
+      size: 2,
+    };
+
+    const { renderPreview } = await import('./filePreview');
+    renderPreview(container as unknown as HTMLElement, entry, 'session-1');
+    await flushPromises();
+
+    expect(formatBinaryDumpMock).toHaveBeenCalledWith(new Uint8Array([0x41, 0x42]));
+    expect(createLineNumberedViewerMock).toHaveBeenCalledWith('binary:2', ['file-viewer-binary-shell']);
+    expect(container.querySelector('.file-viewer-binary-bar')).not.toBeNull();
   });
 });

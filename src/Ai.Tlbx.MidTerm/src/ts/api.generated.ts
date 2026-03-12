@@ -2028,6 +2028,7 @@ export interface components {
     CreateShareLinkRequest: {
       sessionId: string;
       mode: components['schemas']['ShareAccessMode'];
+      shareHost?: null | string;
     };
     CreateShareLinkResponse: {
       shareUrl: string;
@@ -2218,6 +2219,7 @@ export interface components {
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
+      keepSystemAwakeWithActiveSessions: boolean;
       inputMode: string;
       fileRadar: boolean;
       tmuxCompatibility: boolean;

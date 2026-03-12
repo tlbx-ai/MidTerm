@@ -63,7 +63,7 @@ public class WebPreviewProxyMiddlewareTests
     {
         var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
         var service = new WebPreviewService(serverPort: 2000, previewOriginService: previewOrigin);
-        Assert.True(service.SetTarget("https://localhost:2000/"));
+        Assert.True(service.SetTarget("session-1", null, "https://localhost:2000/"));
 
         var nextCalled = false;
         var middleware = new WebPreviewProxyMiddleware(_ =>
@@ -99,18 +99,18 @@ public class WebPreviewProxyMiddlewareTests
     public void CollectProxyPathPrefixes_RewrittenHtml_PrimesServerRootAssetPrefixes()
     {
         const string html = """
-            <link rel="stylesheet" href="/webpreview/_astro/DocsStatic.css">
-            <script type="module" src="/webpreview/_astro/page.js"></script>
-            <img src="/webpreview/OpenAI_Developers.svg">
-            <a href="/webpreview/api/reference/resources/audio/index.md">Markdown</a>
+            <link rel="stylesheet" href="/webpreview/route-1/_astro/DocsStatic.css">
+            <script type="module" src="/webpreview/route-1/_astro/page.js"></script>
+            <img src="/webpreview/route-1/OpenAI_Developers.svg">
+            <a href="/webpreview/route-1/api/reference/resources/audio/index.md">Markdown</a>
             <style>
-              @font-face { src: url(/webpreview/_astro/fonts/site.woff2); }
-              .hero { background-image: url('/webpreview/img/logo.png'); }
+              @font-face { src: url(/webpreview/route-1/_astro/fonts/site.woff2); }
+              .hero { background-image: url('/webpreview/route-1/img/logo.png'); }
             </style>
-            <a href="/webpreview/_ext?u=https%3A%2F%2Fcdn.openai.com%2Ffont.woff2">External</a>
+            <a href="/webpreview/route-1/_ext?u=https%3A%2F%2Fcdn.openai.com%2Ffont.woff2">External</a>
             """;
 
-        var prefixes = WebPreviewProxyMiddleware.CollectProxyPathPrefixes(html);
+        var prefixes = WebPreviewProxyMiddleware.CollectProxyPathPrefixes("/webpreview/route-1", html);
 
         Assert.Equal(
             new[]

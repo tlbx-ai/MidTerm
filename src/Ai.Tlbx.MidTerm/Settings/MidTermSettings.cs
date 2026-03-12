@@ -52,6 +52,7 @@ public sealed class MidTermSettings
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.Default;
     public bool ScrollbackProtection { get; set; } = false;
+    public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)
     public string InputMode { get; set; } = "keyboard";

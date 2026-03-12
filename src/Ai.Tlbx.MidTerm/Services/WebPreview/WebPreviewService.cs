@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Services;
@@ -12,23 +13,14 @@ namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
 public sealed class WebPreviewService
 {
-    private volatile string? _targetUrl;
-    private volatile Uri? _targetUri;
+    public const string DefaultPreviewName = "default";
+    private const int MaxLogEntries = 100;
+
     private readonly int _serverPort;
     private readonly BrowserPreviewOriginService? _previewOriginService;
     private readonly string? _cookiesDirectory;
-
-    private HttpClient _httpClient;
-    private CookieContainer _cookieContainer;
-    private readonly object _clientLock = new();
-
-    private const int MaxLogEntries = 100;
-    private readonly ConcurrentQueue<WebPreviewProxyLogEntry> _proxyLog = new();
-    private int _logIdCounter;
-
-    public string? TargetUrl => _targetUrl;
-    public Uri? TargetUri => _targetUri;
-    public bool IsActive => _targetUri is not null;
+    private readonly ConcurrentDictionary<string, PreviewState> _previews = new();
+    private readonly ConcurrentDictionary<string, string> _routeKeyToPreviewKey = new();
 
     public WebPreviewService(int serverPort, string? cookiesDirectory = null)
         : this(serverPort, previewOriginService: null, cookiesDirectory)
@@ -43,200 +35,250 @@ public sealed class WebPreviewService
         _serverPort = serverPort;
         _previewOriginService = previewOriginService;
         _cookiesDirectory = cookiesDirectory;
-        _cookieContainer = new CookieContainer();
-        _httpClient = CreateHttpClient(_cookieContainer);
     }
 
-    public HttpClient HttpClient => _httpClient;
-
-    public bool IsSelfTarget(Uri uri) => IsMainServerTarget(uri);
-
-    public void AddLogEntry(WebPreviewProxyLogEntry entry)
+    public static string NormalizePreviewName(string? previewName)
     {
-        entry.Id = Interlocked.Increment(ref _logIdCounter);
-        entry.Timestamp = DateTimeOffset.UtcNow;
-        _proxyLog.Enqueue(entry);
-        while (_proxyLog.Count > MaxLogEntries)
-            _proxyLog.TryDequeue(out _);
+        return string.IsNullOrWhiteSpace(previewName)
+            ? DefaultPreviewName
+            : previewName.Trim();
     }
 
-    public List<WebPreviewProxyLogEntry> GetLogEntries(int limit = MaxLogEntries)
+    public WebPreviewSessionInfo EnsurePreviewSession(string sessionId, string? previewName = null)
     {
-        var entries = _proxyLog.ToArray();
-        if (limit >= entries.Length)
-            return entries.ToList();
-        return entries[^limit..].ToList();
+        return ToInfo(GetOrCreateState(sessionId, previewName));
     }
 
-    public void ClearLog()
+    public WebPreviewSessionInfo? GetPreviewSession(string? sessionId, string? previewName = null)
     {
-        while (_proxyLog.TryDequeue(out _)) { }
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        return TryGetState(sessionId, previewName, out var state)
+            ? ToInfo(state)
+            : null;
     }
 
-    public bool SetTarget(string url, bool preserveCookies = false)
+    public WebPreviewSessionInfo? GetPreviewSessionByRouteKey(string routeKey)
+    {
+        return TryGetStateByRouteKey(routeKey, out var state)
+            ? ToInfo(state)
+            : null;
+    }
+
+    public WebPreviewSessionListResponse ListPreviewSessions(string sessionId)
+    {
+        var items = _previews.Values
+            .Where(state => string.Equals(state.SessionId, sessionId, StringComparison.Ordinal))
+            .OrderBy(state => string.Equals(state.PreviewName, DefaultPreviewName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(state => state.PreviewName, StringComparer.OrdinalIgnoreCase)
+            .Select(ToInfo)
+            .ToList();
+
+        return new WebPreviewSessionListResponse
+        {
+            Previews = items
+        };
+    }
+
+    public bool DeletePreviewSession(string sessionId, string? previewName = null)
+    {
+        var normalized = NormalizePreviewName(previewName);
+        if (string.Equals(normalized, DefaultPreviewName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var key = BuildPreviewKey(sessionId, normalized);
+        if (!_previews.TryRemove(key, out var state))
+        {
+            return false;
+        }
+
+        _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
+        state.Dispose();
+        return true;
+    }
+
+    public void ClearSession(string sessionId)
+    {
+        var matches = _previews
+            .Where(entry => string.Equals(entry.Value.SessionId, sessionId, StringComparison.Ordinal))
+            .Select(entry => entry.Key)
+            .ToArray();
+
+        foreach (var key in matches)
+        {
+            if (_previews.TryRemove(key, out var state))
+            {
+                _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
+                state.Dispose();
+            }
+        }
+    }
+
+    public bool TryGetPreviewRouteKey(string sessionId, string? previewName, out string routeKey)
+    {
+        if (TryGetState(sessionId, previewName, out var state))
+        {
+            routeKey = state.RouteKey;
+            return true;
+        }
+
+        routeKey = "";
+        return false;
+    }
+
+    public bool TryGetTargetUriByRouteKey(string routeKey, out Uri? targetUri)
+    {
+        if (TryGetStateByRouteKey(routeKey, out var state))
+        {
+            targetUri = state.TargetUri;
+            return true;
+        }
+
+        targetUri = null;
+        return false;
+    }
+
+    public string? GetTargetUrl(string sessionId, string? previewName = null)
+    {
+        return TryGetState(sessionId, previewName, out var state) ? state.TargetUrl : null;
+    }
+
+    public Uri? GetTargetUri(string sessionId, string? previewName = null)
+    {
+        return TryGetState(sessionId, previewName, out var state) ? state.TargetUri : null;
+    }
+
+    public Uri? GetTargetUriByRouteKey(string routeKey)
+    {
+        return TryGetStateByRouteKey(routeKey, out var state) ? state.TargetUri : null;
+    }
+
+    public bool IsActive(string sessionId, string? previewName = null)
+    {
+        return GetTargetUri(sessionId, previewName) is not null;
+    }
+
+    public bool HasAnyActivePreview()
+    {
+        return _previews.Values.Any(state => state.TargetUri is not null);
+    }
+
+    public bool SetTarget(string sessionId, string? previewName, string url, bool preserveCookies = false)
     {
         if (string.IsNullOrWhiteSpace(url))
+        {
             return false;
+        }
 
         url = NormalizeUrl(url);
-
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
             return false;
+        }
 
         if (uri.Scheme is not ("http" or "https"))
+        {
             return false;
+        }
 
         var isMainServerTarget = IsMainServerTarget(uri);
         if (IsPreviewServerTarget(uri))
+        {
             return false;
+        }
 
-        // Allow MidTerm-in-MidTerm only when the dedicated preview origin is active.
         if (isMainServerTarget && (_previewOriginService?.IsEnabled != true))
-            return false;
-
-        var oldTarget = _targetUri;
-        if (oldTarget is null || !TargetsShareCookieScope(oldTarget, uri))
         {
-            if (!preserveCookies)
-            {
-                ResetCookieJar();
-            }
+            return false;
         }
 
-        _targetUri = uri;
-        _targetUrl = uri.ToString();
-        LoadCookiesFromDisk(uri);
+        var state = GetOrCreateState(sessionId, previewName);
+        var oldTarget = state.TargetUri;
+        if ((oldTarget is null || !TargetsShareCookieScope(oldTarget, uri)) && !preserveCookies)
+        {
+            ResetCookieJar(state);
+        }
+
+        state.TargetUri = uri;
+        state.TargetUrl = uri.ToString();
+        LoadCookiesFromDisk(state, uri);
         return true;
     }
 
-    public void ClearTarget()
+    public void ClearTarget(string sessionId, string? previewName = null)
     {
-        _targetUrl = null;
-        _targetUri = null;
-        ResetCookieJar();
+        var state = GetOrCreateState(sessionId, previewName);
+        state.TargetUrl = null;
+        state.TargetUri = null;
+        ResetCookieJar(state);
     }
 
-    public bool HardReload()
+    public bool HardReload(string sessionId, string? previewName = null)
     {
-        var target = _targetUri;
-        if (target is null)
+        return ClearCookiesInternal(GetOrCreateState(sessionId, previewName));
+    }
+
+    public bool ClearAllCookies(string sessionId, string? previewName = null)
+    {
+        return ClearCookiesInternal(GetOrCreateState(sessionId, previewName));
+    }
+
+    public WebPreviewCookiesResponse GetCookies(string sessionId, string? previewName = null)
+    {
+        return TryGetState(sessionId, previewName, out var state)
+            ? GetCookies(state)
+            : new WebPreviewCookiesResponse();
+    }
+
+    public WebPreviewCookiesResponse GetBrowserCookies(string routeKey, Uri? requestUri = null)
+    {
+        return TryGetStateByRouteKey(routeKey, out var state)
+            ? GetBrowserCookies(state, requestUri)
+            : new WebPreviewCookiesResponse();
+    }
+
+    public bool SetCookieFromRaw(string routeKey, string rawCookie, Uri? requestUri = null, bool allowHttpOnly = true)
+    {
+        if (!TryGetStateByRouteKey(routeKey, out var state))
+        {
             return false;
-
-        DeleteCookieFile(target);
-        ResetCookieJar();
-        return true;
-    }
-
-    public bool ClearAllCookies()
-    {
-        var target = _targetUri;
-        if (target is null)
-            return false;
-
-        DeleteCookieFile(target);
-        ResetCookieJar();
-        return true;
-    }
-
-    public WebPreviewCookiesResponse GetCookies()
-    {
-        var target = _targetUri;
-        if (target is null)
-        {
-            return new WebPreviewCookiesResponse();
         }
 
-        lock (_clientLock)
-        {
-            var cookies = _cookieContainer.GetAllCookies();
-            var result = new WebPreviewCookiesResponse
-            {
-                Header = _cookieContainer.GetCookieHeader(target)
-            };
-
-            foreach (Cookie cookie in cookies)
-            {
-                result.Cookies.Add(new WebPreviewCookieInfo
-                {
-                    Name = cookie.Name,
-                    Value = cookie.Value,
-                    Domain = cookie.Domain,
-                    Path = cookie.Path,
-                    Secure = cookie.Secure,
-                    HttpOnly = cookie.HttpOnly,
-                    ExpiresUtc = cookie.Expires == DateTime.MinValue
-                        ? null
-                        : new DateTimeOffset(cookie.Expires.ToUniversalTime())
-                });
-            }
-
-            return result;
-        }
-    }
-
-    public WebPreviewCookiesResponse GetBrowserCookies(Uri? requestUri = null)
-    {
-        var target = requestUri ?? _targetUri;
-        if (target is null)
-        {
-            return new WebPreviewCookiesResponse();
-        }
-
-        lock (_clientLock)
-        {
-            var cookies = GetMatchingCookiesLocked(target, includeHttpOnly: false);
-            var result = new WebPreviewCookiesResponse
-            {
-                Header = BuildCookieHeader(cookies)
-            };
-
-            foreach (var cookie in cookies)
-            {
-                result.Cookies.Add(new WebPreviewCookieInfo
-                {
-                    Name = cookie.Name,
-                    Value = cookie.Value,
-                    Domain = cookie.Domain,
-                    Path = cookie.Path,
-                    Secure = cookie.Secure,
-                    HttpOnly = cookie.HttpOnly,
-                    ExpiresUtc = cookie.Expires == DateTime.MinValue
-                        ? null
-                        : new DateTimeOffset(cookie.Expires.ToUniversalTime())
-                });
-            }
-
-            return result;
-        }
-    }
-
-    public bool SetCookieFromRaw(string rawCookie, Uri? requestUri = null, bool allowHttpOnly = true)
-    {
-        var target = requestUri ?? _targetUri;
+        var target = requestUri ?? state.TargetUri;
         if (target is null || string.IsNullOrWhiteSpace(rawCookie))
+        {
             return false;
+        }
 
         if (!TryParseCookie(rawCookie, target, out var cookie))
+        {
             return false;
+        }
 
         if (!allowHttpOnly && cookie.HttpOnly)
         {
             cookie.HttpOnly = false;
         }
 
-        lock (_clientLock)
+        lock (state.ClientLock)
         {
             try
             {
                 if (string.IsNullOrEmpty(cookie.Domain))
                 {
-                    _cookieContainer.Add(target, cookie);
+                    state.CookieContainer.Add(target, cookie);
                 }
                 else
                 {
-                    _cookieContainer.Add(cookie);
+                    state.CookieContainer.Add(cookie);
                 }
-                PersistCookiesLocked(target);
+
+                PersistCookiesLocked(state, target);
                 return true;
             }
             catch (CookieException)
@@ -246,11 +288,18 @@ public sealed class WebPreviewService
         }
     }
 
-    public bool DeleteCookie(string name, string? path = null, string? domain = null)
+    public bool DeleteCookie(string sessionId, string? previewName, string name, string? path = null, string? domain = null)
     {
-        var target = _targetUri;
-        if (target is null || string.IsNullOrWhiteSpace(name))
+        if (!TryGetState(sessionId, previewName, out var state))
+        {
             return false;
+        }
+
+        var target = state.TargetUri;
+        if (target is null || string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
 
         var cookie = new Cookie(name, "")
         {
@@ -259,12 +308,12 @@ public sealed class WebPreviewService
             Expires = DateTime.UtcNow.AddYears(-1)
         };
 
-        lock (_clientLock)
+        lock (state.ClientLock)
         {
             try
             {
-                _cookieContainer.Add(cookie);
-                PersistCookiesLocked(target);
+                state.CookieContainer.Add(cookie);
+                PersistCookiesLocked(state, target);
                 return true;
             }
             catch (CookieException)
@@ -274,49 +323,57 @@ public sealed class WebPreviewService
         }
     }
 
-    private void ResetCookieJar()
+    public void ConfigureWebSocket(string routeKey, ClientWebSocket ws, Uri upstreamUri)
     {
-        lock (_clientLock)
+        if (!TryGetStateByRouteKey(routeKey, out var state))
         {
-            var oldClient = _httpClient;
-            _cookieContainer = new CookieContainer();
-            _httpClient = CreateHttpClient(_cookieContainer);
-            oldClient.Dispose();
+            return;
         }
-    }
 
-    public void ConfigureWebSocket(ClientWebSocket ws, Uri upstreamUri)
-    {
-        ws.Options.RemoteCertificateValidationCallback = ValidateCertificate;
+        ws.Options.RemoteCertificateValidationCallback = (sender, certificate, chain, errors) =>
+            ValidateCertificate(state, sender, certificate, chain, errors);
 
-        // Forward cookies from server-side cookie jar so WebSocket connections
-        // share the same session context as HTTP requests (critical for SignalR).
-        // CookieContainer stores cookies under http(s):// but WebSocket URIs use
-        // ws(s)://, so convert the scheme for lookup.
         var httpScheme = upstreamUri.Scheme == "wss" ? "https" : "http";
         var cookieLookupUri = new UriBuilder(upstreamUri) { Scheme = httpScheme }.Uri;
-        var cookieHeader = _cookieContainer.GetCookieHeader(cookieLookupUri);
+        var cookieHeader = state.CookieContainer.GetCookieHeader(cookieLookupUri);
         if (!string.IsNullOrEmpty(cookieHeader))
         {
             ws.Options.SetRequestHeader("Cookie", cookieHeader);
         }
     }
 
-    public void PersistCookies()
+    public HttpClient GetHttpClient(string routeKey)
     {
-        var target = _targetUri;
-        if (target is null)
-            return;
+        return ResolveStateByRouteKey(routeKey).HttpClient;
+    }
 
-        lock (_clientLock)
+    public void PersistCookies(string routeKey)
+    {
+        if (!TryGetStateByRouteKey(routeKey, out var state))
         {
-            PersistCookiesLocked(target);
+            return;
+        }
+
+        var target = state.TargetUri;
+        if (target is null)
+        {
+            return;
+        }
+
+        lock (state.ClientLock)
+        {
+            PersistCookiesLocked(state, target);
         }
     }
 
-    public void SyncSessionCookieForSelfTarget(string? token, Uri? target = null)
+    public void SyncSessionCookieForSelfTarget(string routeKey, string? token, Uri? target = null)
     {
-        var effectiveTarget = target ?? _targetUri;
+        if (!TryGetStateByRouteKey(routeKey, out var state))
+        {
+            return;
+        }
+
+        var effectiveTarget = target ?? state.TargetUri;
         if (effectiveTarget is null
             || !IsMainServerTarget(effectiveTarget)
             || string.IsNullOrWhiteSpace(token))
@@ -332,35 +389,313 @@ public sealed class WebPreviewService
             HttpOnly = true
         };
 
-        lock (_clientLock)
+        lock (state.ClientLock)
         {
             try
             {
-                _cookieContainer.Add(effectiveTarget, cookie);
+                state.CookieContainer.Add(effectiveTarget, cookie);
             }
             catch (CookieException)
             {
-                // Best-effort sync for self-preview auth.
             }
         }
     }
 
-    private void PersistCookiesLocked(Uri target)
+    public void AddLogEntry(string routeKey, WebPreviewProxyLogEntry entry)
     {
-        var filePath = GetCookieFilePath(target);
-        if (filePath is null)
+        if (!TryGetStateByRouteKey(routeKey, out var state))
+        {
             return;
+        }
+
+        entry.Id = Interlocked.Increment(ref state.LogIdCounter);
+        entry.Timestamp = DateTimeOffset.UtcNow;
+        state.ProxyLog.Enqueue(entry);
+        while (state.ProxyLog.Count > MaxLogEntries)
+        {
+            state.ProxyLog.TryDequeue(out _);
+        }
+    }
+
+    public List<WebPreviewProxyLogEntry> GetLogEntries(string sessionId, string? previewName = null, int limit = MaxLogEntries)
+    {
+        return TryGetState(sessionId, previewName, out var state)
+            ? GetLogEntries(state, limit)
+            : [];
+    }
+
+    public void ClearLog(string sessionId, string? previewName = null)
+    {
+        if (TryGetState(sessionId, previewName, out var state))
+        {
+            ClearLog(state);
+        }
+    }
+
+    public bool IsSelfTarget(Uri uri) => IsMainServerTarget(uri);
+
+    public string BuildProxyPrefix(string routeKey) => $"/webpreview/{routeKey}";
+
+    private bool ClearCookiesInternal(PreviewState state)
+    {
+        var target = state.TargetUri;
+        if (target is null)
+        {
+            return false;
+        }
+
+        DeleteCookieFile(state, target);
+        ResetCookieJar(state);
+        return true;
+    }
+
+    private WebPreviewCookiesResponse GetCookies(PreviewState state)
+    {
+        var target = state.TargetUri;
+        if (target is null)
+        {
+            return new WebPreviewCookiesResponse();
+        }
+
+        lock (state.ClientLock)
+        {
+            var cookies = state.CookieContainer.GetAllCookies();
+            var result = new WebPreviewCookiesResponse
+            {
+                Header = state.CookieContainer.GetCookieHeader(target)
+            };
+
+            foreach (Cookie cookie in cookies)
+            {
+                result.Cookies.Add(ToCookieInfo(cookie));
+            }
+
+            return result;
+        }
+    }
+
+    private WebPreviewCookiesResponse GetBrowserCookies(PreviewState state, Uri? requestUri = null)
+    {
+        var target = requestUri ?? state.TargetUri;
+        if (target is null)
+        {
+            return new WebPreviewCookiesResponse();
+        }
+
+        lock (state.ClientLock)
+        {
+            var cookies = GetMatchingCookiesLocked(state, target, includeHttpOnly: false);
+            var result = new WebPreviewCookiesResponse
+            {
+                Header = BuildCookieHeader(cookies)
+            };
+
+            foreach (var cookie in cookies)
+            {
+                result.Cookies.Add(ToCookieInfo(cookie));
+            }
+
+            return result;
+        }
+    }
+
+    private static WebPreviewCookieInfo ToCookieInfo(Cookie cookie)
+    {
+        return new WebPreviewCookieInfo
+        {
+            Name = cookie.Name,
+            Value = cookie.Value,
+            Domain = cookie.Domain,
+            Path = cookie.Path,
+            Secure = cookie.Secure,
+            HttpOnly = cookie.HttpOnly,
+            ExpiresUtc = cookie.Expires == DateTime.MinValue
+                ? null
+                : new DateTimeOffset(cookie.Expires.ToUniversalTime())
+        };
+    }
+
+    private List<WebPreviewProxyLogEntry> GetLogEntries(PreviewState state, int limit)
+    {
+        var entries = state.ProxyLog.ToArray();
+        if (limit >= entries.Length)
+        {
+            return entries.ToList();
+        }
+
+        return entries[^limit..].ToList();
+    }
+
+    private void ClearLog(PreviewState state)
+    {
+        while (state.ProxyLog.TryDequeue(out _))
+        {
+        }
+    }
+
+    private WebPreviewSessionInfo ToInfo(PreviewState state)
+    {
+        return new WebPreviewSessionInfo
+        {
+            SessionId = state.SessionId,
+            PreviewName = state.PreviewName,
+            RouteKey = state.RouteKey,
+            Url = state.TargetUrl,
+            Active = state.TargetUri is not null
+        };
+    }
+
+    private PreviewState GetOrCreateState(string sessionId, string? previewName)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new ArgumentException("sessionId is required.", nameof(sessionId));
+        }
+
+        var normalizedName = NormalizePreviewName(previewName);
+        var key = BuildPreviewKey(sessionId, normalizedName);
+        return _previews.GetOrAdd(key, _ =>
+        {
+            var routeKey = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(10));
+            var state = new PreviewState(
+                sessionId.Trim(),
+                normalizedName,
+                routeKey,
+                CreateHttpClientForState);
+            _routeKeyToPreviewKey[routeKey] = key;
+            return state;
+        });
+    }
+
+    private bool TryGetState(string sessionId, string? previewName, out PreviewState state)
+    {
+        state = null!;
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return false;
+        }
+
+        var key = BuildPreviewKey(sessionId, NormalizePreviewName(previewName));
+        if (_previews.TryGetValue(key, out var existing))
+        {
+            state = existing;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryGetStateByRouteKey(string routeKey, out PreviewState state)
+    {
+        state = null!;
+        if (string.IsNullOrWhiteSpace(routeKey))
+        {
+            return false;
+        }
+
+        if (!_routeKeyToPreviewKey.TryGetValue(routeKey, out var previewKey))
+        {
+            return false;
+        }
+
+        if (_previews.TryGetValue(previewKey, out var existing))
+        {
+            state = existing;
+            return true;
+        }
+
+        return false;
+    }
+
+    private PreviewState ResolveStateByRouteKey(string routeKey)
+    {
+        if (!TryGetStateByRouteKey(routeKey, out var state))
+        {
+            throw new KeyNotFoundException($"Unknown web preview route '{routeKey}'.");
+        }
+
+        return state;
+    }
+
+    private static string BuildPreviewKey(string sessionId, string previewName)
+    {
+        return $"{sessionId.Trim()}\n{previewName.Trim().ToLowerInvariant()}";
+    }
+
+    private void ResetCookieJar(PreviewState state)
+    {
+        lock (state.ClientLock)
+        {
+            var oldClient = state.HttpClient;
+            state.CookieContainer = new CookieContainer();
+            state.HttpClient = CreateHttpClientForState(state, state.CookieContainer);
+            oldClient.Dispose();
+        }
+    }
+
+    private HttpClient CreateHttpClientForState(PreviewState state, CookieContainer cookieContainer)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = true,
+            CookieContainer = cookieContainer,
+            AutomaticDecompression = DecompressionMethods.None,
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            SslOptions = new SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = (sender, certificate, chain, errors) =>
+                    ValidateCertificate(state, sender, certificate, chain, errors)
+            }
+        };
+
+        return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+    }
+
+    private bool ValidateCertificate(
+        PreviewState state,
+        object sender,
+        X509Certificate? certificate,
+        X509Chain? chain,
+        SslPolicyErrors sslPolicyErrors)
+    {
+        _ = sender;
+        _ = certificate;
+        _ = chain;
+
+        if (sslPolicyErrors == SslPolicyErrors.None)
+        {
+            return true;
+        }
+
+        var target = state.TargetUri;
+        return target is not null && IsLocalAddress(target.Host);
+    }
+
+    private void PersistCookiesLocked(PreviewState state, Uri target)
+    {
+        var filePath = GetCookieFilePath(state, target);
+        if (filePath is null)
+        {
+            return;
+        }
 
         try
         {
-            var cookies = _cookieContainer.GetAllCookies();
+            var cookies = state.CookieContainer.GetAllCookies();
             var lines = new List<string>();
             foreach (Cookie cookie in cookies)
             {
                 if (cookie.Expired)
+                {
                     continue;
+                }
+
                 if (!ShouldPersistCookie(target, cookie))
+                {
                     continue;
+                }
+
                 lines.Add(FormatCookie(cookie));
             }
 
@@ -375,59 +710,68 @@ public sealed class WebPreviewService
         }
         catch
         {
-            // Best-effort persistence — don't break the proxy
         }
     }
 
-    private void LoadCookiesFromDisk(Uri target)
+    private void LoadCookiesFromDisk(PreviewState state, Uri target)
     {
-        var filePath = GetCookieFilePath(target);
+        var filePath = GetCookieFilePath(state, target);
         if (filePath is null || !File.Exists(filePath))
+        {
             return;
+        }
 
         try
         {
             var lines = File.ReadAllLines(filePath);
-            lock (_clientLock)
+            lock (state.ClientLock)
             {
                 foreach (var line in lines)
                 {
                     if (string.IsNullOrWhiteSpace(line))
+                    {
                         continue;
+                    }
 
                     if (!TryParseCookie(line, target, out var cookie))
+                    {
                         continue;
+                    }
 
-                    if (cookie.Expired)
+                    if (cookie.Expired || !ShouldPersistCookie(target, cookie))
+                    {
                         continue;
-                    if (!ShouldPersistCookie(target, cookie))
-                        continue;
+                    }
 
                     try
                     {
                         if (string.IsNullOrEmpty(cookie.Domain))
-                            _cookieContainer.Add(target, cookie);
+                        {
+                            state.CookieContainer.Add(target, cookie);
+                        }
                         else
-                            _cookieContainer.Add(cookie);
+                        {
+                            state.CookieContainer.Add(cookie);
+                        }
                     }
                     catch (CookieException)
                     {
-                        // Skip malformed cookies
                     }
                 }
             }
         }
         catch
         {
-            // Best-effort load — don't block target activation
         }
     }
 
-    private void DeleteCookieFile(Uri target)
+    private void DeleteCookieFile(PreviewState state, Uri target)
     {
-        var filePath = GetCookieFilePath(target);
+        var filePath = GetCookieFilePath(state, target);
         if (filePath is null)
+        {
             return;
+        }
 
         try
         {
@@ -435,18 +779,29 @@ public sealed class WebPreviewService
         }
         catch
         {
-            // Best-effort delete
         }
     }
 
-    private string? GetCookieFilePath(Uri target)
+    private string? GetCookieFilePath(PreviewState state, Uri target)
     {
         if (_cookiesDirectory is null)
+        {
             return null;
+        }
 
         var host = target.Host.Replace(':', '_');
-        var fileName = $"{host}_{target.Port}.txt";
+        var previewKey = SanitizeCookieFileSegment($"{state.SessionId}_{state.PreviewName}");
+        var fileName = $"{previewKey}_{host}_{target.Port}.txt";
         return Path.Combine(_cookiesDirectory, fileName);
+    }
+
+    private static string SanitizeCookieFileSegment(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = value
+            .Select(ch => invalid.Contains(ch) ? '_' : ch)
+            .ToArray();
+        return new string(chars);
     }
 
     private static string FormatCookie(Cookie cookie)
@@ -459,35 +814,52 @@ public sealed class WebPreviewService
         };
 
         if (cookie.Secure)
+        {
             parts.Add("Secure");
+        }
+
         if (cookie.HttpOnly)
+        {
             parts.Add("HttpOnly");
+        }
+
         if (cookie.Expires != DateTime.MinValue)
+        {
             parts.Add($"Expires={cookie.Expires.ToUniversalTime():R}");
+        }
 
         return string.Join("; ", parts);
     }
 
-    private List<Cookie> GetMatchingCookiesLocked(Uri requestUri, bool includeHttpOnly)
+    private List<Cookie> GetMatchingCookiesLocked(PreviewState state, Uri requestUri, bool includeHttpOnly)
     {
         var cookies = new List<Cookie>();
-        foreach (Cookie cookie in _cookieContainer.GetAllCookies())
+        foreach (Cookie cookie in state.CookieContainer.GetAllCookies())
         {
             if (cookie.Expired)
+            {
                 continue;
+            }
+
             if (!includeHttpOnly && cookie.HttpOnly)
+            {
                 continue;
+            }
+
             if (!CookieMatchesRequestUri(cookie, requestUri))
+            {
                 continue;
+            }
+
             cookies.Add(cookie);
         }
 
         cookies.Sort((a, b) =>
         {
             var pathCompare = (b.Path?.Length ?? 0).CompareTo(a.Path?.Length ?? 0);
-            if (pathCompare != 0)
-                return pathCompare;
-            return string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+            return pathCompare != 0
+                ? pathCompare
+                : string.Compare(a.Name, b.Name, StringComparison.Ordinal);
         });
 
         return cookies;
@@ -501,10 +873,14 @@ public sealed class WebPreviewService
     private static bool CookieMatchesRequestUri(Cookie cookie, Uri requestUri)
     {
         if (cookie.Secure && requestUri.Scheme != Uri.UriSchemeHttps)
+        {
             return false;
+        }
 
         if (!DomainMatches(cookie.Domain, requestUri.Host))
+        {
             return false;
+        }
 
         return PathMatches(cookie.Path, requestUri.AbsolutePath);
     }
@@ -513,7 +889,9 @@ public sealed class WebPreviewService
     {
         var normalizedDomain = cookieDomain.Trim().TrimStart('.');
         if (string.IsNullOrEmpty(normalizedDomain))
+        {
             return false;
+        }
 
         return requestHost.Equals(normalizedDomain, StringComparison.OrdinalIgnoreCase)
             || requestHost.EndsWith("." + normalizedDomain, StringComparison.OrdinalIgnoreCase);
@@ -523,56 +901,29 @@ public sealed class WebPreviewService
     {
         var normalizedCookiePath = string.IsNullOrWhiteSpace(cookiePath) ? "/" : cookiePath;
         if (!normalizedCookiePath.StartsWith('/'))
+        {
             normalizedCookiePath = "/" + normalizedCookiePath;
+        }
 
         var normalizedRequestPath = string.IsNullOrEmpty(requestPath) ? "/" : requestPath;
         if (!normalizedRequestPath.StartsWith('/'))
+        {
             normalizedRequestPath = "/" + normalizedRequestPath;
+        }
 
         if (normalizedRequestPath.Equals(normalizedCookiePath, StringComparison.Ordinal))
+        {
             return true;
+        }
 
         if (!normalizedRequestPath.StartsWith(normalizedCookiePath, StringComparison.Ordinal))
+        {
             return false;
+        }
 
         return normalizedCookiePath.EndsWith("/", StringComparison.Ordinal)
             || normalizedRequestPath.Length > normalizedCookiePath.Length
             && normalizedRequestPath[normalizedCookiePath.Length] == '/';
-    }
-
-    private bool ValidateCertificate(
-        object sender,
-        X509Certificate? certificate,
-        X509Chain? chain,
-        SslPolicyErrors sslPolicyErrors)
-    {
-        if (sslPolicyErrors == SslPolicyErrors.None)
-            return true;
-
-        // Accept self-signed certs for localhost targets
-        var target = _targetUri;
-        if (target is not null && IsLocalAddress(target.Host))
-            return true;
-
-        return false;
-    }
-
-    private HttpClient CreateHttpClient(CookieContainer cookieContainer)
-    {
-        var handler = new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            UseCookies = true,
-            CookieContainer = cookieContainer,
-            AutomaticDecompression = DecompressionMethods.None,
-            ConnectTimeout = TimeSpan.FromSeconds(10),
-            SslOptions = new SslClientAuthenticationOptions
-            {
-                RemoteCertificateValidationCallback = ValidateCertificate
-            }
-        };
-
-        return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
     }
 
     private bool IsMainServerTarget(Uri uri)
@@ -589,13 +940,14 @@ public sealed class WebPreviewService
     private bool IsThisServerTarget(Uri uri, int port)
     {
         if (uri.Port != port)
+        {
             return false;
+        }
 
-        if (IsLocalAddress(uri.Host))
+        if (IsLocalAddress(uri.Host) || uri.Host.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+        {
             return true;
-
-        if (uri.Host.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
-            return true;
+        }
 
         string? dnsHostName = null;
         try
@@ -615,12 +967,16 @@ public sealed class WebPreviewService
         foreach (var address in ResolveHostAddresses(uri.Host))
         {
             if (IPAddress.IsLoopback(address))
+            {
                 return true;
+            }
 
             foreach (var localAddress in ResolveLocalAddresses(dnsHostName))
             {
                 if (address.Equals(localAddress))
+                {
                     return true;
+                }
             }
         }
 
@@ -664,7 +1020,9 @@ public sealed class WebPreviewService
     private static IEnumerable<IPAddress> ResolveLocalAddresses(string? dnsHostName)
     {
         if (string.IsNullOrEmpty(dnsHostName))
+        {
             yield break;
+        }
 
         IPAddress[] addresses;
         try
@@ -697,13 +1055,11 @@ public sealed class WebPreviewService
     {
         url = url.Trim();
 
-        // Auto-prepend https:// if no scheme provided
         if (!url.Contains("://"))
         {
-            // Check for localhost/127.0.0.1 patterns — use http for those
             if (url.StartsWith("localhost", StringComparison.OrdinalIgnoreCase)
-                || url.StartsWith("127.0.0.1")
-                || url.StartsWith("[::1]"))
+                || url.StartsWith("127.0.0.1", StringComparison.Ordinal)
+                || url.StartsWith("[::1]", StringComparison.Ordinal))
             {
                 url = "http://" + url;
             }
@@ -721,17 +1077,23 @@ public sealed class WebPreviewService
         cookie = new Cookie();
         var parts = rawCookie.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0)
+        {
             return false;
+        }
 
         var first = parts[0];
         var eqIdx = first.IndexOf('=');
         if (eqIdx <= 0)
+        {
             return false;
+        }
 
         var name = first[..eqIdx].Trim();
         var value = first[(eqIdx + 1)..].Trim();
         if (string.IsNullOrWhiteSpace(name))
+        {
             return false;
+        }
 
         cookie = new Cookie(name, value)
         {
@@ -750,12 +1112,16 @@ public sealed class WebPreviewService
             if (key.Equals("Path", StringComparison.OrdinalIgnoreCase))
             {
                 if (!string.IsNullOrWhiteSpace(attrValue))
+                {
                     cookie.Path = attrValue;
+                }
             }
             else if (key.Equals("Domain", StringComparison.OrdinalIgnoreCase))
             {
                 if (!string.IsNullOrWhiteSpace(attrValue))
+                {
                     cookie.Domain = attrValue.TrimStart('.');
+                }
             }
             else if (key.Equals("Secure", StringComparison.OrdinalIgnoreCase))
             {
@@ -768,15 +1134,51 @@ public sealed class WebPreviewService
             else if (key.Equals("Expires", StringComparison.OrdinalIgnoreCase))
             {
                 if (DateTime.TryParse(attrValue, out var expires))
+                {
                     cookie.Expires = expires.ToUniversalTime();
+                }
             }
             else if (key.Equals("Max-Age", StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(attrValue, out var seconds))
+                {
                     cookie.Expires = DateTime.UtcNow.AddSeconds(seconds);
+                }
             }
         }
 
         return true;
+    }
+
+    private sealed class PreviewState : IDisposable
+    {
+        public string SessionId { get; }
+        public string PreviewName { get; }
+        public string RouteKey { get; }
+        public object ClientLock { get; } = new();
+        public ConcurrentQueue<WebPreviewProxyLogEntry> ProxyLog { get; } = new();
+        public int LogIdCounter;
+        public string? TargetUrl;
+        public Uri? TargetUri;
+        public CookieContainer CookieContainer { get; set; }
+        public HttpClient HttpClient { get; set; }
+
+        public PreviewState(
+            string sessionId,
+            string previewName,
+            string routeKey,
+            Func<PreviewState, CookieContainer, HttpClient> clientFactory)
+        {
+            SessionId = sessionId;
+            PreviewName = previewName;
+            RouteKey = routeKey;
+            CookieContainer = new CookieContainer();
+            HttpClient = clientFactory(this, CookieContainer);
+        }
+
+        public void Dispose()
+        {
+            HttpClient.Dispose();
+        }
     }
 }

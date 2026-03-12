@@ -3,7 +3,7 @@
  *
  * Provides a modal viewer/editor for files and directories detected in terminal output.
  * Supports inline preview for images, video, audio, PDF, and editable text files.
- * Binary files are shown with non-printable byte escaping.
+ * Binary files are shown as line-numbered hex/ASCII dumps.
  * Directories show a browsable file listing.
  */
 
@@ -33,7 +33,9 @@ import {
   getFileIcon,
   formatSize,
   isTextFile,
-  escapeBinaryContent,
+  formatBinaryDump,
+  createLineNumberedEditor,
+  createLineNumberedViewer,
 } from './rendering';
 
 const log = createLogger('fileViewer');
@@ -415,6 +417,12 @@ function buildViewUrl(path: string): string {
   return url;
 }
 
+function createCodeStack(): HTMLDivElement {
+  const stack = document.createElement('div');
+  stack.className = 'file-viewer-code-stack';
+  return stack;
+}
+
 async function renderFile(path: string, info: FilePathInfo, container: Element): Promise<void> {
   const mime = info.mimeType || 'application/octet-stream';
   const ext = getExtension(path).toLowerCase();
@@ -487,10 +495,9 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
     currentContent = text;
     isDirty = false;
 
-    const textarea = document.createElement('textarea');
-    textarea.className = 'file-viewer-textarea';
-    textarea.value = text;
-    textarea.spellcheck = false;
+    const stack = createCodeStack();
+    const editor = createLineNumberedEditor(text);
+    const textarea = editor.textarea;
     textarea.addEventListener('input', () => {
       isDirty = true;
       currentContent = textarea.value;
@@ -498,7 +505,8 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
     });
 
     container.innerHTML = '';
-    container.appendChild(textarea);
+    stack.appendChild(editor.root);
+    container.appendChild(stack);
 
     if (!isFullContentLoaded) {
       const loadMoreBtn = document.createElement('button');
@@ -510,9 +518,11 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
         void fetch(viewUrl).then(async (fullResp) => {
           if (fullResp.ok) {
             const fullText = await fullResp.text();
-            textarea.value = fullText;
+            editor.setText(fullText);
             currentContent = fullText;
+            isDirty = false;
             isFullContentLoaded = true;
+            updateSaveButtonVisibility(false);
             loadMoreBtn.remove();
           } else {
             loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
@@ -520,7 +530,7 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
           }
         });
       });
-      container.appendChild(loadMoreBtn);
+      stack.appendChild(loadMoreBtn);
     }
 
     updateSaveButtonVisibility(false);
@@ -555,19 +565,17 @@ async function renderBinaryContent(
 
     const buffer = await resp.arrayBuffer();
     const bytes = new Uint8Array(buffer);
-    const escaped = escapeBinaryContent(bytes);
-
-    const pre = document.createElement('pre');
-    pre.className = 'file-viewer-text file-viewer-binary-text';
-    pre.textContent = escaped;
+    const stack = createCodeStack();
+    const viewer = createLineNumberedViewer(formatBinaryDump(bytes), ['file-viewer-binary-shell']);
+    viewer.pre.classList.add('file-viewer-binary-text');
 
     container.innerHTML = '';
 
     const infoBar = document.createElement('div');
     infoBar.className = 'file-viewer-binary-bar';
     infoBar.textContent = `${info.mimeType || t('fileViewer.binaryFile')} \u2014 ${formatSize(fileSize)}`;
-    container.appendChild(infoBar);
-    container.appendChild(pre);
+    stack.appendChild(infoBar);
+    stack.appendChild(viewer.root);
 
     if (partial) {
       const loadMoreBtn = document.createElement('button');
@@ -580,7 +588,7 @@ async function renderBinaryContent(
           if (fullResp.ok) {
             const fullBuffer = await fullResp.arrayBuffer();
             const fullBytes = new Uint8Array(fullBuffer);
-            pre.textContent = escapeBinaryContent(fullBytes);
+            viewer.setText(formatBinaryDump(fullBytes));
             loadMoreBtn.remove();
           } else {
             loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
@@ -588,9 +596,10 @@ async function renderBinaryContent(
           }
         });
       });
-      container.appendChild(loadMoreBtn);
+      stack.appendChild(loadMoreBtn);
     }
 
+    container.appendChild(stack);
     updateSaveButtonVisibility(false);
   } catch (e) {
     log.error(() => `Failed to load binary file: ${String(e)}`);

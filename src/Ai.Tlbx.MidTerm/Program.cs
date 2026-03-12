@@ -14,6 +14,7 @@ using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Security;
+using Ai.Tlbx.MidTerm.Services.Power;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program
@@ -168,6 +169,10 @@ public class Program
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
         GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
         var commandService = app.Services.GetRequiredService<CommandService>();
+        var sleepInhibitorService = app.Services.GetRequiredService<SystemSleepInhibitorService>();
+        sleepInhibitorService.UpdateEnabled(settings.KeepSystemAwakeWithActiveSessions);
+        var sleepInhibitorStateListenerId = sessionManager.AddStateListener(() =>
+            sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count));
 
         // Tmux compatibility layer (conditional on setting)
         TmuxCommandDispatcher? tmuxDispatcher = null;
@@ -243,6 +248,8 @@ public class Program
             {
                 Log.Warn(() => $"Settings: Ignoring invalid RunAsUser from file: {newSettings.RunAsUser}");
             }
+
+            sleepInhibitorService.UpdateEnabled(newSettings.KeepSystemAwakeWithActiveSessions);
         });
 
         var shutdownService = app.Services.GetRequiredService<ShutdownService>();
@@ -274,6 +281,8 @@ public class Program
             }
             finally
             {
+                sessionManager.RemoveStateListener(sleepInhibitorStateListenerId);
+                sleepInhibitorService.Dispose();
                 gitWatcher.Dispose();
                 TmuxLog.Shutdown();
                 TmuxScriptWriter.Cleanup();
@@ -358,6 +367,7 @@ public class Program
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
         await sessionManager.DiscoverExistingSessionsAsync();
+        sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count);
 
         WriteEventLog($"MainCore: Starting server on https://{bindAddress}:{port}");
 

@@ -12,81 +12,108 @@ public static partial class WebPreviewEndpoints
         WebPreviewService webPreviewService,
         TtyHostSessionManager sessionManager)
     {
+        MapPreviewSessionEndpoints(app, webPreviewService);
         MapTargetEndpoints(app, webPreviewService, sessionManager);
         MapCookieEndpoints(app, webPreviewService);
         MapActionEndpoints(app, webPreviewService, sessionManager);
         MapProxyLogEndpoints(app, webPreviewService);
     }
 
+    private static void MapPreviewSessionEndpoints(WebApplication app, WebPreviewService service)
+    {
+        app.MapGet("/api/webpreview/previews", (string sessionId) =>
+        {
+            return Results.Json(
+                service.ListPreviewSessions(sessionId),
+                AppJsonContext.Default.WebPreviewSessionListResponse);
+        });
+
+        app.MapPost("/api/webpreview/previews", (WebPreviewSessionRequest request) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            var response = service.EnsurePreviewSession(request.SessionId, request.PreviewName);
+            return Results.Json(response, AppJsonContext.Default.WebPreviewSessionInfo);
+        });
+
+        app.MapDelete("/api/webpreview/previews", (string sessionId, string? previewName) =>
+        {
+            return service.DeletePreviewSession(sessionId, previewName)
+                ? Results.Ok()
+                : Results.BadRequest("Failed to delete preview.");
+        });
+    }
+
     private static void MapTargetEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
     {
-        app.MapGet("/api/webpreview/target", () =>
+        app.MapGet("/api/webpreview/target", (string sessionId, string? previewName) =>
         {
-            var response = new WebPreviewTargetResponse
-            {
-                Url = service.TargetUrl,
-                Active = service.IsActive
-            };
+            var response = BuildTargetResponse(service, sessionId, previewName);
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
         app.MapPut("/api/webpreview/target", (WebPreviewTargetRequest request) =>
         {
-            if (!service.SetTarget(request.Url))
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (!service.SetTarget(request.SessionId, request.PreviewName, request.Url))
             {
                 return Results.BadRequest("Invalid URL. Must be http:// or https:// and cannot point to this server.");
             }
 
             WriteMtcliToActiveSessions(sessionManager);
 
-            var response = new WebPreviewTargetResponse
-            {
-                Url = service.TargetUrl,
-                Active = service.IsActive
-            };
+            var response = BuildTargetResponse(service, request.SessionId, request.PreviewName);
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
-        app.MapDelete("/api/webpreview/target", () =>
+        app.MapDelete("/api/webpreview/target", (string sessionId, string? previewName) =>
         {
-            service.ClearTarget();
+            service.ClearTarget(sessionId, previewName);
             return Results.Ok();
         });
     }
 
     private static void MapCookieEndpoints(WebApplication app, WebPreviewService service)
     {
-        app.MapGet("/api/webpreview/cookies", () =>
+        app.MapGet("/api/webpreview/cookies", (string sessionId, string? previewName) =>
         {
-            var response = service.GetCookies();
+            var response = service.GetCookies(sessionId, previewName);
             return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
         });
 
-        app.MapPost("/api/webpreview/cookies", (WebPreviewCookieSetRequest request) =>
+        app.MapPost("/api/webpreview/cookies", (string sessionId, string? previewName, WebPreviewCookieSetRequest request) =>
         {
-            if (!service.SetCookieFromRaw(request.Raw))
+            if (!service.TryGetPreviewRouteKey(sessionId, previewName, out var routeKey)
+                || !service.SetCookieFromRaw(routeKey, request.Raw))
             {
                 return Results.BadRequest("Invalid cookie format.");
             }
 
-            var response = service.GetCookies();
+            var response = service.GetCookies(sessionId, previewName);
             return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
         });
 
-        app.MapDelete("/api/webpreview/cookies", (string name, string? path, string? domain) =>
+        app.MapDelete("/api/webpreview/cookies", (string sessionId, string? previewName, string name, string? path, string? domain) =>
         {
-            if (!service.DeleteCookie(name, path, domain))
+            if (!service.DeleteCookie(sessionId, previewName, name, path, domain))
             {
                 return Results.BadRequest("Failed to delete cookie.");
             }
 
-            var response = service.GetCookies();
+            var response = service.GetCookies(sessionId, previewName);
             return Results.Json(response, AppJsonContext.Default.WebPreviewCookiesResponse);
         });
 
-        app.MapPost("/api/webpreview/cookies/clear", () =>
+        app.MapPost("/api/webpreview/cookies/clear", (string sessionId, string? previewName) =>
         {
-            if (!service.ClearAllCookies())
+            if (!service.ClearAllCookies(sessionId, previewName))
                 return Results.BadRequest("No active target.");
             return Results.Ok();
         });
@@ -98,7 +125,10 @@ public static partial class WebPreviewEndpoints
         {
             if (request.Mode.Equals("hard", StringComparison.OrdinalIgnoreCase))
             {
-                service.HardReload();
+                if (string.IsNullOrWhiteSpace(request.SessionId) || !service.HardReload(request.SessionId, request.PreviewName))
+                {
+                    return Results.BadRequest("No active target.");
+                }
             }
             return Results.Ok();
         });
@@ -126,11 +156,11 @@ public static partial class WebPreviewEndpoints
             // Download CSS files and rewrite hrefs
             foreach (var cssUrl in request.CssUrls.Distinct())
             {
-                if (!TryExtractProxyPath(cssUrl, out var proxyPath))
+                if (!TryExtractProxyPath(cssUrl, out var routeKey, out var proxyPath))
                     continue;
 
                 string upstreamUrl;
-                if (proxyPath.StartsWith("/webpreview/_ext", StringComparison.Ordinal))
+                if (proxyPath.StartsWith("/_ext", StringComparison.Ordinal))
                 {
                     var qIdx = proxyPath.IndexOf("?u=", StringComparison.Ordinal);
                     if (qIdx < 0) continue;
@@ -138,9 +168,9 @@ public static partial class WebPreviewEndpoints
                     try { upstreamUrl = Uri.UnescapeDataString(encoded); }
                     catch { continue; }
                 }
-                else if (service.TargetUri is not null)
+                else if (service.GetTargetUriByRouteKey(routeKey) is { } targetUri)
                 {
-                    upstreamUrl = BuildUpstreamUrl(service.TargetUri, proxyPath);
+                    upstreamUrl = BuildUpstreamUrl(targetUri, proxyPath);
                 }
                 else
                 {
@@ -161,7 +191,7 @@ public static partial class WebPreviewEndpoints
 
                 try
                 {
-                    var cssContent = await service.HttpClient.GetStringAsync(upstreamUrl);
+                    var cssContent = await service.GetHttpClient(routeKey).GetStringAsync(upstreamUrl);
                     await File.WriteAllTextAsync(Path.Combine(cssDir, finalFileName), cssContent);
 
                     html = html.Replace(cssUrl, $"css/{finalFileName}", StringComparison.Ordinal);
@@ -186,15 +216,15 @@ public static partial class WebPreviewEndpoints
 
     private static void MapProxyLogEndpoints(WebApplication app, WebPreviewService service)
     {
-        app.MapGet("/api/webpreview/proxylog", (int? limit) =>
+        app.MapGet("/api/webpreview/proxylog", (string sessionId, string? previewName, int? limit) =>
         {
-            var entries = service.GetLogEntries(limit ?? 100);
+            var entries = service.GetLogEntries(sessionId, previewName, limit ?? 100);
             return Results.Json(entries, AppJsonContext.Default.ListWebPreviewProxyLogEntry);
         });
 
-        app.MapDelete("/api/webpreview/proxylog", () =>
+        app.MapDelete("/api/webpreview/proxylog", (string sessionId, string? previewName) =>
         {
-            service.ClearLog();
+            service.ClearLog(sessionId, previewName);
             return Results.Ok();
         });
     }
@@ -227,18 +257,31 @@ public static partial class WebPreviewEndpoints
     /// Extracts the path+query portion from an absolute browser URL, returning
     /// true only if it passes through the /webpreview proxy prefix.
     /// </summary>
-    private static bool TryExtractProxyPath(string absoluteUrl, out string proxyPath)
+    private static bool TryExtractProxyPath(string absoluteUrl, out string routeKey, out string proxyPath)
     {
+        routeKey = "";
         proxyPath = "";
         if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri))
             return false;
 
-        var path = uri.PathAndQuery;
-        if (!path.StartsWith("/webpreview", StringComparison.Ordinal))
+        if (!WebPreviewProxyMiddleware.TryParseProxyRoute(uri.AbsolutePath, out routeKey, out var remainingPath))
             return false;
 
-        proxyPath = path;
+        proxyPath = remainingPath + uri.Query;
         return true;
+    }
+
+    private static WebPreviewTargetResponse BuildTargetResponse(WebPreviewService service, string sessionId, string? previewName)
+    {
+        var preview = service.EnsurePreviewSession(sessionId, previewName);
+        return new WebPreviewTargetResponse
+        {
+            SessionId = preview.SessionId,
+            PreviewName = preview.PreviewName,
+            RouteKey = preview.RouteKey,
+            Url = preview.Url,
+            Active = preview.Active
+        };
     }
 
     private static void WriteMtcliToActiveSessions(TtyHostSessionManager sessionManager)
@@ -260,12 +303,7 @@ public static partial class WebPreviewEndpoints
     /// </summary>
     private static string BuildUpstreamUrl(Uri targetUri, string proxyPath)
     {
-        // Strip /webpreview (length 11) to keep the leading /
-        var upstreamPath = proxyPath.StartsWith("/webpreview/", StringComparison.Ordinal)
-            ? proxyPath["/webpreview".Length..]
-            : "/";
-
-        return targetUri.GetLeftPart(UriPartial.Authority) + upstreamPath;
+        return targetUri.GetLeftPart(UriPartial.Authority) + proxyPath;
     }
 
     /// <summary>
