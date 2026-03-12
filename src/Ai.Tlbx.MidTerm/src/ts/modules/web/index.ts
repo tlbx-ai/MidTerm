@@ -1,8 +1,7 @@
 /**
  * Web Preview Module
  *
- * In-app website preview with reverse proxy.
- * Shows a dockable iframe panel that can be detached to a popup window.
+ * In-app website preview with session-scoped, named browser contexts.
  */
 
 import { setWebClickHandler } from '../sessionTabs';
@@ -13,14 +12,33 @@ import {
   setupWebPreviewDockResize,
   openWebPreviewDock,
   applyWebPreviewHiddenState,
-  suspendWebPreviewDock,
   hideWebPreviewDockForDetach,
   initViewportReset,
 } from './webDock';
-import { initWebPanel, loadPreview, restoreLastUrl, getLoadedUrl } from './webPanel';
-import { closeDetachedIfOwnedBy, initDetach, isDetachedOpenForSession } from './webDetach';
-import { setWebPreviewTarget } from './webApi';
-import { getSessionState, removeSessionState } from './webSessionState';
+import {
+  initWebPanel,
+  loadPreview,
+  renderPreviewTabs,
+  restoreLastUrl,
+  setPreviewTabSelectHandler,
+} from './webPanel';
+import {
+  closeDetachedIfOwnedBy,
+  dockBack,
+  initDetach,
+  isDetachedOpenForSession,
+} from './webDetach';
+import { listWebPreviewSessions } from './webApi';
+import {
+  getSessionPreview,
+  getSessionSelectedPreviewName,
+  removeSessionState,
+  setSessionMode,
+  setSessionSelectedPreviewName,
+  syncSessionPreviews,
+} from './webSessionState';
+
+let syncToken = 0;
 
 export function initWebPreview(): void {
   setWebClickHandler(() => {
@@ -30,15 +48,17 @@ export function initWebPreview(): void {
   initWebPanel();
   initDetach();
   initViewportReset();
+  setPreviewTabSelectHandler((previewName) => {
+    void selectActivePreview(previewName);
+  });
 
   document.getElementById('web-preview-close')?.addEventListener('click', closeWebPreviewDock);
   setupWebPreviewDockResize();
 
-  let syncToken = 0;
   let knownSessionIds = new Set<string>();
 
-  $activeSessionId.subscribe((sessionId) => {
-    void syncActiveSessionPreview(++syncToken, sessionId);
+  $activeSessionId.subscribe(() => {
+    void syncActiveWebPreview();
   });
 
   $sessionList.subscribe((sessions) => {
@@ -51,58 +71,77 @@ export function initWebPreview(): void {
     }
     knownSessionIds = ids;
   });
+}
 
-  async function syncActiveSessionPreview(token: number, sessionId: string | null): Promise<void> {
-    const state = getSessionState(sessionId);
+/** Re-sync the active session's selected web preview with server-side preview state. */
+export async function syncActiveWebPreview(): Promise<void> {
+  const token = ++syncToken;
+  const sessionId = $activeSessionId.get();
+  renderPreviewTabs();
 
-    if (!sessionId || !state || !state.url || state.mode === 'hidden') {
-      $webPreviewDetached.set(isDetachedOpenForSession(sessionId));
-      if (getLoadedUrl()) {
-        suspendWebPreviewDock();
-      } else {
-        applyWebPreviewHiddenState();
-      }
-      return;
-    }
+  if (!sessionId) {
+    $webPreviewDetached.set(false);
+    $webPreviewUrl.set(null);
+    applyWebPreviewHiddenState();
+    renderPreviewTabs();
+    return;
+  }
 
-    if (state.mode === 'docked') {
-      const loaded = getLoadedUrl();
-      if (loaded && loaded === state.url) {
-        $webPreviewDetached.set(false);
-        $webPreviewUrl.set(state.url);
-        openWebPreviewDock();
-        restoreLastUrl();
-        return;
-      }
+  const previews = await listWebPreviewSessions(sessionId);
+  if (token !== syncToken) {
+    return;
+  }
 
-      const result = await setWebPreviewTarget(state.url);
-      if (token !== syncToken) return;
-      if (!result?.active) {
-        $webPreviewDetached.set(isDetachedOpenForSession(sessionId));
-        applyWebPreviewHiddenState();
-        return;
-      }
+  syncSessionPreviews(sessionId, previews);
+  renderPreviewTabs();
 
-      $webPreviewUrl.set(state.url);
-      $webPreviewDetached.set(false);
-      openWebPreviewDock();
-      restoreLastUrl();
-      await loadPreview();
-      return;
-    }
+  const previewName = getSessionSelectedPreviewName(sessionId);
+  const preview = getSessionPreview(sessionId, previewName);
+  const detached = isDetachedOpenForSession(sessionId, previewName);
 
-    const result = await setWebPreviewTarget(state.url);
-    if (token !== syncToken) return;
-    if (!result?.active) {
-      $webPreviewDetached.set(isDetachedOpenForSession(sessionId));
-      applyWebPreviewHiddenState();
-      return;
-    }
+  $webPreviewUrl.set(preview?.url ?? null);
 
-    $webPreviewUrl.set(state.url);
+  if (!preview || preview.mode === 'hidden') {
+    $webPreviewDetached.set(false);
+    applyWebPreviewHiddenState();
+    renderPreviewTabs();
+    return;
+  }
+
+  if (preview.mode === 'detached' && detached) {
     $webPreviewDetached.set(true);
     hideWebPreviewDockForDetach();
+    renderPreviewTabs();
+    return;
   }
+
+  if (preview.mode === 'detached' && !detached) {
+    setSessionMode(sessionId, previewName, 'docked');
+  }
+
+  $webPreviewDetached.set(false);
+  openWebPreviewDock();
+  restoreLastUrl();
+  renderPreviewTabs();
+  await loadPreview();
+}
+
+/** Select a named preview for the active session and show it in the dock. */
+export async function selectActivePreview(previewName: string): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    return;
+  }
+
+  const normalized = setSessionSelectedPreviewName(sessionId, previewName);
+  if (isDetachedOpenForSession(sessionId, normalized)) {
+    dockBack(sessionId, normalized);
+  } else {
+    setSessionMode(sessionId, normalized, 'docked');
+  }
+
+  renderPreviewTabs();
+  await syncActiveWebPreview();
 }
 
 export { closeWebPreviewDock } from './webDock';

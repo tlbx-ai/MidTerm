@@ -8,5 +8,6 @@ public sealed class BrowserWsResult
     public string? Error { get; init; }
     public int? MatchCount { get; init; }
     public string? SessionId { get; init; }
+    public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }
 }

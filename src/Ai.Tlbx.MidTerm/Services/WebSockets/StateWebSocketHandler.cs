@@ -227,32 +227,50 @@ public sealed class StateWebSocketHandler
             _tmuxLayoutBridge.OnSwapRequested += OnSwapRequested;
         }
 
-        void OnBrowserDetach()
+        void OnBrowserDetach(string? sessionId, string? previewName)
         {
-            var instruction = new Models.Browser.BrowserUiInstruction { Command = "detach" };
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "detach",
+                SessionId = sessionId,
+                PreviewName = previewName
+            };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserDock()
+        void OnBrowserDock(string? sessionId, string? previewName)
         {
-            var instruction = new Models.Browser.BrowserUiInstruction { Command = "dock" };
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "dock",
+                SessionId = sessionId,
+                PreviewName = previewName
+            };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserViewport(int width, int height)
+        void OnBrowserViewport(string? sessionId, string? previewName, int width, int height)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "viewport",
+                SessionId = sessionId,
+                PreviewName = previewName,
                 Width = width,
                 Height = height
             };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserOpen(string url)
+        void OnBrowserOpen(string? sessionId, string? previewName, string url)
         {
-            var instruction = new Models.Browser.BrowserUiInstruction { Command = "open", Url = url };
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "open",
+                Url = url,
+                SessionId = sessionId,
+                PreviewName = previewName
+            };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 

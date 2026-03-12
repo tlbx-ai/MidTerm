@@ -192,6 +192,8 @@ public static class Program
         env["TMUX_PANE"] = $"%{config.PaneIndex ?? 0}";
         env["MT_PORT"] = config.MtPort.Value.ToString();
         env["MT_TOKEN"] = config.MtToken;
+        env["MT_SESSION_ID"] = config.SessionId;
+        env["MT_PREVIEW_NAME"] = "default";
 
         // Prepend tmux script directory to PATH so the tmux shim is found
         if (!string.IsNullOrEmpty(config.TmuxBinDir))

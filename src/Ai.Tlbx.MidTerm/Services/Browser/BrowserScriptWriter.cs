@@ -28,11 +28,24 @@ public static class BrowserScriptWriter
             Directory.CreateDirectory(dir);
             var scriptPath = Path.Combine(dir, "mtbrowser");
 
-            var script = $"""
+            var script = $$"""
                 #!/bin/sh
+                has_arg() {
+                  want="$1"; shift
+                  for arg in "$@"; do
+                    [ "$arg" = "$want" ] && return 0
+                  done
+                  return 1
+                }
+                if [ -n "$MT_SESSION_ID" ] && ! has_arg "--session" "$@"; then
+                  set -- "$@" --session "$MT_SESSION_ID"
+                fi
+                if [ -n "$MT_PREVIEW_NAME" ] && ! has_arg "--preview" "$@"; then
+                  set -- "$@" --preview "$MT_PREVIEW_NAME"
+                fi
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   --data-binary @- \
-                  "https://localhost:{port}/api/browser" 2>/dev/null
+                  "https://localhost:{{port}}/api/browser" 2>/dev/null
                 """;
 
             File.WriteAllText(scriptPath, script);
@@ -70,6 +83,20 @@ public static class BrowserScriptWriter
                     $body.Write($b, 0, $b.Length)
                     $body.WriteByte(0)
                 }
+                if ($env:MT_SESSION_ID -and -not ($args -contains "--session")) {
+                    foreach ($a in @("--session", $env:MT_SESSION_ID)) {
+                        $b = [System.Text.Encoding]::UTF8.GetBytes($a)
+                        $body.Write($b, 0, $b.Length)
+                        $body.WriteByte(0)
+                    }
+                }
+                if ($env:MT_PREVIEW_NAME -and -not ($args -contains "--preview")) {
+                    foreach ($a in @("--preview", $env:MT_PREVIEW_NAME)) {
+                        $b = [System.Text.Encoding]::UTF8.GetBytes($a)
+                        $body.Write($b, 0, $b.Length)
+                        $body.WriteByte(0)
+                    }
+                }
                 $tmp = Join-Path $env:TEMP "mt-browser-$PID.bin"
                 [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
                 try {
@@ -89,11 +116,24 @@ public static class BrowserScriptWriter
             File.WriteAllText(cmdPath, cmdScript);
 
             var bashPath = Path.Combine(dir, "mtbrowser");
-            var bashScript = $"""
+            var bashScript = $$"""
                 #!/bin/sh
+                has_arg() {
+                  want="$1"; shift
+                  for arg in "$@"; do
+                    [ "$arg" = "$want" ] && return 0
+                  done
+                  return 1
+                }
+                if [ -n "$MT_SESSION_ID" ] && ! has_arg "--session" "$@"; then
+                  set -- "$@" --session "$MT_SESSION_ID"
+                fi
+                if [ -n "$MT_PREVIEW_NAME" ] && ! has_arg "--preview" "$@"; then
+                  set -- "$@" --preview "$MT_PREVIEW_NAME"
+                fi
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   --data-binary @- \
-                  "https://localhost:{port}/api/browser" 2>/dev/null
+                  "https://localhost:{{port}}/api/browser" 2>/dev/null
                 """;
             File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n"));
 

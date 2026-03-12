@@ -54,10 +54,11 @@ public sealed class BrowserWebSocketHandler
         var shutdownToken = _shutdownService.Token;
         var connectionId = Guid.NewGuid().ToString("N");
         var sessionId = previewClient?.SessionId ?? context.Request.Query["sessionId"].FirstOrDefault();
+        var previewName = previewClient?.PreviewName;
         var previewId = previewClient?.PreviewId ?? queryPreviewId;
         var browserId = previewClient?.BrowserId ?? context.Request.Cookies["mt-client-id"];
 
-        if (!_commandService.TryRegisterClient(connectionId, sessionId, previewId, OnCommandReady, browserId))
+        if (!_commandService.TryRegisterClient(connectionId, sessionId, previewName, previewId, OnCommandReady, browserId))
         {
             BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
             await ws.CloseAsync(
@@ -68,7 +69,7 @@ public sealed class BrowserWebSocketHandler
         }
 
         BrowserLog.Info(
-            $"Browser WebSocket connected (preview={previewId ?? "(anonymous)"}, session={sessionId ?? "(none)"}, browser={browserId ?? "(none)"})");
+            $"Browser WebSocket connected (preview={previewId ?? "(anonymous)"}, name={previewName ?? "(default)"}, session={sessionId ?? "(none)"}, browser={browserId ?? "(none)"})");
 
         async Task SendCommandAsync(BrowserWsMessage message)
         {
@@ -151,7 +152,7 @@ public sealed class BrowserWebSocketHandler
             _commandService.UnregisterClient(connectionId);
             sendLock.Dispose();
             BrowserLog.Info(
-                $"Browser WebSocket disconnected (preview={previewId ?? "(anonymous)"}, session={sessionId ?? "(none)"}, browser={browserId ?? "(none)"})");
+                $"Browser WebSocket disconnected (preview={previewId ?? "(anonymous)"}, name={previewName ?? "(default)"}, session={sessionId ?? "(none)"}, browser={browserId ?? "(none)"})");
 
             if (ws.State == WebSocketState.Open)
             {

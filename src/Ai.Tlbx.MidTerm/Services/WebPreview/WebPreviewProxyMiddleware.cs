@@ -567,6 +567,14 @@ public sealed partial class WebPreviewProxyMiddleware
         })();</script>
         """;
 
+    private static string GetUrlRewriteScript(string routePrefix)
+    {
+        return UrlRewriteScript.Replace(
+            "var P=\"/webpreview\",E=P+\"/_ext?u=\";",
+            $"var P=\"{routePrefix}\",E=P+\"/_ext?u=\";",
+            StringComparison.Ordinal);
+    }
+
 
     private static readonly HashSet<string> HopByHopHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -610,11 +618,10 @@ public sealed partial class WebPreviewProxyMiddleware
     private readonly WebPreviewService _service;
 
     // Learned path prefixes that should bypass subpath-prefixing and go to the
-    // upstream server root. Seeded from rewritten HTML and reinforced by 404→root
-    // fallback wins. Keyed by prefix (e.g. "/_framework/"), value is true = prefer root.
-    // Reset when the target URL changes.
-    private readonly Dictionary<string, bool> _rootFallbackPrefixes = new(StringComparer.OrdinalIgnoreCase);
-    private string? _rootFallbackTarget;
+    // upstream server root. Stored per preview route key so unrelated browser
+    // contexts do not pollute each other's fallback cache.
+    private readonly Dictionary<string, Dictionary<string, bool>> _rootFallbackPrefixesByRoute = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string?> _rootFallbackTargetsByRoute = new(StringComparer.OrdinalIgnoreCase);
 
     public WebPreviewProxyMiddleware(RequestDelegate next, WebPreviewService service)
     {
@@ -626,29 +633,27 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         var path = context.Request.Path;
 
-        if (path.StartsWithSegments(ProxyPrefix, out var remaining))
+        if (TryParseProxyRoute(path, out var routeKey, out var remainingPath))
         {
-            // External URL proxy: /webpreview/_ext?u=https%3A%2F%2Fexample.com%2Fscript.js
-            var remainingPath = remaining.Value ?? "";
             if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
             {
                 if (context.WebSockets.IsWebSocketRequest)
                 {
-                    await ProxyExternalWebSocketAsync(context);
+                    await ProxyExternalWebSocketAsync(context, routeKey);
                 }
                 else
                 {
-                    await ProxyExternalAsync(context);
+                    await ProxyExternalAsync(context, routeKey);
                 }
                 return;
             }
             if (remainingPath.Equals("/_cookies", StringComparison.Ordinal))
             {
-                await HandleCookieBridgeAsync(context);
+                await HandleCookieBridgeAsync(context, routeKey);
                 return;
             }
 
-            var targetUri = _service.TargetUri;
+            _service.TryGetTargetUriByRouteKey(routeKey, out var targetUri);
             if (targetUri is null)
             {
                 context.Response.StatusCode = 502;
@@ -659,11 +664,11 @@ public sealed partial class WebPreviewProxyMiddleware
 
             if (context.WebSockets.IsWebSocketRequest)
             {
-                await ProxyWebSocketAsync(context, targetUri, remaining.Value ?? "/");
+                await ProxyWebSocketAsync(context, routeKey, targetUri, remainingPath);
             }
             else
             {
-                await ProxyHttpAsync(context, targetUri, remaining.Value ?? "/");
+                await ProxyHttpAsync(context, routeKey, targetUri, remainingPath);
             }
 
             return;
@@ -672,34 +677,37 @@ public sealed partial class WebPreviewProxyMiddleware
         // Guard: if web preview is active and a proxied page's JS leaks calls to
         // /api/webpreview/* (e.g. inner MidTerm calling DELETE /api/webpreview/target),
         // proxy those upstream instead of letting them hit our local handlers.
-        if (_service.IsActive
-            && path.StartsWithSegments("/api/webpreview")
-            && ShouldProxyWebPreviewApiRequest(context.Request))
+        if (path.StartsWithSegments("/api/webpreview")
+            && ShouldProxyWebPreviewApiRequest(context.Request)
+            && TryResolvePreviewFromRequest(context.Request, out routeKey, out var apiTargetUri))
         {
-            var targetUri = _service.TargetUri!;
             if (context.WebSockets.IsWebSocketRequest)
-                await ProxyWebSocketAsync(context, targetUri, path.Value ?? "/");
+                await ProxyWebSocketAsync(context, routeKey, apiTargetUri, path.Value ?? "/");
             else
-                await ProxyHttpAsync(context, targetUri, path.Value ?? "/");
+                await ProxyHttpAsync(context, routeKey, apiTargetUri, path.Value ?? "/");
             return;
         }
 
         // Catch-all: if web preview is active and this isn't a known MidTerm path,
         // it's likely a leaked root-relative URL from the proxied site (e.g. /s/player/...,
         // /youtubei/v1/...). Proxy it to the upstream target directly.
-        if (_service.IsActive
-            && !IsInternalProxyRequest(context.Request)
+        if (!IsInternalProxyRequest(context.Request)
             && !IsMidTermPath(path.Value ?? "/"))
         {
-            var targetUri = _service.TargetUri!;
+            if (!TryResolvePreviewFromRequest(context.Request, out routeKey, out var targetUri))
+            {
+                await _next(context);
+                return;
+            }
+
             var proxyPath = path.Value ?? "/";
             if (context.WebSockets.IsWebSocketRequest)
             {
-                await ProxyWebSocketAsync(context, targetUri, proxyPath);
+                await ProxyWebSocketAsync(context, routeKey, targetUri, proxyPath);
             }
             else
             {
-                await ProxyHttpAsync(context, targetUri, proxyPath);
+                await ProxyHttpAsync(context, routeKey, targetUri, proxyPath);
             }
 
             return;
@@ -723,6 +731,80 @@ public sealed partial class WebPreviewProxyMiddleware
         var refererPath = refererUri.AbsolutePath;
         return refererPath.Equals(ProxyPrefix, StringComparison.OrdinalIgnoreCase)
             || refererPath.StartsWith(ProxyPrefix + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryResolvePreviewFromRequest(HttpRequest request, out string routeKey, out Uri targetUri)
+    {
+        routeKey = "";
+        targetUri = null!;
+
+        if (TryParseProxyRoute(request.Path, out var directRouteKey, out _)
+            && _service.TryGetTargetUriByRouteKey(directRouteKey, out var directTargetUri)
+            && directTargetUri is not null)
+        {
+            routeKey = directRouteKey;
+            targetUri = directTargetUri;
+            return true;
+        }
+
+        if (!request.Headers.TryGetValue("Referer", out var refererValues))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
+        {
+            return false;
+        }
+
+        if (!TryParseProxyRoute(refererUri.AbsolutePath, out routeKey, out _))
+        {
+            return false;
+        }
+
+        if (!_service.TryGetTargetUriByRouteKey(routeKey, out var refererTargetUri) || refererTargetUri is null)
+        {
+            routeKey = "";
+            return false;
+        }
+
+        targetUri = refererTargetUri;
+        return true;
+    }
+
+    internal static bool TryParseProxyRoute(PathString path, out string routeKey, out string remainingPath)
+    {
+        routeKey = "";
+        remainingPath = "/";
+
+        if (!path.StartsWithSegments(ProxyPrefix, out var remaining))
+        {
+            return false;
+        }
+
+        var value = remaining.Value ?? "";
+        if (string.IsNullOrEmpty(value) || value == "/")
+        {
+            return false;
+        }
+
+        var normalized = value.StartsWith('/') ? value : "/" + value;
+        var nextSlash = normalized.IndexOf('/', 1);
+        if (nextSlash < 0)
+        {
+            routeKey = normalized[1..];
+            remainingPath = "/";
+            return !string.IsNullOrWhiteSpace(routeKey);
+        }
+
+        routeKey = normalized[1..nextSlash];
+        remainingPath = normalized[nextSlash..];
+        return !string.IsNullOrWhiteSpace(routeKey);
+    }
+
+    internal static bool TryParseProxyRoute(string path, out string routeKey, out string remainingPath)
+    {
+        return TryParseProxyRoute(new PathString(path), out routeKey, out remainingPath);
     }
 
     private static bool IsInternalProxyRequest(HttpRequest request)
@@ -763,16 +845,16 @@ public sealed partial class WebPreviewProxyMiddleware
             or "/midFont-style.css";
     }
 
-    private async Task ProxyHttpAsync(HttpContext context, Uri targetUri, string path)
+    private async Task ProxyHttpAsync(HttpContext context, string routeKey, Uri targetUri, string path)
     {
-        SyncSelfTargetAuthCookie(context.Request, targetUri);
+        SyncSelfTargetAuthCookie(routeKey, context.Request, targetUri);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
         var targetBase = targetUri.AbsolutePath.TrimEnd('/');
         var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
 
         // Determine primary URL (may use root fallback if previously learned)
         var primaryPath = BuildUpstreamPath(targetUri, path);
-        var useRootFirst = hasSubpath && ShouldTryRootFirst(path, targetBase);
+        var useRootFirst = hasSubpath && ShouldTryRootFirst(routeKey, path, targetBase);
         if (useRootFirst)
         {
             primaryPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
@@ -811,7 +893,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
-            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
+            context, routeKey, originalMethod, currentUrl, BuildRequest, context.RequestAborted);
 
         // Retry-on-404: if we got 404 and the target has a subpath, try the alternate path.
         // If we tried subpath-prefixed first, retry at server root. If we tried root first
@@ -829,7 +911,7 @@ public sealed partial class WebPreviewProxyMiddleware
             {
                 var fallbackUrl = BuildUpstreamUrlFromPath(targetUri, fallbackPath, context.Request.QueryString.Value);
                 var (fallbackResponse, fallbackError, fallbackFinalUrl) = await SendUpstreamAsync(
-                    context, originalMethod, fallbackUrl, BuildRequest, context.RequestAborted);
+                    context, routeKey, originalMethod, fallbackUrl, BuildRequest, context.RequestAborted);
 
                 if (fallbackResponse is not null
                     && fallbackResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
@@ -842,7 +924,7 @@ public sealed partial class WebPreviewProxyMiddleware
                     // Learn: if root worked, remember this prefix for future requests
                     if (!useRootFirst)
                     {
-                        LearnRootFallback(path, targetUri.ToString());
+                        LearnRootFallback(routeKey, path, targetUri.ToString());
                     }
                 }
                 else
@@ -851,19 +933,22 @@ public sealed partial class WebPreviewProxyMiddleware
                     // Learn: if subpath worked from root-first attempt, un-learn
                     if (useRootFirst && fallbackResponse?.StatusCode != System.Net.HttpStatusCode.NotFound)
                     {
-                        UnlearnRootFallback(path);
+                        UnlearnRootFallback(routeKey, path);
                     }
                 }
             }
         }
 
-        _service.PersistCookies();
+        _service.PersistCookies(routeKey);
 
         if (upstreamResponse is not null
             && ShouldAdoptCanonicalTarget(context.Request, upstreamResponse, finalUrl, targetUri.Authority, out var canonicalUri))
         {
             var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + targetUri.AbsolutePath;
-            _service.SetTarget(canonicalTarget, preserveCookies: true);
+            if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
+            {
+                _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+            }
         }
 
         if (upstreamResponse is null)
@@ -886,41 +971,42 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             context.Response.StatusCode = (int)upstreamResponse.StatusCode;
             CopyResponseHeaders(upstreamResponse, context.Response);
-            await DispatchResponseBodyAsync(context, upstreamResponse, finalUrl);
+            await DispatchResponseBodyAsync(context, routeKey, upstreamResponse, finalUrl);
         }
     }
 
-    private async Task ProxyHtmlResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
+    private async Task ProxyHtmlResponseAsync(HttpContext context, string routeKey, Uri targetUri, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
 
         // Rewrite root-relative URLs to go through the proxy.
         // <base href> only handles truly relative URLs (foo/bar.js),
         // but root-relative URLs (/path/to/file) need explicit rewriting.
-        html = RootRelativeAttrRegex().Replace(html, "$1/webpreview/");
-        html = RootRelativeSrcsetRegex().Replace(html, "$1/webpreview/");
-        html = RootRelativeCssUrlRegex().Replace(html, "url(/webpreview/");
+        var routePrefix = _service.BuildProxyPrefix(routeKey);
+        html = RootRelativeAttrRegex().Replace(html, $"$1{routePrefix}/");
+        html = RootRelativeSrcsetRegex().Replace(html, $"$1{routePrefix}/");
+        html = RootRelativeCssUrlRegex().Replace(html, $"url({routePrefix}/");
 
         // Rewrite <meta http-equiv="refresh" content="0;url=/path"> URLs (PHP redirect pattern)
         html = MetaRefreshRegex().Replace(html, m =>
         {
             var prefix = m.Groups[1].Value;
             var url = m.Groups[2].Value;
-            if (url.StartsWith('/') && !url.StartsWith("/webpreview/"))
-                return prefix + "/webpreview" + url;
+            if (url.StartsWith('/') && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+                return prefix + routePrefix + url;
             return m.Value;
         });
 
         // Rewrite absolute external URLs (https://cdn.example.com/...) to go through _ext proxy.
         // This allows MT to fetch third-party resources server-side, bypassing CORS/ad blockers.
-        var targetAuthority = _service.TargetUri?.Authority;
-        html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, targetAuthority));
-        html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, targetAuthority));
+        var targetAuthority = targetUri.Authority;
+        html = AbsoluteUrlAttrRegex().Replace(html, m => RewriteExternalUrl(m, routePrefix, targetAuthority));
+        html = AbsoluteUrlCssRegex().Replace(html, m => RewriteExternalCssUrl(m, routePrefix, targetAuthority));
 
         // Prime the root-fallback cache from rewritten HTML before the browser starts
         // requesting assets. This avoids the first-wave 404s on deep document targets
         // whose HTML points at server-root assets like /_astro/*.
-        PrimeRootFallbacksFromHtml(html);
+        PrimeRootFallbacksFromHtml(routeKey, html);
 
         // Extract the original <base href> value before removing — Blazor and other
         // frameworks rely on precise base URI (e.g., <base href="/kicoach/">).
@@ -948,20 +1034,20 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var basePath = originalBaseHref.TrimEnd('/');
             if (basePath.Length == 0 || basePath == "/")
-                baseHref = "/webpreview/";
+                baseHref = routePrefix + "/";
             else
-                baseHref = "/webpreview" + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+                baseHref = routePrefix + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
         }
         else
         {
-            baseHref = ComputeBaseHref(finalUrl);
+            baseHref = ComputeBaseHref(routePrefix, finalUrl);
         }
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
-        var targetOrigin = _service.TargetUri?.GetLeftPart(UriPartial.Authority) ?? "";
+        var targetOrigin = targetUri.GetLeftPart(UriPartial.Authority);
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + UrlRewriteScript, 1);
+        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix), 1);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
@@ -970,20 +1056,20 @@ public sealed partial class WebPreviewProxyMiddleware
         await context.Response.WriteAsync(html, context.RequestAborted);
     }
 
-    private static string ComputeBaseHref(string? finalUrl)
+    private static string ComputeBaseHref(string routePrefix, string? finalUrl)
     {
         if (finalUrl is null || !Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri))
-            return "/webpreview/";
+            return routePrefix + "/";
 
         var path = finalUri.AbsolutePath;
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
-        return "/webpreview" + directory;
+        return routePrefix + directory;
     }
 
-    internal void PrimeRootFallbacksFromHtml(string html)
+    internal void PrimeRootFallbacksFromHtml(string routeKey, string html)
     {
-        var targetUri = _service.TargetUri;
+        _service.TryGetTargetUriByRouteKey(routeKey, out var targetUri);
         if (targetUri is null)
         {
             return;
@@ -995,16 +1081,16 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
-        ResetFallbackCacheIfTargetChanged();
-        _rootFallbackTarget = targetUri.ToString();
+        ResetFallbackCacheIfTargetChanged(routeKey, targetUri.ToString());
+        var routeCache = GetOrCreateRootFallbackCache(routeKey);
 
-        foreach (var prefix in CollectProxyPathPrefixes(html))
+        foreach (var prefix in CollectProxyPathPrefixes(_service.BuildProxyPrefix(routeKey), html))
         {
-            _rootFallbackPrefixes[prefix] = true;
+            routeCache[prefix] = true;
         }
     }
 
-    internal static string[] CollectProxyPathPrefixes(string html)
+    internal static string[] CollectProxyPathPrefixes(string routePrefix, string html)
     {
         if (string.IsNullOrEmpty(html))
         {
@@ -1015,12 +1101,12 @@ public sealed partial class WebPreviewProxyMiddleware
         foreach (Match match in ProxiedPathRegex().Matches(html))
         {
             var proxiedPath = match.Groups[1].Value;
-            if (!proxiedPath.StartsWith(ProxyPrefix, StringComparison.OrdinalIgnoreCase))
+            if (!proxiedPath.StartsWith(routePrefix, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            var upstreamPath = proxiedPath[ProxyPrefix.Length..];
+            var upstreamPath = proxiedPath[routePrefix.Length..];
             var prefix = GetPathPrefix(upstreamPath);
             if (prefix is null || prefix.Equals("/_ext/", StringComparison.OrdinalIgnoreCase))
             {
@@ -1033,15 +1119,16 @@ public sealed partial class WebPreviewProxyMiddleware
         return prefixes.Count == 0 ? Array.Empty<string>() : [.. prefixes];
     }
 
-    private async Task ProxyCssResponseAsync(HttpContext context, HttpResponseMessage upstreamResponse)
+    private async Task ProxyCssResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse)
     {
         var css = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+        var routePrefix = _service.BuildProxyPrefix(routeKey);
 
         // Rewrite url(/...) references in CSS to go through the proxy
-        css = RootRelativeCssUrlRegex().Replace(css, "url(/webpreview/");
+        css = RootRelativeCssUrlRegex().Replace(css, $"url({routePrefix}/");
 
         // Rewrite absolute external url() references
-        css = AbsoluteUrlCssRegex().Replace(css, m => RewriteExternalCssUrl(m, null));
+        css = AbsoluteUrlCssRegex().Replace(css, m => RewriteExternalCssUrl(m, routePrefix, null));
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");
@@ -1049,7 +1136,7 @@ public sealed partial class WebPreviewProxyMiddleware
         await context.Response.WriteAsync(css, context.RequestAborted);
     }
 
-    private async Task ProxyExternalAsync(HttpContext context)
+    private async Task ProxyExternalAsync(HttpContext context, string routeKey)
     {
         var externalUrl = context.Request.Query["u"].FirstOrDefault();
         if (string.IsNullOrEmpty(externalUrl) || !Uri.TryCreate(externalUrl, UriKind.Absolute, out var extUri))
@@ -1089,9 +1176,9 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
-            context, originalMethod, currentUrl, BuildRequest, context.RequestAborted, "ext-http");
+            context, routeKey, originalMethod, currentUrl, BuildRequest, context.RequestAborted, "ext-http");
 
-        _service.PersistCookies();
+        _service.PersistCookies(routeKey);
 
         if (upstreamResponse is null)
         {
@@ -1101,15 +1188,18 @@ public sealed partial class WebPreviewProxyMiddleware
 
         using (upstreamResponse)
         {
-            if (ShouldAdoptCanonicalTarget(context.Request, upstreamResponse, finalUrl, _service.TargetUri?.Authority, out var canonicalUri))
+            if (ShouldAdoptCanonicalTarget(context.Request, upstreamResponse, finalUrl, _service.GetTargetUriByRouteKey(routeKey)?.Authority, out var canonicalUri))
             {
                 var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + "/";
-                _service.SetTarget(canonicalTarget, preserveCookies: true);
+                if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
+                {
+                    _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+                }
             }
 
             context.Response.StatusCode = (int)upstreamResponse.StatusCode;
             CopyResponseHeaders(upstreamResponse, context.Response);
-            await DispatchResponseBodyAsync(context, upstreamResponse, finalUrl);
+            await DispatchResponseBodyAsync(context, routeKey, upstreamResponse, finalUrl);
         }
     }
 
@@ -1182,6 +1272,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task<(HttpResponseMessage? Response, int ErrorCode, string? FinalUrl)> SendUpstreamAsync(
         HttpContext context,
+        string routeKey,
         HttpMethod originalMethod,
         string startUrl,
         Func<HttpMethod, string, HttpRequestMessage> buildRequest,
@@ -1201,7 +1292,7 @@ public sealed partial class WebPreviewProxyMiddleware
             try
             {
                 upstreamResponse?.Dispose();
-                upstreamResponse = await _service.HttpClient.SendAsync(
+                upstreamResponse = await _service.GetHttpClient(routeKey).SendAsync(
                     requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             }
             catch (HttpRequestException ex)
@@ -1284,7 +1375,10 @@ public sealed partial class WebPreviewProxyMiddleware
             entry.ResponseCookies = setCookies;
         }
 
-        _service.AddLogEntry(entry);
+        if (TryResolvePreviewFromRequest(context.Request, out var routeKey, out _))
+        {
+            _service.AddLogEntry(routeKey, entry);
+        }
     }
 
     private void LogWebSocket(
@@ -1311,10 +1405,13 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         entry.RequestCookies = context.Request.Headers.Cookie.ToString();
-        _service.AddLogEntry(entry);
+        if (TryResolvePreviewFromRequest(context.Request, out var routeKey, out _))
+        {
+            _service.AddLogEntry(routeKey, entry);
+        }
     }
 
-    private async Task DispatchResponseBodyAsync(HttpContext context, HttpResponseMessage upstreamResponse, string? finalUrl)
+    private async Task DispatchResponseBodyAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
         if (IsFontResponse(contentType, context.Request.Path.Value))
@@ -1324,11 +1421,18 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (contentType is "text/html")
         {
-            await ProxyHtmlResponseAsync(context, upstreamResponse, finalUrl);
+            var targetUri = _service.GetTargetUriByRouteKey(routeKey);
+            if (targetUri is null)
+            {
+                context.Response.StatusCode = 502;
+                return;
+            }
+
+            await ProxyHtmlResponseAsync(context, routeKey, targetUri, upstreamResponse, finalUrl);
         }
         else if (contentType is "text/css")
         {
-            await ProxyCssResponseAsync(context, upstreamResponse);
+            await ProxyCssResponseAsync(context, routeKey, upstreamResponse);
         }
         else
         {
@@ -1337,7 +1441,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
-    private async Task ProxyExternalWebSocketAsync(HttpContext context)
+    private async Task ProxyExternalWebSocketAsync(HttpContext context, string routeKey)
     {
         var externalUrl = context.Request.Query["u"].FirstOrDefault();
         if (string.IsNullOrEmpty(externalUrl) || !Uri.TryCreate(externalUrl, UriKind.Absolute, out var extUri))
@@ -1364,15 +1468,15 @@ public sealed partial class WebPreviewProxyMiddleware
         var upstreamUri = new UriBuilder(extUri) { Scheme = wsScheme }.Uri;
         var upstreamOriginScheme = wsScheme == "wss" ? "https" : "http";
         var upstreamOrigin = $"{upstreamOriginScheme}://{upstreamUri.Authority}";
-        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin);
+        await ProxyWebSocketToUpstreamAsync(context, routeKey, upstreamUri, upstreamOrigin);
     }
 
-    private async Task HandleCookieBridgeAsync(HttpContext context)
+    private async Task HandleCookieBridgeAsync(HttpContext context, string routeKey)
     {
         var cookieRequestUri = ResolveCookieBridgeRequestUri(context.Request);
         if (context.Request.Method == HttpMethods.Get)
         {
-            var response = _service.GetBrowserCookies(cookieRequestUri);
+            var response = _service.GetBrowserCookies(routeKey, cookieRequestUri);
             context.Response.ContentType = "application/json";
             await JsonSerializer.SerializeAsync(
                 context.Response.Body,
@@ -1398,13 +1502,13 @@ public sealed partial class WebPreviewProxyMiddleware
                 return;
             }
 
-            if (request is null || !_service.SetCookieFromRaw(request.Raw, cookieRequestUri, allowHttpOnly: false))
+            if (request is null || !_service.SetCookieFromRaw(routeKey, request.Raw, cookieRequestUri, allowHttpOnly: false))
             {
                 context.Response.StatusCode = 400;
                 return;
             }
 
-            var response = _service.GetBrowserCookies(cookieRequestUri);
+            var response = _service.GetBrowserCookies(routeKey, cookieRequestUri);
             context.Response.ContentType = "application/json";
             await JsonSerializer.SerializeAsync(
                 context.Response.Body,
@@ -1419,7 +1523,9 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private Uri? ResolveCookieBridgeRequestUri(HttpRequest request)
     {
-        var targetUri = _service.TargetUri;
+        if (!TryResolvePreviewFromRequest(request, out _, out var targetUri))
+            return null;
+
         if (targetUri is null)
             return null;
 
@@ -1436,10 +1542,11 @@ public sealed partial class WebPreviewProxyMiddleware
         if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
             return targetUri;
 
-        if (!refererUri.AbsolutePath.StartsWith(ProxyPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!TryParseProxyRoute(refererUri.AbsolutePath, out _, out _))
             return targetUri;
 
-        if (refererUri.AbsolutePath.Equals(ProxyPrefix + "/_ext", StringComparison.OrdinalIgnoreCase))
+        if (TryParseProxyRoute(refererUri.AbsolutePath, out _, out var refererRemainingPath)
+            && string.Equals(refererRemainingPath, "/_ext", StringComparison.OrdinalIgnoreCase))
         {
             var externalUrl = QueryHelpers.ParseQuery(refererUri.Query)["u"].FirstOrDefault();
             if (!string.IsNullOrWhiteSpace(externalUrl)
@@ -1451,12 +1558,9 @@ public sealed partial class WebPreviewProxyMiddleware
             return targetUri;
         }
 
-        var proxyPath = refererUri.PathAndQuery;
-        var upstreamPath = proxyPath.StartsWith(ProxyPrefix + "/", StringComparison.OrdinalIgnoreCase)
-            ? proxyPath[ProxyPrefix.Length..]
-            : "/";
+        TryParseProxyRoute(refererUri.AbsolutePath, out _, out var upstreamPath);
 
-        var upstreamUrl = BuildUpstreamUrlFromPath(targetUri, upstreamPath, null);
+        var upstreamUrl = BuildUpstreamUrlFromPath(targetUri, upstreamPath, refererUri.Query);
         return Uri.TryCreate(upstreamUrl, UriKind.Absolute, out var upstreamUri)
             ? upstreamUri
             : targetUri;
@@ -1531,15 +1635,15 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
-    private async Task ProxyWebSocketAsync(HttpContext context, Uri targetUri, string path)
+    private async Task ProxyWebSocketAsync(HttpContext context, string routeKey, Uri targetUri, string path)
     {
-        SyncSelfTargetAuthCookie(context.Request, targetUri);
+        SyncSelfTargetAuthCookie(routeKey, context.Request, targetUri);
         var targetBase = targetUri.AbsolutePath.TrimEnd('/');
         var hasSubpath = !string.IsNullOrEmpty(targetBase) && targetBase != "/";
 
         // Use learned root fallback for WebSocket paths too
         string wsPath;
-        if (hasSubpath && ShouldTryRootFirst(path, targetBase))
+        if (hasSubpath && ShouldTryRootFirst(routeKey, path, targetBase))
         {
             wsPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
             if (!wsPath.StartsWith('/'))
@@ -1553,15 +1657,15 @@ public sealed partial class WebPreviewProxyMiddleware
         var upstreamUrl = BuildUpstreamWsUrlFromPath(targetUri, wsPath, context.Request.QueryString.Value);
         var upstreamUri = new Uri(upstreamUrl);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
-        await ProxyWebSocketToUpstreamAsync(context, upstreamUri, upstreamOrigin, targetUri);
+        await ProxyWebSocketToUpstreamAsync(context, routeKey, upstreamUri, upstreamOrigin, targetUri);
     }
 
     private async Task ProxyWebSocketToUpstreamAsync(
-        HttpContext context, Uri upstreamUri, string upstreamOrigin, Uri? targetUri = null)
+        HttpContext context, string routeKey, Uri upstreamUri, string upstreamOrigin, Uri? targetUri = null)
     {
         using var upstream = new ClientWebSocket();
         // Configure SSL + forward server-side cookie jar (for SignalR session correlation)
-        _service.ConfigureWebSocket(upstream, upstreamUri);
+        _service.ConfigureWebSocket(routeKey, upstream, upstreamUri);
 
         // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)
@@ -1712,7 +1816,7 @@ public sealed partial class WebPreviewProxyMiddleware
         return sb.ToString();
     }
 
-    private void SyncSelfTargetAuthCookie(HttpRequest request, Uri targetUri)
+    private void SyncSelfTargetAuthCookie(string routeKey, HttpRequest request, Uri targetUri)
     {
         if (!_service.IsSelfTarget(targetUri))
         {
@@ -1721,7 +1825,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (request.Cookies.TryGetValue(AuthService.SessionCookieName, out var token))
         {
-            _service.SyncSessionCookieForSelfTarget(token, targetUri);
+            _service.SyncSessionCookieForSelfTarget(routeKey, token, targetUri);
         }
     }
 
@@ -1815,37 +1919,49 @@ public sealed partial class WebPreviewProxyMiddleware
             || normalized.Equals(targetBase, StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool ShouldTryRootFirst(string path, string targetBase)
+    private bool ShouldTryRootFirst(string routeKey, string path, string targetBase)
     {
-        ResetFallbackCacheIfTargetChanged();
+        ResetFallbackCacheIfTargetChanged(routeKey, _service.GetTargetUriByRouteKey(routeKey)?.ToString());
         var prefix = GetPathPrefix(path);
-        return prefix is not null && _rootFallbackPrefixes.TryGetValue(prefix, out var preferRoot) && preferRoot;
+        var routeCache = GetOrCreateRootFallbackCache(routeKey);
+        return prefix is not null && routeCache.TryGetValue(prefix, out var preferRoot) && preferRoot;
     }
 
-    private void LearnRootFallback(string path, string targetUrl)
+    private void LearnRootFallback(string routeKey, string path, string targetUrl)
     {
-        ResetFallbackCacheIfTargetChanged();
-        _rootFallbackTarget = targetUrl;
-        var prefix = GetPathPrefix(path);
-        if (prefix is not null)
-            _rootFallbackPrefixes[prefix] = true;
-    }
-
-    private void UnlearnRootFallback(string path)
-    {
+        ResetFallbackCacheIfTargetChanged(routeKey, targetUrl);
         var prefix = GetPathPrefix(path);
         if (prefix is not null)
-            _rootFallbackPrefixes.Remove(prefix);
+            GetOrCreateRootFallbackCache(routeKey)[prefix] = true;
     }
 
-    private void ResetFallbackCacheIfTargetChanged()
+    private void UnlearnRootFallback(string routeKey, string path)
     {
-        var currentTarget = _service.TargetUri?.ToString();
-        if (_rootFallbackTarget != currentTarget)
+        var prefix = GetPathPrefix(path);
+        if (prefix is not null && _rootFallbackPrefixesByRoute.TryGetValue(routeKey, out var routeCache))
+            routeCache.Remove(prefix);
+    }
+
+    private void ResetFallbackCacheIfTargetChanged(string routeKey, string? currentTarget)
+    {
+        _rootFallbackTargetsByRoute.TryGetValue(routeKey, out var previousTarget);
+        if (previousTarget != currentTarget)
         {
-            _rootFallbackPrefixes.Clear();
-            _rootFallbackTarget = currentTarget;
+            GetOrCreateRootFallbackCache(routeKey).Clear();
+            _rootFallbackTargetsByRoute[routeKey] = currentTarget;
         }
+    }
+
+    private Dictionary<string, bool> GetOrCreateRootFallbackCache(string routeKey)
+    {
+        if (_rootFallbackPrefixesByRoute.TryGetValue(routeKey, out var existing))
+        {
+            return existing;
+        }
+
+        var created = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        _rootFallbackPrefixesByRoute[routeKey] = created;
+        return created;
     }
 
     private static string? GetPathPrefix(string path)
@@ -1915,7 +2031,7 @@ public sealed partial class WebPreviewProxyMiddleware
     /// URLs pointing to the target authority are rewritten to /webpreview/ (same-origin proxy).
     /// URLs pointing to other hosts go through /webpreview/_ext?u=...
     /// </summary>
-    private static string RewriteExternalUrl(Match match, string? targetAuthority)
+    private static string RewriteExternalUrl(Match match, string routePrefix, string? targetAuthority)
     {
         var prefix = match.Groups[1].Value;  // e.g. src="
         var url = match.Groups[2].Value;     // e.g. https://cdn.example.com/script.js
@@ -1925,14 +2041,13 @@ public sealed partial class WebPreviewProxyMiddleware
         if (targetAuthority is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
             && uri.Authority.Equals(targetAuthority, StringComparison.OrdinalIgnoreCase))
         {
-            return prefix + "/webpreview" + uri.PathAndQuery;
+            return prefix + routePrefix + uri.PathAndQuery;
         }
 
-        // External URLs → /webpreview/_ext?u=encodedUrl
-        return prefix + "/webpreview/_ext?u=" + Uri.EscapeDataString(url);
+        return prefix + routePrefix + "/_ext?u=" + Uri.EscapeDataString(url);
     }
 
-    private static string RewriteExternalCssUrl(Match match, string? targetAuthority)
+    private static string RewriteExternalCssUrl(Match match, string routePrefix, string? targetAuthority)
     {
         var prefix = match.Groups[1].Value;  // e.g. url(
         var url = match.Groups[2].Value;     // e.g. https://fonts.googleapis.com/css
@@ -1940,10 +2055,10 @@ public sealed partial class WebPreviewProxyMiddleware
         if (targetAuthority is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri)
             && uri.Authority.Equals(targetAuthority, StringComparison.OrdinalIgnoreCase))
         {
-            return prefix + "/webpreview" + uri.PathAndQuery;
+            return prefix + routePrefix + uri.PathAndQuery;
         }
 
-        return prefix + "/webpreview/_ext?u=" + Uri.EscapeDataString(url);
+        return prefix + routePrefix + "/_ext?u=" + Uri.EscapeDataString(url);
     }
 
     private static bool IsFontResponse(string? contentType, string? path)

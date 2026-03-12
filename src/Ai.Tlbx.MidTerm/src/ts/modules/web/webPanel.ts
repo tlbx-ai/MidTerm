@@ -1,7 +1,7 @@
 /**
  * Web Preview Panel
  *
- * Manages the URL input bar and iframe content within the dock panel.
+ * Manages the URL bar, named preview tabs, and iframe content in the dock panel.
  */
 
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
@@ -20,8 +20,11 @@ import { createLogger } from '../logging';
 import { isDevMode } from '../sidebar/voiceSection';
 import {
   getActiveDockedClient,
+  getActivePreview,
+  getActivePreviewName,
   getActiveUrl,
   getSessionDockedClient,
+  listSessionPreviews,
   setActiveMode,
   setActiveUrl,
   setSessionDockedClient,
@@ -35,6 +38,7 @@ interface PreviewBridgeMessage {
   previewId?: string;
   previewToken?: string;
   sessionId?: string;
+  previewName?: string;
 }
 
 interface PreviewNavigationMessage extends PreviewBridgeMessage {
@@ -59,7 +63,6 @@ interface PreviewCookieResponseMessage extends PreviewBridgeMessage {
   error?: string;
 }
 
-const COOKIE_BRIDGE_PATH = '/webpreview/_cookies';
 const SANDBOX_BASE_FLAGS = [
   'allow-scripts',
   'allow-forms',
@@ -71,28 +74,73 @@ const SANDBOX_BASE_FLAGS = [
 const log = createLogger('webPanel');
 let urlInput: HTMLInputElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
+let previewTabs: HTMLElement | null = null;
 let loadedUrl: string | null = null;
+let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 
-/** Get the URL currently loaded in the iframe (null if unloaded). */
+/** Get the URL currently loaded in the iframe. */
 export function getLoadedUrl(): string | null {
   return loadedUrl;
 }
 
-/** Initialize the web preview panel: wire up URL input, buttons, and keyboard shortcuts. */
+/** Register a callback for preview tab selection. */
+export function setPreviewTabSelectHandler(handler: (previewName: string) => void): void {
+  previewTabSelectHandler = handler;
+}
+
+/** Render the active session's named preview tabs. */
+export function renderPreviewTabs(): void {
+  if (!previewTabs) {
+    return;
+  }
+
+  const sessionId = $activeSessionId.get();
+  const selectedPreviewName = getActivePreviewName();
+  previewTabs.replaceChildren();
+
+  if (!sessionId) {
+    return;
+  }
+
+  for (const preview of listSessionPreviews(sessionId)) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'web-preview-tab';
+    if (preview.previewName === selectedPreviewName) {
+      button.classList.add('active');
+    }
+    if (preview.mode === 'detached') {
+      button.classList.add('detached');
+    }
+    if (!preview.url) {
+      button.classList.add('empty');
+    }
+    button.textContent = preview.previewName;
+    button.dataset.previewName = preview.previewName;
+    button.addEventListener('click', () => {
+      previewTabSelectHandler?.(preview.previewName);
+    });
+    previewTabs.appendChild(button);
+  }
+}
+
+/** Initialize the web preview panel. */
 export function initWebPanel(): void {
-  urlInput = document.getElementById('web-preview-url-input') as HTMLInputElement;
-  iframe = document.getElementById('web-preview-iframe') as HTMLIFrameElement;
+  urlInput = document.getElementById('web-preview-url-input') as HTMLInputElement | null;
+  iframe = document.getElementById('web-preview-iframe') as HTMLIFrameElement | null;
+  previewTabs = document.getElementById('web-preview-tabs');
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
   const screenshotBtn = document.getElementById('web-preview-screenshot');
 
   applyIframeSandbox();
+  renderPreviewTabs();
 
   goBtn?.addEventListener('click', () => {
     void handleGo();
   });
-  urlInput.addEventListener('keydown', (e: KeyboardEvent) => {
+  urlInput?.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       void handleGo();
@@ -109,13 +157,20 @@ export function initWebPanel(): void {
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
 
   window.addEventListener('message', (e: MessageEvent<unknown>) => {
-    if (!iframe || e.source !== iframe.contentWindow) return;
+    if (!iframe || e.source !== iframe.contentWindow) {
+      return;
+    }
+
     const data = e.data as { type?: string } | null;
-    if (!data || typeof data.type !== 'string') return;
+    if (!data || typeof data.type !== 'string') {
+      return;
+    }
 
     if (data.type === 'mt-navigation') {
       const nav = e.data as PreviewNavigationMessage;
-      if (!isActivePreviewMessage(nav)) return;
+      if (!isActivePreviewMessage(nav)) {
+        return;
+      }
       updateUrlBarFromIframe(
         nav.url,
         nav.upstreamUrl,
@@ -126,26 +181,38 @@ export function initWebPanel(): void {
 
     if (data.type === 'mt-cookie-request') {
       const request = e.data as PreviewCookieRequestMessage;
-      if (!isActivePreviewMessage(request)) return;
+      if (!isActivePreviewMessage(request)) {
+        return;
+      }
       void handleCookieBridgeRequest(e, request);
     }
   });
 }
 
-/** Restore the last-used URL for the active session into the URL input bar. */
+/** Restore the active preview URL into the URL bar. */
 export function restoreLastUrl(): void {
   const saved = getActiveUrl();
-  if (saved && urlInput) urlInput.value = saved;
-  if (!saved && urlInput) urlInput.value = '';
+  if (!urlInput) {
+    return;
+  }
+  urlInput.value = saved ?? '';
 }
 
 function normalizeUrl(raw: string): string {
   if (!raw.includes('://')) {
     const isLocal =
       raw.startsWith('localhost') || raw.startsWith('127.0.0.1') || raw.startsWith('[::1]');
-    return (isLocal ? 'http://' : 'https://') + raw;
+    return `${isLocal ? 'http://' : 'https://'}${raw}`;
   }
   return raw;
+}
+
+function getProxyPrefix(routeKey: string): string {
+  return `/webpreview/${encodeURIComponent(routeKey)}`;
+}
+
+function getCookieBridgePath(routeKey: string): string {
+  return `${getProxyPrefix(routeKey)}/_cookies`;
 }
 
 function shouldAllowSameOriginSandbox(frameOrigin?: string): boolean {
@@ -169,7 +236,9 @@ function getSandboxFlags(frameOrigin?: string): string {
 }
 
 function applyIframeSandbox(frameOrigin?: string): void {
-  if (!iframe) return;
+  if (!iframe) {
+    return;
+  }
   if (isDevMode()) {
     iframe.setAttribute('sandbox', getSandboxFlags(frameOrigin));
     return;
@@ -178,44 +247,65 @@ function applyIframeSandbox(frameOrigin?: string): void {
 }
 
 async function handleGo(): Promise<void> {
-  if (!urlInput) return;
+  if (!urlInput) {
+    return;
+  }
+
+  const sessionId = $activeSessionId.get();
+  const previewName = getActivePreviewName();
+  if (!sessionId) {
+    return;
+  }
+
   const url = normalizeUrl(urlInput.value.trim());
-  if (!url) return;
+  if (!url) {
+    return;
+  }
 
   urlInput.value = url;
 
-  log.info(() => `Setting web preview target: ${url}`);
-  const result = await setWebPreviewTarget(url);
-  if (result?.active) {
-    setActiveMode('docked');
-    setCurrentPreviewUrl(url);
-    await loadPreview();
-  } else {
+  log.info(() => `Setting web preview target: ${sessionId}/${previewName} -> ${url}`);
+  const result = await setWebPreviewTarget(sessionId, previewName, url);
+  if (!result?.active) {
     log.warn(() => 'Failed to set web preview target');
+    return;
   }
+
+  setActiveMode('docked');
+  setCurrentPreviewUrl(url);
+  await loadPreview();
 }
 
-function buildProxyUrl(targetUrl: string, frameOrigin = window.location.origin): string {
+function buildProxyUrl(
+  targetUrl: string,
+  routeKey: string,
+  frameOrigin = window.location.origin,
+): string {
   const parsed = new URL(targetUrl);
   const path = parsed.pathname || '/';
-  const proxyUrl = new URL(path === '/' ? '/webpreview/' : `/webpreview${path}`, frameOrigin);
+  const prefix = getProxyPrefix(routeKey);
+  const proxyUrl = new URL(path === '/' ? `${prefix}/` : `${prefix}${path}`, frameOrigin);
   proxyUrl.search = parsed.search;
   proxyUrl.hash = parsed.hash;
   return proxyUrl.toString();
 }
 
-function decodeIframeNavigationUrl(iframeUrl: string, targetOrigin?: string): string | null {
-  const parsed = new URL(iframeUrl);
+function decodeIframeNavigationUrl(
+  iframeUrl: string,
+  routeKey: string,
+  targetOrigin?: string,
+): string | null {
+  const parsed = new URL(iframeUrl, window.location.origin);
+  const prefix = getProxyPrefix(routeKey);
 
-  if (parsed.pathname === '/webpreview/_ext') {
-    const externalUrl = parsed.searchParams.get('u');
-    return externalUrl ? externalUrl : null;
+  if (parsed.pathname === `${prefix}/_ext`) {
+    return parsed.searchParams.get('u');
   }
 
   let path = parsed.pathname;
-  if (path.startsWith('/webpreview/')) {
-    path = path.slice('/webpreview'.length);
-  } else if (path === '/webpreview') {
+  if (path.startsWith(`${prefix}/`)) {
+    path = path.slice(prefix.length);
+  } else if (path === prefix) {
     path = '/';
   } else {
     return parsed.toString();
@@ -225,37 +315,43 @@ function decodeIframeNavigationUrl(iframeUrl: string, targetOrigin?: string): st
     targetOrigin ||
     (() => {
       const target = getActiveUrl() ?? $webPreviewUrl.get();
-      if (!target) return null;
+      if (!target) {
+        return null;
+      }
       return new URL(target).origin;
     })();
 
-  if (!baseOrigin) return null;
+  if (!baseOrigin) {
+    return null;
+  }
+
   return `${baseOrigin}${path}${parsed.search}${parsed.hash}`;
 }
 
-function setCurrentPreviewUrl(url: string, updateInput = true): void {
+function setCurrentPreviewUrl(url: string | null, updateInput = true): void {
   loadedUrl = url;
   setActiveUrl(url);
   $webPreviewUrl.set(url);
   if (updateInput && urlInput) {
-    urlInput.value = url;
+    urlInput.value = url ?? '';
   }
 }
 
 async function ensureDockedPreviewClient(
   sessionId: string,
+  previewName: string,
 ): Promise<BrowserPreviewClientResponse | null> {
-  const existing = getSessionDockedClient(sessionId);
-  if (existing?.previewId && existing.previewToken) {
+  const existing = getSessionDockedClient(sessionId, previewName);
+  if (existing?.previewId && existing.previewToken && existing.routeKey) {
     return existing;
   }
 
-  const created = await createBrowserPreviewClient(sessionId);
+  const created = await createBrowserPreviewClient(sessionId, previewName);
   if (!created) {
     return null;
   }
 
-  setSessionDockedClient(sessionId, created);
+  setSessionDockedClient(sessionId, previewName, created);
   return created;
 }
 
@@ -272,7 +368,9 @@ function postCookieBridgeResponse(
   target: WindowProxy | null,
   message: PreviewCookieResponseMessage,
 ): void {
-  if (!target) return;
+  if (!target) {
+    return;
+  }
   target.postMessage(message, '*');
 }
 
@@ -281,12 +379,8 @@ async function handleCookieBridgeRequest(
   request: PreviewCookieRequestMessage,
 ): Promise<void> {
   const target = event.source as WindowProxy | null;
-  const upstreamUrl =
-    typeof request.upstreamUrl === 'string' ? request.upstreamUrl : getActiveUrl();
-  const url = new URL(COOKIE_BRIDGE_PATH, window.location.origin);
-  if (upstreamUrl) {
-    url.searchParams.set('u', upstreamUrl);
-  }
+  const activePreview = getActivePreview();
+  const routeKey = activePreview?.routeKey ?? getActiveDockedClient()?.routeKey ?? null;
 
   const responseMessage: PreviewCookieResponseMessage = {
     type: 'mt-cookie-response',
@@ -300,6 +394,22 @@ async function handleCookieBridgeRequest(
   }
   if (typeof request.sessionId === 'string') {
     responseMessage.sessionId = request.sessionId;
+  }
+  if (typeof request.previewName === 'string') {
+    responseMessage.previewName = request.previewName;
+  }
+
+  if (!routeKey) {
+    responseMessage.error = 'No active preview route';
+    postCookieBridgeResponse(target, responseMessage);
+    return;
+  }
+
+  const upstreamUrl =
+    typeof request.upstreamUrl === 'string' ? request.upstreamUrl : getActiveUrl();
+  const url = new URL(getCookieBridgePath(routeKey), window.location.origin);
+  if (upstreamUrl) {
+    url.searchParams.set('u', upstreamUrl);
   }
 
   try {
@@ -327,12 +437,17 @@ async function handleCookieBridgeRequest(
   postCookieBridgeResponse(target, responseMessage);
 }
 
-/** Load the current web preview URL into the iframe. */
+/** Load the current active named preview into the iframe. */
 export async function loadPreview(): Promise<void> {
-  if (!iframe) return;
+  if (!iframe) {
+    return;
+  }
+
   applyIframeSandbox();
   const sessionId = $activeSessionId.get();
-  const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
+  const previewName = getActivePreviewName();
+  const currentPreview = getActivePreview();
+  const currentUrl = currentPreview?.url ?? $webPreviewUrl.get();
   loadedUrl = currentUrl;
 
   if (!currentUrl || !sessionId) {
@@ -341,22 +456,26 @@ export async function loadPreview(): Promise<void> {
     return;
   }
 
-  const previewClient = await ensureDockedPreviewClient(sessionId);
-  if ($activeSessionId.get() !== sessionId) {
+  const previewClient = await ensureDockedPreviewClient(sessionId, previewName);
+  if ($activeSessionId.get() !== sessionId || getActivePreviewName() !== previewName) {
     return;
   }
 
   if (!previewClient) {
     iframe.name = '';
     iframe.src = 'about:blank';
-    log.warn(() => `Failed to create browser preview client for session ${sessionId}`);
+    log.warn(() => `Failed to create browser preview client for ${sessionId}/${previewName}`);
     return;
   }
 
   try {
     applyIframeSandbox(previewClient.origin);
     iframe.name = JSON.stringify(previewClient);
-    iframe.src = buildProxyUrl(currentUrl, previewClient.origin ?? window.location.origin);
+    iframe.src = buildProxyUrl(
+      currentUrl,
+      previewClient.routeKey,
+      previewClient.origin ?? window.location.origin,
+    );
   } catch {
     iframe.name = '';
     iframe.src = 'about:blank';
@@ -364,13 +483,19 @@ export async function loadPreview(): Promise<void> {
 }
 
 async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  const previewName = getActivePreviewName();
+  if (!sessionId) {
+    return;
+  }
+
   if (mode === 'hard') {
     await clearWebPreviewBrowserStateAsync();
   }
 
   const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
   if (currentUrl) {
-    const result = await setWebPreviewTarget(currentUrl);
+    const result = await setWebPreviewTarget(sessionId, previewName, currentUrl);
     if (!result?.active) {
       log.warn(() => 'Failed to refresh web preview target');
       return;
@@ -378,13 +503,12 @@ async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
     setCurrentPreviewUrl(currentUrl, false);
   }
 
-  await reloadWebPreview(mode);
+  await reloadWebPreview(sessionId, previewName, mode);
   await loadPreview();
 }
 
 /**
- * Update the URL bar to reflect in-iframe navigation (redirects, pushState, etc.).
- * Uses the upstream URL supplied by the injected proxy runtime when available.
+ * Update the URL bar to reflect in-iframe navigation.
  */
 function updateUrlBarFromIframe(
   iframeUrl: string,
@@ -392,24 +516,36 @@ function updateUrlBarFromIframe(
   targetOrigin?: string,
 ): void {
   try {
-    const displayUrl = upstreamUrl || decodeIframeNavigationUrl(iframeUrl, targetOrigin);
-    if (!displayUrl) return;
+    const routeKey = getActivePreview()?.routeKey ?? getActiveDockedClient()?.routeKey;
+    if (!routeKey) {
+      return;
+    }
+    const displayUrl = upstreamUrl || decodeIframeNavigationUrl(iframeUrl, routeKey, targetOrigin);
+    if (!displayUrl) {
+      return;
+    }
     setCurrentPreviewUrl(displayUrl);
   } catch {
     // ignore malformed URLs
   }
 }
 
-/** Show the web preview iframe and hide the detached placeholder message. */
+/** Show the web preview iframe and hide the detached placeholder. */
 export function showIframe(): void {
-  if (iframe) iframe.classList.remove('hidden');
+  if (iframe) {
+    iframe.classList.remove('hidden');
+  }
   const placeholder = document.getElementById('web-preview-detached-msg');
-  if (placeholder) placeholder.classList.add('hidden');
+  if (placeholder) {
+    placeholder.classList.add('hidden');
+  }
 }
 
 /** Hide the web preview iframe. */
 export function hideIframe(): void {
-  if (iframe) iframe.classList.add('hidden');
+  if (iframe) {
+    iframe.classList.add('hidden');
+  }
 }
 
 /** Unload the iframe by navigating to about:blank and hiding it. */
@@ -422,28 +558,33 @@ export function unloadIframe(): void {
   loadedUrl = null;
 }
 
-/** Show the "detached" placeholder message and hide the iframe. */
+/** Show the detached placeholder message and hide the iframe. */
 export function showDetachedPlaceholder(): void {
   hideIframe();
   const placeholder = document.getElementById('web-preview-detached-msg');
-  if (placeholder) placeholder.classList.remove('hidden');
+  if (placeholder) {
+    placeholder.classList.remove('hidden');
+  }
 }
 
-/** Hide the "detached" placeholder message and show the iframe. */
+/** Hide the detached placeholder message and show the iframe. */
 export function hideDetachedPlaceholder(): void {
   const placeholder = document.getElementById('web-preview-detached-msg');
-  if (placeholder) placeholder.classList.add('hidden');
+  if (placeholder) {
+    placeholder.classList.add('hidden');
+  }
   showIframe();
 }
 
 /**
  * Inject a chat message into the active terminal telling the agent to read
- * the browser control guidance file. Points to CLAUDE.md for Claude Code,
- * AGENTS.md for all other processes.
+ * the browser control guidance file.
  */
 function handleAgentHint(): void {
   const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
+  if (!sessionId) {
+    return;
+  }
 
   const fg = getForegroundInfo(sessionId);
   const name = (fg.name ?? '').toLowerCase();
@@ -455,7 +596,9 @@ function handleAgentHint(): void {
 
 function decodeScreenshotDataUrl(dataUrl: string): Blob | null {
   const commaIndex = dataUrl.indexOf(',');
-  if (commaIndex < 0) return null;
+  if (commaIndex < 0) {
+    return null;
+  }
 
   const meta = dataUrl.slice(0, commaIndex);
   const mime = /^data:([^;]+)/.exec(meta)?.[1] ?? 'image/png';
@@ -472,19 +615,20 @@ function decodeScreenshotDataUrl(dataUrl: string): Blob | null {
 }
 
 /**
- * Capture a screenshot of the web preview iframe via the injected browser bridge.
- * Ctrl+click downloads the PNG directly to the browser; plain click uploads and pastes the
- * file path into the active terminal session.
+ * Capture a screenshot of the active named web preview.
  */
 async function handleScreenshot(download = false): Promise<void> {
   const sessionId = $activeSessionId.get();
-  if (!sessionId || !iframe || iframe.src === 'about:blank') return;
-  const previewId = getActiveDockedClient()?.previewId;
+  const previewName = getActivePreviewName();
+  if (!sessionId || !iframe || iframe.src === 'about:blank') {
+    return;
+  }
 
+  const previewId = getActiveDockedClient()?.previewId;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screenshot_${ts}.png`;
 
-  const dataUrl = await captureBrowserScreenshotRaw(sessionId, previewId);
+  const dataUrl = await captureBrowserScreenshotRaw(sessionId, previewId, previewName);
   if (!dataUrl) {
     log.warn(() => 'Browser screenshot capture failed');
     return;
@@ -498,10 +642,10 @@ async function handleScreenshot(download = false): Promise<void> {
 
   if (download) {
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
     URL.revokeObjectURL(url);
     log.info(() => 'Screenshot downloaded');
     return;
@@ -531,7 +675,13 @@ async function handleScreenshot(download = false): Promise<void> {
 }
 
 async function handleClearCookies(): Promise<void> {
-  const ok = await clearWebPreviewCookies();
+  const sessionId = $activeSessionId.get();
+  const previewName = getActivePreviewName();
+  if (!sessionId) {
+    return;
+  }
+
+  const ok = await clearWebPreviewCookies(sessionId, previewName);
   if (ok) {
     log.info(() => 'Cookies cleared');
     await loadPreview();

@@ -9,5 +9,6 @@ public sealed class BrowserCommandRequest
     public bool TextOnly { get; init; }
     public int? Timeout { get; init; }
     public string? SessionId { get; init; }
+    public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }
 }

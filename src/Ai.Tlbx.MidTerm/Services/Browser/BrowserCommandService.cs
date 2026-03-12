@@ -22,6 +22,7 @@ public sealed class BrowserCommandService
     public bool TryRegisterClient(
         string connectionId,
         string? sessionId,
+        string? previewName,
         string? previewId,
         Action<BrowserWsMessage> listener,
         string? browserId = null)
@@ -38,6 +39,7 @@ public sealed class BrowserCommandService
             {
                 ConnectionId = connectionId,
                 SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId,
+                PreviewName = string.IsNullOrWhiteSpace(previewName) ? null : previewName,
                 PreviewId = string.IsNullOrWhiteSpace(previewId) ? null : previewId,
                 BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
                 Listener = listener,
@@ -91,6 +93,7 @@ public sealed class BrowserCommandService
             TextOnly = request.TextOnly,
             Timeout = request.Timeout,
             SessionId = client.SessionId,
+            PreviewName = client.PreviewName,
             PreviewId = client.PreviewId
         };
 
@@ -198,6 +201,7 @@ public sealed class BrowserCommandService
         if (TryResolveDefaultClient(clients, out var client))
         {
             lines.Add($"default preview: {client.PreviewId ?? "(anonymous)"}");
+            lines.Add($"default preview name: {client.PreviewName ?? "(default)"}");
             lines.Add($"default session: {client.SessionId ?? "(none)"}");
             lines.Add($"default browser: {client.BrowserId ?? "(none)"}");
         }
@@ -259,16 +263,22 @@ public sealed class BrowserCommandService
                 return false;
             }
         }
-        else if (!string.IsNullOrWhiteSpace(request.SessionId))
+        else if (!string.IsNullOrWhiteSpace(request.SessionId) || !string.IsNullOrWhiteSpace(request.PreviewName))
         {
             matches = clients
-                .Where(c => string.Equals(c.SessionId, request.SessionId, StringComparison.Ordinal))
+                .Where(c =>
+                    (string.IsNullOrWhiteSpace(request.SessionId)
+                        || string.Equals(c.SessionId, request.SessionId, StringComparison.Ordinal))
+                    && (string.IsNullOrWhiteSpace(request.PreviewName)
+                        || string.Equals(c.PreviewName, request.PreviewName, StringComparison.OrdinalIgnoreCase)))
                 .OrderByDescending(c => c.ConnectedAtUtc)
                 .ToArray();
 
             if (matches.Length == 0)
             {
-                error = $"No browser preview connected for session '{request.SessionId}'.";
+                error = !string.IsNullOrWhiteSpace(request.PreviewName)
+                    ? $"No browser preview connected for preview '{request.PreviewName}' in session '{request.SessionId ?? "(any)"}'."
+                    : $"No browser preview connected for session '{request.SessionId}'.";
                 return false;
             }
         }
@@ -291,7 +301,9 @@ public sealed class BrowserCommandService
 
             error = string.IsNullOrWhiteSpace(request.SessionId)
                 ? "Multiple browser previews are connected. Re-run the command with --session <id>."
-                : $"Multiple browser previews are connected for session '{request.SessionId}'.";
+                : !string.IsNullOrWhiteSpace(request.PreviewName)
+                    ? $"Multiple browser previews are connected for preview '{request.PreviewName}' in session '{request.SessionId}'."
+                    : $"Multiple browser previews are connected for session '{request.SessionId}'.";
             return false;
         }
 
@@ -356,6 +368,7 @@ public sealed class BrowserCommandService
     {
         public string ConnectionId { get; init; } = "";
         public string? SessionId { get; init; }
+        public string? PreviewName { get; init; }
         public string? PreviewId { get; init; }
         public string? BrowserId { get; init; }
         public required Action<BrowserWsMessage> Listener { get; init; }

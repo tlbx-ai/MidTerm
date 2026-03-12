@@ -10,13 +10,19 @@ public sealed class BrowserPreviewRegistry
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromHours(8);
     private readonly ConcurrentDictionary<string, RegisteredPreview> _previews = new();
 
-    public BrowserPreviewClientResponse Create(string? sessionId, string? browserId = null)
+    public BrowserPreviewClientResponse Create(
+        string? sessionId,
+        string? previewName,
+        string? routeKey,
+        string? browserId = null)
     {
         CleanupExpired();
 
         var preview = new RegisteredPreview
         {
             SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId,
+            PreviewName = string.IsNullOrWhiteSpace(previewName) ? WebPreview.WebPreviewService.DefaultPreviewName : previewName,
+            RouteKey = routeKey ?? "",
             PreviewId = Guid.NewGuid().ToString("N"),
             PreviewToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24)),
             BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
@@ -28,6 +34,8 @@ public sealed class BrowserPreviewRegistry
         return new BrowserPreviewClientResponse
         {
             SessionId = preview.SessionId,
+            PreviewName = preview.PreviewName,
+            RouteKey = preview.RouteKey,
             PreviewId = preview.PreviewId,
             PreviewToken = preview.PreviewToken
         };
@@ -53,6 +61,8 @@ public sealed class BrowserPreviewRegistry
         preview = new BrowserPreviewRegistration
         {
             SessionId = registered.SessionId,
+            PreviewName = registered.PreviewName,
+            RouteKey = registered.RouteKey,
             PreviewId = registered.PreviewId,
             PreviewToken = registered.PreviewToken,
             BrowserId = registered.BrowserId
@@ -75,6 +85,8 @@ public sealed class BrowserPreviewRegistry
     private sealed class RegisteredPreview
     {
         public string? SessionId { get; init; }
+        public string PreviewName { get; init; } = WebPreview.WebPreviewService.DefaultPreviewName;
+        public string RouteKey { get; init; } = "";
         public string PreviewId { get; init; } = "";
         public string PreviewToken { get; init; } = "";
         public string? BrowserId { get; init; }

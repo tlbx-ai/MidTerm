@@ -11,8 +11,8 @@ public class BrowserCommandServiceTests
     {
         var service = new BrowserCommandService();
 
-        var first = service.TryRegisterClient("c1", "session-a", "preview-a", _ => { });
-        var duplicate = service.TryRegisterClient("c2", "session-a", "preview-a", _ => { });
+        var first = service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { });
+        var duplicate = service.TryRegisterClient("c2", "session-a", "user1", "preview-a", _ => { });
 
         Assert.True(first);
         Assert.False(duplicate);
@@ -24,8 +24,8 @@ public class BrowserCommandServiceTests
         var service = new BrowserCommandService();
         BrowserWsMessage? captured = null;
 
-        Assert.True(service.TryRegisterClient("c1", "session-a", "preview-a", _ => { }));
-        Assert.True(service.TryRegisterClient("c2", "session-b", "preview-b", msg =>
+        Assert.True(service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { }));
+        Assert.True(service.TryRegisterClient("c2", "session-b", "user2", "preview-b", msg =>
         {
             captured = msg;
             service.ReceiveResult(new BrowserWsResult
@@ -47,6 +47,7 @@ public class BrowserCommandServiceTests
         Assert.Equal("ok", result.Result);
         Assert.NotNull(captured);
         Assert.Equal("session-b", captured!.SessionId);
+        Assert.Equal("user2", captured.PreviewName);
         Assert.Equal("preview-b", captured.PreviewId);
     }
 
@@ -54,8 +55,8 @@ public class BrowserCommandServiceTests
     public async Task ExecuteCommandAsync_WithMultipleClientsAndNoSession_ReturnsHelpfulError()
     {
         var service = new BrowserCommandService();
-        Assert.True(service.TryRegisterClient("c1", "session-a", "preview-a", _ => { }, browserId: "browser-a"));
-        Assert.True(service.TryRegisterClient("c2", "session-b", "preview-b", _ => { }, browserId: "browser-b"));
+        Assert.True(service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { }, browserId: "browser-a"));
+        Assert.True(service.TryRegisterClient("c2", "session-b", "user2", "preview-b", _ => { }, browserId: "browser-b"));
 
         var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
         {
@@ -72,8 +73,8 @@ public class BrowserCommandServiceTests
         var service = new BrowserCommandService();
         BrowserWsMessage? captured = null;
 
-        Assert.True(service.TryRegisterClient("c1", null, null, _ => { }, browserId: "browser-a"));
-        Assert.True(service.TryRegisterClient("c2", "session-a", "preview-a", msg =>
+        Assert.True(service.TryRegisterClient("c1", null, null, null, _ => { }, browserId: "browser-a"));
+        Assert.True(service.TryRegisterClient("c2", "session-a", "user1", "preview-a", msg =>
         {
             captured = msg;
             service.ReceiveResult(new BrowserWsResult
@@ -102,8 +103,8 @@ public class BrowserCommandServiceTests
         var service = new BrowserCommandService();
         BrowserWsMessage? keptMessage = null;
 
-        Assert.True(service.TryRegisterClient("c1", "session-a", "preview-a", _ => { }));
-        Assert.True(service.TryRegisterClient("c2", "session-b", "preview-b", msg =>
+        Assert.True(service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { }));
+        Assert.True(service.TryRegisterClient("c2", "session-b", "user2", "preview-b", msg =>
         {
             keptMessage = msg;
         }));
@@ -138,5 +139,40 @@ public class BrowserCommandServiceTests
         var kept = await keptTask;
         Assert.True(kept.Success);
         Assert.Equal("still-connected", kept.Result);
+    }
+
+    [Fact]
+    public async Task ExecuteCommandAsync_WithMatchingSessionAndPreviewName_RoutesToCorrectNamedPreview()
+    {
+        var service = new BrowserCommandService();
+        BrowserWsMessage? captured = null;
+
+        Assert.True(service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { }));
+        Assert.True(service.TryRegisterClient("c2", "session-a", "user2", "preview-b", msg =>
+        {
+            captured = msg;
+            service.ReceiveResult(new BrowserWsResult
+            {
+                Id = msg.Id,
+                Success = true,
+                Result = "user2-ok",
+                PreviewId = "preview-b",
+                PreviewName = "user2"
+            });
+        }));
+
+        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "url",
+            SessionId = "session-a",
+            PreviewName = "user2"
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("user2-ok", result.Result);
+        Assert.NotNull(captured);
+        Assert.Equal("session-a", captured!.SessionId);
+        Assert.Equal("user2", captured.PreviewName);
+        Assert.Equal("preview-b", captured.PreviewId);
     }
 }
