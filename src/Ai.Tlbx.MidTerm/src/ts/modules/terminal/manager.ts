@@ -56,7 +56,7 @@ import {
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
-import { getTerminalEnterOverride } from './enterBehavior';
+import { getTerminalEnterOverride, isPowerShellEnterTarget } from './enterBehavior';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -607,9 +607,11 @@ export function setupTerminalEvents(
     // F12: let browser handle it (open DevTools)
     if (e.key === 'F12') return false;
 
+    const foreground = getForegroundInfo(sessionId);
     const enterOverride = getTerminalEnterOverride(
       e,
       $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
+      isPowerShellEnterTarget(foreground.name, foreground.commandLine) ? 'powershell' : 'default',
     );
     if (enterOverride !== null) {
       sendInput(sessionId, enterOverride);
@@ -633,7 +635,6 @@ export function setupTerminalEvents(
     // Native apps (Codex): sets OS clipboard + injects \x1bv.
     // Path apps (Claude, unknown): uploads image + pastes file path.
     if (isNativeImagePasteShortcut(e)) {
-      const foreground = getForegroundInfo(sessionId);
       void handleNativeImagePaste(sessionId, {
         foregroundName: foreground.name,
         foregroundCommandLine: foreground.commandLine,
