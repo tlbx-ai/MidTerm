@@ -26,9 +26,7 @@ export function isPowerShellEnterTarget(
 ): boolean {
   const haystack = `${foregroundName ?? ''} ${foregroundCommandLine ?? ''}`.toLowerCase();
   return (
-    haystack.includes('pwsh') ||
-    haystack.includes('powershell') ||
-    haystack.includes('psreadline')
+    haystack.includes('pwsh') || haystack.includes('powershell') || haystack.includes('psreadline')
   );
 }
 
