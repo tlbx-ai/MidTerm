@@ -182,11 +182,9 @@ public sealed class BrowserCommandService
 
     public string GetStatusText(string? targetUrl)
     {
-        var clients = _clients.Values
-            .OrderByDescending(c => c.ConnectedAtUtc)
-            .ToArray();
+        var status = GetStatus(targetUrl);
 
-        if (clients.Length == 0)
+        if (!status.Connected)
         {
             return "disconnected\nOpen the web preview panel in MidTerm to enable browser commands.\n";
         }
@@ -194,11 +192,11 @@ public sealed class BrowserCommandService
         var lines = new List<string>
         {
             "connected",
-            $"target: {targetUrl ?? "(none)"}",
-            $"clients: {clients.Length}"
+            $"target: {status.TargetUrl ?? "(none)"}",
+            $"clients: {status.ConnectedClientCount}"
         };
 
-        if (TryResolveDefaultClient(clients, out var client))
+        if (status.DefaultClient is { } client)
         {
             lines.Add($"default preview: {client.PreviewId ?? "(anonymous)"}");
             lines.Add($"default preview name: {client.PreviewName ?? "(default)"}");
@@ -211,6 +209,39 @@ public sealed class BrowserCommandService
         }
 
         return string.Join('\n', lines) + "\n";
+    }
+
+    public BrowserStatusResponse GetStatus(string? targetUrl, int connectedUiClientCount = 0)
+    {
+        var clients = _clients.Values
+            .OrderByDescending(c => c.ConnectedAtUtc)
+            .ToArray();
+
+        if (clients.Length == 0)
+        {
+            return new BrowserStatusResponse
+            {
+                Connected = false,
+                ConnectedClientCount = 0,
+                ConnectedUiClientCount = connectedUiClientCount,
+                TargetUrl = targetUrl
+            };
+        }
+
+        var mainBrowserId = _mainBrowserService?.GetMainBrowserId();
+        return new BrowserStatusResponse
+        {
+            Connected = true,
+            ConnectedClientCount = clients.Length,
+            ConnectedUiClientCount = connectedUiClientCount,
+            TargetUrl = targetUrl,
+            DefaultClient = TryResolveDefaultClient(clients, out var client)
+                ? CreateClientInfo(client, mainBrowserId)
+                : null,
+            Clients = clients
+                .Select(c => CreateClientInfo(c, mainBrowserId))
+                .ToArray()
+        };
     }
 
     private void CancelPendingForClient(string connectionId)
@@ -362,6 +393,20 @@ public sealed class BrowserCommandService
             .OrderByDescending(c => c.ConnectedAtUtc)
             .First();
         return true;
+    }
+
+    private static BrowserClientInfo CreateClientInfo(BrowserClient client, string? mainBrowserId)
+    {
+        return new BrowserClientInfo
+        {
+            SessionId = client.SessionId,
+            PreviewName = client.PreviewName,
+            PreviewId = client.PreviewId,
+            BrowserId = client.BrowserId,
+            ConnectedAtUtc = client.ConnectedAtUtc,
+            IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
+                && string.Equals(client.BrowserId, mainBrowserId, StringComparison.Ordinal)
+        };
     }
 
     private sealed class BrowserClient

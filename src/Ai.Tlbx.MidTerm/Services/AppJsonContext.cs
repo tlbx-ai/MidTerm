@@ -46,11 +46,15 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SessionListDto))]
 [JsonSerializable(typeof(SessionInfoDto))]
 [JsonSerializable(typeof(CreateSessionRequest))]
+[JsonSerializable(typeof(SessionReorderRequest))]
+[JsonSerializable(typeof(SessionInputRequest))]
 [JsonSerializable(typeof(RenameSessionRequest))]
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]
 [JsonSerializable(typeof(FileUploadResponse))]
 [JsonSerializable(typeof(InjectGuidanceResponse))]
+[JsonSerializable(typeof(SessionBufferTextResponse))]
+[JsonSerializable(typeof(SessionStateResponse))]
 
 // --- Files ---
 [JsonSerializable(typeof(FileCheckRequest))]
@@ -136,6 +140,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Browser ---
 [JsonSerializable(typeof(BrowserCommandRequest))]
 [JsonSerializable(typeof(BrowserCommandResponse))]
+[JsonSerializable(typeof(BrowserStatusResponse))]
+[JsonSerializable(typeof(BrowserClientInfo))]
+[JsonSerializable(typeof(BrowserClientInfo[]))]
 [JsonSerializable(typeof(BrowserPreviewClientRequest))]
 [JsonSerializable(typeof(BrowserPreviewClientResponse))]
 [JsonSerializable(typeof(BrowserWsMessage))]

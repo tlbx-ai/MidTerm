@@ -60,7 +60,8 @@ $requiredNodeDeps = @(
     @{ Name = "eslint"; Path = Join-Path $NodeModulesRoot "eslint" },
     @{ Name = "esbuild"; Path = Join-Path $NodeModulesRoot "esbuild" },
     @{ Name = "prettier"; Path = Join-Path $NodeModulesRoot "prettier" },
-    @{ Name = "openapi-typescript"; Path = Join-Path $NodeModulesRoot "openapi-typescript" }
+    @{ Name = "openapi-typescript"; Path = Join-Path $NodeModulesRoot "openapi-typescript" },
+    @{ Name = "swagger-ui-dist"; Path = Join-Path $NodeModulesRoot "swagger-ui-dist/package.json" }
 )
 
 function Get-MissingFrontendDeps {
@@ -138,7 +139,7 @@ if ($Publish) {
 }
 
 # Create output directories
-@('', 'js', 'css', 'fonts', 'img') | ForEach-Object {
+@('', 'js', 'css', 'fonts', 'img', 'openapi', 'swagger') | ForEach-Object {
     $dir = Join-Path $WwwRoot $_
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -151,6 +152,8 @@ if ($Publish) {
 $OpenApiProject = Join-Path $PSScriptRoot "..\Ai.Tlbx.MidTerm.OpenApi\Ai.Tlbx.MidTerm.OpenApi.csproj"
 $OpenApiSpec = Join-Path $PSScriptRoot "openapi\openapi.json"
 $GeneratedTypes = Join-Path $TsSource "api.generated.ts"
+$SwaggerSource = Join-Path $StaticSource "swagger"
+$SwaggerUiRoot = Join-Path $NodeModulesRoot "swagger-ui-dist"
 
 Write-Host "Generating API types from OpenAPI spec..." -ForegroundColor Cyan
 
@@ -180,6 +183,7 @@ Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
 $AssetVersion = Get-AssetFingerprint -Paths @(
     $TsSource,
     $StaticSource,
+    $OpenApiSpec,
     (Join-Path $RepoRoot "package.json"),
     (Join-Path $RepoRoot "package-lock.json")
 )
@@ -499,6 +503,37 @@ if (Test-Path $jsSource) {
         else {
             Write-Host "  js/$($_.Name)" -ForegroundColor DarkGray
         }
+    }
+}
+
+# OpenAPI spec -> wwwroot/openapi/
+$openApiDst = Join-Path $WwwRoot "openapi/openapi.json"
+$openApiResult = Process-TextFile -Source $OpenApiSpec -Destination $openApiDst -Compress $Publish
+if ($Publish) {
+    $totalSaved += $openApiResult.Saved
+    Write-Host "  openapi/openapi.json -> openapi/openapi.json.br ($($openApiResult.Reduction)% reduction)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  openapi/openapi.json" -ForegroundColor DarkGray
+}
+
+# Swagger UI assets -> wwwroot/swagger/
+$swaggerTextAssets = @(
+    @{ Src = Join-Path $SwaggerUiRoot "swagger-ui.css"; Dst = Join-Path $WwwRoot "swagger/swagger-ui.css"; Label = "swagger/swagger-ui.css" },
+    @{ Src = Join-Path $SwaggerUiRoot "swagger-ui-bundle.js"; Dst = Join-Path $WwwRoot "swagger/swagger-ui-bundle.js"; Label = "swagger/swagger-ui-bundle.js" },
+    @{ Src = Join-Path $SwaggerUiRoot "swagger-ui-standalone-preset.js"; Dst = Join-Path $WwwRoot "swagger/swagger-ui-standalone-preset.js"; Label = "swagger/swagger-ui-standalone-preset.js" },
+    @{ Src = Join-Path $SwaggerSource "index.html"; Dst = Join-Path $WwwRoot "swagger/index.html"; Label = "swagger/index.html" },
+    @{ Src = Join-Path $SwaggerSource "swagger-initializer.js"; Dst = Join-Path $WwwRoot "swagger/swagger-initializer.js"; Label = "swagger/swagger-initializer.js" }
+)
+
+foreach ($asset in $swaggerTextAssets) {
+    $result = Process-TextFile -Source $asset.Src -Destination $asset.Dst -Compress $Publish
+    if ($Publish) {
+        $totalSaved += $result.Saved
+        Write-Host "  $($asset.Label) -> $($asset.Label).br ($($result.Reduction)% reduction)" -ForegroundColor DarkGray
+    }
+    else {
+        Write-Host "  $($asset.Label)" -ForegroundColor DarkGray
     }
 }
 

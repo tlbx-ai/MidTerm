@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Common.Shells;
@@ -9,6 +10,8 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public static partial class SessionApiEndpoints
@@ -44,9 +47,19 @@ public static partial class SessionApiEndpoints
         WebApplication app,
         TtyHostSessionManager sessionManager,
         ClipboardService clipboardService,
-        AuthService authService,
-        int port)
+        UpdateService updateService,
+        WebPreviewService webPreviewService)
     {
+        app.MapGet("/api/state", () =>
+        {
+            var response = new StateUpdate
+            {
+                Sessions = sessionManager.GetSessionList(),
+                Update = updateService.LatestUpdate
+            };
+            return Results.Json(response, AppJsonContext.Default.StateUpdate);
+        });
+
         app.MapGet("/api/sessions", () =>
         {
             return Results.Json(sessionManager.GetSessionList(), AppJsonContext.Default.SessionListDto);
@@ -71,7 +84,19 @@ public static partial class SessionApiEndpoints
                 return Results.Problem("Failed to create session");
             }
 
-            return Results.Json(MapToDto(sessionInfo), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
+        });
+
+        app.MapPost("/api/sessions/reorder", (SessionReorderRequest request) =>
+        {
+            if (request.SessionIds.Count == 0)
+            {
+                return Results.BadRequest("sessionIds required");
+            }
+
+            return sessionManager.ReorderSessions(request.SessionIds)
+                ? Results.Ok()
+                : Results.BadRequest("Invalid session IDs");
         });
 
         app.MapDelete("/api/sessions/{id}", async (string id) =>
@@ -93,6 +118,76 @@ public static partial class SessionApiEndpoints
                 Cols = request.Cols,
                 Rows = request.Rows
             }, AppJsonContext.Default.ResizeResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/state", async (string id, bool includeBuffer = true, bool includeBufferBase64 = false) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var response = new SessionStateResponse
+            {
+                Session = GetSessionDto(sessionManager, id),
+                Previews = webPreviewService.ListPreviewSessions(id).Previews
+                    .ToArray()
+            };
+
+            if (includeBuffer)
+            {
+                var buffer = await sessionManager.GetBufferAsync(id);
+                if (buffer is not null)
+                {
+                    response.BufferByteLength = buffer.Length;
+                    response.BufferText = Encoding.UTF8.GetString(buffer);
+                    response.BufferBase64 = includeBufferBase64
+                        ? Convert.ToBase64String(buffer)
+                        : null;
+                }
+            }
+
+            return Results.Json(response, AppJsonContext.Default.SessionStateResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!TryGetInputBytes(request, out var data, out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            await sessionManager.SendInputAsync(id, data);
+            return Results.Ok();
+        });
+
+        app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var buffer = await sessionManager.GetBufferAsync(id);
+            if (buffer is null)
+            {
+                return Results.NotFound();
+            }
+
+            var response = new SessionBufferTextResponse
+            {
+                SessionId = id,
+                ByteLength = buffer.Length,
+                Text = Encoding.UTF8.GetString(buffer),
+                Base64 = includeBase64 ? Convert.ToBase64String(buffer) : null
+            };
+
+            return Results.Json(response, AppJsonContext.Default.SessionBufferTextResponse);
         });
 
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>
@@ -199,6 +294,52 @@ public static partial class SessionApiEndpoints
         });
     }
 
+    private static bool TryGetInputBytes(
+        SessionInputRequest request,
+        out byte[] data,
+        out string error)
+    {
+        data = [];
+        error = "";
+
+        var hasText = !string.IsNullOrEmpty(request.Text);
+        var hasBase64 = !string.IsNullOrEmpty(request.Base64);
+
+        if (hasText == hasBase64)
+        {
+            error = "Provide exactly one of text or base64.";
+            return false;
+        }
+
+        if (hasText)
+        {
+            var text = request.Text!;
+            if (request.AppendNewline)
+            {
+                text += "\n";
+            }
+
+            data = Encoding.UTF8.GetBytes(text);
+            return true;
+        }
+
+        try
+        {
+            data = Convert.FromBase64String(request.Base64!);
+            if (request.AppendNewline)
+            {
+                Array.Resize(ref data, data.Length + 1);
+                data[^1] = (byte)'\n';
+            }
+            return true;
+        }
+        catch (FormatException)
+        {
+            error = "base64 is invalid.";
+            return false;
+        }
+    }
+
     private static async Task<string> SaveUploadedFileAsync(
         TtyHostSessionManager sessionManager, string sessionId, IFormFile file)
     {
@@ -261,24 +402,8 @@ public static partial class SessionApiEndpoints
         return !string.IsNullOrWhiteSpace(extension) && ClipboardImageExtensions.Contains(extension);
     }
 
-    private static SessionInfoDto MapToDto(SessionInfo sessionInfo)
+    private static SessionInfoDto GetSessionDto(TtyHostSessionManager sessionManager, string sessionId)
     {
-        return new SessionInfoDto
-        {
-            Id = sessionInfo.Id,
-            Pid = sessionInfo.Pid,
-            CreatedAt = sessionInfo.CreatedAt,
-            IsRunning = sessionInfo.IsRunning,
-            ExitCode = sessionInfo.ExitCode,
-            Cols = sessionInfo.Cols,
-            Rows = sessionInfo.Rows,
-            ShellType = sessionInfo.ShellType,
-            Name = sessionInfo.Name,
-            ManuallyNamed = sessionInfo.ManuallyNamed,
-            CurrentDirectory = sessionInfo.CurrentDirectory,
-            ForegroundPid = sessionInfo.ForegroundPid,
-            ForegroundName = sessionInfo.ForegroundName,
-            ForegroundCommandLine = sessionInfo.ForegroundCommandLine
-        };
+        return sessionManager.GetSessionList().Sessions.First(s => s.Id == sessionId);
     }
 }

@@ -185,6 +185,10 @@ public static class ServerSetup
             {
                 context.Request.Path = path + ".html";
             }
+            else if (path == "/swagger")
+            {
+                context.Request.Path = "/swagger/index.html";
+            }
             else if (path == "/shared" || (path?.StartsWith("/shared/", StringComparison.Ordinal) ?? false))
             {
                 context.Request.Path = "/index.html";
