@@ -4,8 +4,11 @@
  * Manages the mux WebSocket connection for terminal I/O.
  * Uses a binary protocol with 9-byte header (1 byte type + 8 byte session ID).
  *
- * CRITICAL: All output frames are processed strictly in order through a single queue.
- * This ensures TUI apps receive escape sequences in the correct order.
+ * CRITICAL: Output ordering is strict per session, not globally across all sessions.
+ * The scheduler below prioritizes the active terminal and round-robins background
+ * terminals so one flood-heavy session does not block unrelated xterm instances.
+ * If this ever regresses, revert only the scheduler section in this file; the wire
+ * protocol and frame parsing path remain unchanged.
  */
 
 import type { TerminalState } from '../../types';
@@ -411,14 +414,13 @@ function measureOutputRtt(sessionId: string): void {
 let lastHintedSessionId: string | null = null;
 
 // =============================================================================
-// Priority Output Queue
+// Per-Session Output Scheduler
 // =============================================================================
 //
-// Active session frames are processed first (tight loop, minimum latency).
-// Background session frames are processed with periodic yielding to keep
-// the browser responsive (keyboard input, paint, rAF).
-// Per-session ordering is preserved; cross-session reordering is safe since
-// each session has its own xterm instance.
+// Each terminal gets its own ordered frame queue. The active session gets the
+// first timeslice every scheduler turn; background sessions then make progress
+// round-robin. Tune or revert only this section if multi-terminal responsiveness
+// needs more work later.
 
 interface OutputFrameItem {
   sessionId: string;
@@ -426,10 +428,18 @@ interface OutputFrameItem {
   compressed: boolean;
 }
 
-const MAX_QUEUE_SIZE = 10000;
+interface SessionOutputQueue {
+  items: OutputFrameItem[];
+  index: number;
+}
+
+// Tune queue depth and active-vs-background balance here. If the scheduler ever
+// needs to be disabled later, replace only this section with a single FIFO again.
+const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
-const COMPACT_THRESHOLD = 1000;
-const YIELD_BUDGET_MS = 8;
+const QUEUE_COMPACT_THRESHOLD = 1000;
+const ACTIVE_SESSION_BUDGET_MS = 4;
+const SCHEDULER_BUDGET_MS = 8;
 const CURSOR_BURST_WINDOW_MS = 180;
 const CURSOR_BURST_MIN_BYTES = 12;
 const CURSOR_IDLE_SHOW_MS = 650;
@@ -439,14 +449,17 @@ const CURSOR_LOCAL_INPUT_GRACE_MS = 250;
 const SHOW_CURSOR_SEQ = '\x1b[?25h';
 const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
-const outputQueue: OutputFrameItem[] = [];
+const sessionOutputQueues = new Map<string, SessionOutputQueue>();
+const backgroundReadySessionIds: Array<string | undefined> = [];
+const backgroundReadySessionSet = new Set<string>();
 let processingQueue = false;
-let queueIndex = 0;
+let backgroundReadyIndex = 0;
+let lastScheduledActiveSessionId: string | null = null;
 
-function compactQueue(): void {
-  if (queueIndex > 0) {
-    outputQueue.splice(0, queueIndex);
-    queueIndex = 0;
+function compactSessionQueue(queue: SessionOutputQueue): void {
+  if (queue.index > 0) {
+    queue.items.splice(0, queue.index);
+    queue.index = 0;
   }
 }
 
@@ -454,59 +467,206 @@ function yieldToMain(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
-  const pendingCount = outputQueue.length - queueIndex;
-  if (pendingCount >= MAX_QUEUE_SIZE) {
-    const droppedItem = outputQueue[queueIndex];
-    log.warn(
-      () => `Output queue full, dropping oldest frame for session ${droppedItem?.sessionId}`,
-    );
-    if (droppedItem) {
-      $dataLossDetected.set({ sessionId: droppedItem.sessionId, timestamp: Date.now() });
-    }
-    queueIndex++;
-    if (queueIndex >= COMPACT_THRESHOLD) {
-      compactQueue();
-    }
+function compactBackgroundReadySessions(): void {
+  if (backgroundReadyIndex > 0) {
+    backgroundReadySessionIds.splice(0, backgroundReadyIndex);
+    backgroundReadyIndex = 0;
   }
-  outputQueue.push({ sessionId, payload, compressed });
-  void processOutputQueue();
 }
 
-async function processOutputQueue(): Promise<void> {
+function getPendingFrameCount(queue: SessionOutputQueue): number {
+  return queue.items.length - queue.index;
+}
+
+function getOrCreateSessionQueue(sessionId: string): SessionOutputQueue {
+  let queue = sessionOutputQueues.get(sessionId);
+  if (!queue) {
+    queue = { items: [], index: 0 };
+    sessionOutputQueues.set(sessionId, queue);
+  }
+  return queue;
+}
+
+function hasQueuedFrames(sessionId: string | null): boolean {
+  if (sessionId === null) {
+    return false;
+  }
+
+  const queue = sessionOutputQueues.get(sessionId);
+  return queue !== undefined && getPendingFrameCount(queue) > 0;
+}
+
+function enqueueBackgroundSession(sessionId: string): void {
+  if (backgroundReadySessionSet.has(sessionId)) {
+    return;
+  }
+
+  backgroundReadySessionSet.add(sessionId);
+  backgroundReadySessionIds.push(sessionId);
+}
+
+function clearQueuedOutput(): void {
+  sessionOutputQueues.clear();
+  backgroundReadySessionIds.length = 0;
+  backgroundReadySessionSet.clear();
+  backgroundReadyIndex = 0;
+  lastScheduledActiveSessionId = null;
+}
+
+function noteQueueOverflow(sessionId: string): void {
+  log.warn(() => `Output queue full for ${sessionId}, dropping oldest queued frame`);
+  $dataLossDetected.set({ sessionId, timestamp: Date.now() });
+}
+
+function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
+  const queue = sessionOutputQueues.get(sessionId);
+  if (!queue) {
+    return null;
+  }
+
+  const item = queue.items[queue.index];
+  if (!item) {
+    queue.items.length = 0;
+    queue.index = 0;
+    sessionOutputQueues.delete(sessionId);
+    return null;
+  }
+
+  queue.index++;
+
+  if (getPendingFrameCount(queue) === 0) {
+    queue.items.length = 0;
+    queue.index = 0;
+    sessionOutputQueues.delete(sessionId);
+  } else if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
+    compactSessionQueue(queue);
+  }
+
+  return item;
+}
+
+function nextBackgroundSessionId(): string | null {
+  while (backgroundReadyIndex < backgroundReadySessionIds.length) {
+    const sessionId = backgroundReadySessionIds[backgroundReadyIndex];
+    backgroundReadyIndex++;
+    if (backgroundReadyIndex >= QUEUE_COMPACT_THRESHOLD) {
+      compactBackgroundReadySessions();
+    }
+
+    if (sessionId === undefined) {
+      continue;
+    }
+
+    backgroundReadySessionSet.delete(sessionId);
+    return sessionId;
+  }
+
+  compactBackgroundReadySessions();
+  return null;
+}
+
+function syncBackgroundQueue(activeId: string | null): void {
+  if (
+    lastScheduledActiveSessionId !== null &&
+    lastScheduledActiveSessionId !== activeId &&
+    hasQueuedFrames(lastScheduledActiveSessionId)
+  ) {
+    enqueueBackgroundSession(lastScheduledActiveSessionId);
+  }
+
+  lastScheduledActiveSessionId = activeId;
+}
+
+async function drainActiveSessionQueue(activeId: string, deadlineMs: number): Promise<boolean> {
+  let didWork = false;
+
+  while (hasQueuedFrames(activeId)) {
+    const item = dequeueOutputFrame(activeId);
+    if (!item) {
+      break;
+    }
+
+    didWork = true;
+    await processOneFrame(item);
+
+    if ($activeSessionId.get() !== activeId || performance.now() >= deadlineMs) {
+      break;
+    }
+  }
+
+  return didWork;
+}
+
+function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
+  const queue = getOrCreateSessionQueue(sessionId);
+  const pendingCount = getPendingFrameCount(queue);
+  if (pendingCount >= MAX_QUEUED_FRAMES_PER_SESSION) {
+    queue.index++;
+    noteQueueOverflow(sessionId);
+    if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
+      compactSessionQueue(queue);
+    }
+  }
+
+  queue.items.push({ sessionId, payload, compressed });
+  if (sessionId !== $activeSessionId.get()) {
+    enqueueBackgroundSession(sessionId);
+  }
+
+  void processOutputQueues();
+}
+
+async function processOutputQueues(): Promise<void> {
   if (processingQueue) return;
   processingQueue = true;
 
   try {
-    while (queueIndex < outputQueue.length) {
+    for (;;) {
       const activeId = $activeSessionId.get();
+      const cycleStart = performance.now();
+      let didWork = false;
 
-      // Phase 1: process active session frames immediately (low latency)
-      while (queueIndex < outputQueue.length) {
-        const item = outputQueue[queueIndex];
-        if (!item || item.sessionId !== activeId) break;
-        queueIndex++;
-        await processOneFrame(item);
-        if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
+      syncBackgroundQueue(activeId);
+
+      if (activeId !== null) {
+        didWork =
+          (await drainActiveSessionQueue(activeId, cycleStart + ACTIVE_SESSION_BUDGET_MS)) ||
+          didWork;
       }
 
-      // Phase 2: process background frames with yielding
-      let batchStart = performance.now();
-      while (queueIndex < outputQueue.length) {
-        const item = outputQueue[queueIndex];
-        if (item && item.sessionId === $activeSessionId.get()) break;
-        queueIndex++;
-        if (item) await processOneFrame(item);
-        if (queueIndex >= COMPACT_THRESHOLD) compactQueue();
+      while (performance.now() - cycleStart < SCHEDULER_BUDGET_MS) {
+        const sessionId = nextBackgroundSessionId();
+        if (sessionId === null) {
+          break;
+        }
 
-        if (performance.now() - batchStart > YIELD_BUDGET_MS) {
-          await yieldToMain();
-          batchStart = performance.now();
+        if (sessionId === $activeSessionId.get()) {
+          continue;
+        }
+
+        const item = dequeueOutputFrame(sessionId);
+        if (!item) {
+          continue;
+        }
+
+        didWork = true;
+        await processOneFrame(item);
+
+        if (hasQueuedFrames(sessionId)) {
+          enqueueBackgroundSession(sessionId);
         }
       }
+
+      const hasActiveFrames = hasQueuedFrames($activeSessionId.get());
+      const hasBackgroundFrames = backgroundReadyIndex < backgroundReadySessionIds.length;
+      if (!didWork && !hasActiveFrames && !hasBackgroundFrames) {
+        break;
+      }
+
+      if (didWork) {
+        await yieldToMain();
+      }
     }
-    outputQueue.length = 0;
-    queueIndex = 0;
   } finally {
     processingQueue = false;
   }
@@ -836,7 +996,7 @@ export function connectMuxWebSocket(): void {
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
-      outputQueue.length = 0;
+      clearQueuedOutput();
       sessionTerminals.forEach((state) => {
         if (state.opened) {
           state.terminal.clear();
@@ -936,7 +1096,7 @@ export function connectMuxWebSocket(): void {
       });
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
-      outputQueue.length = 0; // Clear pending queue too
+      clearQueuedOutput();
       return;
     }
 
@@ -948,7 +1108,8 @@ export function connectMuxWebSocket(): void {
       if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
         _sessionBytesCallback?.(sessionId, termDataBytes);
       }
-      // Queue ALL output frames to guarantee strict ordering
+      // Queue output by session so strict ordering stays within each terminal
+      // while the active terminal can bypass background backlog.
       // .slice() here is needed — WS may recycle the ArrayBuffer
       if (payload.length >= 4) {
         queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
