@@ -185,6 +185,99 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/security/api-keys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ApiKeyListResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CreateApiKeyRequest'];
+        };
+      };
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CreateApiKeyResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/security/api-keys/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/security/firewall': {
     parameters: {
       query?: never;
@@ -3033,6 +3126,18 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ApiKeyInfoResponse: {
+      id: string;
+      name: string;
+      preview: string;
+      /** Format: date-time */
+      createdAtUtc: string;
+      /** Format: date-time */
+      lastUsedAtUtc: null | string;
+    };
+    ApiKeyListResponse: {
+      apiKeys: components['schemas']['ApiKeyInfoResponse'][];
+    };
     AuthResponse: {
       success: boolean;
       error: null | string;
@@ -3154,6 +3259,13 @@ export interface components {
     };
     /** @enum {unknown} */
     ClipboardShortcutsSetting: 'auto' | 'windows' | 'unix';
+    CreateApiKeyRequest: {
+      name: string;
+    };
+    CreateApiKeyResponse: {
+      apiKey: components['schemas']['ApiKeyInfoResponse'];
+      token: string;
+    };
     CreateHistoryRequest: {
       shellType: string;
       executable: string;

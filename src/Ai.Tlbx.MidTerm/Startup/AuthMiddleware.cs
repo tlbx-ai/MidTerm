@@ -59,11 +59,11 @@ public static class AuthMiddleware
                 return;
             }
 
-            var token = context.Request.Cookies[AuthService.SessionCookieName];
-            if (token is not null && authService.ValidateSessionToken(token))
+            var requestAuthMethod = authService.AuthenticateRequest(context.Request);
+            if (requestAuthMethod != RequestAuthMethod.None)
             {
                 RequestAccessContext.SetFullUser(context, true);
-                if (!context.WebSockets.IsWebSocketRequest)
+                if (requestAuthMethod == RequestAuthMethod.SessionCookie && !context.WebSockets.IsWebSocketRequest)
                 {
                     var freshToken = authService.CreateSessionToken();
                     context.Response.Cookies.Append(

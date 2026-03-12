@@ -15,6 +15,18 @@ public static class SecurityEndpointDefinitions
             handler.GetSecurityStatus())
             .Produces<SecurityStatus>(StatusCodes.Status200OK, "application/json");
 
+        app.MapGet("/api/security/api-keys", (ISecurityHandler handler) =>
+            handler.GetApiKeys())
+            .Produces<ApiKeyListResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/security/api-keys", (CreateApiKeyRequest request, ISecurityHandler handler) =>
+            handler.CreateApiKey(request))
+            .Produces<CreateApiKeyResponse>(StatusCodes.Status201Created, "application/json");
+
+        app.MapDelete("/api/security/api-keys/{id}", (string id, ISecurityHandler handler) =>
+            handler.DeleteApiKey(id))
+            .Produces(StatusCodes.Status204NoContent);
+
         app.MapGet("/api/security/firewall", (ISecurityHandler handler) =>
             handler.GetFirewallStatus())
             .Produces<FirewallRuleStatusResponse>(StatusCodes.Status200OK, "application/json");

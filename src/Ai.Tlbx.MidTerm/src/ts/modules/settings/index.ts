@@ -5,6 +5,7 @@
  */
 
 export * from './panel';
+export * from './apiKeys';
 export * from './persistence';
 export * from './registry';
 export * from './tabs';

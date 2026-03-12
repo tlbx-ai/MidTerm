@@ -1362,6 +1362,44 @@
                   </div>
 
                   <div class="settings-section">
+                    <h3 data-i18n="settings.security.apiKeys">API Keys</h3>
+                    <div class="setting-row setting-row-align-start api-key-create-row">
+                      <label for="api-key-name" data-i18n="settings.security.apiKeyName"
+                        >Name</label
+                      >
+                      <div class="api-key-create-controls">
+                        <input
+                          type="search"
+                          id="api-key-name"
+                          maxlength="80"
+                          spellcheck="false"
+                          data-i18n-placeholder="settings.security.apiKeyNamePlaceholder"
+                          placeholder="Primary Agent"
+                        />
+                        <button
+                          id="btn-create-api-key"
+                          class="btn-secondary"
+                          data-i18n="settings.security.apiKeyCreate"
+                        >
+                          Create API Key
+                        </button>
+                      </div>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.security.apiKeysHint">
+                      Create machine tokens for agents and automation. New keys are shown only once
+                      after creation.
+                    </p>
+                    <p class="setting-hint" data-i18n="settings.security.apiKeyHeadersHint">
+                      Use Authorization: Bearer &lt;token&gt; or X-API-Key: &lt;token&gt;.
+                    </p>
+                    <div id="settings-api-key-list" class="api-key-list">
+                      <div class="api-key-empty" data-i18n="settings.general.loading">
+                        Loading...
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
                     <h3 data-i18n="settings.security.processIdentity">Process Identity</h3>
                     <div class="setting-row">
                       <label for="setting-run-as-user" data-i18n="settings.security.terminalUser"

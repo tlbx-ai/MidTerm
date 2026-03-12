@@ -58,6 +58,22 @@ export async function getSecurityStatus() {
   return client.GET('/api/security/status');
 }
 
+export async function getApiKeys() {
+  return client.GET('/api/security/api-keys');
+}
+
+export async function createApiKey(name: string) {
+  return client.POST('/api/security/api-keys', {
+    body: { name },
+  });
+}
+
+export async function deleteApiKey(id: string) {
+  return client.DELETE('/api/security/api-keys/{id}', {
+    params: { path: { id } },
+  });
+}
+
 export async function getFirewallRuleStatus() {
   return client.GET('/api/security/firewall');
 }

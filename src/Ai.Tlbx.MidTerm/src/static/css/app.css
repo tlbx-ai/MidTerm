@@ -3456,7 +3456,8 @@ body.has-app-background::after {
 
 /* Additional settings input styles */
 .setting-row input[type='text'],
-.setting-row input[type='number'] {
+.setting-row input[type='number'],
+.setting-row input[type='search'] {
   padding: 8px 12px;
   background-color: var(--bg-input);
   color: var(--text-primary);
@@ -3466,12 +3467,14 @@ body.has-app-background::after {
 }
 
 .setting-row input[type='text']:hover,
-.setting-row input[type='number']:hover {
+.setting-row input[type='number']:hover,
+.setting-row input[type='search']:hover {
   border-color: var(--accent-blue);
 }
 
 .setting-row input[type='text']:focus,
-.setting-row input[type='number']:focus {
+.setting-row input[type='number']:focus,
+.setting-row input[type='search']:focus {
   outline: none;
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 3px var(--accent-blue-15);
@@ -3506,6 +3509,102 @@ body.has-app-background::after {
   border-radius: 3px;
   font-family: var(--font-mono);
   color: var(--accent-cyan);
+}
+
+.api-key-create-controls {
+  display: flex;
+  gap: 10px;
+  width: min(100%, 460px);
+  justify-content: flex-end;
+}
+
+.api-key-create-controls input {
+  flex: 1;
+  min-width: 0;
+}
+
+.api-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-key-empty {
+  padding: 14px 16px;
+  border: 1px dashed var(--border-emphasis);
+  border-radius: var(--radius-lg);
+  background: var(--bg-dropdown);
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+}
+
+.api-key-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-dropdown);
+}
+
+.api-key-item-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.api-key-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.api-key-item-name {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.api-key-preview {
+  max-width: none;
+}
+
+.api-key-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+}
+
+.api-key-item-meta strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.api-key-item-actions {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .api-key-create-controls {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .api-key-item {
+    flex-direction: column;
+  }
+
+  .api-key-item-actions {
+    width: 100%;
+  }
 }
 
 /* License items */

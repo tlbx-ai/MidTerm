@@ -39,8 +39,14 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(AuthResponse))]
 [JsonSerializable(typeof(AuthStatusResponse))]
 [JsonSerializable(typeof(SecurityStatus))]
+[JsonSerializable(typeof(ApiKeyInfoResponse))]
+[JsonSerializable(typeof(List<ApiKeyInfoResponse>))]
+[JsonSerializable(typeof(ApiKeyListResponse))]
+[JsonSerializable(typeof(CreateApiKeyRequest))]
+[JsonSerializable(typeof(CreateApiKeyResponse))]
 [JsonSerializable(typeof(FirewallRuleStatusResponse))]
 [JsonSerializable(typeof(FirewallRuleSnapshot))]
+[JsonSerializable(typeof(List<StoredApiKeyRecord>))]
 
 // --- Sessions ---
 [JsonSerializable(typeof(SessionListDto))]

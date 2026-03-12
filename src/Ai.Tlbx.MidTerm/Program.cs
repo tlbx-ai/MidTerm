@@ -123,6 +123,7 @@ public class Program
         var shareGrantService = app.Services.GetRequiredService<ShareGrantService>();
         var tempCleanupService = app.Services.GetRequiredService<TempCleanupService>();
         var certInfoService = app.Services.GetRequiredService<CertificateInfoService>();
+        var apiKeyService = app.Services.GetRequiredService<ApiKeyService>();
 
         WriteEventLog($"MainCore: Certificate loaded = {ServerSetup.LoadedCertificate is not null}, IsFallback = {ServerSetup.IsFallbackCertificate}");
 
@@ -299,7 +300,7 @@ public class Program
         EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
-        SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService);
+        SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService, apiKeyService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);

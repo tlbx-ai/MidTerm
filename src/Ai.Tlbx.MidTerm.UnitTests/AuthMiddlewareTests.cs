@@ -20,6 +20,7 @@ public class AuthMiddlewareTests
     [InlineData("/api/state")]
     [InlineData("/api/system")]
     [InlineData("/api/sessions/abc/state")]
+    [InlineData("/api/security/api-keys")]
     [InlineData("/api/browser/status")]
     [InlineData("/ws/state")]
     public void IsPublicPath_RemoteControlEndpoints_RemainProtected(string path)

@@ -13,6 +13,7 @@ import { initSettingsTabs } from './tabs';
 import { stopLatencyMeasurement } from '../diagnostics';
 import { refreshTerminalPresentation } from '../terminal/scaling';
 import { createLogger } from '../logging';
+import { bindApiKeyControls, fetchApiKeys } from './apiKeys';
 import {
   addFirewallRule,
   getFirewallRuleStatus,
@@ -68,7 +69,9 @@ export function openSettings(): void {
   fetchCertificateInfo();
   bindRegenerateCertButton();
   bindFirewallButtons();
+  bindApiKeyControls();
   void fetchFirewallRuleStatus();
+  void fetchApiKeys();
 }
 
 /**

@@ -121,6 +121,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<TempCleanupService>();
         builder.Services.AddSingleton<CertificateInfoService>();
         builder.Services.AddSingleton<SecurityStatusService>();
+        builder.Services.AddSingleton<ApiKeyService>();
         builder.Services.AddSingleton<IPowerShellCommandRunner, WindowsPowerShellCommandRunner>();
         builder.Services.AddSingleton<WindowsFirewallService>();
         builder.Services.AddSingleton<MainBrowserService>();
