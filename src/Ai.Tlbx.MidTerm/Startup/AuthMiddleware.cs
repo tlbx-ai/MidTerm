@@ -98,7 +98,7 @@ public static class AuthMiddleware
         MaxAge = TimeSpan.FromDays(3)
     };
 
-    private static bool IsPublicPath(string path)
+    internal static bool IsPublicPath(string path)
     {
         return path == "/login" ||
                path == "/login.html" ||
@@ -106,6 +106,9 @@ public static class AuthMiddleware
                path.StartsWith("/shared/", StringComparison.Ordinal) ||
                path == "/trust" ||
                path == "/trust.html" ||
+               path == "/swagger" ||
+               path.StartsWith("/swagger/", StringComparison.Ordinal) ||
+               path.StartsWith("/openapi/", StringComparison.Ordinal) ||
                path == "/api/health" ||
                path == "/api/version" ||
                path == "/api/paths" ||
