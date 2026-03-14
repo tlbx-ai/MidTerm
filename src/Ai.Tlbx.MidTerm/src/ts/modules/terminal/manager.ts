@@ -499,11 +499,14 @@ export function writeOutputFrame(
 
   // Write terminal data
   if (frame.data.length > 0) {
-    state.terminal.write(frame.data);
-
-    // Scan output for file paths to make them clickable
-    // See fileLinks.ts for performance notes - can be disabled if needed
-    scanOutputForPaths(sessionId, frame.data);
+    state.terminal.write(frame.data, () => {
+      // Buffered replay should yield the main thread to xterm first so a tab
+      // opening after reconnect catches up visually before File Radar does its
+      // extra decode and pattern matching work.
+      queueMicrotask(() => {
+        scanOutputForPaths(sessionId, frame.data);
+      });
+    });
   }
 }
 

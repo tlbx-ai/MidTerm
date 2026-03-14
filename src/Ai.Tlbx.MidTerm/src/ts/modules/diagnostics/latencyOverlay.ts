@@ -2,7 +2,8 @@
  * Latency Overlay Module
  *
  * Floating overlay on the terminal showing real-time diagnostics:
- * output RTT, server ping, mthost ping, flush delay, and scrollback buffer fill.
+ * input-to-xterm output RTT, server ping, mthost ping, flush delay, and
+ * scrollback buffer fill.
  * Toggled via Settings > Diagnostics.
  */
 
