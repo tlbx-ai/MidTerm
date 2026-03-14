@@ -156,7 +156,7 @@
   "settings.security.fingerprint": "Impressão Digital",
   "settings.security.validUntil": "Válido Até",
   "settings.security.trustOtherDevices": "Confiar em Outros Dispositivos",
-  "settings.security.openTrustPage": "Abrir Página de Confiança",
+  "settings.security.openTrustPage": "Abrir assistente de confiança do certificado",
   "settings.security.fingerprintHint": "Ao conectar de um novo dispositivo, clique no ícone de cadeado no navegador e compare a impressão digital SHA-256 com esta. Impressões digitais correspondentes confirmam que você está conectando ao servidor real.",
   "settings.security.regenerateCertificate": "Regenerar Certificado",
   "settings.security.regenerate": "Regenerar",

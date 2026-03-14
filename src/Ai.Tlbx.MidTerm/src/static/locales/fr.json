@@ -156,7 +156,7 @@
   "settings.security.fingerprint": "Empreinte Digitale",
   "settings.security.validUntil": "Valide Jusqu'au",
   "settings.security.trustOtherDevices": "Faire Confiance sur d'Autres Appareils",
-  "settings.security.openTrustPage": "Ouvrir la Page de Confiance",
+  "settings.security.openTrustPage": "Ouvrir l'assistant de confiance du certificat",
   "settings.security.fingerprintHint": "Lors de la connexion depuis un nouvel appareil, cliquez sur l'icône de cadenas dans votre navigateur et comparez l'empreinte SHA-256 avec celle-ci. Des empreintes correspondantes confirment que vous vous connectez au vrai serveur.",
   "settings.security.regenerateCertificate": "Régénérer le Certificat",
   "settings.security.regenerate": "Régénérer",

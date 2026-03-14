@@ -156,7 +156,7 @@
   "settings.security.fingerprint": "Huella Digital",
   "settings.security.validUntil": "Válido Hasta",
   "settings.security.trustOtherDevices": "Confiar en Otros Dispositivos",
-  "settings.security.openTrustPage": "Abrir Página de Confianza",
+  "settings.security.openTrustPage": "Abrir asistente de confianza del certificado",
   "settings.security.fingerprintHint": "Al conectarse desde un nuevo dispositivo, haz clic en el icono del candado en tu navegador y compara la huella digital SHA-256 con esta. Las huellas digitales coincidentes confirman que te estás conectando al servidor real.",
   "settings.security.regenerateCertificate": "Regenerar Certificado",
   "settings.security.regenerate": "Regenerar",

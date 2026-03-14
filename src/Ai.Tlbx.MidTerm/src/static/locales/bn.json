@@ -156,7 +156,7 @@
   "settings.security.fingerprint": "ফিঙ্গারপ্রিন্ট",
   "settings.security.validUntil": "বৈধ পর্যন্ত",
   "settings.security.trustOtherDevices": "অন্য ডিভাইসে বিশ্বাস করুন",
-  "settings.security.openTrustPage": "ট্রাস্ট পেজ খুলুন",
+  "settings.security.openTrustPage": "সার্টিফিকেট ট্রাস্ট হেল্পার খুলুন",
   "settings.security.fingerprintHint": "নতুন ডিভাইস থেকে সংযোগ করার সময়, ব্রাউজারে তালা আইকনে ক্লিক করুন এবং SHA-256 ফিঙ্গারপ্রিন্ট তুলনা করুন। মিলে গেলে সংযোগ প্রামাণিক।",
   "settings.security.regenerateCertificate": "সার্টিফিকেট পুনরায় তৈরি করুন",
   "settings.security.regenerate": "পুনরায় তৈরি করুন",

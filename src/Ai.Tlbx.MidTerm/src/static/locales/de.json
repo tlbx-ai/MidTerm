@@ -156,7 +156,7 @@
   "settings.security.fingerprint": "Fingerabdruck",
   "settings.security.validUntil": "Gültig bis",
   "settings.security.trustOtherDevices": "Auf anderen Geräten vertrauen",
-  "settings.security.openTrustPage": "Trust-Seite öffnen",
+  "settings.security.openTrustPage": "Zertifikat-Vertrauenshilfe öffnen",
   "settings.security.fingerprintHint": "Wenn Sie sich von einem neuen Gerät verbinden, klicken Sie auf das Vorhängeschloss-Symbol in Ihrem Browser und vergleichen Sie den SHA-256-Fingerabdruck mit diesem. Übereinstimmende Fingerabdrücke bestätigen, dass Sie sich mit dem echten Server verbinden.",
   "settings.security.regenerateCertificate": "Zertifikat neu generieren",
   "settings.security.regenerate": "Neu generieren",

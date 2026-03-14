@@ -156,7 +156,7 @@
   "settings.security.fingerprint": "フィンガープリント",
   "settings.security.validUntil": "有効期限",
   "settings.security.trustOtherDevices": "他のデバイスで信頼",
-  "settings.security.openTrustPage": "信頼ページを開く",
+  "settings.security.openTrustPage": "証明書信頼ヘルパーを開く",
   "settings.security.fingerprintHint": "新しいデバイスから接続する際、ブラウザの鍵アイコンをクリックしてSHA-256フィンガープリントを比較してください。一致すれば本物のサーバーに接続しています。",
   "settings.security.regenerateCertificate": "証明書を再生成",
   "settings.security.regenerate": "再生成",

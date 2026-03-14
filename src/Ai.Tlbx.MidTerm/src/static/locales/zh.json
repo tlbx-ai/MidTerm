@@ -159,7 +159,7 @@
   "settings.security.fingerprint": "指纹",
   "settings.security.validUntil": "有效期至",
   "settings.security.trustOtherDevices": "在其他设备上信任",
-  "settings.security.openTrustPage": "打开信任页面",
+  "settings.security.openTrustPage": "打开证书信任助手",
   "settings.security.fingerprintHint": "从新设备连接时，点击浏览器中的挂锁图标，将 SHA-256 指纹与此处的指纹进行比较。指纹匹配即确认您正在连接到真实的服务器。",
   "settings.security.regenerateCertificate": "重新生成证书",
   "settings.security.regenerate": "重新生成",

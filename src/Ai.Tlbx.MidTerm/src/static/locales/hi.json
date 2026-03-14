@@ -156,7 +156,7 @@
   "settings.security.fingerprint": "फिंगरप्रिंट",
   "settings.security.validUntil": "वैध तक",
   "settings.security.trustOtherDevices": "अन्य डिवाइस पर भरोसा करें",
-  "settings.security.openTrustPage": "ट्रस्ट पेज खोलें",
+  "settings.security.openTrustPage": "सर्टिफिकेट ट्रस्ट हेल्पर खोलें",
   "settings.security.fingerprintHint": "नए डिवाइस से कनेक्ट करते समय, ब्राउज़र में ताला आइकन पर क्लिक करें और SHA-256 फिंगरप्रिंट की तुलना करें। मिलान होने पर कनेक्शन प्रामाणिक है।",
   "settings.security.regenerateCertificate": "प्रमाणपत्र पुनः उत्पन्न करें",
   "settings.security.regenerate": "पुनः उत्पन्न करें",

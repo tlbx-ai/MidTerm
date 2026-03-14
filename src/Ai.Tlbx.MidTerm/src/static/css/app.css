@@ -3401,10 +3401,12 @@ body.has-app-background::after {
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--fs-lg);
+  text-decoration: none;
 }
 
 .btn-secondary:hover {
   background-color: var(--btn-secondary);
+  text-decoration: none;
 }
 
 .btn-danger {
