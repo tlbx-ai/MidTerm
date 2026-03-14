@@ -139,7 +139,10 @@ function buildGitIndicatorViewModel(status: GitStatusResponse | null): GitIndica
   }
 
   const changedCount =
-    status.staged.length + status.modified.length + status.untracked.length + status.conflicted.length;
+    status.staged.length +
+    status.modified.length +
+    status.untracked.length +
+    status.conflicted.length;
   let statusText = t('git.cleanShort');
 
   if (status.conflicted.length > 0) {
@@ -312,7 +315,7 @@ export function updateCwd(bar: HTMLDivElement, cwd: string): void {
 }
 
 export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusResponse | null): void {
-  const button = bar.querySelector('.git-indicator') as HTMLButtonElement | null;
+  const button = bar.querySelector<HTMLButtonElement>('.git-indicator');
   const branchSpan = bar.querySelector('.git-indicator-branch');
   const separatorSpan = bar.querySelector('.git-indicator-separator');
   const statusSpan = bar.querySelector('.git-indicator-status');
