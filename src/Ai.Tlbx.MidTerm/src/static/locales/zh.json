@@ -397,6 +397,8 @@
   "session.rename": "重命名会话",
   "session.close": "关闭会话",
   "session.injectGuidance": "告知AI关于MidTerm",
+  "session.injectGuidancePrompt.default": "你当前运行在 MidTerm 中，这是一个基于 Web 的终端多路复用器。MidTerm 已在当前工作目录创建了 .midterm/。这个终端可以使用 MidTerm 的浏览器控制和分屏辅助工具。现在请阅读 .midterm/AGENTS.md。MidTerm CLI 辅助脚本位于 .midterm/mtcli.sh 和 .midterm/mtcli.ps1。",
+  "session.injectGuidancePrompt.claude": "你当前运行在 MidTerm 中，这是一个基于 Web 的终端多路复用器。MidTerm 已在当前工作目录创建了 .midterm/。这个终端可以使用 MidTerm 的浏览器控制、分屏和 DOM 检查辅助工具。现在请阅读 .midterm/CLAUDE.md。MidTerm CLI 辅助脚本位于 .midterm/mtcli.sh 和 .midterm/mtcli.ps1。",
   "session.removeFromLayout": "从分屏布局中移除",
   "session.actions": "操作",
   "network.enableClipboard": "点击启用剪贴板和安全功能",

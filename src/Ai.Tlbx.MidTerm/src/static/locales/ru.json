@@ -394,6 +394,8 @@
   "session.rename": "Переименовать сессию",
   "session.close": "Закрыть сессию",
   "session.injectGuidance": "Сообщить ИИ о MidTerm",
+  "session.injectGuidancePrompt.default": "Вы работаете внутри MidTerm, веб-мультиплексора терминала. MidTerm создал .midterm/ в этом рабочем каталоге. Этот терминал может использовать помощники MidTerm для управления браузером и разделённых панелей. Сейчас прочитайте .midterm/AGENTS.md. Помощники CLI MidTerm доступны в .midterm/mtcli.sh и .midterm/mtcli.ps1.",
+  "session.injectGuidancePrompt.claude": "Вы работаете внутри MidTerm, веб-мультиплексора терминала. MidTerm создал .midterm/ в этом рабочем каталоге. Этот терминал может использовать помощники MidTerm для управления браузером, разделённых панелей и инспекции DOM. Сейчас прочитайте .midterm/CLAUDE.md. Помощники CLI MidTerm доступны в .midterm/mtcli.sh и .midterm/mtcli.ps1.",
   "session.removeFromLayout": "Удалить из разделённого макета",
   "session.actions": "Действия",
   "network.enableClipboard": "Нажмите для включения буфера обмена и безопасных функций",

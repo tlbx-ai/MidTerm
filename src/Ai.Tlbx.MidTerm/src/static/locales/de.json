@@ -394,6 +394,8 @@
   "session.rename": "Sitzung umbenennen",
   "session.close": "Sitzung schließen",
   "session.injectGuidance": "KI über MidTerm informieren",
+  "session.injectGuidancePrompt.default": "Du läufst in MidTerm, einem webbasierten Terminal-Multiplexer. MidTerm hat .midterm/ in diesem Arbeitsverzeichnis angelegt. Dieses Terminal kann MidTerm-Helfer für Browser-Steuerung und Split-Panes nutzen. Lies jetzt .midterm/AGENTS.md. Die MidTerm-CLI-Helfer liegen in .midterm/mtcli.sh und .midterm/mtcli.ps1 bereit.",
+  "session.injectGuidancePrompt.claude": "Du läufst in MidTerm, einem webbasierten Terminal-Multiplexer. MidTerm hat .midterm/ in diesem Arbeitsverzeichnis angelegt. Dieses Terminal kann MidTerm-Helfer für Browser-Steuerung, Split-Panes und DOM-Inspektion nutzen. Lies jetzt .midterm/CLAUDE.md. Die MidTerm-CLI-Helfer liegen in .midterm/mtcli.sh und .midterm/mtcli.ps1 bereit.",
   "session.removeFromLayout": "Aus geteiltem Layout entfernen",
   "session.actions": "Aktionen",
   "network.enableClipboard": "Klicken Sie, um Zwischenablage & sichere Funktionen zu aktivieren",

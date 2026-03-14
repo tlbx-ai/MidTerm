@@ -394,6 +394,8 @@
   "session.rename": "सत्र का नाम बदलें",
   "session.close": "सत्र बंद करें",
   "session.injectGuidance": "AI को MidTerm के बारे में बताएं",
+  "session.injectGuidancePrompt.default": "आप MidTerm के अंदर चल रहे हैं, जो एक वेब टर्मिनल मल्टीप्लेक्सर है। MidTerm ने इस कार्य निर्देशिका में .midterm/ बनाया है। यह टर्मिनल MidTerm के ब्राउज़र नियंत्रण और स्प्लिट-पेन हेल्पर्स का उपयोग कर सकता है। अभी .midterm/AGENTS.md पढ़ें। MidTerm CLI हेल्पर्स .midterm/mtcli.sh और .midterm/mtcli.ps1 में उपलब्ध हैं।",
+  "session.injectGuidancePrompt.claude": "आप MidTerm के अंदर चल रहे हैं, जो एक वेब टर्मिनल मल्टीप्लेक्सर है। MidTerm ने इस कार्य निर्देशिका में .midterm/ बनाया है। यह टर्मिनल MidTerm के ब्राउज़र नियंत्रण, स्प्लिट-पेन और DOM निरीक्षण हेल्पर्स का उपयोग कर सकता है। अभी .midterm/CLAUDE.md पढ़ें। MidTerm CLI हेल्पर्स .midterm/mtcli.sh और .midterm/mtcli.ps1 में उपलब्ध हैं।",
   "session.removeFromLayout": "विभाजित लेआउट से हटाएँ",
   "session.actions": "कार्रवाइयाँ",
   "network.enableClipboard": "क्लिपबोर्ड और सुरक्षित सुविधाएँ सक्षम करने के लिए क्लिक करें",

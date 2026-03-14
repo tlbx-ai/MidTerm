@@ -394,6 +394,8 @@
   "session.rename": "Renomear sessão",
   "session.close": "Fechar sessão",
   "session.injectGuidance": "Informar IA sobre MidTerm",
+  "session.injectGuidancePrompt.default": "Você está rodando dentro do MidTerm, um multiplexador de terminal web. O MidTerm criou .midterm/ neste diretório de trabalho. Este terminal pode usar os helpers do MidTerm para controle do navegador e painéis divididos. Leia .midterm/AGENTS.md agora. Os helpers da CLI do MidTerm estão disponíveis em .midterm/mtcli.sh e .midterm/mtcli.ps1.",
+  "session.injectGuidancePrompt.claude": "Você está rodando dentro do MidTerm, um multiplexador de terminal web. O MidTerm criou .midterm/ neste diretório de trabalho. Este terminal pode usar os helpers do MidTerm para controle do navegador, painéis divididos e inspeção do DOM. Leia .midterm/CLAUDE.md agora. Os helpers da CLI do MidTerm estão disponíveis em .midterm/mtcli.sh e .midterm/mtcli.ps1.",
   "session.removeFromLayout": "Remover do layout dividido",
   "session.actions": "Ações",
   "network.enableClipboard": "Clique para ativar a área de transferência e recursos seguros",

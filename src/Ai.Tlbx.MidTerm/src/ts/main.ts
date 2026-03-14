@@ -40,6 +40,7 @@ import {
   calculateOptimalDimensions,
   getEffectiveTerminalFontSize,
   handleClipboardPaste,
+  pasteToTerminal,
   initMobilePiP,
   recordMobilePiPBytes,
 } from './modules/terminal';
@@ -91,6 +92,7 @@ import {
   type LaunchEntry,
 } from './modules/history';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
+import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
 import { buildProcessCwdTuple, buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
   initTouchController,
@@ -600,7 +602,11 @@ async function injectGuidance(sessionId: string): Promise<void> {
     const res = await fetch(`/api/sessions/${sessionId}/inject-guidance`, { method: 'POST' });
     if (!res.ok) {
       log.warn(() => `Inject guidance failed: ${res.status}`);
+      return;
     }
+
+    const fg = getForegroundInfo(sessionId);
+    await pasteToTerminal(sessionId, t(getInjectGuidancePromptKey(fg.name)));
   } catch (e: unknown) {
     log.error(() => `Failed to inject guidance for ${sessionId}: ${String(e)}`);
   }
