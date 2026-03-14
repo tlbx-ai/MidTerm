@@ -440,10 +440,10 @@ let lastHintedSessionId: string | null = null;
 // Each session keeps a small owned queue so we can preserve strict in-order
 // delivery across async decompression and xterm's async write callback.
 //
-// We intentionally avoid a second browser-side scheduler in front of xterm.
-// xterm already slices parsing work internally, and waiting on its write
-// callback keeps MidTerm's notion of "delivered output" aligned with what the
-// user can actually see.
+// We intentionally keep MidTerm's own queue shallow. xterm already preserves
+// write order internally, so we only use its async callback for "parsed and
+// visible" notifications while periodically yielding the main thread to keep
+// input responsive during flood output.
 
 interface OutputFrameItem {
   sessionId: string;
@@ -460,6 +460,7 @@ interface SessionOutputQueue {
 const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
+const OUTPUT_DRAIN_BUDGET_MS = 8;
 const CURSOR_BURST_WINDOW_MS = 180;
 const CURSOR_BURST_MIN_BYTES = 12;
 const CURSOR_IDLE_SHOW_MS = 650;
@@ -477,6 +478,10 @@ function compactSessionQueue(queue: SessionOutputQueue): void {
     queue.items.splice(0, queue.index);
     queue.index = 0;
   }
+}
+
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function getPendingFrameCount(queue: SessionOutputQueue): number {
@@ -521,9 +526,9 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
 
   if (getPendingFrameCount(queue) === 0) {
     // Do not remove the queue object yet. The current worker may still be
-    // waiting on async decompression or xterm's write callback, and deleting it
-    // early would let a second worker start for the same session and break
-    // strict per-session ordering.
+    // waiting on async decompression or a timed yield, and deleting it early
+    // would let a second worker start for the same session and break strict
+    // per-session ordering.
     queue.items.length = 0;
     queue.index = 0;
   } else if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
@@ -557,6 +562,8 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
   queue.processing = true;
 
   try {
+    let sliceStartMs = performance.now();
+
     while (generation === outputQueueGeneration) {
       const item = dequeueOutputFrame(sessionId);
       if (!item) {
@@ -564,13 +571,24 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
       }
 
       await processOneFrame(item, generation);
+
+      if (generation !== outputQueueGeneration) {
+        break;
+      }
+
+      // Heavy output must periodically yield so keyboard interrupts like Ctrl+C
+      // can be processed promptly instead of waiting behind a long browser-side drain.
+      if (performance.now() - sliceStartMs >= OUTPUT_DRAIN_BUDGET_MS) {
+        await yieldToMain();
+        sliceStartMs = performance.now();
+      }
     }
   } finally {
     queue.processing = false;
 
     // If new frames landed after the current drain finished, restart the same
     // per-session worker. We keep sequencing at the session boundary so async
-    // decompression and xterm callbacks cannot reorder a terminal's output.
+    // decompression and timed yields cannot reorder a terminal's output.
     if (generation === outputQueueGeneration && getPendingFrameCount(queue) > 0) {
       void processSessionOutputQueue(sessionId, generation);
     } else if (sessionOutputQueues.get(sessionId) === queue && getPendingFrameCount(queue) === 0) {
@@ -630,7 +648,7 @@ async function processOneFrame(item: OutputFrameItem, generation: number): Promi
 
     const state = sessionTerminals.get(item.sessionId);
     if (state && state.opened) {
-      await writeToTerminalAsync(item.sessionId, state, cols, rows, data, generation);
+      writeToTerminal(item.sessionId, state, cols, rows, data, generation);
     } else if (data.length > 0) {
       bufferPendingFrame(item.sessionId, cols, rows, data);
     }
@@ -794,33 +812,33 @@ export function reconcileSynchronizedOutputCursor(sessionId: string): void {
 /**
  * Write data to terminal, resizing if dimensions changed.
  */
-function writeTerminalDataAsync(
+function writeTerminalData(
   sessionId: string,
   state: TerminalState,
   data: Uint8Array,
   generation: number,
-): Promise<void> {
-  return new Promise((resolve) => {
-    // xterm's write callback fires when the chunk has been parsed. We wait for
-    // that boundary so MidTerm does not pile an unbounded browser-side queue in
-    // front of xterm's own WriteBuffer.
-    state.terminal.write(data, () => {
-      if (generation === outputQueueGeneration) {
-        measureCompletedOutputRtt(sessionId);
-      }
-      resolve();
-    });
+  onParsed?: () => void,
+): void {
+  // xterm already preserves write order internally. We use the callback for
+  // "parsed and visible" notifications only, not as a per-frame flow-control gate.
+  state.terminal.write(data, () => {
+    if (generation !== outputQueueGeneration) {
+      return;
+    }
+
+    measureCompletedOutputRtt(sessionId);
+    onParsed?.();
   });
 }
 
-async function writeToTerminalAsync(
+function writeToTerminal(
   sessionId: string,
   state: TerminalState,
   cols: number,
   rows: number,
   data: Uint8Array,
   generation: number,
-): Promise<void> {
+): void {
   // Track bracketed paste mode by scanning raw bytes (no string allocation)
   if (data.length >= 8) {
     scanBracketedPaste(data, sessionId);
@@ -866,18 +884,19 @@ async function writeToTerminalAsync(
 
   // Always write data if present
   if (cursorVisibility.data.length > 0) {
-    await writeTerminalDataAsync(sessionId, state, cursorVisibility.data, generation);
-
-    // File path scanning is intentionally kicked behind the xterm write callback.
-    // The terminal parse path is latency-sensitive; File Radar can lag slightly
-    // without affecting correctness.
-    if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
-      queueMicrotask(() => {
-        if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
-          scanOutputForPaths(sessionId, cursorVisibility.data);
-        }
-      });
-    }
+    const writtenData = cursorVisibility.data;
+    writeTerminalData(sessionId, state, writtenData, generation, () => {
+      // File path scanning is intentionally kicked behind the xterm write callback.
+      // The terminal parse path is latency-sensitive; File Radar can lag slightly
+      // without affecting correctness.
+      if (sessionId === $activeSessionId.get()) {
+        queueMicrotask(() => {
+          if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
+            scanOutputForPaths(sessionId, writtenData);
+          }
+        });
+      }
+    });
   }
 
   // DISABLED: Was causing cursor to disappear in some cases
@@ -1253,12 +1272,5 @@ export function writeOutputFrame(
   payload: Uint8Array,
 ): void {
   const frame = parseOutputFrame(payload);
-  void writeToTerminalAsync(
-    sessionId,
-    state,
-    frame.cols,
-    frame.rows,
-    frame.data,
-    outputQueueGeneration,
-  );
+  writeToTerminal(sessionId, state, frame.cols, frame.rows, frame.data, outputQueueGeneration);
 }
