@@ -21,6 +21,7 @@ import {
   $activeSessionId,
   $currentSettings,
   $isMainBrowser,
+  $sessions,
   $windowsBuildNumber,
 } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
@@ -611,10 +612,13 @@ export function setupTerminalEvents(
     if (e.key === 'F12') return false;
 
     const foreground = getForegroundInfo(sessionId);
+    const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
     const enterOverride = getTerminalEnterOverride(
       e,
       $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
-      isPowerShellEnterTarget(foreground.name, foreground.commandLine) ? 'powershell' : 'default',
+      isPowerShellEnterTarget(foreground.name, foreground.commandLine, sessionShellType)
+        ? 'powershell'
+        : 'default',
     );
     if (enterOverride !== null) {
       sendInput(sessionId, enterOverride);

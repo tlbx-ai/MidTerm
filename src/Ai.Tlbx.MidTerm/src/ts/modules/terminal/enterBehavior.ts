@@ -9,7 +9,11 @@ export type TerminalEnterMode = 'default' | 'shiftEnterLineFeed';
 export type TerminalEnterTarget = 'default' | 'powershell';
 
 export interface EnterOverrideInput {
-  key: string;
+  key?: string;
+  code?: string;
+  keyCode?: number;
+  which?: number;
+  charCode?: number;
   ctrlKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
@@ -23,10 +27,23 @@ const PSREADLINE_CTRL_SHIFT_ENTER = '\x1b[13;6u';
 export function isPowerShellEnterTarget(
   foregroundName?: string | null,
   foregroundCommandLine?: string | null,
+  shellType?: string | null,
 ): boolean {
-  const haystack = `${foregroundName ?? ''} ${foregroundCommandLine ?? ''}`.toLowerCase();
+  const haystack =
+    `${foregroundName ?? ''} ${foregroundCommandLine ?? ''} ${shellType ?? ''}`.toLowerCase();
   return (
     haystack.includes('pwsh') || haystack.includes('powershell') || haystack.includes('psreadline')
+  );
+}
+
+function isEnterKey(input: EnterOverrideInput): boolean {
+  return (
+    input.key === 'Enter' ||
+    input.code === 'Enter' ||
+    input.code === 'NumpadEnter' ||
+    input.keyCode === 13 ||
+    input.which === 13 ||
+    input.charCode === 13
   );
 }
 
@@ -38,7 +55,7 @@ export function getTerminalEnterOverride(
   mode: TerminalEnterMode,
   target: TerminalEnterTarget = 'default',
 ): string | null {
-  if (input.key !== 'Enter') {
+  if (!isEnterKey(input)) {
     return null;
   }
 
