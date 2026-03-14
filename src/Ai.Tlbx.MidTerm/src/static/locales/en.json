@@ -141,7 +141,7 @@
   "settings.behavior.inputModeHint": "Smart Input uses a text box instead of direct keyboard input. Both mode docks the input bar below the terminal.",
   "settings.behavior.scrollbackProtection": "Claude Code scrollback glitch protection",
   "settings.behavior.keepAwake": "Keep computer awake while sessions exist",
-  "settings.behavior.keepAwakeHint": "Prevents sleep or standby while MidTerm has at least one live session. The display may still turn off.",
+  "settings.behavior.keepAwakeHint": "Prevents sleep or standby while MidTerm has at least one live session. The display may still turn off. On Mac laptops, closing the lid still puts the computer to sleep.",
   "settings.behavior.fileRadar": "File Radar",
   "settings.behavior.managerBar": "Middle Manager Bar",
   "settings.behavior.changelogAfterUpdate": "Show changelog after update",

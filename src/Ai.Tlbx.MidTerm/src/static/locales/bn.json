@@ -126,7 +126,7 @@
   "settings.behavior.inputModeHint": "স্মার্ট ইনপুট সরাসরি কীবোর্ড ইনপুটের পরিবর্তে একটি টেক্সট বক্স ব্যবহার করে। উভয় মোড টার্মিনালের নিচে ইনপুট বার ডক করে।",
   "settings.behavior.scrollbackProtection": "Claude Code স্ক্রলব্যাক গ্লিচ সুরক্ষা",
   "settings.behavior.keepAwake": "সেশন থাকলে কম্পিউটার জাগ্রত রাখুন",
-  "settings.behavior.keepAwakeHint": "MidTerm-এ অন্তত একটি সক্রিয় সেশন থাকলে স্লিপ বা স্ট্যান্ডবাই প্রতিরোধ করে। স্ক্রিন তবুও বন্ধ হতে পারে।",
+  "settings.behavior.keepAwakeHint": "MidTerm-এ অন্তত একটি সক্রিয় সেশন থাকলে স্লিপ বা স্ট্যান্ডবাই প্রতিরোধ করে। স্ক্রিন তবুও বন্ধ হতে পারে। Mac ল্যাপটপে ঢাকনা বন্ধ করলে কম্পিউটার তবুও স্লিপে যায়।",
   "settings.behavior.fileRadar": "File Radar",
   "settings.behavior.managerBar": "Middle Manager Bar",
   "settings.behavior.changelogAfterUpdate": "আপডেটের পরে পরিবর্তন দেখান",

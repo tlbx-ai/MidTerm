@@ -126,7 +126,7 @@
   "settings.behavior.inputModeHint": "Smart Input verwendet ein Textfeld anstelle der direkten Tastatureingabe. Der Beides-Modus dockt die Eingabeleiste unter dem Terminal an.",
   "settings.behavior.scrollbackProtection": "Claude Code Scrollback-Glitch-Schutz",
   "settings.behavior.keepAwake": "Computer wach halten, solange Sitzungen existieren",
-  "settings.behavior.keepAwakeHint": "Verhindert Ruhezustand oder Standby, solange MidTerm mindestens eine aktive Sitzung hat. Der Bildschirm darf sich weiterhin ausschalten.",
+  "settings.behavior.keepAwakeHint": "Verhindert Ruhezustand oder Standby, solange MidTerm mindestens eine aktive Sitzung hat. Der Bildschirm darf sich weiterhin ausschalten. Bei Mac-Laptops versetzt das Schließen des Deckels den Computer weiterhin in den Ruhezustand.",
   "settings.behavior.fileRadar": "File Radar",
   "settings.behavior.managerBar": "Mittlere Manager-Leiste",
   "settings.behavior.changelogAfterUpdate": "Änderungsprotokoll nach Update anzeigen",

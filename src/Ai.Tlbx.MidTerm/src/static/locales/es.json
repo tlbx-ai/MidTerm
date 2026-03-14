@@ -126,7 +126,7 @@
   "settings.behavior.inputModeHint": "Entrada inteligente usa un cuadro de texto en lugar de entrada directa por teclado. El modo Ambos fija la barra de entrada debajo del terminal.",
   "settings.behavior.scrollbackProtection": "Protección contra fallas de desplazamiento de Claude Code",
   "settings.behavior.keepAwake": "Mantener la computadora activa mientras existan sesiones",
-  "settings.behavior.keepAwakeHint": "Evita la suspensión o el modo de espera mientras MidTerm tenga al menos una sesión activa. La pantalla aún puede apagarse.",
+  "settings.behavior.keepAwakeHint": "Evita la suspensión o el modo de espera mientras MidTerm tenga al menos una sesión activa. La pantalla aún puede apagarse. En los portátiles Mac, cerrar la tapa sigue poniendo el equipo en suspensión.",
   "settings.behavior.fileRadar": "Radar de Archivos",
   "settings.behavior.managerBar": "Barra de Administración Central",
   "settings.behavior.changelogAfterUpdate": "Mostrar registro de cambios después de actualizar",
