@@ -365,6 +365,8 @@
   "git.recentCommits": "हाल के कमिट",
   "git.noCommits": "कोई कमिट नहीं",
   "git.workingTreeClean": "कार्यशील ट्री साफ है",
+  "git.cleanShort": "साफ़",
+  "git.noRepoShort": "कोई रिपो नहीं",
   "commands.stop": "रोकें",
   "commands.run": "चलाएँ",
   "commands.edit": "संपादित करें",

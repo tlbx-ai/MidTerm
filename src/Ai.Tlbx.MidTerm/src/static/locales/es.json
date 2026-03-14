@@ -365,6 +365,8 @@
   "git.recentCommits": "Commits recientes",
   "git.noCommits": "Sin commits",
   "git.workingTreeClean": "Directorio de trabajo limpio",
+  "git.cleanShort": "Limpio",
+  "git.noRepoShort": "Sin repo",
   "commands.stop": "Detener",
   "commands.run": "Ejecutar",
   "commands.edit": "Editar",

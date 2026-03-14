@@ -8284,15 +8284,67 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .git-indicator {
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.git-indicator-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.05;
+}
+
+.git-indicator-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 132px;
+}
+
+.git-indicator-line-primary {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.git-indicator-line-secondary {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  opacity: 0.9;
+}
+
+.git-indicator-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-indicator-separator,
+.git-indicator-status {
+  flex-shrink: 0;
+}
+
+.git-indicator-separator {
+  color: var(--text-muted);
+}
+
+.git-indicator-status {
+  color: var(--text-muted);
+}
+
+.git-indicator-empty .git-indicator-branch,
+.git-indicator-empty .git-indicator-status,
+.git-indicator-empty .git-indicator-separator {
+  color: var(--text-muted);
 }
 
 .git-indicator-stats {
-  font-size: var(--fs-sm);
-  font-family: var(--font-mono);
   display: flex;
   gap: 6px;
-  opacity: 0.9;
 }
 
 .git-indicator-added {

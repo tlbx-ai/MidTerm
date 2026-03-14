@@ -14,7 +14,7 @@ export {
   getActiveTab,
   getTabBarHeight,
   setActionButtonActive,
-  updateAllGitIndicators,
+  updateGitIndicatorForSession,
   switchTab,
   reparentTerminalContainer,
   updateSessionCwd,

@@ -331,6 +331,8 @@
   "git.recentCommits": "Recent Commits",
   "git.noCommits": "No commits",
   "git.workingTreeClean": "Working tree clean",
+  "git.cleanShort": "Clean",
+  "git.noRepoShort": "No repo",
 
   "commands.title": "Commands",
   "commands.stop": "Stop",

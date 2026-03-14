@@ -365,6 +365,8 @@
   "git.recentCommits": "最近のコミット",
   "git.noCommits": "コミットなし",
   "git.workingTreeClean": "ワーキングツリーはクリーンです",
+  "git.cleanShort": "クリーン",
+  "git.noRepoShort": "リポジトリなし",
   "commands.stop": "停止",
   "commands.run": "実行",
   "commands.edit": "編集",

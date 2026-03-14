@@ -365,6 +365,8 @@
   "git.recentCommits": "সাম্প্রতিক কমিট",
   "git.noCommits": "কোনো কমিট নেই",
   "git.workingTreeClean": "ওয়ার্কিং ট্রি পরিষ্কার",
+  "git.cleanShort": "পরিষ্কার",
+  "git.noRepoShort": "রেপো নেই",
   "commands.stop": "থামান",
   "commands.run": "চালান",
   "commands.edit": "সম্পাদনা",

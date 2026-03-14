@@ -1,9 +1,9 @@
 /**
  * Session Tab Bar
  *
- * Creates and manages the tab bar UI for each session.
+ * Creates and manages the session bar UI for each session.
  * Tabs: Terminal | Files
- * Right-aligned actions: WEB | Commands | Share | Git
+ * Right-aligned actions: WEB | Commands | Share | Git dock toggle
  */
 
 import type { GitStatusResponse } from '../git/types';
@@ -67,11 +67,112 @@ function createActionLabel(text: string): HTMLSpanElement {
   return label;
 }
 
+function createTextNode(className: string, text: string): HTMLSpanElement {
+  const node = document.createElement('span');
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
 function buildGitStatsMarkup(additions: number, deletions: number): string {
   return (
     `<span class="git-indicator-added">+${additions}</span>` +
     `<span class="git-indicator-deleted">-${deletions}</span>`
   );
+}
+
+interface GitIndicatorViewModel {
+  branchText: string;
+  statusText: string;
+  additions: number;
+  deletions: number;
+  title: string;
+  isEmpty: boolean;
+}
+
+function createGitIndicatorButton(onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.className = 'ide-bar-btn git-indicator';
+  btn.dataset.action = 'git';
+  btn.appendChild(createActionIcon(GIT_BUTTON_ICON));
+
+  const meta = document.createElement('span');
+  meta.className = 'git-indicator-meta';
+
+  const primaryLine = document.createElement('span');
+  primaryLine.className = 'git-indicator-line git-indicator-line-primary';
+  primaryLine.appendChild(createTextNode('git-indicator-branch', t('git.noRepoShort')));
+  primaryLine.appendChild(createTextNode('git-indicator-separator', ''));
+  primaryLine.appendChild(createTextNode('git-indicator-status', ''));
+
+  const secondaryLine = document.createElement('span');
+  secondaryLine.className = 'git-indicator-line git-indicator-line-secondary git-indicator-stats';
+  secondaryLine.innerHTML = buildGitStatsMarkup(0, 0);
+
+  meta.appendChild(primaryLine);
+  meta.appendChild(secondaryLine);
+  btn.appendChild(meta);
+  btn.title = t('sessionTabs.git');
+  btn.setAttribute('aria-label', t('sessionTabs.git'));
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+function hasGitStatus(status: GitStatusResponse | null): status is GitStatusResponse {
+  if (!status) {
+    return false;
+  }
+
+  return Boolean(status.repoRoot || status.branch);
+}
+
+function buildGitIndicatorViewModel(status: GitStatusResponse | null): GitIndicatorViewModel {
+  if (!hasGitStatus(status)) {
+    return {
+      branchText: t('git.noRepoShort'),
+      statusText: '',
+      additions: 0,
+      deletions: 0,
+      title: `${t('sessionTabs.git')}: ${t('git.noRepoShort')}`,
+      isEmpty: true,
+    };
+  }
+
+  const changedCount =
+    status.staged.length + status.modified.length + status.untracked.length + status.conflicted.length;
+  let statusText = t('git.cleanShort');
+
+  if (status.conflicted.length > 0) {
+    statusText = `!${status.conflicted.length}`;
+  } else if (changedCount > 0) {
+    statusText = `~${changedCount}`;
+  } else if (status.ahead > 0 || status.behind > 0) {
+    const syncParts: string[] = [];
+    if (status.ahead > 0) {
+      syncParts.push(`↑${status.ahead}`);
+    }
+    if (status.behind > 0) {
+      syncParts.push(`↓${status.behind}`);
+    }
+    statusText = syncParts.join(' ');
+  }
+
+  const branchText = status.branch || 'HEAD';
+  const additions = status.totalAdditions;
+  const deletions = status.totalDeletions;
+  const title =
+    `${t('sessionTabs.git')}: ${branchText}` +
+    (statusText ? ` / ${statusText}` : '') +
+    `, +${additions} -${deletions}`;
+
+  return {
+    branchText,
+    statusText,
+    additions,
+    deletions,
+    title,
+    isEmpty: false,
+  };
 }
 
 function createActionButton(
@@ -179,18 +280,7 @@ export function createTabBar(
   );
   actions.appendChild(shareBtn);
 
-  const gitBtn = createActionButton(
-    'git',
-    'ide-bar-btn git-indicator',
-    t('sessionTabs.git'),
-    t('sessionTabs.git'),
-    GIT_BUTTON_ICON,
-    () => gitClickHandler?.(),
-  );
-  const gitStats = document.createElement('span');
-  gitStats.className = 'git-indicator-stats';
-  gitStats.innerHTML = buildGitStatsMarkup(0, 0);
-  gitBtn.appendChild(gitStats);
+  const gitBtn = createGitIndicatorButton(() => gitClickHandler?.());
   actions.appendChild(gitBtn);
 
   bar.appendChild(actions);
@@ -222,16 +312,20 @@ export function updateCwd(bar: HTMLDivElement, cwd: string): void {
 }
 
 export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusResponse | null): void {
+  const button = bar.querySelector('.git-indicator') as HTMLButtonElement | null;
+  const branchSpan = bar.querySelector('.git-indicator-branch');
+  const separatorSpan = bar.querySelector('.git-indicator-separator');
+  const statusSpan = bar.querySelector('.git-indicator-status');
   const statsSpan = bar.querySelector('.git-indicator-stats');
-  if (!statsSpan) return;
+  if (!button || !branchSpan || !separatorSpan || !statusSpan || !statsSpan) return;
 
-  if (!status) {
-    statsSpan.innerHTML = buildGitStatsMarkup(0, 0);
-    return;
-  }
+  const viewModel = buildGitIndicatorViewModel(status);
 
-  const additions = status.totalAdditions;
-  const deletions = status.totalDeletions;
-
-  statsSpan.innerHTML = buildGitStatsMarkup(additions, deletions);
+  branchSpan.textContent = viewModel.branchText;
+  statusSpan.textContent = viewModel.statusText;
+  separatorSpan.textContent = viewModel.statusText ? '/' : '';
+  statsSpan.innerHTML = buildGitStatsMarkup(viewModel.additions, viewModel.deletions);
+  button.title = viewModel.title;
+  button.setAttribute('aria-label', viewModel.title);
+  button.classList.toggle('git-indicator-empty', viewModel.isEmpty);
 }

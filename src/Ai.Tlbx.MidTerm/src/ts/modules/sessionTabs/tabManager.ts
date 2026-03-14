@@ -178,10 +178,13 @@ export function setActionButtonActive(actionId: IdeBarActionId, active: boolean)
   }
 }
 
-export function updateAllGitIndicators(status: GitStatusResponse | null): void {
-  for (const state of sessionTabStates.values()) {
-    updateGitIndicator(state.tabBar, status);
-  }
+export function updateGitIndicatorForSession(
+  sessionId: string,
+  status: GitStatusResponse | null,
+): void {
+  const state = sessionTabStates.get(sessionId);
+  if (!state) return;
+  updateGitIndicator(state.tabBar, status);
 }
 
 export function initSessionTabs(): void {
