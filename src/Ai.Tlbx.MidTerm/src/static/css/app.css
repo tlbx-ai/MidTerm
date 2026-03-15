@@ -3167,6 +3167,10 @@ body.has-app-background::after {
   background-color: var(--bg-sidebar);
 }
 
+.session-filter-bar[hidden] {
+  display: none;
+}
+
 .session-filter-input {
   width: 100%;
   min-width: 0;
