@@ -87,10 +87,13 @@ export interface SessionListCallbacks {
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
 let mobileMenuListenersBound = false;
+let sessionFilterListenersBound = false;
+let sessionFilterValue = '';
 const SESSION_GROUP_STORAGE_KEYS = {
   human: 'midterm.sidebar.humanSessionsCollapsed',
   agent: 'midterm.sidebar.agentSessionsCollapsed',
 } as const;
+const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
 
 export type SessionControlMode = 'human' | 'agent';
 
@@ -99,6 +102,136 @@ export interface SessionGroup {
   label: string;
   sessions: Session[];
   collapsed: boolean;
+}
+
+function normalizeSessionFilterValue(value: string | null | undefined): string {
+  return (value ?? '').trim();
+}
+
+function getSessionFilterTerms(query: string): string[] {
+  const normalizedQuery = normalizeSessionFilterValue(query).toLowerCase();
+  return normalizedQuery === '' ? [] : normalizedQuery.split(/\s+/);
+}
+
+function buildSessionFilterHaystack(session: Session): string {
+  const foregroundInfo = getForegroundInfo(session.id);
+  return [
+    session.name,
+    session.terminalTitle,
+    session.shellType,
+    session.currentDirectory,
+    foregroundInfo.name,
+    foregroundInfo.cwd,
+    foregroundInfo.commandLine,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n')
+    .toLowerCase();
+}
+
+function loadStoredSessionFilter(): string {
+  try {
+    return normalizeSessionFilterValue(localStorage.getItem(SESSION_FILTER_STORAGE_KEY));
+  } catch {
+    return '';
+  }
+}
+
+function persistSessionFilter(): void {
+  try {
+    if (sessionFilterValue === '') {
+      localStorage.removeItem(SESSION_FILTER_STORAGE_KEY);
+    } else {
+      localStorage.setItem(SESSION_FILTER_STORAGE_KEY, sessionFilterValue);
+    }
+  } catch {
+    // Ignore localStorage failures and keep the filter in memory.
+  }
+}
+
+function syncSessionFilterControls(): void {
+  const filterInput = dom.sessionFilterInput;
+  if (filterInput && filterInput.value !== sessionFilterValue) {
+    filterInput.value = sessionFilterValue;
+  }
+
+  dom.sessionFilterClear?.classList.toggle('hidden', sessionFilterValue === '');
+}
+
+function setSessionFilter(nextValue: string): void {
+  const normalizedValue = normalizeSessionFilterValue(nextValue);
+  if (normalizedValue === sessionFilterValue) {
+    syncSessionFilterControls();
+    return;
+  }
+
+  sessionFilterValue = normalizedValue;
+  persistSessionFilter();
+  syncSessionFilterControls();
+  renderSessionList();
+}
+
+function clearSessionFilter(focusInput: boolean = false): void {
+  setSessionFilter('');
+  if (focusInput) {
+    dom.sessionFilterInput?.focus();
+  }
+}
+
+function bindSessionFilterEvents(): void {
+  if (sessionFilterListenersBound) {
+    return;
+  }
+
+  const filterInput = dom.sessionFilterInput;
+  const clearButton = dom.sessionFilterClear;
+
+  if (filterInput) {
+    filterInput.setAttribute('aria-label', t('sidebar.filterTerminals'));
+    filterInput.addEventListener('input', () => {
+      setSessionFilter(filterInput.value);
+    });
+
+    filterInput.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (sessionFilterValue !== '') {
+          clearSessionFilter(true);
+        } else {
+          filterInput.blur();
+        }
+      }
+    });
+  }
+
+  if (clearButton) {
+    clearButton.setAttribute('aria-label', t('sidebar.clearTerminalFilter'));
+    clearButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearSessionFilter(true);
+    });
+  }
+
+  sessionFilterListenersBound = true;
+}
+
+export function filterSessionsByQuery(sessions: Session[], query: string): Session[] {
+  const terms = getSessionFilterTerms(query);
+  if (terms.length === 0) {
+    return sessions;
+  }
+
+  return sessions.filter((session) => {
+    const haystack = buildSessionFilterHaystack(session);
+    return terms.every((term) => haystack.includes(term));
+  });
+}
+
+export function isSessionFilterActive(): boolean {
+  return sessionFilterValue !== '';
 }
 
 // =============================================================================
@@ -110,6 +243,9 @@ export interface SessionGroup {
  */
 export function initializeSessionList(): void {
   addProcessStateListener(handleProcessStateChange);
+  sessionFilterValue = loadStoredSessionFilter();
+  syncSessionFilterControls();
+  bindSessionFilterEvents();
 
   if (!mobileMenuListenersBound) {
     document.addEventListener('keydown', handleMobileMenuKeydown);
@@ -523,6 +659,13 @@ function getSidebarDisplaySessions(): Session[] {
   ];
 }
 
+function createSessionFilterEmptyState(): HTMLDivElement {
+  const emptyState = document.createElement('div');
+  emptyState.className = 'session-filter-empty';
+  emptyState.textContent = t('sidebar.noMatchingTerminals');
+  return emptyState;
+}
+
 /**
  * Create a session item DOM element
  */
@@ -548,7 +691,7 @@ function createSessionItem(
   if (isChild) {
     item.dataset.parentId = session.parentSessionId ?? '';
   }
-  item.draggable = !isPending && !isChild;
+  item.draggable = !isPending && !isChild && !isSessionFilterActive();
 
   if (!isPending) {
     item.addEventListener('click', () => {
@@ -880,7 +1023,9 @@ export function renderSessionList(): void {
   if (!dom.sessionList) return;
 
   const sessionList = dom.sessionList;
-  const groups = groupSessionsByController(getSidebarDisplaySessions());
+  const displaySessions = getSidebarDisplaySessions();
+  const filteredSessions = filterSessionsByQuery(displaySessions, sessionFilterValue);
+  const groups = groupSessionsByController(filteredSessions);
 
   closeMobileActionMenu();
   sessionList.querySelectorAll<HTMLElement>('.session-item').forEach((item) => {
@@ -891,10 +1036,15 @@ export function renderSessionList(): void {
   });
 
   sessionList.replaceChildren();
+  sessionList.classList.toggle('filter-active', isSessionFilterActive());
 
-  groups.forEach((group) => {
-    sessionList.appendChild(createSessionGroupSection(group));
-  });
+  if (groups.length === 0 && displaySessions.length > 0 && isSessionFilterActive()) {
+    sessionList.appendChild(createSessionFilterEmptyState());
+  } else {
+    groups.forEach((group) => {
+      sessionList.appendChild(createSessionGroupSection(group));
+    });
+  }
 
   applySidebarGroupingClasses(sessionList);
 }

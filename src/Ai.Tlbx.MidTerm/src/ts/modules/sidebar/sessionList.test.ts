@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 const translations: Record<string, string> = {
   'sidebar.humanControlled': 'Human controlled',
   'sidebar.agentControlled': 'Agent controlled',
+  'sidebar.noMatchingTerminals': 'No terminals match the current filter',
 };
 
 const originalLocalStorage = globalThis.localStorage;
@@ -13,6 +14,7 @@ vi.mock('../i18n', () => ({
 
 describe('sessionList grouping', () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.stubGlobal('localStorage', {
       getItem: vi.fn(() => null),
       setItem: vi.fn(),
@@ -51,5 +53,50 @@ describe('sessionList grouping', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.key).toBe('agent');
+  });
+
+  it('filters sessions by title, shell, and current directory tokens', async () => {
+    const { filterSessionsByQuery } = await import('./sessionList');
+
+    const filtered = filterSessionsByQuery(
+      [
+        {
+          id: 'human-1',
+          shellType: 'Pwsh',
+          name: 'Inbox',
+          terminalTitle: 'Mail triage',
+          currentDirectory: 'Q:\\repos\\Jpa',
+        } as any,
+        {
+          id: 'agent-1',
+          shellType: 'Pwsh',
+          name: 'Worker',
+          terminalTitle: 'MidTerm sidebar',
+          currentDirectory: 'Q:\\repos\\MidtermJpa',
+          agentControlled: true,
+        } as any,
+      ],
+      'midterm q:\\repos\\midtermjpa',
+    );
+
+    expect(filtered.map((session) => session.id)).toEqual(['agent-1']);
+  });
+
+  it('removes empty controller groups after filtering', async () => {
+    const { filterSessionsByQuery, groupSessionsByController } = await import('./sessionList');
+
+    const groups = groupSessionsByController(
+      filterSessionsByQuery(
+        [
+          { id: 'human-1', shellType: 'Pwsh', name: 'Inbox' } as any,
+          { id: 'agent-1', shellType: 'Pwsh', name: 'Worker', agentControlled: true } as any,
+        ],
+        'worker',
+      ),
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key).toBe('agent');
+    expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['agent-1']);
   });
 });

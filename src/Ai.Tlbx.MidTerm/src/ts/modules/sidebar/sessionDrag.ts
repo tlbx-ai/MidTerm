@@ -8,6 +8,7 @@
 import { dom, sessionTerminals } from '../../state';
 import { reorderSessions, $sessionList, $activeSessionId } from '../../stores';
 import { persistSessionOrder } from '../comms';
+import { isSessionFilterActive } from './sessionList';
 import {
   showDockOverlay,
   hideDockOverlay,
@@ -79,6 +80,11 @@ export function initSessionDrag(): void {
 }
 
 function handleDragStart(e: DragEvent): void {
+  if (isSessionFilterActive()) {
+    e.preventDefault();
+    return;
+  }
+
   const target = e.target as HTMLElement;
   const sessionItem = closestSessionItem(target);
   if (!sessionItem) return;
@@ -256,6 +262,10 @@ function handleDrop(e: DragEvent): void {
 }
 
 function handleTouchStart(e: TouchEvent): void {
+  if (isSessionFilterActive()) {
+    return;
+  }
+
   const touch = e.touches[0];
   if (!touch) return;
 

@@ -118,6 +118,27 @@
           </button>
         </div>
         <div class="sidebar-section-label" data-i18n="sidebar.terminals">Terminals</div>
+        <div class="session-filter-bar">
+          <input
+            id="session-filter-input"
+            class="session-filter-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            data-i18n-placeholder="sidebar.filterTerminals"
+            placeholder="Filter terminals"
+          />
+          <button
+            id="session-filter-clear"
+            class="session-filter-clear hidden"
+            type="button"
+            data-i18n-title="sidebar.clearTerminalFilter"
+            title="Clear terminal filter"
+            aria-label="Clear terminal filter"
+          >
+            &times;
+          </button>
+        </div>
         <div class="session-list" id="session-list"></div>
         <div class="sidebar-footer">
           <div id="update-panel" class="update-panel hidden">

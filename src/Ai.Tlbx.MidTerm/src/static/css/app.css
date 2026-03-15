@@ -499,6 +499,12 @@ body.has-app-background::after {
   display: none;
 }
 
+.session-filter-empty {
+  padding: 16px 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
 .session-list::-webkit-scrollbar {
   width: 8px;
   background: transparent;
@@ -547,6 +553,10 @@ body.has-app-background::after {
 
 .session-item.tmux-child,
 .session-item.pending {
+  cursor: pointer;
+}
+
+.session-list.filter-active .session-item:not(.tmux-child):not(.pending) {
   cursor: pointer;
 }
 
@@ -3145,6 +3155,53 @@ body.has-app-background::after {
   background-color: var(--bg-sidebar);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.session-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px;
+  background-color: var(--bg-sidebar);
+}
+
+.session-filter-input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--btn-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.session-filter-input:hover {
+  border-color: var(--accent-blue);
+}
+
+.session-filter-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-15);
+}
+
+.session-filter-clear {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--fs-xl);
+  line-height: 1;
+}
+
+.session-filter-clear:hover {
+  background: var(--white-03);
+  color: var(--text-primary);
 }
 
 .empty-state button:disabled {
