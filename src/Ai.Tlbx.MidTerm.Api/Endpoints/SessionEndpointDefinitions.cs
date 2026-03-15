@@ -55,6 +55,10 @@ public static class SessionEndpointDefinitions
             await handler.SendTextInputAsync(id, request))
             .Produces(StatusCodes.Status200OK);
 
+        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, ISessionHandler handler) =>
+            await handler.SendKeyInputAsync(id, request))
+            .Produces(StatusCodes.Status200OK);
+
         app.MapGet("/api/sessions/{id}/buffer", async (string id, ISessionHandler handler) =>
             await handler.GetBufferAsync(id))
             .Produces<byte[]>(StatusCodes.Status200OK, "application/octet-stream");
@@ -62,6 +66,14 @@ public static class SessionEndpointDefinitions
         app.MapGet("/api/sessions/{id}/buffer/text", async (string id, ISessionHandler handler, bool includeBase64 = false) =>
             await handler.GetBufferTextAsync(id, includeBase64))
             .Produces<SessionBufferTextResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/sessions/{id}/buffer/tail", async (string id, ISessionHandler handler, int lines = 120, bool stripAnsi = true) =>
+            await handler.GetBufferTailAsync(id, lines, stripAnsi))
+            .Produces<string>(StatusCodes.Status200OK, "text/plain");
+
+        app.MapGet("/api/sessions/{id}/activity", async (string id, ISessionHandler handler, int seconds = 120, int bellLimit = 25) =>
+            await handler.GetActivityAsync(id, seconds, bellLimit))
+            .Produces<SessionActivityResponse>(StatusCodes.Status200OK, "application/json");
 
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, ISessionHandler handler, bool auto = false) =>
             await handler.RenameSessionAsync(id, request, auto))

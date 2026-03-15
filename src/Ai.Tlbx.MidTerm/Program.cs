@@ -165,6 +165,7 @@ public class Program
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
+        var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();
         var historyService = app.Services.GetRequiredService<HistoryService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
@@ -230,11 +231,17 @@ public class Program
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
+        sessionManager.OnOutput += (sessionId, _, _, data) =>
+        {
+            sessionTelemetry.RecordOutput(sessionId, data.Span);
+        };
+
         sessionManager.OnSessionClosed += sessionId =>
         {
             sessionPathAllowlistService.ClearSession(sessionId);
             gitWatcher.UnregisterSession(sessionId);
             shareGrantService.RevokeBySession(sessionId);
+            sessionTelemetry.ClearSession(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -306,7 +313,7 @@ public class Program
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, updateService, webPreviewService);
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, updateService, webPreviewService, sessionTelemetry);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);

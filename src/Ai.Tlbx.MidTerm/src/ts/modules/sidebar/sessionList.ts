@@ -104,6 +104,7 @@ export interface SessionGroup {
   label: string;
   sessions: Session[];
   collapsed: boolean;
+  showHeader: boolean;
 }
 
 function normalizeSessionFilterValue(value: string | null | undefined): string {
@@ -618,6 +619,7 @@ export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
   const humanSessions = sessions.filter((session) => getSessionControlMode(session) === 'human');
   const agentSessions = sessions.filter((session) => getSessionControlMode(session) === 'agent');
   const groups: SessionGroup[] = [];
+  const showHeaders = agentSessions.length > 0;
 
   if (humanSessions.length > 0) {
     groups.push({
@@ -625,6 +627,7 @@ export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
       label: t('sidebar.humanControlled'),
       sessions: humanSessions,
       collapsed: isSessionGroupCollapsed('human'),
+      showHeader: showHeaders,
     });
   }
 
@@ -634,6 +637,7 @@ export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
       label: t('sidebar.agentControlled'),
       sessions: agentSessions,
       collapsed: isSessionGroupCollapsed('agent'),
+      showHeader: showHeaders,
     });
   }
 
@@ -952,36 +956,40 @@ function createSessionItem(
 function createSessionGroupSection(group: SessionGroup): HTMLDivElement {
   const section = document.createElement('div');
   section.className = `session-group session-group-${group.key}`;
-  if (group.collapsed) {
+  if (group.showHeader && group.collapsed) {
     section.classList.add('collapsed');
   }
 
-  const toggle = document.createElement('button');
-  toggle.className = 'session-group-toggle';
-  toggle.type = 'button';
-  toggle.setAttribute('aria-expanded', group.collapsed ? 'false' : 'true');
-  toggle.addEventListener('click', () => {
-    toggleSessionGroup(section, group.key);
-    toggle.setAttribute(
-      'aria-expanded',
-      section.classList.contains('collapsed') ? 'false' : 'true',
-    );
-  });
+  if (group.showHeader) {
+    const toggle = document.createElement('button');
+    toggle.className = 'session-group-toggle';
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', group.collapsed ? 'false' : 'true');
+    toggle.addEventListener('click', () => {
+      toggleSessionGroup(section, group.key);
+      toggle.setAttribute(
+        'aria-expanded',
+        section.classList.contains('collapsed') ? 'false' : 'true',
+      );
+    });
 
-  const caret = document.createElement('span');
-  caret.className = 'session-group-caret';
-  caret.textContent = '▾';
+    const caret = document.createElement('span');
+    caret.className = 'session-group-caret';
+    caret.textContent = '▾';
 
-  const label = document.createElement('span');
-  label.className = 'session-group-label';
-  label.textContent = group.label;
+    const label = document.createElement('span');
+    label.className = 'session-group-label';
+    label.textContent = group.label;
 
-  const count = document.createElement('span');
-  count.className = 'session-group-count';
-  count.textContent = String(group.sessions.length);
+    const count = document.createElement('span');
+    count.className = 'session-group-count';
+    count.textContent = String(group.sessions.length);
 
-  toggle.append(caret, label, count);
-  section.appendChild(toggle);
+    toggle.append(caret, label, count);
+    section.appendChild(toggle);
+  } else {
+    section.classList.add('session-group-flat');
+  }
 
   const items = document.createElement('div');
   items.className = 'session-group-items';

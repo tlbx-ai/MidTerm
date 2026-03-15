@@ -10,6 +10,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
@@ -48,7 +49,8 @@ public static partial class SessionApiEndpoints
         TtyHostSessionManager sessionManager,
         ClipboardService clipboardService,
         UpdateService updateService,
-        WebPreviewService webPreviewService)
+        WebPreviewService webPreviewService,
+        SessionTelemetryService sessionTelemetry)
     {
         app.MapGet("/api/state", () =>
         {
@@ -166,6 +168,22 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
+        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!TryGetKeyInputBytes(request, out var data, out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            await sessionManager.SendInputAsync(id, data);
+            return Results.Ok();
+        });
+
         app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false) =>
         {
             if (sessionManager.GetSession(id) is null)
@@ -188,6 +206,40 @@ public static partial class SessionApiEndpoints
             };
 
             return Results.Json(response, AppJsonContext.Default.SessionBufferTextResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/buffer/tail", async (string id, int lines = 120, bool stripAnsi = true) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var buffer = await sessionManager.GetBufferAsync(id);
+            if (buffer is null)
+            {
+                return Results.NotFound();
+            }
+
+            var text = TerminalOutputSanitizer.Decode(buffer);
+            if (stripAnsi)
+            {
+                text = TerminalOutputSanitizer.StripEscapeSequences(text);
+            }
+
+            text = TerminalOutputSanitizer.TailLines(text, lines, out _, out _);
+            return Results.Text(text, "text/plain", Encoding.UTF8);
+        });
+
+        app.MapGet("/api/sessions/{id}/activity", (string id, int seconds = 120, int bellLimit = 25) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var response = sessionTelemetry.GetActivity(id, seconds, bellLimit);
+            return Results.Json(response, AppJsonContext.Default.SessionActivityResponse);
         });
 
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>
@@ -298,6 +350,8 @@ public static partial class SessionApiEndpoints
             return Results.Json(new InjectGuidanceResponse
             {
                 MidtermDir = midtermDir,
+                MtcliShellPath = Path.Combine(midtermDir, "mtcli.sh"),
+                MtcliPowerShellPath = Path.Combine(midtermDir, "mtcli.ps1"),
                 ClaudeMdUpdated = claudeUpdated,
                 AgentsMdUpdated = agentsUpdated,
             }, AppJsonContext.Default.InjectGuidanceResponse);
@@ -348,6 +402,30 @@ public static partial class SessionApiEndpoints
             error = "base64 is invalid.";
             return false;
         }
+    }
+
+    internal static bool TryGetKeyInputBytes(
+        SessionKeyInputRequest request,
+        out byte[] data,
+        out string error)
+    {
+        data = [];
+        error = "";
+
+        if (request.Keys is null || request.Keys.Count == 0)
+        {
+            error = "Provide at least one key.";
+            return false;
+        }
+
+        if (!request.Literal && request.Keys.Any(string.IsNullOrWhiteSpace))
+        {
+            error = "Keys cannot be empty.";
+            return false;
+        }
+
+        data = TmuxKeyTranslator.TranslateKeys(request.Keys, request.Literal);
+        return true;
     }
 
     private static async Task<string> SaveUploadedFileAsync(

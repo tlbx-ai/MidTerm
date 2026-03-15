@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "14";
+    private const string GuidanceVersion = "15";
 
     private static int _port;
     private static AuthService? _authService;
@@ -217,6 +217,12 @@ public static class MidtermDirectory
         | `mt_apply_update [source]` | Apply pending update and wait for server |
         | `mt_sessions` | List terminal sessions |
         | `mt_buffer <id>` | Terminal buffer content |
+        | `mt_tail [id] [lines]` | Cleaned terminal tail with ANSI stripped |
+        | `mt_sendkeys [id] <keys...>` | Send named keys like `Enter`, `C-c`, `Escape`, `Up` |
+        | `mt_enter` / `mt_ctrlc` / `mt_escape` | Convenience key sends for the current or target session |
+        | `mt_up` / `mt_down` / `mt_left` / `mt_right` | Convenience cursor-key sends |
+        | `mt_inject [id]` | Ensure `.midterm` + mtcli helpers in the target cwd |
+        | `mt_activity [id] [seconds] [bellLimit]` | Output heatmap + bell history as JSON |
         | `mt_new_session [shell] [cwd]` | Create a new terminal session |
         | `mt_split [-h]` | Split terminal (adjacent pane via tmux) |
         | `mt_detach` | Detach web preview to popup window |
@@ -279,6 +285,10 @@ public static class MidtermDirectory
 
         mt_new_session → mt_sessions — find the new session id → tmux send-keys -t %1 "htop" Enter
 
+        ## Remote-control another terminal
+
+        mt_sessions → mt_tail SESSION_ID 80 → mt_sendkeys SESSION_ID Up Up Enter → mt_activity SESSION_ID
+
         ## Debug proxy issues
 
         mt_proxylog 10 — check status codes, upstream URLs, WebSocket connections
@@ -303,6 +313,8 @@ public static class MidtermDirectory
         - mt_open is the CLI command that opens/docks the preview; you do not need to click the panel first
         - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
+        - mt_tail strips ANSI escape sequences so supervisor sessions can read clean terminal output
+        - mt_sendkeys plus mt_enter / mt_ctrlc / mt_escape / mt_up / mt_down / mt_left / mt_right are the direct terminal steering helpers
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
         - If mt_status still shows "disconnected" after mt_open, treat that as a MidTerm bug and inspect mt_proxylog plus mt_log error

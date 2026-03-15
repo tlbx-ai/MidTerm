@@ -38,4 +38,34 @@ public sealed class SessionApiEndpointsTests
         Assert.Equal("", error);
         Assert.Equal([0x41, 0x42, 0x0D], data);
     }
+
+    [Fact]
+    public void TryGetKeyInputBytes_TranslatesNamedKeys()
+    {
+        var request = new SessionKeyInputRequest
+        {
+            Keys = ["Up", "Enter"]
+        };
+
+        var ok = SessionApiEndpoints.TryGetKeyInputBytes(request, out var data, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal([0x1B, 0x5B, 0x41, 0x0D], data);
+    }
+
+    [Fact]
+    public void TryGetKeyInputBytes_RejectsEmptyNonLiteralKeys()
+    {
+        var request = new SessionKeyInputRequest
+        {
+            Keys = ["Enter", ""]
+        };
+
+        var ok = SessionApiEndpoints.TryGetKeyInputBytes(request, out var data, out var error);
+
+        Assert.False(ok);
+        Assert.Equal("Keys cannot be empty.", error);
+        Assert.Empty(data);
+    }
 }

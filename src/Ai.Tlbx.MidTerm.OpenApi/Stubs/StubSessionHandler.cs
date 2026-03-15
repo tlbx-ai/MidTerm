@@ -44,11 +44,20 @@ public class StubSessionHandler : ISessionHandler
     public Task<IResult> SendTextInputAsync(string id, SessionInputRequest request) =>
         Task.FromResult<IResult>(Results.Ok());
 
+    public Task<IResult> SendKeyInputAsync(string id, SessionKeyInputRequest request) =>
+        Task.FromResult<IResult>(Results.Ok());
+
     public Task<IResult> GetBufferAsync(string id) =>
         Task.FromResult<IResult>(Results.Bytes(Array.Empty<byte>(), "application/octet-stream"));
 
     public Task<IResult> GetBufferTextAsync(string id, bool includeBase64) =>
         Task.FromResult<IResult>(Results.Json(new SessionBufferTextResponse { SessionId = id }));
+
+    public Task<IResult> GetBufferTailAsync(string id, int lines, bool stripAnsi) =>
+        Task.FromResult<IResult>(Results.Text("", "text/plain"));
+
+    public Task<IResult> GetActivityAsync(string id, int seconds, int bellLimit) =>
+        Task.FromResult<IResult>(Results.Json(new SessionActivityResponse { SessionId = id }));
 
     public Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto) =>
         Task.FromResult<IResult>(Results.Ok());

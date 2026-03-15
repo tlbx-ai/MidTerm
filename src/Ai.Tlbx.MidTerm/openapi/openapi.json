@@ -499,6 +499,38 @@
         }
       }
     },
+    "/api/sessions/{id}/input/keys": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionKeyInputRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/buffer": {
       "get": {
         "tags": [
@@ -559,6 +591,99 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SessionBufferTextResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/buffer/tail": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 120
+            }
+          },
+          {
+            "name": "stripAnsi",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/activity": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seconds",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 120
+            }
+          },
+          {
+            "name": "bellLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionActivityResponse"
                 }
               }
             }
@@ -3543,12 +3668,20 @@
       "InjectGuidanceResponse": {
         "required": [
           "midtermDir",
+          "mtcliShellPath",
+          "mtcliPowerShellPath",
           "claudeMdUpdated",
           "agentsMdUpdated"
         ],
         "type": "object",
         "properties": {
           "midtermDir": {
+            "type": "string"
+          },
+          "mtcliShellPath": {
+            "type": "string"
+          },
+          "mtcliPowerShellPath": {
             "type": "string"
           },
           "claudeMdUpdated": {
@@ -4149,6 +4282,116 @@
           }
         }
       },
+      "SessionActivityHeatSample": {
+        "required": [
+          "timestamp",
+          "bytes",
+          "heat"
+        ],
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "heat": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SessionActivityResponse": {
+        "required": [
+          "sessionId",
+          "windowSeconds",
+          "bellLimit",
+          "totalOutputBytes",
+          "totalBellCount",
+          "currentBytesPerSecond",
+          "currentHeat",
+          "lastOutputAt",
+          "lastBellAt",
+          "heatmap",
+          "bellHistory"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "windowSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bellLimit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalOutputBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalBellCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentBytesPerSecond": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentHeat": {
+            "type": "number",
+            "format": "double"
+          },
+          "lastOutputAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastBellAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "heatmap": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionActivityHeatSample"
+            }
+          },
+          "bellHistory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionBellEvent"
+            }
+          }
+        }
+      },
+      "SessionBellEvent": {
+        "required": [
+          "timestamp",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "SessionBufferTextResponse": {
         "required": [
           "sessionId",
@@ -4316,6 +4559,24 @@
             ]
           },
           "appendNewline": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SessionKeyInputRequest": {
+        "required": [
+          "keys",
+          "literal"
+        ],
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "literal": {
             "type": "boolean"
           }
         }

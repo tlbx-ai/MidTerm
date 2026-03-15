@@ -50,6 +50,7 @@ public static class MtcliScriptWriter
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
         _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
+        _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
         _MNOSESSION() { [[ "$1" == *"No browser preview connected for"* ]]; }
         _MBB() {
           local args=("$@")
@@ -167,7 +168,83 @@ public static class MtcliScriptWriter
 
         # Session management
         mt_sessions()   { _MC "$_MT/api/sessions"; }
-        mt_buffer()     { _MC "$_MT/api/sessions/$1/buffer"; }
+        mt_buffer() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC "$_MT/api/sessions/$sid/buffer"
+        }
+        # mt_tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
+        mt_tail() {
+          local sid lines
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          lines="${1:-120}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC "$_MT/api/sessions/$sid/buffer/tail?lines=$lines&stripAnsi=true"
+        }
+        # mt_sendkeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
+        mt_sendkeys() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "At least one key is required." >&2; return 1; }
+          local body='{"keys":['
+          local first=1
+          local key
+          for key in "$@"; do
+            if [ $first -eq 0 ]; then body+=','; fi
+            body+="\"$(_ME "$key")\""
+            first=0
+          done
+          body+=']}'
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/keys"
+        }
+        mt_enter()      { mt_sendkeys "$@" Enter; }
+        mt_ctrlc()      { mt_sendkeys "$@" C-c; }
+        mt_escape()     { mt_sendkeys "$@" Escape; }
+        mt_up()         { mt_sendkeys "$@" Up; }
+        mt_down()       { mt_sendkeys "$@" Down; }
+        mt_left()       { mt_sendkeys "$@" Left; }
+        mt_right()      { mt_sendkeys "$@" Right; }
+        # mt_inject [SESSION_ID]  — ensure .midterm + mtcli helpers in the target cwd
+        mt_inject() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC -X POST "$_MT/api/sessions/$sid/inject-guidance"
+        }
+        # mt_activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
+        mt_activity() {
+          local sid seconds bells
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          seconds="${1:-120}"
+          bells="${2:-25}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC "$_MT/api/sessions/$sid/activity?seconds=$seconds&bellLimit=$bells"
+        }
         # mt_new_session [SHELL] [CWD]  — create a new terminal session, returns JSON with session id
         mt_new_session() {
           local shell="${1:-}" cwd="${2:-}"
@@ -234,6 +311,27 @@ public static class MtcliScriptWriter
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         function script:_MSID { $env:MT_SESSION_ID }
+        function script:_MIsSessionId {
+            param([string]$Value)
+            return $Value -match '^[A-Za-z0-9]{8}$'
+        }
+        function script:_MResolveSessionArgs {
+            param([string[]]$InputArgs)
+            $remaining = @($InputArgs)
+            $sessionId = _MSID
+            if ($remaining.Count -gt 0 -and (_MIsSessionId $remaining[0])) {
+                $sessionId = $remaining[0]
+                if ($remaining.Count -gt 1) {
+                    $remaining = @($remaining[1..($remaining.Count - 1)])
+                } else {
+                    $remaining = @()
+                }
+            }
+            [pscustomobject]@{
+                SessionId = $sessionId
+                Remaining = $remaining
+            }
+        }
         function script:_MPreview {
             if ($env:MT_PREVIEW_NAME) { return $env:MT_PREVIEW_NAME }
             return "default"
@@ -380,7 +478,87 @@ public static class MtcliScriptWriter
 
         # Session management
         function Mt-Sessions   { _MC "$script:_MT/api/sessions" }
-        function Mt-Buffer     { param([string]$Id) _MC "$script:_MT/api/sessions/$Id/buffer" }
+        function Mt-Buffer {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer"
+        }
+        # Mt-Tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
+        function Mt-Tail {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            $lines = if ($resolved.Remaining.Count -gt 0) { [int]$resolved.Remaining[0] } else { 120 }
+            _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer/tail?lines=$lines&stripAnsi=true"
+        }
+        # Mt-SendKeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
+        function Mt-SendKeys {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $keys = @($resolved.Remaining)
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            if ($keys.Count -eq 0) { Write-Error "At least one key is required."; return }
+            _MJ -d (_MH @{ keys = $keys }) "$script:_MT/api/sessions/$($resolved.SessionId)/input/keys"
+        }
+        function Mt-Enter {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Enter"
+            Mt-SendKeys @forward
+        }
+        function Mt-Ctrlc {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "C-c"
+            Mt-SendKeys @forward
+        }
+        function Mt-Escape {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Escape"
+            Mt-SendKeys @forward
+        }
+        function Mt-Up {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Up"
+            Mt-SendKeys @forward
+        }
+        function Mt-Down {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Down"
+            Mt-SendKeys @forward
+        }
+        function Mt-Left {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Left"
+            Mt-SendKeys @forward
+        }
+        function Mt-Right {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Right"
+            Mt-SendKeys @forward
+        }
+        # Mt-Inject [SESSION_ID]  — ensure .midterm + mtcli helpers in the target cwd
+        function Mt-Inject {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/inject-guidance"
+        }
+        # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
+        function Mt-Activity {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            $seconds = if ($resolved.Remaining.Count -gt 0) { [int]$resolved.Remaining[0] } else { 120 }
+            $bellLimit = if ($resolved.Remaining.Count -gt 1) { [int]$resolved.Remaining[1] } else { 25 }
+            _MC "$script:_MT/api/sessions/$($resolved.SessionId)/activity?seconds=$seconds&bellLimit=$bellLimit"
+        }
         # Mt-NewSession [-Shell SHELL] [-Cwd PATH]  — create a new terminal session
         function Mt-NewSession {
             param([string]$Shell, [string]$Cwd)

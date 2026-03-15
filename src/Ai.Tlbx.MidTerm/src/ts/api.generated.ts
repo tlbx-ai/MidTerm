@@ -675,6 +675,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/{id}/input/keys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['SessionKeyInputRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sessions/{id}/buffer': {
     parameters: {
       query?: never;
@@ -739,6 +778,86 @@ export interface paths {
           };
           content: {
             'application/json': components['schemas']['SessionBufferTextResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/buffer/tail': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          lines?: number;
+          stripAnsi?: boolean;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/activity': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          seconds?: number;
+          bellLimit?: number;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SessionActivityResponse'];
           };
         };
       };
@@ -3427,6 +3546,8 @@ export interface components {
     IFormFile: string;
     InjectGuidanceResponse: {
       midtermDir: string;
+      mtcliShellPath: string;
+      mtcliPowerShellPath: string;
       claudeMdUpdated: boolean;
       agentsMdUpdated: boolean;
     };
@@ -3580,6 +3701,41 @@ export interface components {
       certificateTrusted: boolean;
       warnings: string[];
     };
+    SessionActivityHeatSample: {
+      /** Format: date-time */
+      timestamp: string;
+      /** Format: int32 */
+      bytes: number;
+      /** Format: double */
+      heat: number;
+    };
+    SessionActivityResponse: {
+      sessionId: string;
+      /** Format: int32 */
+      windowSeconds: number;
+      /** Format: int32 */
+      bellLimit: number;
+      /** Format: int64 */
+      totalOutputBytes: number;
+      /** Format: int32 */
+      totalBellCount: number;
+      /** Format: int32 */
+      currentBytesPerSecond: number;
+      /** Format: double */
+      currentHeat: number;
+      /** Format: date-time */
+      lastOutputAt: null | string;
+      /** Format: date-time */
+      lastBellAt: null | string;
+      heatmap: components['schemas']['SessionActivityHeatSample'][];
+      bellHistory: components['schemas']['SessionBellEvent'][];
+    };
+    SessionBellEvent: {
+      /** Format: date-time */
+      timestamp: string;
+      /** Format: int32 */
+      count: number;
+    };
     SessionBufferTextResponse: {
       sessionId: string;
       /** Format: int32 */
@@ -3620,6 +3776,10 @@ export interface components {
       text?: null | string;
       base64?: null | string;
       appendNewline: boolean;
+    };
+    SessionKeyInputRequest: {
+      keys: string[];
+      literal: boolean;
     };
     SessionListDto: {
       sessions: components['schemas']['SessionInfoDto'][];

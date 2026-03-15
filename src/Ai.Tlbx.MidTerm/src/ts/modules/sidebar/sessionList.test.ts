@@ -40,6 +40,7 @@ describe('sessionList grouping', () => {
     ]);
 
     expect(groups.map((group) => group.key)).toEqual(['human', 'agent']);
+    expect(groups.every((group) => group.showHeader)).toBe(true);
     expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['human-1', 'human-2']);
     expect(groups[1]?.sessions.map((session) => session.id)).toEqual(['agent-1', 'agent-2']);
   });
@@ -53,6 +54,20 @@ describe('sessionList grouping', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.key).toBe('agent');
+    expect(groups[0]?.showHeader).toBe(true);
+  });
+
+  it('hides group headers when only human sessions are visible', async () => {
+    const { groupSessionsByController } = await import('./sessionList');
+
+    const groups = groupSessionsByController([
+      { id: 'human-1', shellType: 'Pwsh', name: 'Human 1' } as any,
+      { id: 'human-2', shellType: 'Pwsh', name: 'Human 2' } as any,
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key).toBe('human');
+    expect(groups[0]?.showHeader).toBe(false);
   });
 
   it('filters sessions by title, shell, and current directory tokens', async () => {
