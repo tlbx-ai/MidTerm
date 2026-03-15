@@ -165,7 +165,7 @@ export function isSidebarSessionFilterEnabled(): boolean {
 
 function syncSessionFilterControls(): void {
   const filterEnabled = isSidebarSessionFilterEnabled();
-  getSessionFilterBar()?.classList.toggle('hidden', !filterEnabled);
+  getSessionFilterBar()?.toggleAttribute('hidden', !filterEnabled);
 
   const filterInput = dom.sessionFilterInput;
   const visibleValue = filterEnabled ? sessionFilterValue : '';
@@ -173,7 +173,7 @@ function syncSessionFilterControls(): void {
     filterInput.value = visibleValue;
   }
 
-  dom.sessionFilterClear?.classList.toggle('hidden', !filterEnabled || sessionFilterValue === '');
+  dom.sessionFilterClear?.toggleAttribute('hidden', !filterEnabled || sessionFilterValue === '');
 }
 
 function setSessionFilter(nextValue: string): void {

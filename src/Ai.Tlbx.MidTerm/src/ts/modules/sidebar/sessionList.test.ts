@@ -111,19 +111,59 @@ describe('sessionList grouping', () => {
     vi.stubGlobal('window', { addEventListener: vi.fn() });
 
     const stores = await import('../../stores');
+    const state = await import('../../state');
     const { applySessionFilterSettingChange, initializeSessionList, isSessionFilterActive } =
       await import('./sessionList');
 
+    const filterBar = {
+      hidden: false,
+      toggleAttribute(name: string, force?: boolean) {
+        if (name === 'hidden') {
+          this.hidden = force !== false;
+        }
+      },
+    };
+    const filterInput = {
+      value: '',
+      closest: vi.fn(() => filterBar),
+      focus: vi.fn(),
+      blur: vi.fn(),
+      setAttribute: vi.fn(),
+      addEventListener: vi.fn(),
+    };
+    const clearButton = {
+      hidden: false,
+      closest: vi.fn(() => filterBar),
+      toggleAttribute(name: string, force?: boolean) {
+        if (name === 'hidden') {
+          this.hidden = force !== false;
+        }
+      },
+      setAttribute: vi.fn(),
+      addEventListener: vi.fn(),
+    };
+    state.dom.sessionFilterInput = filterInput as any;
+    state.dom.sessionFilterClear = clearButton as any;
+
     initializeSessionList();
     expect(isSessionFilterActive()).toBe(false);
+    expect(filterBar.hidden).toBe(true);
+    expect(clearButton.hidden).toBe(true);
+    expect(filterInput.value).toBe('');
 
     stores.$currentSettings.set({ showSidebarSessionFilter: true } as any);
     applySessionFilterSettingChange();
     expect(isSessionFilterActive()).toBe(true);
+    expect(filterBar.hidden).toBe(false);
+    expect(clearButton.hidden).toBe(false);
+    expect(filterInput.value).toBe('worker');
 
     stores.$currentSettings.set({ showSidebarSessionFilter: false } as any);
     applySessionFilterSettingChange();
     expect(isSessionFilterActive()).toBe(false);
+    expect(filterBar.hidden).toBe(true);
+    expect(clearButton.hidden).toBe(true);
+    expect(filterInput.value).toBe('');
     expect(localStorageMock.removeItem).toHaveBeenCalledWith('midterm.sidebar.sessionFilter');
   });
 });
