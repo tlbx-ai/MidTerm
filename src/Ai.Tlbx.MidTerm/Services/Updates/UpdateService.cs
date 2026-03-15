@@ -158,78 +158,39 @@ public sealed partial class UpdateService : IDisposable
             if (devEnv is not null)
                 updateChannel = "dev";
 
-            Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}");
-
-            GitHubRelease? release;
-            if (updateChannel == "dev")
-            {
-                release = await FetchLatestDevReleaseAsync();
-            }
-            else
-            {
-                var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
-                var response = await _httpClient.GetStringAsync(apiUrl);
-                release = JsonSerializer.Deserialize<GitHubRelease>(response, GitHubReleaseContext.Default.GitHubRelease);
-            }
-
-            if (release is null || string.IsNullOrEmpty(release.TagName))
-            {
-                return null;
-            }
-
-            var latestVersion = release.TagName.TrimStart('v');
-            var comparison = CompareVersions(latestVersion, _currentVersion);
-            Console.Error.WriteLine($"[UpdateCheck] latest={latestVersion}, comparison={comparison}");
-
-            // For stable channel on a dev version, offer downgrade to stable
-            var isDowngrade = updateChannel == "stable" && comparison < 0;
-
-            if (comparison <= 0 && !isDowngrade)
-            {
-                // No GitHub update, but check for local update in dev mode
-                if (devEnv is not null)
-                {
-                    var localUpdateOnly = CheckLocalUpdate();
-                    if (localUpdateOnly is not null)
-                    {
-                        _latestUpdate = new UpdateInfo
-                        {
-                            Available = false,
-                            CurrentVersion = _currentVersion,
-                            LatestVersion = _currentVersion,
-                            ReleaseUrl = "",
-                            Environment = devEnv,
-                            LocalUpdate = localUpdateOnly
-                        };
-                        NotifyListeners(_latestUpdate);
-                        return _latestUpdate;
-                    }
-                }
-                _latestUpdate = null;
-                return null;
-            }
-
             var assetName = GetAssetNameForPlatform();
-            var asset = release.Assets?.FirstOrDefault(a => a.Name == assetName);
+            Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}, asset={assetName}");
 
-            var releaseManifest = await FetchReleaseManifestAsync(release.TagName);
+            var releases = await FetchReleasesAsync();
+            var selection = SelectBestRelease(releases, updateChannel, _currentVersion, assetName);
+            if (selection is null)
+            {
+                return TryCreateLocalOnlyUpdate(devEnv);
+            }
+
+            var release = selection.Release;
+            var latestVersion = release.TagName!.TrimStart('v');
+            var comparison = CompareVersions(latestVersion, _currentVersion);
+            Console.Error.WriteLine($"[UpdateCheck] latest={latestVersion}, comparison={comparison}, downgrade={selection.IsDowngrade}");
+
+            var releaseManifest = await FetchReleaseManifestAsync(release.TagName!);
             var updateType = DetermineUpdateType(_installedManifest, releaseManifest);
 
             var localUpdate = devEnv is not null ? CheckLocalUpdate() : null;
 
             _latestUpdate = new UpdateInfo
             {
-                Available = asset is not null,
+                Available = true,
                 CurrentVersion = _currentVersion,
                 LatestVersion = latestVersion,
                 ReleaseUrl = release.HtmlUrl ?? $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{release.TagName}",
-                DownloadUrl = asset?.BrowserDownloadUrl,
+                DownloadUrl = selection.DownloadUrl,
                 AssetName = assetName,
                 ReleaseNotes = release.Body,
                 Type = updateType,
                 Environment = devEnv,
                 LocalUpdate = localUpdate,
-                IsDowngrade = isDowngrade
+                IsDowngrade = selection.IsDowngrade
             };
 
             NotifyListeners(_latestUpdate);
@@ -262,42 +223,122 @@ public sealed partial class UpdateService : IDisposable
         }
     }
 
-    private async Task<GitHubRelease?> FetchLatestDevReleaseAsync()
+    private UpdateInfo? TryCreateLocalOnlyUpdate(string? devEnv)
     {
-        var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases?per_page=50";
-        var response = await _httpClient.GetStringAsync(apiUrl);
-        var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(response, GitHubReleaseContext.Default.ListGitHubRelease);
-
-        if (releases is null || releases.Count == 0)
+        if (devEnv is null)
         {
+            _latestUpdate = null;
             return null;
         }
 
-        // Find the highest version (including prereleases)
-        GitHubRelease? best = null;
+        var localUpdateOnly = CheckLocalUpdate();
+        if (localUpdateOnly is null)
+        {
+            _latestUpdate = null;
+            return null;
+        }
+
+        _latestUpdate = new UpdateInfo
+        {
+            Available = false,
+            CurrentVersion = _currentVersion,
+            LatestVersion = _currentVersion,
+            ReleaseUrl = "",
+            Environment = devEnv,
+            LocalUpdate = localUpdateOnly
+        };
+        NotifyListeners(_latestUpdate);
+        return _latestUpdate;
+    }
+
+    private async Task<List<GitHubRelease>> FetchReleasesAsync()
+    {
+        var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases?per_page=50";
+        var response = await _httpClient.GetStringAsync(apiUrl);
+        return JsonSerializer.Deserialize<List<GitHubRelease>>(response, GitHubReleaseContext.Default.ListGitHubRelease) ?? [];
+    }
+
+    internal static ReleaseSelection? SelectBestRelease(
+        IEnumerable<GitHubRelease> releases,
+        string updateChannel,
+        string currentVersion,
+        string assetName)
+    {
+        var isDevChannel = string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase);
+        var allowStableDowngrade = !isDevChannel && HasPrerelease(currentVersion);
+
+        ReleaseSelection? bestUpgrade = null;
+        ReleaseSelection? bestDowngrade = null;
+
         foreach (var release in releases)
         {
-            if (string.IsNullOrEmpty(release.TagName))
+            if (!IsReleaseInChannel(release, isDevChannel) || string.IsNullOrWhiteSpace(release.TagName))
             {
                 continue;
             }
 
-            if (best is null)
+            var downloadUrl = GetAssetDownloadUrl(release, assetName);
+            if (string.IsNullOrWhiteSpace(downloadUrl))
             {
-                best = release;
                 continue;
             }
 
-            var bestVersion = best.TagName!.TrimStart('v');
-            var currentVersion = release.TagName!.TrimStart('v');
-
-            if (CompareVersions(currentVersion, bestVersion) > 0)
+            var candidate = new ReleaseSelection
             {
-                best = release;
+                Release = release,
+                DownloadUrl = downloadUrl
+            };
+
+            var comparison = CompareVersions(release.TagName!.TrimStart('v'), currentVersion);
+            if (comparison > 0)
+            {
+                if (IsBetterReleaseCandidate(candidate, bestUpgrade))
+                {
+                    bestUpgrade = candidate;
+                }
+
+                continue;
+            }
+
+            if (comparison < 0 && allowStableDowngrade && IsBetterReleaseCandidate(candidate, bestDowngrade))
+            {
+                candidate.IsDowngrade = true;
+                bestDowngrade = candidate;
             }
         }
 
-        return best;
+        return bestUpgrade ?? bestDowngrade;
+    }
+
+    private static bool IsBetterReleaseCandidate(ReleaseSelection candidate, ReleaseSelection? currentBest)
+    {
+        if (currentBest is null)
+        {
+            return true;
+        }
+
+        return CompareVersions(candidate.Release.TagName!.TrimStart('v'), currentBest.Release.TagName!.TrimStart('v')) > 0;
+    }
+
+    private static bool HasPrerelease(string version)
+    {
+        var cleanVersion = version.Split('+')[0];
+        var (_, prerelease) = ParseVersionWithPrerelease(cleanVersion);
+        return prerelease is not null;
+    }
+
+    private static bool IsReleaseInChannel(GitHubRelease release, bool isDevChannel)
+    {
+        return !release.Draft && (isDevChannel || !release.Prerelease);
+    }
+
+    private static string? GetAssetDownloadUrl(GitHubRelease release, string assetName)
+    {
+        var asset = release.Assets?.FirstOrDefault(a =>
+            string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(a.BrowserDownloadUrl));
+
+        return asset?.BrowserDownloadUrl;
     }
 
     private async Task<VersionManifest> FetchReleaseManifestAsync(string tagName)
@@ -812,6 +853,7 @@ internal sealed class GitHubRelease
     public string? TagName { get; set; }
     public string? HtmlUrl { get; set; }
     public string? Body { get; set; }
+    public bool Draft { get; set; }
     public bool Prerelease { get; set; }
     public List<GitHubAsset>? Assets { get; set; }
 }
@@ -820,4 +862,11 @@ internal sealed class GitHubAsset
 {
     public string? Name { get; set; }
     public string? BrowserDownloadUrl { get; set; }
+}
+
+internal sealed class ReleaseSelection
+{
+    public GitHubRelease Release { get; init; } = null!;
+    public string DownloadUrl { get; init; } = "";
+    public bool IsDowngrade { get; set; }
 }

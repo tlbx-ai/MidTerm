@@ -8,6 +8,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class UpdateServiceTests : IDisposable
 {
+    private const string WindowsAssetName = "mt-win-x64.zip";
     private readonly string _tempDir;
 
     public UpdateServiceTests()
@@ -54,6 +55,54 @@ public sealed class UpdateServiceTests : IDisposable
     {
         var actual = Math.Sign(UpdateService.CompareVersions(left, right));
         Assert.Equal(expectedSign, actual);
+    }
+
+    [Fact]
+    public void SelectBestRelease_PicksNewestUsableUpgrade_WhenLatestTagMissingPlatformAsset()
+    {
+        var releases = new[]
+        {
+            CreateRelease("v6.10.32-dev.2", prerelease: true, "mt-linux-x64.tar.gz"),
+            CreateRelease("v6.10.32-dev.1", prerelease: true, WindowsAssetName),
+            CreateRelease("v6.10.31-dev.9", prerelease: true, WindowsAssetName)
+        };
+
+        var selection = UpdateService.SelectBestRelease(releases, "dev", "6.10.30-dev.5", WindowsAssetName);
+
+        Assert.NotNull(selection);
+        Assert.Equal("v6.10.32-dev.1", selection!.Release.TagName);
+        Assert.False(selection.IsDowngrade);
+    }
+
+    [Fact]
+    public void SelectBestRelease_StableChannelFallsBackToNewestUsableStable_WhenCurrentBuildIsPrerelease()
+    {
+        var releases = new[]
+        {
+            CreateRelease("v6.10.33", prerelease: false, "mt-linux-x64.tar.gz"),
+            CreateRelease("v6.10.32", prerelease: false, WindowsAssetName),
+            CreateRelease("v6.10.34-dev.1", prerelease: true, WindowsAssetName)
+        };
+
+        var selection = UpdateService.SelectBestRelease(releases, "stable", "6.10.33-dev.1", WindowsAssetName);
+
+        Assert.NotNull(selection);
+        Assert.Equal("v6.10.32", selection!.Release.TagName);
+        Assert.True(selection.IsDowngrade);
+    }
+
+    [Fact]
+    public void SelectBestRelease_DoesNotOfferOlderStableRelease_WhenCurrentBuildIsAlreadyStable()
+    {
+        var releases = new[]
+        {
+            CreateRelease("v6.10.33", prerelease: false, "mt-linux-x64.tar.gz"),
+            CreateRelease("v6.10.31", prerelease: false, WindowsAssetName)
+        };
+
+        var selection = UpdateService.SelectBestRelease(releases, "stable", "6.10.32", WindowsAssetName);
+
+        Assert.Null(selection);
     }
 
     [Fact]
@@ -126,5 +175,19 @@ public sealed class UpdateServiceTests : IDisposable
     {
         var exception = Record.Exception(() => UpdateService.ClearUpdateResult(_tempDir));
         Assert.Null(exception);
+    }
+
+    private static GitHubRelease CreateRelease(string tagName, bool prerelease, params string[] assetNames)
+    {
+        return new GitHubRelease
+        {
+            TagName = tagName,
+            Prerelease = prerelease,
+            Assets = assetNames.Select(name => new GitHubAsset
+            {
+                Name = name,
+                BrowserDownloadUrl = $"https://example.com/{name}"
+            }).ToList()
+        };
     }
 }
