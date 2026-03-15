@@ -606,6 +606,45 @@
         }
       }
     },
+    "/api/sessions/{id}/control": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSessionControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfoDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/upload": {
       "post": {
         "tags": [
@@ -4148,7 +4187,8 @@
           "foregroundCommandLine",
           "order",
           "parentSessionId",
-          "bookmarkId"
+          "bookmarkId",
+          "agentControlled"
         ],
         "type": "object",
         "properties": {
@@ -4239,6 +4279,9 @@
               "null",
               "string"
             ]
+          },
+          "agentControlled": {
+            "type": "boolean"
           }
         }
       },
@@ -4342,6 +4385,17 @@
         "properties": {
           "bookmarkId": {
             "type": "string"
+          }
+        }
+      },
+      "SetSessionControlRequest": {
+        "required": [
+          "agentControlled"
+        ],
+        "type": "object",
+        "properties": {
+          "agentControlled": {
+            "type": "boolean"
           }
         }
       },

@@ -33,6 +33,7 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(SessionInfoDto))]
 [JsonSerializable(typeof(CreateSessionRequest))]
 [JsonSerializable(typeof(RenameSessionRequest))]
+[JsonSerializable(typeof(SetSessionControlRequest))]
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]
 [JsonSerializable(typeof(FileUploadResponse))]

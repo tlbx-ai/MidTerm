@@ -75,6 +75,10 @@ function detectChangeType(sessions: Record<string, Session>): ChangeType {
     if (prev && session.parentSessionId !== prev.parentSessionId) {
       return 'membership';
     }
+
+    if (prev && session.agentControlled !== prev.agentControlled) {
+      return 'membership';
+    }
   }
 
   // Check for data change

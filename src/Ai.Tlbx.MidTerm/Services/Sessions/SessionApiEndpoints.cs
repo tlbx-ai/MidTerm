@@ -208,6 +208,16 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
+        app.MapPut("/api/sessions/{id}/control", (string id, SetSessionControlRequest request) =>
+        {
+            if (!sessionManager.SetAgentControlled(id, request.AgentControlled))
+            {
+                return Results.NotFound();
+            }
+
+            return Results.Json(GetSessionDto(sessionManager, id), AppJsonContext.Default.SessionInfoDto);
+        });
+
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
         {
             var session = sessionManager.GetSession(id);

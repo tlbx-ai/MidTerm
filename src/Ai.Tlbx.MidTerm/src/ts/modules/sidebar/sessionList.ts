@@ -78,6 +78,7 @@ export interface SessionListCallbacks {
   onSelect: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
+  onToggleAgentControl: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
   onInjectGuidance?: (sessionId: string) => void;
   onCloseSidebar: () => void;
@@ -86,6 +87,19 @@ export interface SessionListCallbacks {
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
 let mobileMenuListenersBound = false;
+const SESSION_GROUP_STORAGE_KEYS = {
+  human: 'midterm.sidebar.humanSessionsCollapsed',
+  agent: 'midterm.sidebar.agentSessionsCollapsed',
+} as const;
+
+export type SessionControlMode = 'human' | 'agent';
+
+export interface SessionGroup {
+  key: SessionControlMode;
+  label: string;
+  sessions: Session[];
+  collapsed: boolean;
+}
 
 // =============================================================================
 // Initialization
@@ -256,10 +270,12 @@ function updateSessionProcessInfo(sessionId: string): void {
   if (sessionItem.dataset.processAsTitle === '1') {
     const titleRow = sessionItem.querySelector<HTMLElement>('.session-title-row');
     if (!titleRow) return;
-    // Preserve layout badge, clear everything else
+    // Preserve badges, clear everything else
     const layoutBadge = titleRow.querySelector('.layout-badge');
+    const roleBadge = titleRow.querySelector('.session-role-badge');
     titleRow.innerHTML = '';
     renderProcessTitle(titleRow, fgInfo, sessionId);
+    if (roleBadge) titleRow.appendChild(roleBadge);
     if (layoutBadge) titleRow.appendChild(layoutBadge);
     return;
   }
@@ -413,6 +429,49 @@ export function getSessionDisplayName(session: Session): string {
   return info.primary;
 }
 
+function isAgentControlled(session: Session | null | undefined): boolean {
+  return session?.agentControlled === true;
+}
+
+function getSessionControlMode(session: Session): SessionControlMode {
+  return isAgentControlled(session) ? 'agent' : 'human';
+}
+
+function isSessionGroupCollapsed(group: SessionControlMode): boolean {
+  return localStorage.getItem(SESSION_GROUP_STORAGE_KEYS[group]) === 'true';
+}
+
+function toggleSessionGroup(section: HTMLElement, group: SessionControlMode): void {
+  const collapsed = section.classList.toggle('collapsed');
+  localStorage.setItem(SESSION_GROUP_STORAGE_KEYS[group], String(collapsed));
+}
+
+export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
+  const humanSessions = sessions.filter((session) => getSessionControlMode(session) === 'human');
+  const agentSessions = sessions.filter((session) => getSessionControlMode(session) === 'agent');
+  const groups: SessionGroup[] = [];
+
+  if (humanSessions.length > 0) {
+    groups.push({
+      key: 'human',
+      label: t('sidebar.humanControlled'),
+      sessions: humanSessions,
+      collapsed: isSessionGroupCollapsed('human'),
+    });
+  }
+
+  if (agentSessions.length > 0) {
+    groups.push({
+      key: 'agent',
+      label: t('sidebar.agentControlled'),
+      sessions: agentSessions,
+      collapsed: isSessionGroupCollapsed('agent'),
+    });
+  }
+
+  return groups;
+}
+
 // =============================================================================
 // Rendering
 // =============================================================================
@@ -475,14 +534,17 @@ function createSessionItem(
   const sessionId = session.id;
   const inLayout = isSessionInLayout(sessionId);
   const isChild = isChildSession(sessionId);
+  const controlMode = getSessionControlMode(session);
   const item = document.createElement('div');
   item.className =
     'session-item' +
     (isActive ? ' active' : '') +
     (isPending ? ' pending' : '') +
     (inLayout ? ' in-layout' : '') +
-    (isChild ? ' tmux-child' : '');
+    (isChild ? ' tmux-child' : '') +
+    (controlMode === 'agent' ? ' agent-controlled' : '');
   item.dataset.sessionId = sessionId;
+  item.dataset.controlMode = controlMode;
   if (isChild) {
     item.dataset.parentId = session.parentSessionId ?? '';
   }
@@ -518,17 +580,28 @@ function createSessionItem(
   layoutBadge.textContent = t('session.split');
   layoutBadge.title = t('session.splitTooltip');
 
+  const agentBadge = document.createElement('span');
+  agentBadge.className = 'session-role-badge';
+  agentBadge.textContent = 'AI';
+  agentBadge.title = t('sidebar.agentControlled');
+
   if (displayInfo.useProcessAsTitle) {
     // Unnamed sessions: show cwd + process as the title row
     item.dataset.processAsTitle = '1';
     const fgInfo = getForegroundInfo(sessionId);
     renderProcessTitle(titleRow, fgInfo, sessionId);
+    if (controlMode === 'agent') {
+      titleRow.appendChild(agentBadge);
+    }
     titleRow.appendChild(layoutBadge);
   } else {
     const title = document.createElement('span');
     title.className = 'session-title truncate';
     title.textContent = displayInfo.primary;
     titleRow.appendChild(title);
+    if (controlMode === 'agent') {
+      titleRow.appendChild(agentBadge);
+    }
     titleRow.appendChild(layoutBadge);
 
     if (displayInfo.secondary) {
@@ -573,6 +646,22 @@ function createSessionItem(
   actions.setAttribute('role', 'menu');
 
   if (!isPending && sessionId) {
+    const controlBtn = document.createElement('button');
+    controlBtn.className = 'session-control';
+    controlBtn.classList.toggle('active', controlMode === 'agent');
+    setActionButtonContent(
+      controlBtn,
+      controlMode === 'agent' ? t('session.markHumanControlled') : t('session.markAgentControlled'),
+      'AI',
+      true,
+    );
+    controlBtn.setAttribute('role', 'menuitem');
+    controlBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      callbacks?.onToggleAgentControl(sessionId);
+    });
+
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
     applyPinButtonState(pinBtn, !!session.bookmarkId);
@@ -632,6 +721,7 @@ function createSessionItem(
       undockSession(sessionId);
     });
 
+    actions.appendChild(controlBtn);
     actions.appendChild(pinBtn);
     actions.appendChild(renameBtn);
     actions.appendChild(injectBtn);
@@ -682,97 +772,76 @@ function createSessionItem(
 }
 
 /**
- * Render the session list in the sidebar using diff-based updates.
- * Only adds/removes/reorders items as needed, avoiding full DOM rebuilds.
+ * Create a collapsible session group section.
  */
-export function renderSessionList(): void {
-  if (!dom.sessionList) return;
+function createSessionGroupSection(group: SessionGroup): HTMLDivElement {
+  const section = document.createElement('div');
+  section.className = `session-group session-group-${group.key}`;
+  if (group.collapsed) {
+    section.classList.add('collapsed');
+  }
 
-  const sessionList = dom.sessionList;
-  const sessions = getSidebarDisplaySessions();
-  const activeSessionId = $activeSessionId.get();
-  const existingItems = Array.from(sessionList.querySelectorAll<HTMLElement>('.session-item'));
-  const existingItemsById = new Map<string, HTMLElement>();
-
-  existingItems.forEach((item) => {
-    const itemId = item.dataset.sessionId;
-    if (itemId) {
-      existingItemsById.set(itemId, item);
-    }
-  });
-
-  // Build set of current session IDs
-  const newIds = new Set(sessions.map((s) => s.id));
-
-  // Remove items that no longer exist
-  existingItems.forEach((item) => {
-    const itemId = item.dataset.sessionId;
-    if (itemId && !newIds.has(itemId)) {
-      if (item.classList.contains('menu-open')) {
-        closeMobileActionMenu();
-      }
-      unregisterHeatCanvas(itemId);
-      item.remove();
-      existingItemsById.delete(itemId);
-    }
-  });
-
-  // Add/update items in order
-  let previousElement: Element | null = null;
-  sessions.forEach((session) => {
-    const id = session.id;
-    const existingItem = existingItemsById.get(id);
-    const isPending = pendingSessions.has(id);
-
-    if (existingItem) {
-      // Update active state, pending state, and layout state
-      existingItem.classList.toggle('active', id === activeSessionId);
-      existingItem.classList.toggle('pending', isPending);
-      existingItem.classList.toggle('in-layout', isSessionInLayout(id));
-      const isChild = isChildSession(id);
-      existingItem.classList.toggle('tmux-child', isChild);
-      const htmlItem = existingItem;
-      if (isChild) {
-        htmlItem.dataset.parentId = session.parentSessionId ?? '';
-      } else {
-        delete htmlItem.dataset.parentId;
-      }
-      htmlItem.draggable = !isPending && !isChild;
-
-      // Ensure correct order
-      if (previousElement) {
-        if (existingItem.previousElementSibling !== previousElement) {
-          previousElement.after(existingItem);
-        }
-      } else if (existingItem !== sessionList.firstElementChild) {
-        sessionList.prepend(existingItem);
-      }
-      previousElement = existingItem;
-    } else {
-      // Create new item
-      const item = createSessionItem(session, id === activeSessionId, isPending);
-      if (previousElement) {
-        previousElement.after(item);
-      } else {
-        sessionList.prepend(item);
-      }
-      previousElement = item;
-    }
-  });
-
-  // Mark last child in each tmux group
-  const allItems = sessionList.querySelectorAll<HTMLElement>('.session-item');
-  allItems.forEach((item) => {
-    item.classList.remove('tmux-last-child');
-    item.classList.remove(
-      'layout-group-start',
-      'layout-group-middle',
-      'layout-group-end',
-      'layout-group-single',
+  const toggle = document.createElement('button');
+  toggle.className = 'session-group-toggle';
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', group.collapsed ? 'false' : 'true');
+  toggle.addEventListener('click', () => {
+    toggleSessionGroup(section, group.key);
+    toggle.setAttribute(
+      'aria-expanded',
+      section.classList.contains('collapsed') ? 'false' : 'true',
     );
   });
-  allItems.forEach((item, idx) => {
-    if (item.classList.contains('tmux-child')) {
+
+  const caret = document.createElement('span');
+  caret.className = 'session-group-caret';
+  caret.textContent = '▾';
+
+  const label = document.createElement('span');
+  label.className = 'session-group-label';
+  label.textContent = group.label;
+
+  const count = document.createElement('span');
+  count.className = 'session-group-count';
+  count.textContent = String(group.sessions.length);
+
+  toggle.append(caret, label, count);
+  section.appendChild(toggle);
+
+  const items = document.createElement('div');
+  items.className = 'session-group-items';
+  group.sessions.forEach((session) => {
+    items.appendChild(
+      createSessionItem(
+        session,
+        session.id === $activeSessionId.get(),
+        pendingSessions.has(session.id),
+      ),
+    );
+  });
+
+  section.appendChild(items);
+  return section;
+}
+
+function applySidebarGroupingClasses(sessionList: HTMLElement): void {
+  sessionList.querySelectorAll<HTMLElement>('.session-group-items').forEach((groupItems) => {
+    const allItems = groupItems.querySelectorAll<HTMLElement>('.session-item');
+    allItems.forEach((item) => {
+      item.classList.remove('tmux-last-child');
+      item.classList.remove(
+        'layout-group-start',
+        'layout-group-middle',
+        'layout-group-end',
+        'layout-group-single',
+      );
+    });
+
+    allItems.forEach((item, idx) => {
+      if (!item.classList.contains('tmux-child')) {
+        return;
+      }
+
       const nextItem = allItems[idx + 1];
       if (
         !nextItem ||
@@ -781,28 +850,53 @@ export function renderSessionList(): void {
       ) {
         item.classList.add('tmux-last-child');
       }
+    });
+
+    allItems.forEach((item, idx) => {
+      if (!item.classList.contains('in-layout')) return;
+
+      const prev = allItems[idx - 1];
+      const next = allItems[idx + 1];
+      const prevInLayout = !!prev?.classList.contains('in-layout');
+      const nextInLayout = !!next?.classList.contains('in-layout');
+
+      if (!prevInLayout && !nextInLayout) {
+        item.classList.add('layout-group-single');
+      } else if (!prevInLayout) {
+        item.classList.add('layout-group-start');
+      } else if (!nextInLayout) {
+        item.classList.add('layout-group-end');
+      } else {
+        item.classList.add('layout-group-middle');
+      }
+    });
+  });
+}
+
+/**
+ * Render the session list in the sidebar.
+ */
+export function renderSessionList(): void {
+  if (!dom.sessionList) return;
+
+  const sessionList = dom.sessionList;
+  const groups = groupSessionsByController(getSidebarDisplaySessions());
+
+  closeMobileActionMenu();
+  sessionList.querySelectorAll<HTMLElement>('.session-item').forEach((item) => {
+    const sessionId = item.dataset.sessionId;
+    if (sessionId) {
+      unregisterHeatCanvas(sessionId);
     }
   });
 
-  // Mark contiguous layout groups in sidebar order for explicit visual grouping
-  allItems.forEach((item, idx) => {
-    if (!item.classList.contains('in-layout')) return;
+  sessionList.replaceChildren();
 
-    const prev = allItems[idx - 1];
-    const next = allItems[idx + 1];
-    const prevInLayout = !!prev?.classList.contains('in-layout');
-    const nextInLayout = !!next?.classList.contains('in-layout');
-
-    if (!prevInLayout && !nextInLayout) {
-      item.classList.add('layout-group-single');
-    } else if (!prevInLayout) {
-      item.classList.add('layout-group-start');
-    } else if (!nextInLayout) {
-      item.classList.add('layout-group-end');
-    } else {
-      item.classList.add('layout-group-middle');
-    }
+  groups.forEach((group) => {
+    sessionList.appendChild(createSessionGroupSection(group));
   });
+
+  applySidebarGroupingClasses(sessionList);
 }
 
 /**

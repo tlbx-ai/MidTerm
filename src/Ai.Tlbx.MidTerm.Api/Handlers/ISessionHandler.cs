@@ -25,6 +25,7 @@ public interface ISessionHandler
     Task<IResult> GetBufferAsync(string id);
     Task<IResult> GetBufferTextAsync(string id, bool includeBase64);
     Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto);
+    Task<IResult> SetSessionControlAsync(string id, SetSessionControlRequest request);
     Task<IResult> UploadFileAsync(string id, IFormFile file);
     Task<IResult> PasteClipboardImageAsync(string id, IFormFile file);
     IResult InjectGuidance(string id);

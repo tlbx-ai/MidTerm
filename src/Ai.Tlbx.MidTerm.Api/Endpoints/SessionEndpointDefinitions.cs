@@ -67,6 +67,10 @@ public static class SessionEndpointDefinitions
             await handler.RenameSessionAsync(id, request, auto))
             .Produces(StatusCodes.Status200OK);
 
+        app.MapPut("/api/sessions/{id}/control", async (string id, SetSessionControlRequest request, ISessionHandler handler) =>
+            await handler.SetSessionControlAsync(id, request))
+            .Produces<SessionInfoDto>(StatusCodes.Status200OK, "application/json");
+
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file, ISessionHandler handler) =>
             await handler.UploadFileAsync(id, file))
             .Produces<FileUploadResponse>(StatusCodes.Status200OK, "application/json")

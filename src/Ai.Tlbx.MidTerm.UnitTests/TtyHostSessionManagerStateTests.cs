@@ -64,6 +64,62 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task SetAgentControlled_UnknownSession_ReturnsFalse()
+    {
+        await using var manager = CreateManager();
+
+        var ok = manager.SetAgentControlled("missing", true);
+
+        Assert.False(ok);
+    }
+
+    [Fact]
+    public async Task SetAgentControlled_ExistingSession_PopulatesSessionListFlag()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = manager.SetAgentControlled("s1", true);
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.True(dto.AgentControlled);
+    }
+
+    [Fact]
+    public async Task SetAgentControlled_TmuxFamily_CascadesToParentAndSiblings()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "root");
+        AddCachedSession(manager, "child-a");
+        AddCachedSession(manager, "child-b");
+        manager.SetTmuxParent("child-a", "root");
+        manager.SetTmuxParent("child-b", "root");
+
+        var ok = manager.SetAgentControlled("child-a", true);
+
+        Assert.True(ok);
+        var flags = manager.GetSessionList().Sessions.ToDictionary(s => s.Id, s => s.AgentControlled);
+        Assert.True(flags["root"]);
+        Assert.True(flags["child-a"]);
+        Assert.True(flags["child-b"]);
+    }
+
+    [Fact]
+    public async Task SetTmuxParent_AgentControlledParent_SeedsChildFlag()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "root");
+        AddCachedSession(manager, "child-a");
+        manager.SetAgentControlled("root", true);
+
+        manager.SetTmuxParent("child-a", "root");
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "child-a");
+        Assert.True(dto.AgentControlled);
+    }
+
+    [Fact]
     public async Task SetSessionNameAsync_AutoMode_StoresTerminalTitleOnly()
     {
         await using var manager = CreateManager();

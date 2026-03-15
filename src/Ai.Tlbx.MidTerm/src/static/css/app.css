@@ -431,6 +431,70 @@ body.has-app-background::after {
   scrollbar-color: var(--accent-blue-25) var(--bg-sidebar);
 }
 
+.session-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-group + .session-group {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.session-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.session-group-toggle:hover {
+  background: var(--white-03);
+  color: var(--text-primary);
+}
+
+.session-group-caret {
+  flex: 0 0 auto;
+  font-size: var(--fs-base);
+  transition: transform 0.15s ease;
+}
+
+.session-group.collapsed .session-group-caret {
+  transform: rotate(-90deg);
+}
+
+.session-group-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.session-group-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.session-group-agent .session-group-count {
+  background: var(--accent-blue-10);
+  color: var(--accent-blue-hover);
+}
+
+.session-group.collapsed .session-group-items {
+  display: none;
+}
+
 .session-list::-webkit-scrollbar {
   width: 8px;
   background: transparent;
@@ -524,6 +588,14 @@ body.has-app-background::after {
     1;
 }
 
+.session-item.agent-controlled {
+  background-image: linear-gradient(
+    90deg,
+    var(--accent-blue-10) 0,
+    transparent 44px
+  );
+}
+
 .session-item.pending {
   opacity: 0.7;
   cursor: default;
@@ -577,6 +649,17 @@ body.has-app-background::after {
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+}
+
+.session-role-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-blue-10);
+  color: var(--accent-blue-hover);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .session-title {
@@ -1014,6 +1097,7 @@ body.has-app-background::after {
   );
 }
 
+.session-control,
 .session-pin,
 .session-resize,
 .session-rename,
@@ -1060,12 +1144,22 @@ body.has-app-background::after {
   color: var(--accent-gold);
 }
 
+.session-control.active {
+  color: var(--accent-blue);
+}
+
+.session-control:hover,
 .session-pin:hover,
 .session-resize:hover,
 .session-rename:hover,
 .session-inject:hover {
   background-color: var(--accent-gold);
   color: var(--bg-primary);
+}
+
+.session-control.active:hover {
+  background-color: var(--accent-blue);
+  color: var(--text-on-accent);
 }
 
 .session-close:hover {

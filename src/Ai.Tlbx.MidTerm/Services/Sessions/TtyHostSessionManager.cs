@@ -474,6 +474,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetBookmarkId(sessionId, bookmarkId);
     }
 
+    public bool SetAgentControlled(string sessionId, bool agentControlled)
+    {
+        return _registry.SetAgentControlled(sessionId, agentControlled);
+    }
+
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
         return _registry.ClearBookmarksByHistoryId(bookmarkId);

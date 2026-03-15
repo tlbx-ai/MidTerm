@@ -43,6 +43,14 @@ function closestSessionItem(el: Element | null): HTMLElement | null {
   return found instanceof HTMLElement ? found : null;
 }
 
+function isSameControlMode(target: HTMLElement | null): boolean {
+  if (!target || !draggedElement) {
+    return false;
+  }
+
+  return target.dataset.controlMode === draggedElement.dataset.controlMode;
+}
+
 // Track elements with active drop indicators (avoids full DOM scan)
 const activeIndicators = new Set<HTMLElement>();
 
@@ -149,6 +157,11 @@ function handleDragOver(e: DragEvent): void {
     return;
   }
 
+  if (!isSameControlMode(sessionItem)) {
+    clearAllDropIndicators();
+    return;
+  }
+
   if (e.dataTransfer) {
     e.dataTransfer.dropEffect = 'move';
   }
@@ -210,6 +223,7 @@ function handleDrop(e: DragEvent): void {
   const targetItem = closestSessionItem(target);
 
   if (!targetItem || targetItem === draggedElement) return;
+  if (!isSameControlMode(targetItem)) return;
 
   const targetSessionId = targetItem.dataset.sessionId;
   if (!targetSessionId) return;
@@ -302,6 +316,10 @@ function handleTouchMove(e: TouchEvent): void {
   clearAllDropIndicators();
 
   if (sessionItem && sessionItem !== draggedElement) {
+    if (!isSameControlMode(sessionItem)) {
+      return;
+    }
+
     const rect = sessionItem.getBoundingClientRect();
     const midY = rect.top + rect.height / 2;
     const isAbove = touch.clientY < midY;
@@ -334,7 +352,7 @@ function handleTouchEnd(e: TouchEvent): void {
     const targetItem = closestSessionItem(el);
 
     if (targetItem && targetItem !== draggedElement && !isLayoutActive()) {
-      const targetSessionId = targetItem.dataset.sessionId;
+      const targetSessionId = isSameControlMode(targetItem) ? targetItem.dataset.sessionId : null;
       if (targetSessionId) {
         const sessions = $sessionList.get();
         const fromIndex = sessions.findIndex((s) => s.id === draggedSessionId);

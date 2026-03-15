@@ -135,6 +135,20 @@ export async function setSessionBookmark(id: string, bookmarkId: string) {
   });
 }
 
+export async function setSessionControl(id: string, agentControlled: boolean): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/control`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ agentControlled }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
 // --- Settings ---
 
 export async function getSettings() {

@@ -53,6 +53,13 @@ public class StubSessionHandler : ISessionHandler
     public Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto) =>
         Task.FromResult<IResult>(Results.Ok());
 
+    public Task<IResult> SetSessionControlAsync(string id, SetSessionControlRequest request) =>
+        Task.FromResult<IResult>(Results.Json(new SessionInfoDto
+        {
+            Id = id,
+            AgentControlled = request.AgentControlled
+        }));
+
     public Task<IResult> UploadFileAsync(string id, IFormFile file) =>
         Task.FromResult<IResult>(Results.Json(new FileUploadResponse { Path = "/tmp/file" }));
 

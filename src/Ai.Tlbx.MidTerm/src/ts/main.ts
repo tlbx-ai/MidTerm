@@ -167,6 +167,7 @@ import {
   renameSession as apiRenameSession,
   patchHistoryEntry,
   setSessionBookmark,
+  setSessionControl as apiSetSessionControl,
 } from './api/client';
 
 // Create logger for main module
@@ -356,6 +357,7 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
+    onToggleAgentControl: toggleAgentControl,
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
     },
@@ -460,6 +462,7 @@ async function createSession(): Promise<void> {
     order: Date.now(),
     parentSessionId: null,
     bookmarkId: null,
+    agentControlled: false,
   };
   setSession(tempSession);
   pendingSessions.add(tempId);
@@ -644,6 +647,47 @@ function renameSession(sessionId: string, newName: string | null): void {
       // Subscription handles renderSessionList and updateMobileTitle via store change
       log.error(() => `Failed to rename session ${sessionId}: ${String(e)}`);
     });
+}
+
+function getSessionFamilyIds(sessionId: string): string[] {
+  const sessions = $sessionList.get();
+  const session = sessions.find((item) => item.id === sessionId);
+  if (!session) {
+    return [];
+  }
+
+  const rootSessionId = session.parentSessionId ?? session.id;
+  return sessions
+    .filter((item) => item.id === rootSessionId || item.parentSessionId === rootSessionId)
+    .map((item) => item.id)
+    .filter((id): id is string => !!id);
+}
+
+function toggleAgentControl(sessionId: string): void {
+  const session = getSession(sessionId);
+  if (!session) return;
+
+  const nextAgentControlled = !session.agentControlled;
+  const sessionFamilyIds = getSessionFamilyIds(sessionId);
+  const previousSnapshots = sessionFamilyIds
+    .map((id) => getSession(id))
+    .filter((item): item is Session => !!item)
+    .map((item) => ({ ...item }));
+
+  for (const snapshot of previousSnapshots) {
+    setSession({
+      ...snapshot,
+      agentControlled: nextAgentControlled,
+    });
+  }
+
+  apiSetSessionControl(sessionId, nextAgentControlled).catch((e: unknown) => {
+    for (const snapshot of previousSnapshots) {
+      setSession(snapshot);
+    }
+
+    log.error(() => `Failed to toggle agent control for ${sessionId}: ${String(e)}`);
+  });
 }
 
 async function patchPinnedHistoryLabelIfMatchingTuple(
