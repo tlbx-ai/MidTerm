@@ -10,11 +10,11 @@
       },
       "Microsoft.Extensions.Hosting.WindowsServices": {
         "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "2XfvVSYf1bKWIUVeOZZ7OG8UlV137OwCrw1Qouxbmu8/lqION4l4WtheVz9TDJmO/KcuxpN4lCKbsr37ZW+Y8w==",
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "MGzm+eVrf1dviAygMKF72RlqQxawM4Y6ZzXlgj0stCr/6/FHqJ2QMfJzHe7IAYVhJdFQAzPI9UyqlXprxGGFLQ==",
         "dependencies": {
-          "System.ServiceProcess.ServiceController": "10.0.3"
+          "System.ServiceProcess.ServiceController": "10.0.5"
         }
       },
       "Microsoft.NET.ILLink.Tasks": {
@@ -36,9 +36,9 @@
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "JCKbH/CN5l0CSoJBILEvJmNQVp5vV+FY3q2ue4K9p4eDT4mFEv0bjTQCV+MD6Qk1b/qk9fWmZZKhG1TklbXw1Q=="
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "kxR4O/8o32eNN3m4qbLe3UifYqeyEpallCyVAsLvL5ZFJVyT3JCb+9du/WHfC09VyJh1Q+p/Gd4+AwM7Rz4acg=="
       },
       "Microsoft.Windows.SDK.Win32Docs": {
         "type": "Transitive",
@@ -60,8 +60,8 @@
       },
       "System.ServiceProcess.ServiceController": {
         "type": "Transitive",
-        "resolved": "10.0.3",
-        "contentHash": "lOvEbCrTMl4EB7Ckp1suhgcnUEwUs2qRWLYZvquKU33hpRLZfjTXBSHFWQiRshxqd7dA+Nj9Yiw8EbOwd3T/eQ=="
+        "resolved": "10.0.5",
+        "contentHash": "L7pataU51CVJkdfIxpH6wY1buML9zsi9ZVWYaCOLM1AMpd4wQ0StzbOb8OGZAfwCyK/oyKEYcCZrWAi4GgP3lg=="
       }
     },
     "net10.0/win-x64": {
@@ -81,8 +81,8 @@
       },
       "System.ServiceProcess.ServiceController": {
         "type": "Transitive",
-        "resolved": "10.0.3",
-        "contentHash": "lOvEbCrTMl4EB7Ckp1suhgcnUEwUs2qRWLYZvquKU33hpRLZfjTXBSHFWQiRshxqd7dA+Nj9Yiw8EbOwd3T/eQ=="
+        "resolved": "10.0.5",
+        "contentHash": "L7pataU51CVJkdfIxpH6wY1buML9zsi9ZVWYaCOLM1AMpd4wQ0StzbOb8OGZAfwCyK/oyKEYcCZrWAi4GgP3lg=="
       }
     }
   }

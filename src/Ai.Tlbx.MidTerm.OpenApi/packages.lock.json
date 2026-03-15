@@ -4,18 +4,18 @@
     "net10.0": {
       "Microsoft.AspNetCore.OpenApi": {
         "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "SAvSrKDgnY5GDjDAngOXxPhUvEKlTU/0zIq8zidqHvh/xnZBPs0Vc4LqwyvnmnafNnyUaivtRABz4K4wodXfSg==",
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "vTcxIfOPyfFbYk1g8YcXJfkMnlEWVkSnnjxcZLy60zgwiHMRf2SnZR+9E4HlpwKxgE3yfKMOti8J6WfKuKsw6w==",
         "dependencies": {
           "Microsoft.OpenApi": "2.0.0"
         }
       },
       "Microsoft.Extensions.ApiDescription.Server": {
         "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "o1cEbiEvoolBFTiQd3DlcULDpFNhLG8w8SQqOod5t74tP+HJ9y35J8MP/Ri1lMN8UtjqkQxa6nABoh59Yv6yUA=="
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "Lx8zu/RWUAuPuDfM4S3AeXGNu50G/oDMw2MIWRsZPm+giT0iChOGln6ezM5CEuI7SS2IKOPmAp+ry4pMBv/r/w=="
       },
       "Microsoft.OpenApi": {
         "type": "Transitive",
