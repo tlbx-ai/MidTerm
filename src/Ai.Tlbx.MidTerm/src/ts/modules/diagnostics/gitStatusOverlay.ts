@@ -110,7 +110,10 @@ function updateHeader(): void {
   const subs = getSubscribedSessions();
 
   headerEl.replaceChildren(
-    createToneSpan(`WS: ${wsState}`, wsState === 'open' ? 'git-overlay-tone-good' : 'git-overlay-tone-bad'),
+    createToneSpan(
+      `WS: ${wsState}`,
+      wsState === 'open' ? 'git-overlay-tone-good' : 'git-overlay-tone-bad',
+    ),
     createToneSpan(`Subs: ${subs.length}`, 'git-overlay-tone-info'),
   );
 }

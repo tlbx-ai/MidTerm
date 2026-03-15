@@ -397,7 +397,9 @@ function syncPiPTheme(doc: Document): void {
 
   const themeColor = doc.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (themeColor !== null) {
-    const currentColor = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim();
+    const currentColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--bg-primary')
+      .trim();
     if (currentColor.length > 0) {
       themeColor.content = currentColor;
     }
