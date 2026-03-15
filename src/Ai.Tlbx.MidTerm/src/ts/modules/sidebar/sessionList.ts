@@ -151,21 +151,13 @@ function persistSessionFilter(): void {
   }
 }
 
-function getSessionFilterBar(): HTMLElement | null {
-  return (
-    dom.sessionFilterInput?.closest<HTMLElement>('.session-filter-bar') ??
-    dom.sessionFilterClear?.closest<HTMLElement>('.session-filter-bar') ??
-    null
-  );
-}
-
 export function isSidebarSessionFilterEnabled(): boolean {
   return $currentSettings.get()?.showSidebarSessionFilter === true;
 }
 
 function syncSessionFilterControls(): void {
   const filterEnabled = isSidebarSessionFilterEnabled();
-  getSessionFilterBar()?.toggleAttribute('hidden', !filterEnabled);
+  dom.sessionFilterBar?.toggleAttribute('hidden', !filterEnabled);
 
   const filterInput = dom.sessionFilterInput;
   const visibleValue = filterEnabled ? sessionFilterValue : '';

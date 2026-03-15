@@ -83,6 +83,7 @@ export let suppressLayoutAutoFit = false;
 /** Cached DOM elements */
 export const dom: DOMElements = {
   sessionList: null,
+  sessionFilterBar: null,
   sessionFilterInput: null,
   sessionFilterClear: null,
   terminalsArea: null,
@@ -159,6 +160,7 @@ export function setWsRateEma(tx: number, rx: number): void {
  */
 export function cacheDOMElements(): void {
   dom.sessionList = document.getElementById('session-list');
+  dom.sessionFilterBar = document.getElementById('session-filter-bar');
   dom.sessionFilterInput = document.getElementById(
     'session-filter-input',
   ) as HTMLInputElement | null;

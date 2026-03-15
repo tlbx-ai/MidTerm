@@ -304,7 +304,7 @@ public static partial class SessionApiEndpoints
         });
     }
 
-    private static bool TryGetInputBytes(
+    internal static bool TryGetInputBytes(
         SessionInputRequest request,
         out byte[] data,
         out string error)
@@ -326,7 +326,7 @@ public static partial class SessionApiEndpoints
             var text = request.Text!;
             if (request.AppendNewline)
             {
-                text += "\n";
+                text += "\r";
             }
 
             data = Encoding.UTF8.GetBytes(text);
@@ -339,7 +339,7 @@ public static partial class SessionApiEndpoints
             if (request.AppendNewline)
             {
                 Array.Resize(ref data, data.Length + 1);
-                data[^1] = (byte)'\n';
+                data[^1] = (byte)'\r';
             }
             return true;
         }

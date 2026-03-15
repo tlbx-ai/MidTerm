@@ -37,15 +37,30 @@ public static class MtcliScriptWriter
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
         _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
+        _MNOSESSION() { [[ "$1" == *"No browser preview connected for"* ]]; }
         _MBB() {
           local args=("$@")
+          local original=("$@")
+          local injectedSession=0 injectedPreview=0 output exitCode
           if [ -n "$(_MSID)" ] && ! _MHAS "--session" "${args[@]}"; then
             args+=("--session" "$(_MSID)")
+            injectedSession=1
           fi
-          if [ -n "$(_MPREVIEW)" ] && ! _MHAS "--preview" "${args[@]}"; then
+          if [ $injectedSession -eq 1 ] && ! _MHAS "--preview" "${args[@]}"; then
             args+=("--preview" "$(_MPREVIEW)")
+            injectedPreview=1
+          elif [ -n "${MT_PREVIEW_NAME:-}" ] && ! _MHAS "--preview" "${args[@]}"; then
+            args+=("--preview" "$(_MPREVIEW)")
+            injectedPreview=1
           fi
-          _MB "${args[@]}"
+          output=$(_MB "${args[@]}")
+          exitCode=$?
+          if [ $exitCode -ne 0 ] && [ $injectedSession -eq 1 ] && _MNOSESSION "$output"; then
+            output=$(_MB "${original[@]}")
+            exitCode=$?
+          fi
+          printf '%s' "$output"
+          return $exitCode
         }
         _MQ() {
           if [ -n "$(_MSID)" ]; then
@@ -197,6 +212,10 @@ public static class MtcliScriptWriter
             if ($env:MT_PREVIEW_NAME) { return $env:MT_PREVIEW_NAME }
             return "default"
         }
+        function script:_MShouldRetryAnonymous {
+            param([string]$Output)
+            return $Output -like "*No browser preview connected for*"
+        }
         # Send null-delimited args to text CLI endpoint (browser commands)
         function script:_MB {
             $bytes = [System.Collections.Generic.List[byte]]::new()
@@ -211,14 +230,29 @@ public static class MtcliScriptWriter
             } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
         }
         function script:_MBB {
+            $originalArgs = @($args)
             $allArgs = @($args)
+            $injectedSession = $false
             if ($env:MT_SESSION_ID -and -not ($allArgs -contains "--session")) {
                 $allArgs += @("--session", $env:MT_SESSION_ID)
+                $injectedSession = $true
             }
-            if (-not ($allArgs -contains "--preview")) {
+            $injectedPreview = $false
+            if ($injectedSession -and -not ($allArgs -contains "--preview")) {
                 $allArgs += @("--preview", (_MPreview))
+                $injectedPreview = $true
+            } elseif ($env:MT_PREVIEW_NAME -and -not ($allArgs -contains "--preview")) {
+                $allArgs += @("--preview", (_MPreview))
+                $injectedPreview = $true
             }
-            _MB @allArgs
+            $output = _MB @allArgs
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0 -and $injectedSession -and (_MShouldRetryAnonymous $output)) {
+                $output = _MB @originalArgs
+                $exitCode = $LASTEXITCODE
+            }
+            $global:LASTEXITCODE = $exitCode
+            $output
         }
         function script:_MQuery {
             if (-not $env:MT_SESSION_ID) { return "" }

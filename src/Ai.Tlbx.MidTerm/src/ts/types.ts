@@ -457,6 +457,7 @@ export interface DisplayLayout {
 /** Cached DOM elements */
 export interface DOMElements {
   sessionList: HTMLElement | null;
+  sessionFilterBar: HTMLElement | null;
   sessionFilterInput: HTMLInputElement | null;
   sessionFilterClear: HTMLButtonElement | null;
   terminalsArea: HTMLElement | null;

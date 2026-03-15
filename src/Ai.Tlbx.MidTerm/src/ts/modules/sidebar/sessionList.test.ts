@@ -125,7 +125,6 @@ describe('sessionList grouping', () => {
     };
     const filterInput = {
       value: '',
-      closest: vi.fn(() => filterBar),
       focus: vi.fn(),
       blur: vi.fn(),
       setAttribute: vi.fn(),
@@ -133,7 +132,6 @@ describe('sessionList grouping', () => {
     };
     const clearButton = {
       hidden: false,
-      closest: vi.fn(() => filterBar),
       toggleAttribute(name: string, force?: boolean) {
         if (name === 'hidden') {
           this.hidden = force !== false;
@@ -142,6 +140,7 @@ describe('sessionList grouping', () => {
       setAttribute: vi.fn(),
       addEventListener: vi.fn(),
     };
+    state.dom.sessionFilterBar = filterBar as any;
     state.dom.sessionFilterInput = filterInput as any;
     state.dom.sessionFilterClear = clearButton as any;
 

@@ -59,6 +59,25 @@ public sealed class MtcliScriptWriterTests : IDisposable
     }
 
     [Fact]
+    public void WriteScripts_WritesAnonymousBrowserFallbackForImplicitSessionScope()
+    {
+        Directory.CreateDirectory(_tempDir);
+
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+
+        Assert.Contains("_MNOSESSION()", shell, StringComparison.Ordinal);
+        Assert.Contains("output=$(_MB \"${original[@]}\")", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("if [ -n \"$(_MPREVIEW)\" ] && ! _MHAS \"--preview\" \"${args[@]}\"; then", shell, StringComparison.Ordinal);
+
+        Assert.Contains("function script:_MShouldRetryAnonymous", powershell, StringComparison.Ordinal);
+        Assert.Contains("$output = _MB @originalArgs", powershell, StringComparison.Ordinal);
+        Assert.Contains("elseif ($env:MT_PREVIEW_NAME -and -not ($allArgs -contains \"--preview\"))", powershell, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Ensure_WritesAgentsGuidanceWithSessionScopedPreviewWorkflow()
     {
         Directory.CreateDirectory(_tempDir);
