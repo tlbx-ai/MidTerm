@@ -25,6 +25,7 @@ public sealed partial class MidTermSettingsPublic
             BackgroundImageRevision = settings.BackgroundImageRevision,
             BackgroundImageFit = settings.BackgroundImageFit,
             UiTransparency = settings.UiTransparency,
+            TerminalTransparency = settings.TerminalTransparency,
             TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
@@ -76,6 +77,10 @@ public sealed partial class MidTermSettingsPublic
             settings.BackgroundImageFit = BackgroundImageFit;
         }
         settings.UiTransparency = Math.Clamp(UiTransparency, 0, 85);
+        if (TerminalTransparency.HasValue)
+        {
+            settings.TerminalTransparency = Math.Clamp(TerminalTransparency.Value, 0, 85);
+        }
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
         settings.SmoothScrolling = SmoothScrolling;

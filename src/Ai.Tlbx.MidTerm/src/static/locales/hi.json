@@ -110,6 +110,7 @@
   "settings.appearance.backgroundEnabled": "पृष्ठभूमि छवि दिखाएं",
   "settings.appearance.backgroundFit": "छवि फिट",
   "settings.appearance.uiTransparency": "UI पारदर्शिता",
+  "settings.appearance.terminalTransparency": "टर्मिनल पारदर्शिता",
   "settings.appearance.browserTabTitle": "ब्राउज़र टैब शीर्षक",
   "settings.appearance.minimumContrast": "न्यूनतम कंट्रास्ट",
   "settings.appearance.terminalScrollbar": "टर्मिनल स्क्रॉलबार",

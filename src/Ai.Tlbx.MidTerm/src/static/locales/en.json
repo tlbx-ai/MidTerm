@@ -124,6 +124,7 @@
   "settings.appearance.backgroundEnabled": "Show Background Image",
   "settings.appearance.backgroundFit": "Image Fit",
   "settings.appearance.uiTransparency": "UI Transparency",
+  "settings.appearance.terminalTransparency": "Terminal Transparency",
   "settings.appearance.browserTabTitle": "Browser Tab Title",
   "settings.appearance.minimumContrast": "Minimum Contrast",
   "settings.appearance.terminalScrollbar": "Terminal Scrollbar",

@@ -7,21 +7,26 @@
 import type { MidTermSettingsPublic } from '../../types';
 import { getCssThemePalette } from './cssThemes';
 
-const BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
-  { name: '--bg-terminal' },
-  { name: '--terminal-bg' },
-  { name: '--bg-primary' },
-  { name: '--bg-elevated', boost: 0.03 },
-  { name: '--bg-sidebar', boost: 0.02 },
-  { name: '--bg-surface', boost: 0.06 },
-  { name: '--bg-input', boost: 0.06 },
-  { name: '--bg-dropdown', boost: 0.06 },
-  { name: '--bg-hover', boost: 0.1 },
-  { name: '--bg-active', boost: 0.14 },
-  { name: '--bg-session-hover', boost: 0.08 },
-  { name: '--bg-session-active', boost: 0.12 },
-  { name: '--bg-settings', boost: 0.03 },
-  { name: '--bg-tertiary', boost: 0.03 },
+const TERMINAL_BACKGROUND_VARIABLES = ['--bg-terminal', '--terminal-bg'] as const;
+
+const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
+  { name: '--bg-primary', boost: 0.16 },
+  { name: '--bg-elevated', boost: 0.22 },
+  { name: '--bg-sidebar', boost: 0.22 },
+  { name: '--bg-surface', boost: 0.28 },
+  { name: '--bg-input', boost: 0.28 },
+  { name: '--bg-dropdown', boost: 0.28 },
+  { name: '--bg-hover', boost: 0.34 },
+  { name: '--bg-active', boost: 0.4 },
+  { name: '--bg-session-hover', boost: 0.32 },
+  { name: '--bg-session-active', boost: 0.38 },
+  { name: '--bg-settings', boost: 0.22 },
+  { name: '--bg-tertiary', boost: 0.22 },
+];
+
+const OPAQUE_SURFACE_VARIABLES: Array<{ name: string; source: string }> = [
+  { name: '--bg-elevated-opaque', source: '--bg-elevated' },
+  { name: '--bg-dropdown-opaque', source: '--bg-dropdown' },
 ];
 
 interface RgbColor {
@@ -37,17 +42,42 @@ export function getBackgroundImageUrl(revision: number): string {
 export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void {
   const root = document.documentElement;
   const palette = getCssThemePalette(settings.theme);
-  const transparency = clamp(settings.uiTransparency, 0, 85);
-  const baseAlpha = Math.max(0.15, 1 - transparency / 100);
+  const uiTransparency = clamp(settings.uiTransparency, 0, 85);
+  const terminalTransparency = clamp(
+    settings.terminalTransparency ?? settings.uiTransparency,
+    0,
+    85,
+  );
+  const uiBaseAlpha = Math.max(0.15, 1 - uiTransparency / 100);
+  const terminalBaseAlpha = Math.max(0.15, 1 - terminalTransparency / 100);
 
-  for (const variable of BACKGROUND_VARIABLES) {
+  for (const variable of OPAQUE_SURFACE_VARIABLES) {
+    const value = palette[variable.source];
+    if (!value) {
+      continue;
+    }
+
+    root.style.setProperty(variable.name, value);
+  }
+
+  for (const variableName of TERMINAL_BACKGROUND_VARIABLES) {
+    const value = palette[variableName];
+    const rgb = parseColor(value);
+    if (!rgb) {
+      continue;
+    }
+
+    root.style.setProperty(variableName, toRgba(rgb, terminalBaseAlpha));
+  }
+
+  for (const variable of UI_BACKGROUND_VARIABLES) {
     const value = palette[variable.name];
     const rgb = parseColor(value);
     if (!rgb) {
       continue;
     }
 
-    const alpha = clamp(baseAlpha + (variable.boost ?? 0), 0, 1);
+    const alpha = clamp(uiBaseAlpha + (variable.boost ?? 0), 0, 1);
     root.style.setProperty(variable.name, toRgba(rgb, alpha));
   }
 

@@ -113,6 +113,7 @@
   "settings.appearance.backgroundEnabled": "显示背景图片",
   "settings.appearance.backgroundFit": "图片适配",
   "settings.appearance.uiTransparency": "界面透明度",
+  "settings.appearance.terminalTransparency": "终端透明度",
   "settings.appearance.browserTabTitle": "浏览器标签标题",
   "settings.appearance.minimumContrast": "最小对比度",
   "settings.appearance.terminalScrollbar": "终端滚动条",

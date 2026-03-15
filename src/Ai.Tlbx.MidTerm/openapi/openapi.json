@@ -3807,6 +3807,7 @@
           "backgroundImageRevision",
           "backgroundImageFit",
           "uiTransparency",
+          "terminalTransparency",
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
@@ -3902,6 +3903,13 @@
           },
           "uiTransparency": {
             "type": "integer",
+            "format": "int32"
+          },
+          "terminalTransparency": {
+            "type": [
+              "null",
+              "integer"
+            ],
             "format": "int32"
           },
           "tabTitleMode": {

@@ -110,6 +110,7 @@
   "settings.appearance.backgroundEnabled": "Hintergrundbild anzeigen",
   "settings.appearance.backgroundFit": "Bildanpassung",
   "settings.appearance.uiTransparency": "UI-Transparenz",
+  "settings.appearance.terminalTransparency": "Terminal-Transparenz",
   "settings.appearance.browserTabTitle": "Browser-Tab-Titel",
   "settings.appearance.minimumContrast": "Minimaler Kontrast",
   "settings.appearance.terminalScrollbar": "Terminal-Bildlaufleiste",

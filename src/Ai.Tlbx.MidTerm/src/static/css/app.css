@@ -65,6 +65,8 @@
   --bg-surface: #242735; /* L: 12.5% - Input fields, dropdowns */
   --bg-input: #242735; /* Alias for compatibility */
   --bg-dropdown: #242735; /* Alias for compatibility */
+  --bg-elevated-opaque: #161821; /* Opaque modal/card shell */
+  --bg-dropdown-opaque: #242735; /* Opaque dropdown/menu shell */
   --bg-hover: #2d3044; /* L: 16% - Hover states */
   --bg-active: #363a50; /* L: 19% - Active/selected */
   --bg-session-hover: #1c1e2a; /* Subtle hover */
@@ -373,7 +375,7 @@ body.has-app-background::after {
   box-sizing: border-box;
   border-bottom: 2px solid transparent;
   border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
-  background-color: var(--terminal-bg);
+  background-color: var(--bg-sidebar);
   position: relative;
 }
 
@@ -815,7 +817,7 @@ body.has-app-background::after {
   top: 0;
   left: 8px;
   right: 8px;
-  background: var(--bg-input);
+  background: var(--bg-dropdown-opaque);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 12px var(--shadow-color);
@@ -1233,7 +1235,7 @@ body.has-app-background::after {
   border-top: 1px solid var(--border-color);
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  background-color: var(--terminal-bg);
+  background-color: var(--bg-sidebar);
 }
 
 .sidebar-footer .footer-row {
@@ -2285,7 +2287,7 @@ body.has-app-background::after {
         padding: 6px;
         border: 1px solid var(--border-color);
         border-radius: 10px;
-        background: var(--bg-sidebar);
+        background: var(--bg-dropdown-opaque);
         box-shadow: 0 8px 24px var(--shadow-color);
         overflow-y: auto;
         z-index: 1004;
@@ -2477,7 +2479,7 @@ body.has-app-background::after {
         padding: 8px;
         border: 1px solid var(--border-color);
         border-radius: 14px;
-        background: var(--bg-dropdown);
+        background: var(--bg-dropdown-opaque);
         box-shadow: 0 18px 36px var(--shadow-color-lg);
         opacity: 0;
         visibility: hidden;
@@ -4206,7 +4208,7 @@ body.has-app-background::after {
 
 .modal-content {
   position: relative;
-  background-color: var(--bg-sidebar);
+  background-color: var(--bg-elevated-opaque);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   max-width: 600px;
@@ -7042,7 +7044,7 @@ body.shared-session-mode .session-tab-bar {
 .touch-popup {
   position: fixed;
   bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-  background: var(--bg-sidebar);
+  background: var(--bg-elevated-opaque);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 8px;
@@ -7117,7 +7119,7 @@ body.shared-session-mode .session-tab-bar {
   position: fixed;
   display: flex;
   gap: 4px;
-  background: var(--bg-sidebar);
+  background: var(--bg-elevated-opaque);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 6px;

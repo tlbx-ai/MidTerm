@@ -110,6 +110,7 @@
   "settings.appearance.backgroundEnabled": "背景画像を表示",
   "settings.appearance.backgroundFit": "画像の表示方法",
   "settings.appearance.uiTransparency": "UI の透明度",
+  "settings.appearance.terminalTransparency": "ターミナルの透明度",
   "settings.appearance.browserTabTitle": "ブラウザタブタイトル",
   "settings.appearance.minimumContrast": "最小コントラスト",
   "settings.appearance.terminalScrollbar": "ターミナルスクロールバー",

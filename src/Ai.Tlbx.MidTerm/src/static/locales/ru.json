@@ -110,6 +110,7 @@
   "settings.appearance.backgroundEnabled": "Показывать фоновое изображение",
   "settings.appearance.backgroundFit": "Подгонка изображения",
   "settings.appearance.uiTransparency": "Прозрачность интерфейса",
+  "settings.appearance.terminalTransparency": "Прозрачность терминала",
   "settings.appearance.browserTabTitle": "Заголовок вкладки браузера",
   "settings.appearance.minimumContrast": "Минимальная контрастность",
   "settings.appearance.terminalScrollbar": "Полоса прокрутки терминала",

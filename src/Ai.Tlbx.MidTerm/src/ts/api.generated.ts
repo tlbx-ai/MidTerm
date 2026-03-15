@@ -3509,6 +3509,8 @@ export interface components {
       backgroundImageFit: string;
       /** Format: int32 */
       uiTransparency: number;
+      /** Format: int32 */
+      terminalTransparency: null | number;
       tabTitleMode: components['schemas']['TabTitleModeSetting'];
       /** Format: double */
       minimumContrastRatio: number;

@@ -110,6 +110,7 @@
   "settings.appearance.backgroundEnabled": "Afficher l'image d'arrière-plan",
   "settings.appearance.backgroundFit": "Ajustement de l'image",
   "settings.appearance.uiTransparency": "Transparence de l'interface",
+  "settings.appearance.terminalTransparency": "Transparence du terminal",
   "settings.appearance.browserTabTitle": "Titre de l'Onglet du Navigateur",
   "settings.appearance.minimumContrast": "Contraste Minimum",
   "settings.appearance.terminalScrollbar": "Barre de Défilement du Terminal",

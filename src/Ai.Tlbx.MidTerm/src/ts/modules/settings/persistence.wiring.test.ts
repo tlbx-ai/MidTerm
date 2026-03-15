@@ -18,6 +18,7 @@ const persistenceSource = readFileSync(
 const NON_PERSISTED_SETTING_IDS = new Set([
   'setting-background-upload',
   'setting-ui-transparency-value',
+  'setting-terminal-transparency-value',
 ]);
 
 function getPersistedSettingIds(): string[] {
@@ -90,7 +91,9 @@ describe('settings persistence wiring', () => {
   });
 
   it('uses non-submit inline save buttons for text and number settings', () => {
-    const inlineSaveButtons = [...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g)];
+    const inlineSaveButtons = [
+      ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
+    ];
     expect(inlineSaveButtons).toHaveLength(3);
   });
 });

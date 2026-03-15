@@ -267,6 +267,11 @@ public sealed class SettingsService
         {
             settings.TerminalEnterMode = TerminalEnterModeSetting.ShiftEnterLineFeed;
         }
+
+        if (!json.Contains("\"terminalTransparency\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalTransparency = settings.UiTransparency;
+        }
     }
 
     private void MigrateServiceInstallFlag(MidTermSettings settings, string json)
