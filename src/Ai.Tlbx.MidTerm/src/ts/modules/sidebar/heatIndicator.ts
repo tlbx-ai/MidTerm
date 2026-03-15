@@ -62,10 +62,11 @@ const CANVAS_CSS_H = 36;
 // Color stops: [heat_value, r, g, b]
 const GRADIENT: [number, number, number, number][] = [
   [0.0, 10, 14, 26], // dark navy (nearly invisible when idle)
-  [0.24, 18, 54, 102], // deep cold blue
-  [0.52, 92, 198, 255], // ice blue
-  [0.74, 170, 232, 255], // bright frost blue
-  [0.88, 220, 78, 104], // warm transition without orange
+  [0.18, 18, 54, 102], // deep cold blue
+  [0.4, 92, 198, 255], // ice blue
+  [0.58, 170, 232, 255], // bright frost blue
+  [0.66, 220, 78, 104], // warm transition without orange
+  [0.84, 224, 44, 52], // strong red sooner so hot sessions cool visually more gradually
   [1.0, 220, 28, 28], // hot red
 ];
 
