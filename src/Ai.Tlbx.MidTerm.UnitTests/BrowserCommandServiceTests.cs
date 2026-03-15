@@ -175,4 +175,42 @@ public class BrowserCommandServiceTests
         Assert.Equal("user2", captured.PreviewName);
         Assert.Equal("preview-b", captured.PreviewId);
     }
+
+    [Fact]
+    public void GetStatus_WithScopedPreview_ReturnsOnlyMatchingClient()
+    {
+        var service = new BrowserCommandService();
+
+        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
+        Assert.True(service.TryRegisterClient("c2", "session-a", "codex1", "preview-b", _ => { }));
+        Assert.True(service.TryRegisterClient("c3", "session-b", "codex1", "preview-c", _ => { }));
+
+        var status = service.GetStatus(
+            "https://localhost:5001/teacher?dev=1",
+            sessionId: "session-a",
+            previewName: "codex1");
+
+        Assert.True(status.Connected);
+        Assert.Equal(1, status.ConnectedClientCount);
+        Assert.NotNull(status.DefaultClient);
+        Assert.Equal("session-a", status.DefaultClient!.SessionId);
+        Assert.Equal("codex1", status.DefaultClient.PreviewName);
+        Assert.Equal("preview-b", status.DefaultClient.PreviewId);
+        Assert.Single(status.Clients);
+    }
+
+    [Fact]
+    public void GetStatusText_WithScopedPreviewAndNoMatch_ReturnsHelpfulDisconnectedMessage()
+    {
+        var service = new BrowserCommandService();
+        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
+
+        var status = service.GetStatusText(
+            "https://localhost:5001/teacher?dev=1",
+            sessionId: "session-a",
+            previewName: "codex1");
+
+        Assert.Contains("disconnected", status, StringComparison.Ordinal);
+        Assert.Contains("preview 'codex1' in session 'session-a'", status, StringComparison.Ordinal);
+    }
 }

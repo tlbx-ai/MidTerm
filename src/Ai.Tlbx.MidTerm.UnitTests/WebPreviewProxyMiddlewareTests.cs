@@ -96,6 +96,69 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_CookieBridge_RefreshesAfterFetchAndXhr()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("function wrapCookieRefresh", script, StringComparison.Ordinal);
+        Assert.Contains("XMLHttpRequest.prototype.send=function()", script, StringComparison.Ordinal);
+        Assert.Contains("addEventListener(\"loadend\",onDone)", script, StringComparison.Ordinal);
+        Assert.Contains("cookieRefreshTimer", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RewriteRefererForUpstream_TargetWithBasePath_PreservesTargetBase()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com/dashboard"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+
+        var rewritten = middleware.RewriteRefererForUpstream(
+            $"https://midterm.local/webpreview/{routeKey}/api/save?draft=1",
+            routeKey,
+            new Uri("https://example.com/dashboard"));
+
+        Assert.Equal("https://example.com/dashboard/api/save?draft=1", rewritten);
+    }
+
+    [Fact]
+    public void RewriteRefererForUpstream_ExtProxyReferer_UsesDecodedExternalUrl()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com/dashboard"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+        var externalUrl = "https://cdn.example.com/fonts/site.woff2?v=2";
+
+        var rewritten = middleware.RewriteRefererForUpstream(
+            $"https://midterm.local/webpreview/{routeKey}/_ext?u={Uri.EscapeDataString(externalUrl)}",
+            routeKey,
+            new Uri("https://example.com/dashboard"));
+
+        Assert.Equal(externalUrl, rewritten);
+    }
+
+    [Fact]
+    public void RewriteRefererForUpstream_NonProxyReferer_IsLeftUnchanged()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+        const string referer = "https://example.net/plain/path";
+
+        var rewritten = middleware.RewriteRefererForUpstream(
+            referer,
+            "route-1",
+            new Uri("https://example.com/dashboard"));
+
+        Assert.Equal(referer, rewritten);
+    }
+
+    [Fact]
     public void CollectProxyPathPrefixes_RewrittenHtml_PrimesServerRootAssetPrefixes()
     {
         const string html = """

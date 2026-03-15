@@ -37,6 +37,37 @@ public class WebPreviewServiceTests
     }
 
     [Fact]
+    public void GetBrowserCookies_UsesCurrentDocumentUrlScope()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com/app"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        Assert.True(service.SetCookieFromRaw(routeKey, "theme=dark; Path=/app"));
+        Assert.True(service.SetCookieFromRaw(routeKey, "csrf=abc123; Path=/api"));
+
+        var browserCookies = service.GetBrowserCookies(routeKey, new Uri("https://example.com/app/task/1"));
+
+        Assert.Contains("theme=dark", browserCookies.Header, StringComparison.Ordinal);
+        Assert.DoesNotContain("csrf=abc123", browserCookies.Header, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetForwardedCookieHeader_IncludesHttpOnlyCookiesForMatchingRequestScope()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com/app"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        Assert.True(service.SetCookieFromRaw(routeKey, "theme=dark; Path=/app"));
+        Assert.True(service.SetCookieFromRaw(routeKey, "session=abc123; Path=/app; HttpOnly"));
+
+        var header = service.GetForwardedCookieHeader(routeKey, new Uri("https://example.com/app/api"));
+
+        Assert.NotNull(header);
+        Assert.Contains("theme=dark", header, StringComparison.Ordinal);
+        Assert.Contains("session=abc123", header, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SetTarget_DifferentPort_ResetsCookieJar()
     {
         var service = new WebPreviewService(serverPort: 2000);

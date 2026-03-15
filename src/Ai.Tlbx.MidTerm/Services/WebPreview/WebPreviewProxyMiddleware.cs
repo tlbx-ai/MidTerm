@@ -141,14 +141,30 @@ public sealed partial class WebPreviewProxyMiddleware
               return F.call(self,ru,init);
             },function(){return F.call(self,ru,init);});
           }
+          function wrapCookieRefresh(p){
+            if(!p||typeof p.then!=="function"){qrc();return p;}
+            return p.then(function(v){qrc();return v;},function(err){qrc();throw err;});
+          }
           window.fetch=function(u,o){
-            if(typeof u==="string")return F.call(this,r(u),o);
-            if(u&&typeof u==="object"&&u.url){try{return rfq(this,u,o);}catch(e){}}
-            return F.call(this,u,o);
+            if(typeof u==="string")return wrapCookieRefresh(F.call(this,r(u),o));
+            if(u&&typeof u==="object"&&u.url){try{return wrapCookieRefresh(rfq(this,u,o));}catch(e){}}
+            return wrapCookieRefresh(F.call(this,u,o));
           };
           var X=XMLHttpRequest.prototype.open;
           XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);return X.apply(this,a);};
-          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return sb(r(u),d);};}
+          var XS=XMLHttpRequest.prototype.send;
+          XMLHttpRequest.prototype.send=function(){
+            var xhr=this,done=false;
+            function onDone(){
+              if(done)return;
+              done=true;
+              qrc();
+              try{xhr.removeEventListener("loadend",onDone);}catch(e){}
+            }
+            try{xhr.addEventListener("loadend",onDone);}catch(e){}
+            try{return XS.apply(xhr,arguments);}catch(err){onDone();throw err;}
+          };
+          if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){var ok=sb(r(u),d);if(ok)qrc();return ok;};}
           // === Element property setters ===
           // .src on elements that load resources
           ["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLEmbedElement","HTMLVideoElement","HTMLAudioElement"].forEach(function(n){
@@ -244,7 +260,7 @@ public sealed partial class WebPreviewProxyMiddleware
           window.addEventListener("hashchange",ntfy);
           setTimeout(ntfy,0);
           // === Cookie bridge ===
-          var cc="",cookieSeq=0,cookiePending={};
+          var cc="",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
           window.addEventListener("message",function(ev){
             var d=ev.data;
             if(!d||d.type!=="mt-cookie-response")return;
@@ -269,6 +285,13 @@ public sealed partial class WebPreviewProxyMiddleware
             });
           }
           function rc(){return reqCookie("get").then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
+          function qrc(){
+            if(cookieRefreshTimer)return;
+            cookieRefreshTimer=setTimeout(function(){
+              cookieRefreshTimer=0;
+              rc();
+            },0);
+          }
           rc();
           try{
             var d=Object.getOwnPropertyDescriptor(Document.prototype,"cookie")||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,"cookie");
@@ -877,7 +900,7 @@ public sealed partial class WebPreviewProxyMiddleware
         HttpRequestMessage BuildRequest(HttpMethod method, string url)
         {
             var msg = new HttpRequestMessage(method, url);
-            ForwardRequestHeaders(context.Request, msg, upstreamOrigin);
+            ForwardRequestHeaders(context.Request, msg, routeKey, targetUri, upstreamOrigin);
             msg.Headers.TryAddWithoutValidation("X-Forwarded-For",
                 context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1");
             msg.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
@@ -1170,7 +1193,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var requestUri = new Uri(url);
             var upstreamOrigin = $"{requestUri.Scheme}://{requestUri.Authority}";
             var msg = new HttpRequestMessage(method, url);
-            ForwardRequestHeaders(context.Request, msg, upstreamOrigin);
+            ForwardRequestHeaders(context.Request, msg, routeKey, requestUri, upstreamOrigin);
             AttachRequestBody(msg, method, requestBodyBuffer, context.Request.ContentType, null);
             return msg;
         }
@@ -1203,8 +1226,12 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
-    private static void ForwardRequestHeaders(
-        HttpRequest source, HttpRequestMessage target, string upstreamOrigin)
+    private void ForwardRequestHeaders(
+        HttpRequest source,
+        HttpRequestMessage target,
+        string routeKey,
+        Uri currentTargetUri,
+        string upstreamOrigin)
     {
         foreach (var header in source.Headers)
         {
@@ -1218,18 +1245,50 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
             {
-                var refValue = header.Value.ToString();
-                if (Uri.TryCreate(refValue, UriKind.Absolute, out var refUri))
-                {
-                    refValue = upstreamOrigin + refUri.PathAndQuery
-                        .Replace("/webpreview/", "/").Replace("/webpreview", "/");
-                }
+                var refValue = RewriteRefererForUpstream(header.Value.ToString(), routeKey, currentTargetUri);
                 target.Headers.TryAddWithoutValidation(header.Key, refValue);
                 continue;
             }
 
             target.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
         }
+    }
+
+    internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri)
+    {
+        if (!Uri.TryCreate(refererValue, UriKind.Absolute, out var refererUri))
+        {
+            return refererValue;
+        }
+
+        if (!TryParseProxyRoute(refererUri.AbsolutePath, out var refererRouteKey, out var refererRemainingPath))
+        {
+            return refererValue;
+        }
+
+        if (string.Equals(refererRemainingPath, "/_ext", StringComparison.OrdinalIgnoreCase))
+        {
+            var externalUrl = QueryHelpers.ParseQuery(refererUri.Query)["u"].FirstOrDefault();
+            return !string.IsNullOrWhiteSpace(externalUrl)
+                && Uri.TryCreate(externalUrl, UriKind.Absolute, out var externalUri)
+                ? externalUri.ToString()
+                : refererValue;
+        }
+
+        var refererTarget = _service.GetTargetUriByRouteKey(refererRouteKey);
+        if (refererTarget is null
+            && string.Equals(refererRouteKey, currentRouteKey, StringComparison.Ordinal))
+        {
+            refererTarget = currentTargetUri;
+        }
+
+        if (refererTarget is null)
+        {
+            return refererValue;
+        }
+
+        var upstreamPath = BuildUpstreamPath(refererTarget, refererRemainingPath);
+        return BuildUpstreamUrlFromPath(refererTarget, upstreamPath, refererUri.Query);
     }
 
     private static void AttachRequestBody(
@@ -1298,14 +1357,14 @@ public sealed partial class WebPreviewProxyMiddleware
             catch (HttpRequestException ex)
             {
                 sw.Stop();
-                LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 502, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
+                LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 502, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 502, null);
             }
             catch (TaskCanceledException ex)
             {
                 sw.Stop();
-                LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
+                LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 504, null);
             }
@@ -1326,7 +1385,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
 
             sw.Stop();
-            LogHttpRequest(context, logType ?? "http", originalMethod.Method, startUrl, currentUrl, statusCode, sw.ElapsedMilliseconds, requestMessage, upstreamResponse, null);
+            LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, statusCode, sw.ElapsedMilliseconds, requestMessage, upstreamResponse, null);
             requestMessage.Dispose();
             break;
         }
@@ -1337,7 +1396,7 @@ public sealed partial class WebPreviewProxyMiddleware
     }
 
     private void LogHttpRequest(
-        HttpContext context, string type, string method,
+        HttpContext context, string routeKey, string type, string method,
         string startUrl, string finalUrl, int statusCode, long durationMs,
         HttpRequestMessage? request, HttpResponseMessage? response, string? error)
     {
@@ -1356,8 +1415,15 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             foreach (var h in request.Headers)
                 entry.RequestHeaders[h.Key] = string.Join(", ", h.Value);
-            var cookieHeader = request.Headers.TryGetValues("Cookie", out var cookies)
-                ? string.Join("; ", cookies) : null;
+            var cookieHeader = request.RequestUri is not null
+                ? _service.GetForwardedCookieHeader(routeKey, request.RequestUri)
+                : null;
+            if (string.IsNullOrWhiteSpace(cookieHeader)
+                && request.Headers.TryGetValues("Cookie", out var cookies))
+            {
+                cookieHeader = string.Join("; ", cookies);
+            }
+
             entry.RequestCookies = cookieHeader;
         }
 
@@ -1375,14 +1441,11 @@ public sealed partial class WebPreviewProxyMiddleware
             entry.ResponseCookies = setCookies;
         }
 
-        if (TryResolvePreviewFromRequest(context.Request, out var routeKey, out _))
-        {
-            _service.AddLogEntry(routeKey, entry);
-        }
+        _service.AddLogEntry(routeKey, entry);
     }
 
     private void LogWebSocket(
-        HttpContext context, string type, string upstreamUrl,
+        HttpContext context, string routeKey, string type, string upstreamUrl,
         IList<string> requestedProtocols, string? negotiatedProtocol,
         long durationMs, int statusCode, string? error)
     {
@@ -1404,11 +1467,15 @@ public sealed partial class WebPreviewProxyMiddleware
             entry.RequestHeaders[h.Key] = h.Value.ToString();
         }
 
-        entry.RequestCookies = context.Request.Headers.Cookie.ToString();
-        if (TryResolvePreviewFromRequest(context.Request, out var routeKey, out _))
+        if (Uri.TryCreate(upstreamUrl, UriKind.Absolute, out var upstreamUri))
         {
-            _service.AddLogEntry(routeKey, entry);
+            var httpScheme = upstreamUri.Scheme == "wss" ? "https" : "http";
+            var cookieLookupUri = new UriBuilder(upstreamUri) { Scheme = httpScheme }.Uri;
+            entry.RequestCookies = _service.GetForwardedCookieHeader(routeKey, cookieLookupUri)
+                ?? context.Request.Headers.Cookie.ToString();
         }
+
+        _service.AddLogEntry(routeKey, entry);
     }
 
     private async Task DispatchResponseBodyAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse, string? finalUrl)
@@ -1686,11 +1753,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             else if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
             {
-                // Rewrite referer: replace MidTerm host+/webpreview/ with upstream host
-                if (Uri.TryCreate(value, UriKind.Absolute, out var refUri))
-                {
-                    value = upstreamOrigin + refUri.PathAndQuery.Replace("/webpreview/", "/").Replace("/webpreview", "/");
-                }
+                value = RewriteRefererForUpstream(value, routeKey, targetUri ?? new Uri(upstreamOrigin));
             }
 
             try
@@ -1720,20 +1783,20 @@ public sealed partial class WebPreviewProxyMiddleware
         catch (WebSocketException ex)
         {
             wsSw.Stop();
-            LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
+            LogWebSocket(context, routeKey, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
             context.Response.StatusCode = 502;
             return;
         }
         catch (HttpRequestException ex)
         {
             wsSw.Stop();
-            LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
+            LogWebSocket(context, routeKey, wsType, upstreamUri.ToString(), subProtocols, null, wsSw.ElapsedMilliseconds, 502, ex.Message);
             context.Response.StatusCode = 502;
             return;
         }
 
         wsSw.Stop();
-        LogWebSocket(context, wsType, upstreamUri.ToString(), subProtocols, upstream.SubProtocol, wsSw.ElapsedMilliseconds, 101, null);
+        LogWebSocket(context, routeKey, wsType, upstreamUri.ToString(), subProtocols, upstream.SubProtocol, wsSw.ElapsedMilliseconds, 101, null);
 
         // Accept downstream with the negotiated sub-protocol from upstream
         var acceptProtocol = upstream.SubProtocol;

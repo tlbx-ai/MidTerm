@@ -34,12 +34,17 @@ public static class BrowserEndpoints
         WebPreviewService webPreviewService,
         BrowserUiBridge? uiBridge)
     {
-        app.MapGet("/api/browser/status", (string? sessionId, string? previewName) =>
+        app.MapGet("/api/browser/status", (string? sessionId, string? previewName, string? previewId) =>
         {
             var targetUrl = !string.IsNullOrWhiteSpace(sessionId)
                 ? webPreviewService.GetTargetUrl(sessionId, previewName)
                 : null;
-            var status = commandService.GetStatus(targetUrl, uiBridge?.ConnectedBrowserCount ?? 0);
+            var status = commandService.GetStatus(
+                targetUrl,
+                sessionId,
+                previewName,
+                previewId,
+                uiBridge?.ConnectedBrowserCount ?? 0);
             return Results.Json(status, AppJsonContext.Default.BrowserStatusResponse);
         });
     }
@@ -148,10 +153,15 @@ public static class BrowserEndpoints
             {
                 var sessionId = GetFlagValue(args, "--session");
                 var previewName = GetFlagValue(args, "--preview");
+                var previewId = GetFlagValue(args, "--preview-id");
                 var targetUrl = sessionId is not null
                     ? webPreviewService.GetTargetUrl(sessionId, previewName)
                     : null;
-                var status = commandService.GetStatusText(targetUrl).TrimEnd('\n', '\r');
+                var status = commandService.GetStatusText(
+                    targetUrl,
+                    sessionId,
+                    previewName,
+                    previewId).TrimEnd('\n', '\r');
                 status += $"\nui clients: {uiBridge?.ConnectedBrowserCount ?? 0}\n";
                 return Results.Text(status);
             }

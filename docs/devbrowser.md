@@ -72,6 +72,8 @@ The proxied page no longer calls `/webpreview/{routeKey}/_cookies` directly. Ins
 
 The bridge resolves cookies against the current upstream page URL either from the explicit `?u=` query parameter supplied by the parent or, as a fallback, the iframe referer.
 
+The injected runtime now refreshes its `document.cookie` cache after proxied `fetch`, `XMLHttpRequest`, and `sendBeacon` calls settle. The server-side cookie jar remains the source of truth; the refresh path just re-reads the filtered bridge for the current document URL so script-visible cookies stay in sync after upstream responses mutate the jar.
+
 ## Sandboxed Runtime Compatibility
 
 When the preview iframe is sandboxed without a usable same-origin storage context, the injected runtime now provides safe compatibility fallbacks before any upstream JavaScript runs:
@@ -91,6 +93,7 @@ Browser automation is now scoped per named preview session instead of "whichever
 - the shell now exposes `MT_SESSION_ID` automatically; `mt_session` prints it, `mt_preview [name]` switches the current named preview, and `mt_previews` lists the preview set for the current terminal
 - browser commands without explicit flags default to `--session $MT_SESSION_ID --preview $MT_PREVIEW_NAME`
 - commands with `--session` and `--preview` route only to that named preview
+- `mt_status` / `/api/browser/status` now report the explicitly targeted preview/session scope instead of only the global default browser client
 - docked UI screenshot capture sends the active docked `previewId`, so sibling previews under the same terminal session do not collide
 - the MidTerm UI shows one tab per named preview under the active terminal session; each tab keeps its own target URL, cookies, proxy log, and detached popup state
 
@@ -165,6 +168,8 @@ MidTerm only auto-updates the stored preview target when a **document/iframe HTM
 - Upstream URL, status code, duration
 - WebSocket sub-protocols, negotiated protocol
 - Error messages on failure
+
+`requestCookies` now reflects the effective cookie header MidTerm forwarded from the preview's server-side cookie jar for that upstream URL, not just any explicit `Cookie` header present on the outgoing request object.
 
 CLI: `mt_proxylog [limit]` / `Mt-ProxyLog [-Limit N]`
 

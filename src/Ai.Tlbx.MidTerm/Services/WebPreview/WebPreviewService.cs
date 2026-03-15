@@ -335,7 +335,7 @@ public sealed class WebPreviewService
 
         var httpScheme = upstreamUri.Scheme == "wss" ? "https" : "http";
         var cookieLookupUri = new UriBuilder(upstreamUri) { Scheme = httpScheme }.Uri;
-        var cookieHeader = state.CookieContainer.GetCookieHeader(cookieLookupUri);
+        var cookieHeader = GetForwardedCookieHeader(routeKey, cookieLookupUri);
         if (!string.IsNullOrEmpty(cookieHeader))
         {
             ws.Options.SetRequestHeader("Cookie", cookieHeader);
@@ -414,6 +414,21 @@ public sealed class WebPreviewService
         while (state.ProxyLog.Count > MaxLogEntries)
         {
             state.ProxyLog.TryDequeue(out _);
+        }
+    }
+
+    public string? GetForwardedCookieHeader(string routeKey, Uri requestUri)
+    {
+        if (!TryGetStateByRouteKey(routeKey, out var state))
+        {
+            return null;
+        }
+
+        lock (state.ClientLock)
+        {
+            var cookies = GetMatchingCookiesLocked(state, requestUri, includeHttpOnly: true);
+            var header = BuildCookieHeader(cookies);
+            return string.IsNullOrWhiteSpace(header) ? null : header;
         }
     }
 
