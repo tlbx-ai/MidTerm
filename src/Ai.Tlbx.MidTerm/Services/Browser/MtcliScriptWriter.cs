@@ -55,7 +55,7 @@ public static class MtcliScriptWriter
           fi
           output=$(_MB "${args[@]}")
           exitCode=$?
-          if [ $exitCode -ne 0 ] && [ $injectedSession -eq 1 ] && _MNOSESSION "$output"; then
+          if [ $injectedSession -eq 1 ] && _MNOSESSION "$output"; then
             output=$(_MB "${original[@]}")
             exitCode=$?
           fi
@@ -247,7 +247,7 @@ public static class MtcliScriptWriter
             }
             $output = _MB @allArgs
             $exitCode = $LASTEXITCODE
-            if ($exitCode -ne 0 -and $injectedSession -and (_MShouldRetryAnonymous $output)) {
+            if ($injectedSession -and (_MShouldRetryAnonymous $output)) {
                 $output = _MB @originalArgs
                 $exitCode = $LASTEXITCODE
             }

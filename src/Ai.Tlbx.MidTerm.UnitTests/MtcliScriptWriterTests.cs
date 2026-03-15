@@ -70,10 +70,12 @@ public sealed class MtcliScriptWriterTests : IDisposable
 
         Assert.Contains("_MNOSESSION()", shell, StringComparison.Ordinal);
         Assert.Contains("output=$(_MB \"${original[@]}\")", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("[ $exitCode -ne 0 ] && [ $injectedSession -eq 1 ] && _MNOSESSION", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("if [ -n \"$(_MPREVIEW)\" ] && ! _MHAS \"--preview\" \"${args[@]}\"; then", shell, StringComparison.Ordinal);
 
         Assert.Contains("function script:_MShouldRetryAnonymous", powershell, StringComparison.Ordinal);
         Assert.Contains("$output = _MB @originalArgs", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("$exitCode -ne 0 -and $injectedSession -and (_MShouldRetryAnonymous $output)", powershell, StringComparison.Ordinal);
         Assert.Contains("elseif ($env:MT_PREVIEW_NAME -and -not ($allArgs -contains \"--preview\"))", powershell, StringComparison.Ordinal);
     }
 
