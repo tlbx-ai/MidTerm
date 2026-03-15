@@ -26,11 +26,24 @@ public static class MtcliScriptWriter
         #
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
         # It only works on this machine's MidTerm instance. Not a security risk.
+        # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port}}"
         _MK="mm-session={{token}}"
-        _MC() { curl -sfk -b "$_MK" "$@" 2>/dev/null; }
+        _MC() {
+          if [ -n "${MT_API_KEY:-}" ]; then
+            curl -sfk -H "Authorization: Bearer $MT_API_KEY" "$@" 2>/dev/null
+          else
+            curl -sfk -b "$_MK" "$@" 2>/dev/null
+          fi
+        }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
-        _MBR() { curl -sk -b "$_MK" "$@" 2>/dev/null; }
+        _MBR() {
+          if [ -n "${MT_API_KEY:-}" ]; then
+            curl -sk -H "Authorization: Bearer $MT_API_KEY" "$@" 2>/dev/null
+          else
+            curl -sk -b "$_MK" "$@" 2>/dev/null
+          fi
+        }
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
@@ -198,12 +211,25 @@ public static class MtcliScriptWriter
         #
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
         # It only works on this machine's MidTerm instance. Not a security risk.
+        # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port}}"
         $script:_MK = "mm-session={{token}}"
 
-        function script:_MC { & curl.exe -sfk -b $script:_MK @args 2>$null }
+        function script:_MC {
+            if ($env:MT_API_KEY) {
+                & curl.exe -sfk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>$null
+            } else {
+                & curl.exe -sfk -b $script:_MK @args 2>$null
+            }
+        }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
-        function script:_MBR { & curl.exe -sk -b $script:_MK @args 2>$null }
+        function script:_MBR {
+            if ($env:MT_API_KEY) {
+                & curl.exe -sk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>$null
+            } else {
+                & curl.exe -sk -b $script:_MK @args 2>$null
+            }
+        }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }

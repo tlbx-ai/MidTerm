@@ -33,6 +33,28 @@ public sealed class MtcliScriptWriterTests : IDisposable
     }
 
     [Fact]
+    public void WriteScripts_WritesOptionalApiKeyAuthHelpers()
+    {
+        Directory.CreateDirectory(_tempDir);
+
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+
+        Assert.Contains("set MT_API_KEY", shell, StringComparison.Ordinal);
+        Assert.Contains("Authorization: Bearer $MT_API_KEY", shell, StringComparison.Ordinal);
+        Assert.Contains("curl -sfk -H", shell, StringComparison.Ordinal);
+        Assert.Contains("curl -sk -H", shell, StringComparison.Ordinal);
+
+        Assert.Contains("set MT_API_KEY", powershell, StringComparison.Ordinal);
+        Assert.Contains("$env:MT_API_KEY", powershell, StringComparison.Ordinal);
+        Assert.Contains("Authorization: Bearer $($env:MT_API_KEY)", powershell, StringComparison.Ordinal);
+        Assert.Contains("& curl.exe -sfk -H", powershell, StringComparison.Ordinal);
+        Assert.Contains("& curl.exe -sk -H", powershell, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WriteScripts_WritesSessionScopedPreviewHelpers()
     {
         Directory.CreateDirectory(_tempDir);
