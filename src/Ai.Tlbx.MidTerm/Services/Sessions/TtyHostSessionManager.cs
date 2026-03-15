@@ -51,9 +51,14 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
     public event Action<string, string>? OnCwdChanged;
 
-    public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null, bool isServiceMode = false)
+    public TtyHostSessionManager(
+        string? expectedVersion = null,
+        string? minCompatibleVersion = null,
+        string? runAsUser = null,
+        bool isServiceMode = false,
+        SessionControlStateService? sessionControlStateService = null)
     {
-        _registry = new SessionRegistry(isServiceMode);
+        _registry = new SessionRegistry(isServiceMode, sessionControlStateService);
         _clients = _registry.Clients;
         _sessionCache = _registry.SessionCache;
         _expectedTtyHostVersion = expectedVersion ?? TtyHostSpawner.GetTtyHostVersion();

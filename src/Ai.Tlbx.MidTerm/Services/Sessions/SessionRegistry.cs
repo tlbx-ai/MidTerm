@@ -10,11 +10,13 @@ internal sealed class SessionRegistry
     private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly string _dropsBasePath;
+    private readonly SessionControlStateService? _sessionControlStateService;
     private int _nextOrder;
 
-    public SessionRegistry(bool isServiceMode)
+    public SessionRegistry(bool isServiceMode, SessionControlStateService? sessionControlStateService = null)
     {
         _dropsBasePath = GetDropsBasePath(isServiceMode);
+        _sessionControlStateService = sessionControlStateService;
     }
 
     public ConcurrentDictionary<string, TtyHostClient> Clients { get; } = new();
@@ -107,9 +109,10 @@ internal sealed class SessionRegistry
 
         TmuxParentSessions[childSessionId] = parentSessionId;
 
-        if (AgentControlledSessions.ContainsKey(parentSessionId))
+        if (IsAgentControlled(parentSessionId))
         {
             AgentControlledSessions[childSessionId] = 0;
+            _sessionControlStateService?.SetAgentControlled(childSessionId, agentControlled: true);
         }
     }
 
@@ -144,7 +147,7 @@ internal sealed class SessionRegistry
                     Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
                     ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
                     BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
-                    AgentControlled = AgentControlledSessions.ContainsKey(s.Id)
+                    AgentControlled = IsAgentControlled(s.Id)
                 })
                 .OrderBy(s => s.Order)
                 .ToList()
@@ -161,6 +164,7 @@ internal sealed class SessionRegistry
         TmuxParentSessions.TryRemove(sessionId, out _);
         BookmarkLinks.TryRemove(sessionId, out _);
         AgentControlledSessions.TryRemove(sessionId, out _);
+        _sessionControlStateService?.RemoveSession(sessionId);
 
         foreach (var kvp in TmuxParentSessions.ToArray())
         {
@@ -202,6 +206,8 @@ internal sealed class SessionRegistry
             {
                 AgentControlledSessions.TryRemove(relatedSessionId, out _);
             }
+
+            _sessionControlStateService?.SetAgentControlled(relatedSessionId, agentControlled);
         }
 
         NotifyStateChange();
@@ -298,6 +304,12 @@ internal sealed class SessionRegistry
         AgentControlledSessions.Clear();
         _stateListeners.Clear();
         _tempDirectories.Clear();
+    }
+
+    private bool IsAgentControlled(string sessionId)
+    {
+        return AgentControlledSessions.ContainsKey(sessionId)
+            || _sessionControlStateService?.IsAgentControlled(sessionId) == true;
     }
 
     private IReadOnlyList<string> GetTmuxFamilySessionIds(string sessionId)

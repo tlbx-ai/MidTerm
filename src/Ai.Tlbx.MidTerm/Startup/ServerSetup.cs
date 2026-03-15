@@ -128,8 +128,12 @@ public static class ServerSetup
         builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
+        builder.Services.AddSingleton<SessionControlStateService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
-            new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService));
+            new TtyHostSessionManager(
+                runAsUser: settings.RunAsUser,
+                isServiceMode: settingsService.IsRunningAsService,
+                sessionControlStateService: _.GetRequiredService<SessionControlStateService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();

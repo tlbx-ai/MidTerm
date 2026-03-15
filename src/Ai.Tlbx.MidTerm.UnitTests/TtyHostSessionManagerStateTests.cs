@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Reflection;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -117,6 +118,58 @@ public sealed class TtyHostSessionManagerStateTests
 
         var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "child-a");
         Assert.True(dto.AgentControlled);
+    }
+
+    [Fact]
+    public async Task SetAgentControlled_PersistsAcrossManagerRestart()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                Assert.True(manager.SetAgentControlled("s1", true));
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.True(dto.AgentControlled);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CloseSessionAsync_RemovesPersistedAgentControlState()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                AddDisconnectedClient(manager, "s1");
+                Assert.True(manager.SetAgentControlled("s1", true));
+
+                var closed = await manager.CloseSessionAsync("s1");
+                Assert.True(closed);
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.False(dto.AgentControlled);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
     }
 
     [Fact]
@@ -296,9 +349,19 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Equal("dotnet test", refreshed.ForegroundCommandLine);
     }
 
-    private static TtyHostSessionManager CreateManager()
+    private static TtyHostSessionManager CreateManager(SessionControlStateService? sessionControlStateService = null)
     {
-        return new TtyHostSessionManager(expectedVersion: "1.0.0", minCompatibleVersion: "1.0.0");
+        return new TtyHostSessionManager(
+            expectedVersion: "1.0.0",
+            minCompatibleVersion: "1.0.0",
+            sessionControlStateService: sessionControlStateService);
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "midterm-session-control-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
     }
 
     private static SessionInfo AddCachedSession(TtyHostSessionManager manager, string sessionId)
