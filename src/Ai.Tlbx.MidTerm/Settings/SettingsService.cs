@@ -396,6 +396,7 @@ public sealed class SettingsService
         current.ScrollbackProtection = old.ScrollbackProtection;
         current.InputMode = old.InputMode;
         current.FileRadar = old.FileRadar;
+        current.ShowSidebarSessionFilter = old.ShowSidebarSessionFilter;
         current.ManagerBarEnabled = old.ManagerBarEnabled;
         current.ManagerBarButtons = old.ManagerBarButtons;
         current.TmuxCompatibility = old.TmuxCompatibility;

@@ -41,6 +41,7 @@ public sealed partial class MidTermSettingsPublic
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
+    public bool ShowSidebarSessionFilter { get; set; } = false;
     public bool TmuxCompatibility { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
     public bool DevMode { get; set; } = false;

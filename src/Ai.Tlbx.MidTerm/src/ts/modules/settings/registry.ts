@@ -283,6 +283,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'lazy',
   }),
+  controlEntry(
+    'showSidebarSessionFilter',
+    'setting-show-sidebar-session-filter',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   controlEntry('tmuxCompatibility', 'setting-tmux-compatibility', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

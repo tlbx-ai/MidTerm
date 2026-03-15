@@ -40,6 +40,7 @@ public sealed partial class MidTermSettingsPublic
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
+            ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
             TmuxCompatibility = settings.TmuxCompatibility,
             ManagerBarEnabled = settings.ManagerBarEnabled,
             ManagerBarButtons = settings.ManagerBarButtons,
@@ -91,6 +92,7 @@ public sealed partial class MidTermSettingsPublic
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
+        settings.ShowSidebarSessionFilter = ShowSidebarSessionFilter;
         settings.TmuxCompatibility = TmuxCompatibility;
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.ManagerBarButtons = ManagerBarButtons;

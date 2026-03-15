@@ -133,6 +133,7 @@
   "settings.behavior.keepAwake": "Manter o computador ativo enquanto existirem sessões",
   "settings.behavior.keepAwakeHint": "Impede suspensão ou modo de espera enquanto o MidTerm tiver pelo menos uma sessão ativa. A tela ainda pode desligar. Em notebooks Mac, fechar a tampa ainda coloca o computador em suspensão.",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.sidebarTerminalFilter": "Filtro de terminais na barra lateral",
   "settings.behavior.managerBar": "Barra Gerenciadora Central",
   "settings.behavior.changelogAfterUpdate": "Mostrar histórico de alterações após atualização",
   "settings.behavior.installAsApp": "Instalar como App",

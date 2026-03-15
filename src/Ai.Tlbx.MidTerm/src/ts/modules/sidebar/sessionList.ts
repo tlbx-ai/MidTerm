@@ -11,6 +11,7 @@ import { pendingSessions, dom } from '../../state';
 import {
   $settingsOpen,
   $activeSessionId,
+  $currentSettings,
   $sessionList,
   getSession,
   isChildSession,
@@ -89,6 +90,7 @@ let mobileActionBackdrop: HTMLDivElement | null = null;
 let mobileMenuListenersBound = false;
 let sessionFilterListenersBound = false;
 let sessionFilterValue = '';
+let previousSessionFilterEnabled: boolean | null = null;
 const SESSION_GROUP_STORAGE_KEYS = {
   human: 'midterm.sidebar.humanSessionsCollapsed',
   agent: 'midterm.sidebar.agentSessionsCollapsed',
@@ -149,13 +151,29 @@ function persistSessionFilter(): void {
   }
 }
 
+function getSessionFilterBar(): HTMLElement | null {
+  return (
+    dom.sessionFilterInput?.closest<HTMLElement>('.session-filter-bar') ??
+    dom.sessionFilterClear?.closest<HTMLElement>('.session-filter-bar') ??
+    null
+  );
+}
+
+export function isSidebarSessionFilterEnabled(): boolean {
+  return $currentSettings.get()?.showSidebarSessionFilter === true;
+}
+
 function syncSessionFilterControls(): void {
+  const filterEnabled = isSidebarSessionFilterEnabled();
+  getSessionFilterBar()?.classList.toggle('hidden', !filterEnabled);
+
   const filterInput = dom.sessionFilterInput;
-  if (filterInput && filterInput.value !== sessionFilterValue) {
-    filterInput.value = sessionFilterValue;
+  const visibleValue = filterEnabled ? sessionFilterValue : '';
+  if (filterInput && filterInput.value !== visibleValue) {
+    filterInput.value = visibleValue;
   }
 
-  dom.sessionFilterClear?.classList.toggle('hidden', sessionFilterValue === '');
+  dom.sessionFilterClear?.classList.toggle('hidden', !filterEnabled || sessionFilterValue === '');
 }
 
 function setSessionFilter(nextValue: string): void {
@@ -231,7 +249,29 @@ export function filterSessionsByQuery(sessions: Session[], query: string): Sessi
 }
 
 export function isSessionFilterActive(): boolean {
-  return sessionFilterValue !== '';
+  return isSidebarSessionFilterEnabled() && sessionFilterValue !== '';
+}
+
+export function applySessionFilterSettingChange(): void {
+  const settingsLoaded = $currentSettings.get() !== null;
+  const filterEnabled = isSidebarSessionFilterEnabled();
+
+  if (!settingsLoaded) {
+    syncSessionFilterControls();
+    renderSessionList();
+    return;
+  }
+
+  const shouldClearStoredFilter = !filterEnabled && previousSessionFilterEnabled !== false;
+  previousSessionFilterEnabled = filterEnabled;
+
+  if (shouldClearStoredFilter && sessionFilterValue !== '') {
+    clearSessionFilter();
+    return;
+  }
+
+  syncSessionFilterControls();
+  renderSessionList();
 }
 
 // =============================================================================
@@ -1024,7 +1064,10 @@ export function renderSessionList(): void {
 
   const sessionList = dom.sessionList;
   const displaySessions = getSidebarDisplaySessions();
-  const filteredSessions = filterSessionsByQuery(displaySessions, sessionFilterValue);
+  const filteredSessions = filterSessionsByQuery(
+    displaySessions,
+    isSidebarSessionFilterEnabled() ? sessionFilterValue : '',
+  );
   const groups = groupSessionsByController(filteredSessions);
 
   closeMobileActionMenu();

@@ -133,6 +133,7 @@
   "settings.behavior.keepAwake": "Computer wach halten, solange Sitzungen existieren",
   "settings.behavior.keepAwakeHint": "Verhindert Ruhezustand oder Standby, solange MidTerm mindestens eine aktive Sitzung hat. Der Bildschirm darf sich weiterhin ausschalten. Bei Mac-Laptops versetzt das Schließen des Deckels den Computer weiterhin in den Ruhezustand.",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.sidebarTerminalFilter": "Terminal-Filter in der Seitenleiste",
   "settings.behavior.managerBar": "Mittlere Manager-Leiste",
   "settings.behavior.changelogAfterUpdate": "Änderungsprotokoll nach Update anzeigen",
   "settings.behavior.installAsApp": "Als App installieren",

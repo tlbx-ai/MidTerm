@@ -3526,6 +3526,7 @@ export interface components {
       keepSystemAwakeWithActiveSessions: boolean;
       inputMode: string;
       fileRadar: boolean;
+      showSidebarSessionFilter: boolean;
       tmuxCompatibility: boolean;
       managerBarEnabled: boolean;
       devMode: boolean;

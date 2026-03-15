@@ -42,6 +42,7 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.False(settings.ShowSidebarSessionFilter);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);
         Assert.True(settings.ShowChangelogAfterUpdate);
@@ -63,6 +64,7 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.False(settings.ShowSidebarSessionFilter);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);
         Assert.True(settings.ShowChangelogAfterUpdate);
@@ -99,6 +101,7 @@ public sealed class SettingsServiceTests : IDisposable
           "cursorBlink": false,
           "rightClickPaste": false,
           "fileRadar": false,
+          "showSidebarSessionFilter": false,
           "managerBarEnabled": false,
           "tmuxCompatibility": false,
           "showChangelogAfterUpdate": false,
@@ -114,6 +117,7 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.False(settings.CursorBlink);
         Assert.False(settings.RightClickPaste);
         Assert.False(settings.FileRadar);
+        Assert.False(settings.ShowSidebarSessionFilter);
         Assert.False(settings.ManagerBarEnabled);
         Assert.False(settings.TmuxCompatibility);
         Assert.False(settings.ShowChangelogAfterUpdate);
@@ -133,6 +137,24 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.NotNull(settings);
         Assert.Equal(SettingsLoadStatus.ErrorFallbackToDefault, service.LoadStatus);
         Assert.False(string.IsNullOrWhiteSpace(service.LoadError));
+    }
+
+    [Fact]
+    public void Load_ExplicitTrueSidebarSessionFilter_IsPreserved()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "showSidebarSessionFilter": true
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.True(settings.ShowSidebarSessionFilter);
     }
 
     [Fact]

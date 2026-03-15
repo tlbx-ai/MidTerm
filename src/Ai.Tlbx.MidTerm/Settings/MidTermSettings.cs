@@ -60,6 +60,9 @@ public sealed class MidTermSettings
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
 
+    // Sidebar session filter - Shows the sidebar filter input for narrowing visible sessions
+    public bool ShowSidebarSessionFilter { get; set; } = false;
+
     // Middle Manager Bar - Quick-action buttons below terminal area
     public bool ManagerBarEnabled { get; set; } = true;
     public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];

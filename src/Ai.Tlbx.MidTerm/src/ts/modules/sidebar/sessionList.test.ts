@@ -99,4 +99,31 @@ describe('sessionList grouping', () => {
     expect(groups[0]?.key).toBe('agent');
     expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['agent-1']);
   });
+
+  it('keeps stored queries inactive until the sidebar filter setting is enabled', async () => {
+    const localStorageMock = {
+      getItem: vi.fn(() => 'worker'),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    };
+    vi.stubGlobal('localStorage', localStorageMock);
+    vi.stubGlobal('document', { addEventListener: vi.fn() });
+    vi.stubGlobal('window', { addEventListener: vi.fn() });
+
+    const stores = await import('../../stores');
+    const { applySessionFilterSettingChange, initializeSessionList, isSessionFilterActive } =
+      await import('./sessionList');
+
+    initializeSessionList();
+    expect(isSessionFilterActive()).toBe(false);
+
+    stores.$currentSettings.set({ showSidebarSessionFilter: true } as any);
+    applySessionFilterSettingChange();
+    expect(isSessionFilterActive()).toBe(true);
+
+    stores.$currentSettings.set({ showSidebarSessionFilter: false } as any);
+    applySessionFilterSettingChange();
+    expect(isSessionFilterActive()).toBe(false);
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith('midterm.sidebar.sessionFilter');
+  });
 });

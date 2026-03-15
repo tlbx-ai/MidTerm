@@ -148,6 +148,7 @@
   "settings.behavior.keepAwake": "Keep computer awake while sessions exist",
   "settings.behavior.keepAwakeHint": "Prevents sleep or standby while MidTerm has at least one live session. The display may still turn off. On Mac laptops, closing the lid still puts the computer to sleep.",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.sidebarTerminalFilter": "Sidebar Terminal Filter",
   "settings.behavior.managerBar": "Middle Manager Bar",
   "settings.behavior.changelogAfterUpdate": "Show changelog after update",
   "settings.behavior.installAsApp": "Install as App",

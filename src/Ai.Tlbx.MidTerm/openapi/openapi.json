@@ -3822,6 +3822,7 @@
           "keepSystemAwakeWithActiveSessions",
           "inputMode",
           "fileRadar",
+          "showSidebarSessionFilter",
           "tmuxCompatibility",
           "managerBarEnabled",
           "devMode",
@@ -3948,6 +3949,9 @@
             "type": "string"
           },
           "fileRadar": {
+            "type": "boolean"
+          },
+          "showSidebarSessionFilter": {
             "type": "boolean"
           },
           "tmuxCompatibility": {

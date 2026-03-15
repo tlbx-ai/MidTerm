@@ -133,6 +133,7 @@
   "settings.behavior.keepAwake": "セッションがある間はコンピューターをスリープさせない",
   "settings.behavior.keepAwakeHint": "MidTerm に少なくとも 1 つのアクティブなセッションがある間は、スリープやスタンバイを防ぎます。画面はオフになってもかまいません。Mac ノートでは、ふたを閉じると引き続きスリープします。",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.sidebarTerminalFilter": "サイドバーのターミナルフィルター",
   "settings.behavior.managerBar": "Middle Manager Bar",
   "settings.behavior.changelogAfterUpdate": "アップデート後に変更履歴を表示",
   "settings.behavior.installAsApp": "アプリとしてインストール",
