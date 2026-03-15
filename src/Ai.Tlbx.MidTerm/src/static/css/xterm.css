@@ -78,8 +78,8 @@
 
 .xterm .composition-view {
     /* TODO: Composition position got messed up somewhere */
-    background: #000;
-    color: #FFF;
+    background: var(--bg-terminal);
+    color: var(--text-terminal);
     display: none;
     position: absolute;
     white-space: nowrap;
@@ -92,7 +92,7 @@
 
 .xterm .xterm-viewport {
     /* On OS X this is required in order for the scroll bar to appear fully opaque */
-    background-color: #000;
+    background-color: var(--bg-terminal);
     overflow-y: scroll;
     cursor: default;
     position: absolute;
@@ -238,7 +238,7 @@
 	opacity: 1;
 
 	/* Background rule added for IE9 - to allow clicks on dom node */
-	background:rgba(0,0,0,0);
+	background: transparent;
 
 	transition: opacity 100ms linear;
 	/* In front of peek view */
@@ -263,7 +263,7 @@
 	left: 3px;
 	height: 3px;
 	width: 100%;
-	box-shadow: var(--vscode-scrollbar-shadow, #000) 0 6px 6px -6px inset;
+	box-shadow: var(--shadow-color-lg) 0 6px 6px -6px inset;
 }
 .xterm .xterm-scrollable-element > .shadow.left {
 	display: block;
@@ -271,7 +271,7 @@
 	left: 0;
 	height: 100%;
 	width: 3px;
-	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+	box-shadow: var(--shadow-color-lg) 6px 0 6px -6px inset;
 }
 .xterm .xterm-scrollable-element > .shadow.top-left-corner {
 	display: block;
@@ -281,5 +281,5 @@
 	width: 3px;
 }
 .xterm .xterm-scrollable-element > .shadow.top.left {
-	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+	box-shadow: var(--shadow-color-lg) 6px 0 6px -6px inset;
 }

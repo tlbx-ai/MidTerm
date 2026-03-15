@@ -108,11 +108,11 @@ function updateHeader(): void {
 
   const wsState = getGitWsState();
   const subs = getSubscribedSessions();
-  const wsColor = wsState === 'open' ? '#4ec9b0' : '#f44747';
 
-  headerEl.innerHTML =
-    `<span style="color:${wsColor}">WS: ${wsState}</span> ` +
-    `<span style="color:#569cd6">Subs: ${subs.length}</span>`;
+  headerEl.replaceChildren(
+    createToneSpan(`WS: ${wsState}`, wsState === 'open' ? 'git-overlay-tone-good' : 'git-overlay-tone-bad'),
+    createToneSpan(`Subs: ${subs.length}`, 'git-overlay-tone-info'),
+  );
 }
 
 function addEvent(event: GitDiagEvent): void {
@@ -137,32 +137,48 @@ function appendEventRow(event: GitDiagEvent): void {
   const time = new Date(event.timestamp);
   const ts = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}:${time.getSeconds().toString().padStart(2, '0')}`;
 
-  const color = getEventColor(event.type);
-  row.innerHTML = `<span style="color:#666">${ts}</span> <span style="color:${color}">${event.type}</span> ${event.detail}`;
+  const timestamp = document.createElement('span');
+  timestamp.className = 'git-overlay-tone-time';
+  timestamp.textContent = ts;
+
+  const type = document.createElement('span');
+  type.className = `git-overlay-event-type ${getEventToneClass(event.type)}`;
+  type.textContent = event.type;
+
+  row.appendChild(timestamp);
+  row.appendChild(type);
+  row.appendChild(document.createTextNode(` ${event.detail}`));
   logEl.appendChild(row);
 
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function getEventColor(type: string): string {
+function getEventToneClass(type: string): string {
   switch (type) {
     case 'ws-open':
     case 'status':
     case 'fallback-ok':
-      return '#4ec9b0';
+      return 'git-overlay-tone-good';
     case 'ws-close':
     case 'ws-error':
     case 'fallback-err':
-      return '#f44747';
+      return 'git-overlay-tone-bad';
     case 'subscribe':
-      return '#569cd6';
+      return 'git-overlay-tone-info';
     case 'fallback':
     case 'cwd-change':
-      return '#dcdcaa';
+      return 'git-overlay-tone-warn';
     case 'unsubscribe':
     case 'cache-clear':
-      return '#808080';
+      return 'git-overlay-tone-muted';
     default:
-      return '#d4d4d4';
+      return 'git-overlay-tone-default';
   }
+}
+
+function createToneSpan(text: string, className: string): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = `git-overlay-segment ${className}`;
+  span.textContent = text;
+  return span;
 }
