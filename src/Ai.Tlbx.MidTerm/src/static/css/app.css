@@ -497,6 +497,16 @@ body.has-app-background::after {
   color: var(--accent-blue-hover);
 }
 
+.session-group-attention {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(224, 44, 52, 0.14);
+  color: rgb(224, 44, 52);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
 .session-group.collapsed .session-group-items {
   display: none;
 }
@@ -612,6 +622,14 @@ body.has-app-background::after {
   );
 }
 
+.session-item.needs-attention {
+  background-image: linear-gradient(
+    90deg,
+    rgba(224, 44, 52, 0.12) 0,
+    transparent 56px
+  );
+}
+
 .session-item.pending {
   opacity: 0.7;
   cursor: default;
@@ -676,6 +694,35 @@ body.has-app-background::after {
   font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
+}
+
+.session-state-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.session-item.supervisor-busy-turn .session-state-badge {
+  background: var(--accent-blue-10);
+  color: var(--accent-blue-hover);
+}
+
+.session-item.supervisor-idle-prompt .session-state-badge,
+.session-item.supervisor-shell .session-state-badge {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+.session-item.supervisor-blocked .session-state-badge,
+.session-item.supervisor-dead .session-state-badge {
+  background: rgba(224, 44, 52, 0.14);
+  color: rgb(224, 44, 52);
 }
 
 .session-title {

@@ -26,9 +26,17 @@ public static class SessionEndpointDefinitions
             handler.GetSessions())
             .Produces<SessionListDto>(StatusCodes.Status200OK, "application/json");
 
+        app.MapGet("/api/sessions/attention", (ISessionHandler handler, bool agentOnly = true) =>
+            handler.GetSessionAttention(agentOnly))
+            .Produces<SessionAttentionResponse>(StatusCodes.Status200OK, "application/json");
+
         app.MapPost("/api/sessions", async (CreateSessionRequest? request, ISessionHandler handler) =>
             await handler.CreateSessionAsync(request))
             .Produces<SessionInfoDto>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, ISessionHandler handler) =>
+            await handler.BootstrapWorkerAsync(request))
+            .Produces<WorkerBootstrapResponse>(StatusCodes.Status200OK, "application/json");
 
         app.MapPost("/api/sessions/reorder", (SessionReorderRequest request, ISessionHandler handler) =>
             handler.ReorderSessions(request))
@@ -57,6 +65,10 @@ public static class SessionEndpointDefinitions
 
         app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, ISessionHandler handler) =>
             await handler.SendKeyInputAsync(id, request))
+            .Produces(StatusCodes.Status200OK);
+
+        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, ISessionHandler handler) =>
+            await handler.SendPromptInputAsync(id, request))
             .Produces(StatusCodes.Status200OK);
 
         app.MapGet("/api/sessions/{id}/buffer", async (string id, ISessionHandler handler) =>

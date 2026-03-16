@@ -20,8 +20,21 @@ public class StubSessionHandler : ISessionHandler
     public IResult GetSessions() =>
         Results.Json(new SessionListDto());
 
+    public IResult GetSessionAttention(bool agentOnly) =>
+        Results.Json(new SessionAttentionResponse { AgentOnly = agentOnly });
+
     public Task<IResult> CreateSessionAsync(CreateSessionRequest? request) =>
         Task.FromResult<IResult>(Results.Json(new SessionInfoDto { Id = "stub" }));
+
+    public Task<IResult> BootstrapWorkerAsync(WorkerBootstrapRequest request) =>
+        Task.FromResult<IResult>(Results.Json(new WorkerBootstrapResponse
+        {
+            Session = new SessionInfoDto { Id = "stub", AgentControlled = request.AgentControlled },
+            Profile = request.Profile ?? "unknown",
+            LaunchCommand = request.LaunchCommand,
+            SlashCommands = request.SlashCommands,
+            GuidanceInjected = request.InjectGuidance
+        }));
 
     public IResult ReorderSessions(SessionReorderRequest request) =>
         Results.Ok();
@@ -45,6 +58,9 @@ public class StubSessionHandler : ISessionHandler
         Task.FromResult<IResult>(Results.Ok());
 
     public Task<IResult> SendKeyInputAsync(string id, SessionKeyInputRequest request) =>
+        Task.FromResult<IResult>(Results.Ok());
+
+    public Task<IResult> SendPromptInputAsync(string id, SessionPromptRequest request) =>
         Task.FromResult<IResult>(Results.Ok());
 
     public Task<IResult> GetBufferAsync(string id) =>

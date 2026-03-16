@@ -306,6 +306,64 @@
         }
       }
     },
+    "/api/sessions/attention": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "agentOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionAttentionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workers/bootstrap": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerBootstrapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerBootstrapResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/reorder": {
       "post": {
         "tags": [
@@ -519,6 +577,38 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SessionKeyInputRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/input/prompt": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPromptRequest"
               }
             }
           },
@@ -4375,6 +4465,50 @@
           }
         }
       },
+      "SessionAttentionItem": {
+        "required": [
+          "session",
+          "attentionScore"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionInfoDto"
+          },
+          "attentionScore": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SessionAttentionResponse": {
+        "required": [
+          "generatedAt",
+          "agentOnly",
+          "attentionCount",
+          "sessions"
+        ],
+        "type": "object",
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agentOnly": {
+            "type": "boolean"
+          },
+          "attentionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionAttentionItem"
+            }
+          }
+        }
+      },
       "SessionBellEvent": {
         "required": [
           "timestamp",
@@ -4443,7 +4577,8 @@
           "order",
           "parentSessionId",
           "bookmarkId",
-          "agentControlled"
+          "agentControlled",
+          "supervisor"
         ],
         "type": "object",
         "properties": {
@@ -4537,6 +4672,16 @@
           },
           "agentControlled": {
             "type": "boolean"
+          },
+          "supervisor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionSupervisorInfoDto"
+              }
+            ]
           }
         }
       },
@@ -4595,6 +4740,81 @@
           }
         }
       },
+      "SessionPromptRequest": {
+        "required": [
+          "mode",
+          "interruptFirst",
+          "interruptKeys",
+          "literalInterruptKeys",
+          "interruptDelayMs",
+          "submitKeys",
+          "literalSubmitKeys",
+          "submitDelayMs",
+          "followupSubmitCount",
+          "followupSubmitDelayMs"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "base64": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mode": {
+            "type": "string"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "interruptFirst": {
+            "type": "boolean"
+          },
+          "interruptKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "literalInterruptKeys": {
+            "type": "boolean"
+          },
+          "interruptDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "submitKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "literalSubmitKeys": {
+            "type": "boolean"
+          },
+          "submitDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "followupSubmitCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "followupSubmitDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "SessionReorderRequest": {
         "required": [
           "sessionIds"
@@ -4616,7 +4836,8 @@
           "bufferByteLength",
           "bufferEncoding",
           "bufferText",
-          "bufferBase64"
+          "bufferBase64",
+          "supervisor"
         ],
         "type": "object",
         "properties": {
@@ -4647,6 +4868,69 @@
               "null",
               "string"
             ]
+          },
+          "supervisor": {
+            "$ref": "#/components/schemas/SessionSupervisorInfoDto"
+          }
+        }
+      },
+      "SessionSupervisorInfoDto": {
+        "required": [
+          "state",
+          "profile",
+          "needsAttention",
+          "attentionReason",
+          "attentionScore",
+          "lastInputAt",
+          "lastOutputAt",
+          "lastBellAt",
+          "currentHeat"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "boolean"
+          },
+          "attentionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attentionScore": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastInputAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastOutputAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastBellAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "currentHeat": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -5548,6 +5832,118 @@
           },
           "active": {
             "type": "boolean"
+          }
+        }
+      },
+      "WorkerBootstrapRequest": {
+        "required": [
+          "cols",
+          "rows",
+          "agentControlled",
+          "injectGuidance",
+          "launchDelayMs",
+          "slashCommands",
+          "slashCommandDelayMs"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "shell": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workingDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentControlled": {
+            "type": "boolean"
+          },
+          "injectGuidance": {
+            "type": "boolean"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "launchCommand": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "launchDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "slashCommands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slashCommandDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "WorkerBootstrapResponse": {
+        "required": [
+          "session",
+          "profile",
+          "launchCommand",
+          "slashCommands",
+          "guidanceInjected",
+          "midtermDir"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionInfoDto"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "launchCommand": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "slashCommands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "guidanceInjected": {
+            "type": "boolean"
+          },
+          "midtermDir": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       }

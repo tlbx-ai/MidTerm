@@ -105,6 +105,7 @@ export interface SessionGroup {
   sessions: Session[];
   collapsed: boolean;
   showHeader: boolean;
+  attentionCount: number;
 }
 
 function normalizeSessionFilterValue(value: string | null | undefined): string {
@@ -442,9 +443,11 @@ function updateSessionProcessInfo(sessionId: string): void {
     // Preserve badges, clear everything else
     const layoutBadge = titleRow.querySelector('.layout-badge');
     const roleBadge = titleRow.querySelector('.session-role-badge');
+    const stateBadge = titleRow.querySelector('.session-state-badge');
     titleRow.innerHTML = '';
     renderProcessTitle(titleRow, fgInfo, sessionId);
     if (roleBadge) titleRow.appendChild(roleBadge);
+    if (stateBadge) titleRow.appendChild(stateBadge);
     if (layoutBadge) titleRow.appendChild(layoutBadge);
     return;
   }
@@ -606,6 +609,29 @@ function getSessionControlMode(session: Session): SessionControlMode {
   return isAgentControlled(session) ? 'agent' : 'human';
 }
 
+function getSupervisorState(session: Session): string {
+  return session.supervisor?.state ?? 'unknown';
+}
+
+function getAttentionScore(session: Session): number {
+  return session.supervisor?.attentionScore ?? 0;
+}
+
+function needsAttention(session: Session): boolean {
+  return session.supervisor?.needsAttention === true;
+}
+
+function getSupervisorBadgeLabel(session: Session): string | null {
+  const state = getSupervisorState(session);
+  return state === 'unknown'
+    ? null
+    : state
+        .replace(/^busy-turn$/, 'busy')
+        .replace(/^idle-prompt$/, 'idle')
+        .replace(/-/g, ' ')
+        .toUpperCase();
+}
+
 function isSessionGroupCollapsed(group: SessionControlMode): boolean {
   return localStorage.getItem(SESSION_GROUP_STORAGE_KEYS[group]) === 'true';
 }
@@ -617,7 +643,15 @@ function toggleSessionGroup(section: HTMLElement, group: SessionControlMode): vo
 
 export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
   const humanSessions = sessions.filter((session) => getSessionControlMode(session) === 'human');
-  const agentSessions = sessions.filter((session) => getSessionControlMode(session) === 'agent');
+  const agentSessions = sessions
+    .filter((session) => getSessionControlMode(session) === 'agent')
+    .sort((a, b) => {
+      const attentionDelta = Number(needsAttention(b)) - Number(needsAttention(a));
+      if (attentionDelta !== 0) return attentionDelta;
+      const scoreDelta = getAttentionScore(b) - getAttentionScore(a);
+      if (scoreDelta !== 0) return scoreDelta;
+      return a.order - b.order;
+    });
   const groups: SessionGroup[] = [];
   const showHeaders = agentSessions.length > 0;
 
@@ -628,6 +662,7 @@ export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
       sessions: humanSessions,
       collapsed: isSessionGroupCollapsed('human'),
       showHeader: showHeaders,
+      attentionCount: 0,
     });
   }
 
@@ -638,6 +673,7 @@ export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
       sessions: agentSessions,
       collapsed: isSessionGroupCollapsed('agent'),
       showHeader: showHeaders,
+      attentionCount: agentSessions.filter((session) => needsAttention(session)).length,
     });
   }
 
@@ -714,6 +750,7 @@ function createSessionItem(
   const inLayout = isSessionInLayout(sessionId);
   const isChild = isChildSession(sessionId);
   const controlMode = getSessionControlMode(session);
+  const supervisorState = getSupervisorState(session);
   const item = document.createElement('div');
   item.className =
     'session-item' +
@@ -721,7 +758,9 @@ function createSessionItem(
     (isPending ? ' pending' : '') +
     (inLayout ? ' in-layout' : '') +
     (isChild ? ' tmux-child' : '') +
-    (controlMode === 'agent' ? ' agent-controlled' : '');
+    (controlMode === 'agent' ? ' agent-controlled' : '') +
+    (needsAttention(session) ? ' needs-attention' : '') +
+    (supervisorState ? ` supervisor-${supervisorState}` : '');
   item.dataset.sessionId = sessionId;
   item.dataset.controlMode = controlMode;
   if (isChild) {
@@ -764,6 +803,15 @@ function createSessionItem(
   agentBadge.textContent = 'AI';
   agentBadge.title = t('sidebar.agentControlled');
 
+  const supervisorBadgeLabel = getSupervisorBadgeLabel(session);
+  const stateBadge = document.createElement('span');
+  stateBadge.className = 'session-state-badge';
+  stateBadge.textContent = supervisorBadgeLabel ?? '';
+  stateBadge.hidden = supervisorBadgeLabel === null;
+  if (session.supervisor?.attentionReason) {
+    stateBadge.title = session.supervisor.attentionReason;
+  }
+
   if (displayInfo.useProcessAsTitle) {
     // Unnamed sessions: show cwd + process as the title row
     item.dataset.processAsTitle = '1';
@@ -771,6 +819,9 @@ function createSessionItem(
     renderProcessTitle(titleRow, fgInfo, sessionId);
     if (controlMode === 'agent') {
       titleRow.appendChild(agentBadge);
+      if (supervisorBadgeLabel) {
+        titleRow.appendChild(stateBadge);
+      }
     }
     titleRow.appendChild(layoutBadge);
   } else {
@@ -780,6 +831,9 @@ function createSessionItem(
     titleRow.appendChild(title);
     if (controlMode === 'agent') {
       titleRow.appendChild(agentBadge);
+      if (supervisorBadgeLabel) {
+        titleRow.appendChild(stateBadge);
+      }
     }
     titleRow.appendChild(layoutBadge);
 
@@ -986,6 +1040,12 @@ function createSessionGroupSection(group: SessionGroup): HTMLDivElement {
     count.textContent = String(group.sessions.length);
 
     toggle.append(caret, label, count);
+    if (group.key === 'agent' && group.attentionCount > 0) {
+      const attention = document.createElement('span');
+      attention.className = 'session-group-attention';
+      attention.textContent = `${group.attentionCount} !`;
+      toggle.appendChild(attention);
+    }
     section.appendChild(toggle);
   } else {
     section.classList.add('session-group-flat');

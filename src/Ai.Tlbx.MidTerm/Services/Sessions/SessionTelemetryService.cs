@@ -26,7 +26,9 @@ public sealed class SessionTelemetryService
         public List<OutputBucket> Buckets { get; } = [];
         public List<BellRecord> BellRecords { get; } = [];
         public long TotalOutputBytes { get; set; }
+        public long TotalInputBytes { get; set; }
         public int TotalBellCount { get; set; }
+        public DateTimeOffset? LastInputAt { get; set; }
         public DateTimeOffset? LastOutputAt { get; set; }
         public DateTimeOffset? LastBellAt { get; set; }
     }
@@ -57,6 +59,18 @@ public sealed class SessionTelemetryService
                 });
                 TrimBells(state);
             }
+        }
+    }
+
+    public void RecordInput(string sessionId, int byteCount)
+    {
+        var state = _sessions.GetOrAdd(sessionId, _ => new SessionTelemetryState());
+        var now = DateTimeOffset.UtcNow;
+
+        lock (state.SyncRoot)
+        {
+            state.TotalInputBytes += byteCount;
+            state.LastInputAt = now;
         }
     }
 
@@ -144,6 +158,56 @@ public sealed class SessionTelemetryService
         }
 
         return response;
+    }
+
+    public SessionTelemetrySnapshot GetSnapshot(string sessionId, int seconds = 120)
+    {
+        seconds = Math.Clamp(seconds, 10, MaxBucketCount);
+        var nowSecond = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var startSecond = nowSecond - seconds + 1;
+
+        if (!_sessions.TryGetValue(sessionId, out var state))
+        {
+            return new SessionTelemetrySnapshot();
+        }
+
+        lock (state.SyncRoot)
+        {
+            TrimBuckets(state, nowSecond);
+            TrimBells(state);
+
+            var maxBytes = 0;
+            var currentBytes = 0;
+            foreach (var bucket in state.Buckets)
+            {
+                if (bucket.UnixSecond < startSecond)
+                {
+                    continue;
+                }
+
+                if (bucket.Bytes > maxBytes)
+                {
+                    maxBytes = bucket.Bytes;
+                }
+
+                if (bucket.UnixSecond == nowSecond)
+                {
+                    currentBytes = bucket.Bytes;
+                }
+            }
+
+            return new SessionTelemetrySnapshot
+            {
+                TotalOutputBytes = state.TotalOutputBytes,
+                TotalInputBytes = state.TotalInputBytes,
+                TotalBellCount = state.TotalBellCount,
+                LastInputAt = state.LastInputAt,
+                LastOutputAt = state.LastOutputAt,
+                LastBellAt = state.LastBellAt,
+                CurrentBytesPerSecond = currentBytes,
+                CurrentHeat = maxBytes > 0 ? Math.Round(currentBytes / (double)maxBytes, 4) : 0
+            };
+        }
     }
 
     private static void AddBytes(SessionTelemetryState state, long unixSecond, int bytes)

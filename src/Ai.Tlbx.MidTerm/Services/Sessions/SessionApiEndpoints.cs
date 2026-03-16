@@ -50,13 +50,15 @@ public static partial class SessionApiEndpoints
         ClipboardService clipboardService,
         UpdateService updateService,
         WebPreviewService webPreviewService,
-        SessionTelemetryService sessionTelemetry)
+        SessionTelemetryService sessionTelemetry,
+        SessionSupervisorService sessionSupervisor,
+        AiCliProfileService aiCliProfileService)
     {
         app.MapGet("/api/state", () =>
         {
             var response = new StateUpdate
             {
-                Sessions = sessionManager.GetSessionList(),
+                Sessions = GetSessionListDto(sessionManager, sessionSupervisor),
                 Update = updateService.LatestUpdate
             };
             return Results.Json(response, AppJsonContext.Default.StateUpdate);
@@ -64,7 +66,13 @@ public static partial class SessionApiEndpoints
 
         app.MapGet("/api/sessions", () =>
         {
-            return Results.Json(sessionManager.GetSessionList(), AppJsonContext.Default.SessionListDto);
+            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor), AppJsonContext.Default.SessionListDto);
+        });
+
+        app.MapGet("/api/sessions/attention", (bool agentOnly = true) =>
+        {
+            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor).Sessions, agentOnly);
+            return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
         app.MapPost("/api/sessions", async (CreateSessionRequest? request) =>
@@ -86,7 +94,90 @@ public static partial class SessionApiEndpoints
                 return Results.Problem("Failed to create session");
             }
 
-            return Results.Json(GetSessionDto(sessionManager, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
+        });
+
+        app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
+        {
+            var sessionInfo = await sessionManager.CreateSessionAsync(
+                request.Shell, request.Cols, request.Rows, request.WorkingDirectory, ct);
+
+            if (sessionInfo is null)
+            {
+                return Results.Problem("Failed to create worker session");
+            }
+
+            var sessionId = sessionInfo.Id;
+
+            if (request.AgentControlled)
+            {
+                sessionManager.SetAgentControlled(sessionId, true);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                await sessionManager.SetSessionNameAsync(sessionId, request.Name, isManual: true, ct);
+            }
+
+            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+            var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, workerSession);
+            var launchCommand = string.IsNullOrWhiteSpace(request.LaunchCommand)
+                ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
+                : request.LaunchCommand.Trim();
+
+            var guidanceInjected = false;
+            string? midtermDir = null;
+            var targetDirectory = workerSession.CurrentDirectory ?? request.WorkingDirectory;
+            if (request.InjectGuidance &&
+                !string.IsNullOrWhiteSpace(targetDirectory) &&
+                Directory.Exists(targetDirectory))
+            {
+                midtermDir = MidtermDirectory.Ensure(targetDirectory);
+                MidtermDirectory.AppendRootPointer(targetDirectory);
+                guidanceInjected = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(launchCommand))
+            {
+                await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, Encoding.UTF8.GetBytes(launchCommand + "\r"), ct);
+                if (request.LaunchDelayMs > 0)
+                {
+                    await Task.Delay(request.LaunchDelayMs, ct);
+                }
+            }
+
+            var slashCommands = aiCliProfileService.NormalizeSlashCommands(resolvedProfile, request.SlashCommands);
+            foreach (var slashCommand in slashCommands)
+            {
+                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+                if (!TryBuildPromptExecutionPlan(
+                        new SessionPromptRequest
+                        {
+                            Text = slashCommand,
+                            Mode = "auto",
+                            Profile = resolvedProfile,
+                            SubmitDelayMs = request.SlashCommandDelayMs
+                        },
+                        currentSession,
+                        aiCliProfileService,
+                        out var plan,
+                        out var error))
+                {
+                    return Results.BadRequest(error);
+                }
+
+                await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, sessionId, plan, ct);
+            }
+
+            return Results.Json(new WorkerBootstrapResponse
+            {
+                Session = GetSessionDto(sessionManager, sessionSupervisor, sessionId),
+                Profile = resolvedProfile,
+                LaunchCommand = launchCommand,
+                SlashCommands = slashCommands,
+                GuidanceInjected = guidanceInjected,
+                MidtermDir = midtermDir
+            }, AppJsonContext.Default.WorkerBootstrapResponse);
         });
 
         app.MapPost("/api/sessions/reorder", (SessionReorderRequest request) =>
@@ -131,7 +222,7 @@ public static partial class SessionApiEndpoints
 
             var response = new SessionStateResponse
             {
-                Session = GetSessionDto(sessionManager, id),
+                Session = GetSessionDto(sessionManager, sessionSupervisor, id),
                 Previews = webPreviewService.ListPreviewSessions(id).Previews
                     .ToArray()
             };
@@ -164,7 +255,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
-            await sessionManager.SendInputAsync(id, data);
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
             return Results.Ok();
         });
 
@@ -180,7 +271,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
-            await sessionManager.SendInputAsync(id, data);
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
             return Results.Ok();
         });
 
@@ -191,34 +282,18 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            if (!TryGetPromptInputSequence(
+            var session = GetSessionDto(sessionManager, sessionSupervisor, id);
+            if (!TryBuildPromptExecutionPlan(
                     request,
-                    out var interruptData,
-                    out var promptData,
-                    out var submitData,
-                    out var interruptDelayMs,
-                    out var submitDelayMs,
+                    session,
+                    aiCliProfileService,
+                    out var plan,
                     out var error))
             {
                 return Results.BadRequest(error);
             }
 
-            if (interruptData is { Length: > 0 })
-            {
-                await sessionManager.SendInputAsync(id, interruptData, ct);
-                if (interruptDelayMs > 0)
-                {
-                    await Task.Delay(interruptDelayMs, ct);
-                }
-            }
-
-            await sessionManager.SendInputAsync(id, promptData, ct);
-            if (submitDelayMs > 0)
-            {
-                await Task.Delay(submitDelayMs, ct);
-            }
-
-            await sessionManager.SendInputAsync(id, submitData, ct);
+            await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
             return Results.Ok();
         });
 
@@ -305,7 +380,7 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            return Results.Json(GetSessionDto(sessionManager, id), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
@@ -468,6 +543,7 @@ public static partial class SessionApiEndpoints
 
     internal static bool TryGetPromptInputSequence(
         SessionPromptRequest request,
+        bool interruptFirst,
         out byte[]? interruptData,
         out byte[] promptData,
         out byte[] submitData,
@@ -480,7 +556,7 @@ public static partial class SessionApiEndpoints
         submitData = [];
         error = "";
 
-        if (request.InterruptDelayMs < 0 || request.SubmitDelayMs < 0)
+        if (request.InterruptDelayMs < 0 || request.SubmitDelayMs < 0 || request.FollowupSubmitDelayMs < 0)
         {
             interruptDelayMs = 0;
             submitDelayMs = 0;
@@ -517,7 +593,7 @@ public static partial class SessionApiEndpoints
             return false;
         }
 
-        if (!request.InterruptFirst)
+        if (!interruptFirst)
         {
             return true;
         }
@@ -538,6 +614,141 @@ public static partial class SessionApiEndpoints
 
         interruptData = translatedInterruptData;
         return true;
+    }
+
+    internal static bool TryGetPromptInputSequence(
+        SessionPromptRequest request,
+        out byte[]? interruptData,
+        out byte[] promptData,
+        out byte[] submitData,
+        out int interruptDelayMs,
+        out int submitDelayMs,
+        out string error)
+    {
+        return TryGetPromptInputSequence(
+            request,
+            request.InterruptFirst,
+            out interruptData,
+            out promptData,
+            out submitData,
+            out interruptDelayMs,
+            out submitDelayMs,
+            out error);
+    }
+
+    internal static bool TryBuildPromptExecutionPlan(
+        SessionPromptRequest request,
+        SessionInfoDto session,
+        AiCliProfileService aiCliProfileService,
+        out SessionPromptExecutionPlan plan,
+        out string error)
+    {
+        plan = new SessionPromptExecutionPlan(null, [], [], 0, 0, 0, 0);
+        error = "";
+
+        var mode = NormalizePromptMode(request.Mode);
+        if (mode is null)
+        {
+            error = "Mode must be auto, append, or interrupt-first.";
+            return false;
+        }
+
+        var supervisor = session.Supervisor ?? new SessionSupervisorInfoDto();
+        var profile = aiCliProfileService.NormalizeProfile(request.Profile, session);
+        var interruptFirst = mode switch
+        {
+            "interrupt-first" => true,
+            "append" => false,
+            _ => supervisor.State == SessionSupervisorService.BusyTurnState
+        };
+
+        if (!TryGetPromptInputSequence(
+                request,
+                interruptFirst,
+                out var interruptData,
+                out var promptData,
+                out var submitData,
+                out var interruptDelayMs,
+                out var submitDelayMs,
+                out error))
+        {
+            return false;
+        }
+
+        var followupSubmitCount = request.FollowupSubmitCount;
+        if (followupSubmitCount <= 0 &&
+            request.Text?.Contains('\n') == true &&
+            aiCliProfileService.IsInteractiveAi(profile))
+        {
+            followupSubmitCount = 1;
+        }
+
+        plan = new SessionPromptExecutionPlan(
+            interruptData,
+            promptData,
+            submitData,
+            interruptDelayMs,
+            submitDelayMs,
+            followupSubmitCount,
+            request.FollowupSubmitDelayMs);
+        return true;
+    }
+
+    private static string? NormalizePromptMode(string? mode)
+    {
+        return (mode ?? "auto").Trim().ToLowerInvariant() switch
+        {
+            "auto" => "auto",
+            "append" => "append",
+            "interrupt-first" or "interruptfirst" => "interrupt-first",
+            _ => null
+        };
+    }
+
+    private static async Task ExecutePromptPlanAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        string sessionId,
+        SessionPromptExecutionPlan plan,
+        CancellationToken ct)
+    {
+        if (plan.InterruptData is { Length: > 0 })
+        {
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.InterruptData, ct);
+            if (plan.InterruptDelayMs > 0)
+            {
+                await Task.Delay(plan.InterruptDelayMs, ct);
+            }
+        }
+
+        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.PromptData, ct);
+        if (plan.SubmitDelayMs > 0)
+        {
+            await Task.Delay(plan.SubmitDelayMs, ct);
+        }
+
+        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
+
+        for (var i = 0; i < plan.FollowupSubmitCount; i++)
+        {
+            if (plan.FollowupSubmitDelayMs > 0)
+            {
+                await Task.Delay(plan.FollowupSubmitDelayMs, ct);
+            }
+
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
+        }
+    }
+
+    private static async Task SendInputAndRecordAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        string sessionId,
+        byte[] data,
+        CancellationToken ct = default)
+    {
+        sessionTelemetry.RecordInput(sessionId, data.Length);
+        await sessionManager.SendInputAsync(sessionId, data, ct);
     }
 
     private static async Task<string> SaveUploadedFileAsync(
@@ -602,8 +813,33 @@ public static partial class SessionApiEndpoints
         return !string.IsNullOrWhiteSpace(extension) && ClipboardImageExtensions.Contains(extension);
     }
 
-    private static SessionInfoDto GetSessionDto(TtyHostSessionManager sessionManager, string sessionId)
+    private static SessionListDto GetSessionListDto(
+        TtyHostSessionManager sessionManager,
+        SessionSupervisorService sessionSupervisor)
     {
-        return sessionManager.GetSessionList().Sessions.First(s => s.Id == sessionId);
+        var response = sessionManager.GetSessionList();
+        foreach (var session in response.Sessions)
+        {
+            session.Supervisor = sessionSupervisor.Describe(session);
+        }
+
+        return response;
     }
+
+    private static SessionInfoDto GetSessionDto(
+        TtyHostSessionManager sessionManager,
+        SessionSupervisorService sessionSupervisor,
+        string sessionId)
+    {
+        return GetSessionListDto(sessionManager, sessionSupervisor).Sessions.First(s => s.Id == sessionId);
+    }
+
+    internal sealed record SessionPromptExecutionPlan(
+        byte[]? InterruptData,
+        byte[] PromptData,
+        byte[] SubmitData,
+        int InterruptDelayMs,
+        int SubmitDelayMs,
+        int FollowupSubmitCount,
+        int FollowupSubmitDelayMs);
 }

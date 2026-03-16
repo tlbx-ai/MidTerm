@@ -24,4 +24,5 @@ public sealed class SessionInfoDto
     public string? ParentSessionId { get; set; }
     public string? BookmarkId { get; set; }
     public bool AgentControlled { get; set; }
+    public SessionSupervisorInfoDto? Supervisor { get; set; }
 }

@@ -213,7 +213,7 @@ public static class MtcliScriptWriter
           local body="{\"text\":\"$(_MJE "$text")\",\"appendNewline\":false}"
           _MJ -d "$body" "$_MT/api/sessions/$sid/input/text"
         }
-        # mt_prompt [SESSION_ID] TEXT  — atomically send text and submit via the server prompt API
+        # mt_prompt [SESSION_ID] TEXT  — state-aware send + submit via the server prompt API
         mt_prompt() {
           local sid submit_delay_ms interrupt_delay_ms interrupt_first
           if [ $# -gt 0 ] && _MISID "$1"; then
@@ -227,7 +227,8 @@ public static class MtcliScriptWriter
           submit_delay_ms="${MT_PROMPT_DELAY_MS:-300}"
           interrupt_delay_ms="${MT_PROMPT_INTERRUPT_DELAY_MS:-150}"
           interrupt_first="$(_MBOOL "${MT_PROMPT_INTERRUPT_FIRST:-false}")"
-          local body="{\"text\":\"$(_MJE "$*")\",\"interruptFirst\":$interrupt_first,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
+          local profile="${MT_AI_PROFILE:-}"
+          local body="{\"text\":\"$(_MJE "$*")\",\"mode\":\"auto\",\"profile\":\"$(_MJE "$profile")\",\"interruptFirst\":$interrupt_first,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
           _MJ -d "$body" "$_MT/api/sessions/$sid/input/prompt"
         }
         # mt_prompt_now [SESSION_ID] TEXT  — interrupt first, then atomically send and submit the prompt
@@ -243,8 +244,24 @@ public static class MtcliScriptWriter
           [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
           submit_delay_ms="${MT_PROMPT_DELAY_MS:-300}"
           interrupt_delay_ms="${MT_PROMPT_INTERRUPT_DELAY_MS:-150}"
-          local body="{\"text\":\"$(_MJE "$*")\",\"interruptFirst\":true,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
+          local profile="${MT_AI_PROFILE:-}"
+          local body="{\"text\":\"$(_MJE "$*")\",\"mode\":\"interrupt-first\",\"profile\":\"$(_MJE "$profile")\",\"interruptFirst\":true,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
           _MJ -d "$body" "$_MT/api/sessions/$sid/input/prompt"
+        }
+        # mt_slash [SESSION_ID] COMMAND  — send a slash command through the prompt API
+        mt_slash() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Slash command required." >&2; return 1; }
+          local command="$*"
+          [[ "$command" == /* ]] || command="/$command"
+          MT_AI_PROFILE="${MT_AI_PROFILE:-}" mt_prompt "$sid" "$command"
         }
         # mt_sendkeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         mt_sendkeys() {
@@ -299,6 +316,33 @@ public static class MtcliScriptWriter
           bells="${2:-25}"
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           _MC "$_MT/api/sessions/$sid/activity?seconds=$seconds&bellLimit=$bells"
+        }
+        # mt_attention [AGENT_ONLY]  — ranked fleet view for supervision
+        mt_attention() {
+          local agent_only="${1:-true}"
+          _MC "$_MT/api/sessions/attention?agentOnly=$agent_only"
+        }
+        # mt_bootstrap NAME CWD PROFILE [SLASH_COMMAND ...]  — create an agent-controlled worker session
+        mt_bootstrap() {
+          [ $# -ge 3 ] || { echo "Usage: mt_bootstrap NAME CWD PROFILE [SLASH_COMMAND ...]" >&2; return 1; }
+          local name="$1" cwd="$2" profile="$3"
+          shift 3
+          local launch_delay_ms="${MT_BOOTSTRAP_LAUNCH_DELAY_MS:-1200}"
+          local slash_delay_ms="${MT_BOOTSTRAP_SLASH_DELAY_MS:-350}"
+          local body="{\"name\":\"$(_MJE "$name")\",\"workingDirectory\":\"$(_MJE "$cwd")\",\"profile\":\"$(_MJE "$profile")\",\"agentControlled\":true,\"injectGuidance\":true,\"launchDelayMs\":$launch_delay_ms,\"slashCommandDelayMs\":$slash_delay_ms"
+          if [ $# -gt 0 ]; then
+            body+=',\"slashCommands\":['
+            local first=1
+            local command
+            for command in "$@"; do
+              if [ $first -eq 0 ]; then body+=','; fi
+              body+="\"$(_MJE "$command")\""
+              first=0
+            done
+            body+=']'
+          fi
+          body+='}'
+          _MJ -d "$body" "$_MT/api/workers/bootstrap"
         }
         # mt_new_session [SHELL] [CWD]  — create a new terminal session, returns JSON with session id
         mt_new_session() {
@@ -589,7 +633,7 @@ public static class MtcliScriptWriter
                 submitDelayMs = $SubmitDelayMs
             }) "$script:_MT/api/sessions/$SessionId/input/prompt"
         }
-        # Mt-Prompt [SESSION_ID] TEXT [-DelayMs N]  — atomically send text and submit via the server prompt API
+        # Mt-Prompt [SESSION_ID] TEXT [-DelayMs N]  — state-aware send + submit via the server prompt API
         function Mt-Prompt {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
             $resolved = _MResolveSessionArgs $InputArgs
@@ -601,7 +645,14 @@ public static class MtcliScriptWriter
 
             $interruptDelayMs = if ($env:MT_PROMPT_INTERRUPT_DELAY_MS) { [int]$env:MT_PROMPT_INTERRUPT_DELAY_MS } else { 150 }
             $interruptFirst = _MParseBool $env:MT_PROMPT_INTERRUPT_FIRST
-            _MSendPromptRequest -SessionId $sessionId -Text $text -InterruptFirst:$interruptFirst -InterruptDelayMs $interruptDelayMs -SubmitDelayMs $DelayMs
+            _MJ -d (_MH @{
+                text = $text
+                mode = "auto"
+                profile = $env:MT_AI_PROFILE
+                interruptFirst = $interruptFirst
+                interruptDelayMs = $interruptDelayMs
+                submitDelayMs = $DelayMs
+            }) "$script:_MT/api/sessions/$sessionId/input/prompt"
         }
         # Mt-PromptNow [SESSION_ID] TEXT [-DelayMs N]  — interrupt first, then atomically send and submit the prompt
         function Mt-PromptNow {
@@ -614,7 +665,30 @@ public static class MtcliScriptWriter
             if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
 
             $interruptDelayMs = if ($env:MT_PROMPT_INTERRUPT_DELAY_MS) { [int]$env:MT_PROMPT_INTERRUPT_DELAY_MS } else { 150 }
-            _MSendPromptRequest -SessionId $sessionId -Text $text -InterruptFirst:$true -InterruptDelayMs $interruptDelayMs -SubmitDelayMs $DelayMs
+            _MJ -d (_MH @{
+                text = $text
+                mode = "interrupt-first"
+                profile = $env:MT_AI_PROFILE
+                interruptFirst = $true
+                interruptDelayMs = $interruptDelayMs
+                submitDelayMs = $DelayMs
+            }) "$script:_MT/api/sessions/$sessionId/input/prompt"
+        }
+        # Mt-Slash [SESSION_ID] COMMAND  — send a slash command through the prompt API
+        function Mt-Slash {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $command = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($command)) { Write-Error "Slash command required."; return }
+
+            if (-not $command.StartsWith('/')) {
+                $command = "/$command"
+            }
+
+            Mt-Prompt $sessionId $command -DelayMs $DelayMs
         }
         # Mt-SendKeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         function Mt-SendKeys {
@@ -682,6 +756,32 @@ public static class MtcliScriptWriter
             $seconds = if ($resolved.Remaining.Count -gt 0) { [int]$resolved.Remaining[0] } else { 120 }
             $bellLimit = if ($resolved.Remaining.Count -gt 1) { [int]$resolved.Remaining[1] } else { 25 }
             _MC "$script:_MT/api/sessions/$($resolved.SessionId)/activity?seconds=$seconds&bellLimit=$bellLimit"
+        }
+        # Mt-Attention [-AgentOnly true|false]  — ranked fleet view for supervision
+        function Mt-Attention {
+            param([bool]$AgentOnly = $true)
+            _MC "$script:_MT/api/sessions/attention?agentOnly=$AgentOnly"
+        }
+        # Mt-Bootstrap -Name NAME -Cwd PATH -Profile PROFILE [-SlashCommands ...]  — create an agent-controlled worker session
+        function Mt-Bootstrap {
+            param(
+                [Parameter(Mandatory=$true)][string]$Name,
+                [Parameter(Mandatory=$true)][string]$Cwd,
+                [Parameter(Mandatory=$true)][string]$Profile,
+                [string[]]$SlashCommands = @()
+            )
+            $launchDelayMs = if ($env:MT_BOOTSTRAP_LAUNCH_DELAY_MS) { [int]$env:MT_BOOTSTRAP_LAUNCH_DELAY_MS } else { 1200 }
+            $slashDelayMs = if ($env:MT_BOOTSTRAP_SLASH_DELAY_MS) { [int]$env:MT_BOOTSTRAP_SLASH_DELAY_MS } else { 350 }
+            _MJ -d (_MH @{
+                name = $Name
+                workingDirectory = $Cwd
+                profile = $Profile
+                agentControlled = $true
+                injectGuidance = $true
+                launchDelayMs = $launchDelayMs
+                slashCommandDelayMs = $slashDelayMs
+                slashCommands = $SlashCommands
+            }) "$script:_MT/api/workers/bootstrap"
         }
         # Mt-NewSession [-Shell SHELL] [-Cwd PATH]  — create a new terminal session
         function Mt-NewSession {

@@ -15,7 +15,9 @@ public interface ISessionHandler
 {
     IResult GetState();
     IResult GetSessions();
+    IResult GetSessionAttention(bool agentOnly);
     Task<IResult> CreateSessionAsync(CreateSessionRequest? request);
+    Task<IResult> BootstrapWorkerAsync(WorkerBootstrapRequest request);
     IResult ReorderSessions(SessionReorderRequest request);
     Task<IResult> DeleteSessionAsync(string id);
     Task<IResult> ResizeSessionAsync(string id, ResizeRequest request);
@@ -23,6 +25,7 @@ public interface ISessionHandler
     Task<IResult> SendRawInputAsync(string id, byte[] body);
     Task<IResult> SendTextInputAsync(string id, SessionInputRequest request);
     Task<IResult> SendKeyInputAsync(string id, SessionKeyInputRequest request);
+    Task<IResult> SendPromptInputAsync(string id, SessionPromptRequest request);
     Task<IResult> GetBufferAsync(string id);
     Task<IResult> GetBufferTextAsync(string id, bool includeBase64);
     Task<IResult> GetBufferTailAsync(string id, int lines, bool stripAnsi);

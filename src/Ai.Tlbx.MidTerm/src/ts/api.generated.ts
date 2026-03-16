@@ -444,6 +444,82 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/attention': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          agentOnly?: boolean;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SessionAttentionResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workers/bootstrap': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['WorkerBootstrapRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['WorkerBootstrapResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sessions/reorder': {
     parameters: {
       query?: never;
@@ -696,6 +772,45 @@ export interface paths {
       requestBody: {
         content: {
           'application/json': components['schemas']['SessionKeyInputRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/input/prompt': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['SessionPromptRequest'];
         };
       };
       responses: {
@@ -3730,6 +3845,19 @@ export interface components {
       heatmap: components['schemas']['SessionActivityHeatSample'][];
       bellHistory: components['schemas']['SessionBellEvent'][];
     };
+    SessionAttentionItem: {
+      session: components['schemas']['SessionInfoDto'];
+      /** Format: int32 */
+      attentionScore: number;
+    };
+    SessionAttentionResponse: {
+      /** Format: date-time */
+      generatedAt: string;
+      agentOnly: boolean;
+      /** Format: int32 */
+      attentionCount: number;
+      sessions: components['schemas']['SessionAttentionItem'][];
+    };
     SessionBellEvent: {
       /** Format: date-time */
       timestamp: string;
@@ -3771,6 +3899,7 @@ export interface components {
       parentSessionId: null | string;
       bookmarkId: null | string;
       agentControlled: boolean;
+      supervisor: null | components['schemas']['SessionSupervisorInfoDto'];
     };
     SessionInputRequest: {
       text?: null | string;
@@ -3784,6 +3913,25 @@ export interface components {
     SessionListDto: {
       sessions: components['schemas']['SessionInfoDto'][];
     };
+    SessionPromptRequest: {
+      text?: null | string;
+      base64?: null | string;
+      mode: string;
+      profile?: null | string;
+      interruptFirst: boolean;
+      interruptKeys: string[];
+      literalInterruptKeys: boolean;
+      /** Format: int32 */
+      interruptDelayMs: number;
+      submitKeys: string[];
+      literalSubmitKeys: boolean;
+      /** Format: int32 */
+      submitDelayMs: number;
+      /** Format: int32 */
+      followupSubmitCount: number;
+      /** Format: int32 */
+      followupSubmitDelayMs: number;
+    };
     SessionReorderRequest: {
       sessionIds: string[];
     };
@@ -3795,6 +3943,23 @@ export interface components {
       bufferEncoding: string;
       bufferText: null | string;
       bufferBase64: null | string;
+      supervisor: components['schemas']['SessionSupervisorInfoDto'];
+    };
+    SessionSupervisorInfoDto: {
+      state: string;
+      profile: string;
+      needsAttention: boolean;
+      attentionReason: null | string;
+      /** Format: int32 */
+      attentionScore: number;
+      /** Format: date-time */
+      lastInputAt: null | string;
+      /** Format: date-time */
+      lastOutputAt: null | string;
+      /** Format: date-time */
+      lastBellAt: null | string;
+      /** Format: double */
+      currentHeat: number;
     };
     SetBookmarkRequest: {
       bookmarkId: string;
@@ -4022,6 +4187,32 @@ export interface components {
       routeKey: null | string;
       url: null | string;
       active: boolean;
+    };
+    WorkerBootstrapRequest: {
+      name?: null | string;
+      shell?: null | string;
+      workingDirectory?: null | string;
+      /** Format: int32 */
+      cols: number;
+      /** Format: int32 */
+      rows: number;
+      agentControlled: boolean;
+      injectGuidance: boolean;
+      profile?: null | string;
+      launchCommand?: null | string;
+      /** Format: int32 */
+      launchDelayMs: number;
+      slashCommands: string[];
+      /** Format: int32 */
+      slashCommandDelayMs: number;
+    };
+    WorkerBootstrapResponse: {
+      session: components['schemas']['SessionInfoDto'];
+      profile: string;
+      launchCommand: null | string;
+      slashCommands: string[];
+      guidanceInjected: boolean;
+      midtermDir: null | string;
     };
   };
   responses: never;

@@ -130,6 +130,8 @@ public static class ServerSetup
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
         builder.Services.AddSingleton<SessionControlStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
+        builder.Services.AddSingleton<AiCliProfileService>();
+        builder.Services.AddSingleton<SessionSupervisorService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
             new TtyHostSessionManager(
                 runAsUser: settings.RunAsUser,

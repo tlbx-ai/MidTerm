@@ -57,6 +57,33 @@ describe('sessionList grouping', () => {
     expect(groups[0]?.showHeader).toBe(true);
   });
 
+  it('sorts agent sessions with attention before quiet workers', async () => {
+    const { groupSessionsByController } = await import('./sessionList');
+
+    const groups = groupSessionsByController([
+      {
+        id: 'agent-busy',
+        shellType: 'Pwsh',
+        name: 'Busy worker',
+        agentControlled: true,
+        order: 2,
+        supervisor: { state: 'busy-turn', attentionScore: 10, needsAttention: false },
+      } as any,
+      {
+        id: 'agent-blocked',
+        shellType: 'Pwsh',
+        name: 'Blocked worker',
+        agentControlled: true,
+        order: 1,
+        supervisor: { state: 'blocked', attentionScore: 95, needsAttention: true },
+      } as any,
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.attentionCount).toBe(1);
+    expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['agent-blocked', 'agent-busy']);
+  });
+
   it('hides group headers when only human sessions are visible', async () => {
     const { groupSessionsByController } = await import('./sessionList');
 
