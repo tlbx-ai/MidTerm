@@ -142,6 +142,13 @@ describe('sessionList grouping', () => {
     expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['agent-1']);
   });
 
+  it('only shows the AI control action for AI-controlled sessions', async () => {
+    const { shouldShowAgentControlAction } = await import('./sessionList');
+
+    expect(shouldShowAgentControlAction('agent')).toBe(true);
+    expect(shouldShowAgentControlAction('human')).toBe(false);
+  });
+
   it('keeps stored queries inactive until the sidebar filter setting is enabled', async () => {
     const localStorageMock = {
       getItem: vi.fn(() => 'worker'),

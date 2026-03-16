@@ -108,6 +108,10 @@ export interface SessionGroup {
   attentionCount: number;
 }
 
+export function shouldShowAgentControlAction(controlMode: SessionControlMode): boolean {
+  return controlMode === 'agent';
+}
+
 function normalizeSessionFilterValue(value: string | null | undefined): string {
   return (value ?? '').trim();
 }
@@ -879,21 +883,19 @@ function createSessionItem(
   actions.setAttribute('role', 'menu');
 
   if (!isPending && sessionId) {
-    const controlBtn = document.createElement('button');
-    controlBtn.className = 'session-control';
-    controlBtn.classList.toggle('active', controlMode === 'agent');
-    setActionButtonContent(
-      controlBtn,
-      controlMode === 'agent' ? t('session.markHumanControlled') : t('session.markAgentControlled'),
-      'AI',
-      true,
-    );
-    controlBtn.setAttribute('role', 'menuitem');
-    controlBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      callbacks?.onToggleAgentControl(sessionId);
-    });
+    if (shouldShowAgentControlAction(controlMode)) {
+      const controlBtn = document.createElement('button');
+      controlBtn.className = 'session-control';
+      controlBtn.classList.add('active');
+      setActionButtonContent(controlBtn, t('session.markHumanControlled'), 'AI', true);
+      controlBtn.setAttribute('role', 'menuitem');
+      controlBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMobileActionMenu();
+        callbacks?.onToggleAgentControl(sessionId);
+      });
+      actions.appendChild(controlBtn);
+    }
 
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
@@ -954,7 +956,6 @@ function createSessionItem(
       undockSession(sessionId);
     });
 
-    actions.appendChild(controlBtn);
     actions.appendChild(pinBtn);
     actions.appendChild(renameBtn);
     actions.appendChild(injectBtn);
