@@ -123,6 +123,7 @@ public class Program
         var shareGrantService = app.Services.GetRequiredService<ShareGrantService>();
         var tempCleanupService = app.Services.GetRequiredService<TempCleanupService>();
         var certInfoService = app.Services.GetRequiredService<CertificateInfoService>();
+        var apiKeyService = app.Services.GetRequiredService<ApiKeyService>();
 
         WriteEventLog($"MainCore: Certificate loaded = {ServerSetup.LoadedCertificate is not null}, IsFallback = {ServerSetup.IsFallbackCertificate}");
 
@@ -164,6 +165,10 @@ public class Program
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
+        var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();
+        var sessionSupervisor = app.Services.GetRequiredService<SessionSupervisorService>();
+        var aiCliProfileService = app.Services.GetRequiredService<AiCliProfileService>();
+        var workerSessionRegistry = app.Services.GetRequiredService<WorkerSessionRegistryService>();
         var historyService = app.Services.GetRequiredService<HistoryService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
@@ -229,11 +234,18 @@ public class Program
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
+        sessionManager.OnOutput += (sessionId, _, _, data) =>
+        {
+            sessionTelemetry.RecordOutput(sessionId, data.Span);
+        };
+
         sessionManager.OnSessionClosed += sessionId =>
         {
             sessionPathAllowlistService.ClearSession(sessionId);
             gitWatcher.UnregisterSession(sessionId);
             shareGrantService.RevokeBySession(sessionId);
+            sessionTelemetry.ClearSession(sessionId);
+            workerSessionRegistry.Forget(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -299,12 +311,13 @@ public class Program
         EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
-        SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService);
+        SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService, apiKeyService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, authService, port);
+        var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, updateService, webPreviewService, sessionTelemetry, sessionSupervisor, aiCliProfileService, workerSessionRegistry);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
@@ -314,7 +327,6 @@ public class Program
         FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
-        var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
         WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
         BrowserEndpoints.MapBrowserEndpoints(
             app,

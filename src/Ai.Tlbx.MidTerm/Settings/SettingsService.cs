@@ -262,6 +262,16 @@ public sealed class SettingsService
         {
             settings.ShowUpdateNotification = true;
         }
+
+        if (!json.Contains("\"terminalEnterMode\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalEnterMode = TerminalEnterModeSetting.ShiftEnterLineFeed;
+        }
+
+        if (!json.Contains("\"terminalTransparency\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalTransparency = settings.UiTransparency;
+        }
     }
 
     private void MigrateServiceInstallFlag(MidTermSettings settings, string json)
@@ -391,6 +401,7 @@ public sealed class SettingsService
         current.ScrollbackProtection = old.ScrollbackProtection;
         current.InputMode = old.InputMode;
         current.FileRadar = old.FileRadar;
+        current.ShowSidebarSessionFilter = old.ShowSidebarSessionFilter;
         current.ManagerBarEnabled = old.ManagerBarEnabled;
         current.ManagerBarButtons = old.ManagerBarButtons;
         current.TmuxCompatibility = old.TmuxCompatibility;

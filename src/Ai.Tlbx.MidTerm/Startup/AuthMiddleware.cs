@@ -59,11 +59,11 @@ public static class AuthMiddleware
                 return;
             }
 
-            var token = context.Request.Cookies[AuthService.SessionCookieName];
-            if (token is not null && authService.ValidateSessionToken(token))
+            var requestAuthMethod = authService.AuthenticateRequest(context.Request);
+            if (requestAuthMethod != RequestAuthMethod.None)
             {
                 RequestAccessContext.SetFullUser(context, true);
-                if (!context.WebSockets.IsWebSocketRequest)
+                if (requestAuthMethod == RequestAuthMethod.SessionCookie && !context.WebSockets.IsWebSocketRequest)
                 {
                     var freshToken = authService.CreateSessionToken();
                     context.Response.Cookies.Append(
@@ -98,7 +98,7 @@ public static class AuthMiddleware
         MaxAge = TimeSpan.FromDays(3)
     };
 
-    private static bool IsPublicPath(string path)
+    internal static bool IsPublicPath(string path)
     {
         return path == "/login" ||
                path == "/login.html" ||
@@ -106,6 +106,9 @@ public static class AuthMiddleware
                path.StartsWith("/shared/", StringComparison.Ordinal) ||
                path == "/trust" ||
                path == "/trust.html" ||
+               path == "/swagger" ||
+               path.StartsWith("/swagger/", StringComparison.Ordinal) ||
+               path.StartsWith("/openapi/", StringComparison.Ordinal) ||
                path == "/api/health" ||
                path == "/api/version" ||
                path == "/api/paths" ||

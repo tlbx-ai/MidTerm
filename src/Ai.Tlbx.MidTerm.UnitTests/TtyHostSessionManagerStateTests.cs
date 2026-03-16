@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Reflection;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -61,6 +62,114 @@ public sealed class TtyHostSessionManagerStateTests
 
         Assert.Equal(0, manager.ClearBookmarksByHistoryId(" "));
         Assert.Equal("history-a", manager.GetSessionList().Sessions.Single().BookmarkId);
+    }
+
+    [Fact]
+    public async Task SetAgentControlled_UnknownSession_ReturnsFalse()
+    {
+        await using var manager = CreateManager();
+
+        var ok = manager.SetAgentControlled("missing", true);
+
+        Assert.False(ok);
+    }
+
+    [Fact]
+    public async Task SetAgentControlled_ExistingSession_PopulatesSessionListFlag()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = manager.SetAgentControlled("s1", true);
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.True(dto.AgentControlled);
+    }
+
+    [Fact]
+    public async Task SetAgentControlled_TmuxFamily_CascadesToParentAndSiblings()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "root");
+        AddCachedSession(manager, "child-a");
+        AddCachedSession(manager, "child-b");
+        manager.SetTmuxParent("child-a", "root");
+        manager.SetTmuxParent("child-b", "root");
+
+        var ok = manager.SetAgentControlled("child-a", true);
+
+        Assert.True(ok);
+        var flags = manager.GetSessionList().Sessions.ToDictionary(s => s.Id, s => s.AgentControlled);
+        Assert.True(flags["root"]);
+        Assert.True(flags["child-a"]);
+        Assert.True(flags["child-b"]);
+    }
+
+    [Fact]
+    public async Task SetTmuxParent_AgentControlledParent_SeedsChildFlag()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "root");
+        AddCachedSession(manager, "child-a");
+        manager.SetAgentControlled("root", true);
+
+        manager.SetTmuxParent("child-a", "root");
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "child-a");
+        Assert.True(dto.AgentControlled);
+    }
+
+    [Fact]
+    public async Task SetAgentControlled_PersistsAcrossManagerRestart()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                Assert.True(manager.SetAgentControlled("s1", true));
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.True(dto.AgentControlled);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CloseSessionAsync_RemovesPersistedAgentControlState()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                AddDisconnectedClient(manager, "s1");
+                Assert.True(manager.SetAgentControlled("s1", true));
+
+                var closed = await manager.CloseSessionAsync("s1");
+                Assert.True(closed);
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.False(dto.AgentControlled);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
     }
 
     [Fact]
@@ -240,9 +349,19 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Equal("dotnet test", refreshed.ForegroundCommandLine);
     }
 
-    private static TtyHostSessionManager CreateManager()
+    private static TtyHostSessionManager CreateManager(SessionControlStateService? sessionControlStateService = null)
     {
-        return new TtyHostSessionManager(expectedVersion: "1.0.0", minCompatibleVersion: "1.0.0");
+        return new TtyHostSessionManager(
+            expectedVersion: "1.0.0",
+            minCompatibleVersion: "1.0.0",
+            sessionControlStateService: sessionControlStateService);
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "midterm-session-control-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
     }
 
     private static SessionInfo AddCachedSession(TtyHostSessionManager manager, string sessionId)

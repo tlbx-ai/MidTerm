@@ -3,7 +3,7 @@
  *
  * Renders per-session thermal activity indicators as canvas strips
  * in the sidebar. Maps byte activity to color temperature:
- * red/orange (hot, active) → dark blue (cold, idle).
+ * hot red (active) → ice blue (cooling) → dark blue (idle).
  *
  * Uses a single rAF loop for all sessions. Self-calibrating peak rate
  * ensures meaningful contrast even between sessions with different
@@ -62,10 +62,12 @@ const CANVAS_CSS_H = 36;
 // Color stops: [heat_value, r, g, b]
 const GRADIENT: [number, number, number, number][] = [
   [0.0, 10, 14, 26], // dark navy (nearly invisible when idle)
-  [0.25, 10, 48, 100], // medium blue
-  [0.55, 180, 100, 0], // amber
-  [0.78, 200, 60, 0], // orange
-  [1.0, 200, 20, 0], // red
+  [0.18, 18, 54, 102], // deep cold blue
+  [0.4, 92, 198, 255], // ice blue
+  [0.58, 170, 232, 255], // bright frost blue
+  [0.66, 220, 78, 104], // warm transition without orange
+  [0.84, 224, 44, 52], // strong red sooner so hot sessions cool visually more gradually
+  [1.0, 220, 28, 28], // hot red
 ];
 
 // =============================================================================

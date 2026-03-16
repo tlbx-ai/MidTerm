@@ -81,14 +81,6 @@
             >
               <span class="icon">&#xe913;</span>
             </button>
-            <button
-              class="sidebar-btn"
-              id="btn-main-browser"
-              data-i18n-title="sidebar.claimMainBrowser"
-              title="Become the leading browser — terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead."
-            >
-              <span class="icon">&#xe989;</span>
-            </button>
           </div>
         </div>
         <div class="sidebar-nav">
@@ -117,7 +109,29 @@
             ><span data-i18n="sidebar.loadBookmarked">Bookmarks</span>
           </button>
         </div>
-        <div class="sidebar-section-label" data-i18n="sidebar.terminals">Terminals</div>
+        <div class="sidebar-section-label" aria-hidden="true"></div>
+        <div id="session-filter-bar" class="session-filter-bar" hidden>
+          <input
+            id="session-filter-input"
+            class="session-filter-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            data-i18n-placeholder="sidebar.filterTerminals"
+            placeholder="Filter terminals"
+          />
+          <button
+            id="session-filter-clear"
+            class="session-filter-clear"
+            hidden
+            type="button"
+            data-i18n-title="sidebar.clearTerminalFilter"
+            title="Clear terminal filter"
+            aria-label="Clear terminal filter"
+          >
+            &times;
+          </button>
+        </div>
         <div class="session-list" id="session-list"></div>
         <div class="sidebar-footer">
           <div id="update-panel" class="update-panel hidden">
@@ -1091,6 +1105,26 @@
                         <span id="setting-ui-transparency-value" class="slider-value">0%</span>
                       </div>
                     </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-terminal-transparency"
+                        data-i18n="settings.appearance.terminalTransparency"
+                        >Terminal Transparency</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-terminal-transparency"
+                          min="0"
+                          max="85"
+                          step="5"
+                          value="0"
+                        />
+                        <span id="setting-terminal-transparency-value" class="slider-value"
+                          >0%</span
+                        >
+                      </div>
+                    </div>
                   </div>
                 </section>
 
@@ -1213,17 +1247,17 @@
                       <label
                         for="setting-terminal-enter-mode"
                         data-i18n="settings.behavior.terminalEnterMode"
-                        >Enter Key Behavior</label
+                        >Shift+Enter = NewLine without Send</label
                       >
                       <select id="setting-terminal-enter-mode">
-                        <option value="default" data-i18n="settings.options.terminalEnterDefault">
-                          Default (Shift+Enter sends Enter)
-                        </option>
                         <option
                           value="shiftEnterLineFeed"
                           data-i18n="settings.options.terminalEnterShiftLineFeed"
                         >
-                          Shift+Enter sends line feed (\n)
+                          On
+                        </option>
+                        <option value="default" data-i18n="settings.options.terminalEnterDefault">
+                          Off
                         </option>
                       </select>
                     </div>
@@ -1281,6 +1315,14 @@
                         >File Radar</label
                       >
                       <input type="checkbox" id="setting-file-radar" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-show-sidebar-session-filter"
+                        data-i18n="settings.behavior.sidebarTerminalFilter"
+                        >Sidebar Terminal Filter</label
+                      >
+                      <input type="checkbox" id="setting-show-sidebar-session-filter" />
                     </div>
                     <div class="setting-row">
                       <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
@@ -1362,6 +1404,44 @@
                   </div>
 
                   <div class="settings-section">
+                    <h3 data-i18n="settings.security.apiKeys">API Keys</h3>
+                    <div class="setting-row setting-row-align-start api-key-create-row">
+                      <label for="api-key-name" data-i18n="settings.security.apiKeyName"
+                        >Name</label
+                      >
+                      <div class="api-key-create-controls">
+                        <input
+                          type="search"
+                          id="api-key-name"
+                          maxlength="80"
+                          spellcheck="false"
+                          data-i18n-placeholder="settings.security.apiKeyNamePlaceholder"
+                          placeholder="Primary Agent"
+                        />
+                        <button
+                          id="btn-create-api-key"
+                          class="btn-secondary"
+                          data-i18n="settings.security.apiKeyCreate"
+                        >
+                          Create API Key
+                        </button>
+                      </div>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.security.apiKeysHint">
+                      Create machine tokens for agents and automation. New keys are shown only once
+                      after creation.
+                    </p>
+                    <p class="setting-hint" data-i18n="settings.security.apiKeyHeadersHint">
+                      Use Authorization: Bearer &lt;token&gt; or X-API-Key: &lt;token&gt;.
+                    </p>
+                    <div id="settings-api-key-list" class="api-key-list">
+                      <div class="api-key-empty" data-i18n="settings.general.loading">
+                        Loading...
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
                     <h3 data-i18n="settings.security.processIdentity">Process Identity</h3>
                     <div class="setting-row">
                       <label for="setting-run-as-user" data-i18n="settings.security.terminalUser"
@@ -1398,7 +1478,7 @@
                         target="_blank"
                         class="btn-secondary"
                         data-i18n="settings.security.openTrustPage"
-                        >Open Trust Page</a
+                        >Open Certificate Trust Helper</a
                       >
                     </div>
                     <p class="setting-hint" data-i18n="settings.security.fingerprintHint">
@@ -1661,6 +1741,29 @@
         <!-- Git Dock Panel -->
         <aside id="git-dock" class="git-dock hidden">
           <div class="git-dock-resize-grip"></div>
+          <div class="git-dock-header">
+            <div class="git-dock-brand">
+              <span class="git-dock-title" data-i18n="git.title">Git</span>
+            </div>
+            <div class="git-dock-actions">
+              <button
+                class="sidebar-btn"
+                id="git-dock-refresh"
+                data-i18n-title="fileViewer.refresh"
+                title="Refresh"
+              >
+                <span aria-hidden="true">&#x21bb;</span>
+              </button>
+              <button
+                class="sidebar-btn"
+                id="git-dock-close"
+                data-i18n-title="commands.close"
+                title="Close"
+              >
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+          </div>
           <div class="git-dock-body"></div>
         </aside>
 

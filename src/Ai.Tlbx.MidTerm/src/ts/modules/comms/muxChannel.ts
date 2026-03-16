@@ -5,10 +5,12 @@
  * Uses a binary protocol with 9-byte header (1 byte type + 8 byte session ID).
  *
  * CRITICAL: Output ordering is strict per session, not globally across all sessions.
- * The scheduler below prioritizes the active terminal and round-robins background
- * terminals so one flood-heavy session does not block unrelated xterm instances.
- * If this ever regresses, revert only the scheduler section in this file; the wire
- * protocol and frame parsing path remain unchanged.
+ * We intentionally keep only the minimum browser-side sequencing needed to preserve
+ * per-session order across async decompression and xterm's async write callback.
+ *
+ * xterm already has its own WriteBuffer and input-aware scheduling. Adding another
+ * global scheduler in front of it hid real terminal latency behind an extra queue
+ * and made the "output RTT" metric stop before the user-visible xterm parse step.
  */
 
 import type { TerminalState } from '../../types';
@@ -35,6 +37,13 @@ import type { ForegroundChangePayload } from '../../types';
 import { handleForegroundChange } from '../process';
 import { scanOutputForPaths } from '../terminal/fileLinks';
 import { processCursorVisibilityControls } from './cursorVisibility';
+import {
+  armOutputRttMeasurement as armTrackedOutputRttMeasurement,
+  consumeCompletedOutputRtt,
+  createOutputRttTracker,
+  recordOutputRttInput,
+  resetOutputRttTracker,
+} from './outputRttTracker';
 import {
   parseOutputFrame,
   parseCompressedOutputFrame,
@@ -365,10 +374,12 @@ export async function measureLatency(sessionId: string): Promise<LatencyResult> 
 // Input→Output RTT Tracking
 // =============================================================================
 
-const lastInputTimestamp = new Map<string, number>();
 let lastOutputRtt: number | null = null;
 type OutputRttListener = (sessionId: string, rtt: number) => void;
 const outputRttListeners = new Set<OutputRttListener>();
+// WebSocket receipt is too early to reflect what the user sees. This tracker
+// holds the timestamp until xterm finishes parsing the first post-input chunk.
+const outputRttTracker = createOutputRttTracker();
 
 let lastFlushDelayMs: number | null = null;
 let lastServerIoRttMs: number | null = null;
@@ -396,17 +407,26 @@ export function offOutputRtt(cb: OutputRttListener): void {
 }
 
 function recordInputTimestamp(sessionId: string): void {
-  lastInputTimestamp.set(sessionId, performance.now());
+  recordOutputRttInput(outputRttTracker, sessionId, performance.now());
 }
 
-function measureOutputRtt(sessionId: string): void {
-  const sent = lastInputTimestamp.get(sessionId);
-  if (sent !== undefined) {
-    lastOutputRtt = performance.now() - sent;
-    lastInputTimestamp.delete(sessionId);
-    for (const listener of outputRttListeners) {
-      listener(sessionId, lastOutputRtt);
-    }
+function armOutputRttMeasurement(sessionId: string): void {
+  // We deliberately move the timestamp only when the first post-input output
+  // frame actually arrives. The final RTT is then reported when xterm finishes
+  // parsing that first frame, which matches visible terminal latency much more
+  // closely than measuring at WebSocket receipt time.
+  armTrackedOutputRttMeasurement(outputRttTracker, sessionId);
+}
+
+function measureCompletedOutputRtt(sessionId: string): void {
+  const rtt = consumeCompletedOutputRtt(outputRttTracker, sessionId, performance.now());
+  if (rtt === null) {
+    return;
+  }
+
+  lastOutputRtt = rtt;
+  for (const listener of outputRttListeners) {
+    listener(sessionId, lastOutputRtt);
   }
 }
 
@@ -414,13 +434,16 @@ function measureOutputRtt(sessionId: string): void {
 let lastHintedSessionId: string | null = null;
 
 // =============================================================================
-// Per-Session Output Scheduler
+// Per-Session Output Delivery
 // =============================================================================
 //
-// Each terminal gets its own ordered frame queue. The active session gets the
-// first timeslice every scheduler turn; background sessions then make progress
-// round-robin. Tune or revert only this section if multi-terminal responsiveness
-// needs more work later.
+// Each session keeps a small owned queue so we can preserve strict in-order
+// delivery across async decompression and xterm's async write callback.
+//
+// We intentionally keep MidTerm's own queue shallow. xterm already preserves
+// write order internally, so we only use its async callback for "parsed and
+// visible" notifications while periodically yielding the main thread to keep
+// input responsive during flood output.
 
 interface OutputFrameItem {
   sessionId: string;
@@ -431,15 +454,13 @@ interface OutputFrameItem {
 interface SessionOutputQueue {
   items: OutputFrameItem[];
   index: number;
+  processing: boolean;
 }
 
-// Tune queue depth and active-vs-background balance here. If the scheduler ever
-// needs to be disabled later, replace only this section with a single FIFO again.
 const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
-const ACTIVE_SESSION_BUDGET_MS = 4;
-const SCHEDULER_BUDGET_MS = 8;
+const OUTPUT_DRAIN_BUDGET_MS = 8;
 const CURSOR_BURST_WINDOW_MS = 180;
 const CURSOR_BURST_MIN_BYTES = 12;
 const CURSOR_IDLE_SHOW_MS = 650;
@@ -450,11 +471,7 @@ const SHOW_CURSOR_SEQ = '\x1b[?25h';
 const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
-const backgroundReadySessionIds: Array<string | undefined> = [];
-const backgroundReadySessionSet = new Set<string>();
-let processingQueue = false;
-let backgroundReadyIndex = 0;
-let lastScheduledActiveSessionId: string | null = null;
+let outputQueueGeneration = 0;
 
 function compactSessionQueue(queue: SessionOutputQueue): void {
   if (queue.index > 0) {
@@ -467,13 +484,6 @@ function yieldToMain(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function compactBackgroundReadySessions(): void {
-  if (backgroundReadyIndex > 0) {
-    backgroundReadySessionIds.splice(0, backgroundReadyIndex);
-    backgroundReadyIndex = 0;
-  }
-}
-
 function getPendingFrameCount(queue: SessionOutputQueue): number {
   return queue.items.length - queue.index;
 }
@@ -481,36 +491,16 @@ function getPendingFrameCount(queue: SessionOutputQueue): number {
 function getOrCreateSessionQueue(sessionId: string): SessionOutputQueue {
   let queue = sessionOutputQueues.get(sessionId);
   if (!queue) {
-    queue = { items: [], index: 0 };
+    queue = { items: [], index: 0, processing: false };
     sessionOutputQueues.set(sessionId, queue);
   }
   return queue;
 }
 
-function hasQueuedFrames(sessionId: string | null): boolean {
-  if (sessionId === null) {
-    return false;
-  }
-
-  const queue = sessionOutputQueues.get(sessionId);
-  return queue !== undefined && getPendingFrameCount(queue) > 0;
-}
-
-function enqueueBackgroundSession(sessionId: string): void {
-  if (backgroundReadySessionSet.has(sessionId)) {
-    return;
-  }
-
-  backgroundReadySessionSet.add(sessionId);
-  backgroundReadySessionIds.push(sessionId);
-}
-
 function clearQueuedOutput(): void {
   sessionOutputQueues.clear();
-  backgroundReadySessionIds.length = 0;
-  backgroundReadySessionSet.clear();
-  backgroundReadyIndex = 0;
-  lastScheduledActiveSessionId = null;
+  resetOutputRttTracker(outputRttTracker);
+  outputQueueGeneration++;
 }
 
 function noteQueueOverflow(sessionId: string): void {
@@ -535,66 +525,17 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
   queue.index++;
 
   if (getPendingFrameCount(queue) === 0) {
+    // Do not remove the queue object yet. The current worker may still be
+    // waiting on async decompression or a timed yield, and deleting it early
+    // would let a second worker start for the same session and break strict
+    // per-session ordering.
     queue.items.length = 0;
     queue.index = 0;
-    sessionOutputQueues.delete(sessionId);
   } else if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
     compactSessionQueue(queue);
   }
 
   return item;
-}
-
-function nextBackgroundSessionId(): string | null {
-  while (backgroundReadyIndex < backgroundReadySessionIds.length) {
-    const sessionId = backgroundReadySessionIds[backgroundReadyIndex];
-    backgroundReadyIndex++;
-    if (backgroundReadyIndex >= QUEUE_COMPACT_THRESHOLD) {
-      compactBackgroundReadySessions();
-    }
-
-    if (sessionId === undefined) {
-      continue;
-    }
-
-    backgroundReadySessionSet.delete(sessionId);
-    return sessionId;
-  }
-
-  compactBackgroundReadySessions();
-  return null;
-}
-
-function syncBackgroundQueue(activeId: string | null): void {
-  if (
-    lastScheduledActiveSessionId !== null &&
-    lastScheduledActiveSessionId !== activeId &&
-    hasQueuedFrames(lastScheduledActiveSessionId)
-  ) {
-    enqueueBackgroundSession(lastScheduledActiveSessionId);
-  }
-
-  lastScheduledActiveSessionId = activeId;
-}
-
-async function drainActiveSessionQueue(activeId: string, deadlineMs: number): Promise<boolean> {
-  let didWork = false;
-
-  while (hasQueuedFrames(activeId)) {
-    const item = dequeueOutputFrame(activeId);
-    if (!item) {
-      break;
-    }
-
-    didWork = true;
-    await processOneFrame(item);
-
-    if ($activeSessionId.get() !== activeId || performance.now() >= deadlineMs) {
-      break;
-    }
-  }
-
-  return didWork;
 }
 
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
@@ -609,66 +550,50 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   }
 
   queue.items.push({ sessionId, payload, compressed });
-  if (sessionId !== $activeSessionId.get()) {
-    enqueueBackgroundSession(sessionId);
-  }
-
-  void processOutputQueues();
+  void processSessionOutputQueue(sessionId, outputQueueGeneration);
 }
 
-async function processOutputQueues(): Promise<void> {
-  if (processingQueue) return;
-  processingQueue = true;
+async function processSessionOutputQueue(sessionId: string, generation: number): Promise<void> {
+  const queue = sessionOutputQueues.get(sessionId);
+  if (!queue || queue.processing) {
+    return;
+  }
+
+  queue.processing = true;
 
   try {
-    for (;;) {
-      const activeId = $activeSessionId.get();
-      const cycleStart = performance.now();
-      let didWork = false;
+    let sliceStartMs = performance.now();
 
-      syncBackgroundQueue(activeId);
-
-      if (activeId !== null) {
-        didWork =
-          (await drainActiveSessionQueue(activeId, cycleStart + ACTIVE_SESSION_BUDGET_MS)) ||
-          didWork;
-      }
-
-      while (performance.now() - cycleStart < SCHEDULER_BUDGET_MS) {
-        const sessionId = nextBackgroundSessionId();
-        if (sessionId === null) {
-          break;
-        }
-
-        if (sessionId === $activeSessionId.get()) {
-          continue;
-        }
-
-        const item = dequeueOutputFrame(sessionId);
-        if (!item) {
-          continue;
-        }
-
-        didWork = true;
-        await processOneFrame(item);
-
-        if (hasQueuedFrames(sessionId)) {
-          enqueueBackgroundSession(sessionId);
-        }
-      }
-
-      const hasActiveFrames = hasQueuedFrames($activeSessionId.get());
-      const hasBackgroundFrames = backgroundReadyIndex < backgroundReadySessionIds.length;
-      if (!didWork && !hasActiveFrames && !hasBackgroundFrames) {
+    while (generation === outputQueueGeneration) {
+      const item = dequeueOutputFrame(sessionId);
+      if (!item) {
         break;
       }
 
-      if (didWork) {
+      await processOneFrame(item, generation);
+
+      if (generation !== outputQueueGeneration) {
+        break;
+      }
+
+      // Heavy output must periodically yield so keyboard interrupts like Ctrl+C
+      // can be processed promptly instead of waiting behind a long browser-side drain.
+      if (performance.now() - sliceStartMs >= OUTPUT_DRAIN_BUDGET_MS) {
         await yieldToMain();
+        sliceStartMs = performance.now();
       }
     }
   } finally {
-    processingQueue = false;
+    queue.processing = false;
+
+    // If new frames landed after the current drain finished, restart the same
+    // per-session worker. We keep sequencing at the session boundary so async
+    // decompression and timed yields cannot reorder a terminal's output.
+    if (generation === outputQueueGeneration && getPendingFrameCount(queue) > 0) {
+      void processSessionOutputQueue(sessionId, generation);
+    } else if (sessionOutputQueues.get(sessionId) === queue && getPendingFrameCount(queue) === 0) {
+      sessionOutputQueues.delete(sessionId);
+    }
   }
 }
 
@@ -703,7 +628,7 @@ function bufferPendingFrame(sessionId: string, cols: number, rows: number, data:
   frames.push(bufferedPayload);
 }
 
-async function processOneFrame(item: OutputFrameItem): Promise<void> {
+async function processOneFrame(item: OutputFrameItem, generation: number): Promise<void> {
   try {
     let cols: number;
     let rows: number;
@@ -723,7 +648,7 @@ async function processOneFrame(item: OutputFrameItem): Promise<void> {
 
     const state = sessionTerminals.get(item.sessionId);
     if (state && state.opened) {
-      writeToTerminal(item.sessionId, state, cols, rows, data);
+      writeToTerminal(item.sessionId, state, cols, rows, data, generation);
     } else if (data.length > 0) {
       bufferPendingFrame(item.sessionId, cols, rows, data);
     }
@@ -887,12 +812,32 @@ export function reconcileSynchronizedOutputCursor(sessionId: string): void {
 /**
  * Write data to terminal, resizing if dimensions changed.
  */
+function writeTerminalData(
+  sessionId: string,
+  state: TerminalState,
+  data: Uint8Array,
+  generation: number,
+  onParsed?: () => void,
+): void {
+  // xterm already preserves write order internally. We use the callback for
+  // "parsed and visible" notifications only, not as a per-frame flow-control gate.
+  state.terminal.write(data, () => {
+    if (generation !== outputQueueGeneration) {
+      return;
+    }
+
+    measureCompletedOutputRtt(sessionId);
+    onParsed?.();
+  });
+}
+
 function writeToTerminal(
   sessionId: string,
   state: TerminalState,
   cols: number,
   rows: number,
   data: Uint8Array,
+  generation: number,
 ): void {
   // Track bracketed paste mode by scanning raw bytes (no string allocation)
   if (data.length >= 8) {
@@ -939,11 +884,19 @@ function writeToTerminal(
 
   // Always write data if present
   if (cursorVisibility.data.length > 0) {
-    state.terminal.write(cursorVisibility.data);
-    // Scan for file paths only on active session (avoids decode+concat for background frames)
-    if (sessionId === $activeSessionId.get()) {
-      scanOutputForPaths(sessionId, cursorVisibility.data);
-    }
+    const writtenData = cursorVisibility.data;
+    writeTerminalData(sessionId, state, writtenData, generation, () => {
+      // File path scanning is intentionally kicked behind the xterm write callback.
+      // The terminal parse path is latency-sensitive; File Radar can lag slightly
+      // without affecting correctness.
+      if (sessionId === $activeSessionId.get()) {
+        queueMicrotask(() => {
+          if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
+            scanOutputForPaths(sessionId, writtenData);
+          }
+        });
+      }
+    });
   }
 
   // DISABLED: Was causing cursor to disappear in some cases
@@ -1101,15 +1054,15 @@ export function connectMuxWebSocket(): void {
     }
 
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
-      measureOutputRtt(sessionId);
+      armOutputRttMeasurement(sessionId);
       // Pass only terminal data bytes (exclude cols/rows header overhead)
       const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 8 : 4;
       const termDataBytes = Math.max(0, payload.length - hdrBytes);
       if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
         _sessionBytesCallback?.(sessionId, termDataBytes);
       }
-      // Queue output by session so strict ordering stays within each terminal
-      // while the active terminal can bypass background backlog.
+      // Queue output by session so async decompression and xterm callbacks
+      // cannot reorder a single terminal's output stream.
       // .slice() here is needed — WS may recycle the ArrayBuffer
       if (payload.length >= 4) {
         queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
@@ -1319,5 +1272,5 @@ export function writeOutputFrame(
   payload: Uint8Array,
 ): void {
   const frame = parseOutputFrame(payload);
-  writeToTerminal(sessionId, state, frame.cols, frame.rows, frame.data);
+  writeToTerminal(sessionId, state, frame.cols, frame.rows, frame.data, outputQueueGeneration);
 }

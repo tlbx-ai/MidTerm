@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Common.Shells;
@@ -9,6 +10,9 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Services.Tmux;
+using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public static partial class SessionApiEndpoints
@@ -44,12 +48,32 @@ public static partial class SessionApiEndpoints
         WebApplication app,
         TtyHostSessionManager sessionManager,
         ClipboardService clipboardService,
-        AuthService authService,
-        int port)
+        UpdateService updateService,
+        WebPreviewService webPreviewService,
+        SessionTelemetryService sessionTelemetry,
+        SessionSupervisorService sessionSupervisor,
+        AiCliProfileService aiCliProfileService,
+        WorkerSessionRegistryService workerSessionRegistry)
     {
+        app.MapGet("/api/state", () =>
+        {
+            var response = new StateUpdate
+            {
+                Sessions = GetSessionListDto(sessionManager, sessionSupervisor),
+                Update = updateService.LatestUpdate
+            };
+            return Results.Json(response, AppJsonContext.Default.StateUpdate);
+        });
+
         app.MapGet("/api/sessions", () =>
         {
-            return Results.Json(sessionManager.GetSessionList(), AppJsonContext.Default.SessionListDto);
+            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor), AppJsonContext.Default.SessionListDto);
+        });
+
+        app.MapGet("/api/sessions/attention", (bool agentOnly = true) =>
+        {
+            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor).Sessions, agentOnly);
+            return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
         app.MapPost("/api/sessions", async (CreateSessionRequest? request) =>
@@ -71,11 +95,114 @@ public static partial class SessionApiEndpoints
                 return Results.Problem("Failed to create session");
             }
 
-            return Results.Json(MapToDto(sessionInfo), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
+        });
+
+        app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
+        {
+            var sessionInfo = await sessionManager.CreateSessionAsync(
+                request.Shell, request.Cols, request.Rows, request.WorkingDirectory, ct);
+
+            if (sessionInfo is null)
+            {
+                return Results.Problem("Failed to create worker session");
+            }
+
+            var sessionId = sessionInfo.Id;
+
+            if (request.AgentControlled)
+            {
+                sessionManager.SetAgentControlled(sessionId, true);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                await sessionManager.SetSessionNameAsync(sessionId, request.Name, isManual: true, ct);
+            }
+
+            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+            var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, workerSession);
+            var launchCommand = string.IsNullOrWhiteSpace(request.LaunchCommand)
+                ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
+                : request.LaunchCommand.Trim();
+
+            var guidanceInjected = false;
+            string? midtermDir = null;
+            var targetDirectory = workerSession.CurrentDirectory ?? request.WorkingDirectory;
+            if (request.InjectGuidance &&
+                !string.IsNullOrWhiteSpace(targetDirectory) &&
+                Directory.Exists(targetDirectory))
+            {
+                midtermDir = MidtermDirectory.Ensure(targetDirectory);
+                MidtermDirectory.AppendRootPointer(targetDirectory);
+                guidanceInjected = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(launchCommand))
+            {
+                await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, Encoding.UTF8.GetBytes(launchCommand + "\r"), ct);
+                if (request.LaunchDelayMs > 0)
+                {
+                    await Task.Delay(request.LaunchDelayMs, ct);
+                }
+            }
+
+            var slashCommands = aiCliProfileService.NormalizeSlashCommands(resolvedProfile, request.SlashCommands);
+            workerSessionRegistry.Register(
+                sessionId,
+                resolvedProfile,
+                launchCommand,
+                slashCommands,
+                request.LaunchDelayMs,
+                request.SlashCommandDelayMs);
+            foreach (var slashCommand in slashCommands)
+            {
+                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+                if (!TryBuildPromptExecutionPlan(
+                        new SessionPromptRequest
+                        {
+                            Text = slashCommand,
+                            Mode = "auto",
+                            Profile = resolvedProfile,
+                            SubmitDelayMs = request.SlashCommandDelayMs
+                        },
+                        currentSession,
+                        aiCliProfileService,
+                        out var plan,
+                        out var error))
+                {
+                    return Results.BadRequest(error);
+                }
+
+                await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, sessionId, plan, ct);
+            }
+
+            return Results.Json(new WorkerBootstrapResponse
+            {
+                Session = GetSessionDto(sessionManager, sessionSupervisor, sessionId),
+                Profile = resolvedProfile,
+                LaunchCommand = launchCommand,
+                SlashCommands = slashCommands,
+                GuidanceInjected = guidanceInjected,
+                MidtermDir = midtermDir
+            }, AppJsonContext.Default.WorkerBootstrapResponse);
+        });
+
+        app.MapPost("/api/sessions/reorder", (SessionReorderRequest request) =>
+        {
+            if (request.SessionIds.Count == 0)
+            {
+                return Results.BadRequest("sessionIds required");
+            }
+
+            return sessionManager.ReorderSessions(request.SessionIds)
+                ? Results.Ok()
+                : Results.BadRequest("Invalid session IDs");
         });
 
         app.MapDelete("/api/sessions/{id}", async (string id) =>
         {
+            workerSessionRegistry.Forget(id);
             await sessionManager.CloseSessionAsync(id);
             return Results.Ok();
         });
@@ -95,6 +222,156 @@ public static partial class SessionApiEndpoints
             }, AppJsonContext.Default.ResizeResponse);
         });
 
+        app.MapGet("/api/sessions/{id}/state", async (string id, bool includeBuffer = true, bool includeBufferBase64 = false) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var response = new SessionStateResponse
+            {
+                Session = GetSessionDto(sessionManager, sessionSupervisor, id),
+                Previews = webPreviewService.ListPreviewSessions(id).Previews
+                    .ToArray()
+            };
+
+            if (includeBuffer)
+            {
+                var buffer = await sessionManager.GetBufferAsync(id);
+                if (buffer is not null)
+                {
+                    response.BufferByteLength = buffer.Length;
+                    response.BufferText = Encoding.UTF8.GetString(buffer);
+                    response.BufferBase64 = includeBufferBase64
+                        ? Convert.ToBase64String(buffer)
+                        : null;
+                }
+            }
+
+            return Results.Json(response, AppJsonContext.Default.SessionStateResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!TryGetInputBytes(request, out var data, out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!TryGetKeyInputBytes(request, out var data, out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = await EnsureWorkerReadyForPromptAsync(
+                sessionManager,
+                sessionTelemetry,
+                sessionSupervisor,
+                aiCliProfileService,
+                workerSessionRegistry,
+                id,
+                request,
+                ct);
+            if (!TryBuildPromptExecutionPlan(
+                    request,
+                    session,
+                    aiCliProfileService,
+                    out var plan,
+                    out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
+            return Results.Ok();
+        });
+
+        app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var buffer = await sessionManager.GetBufferAsync(id);
+            if (buffer is null)
+            {
+                return Results.NotFound();
+            }
+
+            var response = new SessionBufferTextResponse
+            {
+                SessionId = id,
+                ByteLength = buffer.Length,
+                Text = Encoding.UTF8.GetString(buffer),
+                Base64 = includeBase64 ? Convert.ToBase64String(buffer) : null
+            };
+
+            return Results.Json(response, AppJsonContext.Default.SessionBufferTextResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/buffer/tail", async (string id, int lines = 120, bool stripAnsi = true) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var buffer = await sessionManager.GetBufferAsync(id);
+            if (buffer is null)
+            {
+                return Results.NotFound();
+            }
+
+            var text = TerminalOutputSanitizer.Decode(buffer);
+            if (stripAnsi)
+            {
+                text = TerminalOutputSanitizer.StripEscapeSequences(text);
+            }
+
+            text = TerminalOutputSanitizer.TailLines(text, lines, out _, out _);
+            return Results.Text(text, "text/plain", Encoding.UTF8);
+        });
+
+        app.MapGet("/api/sessions/{id}/activity", (string id, int seconds = 120, int bellLimit = 25) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var response = sessionTelemetry.GetActivity(id, seconds, bellLimit);
+            return Results.Json(response, AppJsonContext.Default.SessionActivityResponse);
+        });
+
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>
         {
             if (!await sessionManager.SetSessionNameAsync(id, request.Name, isManual: !auto))
@@ -111,6 +388,16 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
             return Results.Ok();
+        });
+
+        app.MapPut("/api/sessions/{id}/control", (string id, SetSessionControlRequest request) =>
+        {
+            if (!sessionManager.SetAgentControlled(id, request.AgentControlled))
+            {
+                return Results.NotFound();
+            }
+
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
@@ -193,11 +480,401 @@ public static partial class SessionApiEndpoints
             return Results.Json(new InjectGuidanceResponse
             {
                 MidtermDir = midtermDir,
+                MtcliShellPath = Path.Combine(midtermDir, "mtcli.sh"),
+                MtcliPowerShellPath = Path.Combine(midtermDir, "mtcli.ps1"),
                 ClaudeMdUpdated = claudeUpdated,
                 AgentsMdUpdated = agentsUpdated,
             }, AppJsonContext.Default.InjectGuidanceResponse);
         });
     }
+
+    internal static bool TryGetInputBytes(
+        SessionInputRequest request,
+        out byte[] data,
+        out string error)
+    {
+        data = [];
+        error = "";
+
+        var hasText = !string.IsNullOrEmpty(request.Text);
+        var hasBase64 = !string.IsNullOrEmpty(request.Base64);
+
+        if (hasText == hasBase64)
+        {
+            error = "Provide exactly one of text or base64.";
+            return false;
+        }
+
+        if (hasText)
+        {
+            var text = request.Text!;
+            if (request.AppendNewline)
+            {
+                text += "\r";
+            }
+
+            data = Encoding.UTF8.GetBytes(text);
+            return true;
+        }
+
+        try
+        {
+            data = Convert.FromBase64String(request.Base64!);
+            if (request.AppendNewline)
+            {
+                Array.Resize(ref data, data.Length + 1);
+                data[^1] = (byte)'\r';
+            }
+            return true;
+        }
+        catch (FormatException)
+        {
+            error = "base64 is invalid.";
+            return false;
+        }
+    }
+
+    internal static bool TryGetKeyInputBytes(
+        SessionKeyInputRequest request,
+        out byte[] data,
+        out string error)
+    {
+        data = [];
+        error = "";
+
+        if (request.Keys is null || request.Keys.Count == 0)
+        {
+            error = "Provide at least one key.";
+            return false;
+        }
+
+        if (!request.Literal && request.Keys.Any(string.IsNullOrWhiteSpace))
+        {
+            error = "Keys cannot be empty.";
+            return false;
+        }
+
+        data = TmuxKeyTranslator.TranslateKeys(request.Keys, request.Literal);
+        return true;
+    }
+
+    internal static bool TryGetPromptInputSequence(
+        SessionPromptRequest request,
+        bool interruptFirst,
+        out byte[]? interruptData,
+        out byte[] promptData,
+        out byte[] submitData,
+        out int interruptDelayMs,
+        out int submitDelayMs,
+        out string error)
+    {
+        interruptData = null;
+        promptData = [];
+        submitData = [];
+        error = "";
+
+        if (request.InterruptDelayMs < 0 || request.SubmitDelayMs < 0 || request.FollowupSubmitDelayMs < 0)
+        {
+            interruptDelayMs = 0;
+            submitDelayMs = 0;
+            error = "Delay values cannot be negative.";
+            return false;
+        }
+
+        interruptDelayMs = request.InterruptDelayMs;
+        submitDelayMs = request.SubmitDelayMs;
+
+        if (!TryGetInputBytes(new SessionInputRequest
+            {
+                Text = request.Text,
+                Base64 = request.Base64,
+                AppendNewline = false
+            },
+            out promptData,
+            out error))
+        {
+            return false;
+        }
+
+        if (!TryGetKeyInputBytes(new SessionKeyInputRequest
+            {
+                Keys = request.SubmitKeys,
+                Literal = request.LiteralSubmitKeys
+            },
+            out submitData,
+            out error))
+        {
+            error = error == "Provide at least one key."
+                ? "Provide at least one submit key."
+                : error;
+            return false;
+        }
+
+        if (!interruptFirst)
+        {
+            return true;
+        }
+
+        if (!TryGetKeyInputBytes(new SessionKeyInputRequest
+            {
+                Keys = request.InterruptKeys,
+                Literal = request.LiteralInterruptKeys
+            },
+            out var translatedInterruptData,
+            out error))
+        {
+            error = error == "Provide at least one key."
+                ? "Provide at least one interrupt key."
+                : error;
+            return false;
+        }
+
+        interruptData = translatedInterruptData;
+        return true;
+    }
+
+    internal static bool TryGetPromptInputSequence(
+        SessionPromptRequest request,
+        out byte[]? interruptData,
+        out byte[] promptData,
+        out byte[] submitData,
+        out int interruptDelayMs,
+        out int submitDelayMs,
+        out string error)
+    {
+        return TryGetPromptInputSequence(
+            request,
+            request.InterruptFirst,
+            out interruptData,
+            out promptData,
+            out submitData,
+            out interruptDelayMs,
+            out submitDelayMs,
+            out error);
+    }
+
+    internal static bool TryBuildPromptExecutionPlan(
+        SessionPromptRequest request,
+        SessionInfoDto session,
+        AiCliProfileService aiCliProfileService,
+        out SessionPromptExecutionPlan plan,
+        out string error)
+    {
+        plan = new SessionPromptExecutionPlan(null, [], [], 0, 0, 0, 0);
+        error = "";
+
+        var mode = NormalizePromptMode(request.Mode);
+        if (mode is null)
+        {
+            error = "Mode must be auto, append, or interrupt-first.";
+            return false;
+        }
+
+        var supervisor = session.Supervisor ?? new SessionSupervisorInfoDto();
+        var profile = aiCliProfileService.NormalizeProfile(request.Profile, session);
+        var interruptFirst = mode switch
+        {
+            "interrupt-first" => true,
+            "append" => false,
+            _ => supervisor.State == SessionSupervisorService.BusyTurnState
+        };
+
+        if (!TryGetPromptInputSequence(
+                request,
+                interruptFirst,
+                out var interruptData,
+                out var promptData,
+                out var submitData,
+                out var interruptDelayMs,
+                out var submitDelayMs,
+                out error))
+        {
+            return false;
+        }
+
+        var followupSubmitCount = request.FollowupSubmitCount;
+        if (followupSubmitCount <= 0 &&
+            request.Text?.Contains('\n') == true &&
+            aiCliProfileService.IsInteractiveAi(profile))
+        {
+            followupSubmitCount = 1;
+        }
+
+        plan = new SessionPromptExecutionPlan(
+            interruptData,
+            promptData,
+            submitData,
+            interruptDelayMs,
+            submitDelayMs,
+            followupSubmitCount,
+            request.FollowupSubmitDelayMs);
+        return true;
+    }
+
+    private static string? NormalizePromptMode(string? mode)
+    {
+        return (mode ?? "auto").Trim().ToLowerInvariant() switch
+        {
+            "auto" => "auto",
+            "append" => "append",
+            "interrupt-first" or "interruptfirst" => "interrupt-first",
+            _ => null
+        };
+    }
+
+    private static async Task ExecutePromptPlanAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        string sessionId,
+        SessionPromptExecutionPlan plan,
+        CancellationToken ct)
+    {
+        if (plan.InterruptData is { Length: > 0 })
+        {
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.InterruptData, ct);
+            if (plan.InterruptDelayMs > 0)
+            {
+                await Task.Delay(plan.InterruptDelayMs, ct);
+            }
+        }
+
+        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.PromptData, ct);
+        if (plan.SubmitDelayMs > 0)
+        {
+            await Task.Delay(plan.SubmitDelayMs, ct);
+        }
+
+        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
+
+        for (var i = 0; i < plan.FollowupSubmitCount; i++)
+        {
+            if (plan.FollowupSubmitDelayMs > 0)
+            {
+                await Task.Delay(plan.FollowupSubmitDelayMs, ct);
+            }
+
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
+        }
+    }
+
+    private static async Task<SessionInfoDto> EnsureWorkerReadyForPromptAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        SessionSupervisorService sessionSupervisor,
+        AiCliProfileService aiCliProfileService,
+        WorkerSessionRegistryService workerSessionRegistry,
+        string sessionId,
+        SessionPromptRequest request,
+        CancellationToken ct)
+    {
+        var session = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+        if (session.Supervisor?.State != SessionSupervisorService.ShellState)
+        {
+            return session;
+        }
+
+        if (!TryBuildWorkerAutoResumePlan(sessionId, request, session, aiCliProfileService, workerSessionRegistry, out var resumePlan))
+        {
+            return session;
+        }
+
+        await SendInputAndRecordAsync(
+            sessionManager,
+            sessionTelemetry,
+            sessionId,
+            Encoding.UTF8.GetBytes(resumePlan.LaunchCommand + "\r"),
+            ct);
+
+        if (resumePlan.LaunchDelayMs > 0)
+        {
+            await Task.Delay(resumePlan.LaunchDelayMs, ct);
+        }
+
+        foreach (var slashCommand in resumePlan.SlashCommands)
+        {
+            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+            if (!TryBuildPromptExecutionPlan(
+                    new SessionPromptRequest
+                    {
+                        Text = slashCommand,
+                        Mode = "auto",
+                        Profile = resumePlan.Profile,
+                        SubmitDelayMs = resumePlan.SlashCommandDelayMs
+                    },
+                    currentSession,
+                    aiCliProfileService,
+                    out var slashPlan,
+                    out _))
+            {
+                continue;
+            }
+
+            await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, sessionId, slashPlan, ct);
+        }
+
+        return GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+    }
+
+    internal static bool TryBuildWorkerAutoResumePlan(
+        string sessionId,
+        SessionPromptRequest request,
+        SessionInfoDto session,
+        AiCliProfileService aiCliProfileService,
+        WorkerSessionRegistryService workerSessionRegistry,
+        out WorkerAutoResumePlan plan)
+    {
+        plan = new WorkerAutoResumePlan(string.Empty, AiCliProfileService.UnknownProfile, [], 0, 0);
+
+        if (session.Supervisor?.State != SessionSupervisorService.ShellState)
+        {
+            return false;
+        }
+
+        var hasRegistry = workerSessionRegistry.TryGet(sessionId, out var registration);
+        var profile = aiCliProfileService.NormalizeProfile(
+            request.Profile ?? (hasRegistry ? registration!.Profile : null),
+            session);
+
+        if (!aiCliProfileService.IsInteractiveAi(profile))
+        {
+            return false;
+        }
+
+        var launchCommand = hasRegistry
+            ? registration!.LaunchCommand
+            : aiCliProfileService.GetDefaultLaunchCommand(profile);
+
+        if (string.IsNullOrWhiteSpace(launchCommand))
+        {
+            return false;
+        }
+
+        plan = new WorkerAutoResumePlan(
+            launchCommand.Trim(),
+            profile,
+            hasRegistry ? registration!.SlashCommands : [],
+            hasRegistry ? registration!.LaunchDelayMs : 1200,
+            hasRegistry ? registration!.SlashCommandDelayMs : 350);
+        return true;
+    }
+
+    private static async Task SendInputAndRecordAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        string sessionId,
+        byte[] data,
+        CancellationToken ct = default)
+    {
+        sessionTelemetry.RecordInput(sessionId, data.Length);
+        await sessionManager.SendInputAsync(sessionId, data, ct);
+    }
+
+    internal readonly record struct WorkerAutoResumePlan(
+        string LaunchCommand,
+        string Profile,
+        IReadOnlyList<string> SlashCommands,
+        int LaunchDelayMs,
+        int SlashCommandDelayMs);
 
     private static async Task<string> SaveUploadedFileAsync(
         TtyHostSessionManager sessionManager, string sessionId, IFormFile file)
@@ -261,24 +938,33 @@ public static partial class SessionApiEndpoints
         return !string.IsNullOrWhiteSpace(extension) && ClipboardImageExtensions.Contains(extension);
     }
 
-    private static SessionInfoDto MapToDto(SessionInfo sessionInfo)
+    private static SessionListDto GetSessionListDto(
+        TtyHostSessionManager sessionManager,
+        SessionSupervisorService sessionSupervisor)
     {
-        return new SessionInfoDto
+        var response = sessionManager.GetSessionList();
+        foreach (var session in response.Sessions)
         {
-            Id = sessionInfo.Id,
-            Pid = sessionInfo.Pid,
-            CreatedAt = sessionInfo.CreatedAt,
-            IsRunning = sessionInfo.IsRunning,
-            ExitCode = sessionInfo.ExitCode,
-            Cols = sessionInfo.Cols,
-            Rows = sessionInfo.Rows,
-            ShellType = sessionInfo.ShellType,
-            Name = sessionInfo.Name,
-            ManuallyNamed = sessionInfo.ManuallyNamed,
-            CurrentDirectory = sessionInfo.CurrentDirectory,
-            ForegroundPid = sessionInfo.ForegroundPid,
-            ForegroundName = sessionInfo.ForegroundName,
-            ForegroundCommandLine = sessionInfo.ForegroundCommandLine
-        };
+            session.Supervisor = sessionSupervisor.Describe(session);
+        }
+
+        return response;
     }
+
+    private static SessionInfoDto GetSessionDto(
+        TtyHostSessionManager sessionManager,
+        SessionSupervisorService sessionSupervisor,
+        string sessionId)
+    {
+        return GetSessionListDto(sessionManager, sessionSupervisor).Sessions.First(s => s.Id == sessionId);
+    }
+
+    internal sealed record SessionPromptExecutionPlan(
+        byte[]? InterruptData,
+        byte[] PromptData,
+        byte[] SubmitData,
+        int InterruptDelayMs,
+        int SubmitDelayMs,
+        int FollowupSubmitCount,
+        int FollowupSubmitDelayMs);
 }

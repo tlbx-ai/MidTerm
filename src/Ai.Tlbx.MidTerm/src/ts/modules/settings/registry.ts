@@ -187,6 +187,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'integer, clamped to 0-85',
     applyMode: 'immediate',
   }),
+  controlEntry('terminalTransparency', 'setting-terminal-transparency', 'int', 0, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'integer, clamped to 0-85',
+    applyMode: 'immediate',
+  }),
   controlEntry('tabTitleMode', 'setting-tab-title', 'select', 'hostname', {
     editable: true,
     storage: 'settings.json',
@@ -247,7 +253,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known clipboard shortcut mode',
     applyMode: 'lazy',
   }),
-  controlEntry('terminalEnterMode', 'setting-terminal-enter-mode', 'select', 'default', {
+  controlEntry('terminalEnterMode', 'setting-terminal-enter-mode', 'select', 'shiftEnterLineFeed', {
     editable: true,
     storage: 'settings.json',
     validation: 'known Enter-key mode',
@@ -283,6 +289,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'lazy',
   }),
+  controlEntry(
+    'showSidebarSessionFilter',
+    'setting-show-sidebar-session-filter',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   controlEntry('tmuxCompatibility', 'setting-tmux-compatibility', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

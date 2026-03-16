@@ -10,7 +10,7 @@ import type { MidTermSettingsPublic, MidTermSettingsUpdate, UserInfo } from '../
 import { JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
-import { getEffectiveXtermTheme } from '../theming/themes';
+import { getEffectiveXtermThemeForSettings } from '../theming/themes';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
@@ -261,7 +261,11 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   getSettingsRegistryControlEntries().forEach((entry) => {
     setRegistryControlValue(entry, settings[entry.key]);
   });
-  updateTransparencyValue(settings.uiTransparency);
+  updateTransparencyValue('setting-ui-transparency-value', settings.uiTransparency);
+  updateTransparencyValue(
+    'setting-terminal-transparency-value',
+    settings.terminalTransparency ?? settings.uiTransparency,
+  );
   updateBackgroundImageUi(settings);
   if (dom.settingsView) {
     syncInlineTextInputWrappers(dom.settingsView);
@@ -328,7 +332,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   if (!settings) return;
 
   applyBackgroundAppearance(settings);
-  const theme = getEffectiveXtermTheme();
+  const theme = getEffectiveXtermThemeForSettings(settings);
   const fontFamily = buildTerminalFontStack(settings.fontFamily);
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
   const contrastRatio = settings.minimumContrastRatio;
@@ -495,22 +499,19 @@ export function bindSettingsAutoSave(): void {
     );
   });
 
-  const transparencySlider = document.getElementById(
+  const uiTransparencySlider = document.getElementById(
     'setting-ui-transparency',
   ) as HTMLInputElement | null;
-  if (transparencySlider) {
-    transparencySlider.addEventListener(
-      'input',
-      () => {
-        const value = parseInt(transparencySlider.value, 10) || 0;
-        updateTransparencyValue(value);
-        const current = $currentSettings.get();
-        if (!current) return;
-        applyBackgroundAppearance({ ...current, uiTransparency: value });
-      },
-      { signal },
-    );
-  }
+  bindTransparencyPreview(uiTransparencySlider, 'setting-ui-transparency-value', signal);
+
+  const terminalTransparencySlider = document.getElementById(
+    'setting-terminal-transparency',
+  ) as HTMLInputElement | null;
+  bindTransparencyPreview(
+    terminalTransparencySlider,
+    'setting-terminal-transparency-value',
+    signal,
+  );
 
   const fontSizeInput = document.getElementById('setting-font-size') as HTMLInputElement | null;
   if (fontSizeInput) {
@@ -636,8 +637,61 @@ export function unbindSettingsAutoSave(): void {
   }
 }
 
-function updateTransparencyValue(value: number): void {
-  const label = document.getElementById('setting-ui-transparency-value');
+function bindTransparencyPreview(
+  slider: HTMLInputElement | null,
+  labelId: string,
+  signal: AbortSignal,
+): void {
+  if (!slider) {
+    return;
+  }
+
+  slider.addEventListener(
+    'input',
+    () => {
+      const value = Number.parseInt(slider.value, 10) || 0;
+      updateTransparencyValue(labelId, value);
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
+      }
+
+      previewTransparencySettings(resolvePreviewTransparencySettings(current));
+    },
+    { signal },
+  );
+}
+
+function resolvePreviewTransparencySettings(current: MidTermSettingsPublic): MidTermSettingsPublic {
+  const uiSlider = document.getElementById('setting-ui-transparency') as HTMLInputElement | null;
+  const terminalSlider = document.getElementById(
+    'setting-terminal-transparency',
+  ) as HTMLInputElement | null;
+
+  const uiTransparency = Number.parseInt(uiSlider?.value ?? '', 10);
+  const terminalTransparency = Number.parseInt(terminalSlider?.value ?? '', 10);
+
+  return {
+    ...current,
+    uiTransparency: Number.isFinite(uiTransparency) ? uiTransparency : current.uiTransparency,
+    terminalTransparency: Number.isFinite(terminalTransparency)
+      ? terminalTransparency
+      : (current.terminalTransparency ?? current.uiTransparency),
+  };
+}
+
+function previewTransparencySettings(settings: MidTermSettingsPublic): void {
+  applyBackgroundAppearance(settings);
+  const theme = getEffectiveXtermThemeForSettings(settings);
+
+  for (const [sessionId, state] of sessionTerminals.entries()) {
+    state.terminal.options.theme = theme;
+    refreshTerminalPresentation(sessionId, state);
+  }
+}
+
+function updateTransparencyValue(labelId: string, value: number): void {
+  const label = document.getElementById(labelId);
   if (label) {
     label.textContent = `${String(value)}%`;
   }

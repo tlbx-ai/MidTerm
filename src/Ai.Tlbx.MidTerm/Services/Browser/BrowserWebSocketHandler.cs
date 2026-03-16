@@ -37,15 +37,10 @@ public sealed class BrowserWebSocketHandler
 
         if (!hasPreviewAuth)
         {
-            var settings = _settingsService.Load();
-            if (settings.AuthenticationEnabled && !string.IsNullOrEmpty(settings.PasswordHash))
+            if (_authService.AuthenticateRequest(context.Request) == RequestAuthMethod.None)
             {
-                var token = context.Request.Cookies[AuthService.SessionCookieName];
-                if (token is null || !_authService.ValidateSessionToken(token))
-                {
-                    context.Response.StatusCode = 401;
-                    return;
-                }
+                context.Response.StatusCode = 401;
+                return;
             }
         }
 

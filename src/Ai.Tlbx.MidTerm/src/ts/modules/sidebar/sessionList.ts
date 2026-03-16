@@ -11,6 +11,7 @@ import { pendingSessions, dom } from '../../state';
 import {
   $settingsOpen,
   $activeSessionId,
+  $currentSettings,
   $sessionList,
   getSession,
   isChildSession,
@@ -78,6 +79,7 @@ export interface SessionListCallbacks {
   onSelect: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
+  onToggleAgentControl: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
   onInjectGuidance?: (sessionId: string) => void;
   onCloseSidebar: () => void;
@@ -86,6 +88,189 @@ export interface SessionListCallbacks {
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
 let mobileMenuListenersBound = false;
+let sessionFilterListenersBound = false;
+let sessionFilterValue = '';
+let previousSessionFilterEnabled: boolean | null = null;
+const SESSION_GROUP_STORAGE_KEYS = {
+  human: 'midterm.sidebar.humanSessionsCollapsed',
+  agent: 'midterm.sidebar.agentSessionsCollapsed',
+} as const;
+const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
+
+export type SessionControlMode = 'human' | 'agent';
+
+export interface SessionGroup {
+  key: SessionControlMode;
+  label: string;
+  sessions: Session[];
+  collapsed: boolean;
+  showHeader: boolean;
+  attentionCount: number;
+}
+
+export function shouldShowAgentControlAction(controlMode: SessionControlMode): boolean {
+  return controlMode === 'agent';
+}
+
+function normalizeSessionFilterValue(value: string | null | undefined): string {
+  return (value ?? '').trim();
+}
+
+function getSessionFilterTerms(query: string): string[] {
+  const normalizedQuery = normalizeSessionFilterValue(query).toLowerCase();
+  return normalizedQuery === '' ? [] : normalizedQuery.split(/\s+/);
+}
+
+function buildSessionFilterHaystack(session: Session): string {
+  const foregroundInfo = getForegroundInfo(session.id);
+  return [
+    session.name,
+    session.terminalTitle,
+    session.shellType,
+    session.currentDirectory,
+    foregroundInfo.name,
+    foregroundInfo.cwd,
+    foregroundInfo.commandLine,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n')
+    .toLowerCase();
+}
+
+function loadStoredSessionFilter(): string {
+  try {
+    return normalizeSessionFilterValue(localStorage.getItem(SESSION_FILTER_STORAGE_KEY));
+  } catch {
+    return '';
+  }
+}
+
+function persistSessionFilter(): void {
+  try {
+    if (sessionFilterValue === '') {
+      localStorage.removeItem(SESSION_FILTER_STORAGE_KEY);
+    } else {
+      localStorage.setItem(SESSION_FILTER_STORAGE_KEY, sessionFilterValue);
+    }
+  } catch {
+    // Ignore localStorage failures and keep the filter in memory.
+  }
+}
+
+export function isSidebarSessionFilterEnabled(): boolean {
+  return $currentSettings.get()?.showSidebarSessionFilter === true;
+}
+
+function syncSessionFilterControls(): void {
+  const filterEnabled = isSidebarSessionFilterEnabled();
+  dom.sessionFilterBar?.toggleAttribute('hidden', !filterEnabled);
+
+  const filterInput = dom.sessionFilterInput;
+  const visibleValue = filterEnabled ? sessionFilterValue : '';
+  if (filterInput && filterInput.value !== visibleValue) {
+    filterInput.value = visibleValue;
+  }
+
+  dom.sessionFilterClear?.toggleAttribute('hidden', !filterEnabled || sessionFilterValue === '');
+}
+
+function setSessionFilter(nextValue: string): void {
+  const normalizedValue = normalizeSessionFilterValue(nextValue);
+  if (normalizedValue === sessionFilterValue) {
+    syncSessionFilterControls();
+    return;
+  }
+
+  sessionFilterValue = normalizedValue;
+  persistSessionFilter();
+  syncSessionFilterControls();
+  renderSessionList();
+}
+
+function clearSessionFilter(focusInput: boolean = false): void {
+  setSessionFilter('');
+  if (focusInput) {
+    dom.sessionFilterInput?.focus();
+  }
+}
+
+function bindSessionFilterEvents(): void {
+  if (sessionFilterListenersBound) {
+    return;
+  }
+
+  const filterInput = dom.sessionFilterInput;
+  const clearButton = dom.sessionFilterClear;
+
+  if (filterInput) {
+    filterInput.setAttribute('aria-label', t('sidebar.filterTerminals'));
+    filterInput.addEventListener('input', () => {
+      setSessionFilter(filterInput.value);
+    });
+
+    filterInput.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (sessionFilterValue !== '') {
+          clearSessionFilter(true);
+        } else {
+          filterInput.blur();
+        }
+      }
+    });
+  }
+
+  if (clearButton) {
+    clearButton.setAttribute('aria-label', t('sidebar.clearTerminalFilter'));
+    clearButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearSessionFilter(true);
+    });
+  }
+
+  sessionFilterListenersBound = true;
+}
+
+export function filterSessionsByQuery(sessions: Session[], query: string): Session[] {
+  const terms = getSessionFilterTerms(query);
+  if (terms.length === 0) {
+    return sessions;
+  }
+
+  return sessions.filter((session) => {
+    const haystack = buildSessionFilterHaystack(session);
+    return terms.every((term) => haystack.includes(term));
+  });
+}
+
+export function isSessionFilterActive(): boolean {
+  return isSidebarSessionFilterEnabled() && sessionFilterValue !== '';
+}
+
+export function applySessionFilterSettingChange(): void {
+  const settingsLoaded = $currentSettings.get() !== null;
+  const filterEnabled = isSidebarSessionFilterEnabled();
+
+  if (!settingsLoaded) {
+    syncSessionFilterControls();
+    renderSessionList();
+    return;
+  }
+
+  const shouldClearStoredFilter = !filterEnabled && previousSessionFilterEnabled !== false;
+  previousSessionFilterEnabled = filterEnabled;
+
+  if (shouldClearStoredFilter && sessionFilterValue !== '') {
+    clearSessionFilter();
+    return;
+  }
+
+  syncSessionFilterControls();
+  renderSessionList();
+}
 
 // =============================================================================
 // Initialization
@@ -96,6 +281,9 @@ let mobileMenuListenersBound = false;
  */
 export function initializeSessionList(): void {
   addProcessStateListener(handleProcessStateChange);
+  sessionFilterValue = loadStoredSessionFilter();
+  syncSessionFilterControls();
+  bindSessionFilterEvents();
 
   if (!mobileMenuListenersBound) {
     document.addEventListener('keydown', handleMobileMenuKeydown);
@@ -256,10 +444,14 @@ function updateSessionProcessInfo(sessionId: string): void {
   if (sessionItem.dataset.processAsTitle === '1') {
     const titleRow = sessionItem.querySelector<HTMLElement>('.session-title-row');
     if (!titleRow) return;
-    // Preserve layout badge, clear everything else
+    // Preserve badges, clear everything else
     const layoutBadge = titleRow.querySelector('.layout-badge');
+    const roleBadge = titleRow.querySelector('.session-role-badge');
+    const stateBadge = titleRow.querySelector('.session-state-badge');
     titleRow.innerHTML = '';
     renderProcessTitle(titleRow, fgInfo, sessionId);
+    if (roleBadge) titleRow.appendChild(roleBadge);
+    if (stateBadge) titleRow.appendChild(stateBadge);
     if (layoutBadge) titleRow.appendChild(layoutBadge);
     return;
   }
@@ -413,6 +605,85 @@ export function getSessionDisplayName(session: Session): string {
   return info.primary;
 }
 
+function isAgentControlled(session: Session | null | undefined): boolean {
+  return session?.agentControlled === true;
+}
+
+function getSessionControlMode(session: Session): SessionControlMode {
+  return isAgentControlled(session) ? 'agent' : 'human';
+}
+
+function getSupervisorState(session: Session): string {
+  return session.supervisor?.state ?? 'unknown';
+}
+
+function getAttentionScore(session: Session): number {
+  return session.supervisor?.attentionScore ?? 0;
+}
+
+function needsAttention(session: Session): boolean {
+  return session.supervisor?.needsAttention === true;
+}
+
+function getSupervisorBadgeLabel(session: Session): string | null {
+  const state = getSupervisorState(session);
+  return state === 'unknown'
+    ? null
+    : state
+        .replace(/^busy-turn$/, 'busy')
+        .replace(/^idle-prompt$/, 'idle')
+        .replace(/-/g, ' ')
+        .toUpperCase();
+}
+
+function isSessionGroupCollapsed(group: SessionControlMode): boolean {
+  return localStorage.getItem(SESSION_GROUP_STORAGE_KEYS[group]) === 'true';
+}
+
+function toggleSessionGroup(section: HTMLElement, group: SessionControlMode): void {
+  const collapsed = section.classList.toggle('collapsed');
+  localStorage.setItem(SESSION_GROUP_STORAGE_KEYS[group], String(collapsed));
+}
+
+export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
+  const humanSessions = sessions.filter((session) => getSessionControlMode(session) === 'human');
+  const agentSessions = sessions
+    .filter((session) => getSessionControlMode(session) === 'agent')
+    .sort((a, b) => {
+      const attentionDelta = Number(needsAttention(b)) - Number(needsAttention(a));
+      if (attentionDelta !== 0) return attentionDelta;
+      const scoreDelta = getAttentionScore(b) - getAttentionScore(a);
+      if (scoreDelta !== 0) return scoreDelta;
+      return a.order - b.order;
+    });
+  const groups: SessionGroup[] = [];
+  const showHeaders = agentSessions.length > 0;
+
+  if (humanSessions.length > 0) {
+    groups.push({
+      key: 'human',
+      label: t('sidebar.humanControlled'),
+      sessions: humanSessions,
+      collapsed: isSessionGroupCollapsed('human'),
+      showHeader: showHeaders,
+      attentionCount: 0,
+    });
+  }
+
+  if (agentSessions.length > 0) {
+    groups.push({
+      key: 'agent',
+      label: t('sidebar.agentControlled'),
+      sessions: agentSessions,
+      collapsed: isSessionGroupCollapsed('agent'),
+      showHeader: showHeaders,
+      attentionCount: agentSessions.filter((session) => needsAttention(session)).length,
+    });
+  }
+
+  return groups;
+}
+
 // =============================================================================
 // Rendering
 // =============================================================================
@@ -464,6 +735,13 @@ function getSidebarDisplaySessions(): Session[] {
   ];
 }
 
+function createSessionFilterEmptyState(): HTMLDivElement {
+  const emptyState = document.createElement('div');
+  emptyState.className = 'session-filter-empty';
+  emptyState.textContent = t('sidebar.noMatchingTerminals');
+  return emptyState;
+}
+
 /**
  * Create a session item DOM element
  */
@@ -475,18 +753,24 @@ function createSessionItem(
   const sessionId = session.id;
   const inLayout = isSessionInLayout(sessionId);
   const isChild = isChildSession(sessionId);
+  const controlMode = getSessionControlMode(session);
+  const supervisorState = getSupervisorState(session);
   const item = document.createElement('div');
   item.className =
     'session-item' +
     (isActive ? ' active' : '') +
     (isPending ? ' pending' : '') +
     (inLayout ? ' in-layout' : '') +
-    (isChild ? ' tmux-child' : '');
+    (isChild ? ' tmux-child' : '') +
+    (controlMode === 'agent' ? ' agent-controlled' : '') +
+    (needsAttention(session) ? ' needs-attention' : '') +
+    (supervisorState ? ` supervisor-${supervisorState}` : '');
   item.dataset.sessionId = sessionId;
+  item.dataset.controlMode = controlMode;
   if (isChild) {
     item.dataset.parentId = session.parentSessionId ?? '';
   }
-  item.draggable = !isPending && !isChild;
+  item.draggable = !isPending && !isChild && !isSessionFilterActive();
 
   if (!isPending) {
     item.addEventListener('click', () => {
@@ -518,17 +802,43 @@ function createSessionItem(
   layoutBadge.textContent = t('session.split');
   layoutBadge.title = t('session.splitTooltip');
 
+  const agentBadge = document.createElement('span');
+  agentBadge.className = 'session-role-badge';
+  agentBadge.textContent = 'AI';
+  agentBadge.title = t('sidebar.agentControlled');
+
+  const supervisorBadgeLabel = getSupervisorBadgeLabel(session);
+  const stateBadge = document.createElement('span');
+  stateBadge.className = 'session-state-badge';
+  stateBadge.textContent = supervisorBadgeLabel ?? '';
+  stateBadge.hidden = supervisorBadgeLabel === null;
+  if (session.supervisor?.attentionReason) {
+    stateBadge.title = session.supervisor.attentionReason;
+  }
+
   if (displayInfo.useProcessAsTitle) {
     // Unnamed sessions: show cwd + process as the title row
     item.dataset.processAsTitle = '1';
     const fgInfo = getForegroundInfo(sessionId);
     renderProcessTitle(titleRow, fgInfo, sessionId);
+    if (controlMode === 'agent') {
+      titleRow.appendChild(agentBadge);
+      if (supervisorBadgeLabel) {
+        titleRow.appendChild(stateBadge);
+      }
+    }
     titleRow.appendChild(layoutBadge);
   } else {
     const title = document.createElement('span');
     title.className = 'session-title truncate';
     title.textContent = displayInfo.primary;
     titleRow.appendChild(title);
+    if (controlMode === 'agent') {
+      titleRow.appendChild(agentBadge);
+      if (supervisorBadgeLabel) {
+        titleRow.appendChild(stateBadge);
+      }
+    }
     titleRow.appendChild(layoutBadge);
 
     if (displayInfo.secondary) {
@@ -573,6 +883,20 @@ function createSessionItem(
   actions.setAttribute('role', 'menu');
 
   if (!isPending && sessionId) {
+    if (shouldShowAgentControlAction(controlMode)) {
+      const controlBtn = document.createElement('button');
+      controlBtn.className = 'session-control';
+      controlBtn.classList.add('active');
+      setActionButtonContent(controlBtn, t('session.markHumanControlled'), 'AI', true);
+      controlBtn.setAttribute('role', 'menuitem');
+      controlBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMobileActionMenu();
+        callbacks?.onToggleAgentControl(sessionId);
+      });
+      actions.appendChild(controlBtn);
+    }
+
     const pinBtn = document.createElement('button');
     pinBtn.className = 'session-pin';
     applyPinButtonState(pinBtn, !!session.bookmarkId);
@@ -682,97 +1006,86 @@ function createSessionItem(
 }
 
 /**
- * Render the session list in the sidebar using diff-based updates.
- * Only adds/removes/reorders items as needed, avoiding full DOM rebuilds.
+ * Create a collapsible session group section.
  */
-export function renderSessionList(): void {
-  if (!dom.sessionList) return;
+function createSessionGroupSection(group: SessionGroup): HTMLDivElement {
+  const section = document.createElement('div');
+  section.className = `session-group session-group-${group.key}`;
+  if (group.showHeader && group.collapsed) {
+    section.classList.add('collapsed');
+  }
 
-  const sessionList = dom.sessionList;
-  const sessions = getSidebarDisplaySessions();
-  const activeSessionId = $activeSessionId.get();
-  const existingItems = Array.from(sessionList.querySelectorAll<HTMLElement>('.session-item'));
-  const existingItemsById = new Map<string, HTMLElement>();
+  if (group.showHeader) {
+    const toggle = document.createElement('button');
+    toggle.className = 'session-group-toggle';
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', group.collapsed ? 'false' : 'true');
+    toggle.addEventListener('click', () => {
+      toggleSessionGroup(section, group.key);
+      toggle.setAttribute(
+        'aria-expanded',
+        section.classList.contains('collapsed') ? 'false' : 'true',
+      );
+    });
 
-  existingItems.forEach((item) => {
-    const itemId = item.dataset.sessionId;
-    if (itemId) {
-      existingItemsById.set(itemId, item);
+    const caret = document.createElement('span');
+    caret.className = 'session-group-caret';
+    caret.textContent = '▾';
+
+    const label = document.createElement('span');
+    label.className = 'session-group-label';
+    label.textContent = group.label;
+
+    const count = document.createElement('span');
+    count.className = 'session-group-count';
+    count.textContent = String(group.sessions.length);
+
+    toggle.append(caret, label, count);
+    if (group.key === 'agent' && group.attentionCount > 0) {
+      const attention = document.createElement('span');
+      attention.className = 'session-group-attention';
+      attention.textContent = `${group.attentionCount} !`;
+      toggle.appendChild(attention);
     }
-  });
+    section.appendChild(toggle);
+  } else {
+    section.classList.add('session-group-flat');
+  }
 
-  // Build set of current session IDs
-  const newIds = new Set(sessions.map((s) => s.id));
-
-  // Remove items that no longer exist
-  existingItems.forEach((item) => {
-    const itemId = item.dataset.sessionId;
-    if (itemId && !newIds.has(itemId)) {
-      if (item.classList.contains('menu-open')) {
-        closeMobileActionMenu();
-      }
-      unregisterHeatCanvas(itemId);
-      item.remove();
-      existingItemsById.delete(itemId);
-    }
-  });
-
-  // Add/update items in order
-  let previousElement: Element | null = null;
-  sessions.forEach((session) => {
-    const id = session.id;
-    const existingItem = existingItemsById.get(id);
-    const isPending = pendingSessions.has(id);
-
-    if (existingItem) {
-      // Update active state, pending state, and layout state
-      existingItem.classList.toggle('active', id === activeSessionId);
-      existingItem.classList.toggle('pending', isPending);
-      existingItem.classList.toggle('in-layout', isSessionInLayout(id));
-      const isChild = isChildSession(id);
-      existingItem.classList.toggle('tmux-child', isChild);
-      const htmlItem = existingItem;
-      if (isChild) {
-        htmlItem.dataset.parentId = session.parentSessionId ?? '';
-      } else {
-        delete htmlItem.dataset.parentId;
-      }
-      htmlItem.draggable = !isPending && !isChild;
-
-      // Ensure correct order
-      if (previousElement) {
-        if (existingItem.previousElementSibling !== previousElement) {
-          previousElement.after(existingItem);
-        }
-      } else if (existingItem !== sessionList.firstElementChild) {
-        sessionList.prepend(existingItem);
-      }
-      previousElement = existingItem;
-    } else {
-      // Create new item
-      const item = createSessionItem(session, id === activeSessionId, isPending);
-      if (previousElement) {
-        previousElement.after(item);
-      } else {
-        sessionList.prepend(item);
-      }
-      previousElement = item;
-    }
-  });
-
-  // Mark last child in each tmux group
-  const allItems = sessionList.querySelectorAll<HTMLElement>('.session-item');
-  allItems.forEach((item) => {
-    item.classList.remove('tmux-last-child');
-    item.classList.remove(
-      'layout-group-start',
-      'layout-group-middle',
-      'layout-group-end',
-      'layout-group-single',
+  const items = document.createElement('div');
+  items.className = 'session-group-items';
+  group.sessions.forEach((session) => {
+    items.appendChild(
+      createSessionItem(
+        session,
+        session.id === $activeSessionId.get(),
+        pendingSessions.has(session.id),
+      ),
     );
   });
-  allItems.forEach((item, idx) => {
-    if (item.classList.contains('tmux-child')) {
+
+  section.appendChild(items);
+  return section;
+}
+
+function applySidebarGroupingClasses(sessionList: HTMLElement): void {
+  sessionList.querySelectorAll<HTMLElement>('.session-group-items').forEach((groupItems) => {
+    const allItems = groupItems.querySelectorAll<HTMLElement>('.session-item');
+    allItems.forEach((item) => {
+      item.classList.remove('tmux-last-child');
+      item.classList.remove(
+        'layout-group-start',
+        'layout-group-middle',
+        'layout-group-end',
+        'layout-group-single',
+      );
+    });
+
+    allItems.forEach((item, idx) => {
+      if (!item.classList.contains('tmux-child')) {
+        return;
+      }
+
       const nextItem = allItems[idx + 1];
       if (
         !nextItem ||
@@ -781,28 +1094,63 @@ export function renderSessionList(): void {
       ) {
         item.classList.add('tmux-last-child');
       }
+    });
+
+    allItems.forEach((item, idx) => {
+      if (!item.classList.contains('in-layout')) return;
+
+      const prev = allItems[idx - 1];
+      const next = allItems[idx + 1];
+      const prevInLayout = !!prev?.classList.contains('in-layout');
+      const nextInLayout = !!next?.classList.contains('in-layout');
+
+      if (!prevInLayout && !nextInLayout) {
+        item.classList.add('layout-group-single');
+      } else if (!prevInLayout) {
+        item.classList.add('layout-group-start');
+      } else if (!nextInLayout) {
+        item.classList.add('layout-group-end');
+      } else {
+        item.classList.add('layout-group-middle');
+      }
+    });
+  });
+}
+
+/**
+ * Render the session list in the sidebar.
+ */
+export function renderSessionList(): void {
+  if (!dom.sessionList) return;
+
+  const sessionList = dom.sessionList;
+  const displaySessions = getSidebarDisplaySessions();
+  const filteredSessions = filterSessionsByQuery(
+    displaySessions,
+    isSidebarSessionFilterEnabled() ? sessionFilterValue : '',
+  );
+  const groups = groupSessionsByController(filteredSessions);
+
+  closeMobileActionMenu();
+  sessionList.querySelectorAll<HTMLElement>('.session-item').forEach((item) => {
+    const sessionId = item.dataset.sessionId;
+    if (sessionId) {
+      unregisterHeatCanvas(sessionId);
     }
   });
 
-  // Mark contiguous layout groups in sidebar order for explicit visual grouping
-  allItems.forEach((item, idx) => {
-    if (!item.classList.contains('in-layout')) return;
+  sessionList.replaceChildren();
+  sessionList.classList.toggle('filter-active', isSessionFilterActive());
 
-    const prev = allItems[idx - 1];
-    const next = allItems[idx + 1];
-    const prevInLayout = !!prev?.classList.contains('in-layout');
-    const nextInLayout = !!next?.classList.contains('in-layout');
+  if (groups.length === 0 && displaySessions.length > 0 && isSessionFilterActive()) {
+    sessionList.appendChild(createSessionFilterEmptyState());
+  } else {
+    groups.forEach((group) => {
+      sessionList.appendChild(createSessionGroupSection(group));
+    });
+  }
 
-    if (!prevInLayout && !nextInLayout) {
-      item.classList.add('layout-group-single');
-    } else if (!prevInLayout) {
-      item.classList.add('layout-group-start');
-    } else if (!nextInLayout) {
-      item.classList.add('layout-group-end');
-    } else {
-      item.classList.add('layout-group-middle');
-    }
-  });
+  applySidebarGroupingClasses(sessionList);
 }
 
 /**

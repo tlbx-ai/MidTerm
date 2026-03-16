@@ -207,7 +207,7 @@ export const DEFAULT_SETTINGS = {
   copyOnSelect: false,
   rightClickPaste: true,
   clipboardShortcuts: 'auto' as const,
-  terminalEnterMode: 'default' as const,
+  terminalEnterMode: 'shiftEnterLineFeed' as const,
 };
 
 // =============================================================================

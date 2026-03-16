@@ -11,14 +11,14 @@ import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
 import { openDiffOverlay } from './gitDiff';
 
-type SectionId = 'staged' | 'changes' | 'untracked';
+type SectionId = 'conflicts' | 'staged' | 'changes' | 'untracked';
+type PanelSectionId = SectionId | 'commits';
 
 interface GitPanelState {
   sessionId: string;
   container: HTMLElement;
   status: GitStatusResponse | null;
-  expandedSection: SectionId | null;
-  showCommits: boolean;
+  expandedSections: Set<PanelSectionId>;
 }
 
 const panelStates = new Map<string, GitPanelState>();
@@ -28,8 +28,7 @@ export function createGitPanel(container: HTMLElement, sessionId: string): void 
     sessionId,
     container,
     status: null,
-    expandedSection: null,
-    showCommits: false,
+    expandedSections: new Set<PanelSectionId>(),
   };
   panelStates.set(sessionId, state);
   renderPanel(state);
@@ -56,8 +55,7 @@ export async function renderGitPanelInto(container: HTMLElement, sessionId: stri
       sessionId,
       container,
       status: null,
-      expandedSection: null,
-      showCommits: false,
+      expandedSections: new Set<PanelSectionId>(),
     };
     panelStates.set(sessionId, state);
   } else {
@@ -82,8 +80,12 @@ function statusToLetter(status: string): string {
       return 'A';
     case 'deleted':
       return 'D';
+    case 'renamed':
+      return 'R';
+    case 'conflicted':
+      return '!';
     default:
-      return 'C';
+      return 'M';
   }
 }
 
@@ -93,10 +95,24 @@ function statusToColor(status: string): string {
     case 'untracked':
       return 'green';
     case 'deleted':
+    case 'conflicted':
       return 'red';
     default:
       return 'yellow';
   }
+}
+
+function hasGitRepoStatus(status: GitStatusResponse | null): status is GitStatusResponse {
+  return Boolean(status && (status.repoRoot || status.branch));
+}
+
+function countWorktreeChanges(status: GitStatusResponse): number {
+  return (
+    status.conflicted.length +
+    status.staged.length +
+    status.modified.length +
+    status.untracked.length
+  );
 }
 
 interface TreeNode {
@@ -152,7 +168,8 @@ function renderTreeNode(node: TreeNode, depth: number): string {
     if (child.file) {
       const letter = statusToLetter(child.file.status);
       const color = statusToColor(child.file.status);
-      html += `<div class="git-tree-file" data-path="${escapeHtml(child.file.path)}" style="padding-left:${12 + indent}px">
+      const isDisabled = child.file.status === 'untracked';
+      html += `<div class="git-tree-file${isDisabled ? ' git-tree-file-disabled' : ''}" data-path="${escapeHtml(child.file.path)}" style="padding-left:${12 + indent}px">
         <span class="git-tree-name">${escapeHtml(child.name)}</span>
         <span class="git-file-indicator git-indicator-${color}">${letter}</span>
       </div>`;
@@ -176,51 +193,157 @@ function tallyLoc(files: GitFileEntry[]): { add: number; del: number } {
   return { add, del };
 }
 
+function applyDefaultExpandedSections(state: GitPanelState, status: GitStatusResponse): void {
+  if (state.expandedSections.size > 0) {
+    return;
+  }
+
+  const sections: SectionId[] = [];
+
+  if (status.conflicted.length > 0) {
+    sections.push('conflicts');
+  }
+  if (status.staged.length > 0) {
+    sections.push('staged');
+  }
+  if (status.modified.length > 0) {
+    sections.push('changes');
+  }
+  if (status.untracked.length > 0) {
+    sections.push('untracked');
+  }
+
+  if (sections.length === 0 && status.recentCommits.length > 0) {
+    state.expandedSections.add('commits');
+    return;
+  }
+
+  for (const section of sections) {
+    state.expandedSections.add(section);
+  }
+}
+
+function renderPanelFill(mainText: string, hintText = '', className = ''): string {
+  return `<div class="git-panel-fill${className ? ' ' + className : ''}">
+    <div class="git-panel-empty-copy">
+      <p>${escapeHtml(mainText)}</p>
+      ${hintText ? `<p class="git-panel-hint">${escapeHtml(hintText)}</p>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderSummary(status: GitStatusResponse): string {
+  const pills: string[] = [];
+  const changeCount = countWorktreeChanges(status);
+
+  if (status.conflicted.length > 0) {
+    pills.push(
+      `<span class="git-summary-pill git-summary-pill-danger">!${status.conflicted.length}</span>`,
+    );
+  }
+  if (changeCount > 0) {
+    pills.push(`<span class="git-summary-pill git-summary-pill-warn">~${changeCount}</span>`);
+  }
+  if (status.ahead > 0) {
+    pills.push(`<span class="git-summary-pill">↑${status.ahead}</span>`);
+  }
+  if (status.behind > 0) {
+    pills.push(`<span class="git-summary-pill">↓${status.behind}</span>`);
+  }
+  if (status.stashCount > 0) {
+    pills.push(
+      `<span class="git-summary-pill">${escapeHtml(t('git.stash'))} ${status.stashCount}</span>`,
+    );
+  }
+  if (pills.length === 0) {
+    pills.push(
+      `<span class="git-summary-pill git-summary-pill-clean">${escapeHtml(t('git.cleanShort'))}</span>`,
+    );
+  }
+
+  const branch = escapeHtml(status.branch || 'HEAD');
+  const repoRoot = escapeHtml(status.repoRoot);
+  const repoSubtitle = status.repoRoot
+    ? `<div class="git-panel-summary-subtitle" title="${repoRoot}">${repoRoot}</div>`
+    : '';
+
+  return `<div class="git-panel-summary">
+    <div class="git-panel-summary-title-row">
+      <span class="git-panel-summary-title">${branch}</span>
+      <span class="git-panel-summary-pills">${pills.join('')}</span>
+    </div>
+    ${repoSubtitle}
+  </div>`;
+}
+
 function renderPanel(state: GitPanelState): void {
   const { status, container } = state;
 
-  if (!status) {
+  if (!hasGitRepoStatus(status)) {
     container.innerHTML = `
       <div class="git-panel">
-        <div class="git-panel-empty">
-          <p>${t('git.notARepo')}</p>
-          <p class="git-panel-hint">${t('git.notARepoHint')}</p>
+        <div class="git-panel-content">
+          ${renderPanelFill(t('git.notARepo'), t('git.notARepoHint'), 'git-panel-empty')}
         </div>
       </div>`;
     return;
   }
 
+  applyDefaultExpandedSections(state, status);
+
+  const hasConflicts = status.conflicted.length > 0;
   const hasStaged = status.staged.length > 0;
   const hasChanges = status.modified.length > 0;
   const hasUntracked = status.untracked.length > 0;
+  const sectionCount = [hasConflicts, hasStaged, hasChanges, hasUntracked].filter(Boolean).length;
+  const singleFillSection = sectionCount === 1;
 
   let html = '<div class="git-panel">';
+  html += renderSummary(status);
+  html += '<div class="git-panel-content">';
 
-  if (hasStaged) {
-    html += renderSection(state, 'staged', t('git.stagedChanges'), status.staged);
-  }
-  if (hasChanges) {
-    html += renderSection(state, 'changes', t('git.changes'), status.modified);
-  }
-  if (hasUntracked) {
-    html += renderSection(state, 'untracked', t('git.untracked'), status.untracked);
+  if (sectionCount > 0) {
+    html += `<div class="git-panel-sections${singleFillSection ? ' git-panel-sections-fill' : ''}">`;
+    if (hasConflicts) {
+      html += renderSection(
+        state,
+        'conflicts',
+        t('git.conflicts'),
+        status.conflicted,
+        singleFillSection,
+      );
+    }
+    if (hasStaged) {
+      html += renderSection(
+        state,
+        'staged',
+        t('git.stagedChanges'),
+        status.staged,
+        singleFillSection,
+      );
+    }
+    if (hasChanges) {
+      html += renderSection(state, 'changes', t('git.changes'), status.modified, singleFillSection);
+    }
+    if (hasUntracked) {
+      html += renderSection(
+        state,
+        'untracked',
+        t('git.untracked'),
+        status.untracked,
+        singleFillSection,
+      );
+    }
+    html += '</div>';
+  } else {
+    html += renderPanelFill(t('git.workingTreeClean'), '', 'git-panel-clean');
   }
 
-  if (!hasStaged && !hasChanges && !hasUntracked) {
-    html += `<div class="git-panel-clean">
-      <span>\u2714</span> ${t('git.workingTreeClean')}
-    </div>`;
+  if (status.recentCommits.length > 0) {
+    html += renderCommitsSection(state, status.recentCommits, sectionCount === 0);
   }
 
-  html += renderCommitsSection(state, status.recentCommits);
-
-  if (status.stashCount > 0) {
-    html += `<div class="git-stash-footer">
-      <span class="git-stash-label">${t('git.stash')} (${status.stashCount})</span>
-    </div>`;
-  }
-
-  html += '</div>';
+  html += '</div></div>';
   container.innerHTML = html;
   bindPanelEvents(state);
 }
@@ -230,8 +353,9 @@ function renderSection(
   sectionId: SectionId,
   title: string,
   files: GitFileEntry[],
+  fill = false,
 ): string {
-  const isExpanded = state.expandedSection === sectionId;
+  const isExpanded = state.expandedSections.has(sectionId);
   const count = files.length;
   const loc = tallyLoc(files);
 
@@ -244,7 +368,7 @@ function renderSection(
       `</span>`;
   }
 
-  let html = `<div class="git-section${isExpanded ? ' git-section-expanded' : ''}">
+  let html = `<div class="git-section${isExpanded ? ' git-section-expanded' : ''}${fill ? ' git-section-fill' : ''}">
     <button class="git-section-header" data-section="${sectionId}">
       <span class="git-section-chevron">${isExpanded ? '\u25BE' : '\u25B8'}</span>
       <span class="git-section-title">${escapeHtml(title)}</span>
@@ -263,21 +387,32 @@ function renderSection(
   return html;
 }
 
-function renderCommitsSection(state: GitPanelState, commits: GitLogEntry[]): string {
+function renderCommitsSection(state: GitPanelState, commits: GitLogEntry[], fill = false): string {
   if (commits.length === 0) return '';
 
-  let html = `<div class="git-commits-section">
+  const isExpanded = state.expandedSections.has('commits');
+
+  let html = `<div class="git-commits-section${fill ? ' git-commits-fill' : ''}">
     <button class="git-section-toggle" data-section="commits">
       ${t('git.recentCommits')} (${commits.length})
-      <span class="git-section-chevron">${state.showCommits ? '\u25BE' : '\u25B8'}</span>
+      <span class="git-section-chevron">${isExpanded ? '\u25BE' : '\u25B8'}</span>
     </button>`;
 
-  if (state.showCommits) {
+  if (isExpanded) {
     html += '<div class="git-commits-list">';
     for (const commit of commits) {
+      const metaParts = [commit.author, commit.date]
+        .filter((part) => part.length > 0)
+        .map((part) => escapeHtml(part));
+      const metaHtml =
+        metaParts.length > 0 ? `<div class="git-commit-meta">${metaParts.join(' • ')}</div>` : '';
+
       html += `<div class="git-commit-entry">
-        <span class="git-commit-hash">${escapeHtml(commit.shortHash)}</span>
-        <span class="git-commit-msg">${escapeHtml(commit.message)}</span>
+        <div class="git-commit-main">
+          <span class="git-commit-hash">${escapeHtml(commit.shortHash)}</span>
+          <span class="git-commit-msg">${escapeHtml(commit.message)}</span>
+        </div>
+        ${metaHtml}
       </div>`;
     }
     html += '</div>';
@@ -293,14 +428,25 @@ function bindPanelEvents(state: GitPanelState): void {
   container.querySelectorAll<HTMLElement>('.git-section-header').forEach((el) => {
     el.addEventListener('click', () => {
       const section = el.dataset.section as SectionId;
-      state.expandedSection = state.expandedSection === section ? null : section;
+      if (state.expandedSections.has(section)) {
+        state.expandedSections.delete(section);
+      } else {
+        state.expandedSections.add(section);
+      }
       renderPanel(state);
     });
   });
 
-  container.querySelector('.git-section-toggle')?.addEventListener('click', () => {
-    state.showCommits = !state.showCommits;
-    renderPanel(state);
+  container.querySelectorAll<HTMLElement>('.git-section-toggle').forEach((el) => {
+    el.addEventListener('click', () => {
+      const section = el.dataset.section as PanelSectionId;
+      if (state.expandedSections.has(section)) {
+        state.expandedSections.delete(section);
+      } else {
+        state.expandedSections.add(section);
+      }
+      renderPanel(state);
+    });
   });
 
   container.querySelectorAll<HTMLElement>('.git-tree-file').forEach((el) => {
@@ -308,10 +454,11 @@ function bindPanelEvents(state: GitPanelState): void {
       const path = el.dataset.path;
       if (!path || !status) return;
 
-      const isStaged = status.staged.some((f) => f.path === path);
-      const isUntracked = status.untracked.some((f) => f.path === path);
+      if (el.classList.contains('git-tree-file-disabled')) {
+        return;
+      }
 
-      if (isUntracked) return;
+      const isStaged = status.staged.some((f) => f.path === path);
 
       void openDiffOverlay(sessionId, path, isStaged);
     });

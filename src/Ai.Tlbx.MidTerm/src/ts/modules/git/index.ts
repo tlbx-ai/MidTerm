@@ -7,7 +7,7 @@
  */
 
 import { createLogger } from '../logging';
-import { setGitClickHandler, updateAllGitIndicators } from '../sessionTabs';
+import { setGitClickHandler, updateGitIndicatorForSession } from '../sessionTabs';
 import { $activeSessionId } from '../../stores';
 import { addProcessStateListener } from '../process';
 import { updateGitStatus, destroyGitPanel } from './gitPanel';
@@ -34,11 +34,7 @@ export function initGitPanel(): void {
   setGitStatusCallback((sessionId, status) => {
     cachedStatuses.set(sessionId, status);
     updateGitStatus(sessionId, status);
-
-    const activeId = $activeSessionId.get();
-    if (activeId === sessionId) {
-      updateAllGitIndicators(status);
-    }
+    updateGitIndicatorForSession(sessionId, status);
   });
 
   $activeSessionId.subscribe((sessionId) => {
@@ -48,12 +44,11 @@ export function initGitPanel(): void {
     previousSessionId = sessionId ?? null;
 
     if (!sessionId) {
-      updateAllGitIndicators(null);
       return;
     }
     subscribeToSession(sessionId);
     const cached = cachedStatuses.get(sessionId);
-    updateAllGitIndicators(cached ?? null);
+    updateGitIndicatorForSession(sessionId, cached ?? null);
   });
 
   addProcessStateListener((sessionId, state) => {
@@ -67,10 +62,7 @@ export function initGitPanel(): void {
     if (oldCwd) {
       emitCwdDiag(sessionId, oldCwd, newCwd);
       cachedStatuses.delete(sessionId);
-      const activeId = $activeSessionId.get();
-      if (activeId === sessionId) {
-        updateAllGitIndicators(null);
-      }
+      updateGitIndicatorForSession(sessionId, null);
       triggerGitFallback(sessionId);
     }
   });

@@ -23,4 +23,6 @@ public sealed class SessionInfoDto
     public int Order { get; set; }
     public string? ParentSessionId { get; set; }
     public string? BookmarkId { get; set; }
+    public bool AgentControlled { get; set; }
+    public SessionSupervisorInfoDto? Supervisor { get; set; }
 }

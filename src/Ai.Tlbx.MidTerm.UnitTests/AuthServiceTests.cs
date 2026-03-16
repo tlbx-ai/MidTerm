@@ -1,6 +1,8 @@
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Settings;
 using Microsoft.Extensions.Time.Testing;
+using Microsoft.AspNetCore.Http;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -10,6 +12,7 @@ public class AuthServiceTests : IDisposable
     private readonly string _tempDir;
     private readonly SettingsService _settingsService;
     private readonly FakeTimeProvider _timeProvider;
+    private readonly ApiKeyService _apiKeyService;
     private readonly AuthService _authService;
 
     public AuthServiceTests()
@@ -21,6 +24,7 @@ public class AuthServiceTests : IDisposable
             _tempDir = string.Empty;
             _settingsService = null!;
             _timeProvider = null!;
+            _apiKeyService = null!;
             _authService = null!;
             return;
         }
@@ -29,7 +33,8 @@ public class AuthServiceTests : IDisposable
         Directory.CreateDirectory(_tempDir);
         _settingsService = new SettingsService(_tempDir);
         _timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        _authService = new AuthService(_settingsService, _timeProvider);
+        _apiKeyService = new ApiKeyService(_settingsService, _timeProvider);
+        _authService = new AuthService(_settingsService, _apiKeyService, _timeProvider);
     }
 
     private static bool IsWindows => OperatingSystem.IsWindows();
@@ -302,5 +307,43 @@ public class AuthServiceTests : IDisposable
     {
         if (!IsWindows) return;
         Assert.False(_authService.ValidateSessionToken("notavalidtoken"));
+    }
+
+    [Fact]
+    public void AuthenticateRequest_BearerApiKey_ReturnsApiKey()
+    {
+        if (!IsWindows) return;
+
+        var settings = _settingsService.Load();
+        settings.AuthenticationEnabled = true;
+        settings.PasswordHash = AuthService.HashPasswordStatic("Secret123");
+        _settingsService.Save(settings);
+
+        var created = _apiKeyService.CreateApiKey("Primary Agent");
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {created.Token}";
+
+        var result = _authService.AuthenticateRequest(context.Request);
+
+        Assert.Equal(RequestAuthMethod.ApiKey, result);
+    }
+
+    [Fact]
+    public void AuthenticateRequest_XApiKeyHeader_ReturnsApiKey()
+    {
+        if (!IsWindows) return;
+
+        var settings = _settingsService.Load();
+        settings.AuthenticationEnabled = true;
+        settings.PasswordHash = AuthService.HashPasswordStatic("Secret123");
+        _settingsService.Save(settings);
+
+        var created = _apiKeyService.CreateApiKey("Secondary Agent");
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-API-Key"] = created.Token;
+
+        var result = _authService.AuthenticateRequest(context.Request);
+
+        Assert.Equal(RequestAuthMethod.ApiKey, result);
     }
 }

@@ -1,0 +1,254 @@
+using System.Text;
+using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Xunit;
+
+namespace Ai.Tlbx.MidTerm.UnitTests;
+
+public sealed class SessionApiEndpointsTests
+{
+    [Fact]
+    public void TryGetInputBytes_TextAppendNewline_UsesCarriageReturn()
+    {
+        var request = new SessionInputRequest
+        {
+            Text = "Write-Output test",
+            AppendNewline = true
+        };
+
+        var ok = SessionApiEndpoints.TryGetInputBytes(request, out var data, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("Write-Output test\r", Encoding.UTF8.GetString(data));
+    }
+
+    [Fact]
+    public void TryGetInputBytes_Base64AppendNewline_UsesCarriageReturn()
+    {
+        var request = new SessionInputRequest
+        {
+            Base64 = Convert.ToBase64String([0x41, 0x42]),
+            AppendNewline = true
+        };
+
+        var ok = SessionApiEndpoints.TryGetInputBytes(request, out var data, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal([0x41, 0x42, 0x0D], data);
+    }
+
+    [Fact]
+    public void TryGetKeyInputBytes_TranslatesNamedKeys()
+    {
+        var request = new SessionKeyInputRequest
+        {
+            Keys = ["Up", "Enter"]
+        };
+
+        var ok = SessionApiEndpoints.TryGetKeyInputBytes(request, out var data, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal([0x1B, 0x5B, 0x41, 0x0D], data);
+    }
+
+    [Fact]
+    public void TryGetKeyInputBytes_RejectsEmptyNonLiteralKeys()
+    {
+        var request = new SessionKeyInputRequest
+        {
+            Keys = ["Enter", ""]
+        };
+
+        var ok = SessionApiEndpoints.TryGetKeyInputBytes(request, out var data, out var error);
+
+        Assert.False(ok);
+        Assert.Equal("Keys cannot be empty.", error);
+        Assert.Empty(data);
+    }
+
+    [Fact]
+    public void TryGetPromptInputSequence_DefaultsToEnterSubmitWithoutInterrupt()
+    {
+        var request = new SessionPromptRequest
+        {
+            Text = "status"
+        };
+
+        var ok = SessionApiEndpoints.TryGetPromptInputSequence(
+            request,
+            out var interruptData,
+            out var promptData,
+            out var submitData,
+            out var interruptDelayMs,
+            out var submitDelayMs,
+            out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Null(interruptData);
+        Assert.Equal("status", Encoding.UTF8.GetString(promptData));
+        Assert.Equal([0x0D], submitData);
+        Assert.Equal(150, interruptDelayMs);
+        Assert.Equal(300, submitDelayMs);
+    }
+
+    [Fact]
+    public void TryGetPromptInputSequence_InterruptFirst_UsesConfiguredKeySequences()
+    {
+        var request = new SessionPromptRequest
+        {
+            Text = "continue",
+            InterruptFirst = true,
+            InterruptDelayMs = 25,
+            SubmitDelayMs = 50
+        };
+
+        var ok = SessionApiEndpoints.TryGetPromptInputSequence(
+            request,
+            out var interruptData,
+            out var promptData,
+            out var submitData,
+            out var interruptDelayMs,
+            out var submitDelayMs,
+            out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.NotNull(interruptData);
+        Assert.Equal([(byte)0x03], interruptData);
+        Assert.Equal("continue", Encoding.UTF8.GetString(promptData));
+        Assert.Equal([0x0D], submitData);
+        Assert.Equal(25, interruptDelayMs);
+        Assert.Equal(50, submitDelayMs);
+    }
+
+    [Fact]
+    public void TryGetPromptInputSequence_RejectsNegativeDelays()
+    {
+        var request = new SessionPromptRequest
+        {
+            Text = "status",
+            SubmitDelayMs = -1
+        };
+
+        var ok = SessionApiEndpoints.TryGetPromptInputSequence(
+            request,
+            out var interruptData,
+            out var promptData,
+            out var submitData,
+            out var interruptDelayMs,
+            out var submitDelayMs,
+            out var error);
+
+        Assert.False(ok);
+        Assert.Equal("Delay values cannot be negative.", error);
+        Assert.Null(interruptData);
+        Assert.Empty(promptData);
+        Assert.Empty(submitData);
+        Assert.Equal(0, interruptDelayMs);
+        Assert.Equal(0, submitDelayMs);
+    }
+
+    [Fact]
+    public void TryBuildWorkerAutoResumePlan_UsesRegisteredWorkerWhenShellFallback()
+    {
+        var registry = new WorkerSessionRegistryService();
+        registry.Register("s1", AiCliProfileService.CodexProfile, "codex --yolo", ["/model"], 900, 220);
+
+        var session = new SessionInfoDto
+        {
+            Id = "s1",
+            ShellType = "Pwsh",
+            ForegroundName = "pwsh",
+            Supervisor = new SessionSupervisorInfoDto
+            {
+                State = SessionSupervisorService.ShellState
+            }
+        };
+
+        var ok = SessionApiEndpoints.TryBuildWorkerAutoResumePlan(
+            "s1",
+            new SessionPromptRequest
+            {
+                Text = "continue work"
+            },
+            session,
+            new AiCliProfileService(),
+            registry,
+            out var plan);
+
+        Assert.True(ok);
+        Assert.Equal("codex --yolo", plan.LaunchCommand);
+        Assert.Equal(AiCliProfileService.CodexProfile, plan.Profile);
+        Assert.Equal(["/model"], plan.SlashCommands);
+        Assert.Equal(900, plan.LaunchDelayMs);
+        Assert.Equal(220, plan.SlashCommandDelayMs);
+    }
+
+    [Fact]
+    public void TryBuildWorkerAutoResumePlan_FallsBackToProfileDefaultLaunchCommand()
+    {
+        var session = new SessionInfoDto
+        {
+            Id = "s2",
+            ShellType = "Pwsh",
+            ForegroundName = "pwsh",
+            Supervisor = new SessionSupervisorInfoDto
+            {
+                State = SessionSupervisorService.ShellState
+            }
+        };
+
+        var ok = SessionApiEndpoints.TryBuildWorkerAutoResumePlan(
+            "s2",
+            new SessionPromptRequest
+            {
+                Text = "continue work",
+                Profile = AiCliProfileService.CodexProfile
+            },
+            session,
+            new AiCliProfileService(),
+            new WorkerSessionRegistryService(),
+            out var plan);
+
+        Assert.True(ok);
+        Assert.Equal("codex --yolo", plan.LaunchCommand);
+        Assert.Equal(AiCliProfileService.CodexProfile, plan.Profile);
+        Assert.Empty(plan.SlashCommands);
+        Assert.Equal(1200, plan.LaunchDelayMs);
+    }
+
+    [Fact]
+    public void TryBuildWorkerAutoResumePlan_DoesNothingWhenSessionIsNotShell()
+    {
+        var session = new SessionInfoDto
+        {
+            Id = "s3",
+            ShellType = "Pwsh",
+            ForegroundName = "node",
+            ForegroundCommandLine = "codex --yolo",
+            Supervisor = new SessionSupervisorInfoDto
+            {
+                State = SessionSupervisorService.IdlePromptState
+            }
+        };
+
+        var ok = SessionApiEndpoints.TryBuildWorkerAutoResumePlan(
+            "s3",
+            new SessionPromptRequest
+            {
+                Text = "continue work",
+                Profile = AiCliProfileService.CodexProfile
+            },
+            session,
+            new AiCliProfileService(),
+            new WorkerSessionRegistryService(),
+            out var plan);
+
+        Assert.False(ok);
+        Assert.Equal(string.Empty, plan.LaunchCommand);
+    }
+}

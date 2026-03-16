@@ -121,14 +121,23 @@ public static class ServerSetup
         builder.Services.AddSingleton<TempCleanupService>();
         builder.Services.AddSingleton<CertificateInfoService>();
         builder.Services.AddSingleton<SecurityStatusService>();
+        builder.Services.AddSingleton<ApiKeyService>();
         builder.Services.AddSingleton<IPowerShellCommandRunner, WindowsPowerShellCommandRunner>();
         builder.Services.AddSingleton<WindowsFirewallService>();
         builder.Services.AddSingleton<MainBrowserService>();
         builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
+        builder.Services.AddSingleton<SessionControlStateService>();
+        builder.Services.AddSingleton<SessionTelemetryService>();
+        builder.Services.AddSingleton<AiCliProfileService>();
+        builder.Services.AddSingleton<SessionSupervisorService>();
+        builder.Services.AddSingleton<WorkerSessionRegistryService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
-            new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService));
+            new TtyHostSessionManager(
+                runAsUser: settings.RunAsUser,
+                isServiceMode: settingsService.IsRunningAsService,
+                sessionControlStateService: _.GetRequiredService<SessionControlStateService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
@@ -184,6 +193,10 @@ public static class ServerSetup
             if (path == "/trust" || path == "/login")
             {
                 context.Request.Path = path + ".html";
+            }
+            else if (path == "/swagger")
+            {
+                context.Request.Path = "/swagger/index.html";
             }
             else if (path == "/shared" || (path?.StartsWith("/shared/", StringComparison.Ordinal) ?? false))
             {

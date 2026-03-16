@@ -180,7 +180,69 @@ public sealed class BrowserCommandService
         }
     }
 
-    public string GetStatusText(string? targetUrl)
+    public string GetStatusText(
+        string? targetUrl,
+        string? sessionId = null,
+        string? previewName = null,
+        string? previewId = null)
+    {
+        var snapshot = GetStatusSnapshot(
+            targetUrl,
+            sessionId,
+            previewName,
+            previewId,
+            connectedUiClientCount: 0);
+        var status = snapshot.Response;
+
+        if (!status.Connected)
+        {
+            return $"disconnected\n{snapshot.DisconnectedReason ?? "Open the web preview panel in MidTerm to enable browser commands."}\n";
+        }
+
+        var clientLabel = snapshot.IsScoped ? "selected" : "default";
+        var lines = new List<string>
+        {
+            "connected",
+            $"target: {status.TargetUrl ?? "(none)"}",
+            $"clients: {status.ConnectedClientCount}"
+        };
+
+        if (status.DefaultClient is { } client)
+        {
+            lines.Add($"{clientLabel} preview: {client.PreviewId ?? "(anonymous)"}");
+            lines.Add($"{clientLabel} preview name: {client.PreviewName ?? "(default)"}");
+            lines.Add($"{clientLabel} session: {client.SessionId ?? "(none)"}");
+            lines.Add($"{clientLabel} browser: {client.BrowserId ?? "(none)"}");
+        }
+        else
+        {
+            lines.Add($"{clientLabel} preview: ambiguous");
+        }
+
+        return string.Join('\n', lines) + "\n";
+    }
+
+    public BrowserStatusResponse GetStatus(
+        string? targetUrl,
+        string? sessionId = null,
+        string? previewName = null,
+        string? previewId = null,
+        int connectedUiClientCount = 0)
+    {
+        return GetStatusSnapshot(
+            targetUrl,
+            sessionId,
+            previewName,
+            previewId,
+            connectedUiClientCount).Response;
+    }
+
+    private BrowserStatusSnapshot GetStatusSnapshot(
+        string? targetUrl,
+        string? sessionId,
+        string? previewName,
+        string? previewId,
+        int connectedUiClientCount)
     {
         var clients = _clients.Values
             .OrderByDescending(c => c.ConnectedAtUtc)
@@ -188,29 +250,104 @@ public sealed class BrowserCommandService
 
         if (clients.Length == 0)
         {
-            return "disconnected\nOpen the web preview panel in MidTerm to enable browser commands.\n";
+            return new BrowserStatusSnapshot
+            {
+                IsScoped = HasStatusScope(sessionId, previewName, previewId),
+                DisconnectedReason = "Open the web preview panel in MidTerm to enable browser commands.",
+                Response = new BrowserStatusResponse
+                {
+                    Connected = false,
+                    ConnectedClientCount = 0,
+                    ConnectedUiClientCount = connectedUiClientCount,
+                    TargetUrl = targetUrl
+                }
+            };
         }
 
-        var lines = new List<string>
+        var matches = FilterClients(clients, sessionId, previewName, previewId);
+        if (matches.Length == 0)
         {
-            "connected",
-            $"target: {targetUrl ?? "(none)"}",
-            $"clients: {clients.Length}"
+            return new BrowserStatusSnapshot
+            {
+                IsScoped = HasStatusScope(sessionId, previewName, previewId),
+                DisconnectedReason = BuildDisconnectedReason(sessionId, previewName, previewId),
+                Response = new BrowserStatusResponse
+                {
+                    Connected = false,
+                    ConnectedClientCount = 0,
+                    ConnectedUiClientCount = connectedUiClientCount,
+                    TargetUrl = targetUrl
+                }
+            };
+        }
+
+        var mainBrowserId = _mainBrowserService?.GetMainBrowserId();
+        return new BrowserStatusSnapshot
+        {
+            IsScoped = HasStatusScope(sessionId, previewName, previewId),
+            Response = new BrowserStatusResponse
+            {
+                Connected = true,
+                ConnectedClientCount = matches.Length,
+                ConnectedUiClientCount = connectedUiClientCount,
+                TargetUrl = targetUrl,
+                DefaultClient = TryResolveDefaultClient(matches, out var client)
+                    ? CreateClientInfo(client, mainBrowserId)
+                    : null,
+                Clients = matches
+                    .Select(c => CreateClientInfo(c, mainBrowserId))
+                    .ToArray()
+            }
         };
+    }
 
-        if (TryResolveDefaultClient(clients, out var client))
+    private static BrowserClient[] FilterClients(
+        BrowserClient[] clients,
+        string? sessionId,
+        string? previewName,
+        string? previewId)
+    {
+        if (!HasStatusScope(sessionId, previewName, previewId))
         {
-            lines.Add($"default preview: {client.PreviewId ?? "(anonymous)"}");
-            lines.Add($"default preview name: {client.PreviewName ?? "(default)"}");
-            lines.Add($"default session: {client.SessionId ?? "(none)"}");
-            lines.Add($"default browser: {client.BrowserId ?? "(none)"}");
-        }
-        else
-        {
-            lines.Add("default preview: ambiguous");
+            return clients;
         }
 
-        return string.Join('\n', lines) + "\n";
+        return clients
+            .Where(c =>
+                (string.IsNullOrWhiteSpace(previewId)
+                    || string.Equals(c.PreviewId, previewId, StringComparison.Ordinal))
+                && (string.IsNullOrWhiteSpace(sessionId)
+                    || string.Equals(c.SessionId, sessionId, StringComparison.Ordinal))
+                && (string.IsNullOrWhiteSpace(previewName)
+                    || string.Equals(c.PreviewName, previewName, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+    }
+
+    private static bool HasStatusScope(string? sessionId, string? previewName, string? previewId)
+    {
+        return !string.IsNullOrWhiteSpace(sessionId)
+            || !string.IsNullOrWhiteSpace(previewName)
+            || !string.IsNullOrWhiteSpace(previewId);
+    }
+
+    private static string BuildDisconnectedReason(string? sessionId, string? previewName, string? previewId)
+    {
+        if (!string.IsNullOrWhiteSpace(previewId))
+        {
+            return $"No browser preview connected for preview '{previewId}'.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(previewName))
+        {
+            return $"No browser preview connected for preview '{previewName}' in session '{sessionId ?? "(any)"}'.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            return $"No browser preview connected for session '{sessionId}'.";
+        }
+
+        return "Open the web preview panel in MidTerm to enable browser commands.";
     }
 
     private void CancelPendingForClient(string connectionId)
@@ -364,6 +501,20 @@ public sealed class BrowserCommandService
         return true;
     }
 
+    private static BrowserClientInfo CreateClientInfo(BrowserClient client, string? mainBrowserId)
+    {
+        return new BrowserClientInfo
+        {
+            SessionId = client.SessionId,
+            PreviewName = client.PreviewName,
+            PreviewId = client.PreviewId,
+            BrowserId = client.BrowserId,
+            ConnectedAtUtc = client.ConnectedAtUtc,
+            IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
+                && string.Equals(client.BrowserId, mainBrowserId, StringComparison.Ordinal)
+        };
+    }
+
     private sealed class BrowserClient
     {
         public string ConnectionId { get; init; } = "";
@@ -380,5 +531,12 @@ public sealed class BrowserCommandService
         public string ConnectionId { get; init; } = "";
         public string? PreviewId { get; init; }
         public required TaskCompletionSource<BrowserWsResult> CompletionSource { get; init; }
+    }
+
+    private sealed class BrowserStatusSnapshot
+    {
+        public required BrowserStatusResponse Response { get; init; }
+        public string? DisconnectedReason { get; init; }
+        public bool IsScoped { get; init; }
     }
 }

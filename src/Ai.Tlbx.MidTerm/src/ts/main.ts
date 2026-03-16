@@ -18,7 +18,6 @@ import {
   setSelectSessionCallback,
   sendInput,
   sendActiveSessionHint,
-  claimMainBrowser,
   setSessionBytesCallback,
   setSuppressHeatCallback,
 } from './modules/comms';
@@ -31,7 +30,6 @@ import {
   setShowBellCallback,
   setupResizeObserver,
   setupVisualViewport,
-  autoResizeAllTerminalsImmediate,
   bindSearchEvents,
   scrollToBottom,
   focusActiveTerminal,
@@ -40,6 +38,7 @@ import {
   calculateOptimalDimensions,
   getEffectiveTerminalFontSize,
   handleClipboardPaste,
+  pasteToTerminal,
   initMobilePiP,
   recordMobilePiPBytes,
 } from './modules/terminal';
@@ -91,6 +90,7 @@ import {
   type LaunchEntry,
 } from './modules/history';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
+import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
 import { buildProcessCwdTuple, buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
   initTouchController,
@@ -146,8 +146,6 @@ import {
   $activeSessionId,
   $sessionList,
   $currentSettings,
-  $isMainBrowser,
-  $showMainBrowserButton,
   setSession,
   removeSession,
   getSession,
@@ -165,6 +163,7 @@ import {
   renameSession as apiRenameSession,
   patchHistoryEntry,
   setSessionBookmark,
+  setSessionControl as apiSetSessionControl,
 } from './api/client';
 
 // Create logger for main module
@@ -208,7 +207,6 @@ async function init(): Promise<void> {
 
   cacheDOMElements();
   await initI18n();
-  initMainBrowserButton();
   initTrafficIndicator();
   setSessionBytesCallback((sessionId, bytes) => {
     recordBytes(sessionId, bytes);
@@ -354,6 +352,7 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
+    onToggleAgentControl: toggleAgentControl,
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
     },
@@ -455,9 +454,21 @@ async function createSession(): Promise<void> {
     cols: cols,
     rows: rows,
     manuallyNamed: false,
+    supervisor: {
+      state: 'unknown',
+      profile: 'unknown',
+      needsAttention: false,
+      attentionReason: null,
+      attentionScore: 0,
+      lastInputAt: null,
+      lastOutputAt: null,
+      lastBellAt: null,
+      currentHeat: 0,
+    },
     order: Date.now(),
     parentSessionId: null,
     bookmarkId: null,
+    agentControlled: false,
   };
   setSession(tempSession);
   pendingSessions.add(tempId);
@@ -600,7 +611,11 @@ async function injectGuidance(sessionId: string): Promise<void> {
     const res = await fetch(`/api/sessions/${sessionId}/inject-guidance`, { method: 'POST' });
     if (!res.ok) {
       log.warn(() => `Inject guidance failed: ${res.status}`);
+      return;
     }
+
+    const fg = getForegroundInfo(sessionId);
+    await pasteToTerminal(sessionId, t(getInjectGuidancePromptKey(fg.name)));
   } catch (e: unknown) {
     log.error(() => `Failed to inject guidance for ${sessionId}: ${String(e)}`);
   }
@@ -638,6 +653,47 @@ function renameSession(sessionId: string, newName: string | null): void {
       // Subscription handles renderSessionList and updateMobileTitle via store change
       log.error(() => `Failed to rename session ${sessionId}: ${String(e)}`);
     });
+}
+
+function getSessionFamilyIds(sessionId: string): string[] {
+  const sessions = $sessionList.get();
+  const session = sessions.find((item) => item.id === sessionId);
+  if (!session) {
+    return [];
+  }
+
+  const rootSessionId = session.parentSessionId ?? session.id;
+  return sessions
+    .filter((item) => item.id === rootSessionId || item.parentSessionId === rootSessionId)
+    .map((item) => item.id)
+    .filter((id): id is string => !!id);
+}
+
+function toggleAgentControl(sessionId: string): void {
+  const session = getSession(sessionId);
+  if (!session) return;
+
+  const nextAgentControlled = !session.agentControlled;
+  const sessionFamilyIds = getSessionFamilyIds(sessionId);
+  const previousSnapshots = sessionFamilyIds
+    .map((id) => getSession(id))
+    .filter((item): item is Session => !!item)
+    .map((item) => ({ ...item }));
+
+  for (const snapshot of previousSnapshots) {
+    setSession({
+      ...snapshot,
+      agentControlled: nextAgentControlled,
+    });
+  }
+
+  apiSetSessionControl(sessionId, nextAgentControlled).catch((e: unknown) => {
+    for (const snapshot of previousSnapshots) {
+      setSession(snapshot);
+    }
+
+    log.error(() => `Failed to toggle agent control for ${sessionId}: ${String(e)}`);
+  });
 }
 
 async function patchPinnedHistoryLabelIfMatchingTuple(
@@ -919,49 +975,6 @@ function showBellNotification(sessionId: string): void {
       }, 200);
     }
   }
-}
-
-// =============================================================================
-// Main Browser Toggle
-// =============================================================================
-
-function initMainBrowserButton(): void {
-  const btn = document.getElementById('btn-main-browser');
-  if (!btn) return;
-
-  function updateState(): void {
-    if (!btn) return;
-    const isMain = $isMainBrowser.get();
-    const showButton = $showMainBrowserButton.get();
-
-    if (!showButton || isMain) {
-      btn.style.display = 'none';
-      btn.classList.remove('main-browser-active');
-      return;
-    }
-
-    btn.style.display = '';
-    btn.classList.remove('main-browser-active');
-    btn.title = t('sidebar.claimMainBrowser');
-  }
-
-  updateState();
-
-  btn.addEventListener('click', () => {
-    if ($isMainBrowser.get()) return;
-    claimMainBrowser();
-  });
-
-  $isMainBrowser.subscribe((isMain) => {
-    updateState();
-    if (isMain) {
-      requestAnimationFrame(autoResizeAllTerminalsImmediate);
-    }
-  });
-
-  $showMainBrowserButton.subscribe(() => {
-    updateState();
-  });
 }
 
 // =============================================================================

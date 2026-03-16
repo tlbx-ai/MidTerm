@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using Ai.Tlbx.MidTerm.Models.Security;
+using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -19,12 +21,17 @@ public sealed class AuthService
     private const int SessionTokenValidityHours = 24 * 3; // 3 days (sliding window refresh on activity)
 
     private readonly SettingsService _settingsService;
+    private readonly ApiKeyService _apiKeyService;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, RateLimitEntry> _rateLimits = new();
 
-    public AuthService(SettingsService settingsService, TimeProvider? timeProvider = null)
+    public AuthService(
+        SettingsService settingsService,
+        ApiKeyService apiKeyService,
+        TimeProvider? timeProvider = null)
     {
         _settingsService = settingsService;
+        _apiKeyService = apiKeyService;
         _timeProvider = timeProvider ?? TimeProvider.System;
 
         var settings = _settingsService.Load();
@@ -47,6 +54,29 @@ public sealed class AuthService
         {
             _settingsService.Save(settings);
         }
+    }
+
+    public RequestAuthMethod AuthenticateRequest(HttpRequest request)
+    {
+        var settings = _settingsService.Load();
+        if (!settings.AuthenticationEnabled || string.IsNullOrEmpty(settings.PasswordHash))
+        {
+            return RequestAuthMethod.OpenAccess;
+        }
+
+        var sessionToken = request.Cookies[SessionCookieName];
+        if (sessionToken is not null && ValidateSessionToken(sessionToken))
+        {
+            return RequestAuthMethod.SessionCookie;
+        }
+
+        var apiKey = ExtractApiKey(request);
+        if (apiKey is not null && _apiKeyService.TryValidateApiKey(apiKey, out _))
+        {
+            return RequestAuthMethod.ApiKey;
+        }
+
+        return RequestAuthMethod.None;
     }
 
     /// <summary>
@@ -246,6 +276,34 @@ public sealed class AuthService
         using var hmac = new HMACSHA256(Convert.FromBase64String(secret));
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
         return Convert.ToBase64String(hash);
+    }
+
+    private static string? ExtractApiKey(HttpRequest request)
+    {
+        if (request.Headers.TryGetValue("Authorization", out var authorization))
+        {
+            var value = authorization.ToString();
+            const string prefix = "Bearer ";
+            if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var token = value[prefix.Length..].Trim();
+                if (!string.IsNullOrEmpty(token))
+                {
+                    return token;
+                }
+            }
+        }
+
+        if (request.Headers.TryGetValue("X-API-Key", out var apiKeyHeader))
+        {
+            var token = apiKeyHeader.ToString().Trim();
+            if (!string.IsNullOrEmpty(token))
+            {
+                return token;
+            }
+        }
+
+        return null;
     }
 
     private sealed class RateLimitEntry

@@ -18,6 +18,7 @@ public static class BrowserEndpoints
         BrowserUiBridge? uiBridge = null)
     {
         MapPreviewClientEndpoint(app, previewRegistry, previewOriginService, webPreviewService);
+        MapStatusEndpoint(app, commandService, webPreviewService, uiBridge);
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService, uiBridge);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
 
@@ -25,6 +26,27 @@ public static class BrowserEndpoints
         {
             MapUiEndpoints(app, uiBridge);
         }
+    }
+
+    private static void MapStatusEndpoint(
+        WebApplication app,
+        BrowserCommandService commandService,
+        WebPreviewService webPreviewService,
+        BrowserUiBridge? uiBridge)
+    {
+        app.MapGet("/api/browser/status", (string? sessionId, string? previewName, string? previewId) =>
+        {
+            var targetUrl = !string.IsNullOrWhiteSpace(sessionId)
+                ? webPreviewService.GetTargetUrl(sessionId, previewName)
+                : null;
+            var status = commandService.GetStatus(
+                targetUrl,
+                sessionId,
+                previewName,
+                previewId,
+                uiBridge?.ConnectedBrowserCount ?? 0);
+            return Results.Json(status, AppJsonContext.Default.BrowserStatusResponse);
+        });
     }
 
     private static void MapPreviewClientEndpoint(
@@ -131,10 +153,15 @@ public static class BrowserEndpoints
             {
                 var sessionId = GetFlagValue(args, "--session");
                 var previewName = GetFlagValue(args, "--preview");
+                var previewId = GetFlagValue(args, "--preview-id");
                 var targetUrl = sessionId is not null
                     ? webPreviewService.GetTargetUrl(sessionId, previewName)
                     : null;
-                var status = commandService.GetStatusText(targetUrl).TrimEnd('\n', '\r');
+                var status = commandService.GetStatusText(
+                    targetUrl,
+                    sessionId,
+                    previewName,
+                    previewId).TrimEnd('\n', '\r');
                 status += $"\nui clients: {uiBridge?.ConnectedBrowserCount ?? 0}\n";
                 return Results.Text(status);
             }
@@ -174,6 +201,17 @@ public static class BrowserEndpoints
         TtyHostSessionManager sessionManager,
         WebPreviewService webPreviewService)
     {
+        app.MapPost("/api/browser/command", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Command))
+            {
+                return Results.BadRequest("command required");
+            }
+
+            var result = await commandService.ExecuteCommandAsync(request, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
         app.MapPost("/api/browser/query", async (BrowserCommandRequest request, HttpContext ctx) =>
         {
             var cmd = WithCommand(request, "query");

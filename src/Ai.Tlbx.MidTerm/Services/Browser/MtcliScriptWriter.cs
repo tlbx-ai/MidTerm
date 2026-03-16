@@ -26,26 +26,61 @@ public static class MtcliScriptWriter
         #
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
         # It only works on this machine's MidTerm instance. Not a security risk.
+        # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port}}"
         _MK="mm-session={{token}}"
-        _MC() { curl -sfk -b "$_MK" "$@" 2>/dev/null; }
+        _MC() {
+          if [ -n "${MT_API_KEY:-}" ]; then
+            curl -sfk -H "Authorization: Bearer $MT_API_KEY" "$@" 2>/dev/null
+          else
+            curl -sfk -b "$_MK" "$@" 2>/dev/null
+          fi
+        }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
-        _MBR() { curl -sk -b "$_MK" "$@" 2>/dev/null; }
+        _MBR() {
+          if [ -n "${MT_API_KEY:-}" ]; then
+            curl -sk -H "Authorization: Bearer $MT_API_KEY" "$@" 2>/dev/null
+          else
+            curl -sk -b "$_MK" "$@" 2>/dev/null
+          fi
+        }
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
         _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
+        _MBOOL() {
+          case "${1:-}" in
+            1|true|TRUE|True|yes|YES|on|ON) printf 'true' ;;
+            *) printf 'false' ;;
+          esac
+        }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
+        _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
+        _MNOSESSION() { [[ "$1" == *"No browser preview connected for"* ]]; }
         _MBB() {
           local args=("$@")
+          local original=("$@")
+          local injectedSession=0 injectedPreview=0 output exitCode
           if [ -n "$(_MSID)" ] && ! _MHAS "--session" "${args[@]}"; then
             args+=("--session" "$(_MSID)")
+            injectedSession=1
           fi
-          if [ -n "$(_MPREVIEW)" ] && ! _MHAS "--preview" "${args[@]}"; then
+          if [ $injectedSession -eq 1 ] && ! _MHAS "--preview" "${args[@]}"; then
             args+=("--preview" "$(_MPREVIEW)")
+            injectedPreview=1
+          elif [ -n "${MT_PREVIEW_NAME:-}" ] && ! _MHAS "--preview" "${args[@]}"; then
+            args+=("--preview" "$(_MPREVIEW)")
+            injectedPreview=1
           fi
-          _MB "${args[@]}"
+          output=$(_MB "${args[@]}")
+          exitCode=$?
+          if [ $injectedSession -eq 1 ] && _MNOSESSION "$output"; then
+            output=$(_MB "${original[@]}")
+            exitCode=$?
+          fi
+          printf '%s' "$output"
+          return $exitCode
         }
         _MQ() {
           if [ -n "$(_MSID)" ]; then
@@ -102,6 +137,7 @@ public static class MtcliScriptWriter
 
         # Web preview (dev browser)
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
+        _MJE() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
         mt_navigate()   { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         # mt_open URL  — open URL in web preview panel and dock it
         mt_open()       { mt_navigate "$1"; _MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
@@ -115,6 +151,17 @@ public static class MtcliScriptWriter
         mt_clearcookies() { _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
         # mt_hardreload  — clear cookies + reload (fresh session)
         mt_hardreload() { mt_clearcookies; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"; }
+        # mt_preview_reset [URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
+        mt_preview_reset() {
+          local url="${1:-}"
+          local reset_script='(async () => { try { localStorage.clear(); sessionStorage.clear(); if (window.indexedDB && indexedDB.databases) { const dbs = await indexedDB.databases(); for (const db of dbs) { if (db && db.name) { try { indexedDB.deleteDatabase(db.name); } catch { } } } } return JSON.stringify({ ok: true }); } catch (error) { return JSON.stringify({ ok: false, error: String(error) }); } })()'
+          if [ -n "$url" ]; then
+            mt_navigate "$url" >/dev/null
+          fi
+          mt_clearcookies >/dev/null
+          mt_exec "$reset_script" >/dev/null 2>&1 || true
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"
+        }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
         mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MSID)&previewName=$(_MPREVIEW)&limit=$n"; }
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
@@ -139,7 +186,175 @@ public static class MtcliScriptWriter
 
         # Session management
         mt_sessions()   { _MC "$_MT/api/sessions"; }
-        mt_buffer()     { _MC "$_MT/api/sessions/$1/buffer"; }
+        mt_buffer() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC "$_MT/api/sessions/$sid/buffer"
+        }
+        # mt_tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
+        mt_tail() {
+          local sid lines
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          lines="${1:-120}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC "$_MT/api/sessions/$sid/buffer/tail?lines=$lines&stripAnsi=true"
+        }
+        # mt_sendtext [SESSION_ID] TEXT  — send literal text without auto-submit
+        mt_sendtext() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          local text="$*"
+          local body="{\"text\":\"$(_MJE "$text")\",\"appendNewline\":false}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/text"
+        }
+        # mt_prompt [SESSION_ID] TEXT  — state-aware send + submit via the server prompt API
+        mt_prompt() {
+          local sid submit_delay_ms interrupt_delay_ms interrupt_first
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          submit_delay_ms="${MT_PROMPT_DELAY_MS:-300}"
+          interrupt_delay_ms="${MT_PROMPT_INTERRUPT_DELAY_MS:-150}"
+          interrupt_first="$(_MBOOL "${MT_PROMPT_INTERRUPT_FIRST:-false}")"
+          local profile="${MT_AI_PROFILE:-}"
+          local body="{\"text\":\"$(_MJE "$*")\",\"mode\":\"auto\",\"profile\":\"$(_MJE "$profile")\",\"interruptFirst\":$interrupt_first,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/prompt"
+        }
+        # mt_prompt_now [SESSION_ID] TEXT  — interrupt first, then atomically send and submit the prompt
+        mt_prompt_now() {
+          local sid submit_delay_ms interrupt_delay_ms
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          submit_delay_ms="${MT_PROMPT_DELAY_MS:-300}"
+          interrupt_delay_ms="${MT_PROMPT_INTERRUPT_DELAY_MS:-150}"
+          local profile="${MT_AI_PROFILE:-}"
+          local body="{\"text\":\"$(_MJE "$*")\",\"mode\":\"interrupt-first\",\"profile\":\"$(_MJE "$profile")\",\"interruptFirst\":true,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/prompt"
+        }
+        # mt_slash [SESSION_ID] COMMAND  — send a slash command through the prompt API
+        mt_slash() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Slash command required." >&2; return 1; }
+          local command="$*"
+          [[ "$command" == /* ]] || command="/$command"
+          MT_AI_PROFILE="${MT_AI_PROFILE:-}" mt_prompt "$sid" "$command"
+        }
+        # mt_sendkeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
+        mt_sendkeys() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "At least one key is required." >&2; return 1; }
+          local body='{"keys":['
+          local first=1
+          local key
+          for key in "$@"; do
+            if [ $first -eq 0 ]; then body+=','; fi
+            body+="\"$(_ME "$key")\""
+            first=0
+          done
+          body+=']}'
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/keys"
+        }
+        mt_enter()      { mt_sendkeys "$@" Enter; }
+        mt_ctrlc()      { mt_sendkeys "$@" C-c; }
+        mt_escape()     { mt_sendkeys "$@" Escape; }
+        mt_up()         { mt_sendkeys "$@" Up; }
+        mt_down()       { mt_sendkeys "$@" Down; }
+        mt_left()       { mt_sendkeys "$@" Left; }
+        mt_right()      { mt_sendkeys "$@" Right; }
+        # mt_inject [SESSION_ID]  — ensure .midterm + mtcli helpers in the target cwd
+        mt_inject() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC -X POST "$_MT/api/sessions/$sid/inject-guidance"
+        }
+        # mt_activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
+        mt_activity() {
+          local sid seconds bells
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          seconds="${1:-120}"
+          bells="${2:-25}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC "$_MT/api/sessions/$sid/activity?seconds=$seconds&bellLimit=$bells"
+        }
+        # mt_attention [AGENT_ONLY]  — ranked fleet view for supervision
+        mt_attention() {
+          local agent_only="${1:-true}"
+          _MC "$_MT/api/sessions/attention?agentOnly=$agent_only"
+        }
+        # mt_bootstrap NAME CWD PROFILE [SLASH_COMMAND ...]  — create an agent-controlled worker session
+        mt_bootstrap() {
+          [ $# -ge 3 ] || { echo "Usage: mt_bootstrap NAME CWD PROFILE [SLASH_COMMAND ...]" >&2; return 1; }
+          local name="$1" cwd="$2" profile="$3"
+          shift 3
+          local launch_delay_ms="${MT_BOOTSTRAP_LAUNCH_DELAY_MS:-1200}"
+          local slash_delay_ms="${MT_BOOTSTRAP_SLASH_DELAY_MS:-350}"
+          local body="{\"name\":\"$(_MJE "$name")\",\"workingDirectory\":\"$(_MJE "$cwd")\",\"profile\":\"$(_MJE "$profile")\",\"agentControlled\":true,\"injectGuidance\":true,\"launchDelayMs\":$launch_delay_ms,\"slashCommandDelayMs\":$slash_delay_ms"
+          if [ $# -gt 0 ]; then
+            body+=',\"slashCommands\":['
+            local first=1
+            local command
+            for command in "$@"; do
+              if [ $first -eq 0 ]; then body+=','; fi
+              body+="\"$(_MJE "$command")\""
+              first=0
+            done
+            body+=']'
+          fi
+          body+='}'
+          _MJ -d "$body" "$_MT/api/workers/bootstrap"
+        }
         # mt_new_session [SHELL] [CWD]  — create a new terminal session, returns JSON with session id
         mt_new_session() {
           local shell="${1:-}" cwd="${2:-}"
@@ -183,19 +398,70 @@ public static class MtcliScriptWriter
         #
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
         # It only works on this machine's MidTerm instance. Not a security risk.
+        # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port}}"
         $script:_MK = "mm-session={{token}}"
 
-        function script:_MC { & curl.exe -sfk -b $script:_MK @args 2>$null }
+        function script:_MC {
+            if ($env:MT_API_KEY) {
+                & curl.exe -sfk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>$null
+            } else {
+                & curl.exe -sfk -b $script:_MK @args 2>$null
+            }
+        }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
-        function script:_MBR { & curl.exe -sk -b $script:_MK @args 2>$null }
+        function script:_MBR {
+            if ($env:MT_API_KEY) {
+                & curl.exe -sk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>$null
+            } else {
+                & curl.exe -sk -b $script:_MK @args 2>$null
+            }
+        }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         function script:_MSID { $env:MT_SESSION_ID }
+        function script:_MIsSessionId {
+            param([string]$Value)
+            return $Value -match '^[A-Za-z0-9]{8}$'
+        }
+        function script:_MResolveSessionArgs {
+            param([string[]]$InputArgs)
+            $remaining = @($InputArgs)
+            $sessionId = _MSID
+            if ($remaining.Count -gt 0 -and (_MIsSessionId $remaining[0])) {
+                $sessionId = $remaining[0]
+                if ($remaining.Count -gt 1) {
+                    $remaining = @($remaining[1..($remaining.Count - 1)])
+                } else {
+                    $remaining = @()
+                }
+            }
+            [pscustomobject]@{
+                SessionId = $sessionId
+                Remaining = $remaining
+            }
+        }
         function script:_MPreview {
             if ($env:MT_PREVIEW_NAME) { return $env:MT_PREVIEW_NAME }
             return "default"
+        }
+        function script:_MShouldRetryAnonymous {
+            param([string]$Output)
+            return $Output -like "*No browser preview connected for*"
+        }
+        function script:_MParseBool {
+            param([string]$Value)
+            if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+            switch -Regex ($Value.Trim()) {
+                '^(1|true|yes|on)$' { return $true }
+                default { return $false }
+            }
+        }
+        function script:_MSendTextRequest {
+            param([string]$SessionId, [string]$Text, [bool]$AppendNewline = $false)
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ text = $Text; appendNewline = $AppendNewline }) "$script:_MT/api/sessions/$SessionId/input/text"
         }
         # Send null-delimited args to text CLI endpoint (browser commands)
         function script:_MB {
@@ -211,14 +477,29 @@ public static class MtcliScriptWriter
             } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
         }
         function script:_MBB {
+            $originalArgs = @($args)
             $allArgs = @($args)
+            $injectedSession = $false
             if ($env:MT_SESSION_ID -and -not ($allArgs -contains "--session")) {
                 $allArgs += @("--session", $env:MT_SESSION_ID)
+                $injectedSession = $true
             }
-            if (-not ($allArgs -contains "--preview")) {
+            $injectedPreview = $false
+            if ($injectedSession -and -not ($allArgs -contains "--preview")) {
                 $allArgs += @("--preview", (_MPreview))
+                $injectedPreview = $true
+            } elseif ($env:MT_PREVIEW_NAME -and -not ($allArgs -contains "--preview")) {
+                $allArgs += @("--preview", (_MPreview))
+                $injectedPreview = $true
             }
-            _MB @allArgs
+            $output = _MB @allArgs
+            $exitCode = $LASTEXITCODE
+            if ($injectedSession -and (_MShouldRetryAnonymous $output)) {
+                $output = _MB @originalArgs
+                $exitCode = $LASTEXITCODE
+            }
+            $global:LASTEXITCODE = $exitCode
+            $output
         }
         function script:_MQuery {
             if (-not $env:MT_SESSION_ID) { return "" }
@@ -296,6 +577,21 @@ public static class MtcliScriptWriter
         function Mt-ClearCookies { _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
         # Mt-HardReload  — clear cookies + reload (fresh session)
         function Mt-HardReload { Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
+        # Mt-PreviewReset [-Url URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
+        function Mt-PreviewReset {
+            param([string]$Url)
+            if ($Url) {
+                Mt-Navigate -Url $Url | Out-Null
+            }
+            Mt-ClearCookies | Out-Null
+            try {
+                $script = "(async () => { try { localStorage.clear(); sessionStorage.clear(); if (window.indexedDB && indexedDB.databases) { const dbs = await indexedDB.databases(); for (const db of dbs) { if (db && db.name) { try { indexedDB.deleteDatabase(db.name); } catch { } } } } return { ok: true }; } catch (error) { return { ok: false, error: String(error) }; } })()"
+                $script | Mt-Exec | Out-Null
+            }
+            catch {
+            }
+            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload"
+        }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
         function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
         # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return
@@ -320,7 +616,199 @@ public static class MtcliScriptWriter
 
         # Session management
         function Mt-Sessions   { _MC "$script:_MT/api/sessions" }
-        function Mt-Buffer     { param([string]$Id) _MC "$script:_MT/api/sessions/$Id/buffer" }
+        function Mt-Buffer {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer"
+        }
+        # Mt-Tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
+        function Mt-Tail {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            $lines = if ($resolved.Remaining.Count -gt 0) { [int]$resolved.Remaining[0] } else { 120 }
+            _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer/tail?lines=$lines&stripAnsi=true"
+        }
+        # Mt-SendText [SESSION_ID] TEXT  — send literal text without auto-submit
+        function Mt-SendText {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $text = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
+
+            _MSendTextRequest -SessionId $sessionId -Text $text -AppendNewline:$false
+        }
+        function script:_MSendPromptRequest {
+            param(
+                [string]$SessionId,
+                [string]$Text,
+                [bool]$InterruptFirst = $false,
+                [int]$InterruptDelayMs = 150,
+                [int]$SubmitDelayMs = 300
+            )
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($Text)) { Write-Error "Text required."; return }
+            _MJ -d (_MH @{
+                text = $Text
+                interruptFirst = $InterruptFirst
+                interruptDelayMs = $InterruptDelayMs
+                submitDelayMs = $SubmitDelayMs
+            }) "$script:_MT/api/sessions/$SessionId/input/prompt"
+        }
+        # Mt-Prompt [SESSION_ID] TEXT [-DelayMs N]  — state-aware send + submit via the server prompt API
+        function Mt-Prompt {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $text = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
+
+            $interruptDelayMs = if ($env:MT_PROMPT_INTERRUPT_DELAY_MS) { [int]$env:MT_PROMPT_INTERRUPT_DELAY_MS } else { 150 }
+            $interruptFirst = _MParseBool $env:MT_PROMPT_INTERRUPT_FIRST
+            _MJ -d (_MH @{
+                text = $text
+                mode = "auto"
+                profile = $env:MT_AI_PROFILE
+                interruptFirst = $interruptFirst
+                interruptDelayMs = $interruptDelayMs
+                submitDelayMs = $DelayMs
+            }) "$script:_MT/api/sessions/$sessionId/input/prompt"
+        }
+        # Mt-PromptNow [SESSION_ID] TEXT [-DelayMs N]  — interrupt first, then atomically send and submit the prompt
+        function Mt-PromptNow {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $text = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
+
+            $interruptDelayMs = if ($env:MT_PROMPT_INTERRUPT_DELAY_MS) { [int]$env:MT_PROMPT_INTERRUPT_DELAY_MS } else { 150 }
+            _MJ -d (_MH @{
+                text = $text
+                mode = "interrupt-first"
+                profile = $env:MT_AI_PROFILE
+                interruptFirst = $true
+                interruptDelayMs = $interruptDelayMs
+                submitDelayMs = $DelayMs
+            }) "$script:_MT/api/sessions/$sessionId/input/prompt"
+        }
+        # Mt-Slash [SESSION_ID] COMMAND  — send a slash command through the prompt API
+        function Mt-Slash {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $command = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($command)) { Write-Error "Slash command required."; return }
+
+            if (-not $command.StartsWith('/')) {
+                $command = "/$command"
+            }
+
+            Mt-Prompt $sessionId $command -DelayMs $DelayMs
+        }
+        # Mt-SendKeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
+        function Mt-SendKeys {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $keys = @($resolved.Remaining)
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            if ($keys.Count -eq 0) { Write-Error "At least one key is required."; return }
+            _MJ -d (_MH @{ keys = $keys }) "$script:_MT/api/sessions/$($resolved.SessionId)/input/keys"
+        }
+        function Mt-Enter {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Enter"
+            Mt-SendKeys @forward
+        }
+        function Mt-Ctrlc {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "C-c"
+            Mt-SendKeys @forward
+        }
+        function Mt-Escape {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Escape"
+            Mt-SendKeys @forward
+        }
+        function Mt-Up {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Up"
+            Mt-SendKeys @forward
+        }
+        function Mt-Down {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Down"
+            Mt-SendKeys @forward
+        }
+        function Mt-Left {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Left"
+            Mt-SendKeys @forward
+        }
+        function Mt-Right {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $forward = @($InputArgs)
+            $forward += "Right"
+            Mt-SendKeys @forward
+        }
+        # Mt-Inject [SESSION_ID]  — ensure .midterm + mtcli helpers in the target cwd
+        function Mt-Inject {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/inject-guidance"
+        }
+        # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
+        function Mt-Activity {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            $seconds = if ($resolved.Remaining.Count -gt 0) { [int]$resolved.Remaining[0] } else { 120 }
+            $bellLimit = if ($resolved.Remaining.Count -gt 1) { [int]$resolved.Remaining[1] } else { 25 }
+            _MC "$script:_MT/api/sessions/$($resolved.SessionId)/activity?seconds=$seconds&bellLimit=$bellLimit"
+        }
+        # Mt-Attention [-AgentOnly true|false]  — ranked fleet view for supervision
+        function Mt-Attention {
+            param([bool]$AgentOnly = $true)
+            _MC "$script:_MT/api/sessions/attention?agentOnly=$AgentOnly"
+        }
+        # Mt-Bootstrap -Name NAME -Cwd PATH -Profile PROFILE [-SlashCommands ...]  — create an agent-controlled worker session
+        function Mt-Bootstrap {
+            param(
+                [Parameter(Mandatory=$true)][string]$Name,
+                [Parameter(Mandatory=$true)][string]$Cwd,
+                [Parameter(Mandatory=$true)][string]$Profile,
+                [string[]]$SlashCommands = @()
+            )
+            $launchDelayMs = if ($env:MT_BOOTSTRAP_LAUNCH_DELAY_MS) { [int]$env:MT_BOOTSTRAP_LAUNCH_DELAY_MS } else { 1200 }
+            $slashDelayMs = if ($env:MT_BOOTSTRAP_SLASH_DELAY_MS) { [int]$env:MT_BOOTSTRAP_SLASH_DELAY_MS } else { 350 }
+            _MJ -d (_MH @{
+                name = $Name
+                workingDirectory = $Cwd
+                profile = $Profile
+                agentControlled = $true
+                injectGuidance = $true
+                launchDelayMs = $launchDelayMs
+                slashCommandDelayMs = $slashDelayMs
+                slashCommands = $SlashCommands
+            }) "$script:_MT/api/workers/bootstrap"
+        }
         # Mt-NewSession [-Shell SHELL] [-Cwd PATH]  — create a new terminal session
         function Mt-NewSession {
             param([string]$Shell, [string]$Cwd)

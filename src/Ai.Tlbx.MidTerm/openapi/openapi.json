@@ -114,6 +114,74 @@
         }
       }
     },
+    "/api/security/api-keys": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateApiKeyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/api-keys/{id}": {
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/api/security/firewall": {
       "get": {
         "tags": [
@@ -160,6 +228,25 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FirewallRuleStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/state": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateUpdate"
                 }
               }
             }
@@ -215,6 +302,86 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/sessions/attention": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "agentOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionAttentionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workers/bootstrap": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerBootstrapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerBootstrapResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/reorder": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }
@@ -280,6 +447,340 @@
         }
       }
     },
+    "/api/sessions/{id}/state": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeBuffer",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "includeBufferBase64",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/input": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "byte"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/input/text": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionInputRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/input/keys": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionKeyInputRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/input/prompt": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPromptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/buffer": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/buffer/text": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeBase64",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBufferTextResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/buffer/tail": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 120
+            }
+          },
+          {
+            "name": "stripAnsi",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/activity": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seconds",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 120
+            }
+          },
+          {
+            "name": "bellLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionActivityResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/name": {
       "put": {
         "tags": [
@@ -316,6 +817,45 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/control": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSessionControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfoDto"
+                }
+              }
+            }
           }
         }
       }
@@ -367,6 +907,75 @@
         }
       }
     },
+    "/api/sessions/{id}/paste-clipboard-image": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file"
+                ],
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "$ref": "#/components/schemas/IFormFile"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/inject-guidance": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InjectGuidanceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/bookmark": {
       "put": {
         "tags": [
@@ -392,6 +1001,674 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/browser/status": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/preview-client": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserPreviewClientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserPreviewClientResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/detach": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/browser/dock": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/browser/viewport": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/browser/open": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewTargetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/browser/command": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserCommandResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webpreview/previews": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewSessionListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewSessionInfo"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webpreview/target": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewTargetResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewTargetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewTargetResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webpreview/cookies": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewCookiesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewCookieSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewCookiesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewCookiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webpreview/cookies/clear": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webpreview/reload": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewReloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webpreview/snapshot": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebPreviewSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebPreviewSnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webpreview/proxylog": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WebPreviewProxyLogEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/restart": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/shutdown": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -1385,6 +2662,52 @@
   },
   "components": {
     "schemas": {
+      "ApiKeyInfoResponse": {
+        "required": [
+          "id",
+          "name",
+          "preview",
+          "createdAtUtc",
+          "lastUsedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiKeyListResponse": {
+        "required": [
+          "apiKeys"
+        ],
+        "type": "object",
+        "properties": {
+          "apiKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyInfoResponse"
+            }
+          }
+        }
+      },
       "AuthResponse": {
         "required": [
           "success",
@@ -1546,6 +2869,242 @@
           }
         }
       },
+      "BrowserClientInfo": {
+        "required": [
+          "sessionId",
+          "previewName",
+          "previewId",
+          "browserId",
+          "connectedAtUtc",
+          "isMainBrowser"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "browserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "connectedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isMainBrowser": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BrowserCommandRequest": {
+        "required": [
+          "command",
+          "textOnly"
+        ],
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "selector": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "value": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "maxDepth": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "textOnly": {
+            "type": "boolean"
+          },
+          "timeout": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BrowserCommandResponse": {
+        "required": [
+          "success",
+          "result",
+          "error",
+          "matchCount"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "matchCount": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "BrowserPreviewClientRequest": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BrowserPreviewClientResponse": {
+        "required": [
+          "sessionId",
+          "previewName",
+          "routeKey",
+          "previewId",
+          "previewToken",
+          "origin"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": "string"
+          },
+          "routeKey": {
+            "type": "string"
+          },
+          "previewId": {
+            "type": "string"
+          },
+          "previewToken": {
+            "type": "string"
+          },
+          "origin": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BrowserStatusResponse": {
+        "required": [
+          "connected",
+          "connectedClientCount",
+          "connectedUiClientCount",
+          "targetUrl",
+          "defaultClient",
+          "clients"
+        ],
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "connectedClientCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "connectedUiClientCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "defaultClient": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserClientInfo"
+              }
+            ]
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BrowserClientInfo"
+            }
+          }
+        }
+      },
       "CertificateDownloadInfo": {
         "required": [
           "fingerprint",
@@ -1689,6 +3248,32 @@
           "windows",
           "unix"
         ]
+      },
+      "CreateApiKeyRequest": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateApiKeyResponse": {
+        "required": [
+          "apiKey",
+          "token"
+        ],
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "$ref": "#/components/schemas/ApiKeyInfoResponse"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
       },
       "CreateHistoryRequest": {
         "required": [
@@ -2170,6 +3755,33 @@
         "type": "string",
         "format": "binary"
       },
+      "InjectGuidanceResponse": {
+        "required": [
+          "midtermDir",
+          "mtcliShellPath",
+          "mtcliPowerShellPath",
+          "claudeMdUpdated",
+          "agentsMdUpdated"
+        ],
+        "type": "object",
+        "properties": {
+          "midtermDir": {
+            "type": "string"
+          },
+          "mtcliShellPath": {
+            "type": "string"
+          },
+          "mtcliPowerShellPath": {
+            "type": "string"
+          },
+          "claudeMdUpdated": {
+            "type": "boolean"
+          },
+          "agentsMdUpdated": {
+            "type": "boolean"
+          }
+        }
+      },
       "LanguageSetting": {
         "enum": [
           "auto",
@@ -2418,6 +4030,7 @@
           "backgroundImageRevision",
           "backgroundImageFit",
           "uiTransparency",
+          "terminalTransparency",
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
@@ -2433,6 +4046,7 @@
           "keepSystemAwakeWithActiveSessions",
           "inputMode",
           "fileRadar",
+          "showSidebarSessionFilter",
           "tmuxCompatibility",
           "managerBarEnabled",
           "devMode",
@@ -2514,6 +4128,13 @@
             "type": "integer",
             "format": "int32"
           },
+          "terminalTransparency": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
           "tabTitleMode": {
             "$ref": "#/components/schemas/TabTitleModeSetting"
           },
@@ -2559,6 +4180,9 @@
             "type": "string"
           },
           "fileRadar": {
+            "type": "boolean"
+          },
+          "showSidebarSessionFilter": {
             "type": "boolean"
           },
           "tmuxCompatibility": {
@@ -2748,6 +4372,191 @@
           }
         }
       },
+      "SessionActivityHeatSample": {
+        "required": [
+          "timestamp",
+          "bytes",
+          "heat"
+        ],
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "heat": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SessionActivityResponse": {
+        "required": [
+          "sessionId",
+          "windowSeconds",
+          "bellLimit",
+          "totalOutputBytes",
+          "totalBellCount",
+          "currentBytesPerSecond",
+          "currentHeat",
+          "lastOutputAt",
+          "lastBellAt",
+          "heatmap",
+          "bellHistory"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "windowSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bellLimit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalOutputBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalBellCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentBytesPerSecond": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentHeat": {
+            "type": "number",
+            "format": "double"
+          },
+          "lastOutputAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastBellAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "heatmap": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionActivityHeatSample"
+            }
+          },
+          "bellHistory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionBellEvent"
+            }
+          }
+        }
+      },
+      "SessionAttentionItem": {
+        "required": [
+          "session",
+          "attentionScore"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionInfoDto"
+          },
+          "attentionScore": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SessionAttentionResponse": {
+        "required": [
+          "generatedAt",
+          "agentOnly",
+          "attentionCount",
+          "sessions"
+        ],
+        "type": "object",
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agentOnly": {
+            "type": "boolean"
+          },
+          "attentionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionAttentionItem"
+            }
+          }
+        }
+      },
+      "SessionBellEvent": {
+        "required": [
+          "timestamp",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SessionBufferTextResponse": {
+        "required": [
+          "sessionId",
+          "byteLength",
+          "encoding",
+          "text",
+          "base64"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "byteLength": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "base64": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SessionInfoDto": {
         "required": [
           "id",
@@ -2767,7 +4576,9 @@
           "foregroundCommandLine",
           "order",
           "parentSessionId",
-          "bookmarkId"
+          "bookmarkId",
+          "agentControlled",
+          "supervisor"
         ],
         "type": "object",
         "properties": {
@@ -2858,6 +4669,60 @@
               "null",
               "string"
             ]
+          },
+          "agentControlled": {
+            "type": "boolean"
+          },
+          "supervisor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionSupervisorInfoDto"
+              }
+            ]
+          }
+        }
+      },
+      "SessionInputRequest": {
+        "required": [
+          "appendNewline"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "base64": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "appendNewline": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SessionKeyInputRequest": {
+        "required": [
+          "keys",
+          "literal"
+        ],
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "literal": {
+            "type": "boolean"
           }
         }
       },
@@ -2875,6 +4740,200 @@
           }
         }
       },
+      "SessionPromptRequest": {
+        "required": [
+          "mode",
+          "interruptFirst",
+          "interruptKeys",
+          "literalInterruptKeys",
+          "interruptDelayMs",
+          "submitKeys",
+          "literalSubmitKeys",
+          "submitDelayMs",
+          "followupSubmitCount",
+          "followupSubmitDelayMs"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "base64": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mode": {
+            "type": "string"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "interruptFirst": {
+            "type": "boolean"
+          },
+          "interruptKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "literalInterruptKeys": {
+            "type": "boolean"
+          },
+          "interruptDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "submitKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "literalSubmitKeys": {
+            "type": "boolean"
+          },
+          "submitDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "followupSubmitCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "followupSubmitDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SessionReorderRequest": {
+        "required": [
+          "sessionIds"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SessionStateResponse": {
+        "required": [
+          "session",
+          "previews",
+          "bufferByteLength",
+          "bufferEncoding",
+          "bufferText",
+          "bufferBase64",
+          "supervisor"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionInfoDto"
+          },
+          "previews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebPreviewSessionInfo"
+            }
+          },
+          "bufferByteLength": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bufferEncoding": {
+            "type": "string"
+          },
+          "bufferText": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "bufferBase64": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "supervisor": {
+            "$ref": "#/components/schemas/SessionSupervisorInfoDto"
+          }
+        }
+      },
+      "SessionSupervisorInfoDto": {
+        "required": [
+          "state",
+          "profile",
+          "needsAttention",
+          "attentionReason",
+          "attentionScore",
+          "lastInputAt",
+          "lastOutputAt",
+          "lastBellAt",
+          "currentHeat"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "boolean"
+          },
+          "attentionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attentionScore": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastInputAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastOutputAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastBellAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "currentHeat": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "SetBookmarkRequest": {
         "required": [
           "bookmarkId"
@@ -2883,6 +4942,17 @@
         "properties": {
           "bookmarkId": {
             "type": "string"
+          }
+        }
+      },
+      "SetSessionControlRequest": {
+        "required": [
+          "agentControlled"
+        ],
+        "type": "object",
+        "properties": {
+          "agentControlled": {
+            "type": "boolean"
           }
         }
       },
@@ -2986,6 +5056,35 @@
           "Zsh",
           null
         ]
+      },
+      "StateUpdate": {
+        "required": [
+          "sessions",
+          "update"
+        ],
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionListDto"
+              }
+            ]
+          },
+          "update": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateInfo"
+              }
+            ]
+          }
+        }
       },
       "SystemHealth": {
         "required": [
@@ -3342,6 +5441,505 @@
             }
           },
           "signature": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ViewportRequest": {
+        "required": [
+          "width",
+          "height"
+        ],
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "WebPreviewCookieInfo": {
+        "required": [
+          "name",
+          "value",
+          "domain",
+          "path",
+          "secure",
+          "httpOnly",
+          "expiresUtc",
+          "sameSite"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "secure": {
+            "type": "boolean"
+          },
+          "httpOnly": {
+            "type": "boolean"
+          },
+          "expiresUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "sameSite": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "WebPreviewCookieSetRequest": {
+        "required": [
+          "raw"
+        ],
+        "type": "object",
+        "properties": {
+          "raw": {
+            "type": "string"
+          }
+        }
+      },
+      "WebPreviewCookiesResponse": {
+        "required": [
+          "header",
+          "cookies"
+        ],
+        "type": "object",
+        "properties": {
+          "header": {
+            "type": "string"
+          },
+          "cookies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebPreviewCookieInfo"
+            }
+          }
+        }
+      },
+      "WebPreviewProxyLogEntry": {
+        "required": [
+          "id",
+          "timestamp",
+          "type",
+          "method",
+          "requestUrl",
+          "upstreamUrl",
+          "statusCode",
+          "error",
+          "durationMs",
+          "requestHeaders",
+          "responseHeaders",
+          "requestCookies",
+          "responseCookies",
+          "contentType",
+          "contentLength",
+          "subProtocols",
+          "negotiatedProtocol"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "requestUrl": {
+            "type": "string"
+          },
+          "upstreamUrl": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "durationMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requestHeaders": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "responseHeaders": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "requestCookies": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "responseCookies": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "contentType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "contentLength": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "subProtocols": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "negotiatedProtocol": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "WebPreviewReloadRequest": {
+        "required": [
+          "mode"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mode": {
+            "type": "string"
+          }
+        }
+      },
+      "WebPreviewSessionInfo": {
+        "required": [
+          "sessionId",
+          "previewName",
+          "routeKey",
+          "url",
+          "active"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "previewName": {
+            "type": "string"
+          },
+          "routeKey": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "WebPreviewSessionListResponse": {
+        "required": [
+          "previews"
+        ],
+        "type": "object",
+        "properties": {
+          "previews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebPreviewSessionInfo"
+            }
+          }
+        }
+      },
+      "WebPreviewSessionRequest": {
+        "required": [
+          "sessionId"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "WebPreviewSnapshotRequest": {
+        "required": [
+          "sessionId",
+          "html",
+          "cssUrls"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "html": {
+            "type": "string"
+          },
+          "cssUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WebPreviewSnapshotResponse": {
+        "required": [
+          "snapshotPath"
+        ],
+        "type": "object",
+        "properties": {
+          "snapshotPath": {
+            "type": "string"
+          }
+        }
+      },
+      "WebPreviewTargetRequest": {
+        "required": [
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "WebPreviewTargetResponse": {
+        "required": [
+          "sessionId",
+          "previewName",
+          "routeKey",
+          "url",
+          "active"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": "string"
+          },
+          "routeKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "WorkerBootstrapRequest": {
+        "required": [
+          "cols",
+          "rows",
+          "agentControlled",
+          "injectGuidance",
+          "launchDelayMs",
+          "slashCommands",
+          "slashCommandDelayMs"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "shell": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workingDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentControlled": {
+            "type": "boolean"
+          },
+          "injectGuidance": {
+            "type": "boolean"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "launchCommand": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "launchDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "slashCommands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slashCommandDelayMs": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "WorkerBootstrapResponse": {
+        "required": [
+          "session",
+          "profile",
+          "launchCommand",
+          "slashCommands",
+          "guidanceInjected",
+          "midtermDir"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionInfoDto"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "launchCommand": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "slashCommands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "guidanceInjected": {
+            "type": "boolean"
+          },
+          "midtermDir": {
             "type": [
               "null",
               "string"

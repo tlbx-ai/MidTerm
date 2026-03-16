@@ -6,9 +6,10 @@
  */
 
 import type { LayoutNode, Session } from '../../types';
-import { $sessions, $activeSessionId, $layout } from '../../stores';
+import { $sessions, $activeSessionId, $layout, $currentSettings } from '../../stores';
 import { createLogger } from '../logging';
 import {
+  applySessionFilterSettingChange,
   renderSessionList,
   updateEmptyState,
   updateMobileTitle,
@@ -40,6 +41,7 @@ let previousActiveItem: HTMLElement | null = null;
 let unsubscribeSessions: (() => void) | null = null;
 let unsubscribeActiveSession: (() => void) | null = null;
 let unsubscribeLayout: (() => void) | null = null;
+let unsubscribeSettings: (() => void) | null = null;
 
 // =============================================================================
 // Change Detection
@@ -73,6 +75,10 @@ function detectChangeType(sessions: Record<string, Session>): ChangeType {
   for (const [id, session] of Object.entries(sessions)) {
     const prev = previousSessions[id];
     if (prev && session.parentSessionId !== prev.parentSessionId) {
+      return 'membership';
+    }
+
+    if (prev && session.agentControlled !== prev.agentControlled) {
       return 'membership';
     }
   }
@@ -283,6 +289,10 @@ export function initializeSidebarUpdater(): void {
     updateMobileTitle();
   });
 
+  unsubscribeSettings = $currentSettings.subscribe(() => {
+    applySessionFilterSettingChange();
+  });
+
   log.info(() => 'Sidebar updater initialized');
 }
 
@@ -293,6 +303,8 @@ export function cleanupSidebarUpdater(): void {
   unsubscribeActiveSession = null;
   unsubscribeLayout?.();
   unsubscribeLayout = null;
+  unsubscribeSettings?.();
+  unsubscribeSettings = null;
   previousActiveItem = null;
   initialized = false;
 }

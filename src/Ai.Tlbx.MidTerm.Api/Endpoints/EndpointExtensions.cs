@@ -9,6 +9,9 @@ public static class EndpointExtensions
         app.MapAuthApiEndpoints();
         app.MapSecurityApiEndpoints();
         app.MapSessionApiEndpoints();
+        app.MapBrowserApiEndpoints();
+        app.MapWebPreviewApiEndpoints();
+        app.MapPowerApiEndpoints();
         app.MapHistoryApiEndpoints();
         app.MapFileApiEndpoints();
         app.MapLogApiEndpoints();

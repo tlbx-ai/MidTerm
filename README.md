@@ -10,105 +10,105 @@
 [![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](#install)
 [![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](#install)
 
-**Your terminal, anywhere.** Run AI agents on your machine. Check on them from your phone.
+**Your terminal workspace, anywhere.** Run AI coding agents and local tools on your own machine, then keep using them from any browser on desktop, tablet, or phone.
 
 ![MidTerm Screenshot](docs/marketing/Screenshots/sc1.png)
 
-## The 30-Second Version
+## What MidTerm Is
 
-You start Claude Code on your PC. Complex refactor — it's going to take a while.
+MidTerm is a web-based terminal multiplexer with a lot more around the terminal than a simple shell tab. It gives you multiple long-lived terminal sessions, split layouts, files and git panels, saved commands, browser previews, mobile-first controls, voice and smart-input workflows, update management, certificate trust help, and remote-access tooling in one local install.
 
-You need lunch. You grab your phone. You open MidTerm.
+The core idea is still simple:
 
-Your agent is still running. It's asking a question.
+1. Start work on your main machine.
+2. Open MidTerm from another browser later.
+3. Keep the same sessions alive without moving your code or secrets to someone else's server.
 
-You type "yes, commit that." You go back to eating.
+## What You Get
 
-**That's MidTerm.** One binary. One password. Any browser.
+- **Terminal workspace, not a single shell page.** Multiple sessions, split-pane layouts, session reordering, search, heat indicators, bookmarks/history, tmux compatibility, and a manual-resize model built for multi-device use.
+- **Workflow surfaces around the terminal.** Per-session Files tabs with preview and save, Git status with diff overlays, Commands panels for saved scripts, a customizable manager bar, and session-scoped web preview/browser automation.
+- **Remote and mobile features built in.** Smart Input, touch controller, mobile action menus, PWA install, document Picture-in-Picture, voice/chat hooks, shared-session links, and Share Access packets for sending trusted connection details to other devices.
+- **Security and operations for real installs.** Password auth, local HTTPS cert generation, trust-page onboarding, API keys, run-as-user support, diagnostics overlays, live settings sync, stable/dev update channels, and install/update scripts for user mode or service mode.
+
+The full tracked inventory is in [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Install
 
-Recommended for real installs: use the native installer below. It handles password setup, service mode, and self-update.
+Recommended for real installs: use the native installer. It handles password setup, service mode, certificate setup, and the normal update path.
 
-**macOS / Linux:**
+**macOS / Linux**
+
 ```bash
 curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell)**
+
 ```powershell
 irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 ```
 
-**Quick launch alternative via `npx` (requires Node.js):**
+**Quick launch via `npx`**
+
 ```bash
 npx @tlbx-ai/midterm
 ```
 
-That downloads the native binary for your platform, runs MidTerm in user mode, and opens it in your browser. Use the installer above if you want the normal persistent install and update path.
+That path is useful for trying MidTerm in user mode. Use the native installer when you want the persistent install, service integration, and normal update flow.
 
-Open [https://localhost:2000](https://localhost:2000). Click **+**. You have a terminal.
+Open `https://localhost:2000`, create a session, and you have the full workspace.
 
-The installer asks for a password — nobody gets in without it.
+### Install Modes
 
-## Access From Anywhere
+| Mode | Best for | Notes |
+| --- | --- | --- |
+| System service | Always-on access, remote use, headless or shared machines | Starts in the background and survives logouts/reboots |
+| User install | Trying MidTerm, personal workstations, no admin access | Runs in your user context and is started when needed |
 
-Install **[Tailscale](https://tailscale.com)** (free). Now open `http://your-machine:2000` from any device, anywhere.
+## Common Workflows
 
-<details>
-<summary>Other options: Cloudflare Tunnel, reverse proxy</summary>
+- **AI coding agents on your own hardware.** Run Claude Code, Codex, Aider, Cursor CLI, or any other terminal-native agent, then continue approving steps from your phone.
+- **Long-running sessions that stay put.** Builds, deploys, test suites, data jobs, shells, and TUIs stay alive while the browser client comes and goes.
+- **Terminal-plus-browser workflows.** Use web preview and browser automation beside the terminal instead of constantly switching out to a separate browser window.
+- **Remote access without turning your machine into a cloud IDE.** Pair MidTerm with Tailscale, Cloudflare Tunnel, or your own reverse proxy and keep your code, tools, and API keys on the box you control.
 
-- **[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)** — Free, no port forwarding needed
-- **Reverse proxy** — nginx/Caddy with HTTPS
+## Remote Access
 
-</details>
+The simplest path is usually [Tailscale](https://tailscale.com). Install it on the machine running MidTerm, then open MidTerm from any of your devices over the Tailnet.
 
-## What You Get
+Other common options:
 
-- **Single ~15MB binary.** No Docker. No Node. No runtime. Download and run.
-- **Password protected from first run.** PBKDF2 hashed, rate-limited, not optional.
-- **Any shell.** Zsh, Bash, PowerShell, CMD.
-- **Multiple terminals, one browser tab.** Split panes, drag to reorder.
-- **Works on any screen.** Phone, tablet, laptop — resize with one click.
-- **Auto-updates.** One click in the UI, page reloads automatically.
+- [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+- Reverse proxy with HTTPS via nginx or Caddy
+- Shared-session links when you want to expose only one session instead of the full UI
 
-<details>
-<summary>More features</summary>
+MidTerm also includes a trust page and certificate download helpers so local HTTPS access works cleanly on phones and tablets.
 
-- **Native AOT compiled** — macOS, Windows, Linux
-- **Priority multiplexing** — Active terminal gets instant delivery, background sessions batch efficiently
-- **Tmux compatibility** — AI coding tools that detect tmux work out of the box
-- **Manager bar** — Customizable quick-action buttons for common commands
-- **Clipboard image paste** — Alt+V to inject clipboard images into terminal
-- **Installable (PWA)** — Add to home screen on mobile, standalone window on desktop
+## Architecture and Docs
 
-</details>
-
-## Perfect For
-
-- **AI coding agents** — Claude Code, OpenAI Codex, Aider, Cursor CLI
-- **Long-running tasks** — Builds, deployments, data processing
-- **Any TUI app** — htop, vim, tmux sessions, whatever you run in a terminal
-
-```
-Your PC                          Anywhere
-┌─────────────────┐              ┌─────────────────┐
-│ Claude Code     │    HTTPS     │                 │
-│ OpenAI Codex    │◄────────────►│   Browser       │
-│ Any TUI app     │   WebSocket  │                 │
-└─────────────────┘              └─────────────────┘
-     Full power                    Full access
-```
-
----
+- [docs/FEATURES.md](docs/FEATURES.md) - canonical 432-feature inventory grouped by subsystem
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - runtime, protocols, storage, security, and update architecture
+- [docs/devbrowser.md](docs/devbrowser.md) - web preview proxy and browser automation design
+- [docs/file-radar.md](docs/file-radar.md) - terminal path detection design
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - contribution guide
 
 ## Reference
 
-<details>
-<summary>Command line options</summary>
+### Binaries
 
-```
-mm [options]
+- `mt` / `mt.exe` - web server, static asset host, REST API, WebSockets, update UI, settings UI
+- `mthost` / `mthost.exe` - PTY host, one process per terminal session
+
+### Settings Locations
+
+- Service mode: `%ProgramData%\MidTerm\settings.json` on Windows or `/usr/local/etc/midterm/settings.json` on Unix
+- User mode: `~/.midterm/settings.json`
+
+### Command Line
+
+```text
+mt [options]
 
   --port 2000       Port to listen on (default: 2000)
   --bind 0.0.0.0    Address to bind to (default: 0.0.0.0)
@@ -116,96 +116,32 @@ mm [options]
   --hash-password   Hash a password for settings.json
 ```
 
-</details>
+## Build From Source
 
-<details>
-<summary>Configuration</summary>
+**Prerequisites**
 
-Settings stored in:
-- **Service mode:** `%ProgramData%\MidTerm\settings.json` (Windows) or `/usr/local/etc/MidTerm/settings.json` (Unix)
-- **User mode:** `~/.MidTerm/settings.json`
-
-```json
-{
-  "defaultShell": "Pwsh",
-  "defaultCols": 120,
-  "defaultRows": 30,
-  "authenticationEnabled": true,
-  "passwordHash": "$PBKDF2$100000$..."
-}
-```
-
-</details>
-
-<details>
-<summary>Security details</summary>
-
-- **PBKDF2 hashing** — 100,000 iterations with SHA256
-- **Session cookies** — 3-week validity with sliding expiration
-- **Rate limiting** — Lockout after failed login attempts
-- Change your password anytime in **Settings > Security**
-
-</details>
-
-<details>
-<summary>Installation options</summary>
-
-The installer asks you to choose:
-
-| Option | Best for | Privileges |
-|--------|----------|------------|
-| **System service** | Always-on access, headless machines, remote access before login | Requires admin/sudo |
-| **User install** | Try it out, occasional use, no admin rights | No special permissions |
-
-### Manual Download
-
-| Platform | Download |
-|----------|----------|
-| macOS ARM64 | [mm-osx-arm64.tar.gz](https://github.com/tlbx-ai/MidTerm/releases/latest) |
-| macOS x64 | [mm-osx-x64.tar.gz](https://github.com/tlbx-ai/MidTerm/releases/latest) |
-| Windows x64 | [mm-win-x64.zip](https://github.com/tlbx-ai/MidTerm/releases/latest) |
-| Linux x64 | [mm-linux-x64.tar.gz](https://github.com/tlbx-ai/MidTerm/releases/latest) |
-
-</details>
-
-<details>
-<summary>Building from source</summary>
-
-**Prerequisites:**
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [esbuild](https://esbuild.github.io/) — TypeScript bundler, must be in PATH
-  - Windows: `winget install esbuild` or download from [releases](https://github.com/evanw/esbuild/releases)
-  - macOS: `brew install esbuild`
-  - Linux: Download from [releases](https://github.com/evanw/esbuild/releases)
+- [esbuild](https://esbuild.github.io/) in `PATH`
 
 ```bash
 git clone https://github.com/tlbx-ai/MidTerm.git
 cd MidTerm
 
-# Build
 dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
-
-# AOT binary (platform-specific)
-cd src/Ai.Tlbx.MidTerm
-./build-aot-macos.sh     # macOS
-./build-aot.cmd          # Windows
-./build-aot-linux.sh     # Linux
+dotnet test src/Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj
+dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj
 ```
 
-</details>
+Platform-specific AOT publish scripts live under `src/Ai.Tlbx.MidTerm/`.
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
+Contributions are welcome. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
-**Note:** All contributions require acceptance of our [Contributor License Agreement](docs/CLA.md).
+All contributions require acceptance of the [Contributor License Agreement](docs/CLA.md).
 
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)
 
-Commercial licensing available — [contact for details](https://github.com/tlbx-ai).
-
----
-
-Created by [Johannes Schmidt](https://github.com/tlbx-ai)
+Commercial licensing is available via [tlbx-ai](https://github.com/tlbx-ai).

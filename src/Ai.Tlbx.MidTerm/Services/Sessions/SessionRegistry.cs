@@ -10,11 +10,13 @@ internal sealed class SessionRegistry
     private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly string _dropsBasePath;
+    private readonly SessionControlStateService? _sessionControlStateService;
     private int _nextOrder;
 
-    public SessionRegistry(bool isServiceMode)
+    public SessionRegistry(bool isServiceMode, SessionControlStateService? sessionControlStateService = null)
     {
         _dropsBasePath = GetDropsBasePath(isServiceMode);
+        _sessionControlStateService = sessionControlStateService;
     }
 
     public ConcurrentDictionary<string, TtyHostClient> Clients { get; } = new();
@@ -32,6 +34,8 @@ internal sealed class SessionRegistry
     public ConcurrentDictionary<string, string> TmuxParentSessions { get; } = new();
 
     public ConcurrentDictionary<string, string> BookmarkLinks { get; } = new();
+
+    public ConcurrentDictionary<string, byte> AgentControlledSessions { get; } = new();
 
     public int ClientCount => Clients.Count;
 
@@ -104,6 +108,12 @@ internal sealed class SessionRegistry
         }
 
         TmuxParentSessions[childSessionId] = parentSessionId;
+
+        if (IsAgentControlled(parentSessionId))
+        {
+            AgentControlledSessions[childSessionId] = 0;
+            _sessionControlStateService?.SetAgentControlled(childSessionId, agentControlled: true);
+        }
     }
 
     public IReadOnlyList<SessionInfo> GetAllSessions()
@@ -136,7 +146,8 @@ internal sealed class SessionRegistry
                     ForegroundCommandLine = s.ForegroundCommandLine,
                     Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
                     ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
-                    BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null
+                    BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
+                    AgentControlled = IsAgentControlled(s.Id)
                 })
                 .OrderBy(s => s.Order)
                 .ToList()
@@ -152,6 +163,8 @@ internal sealed class SessionRegistry
         HiddenSessions.TryRemove(sessionId, out _);
         TmuxParentSessions.TryRemove(sessionId, out _);
         BookmarkLinks.TryRemove(sessionId, out _);
+        AgentControlledSessions.TryRemove(sessionId, out _);
+        _sessionControlStateService?.RemoveSession(sessionId);
 
         foreach (var kvp in TmuxParentSessions.ToArray())
         {
@@ -172,6 +185,31 @@ internal sealed class SessionRegistry
         }
 
         BookmarkLinks[sessionId] = bookmarkId;
+        NotifyStateChange();
+        return true;
+    }
+
+    public bool SetAgentControlled(string sessionId, bool agentControlled)
+    {
+        if (!SessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        foreach (var relatedSessionId in GetTmuxFamilySessionIds(sessionId))
+        {
+            if (agentControlled)
+            {
+                AgentControlledSessions[relatedSessionId] = 0;
+            }
+            else
+            {
+                AgentControlledSessions.TryRemove(relatedSessionId, out _);
+            }
+
+            _sessionControlStateService?.SetAgentControlled(relatedSessionId, agentControlled);
+        }
+
         NotifyStateChange();
         return true;
     }
@@ -263,8 +301,44 @@ internal sealed class SessionRegistry
         HiddenSessions.Clear();
         TmuxParentSessions.Clear();
         BookmarkLinks.Clear();
+        AgentControlledSessions.Clear();
         _stateListeners.Clear();
         _tempDirectories.Clear();
+    }
+
+    private bool IsAgentControlled(string sessionId)
+    {
+        return AgentControlledSessions.ContainsKey(sessionId)
+            || _sessionControlStateService?.IsAgentControlled(sessionId) == true;
+    }
+
+    private IReadOnlyList<string> GetTmuxFamilySessionIds(string sessionId)
+    {
+        var rootSessionId = TmuxParentSessions.TryGetValue(sessionId, out var parentSessionId)
+            ? parentSessionId
+            : sessionId;
+
+        var sessionIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+            rootSessionId
+        };
+
+        foreach (var kvp in TmuxParentSessions)
+        {
+            if (string.Equals(kvp.Value, rootSessionId, StringComparison.Ordinal))
+            {
+                sessionIds.Add(kvp.Key);
+            }
+        }
+
+        if (SessionCache.ContainsKey(sessionId))
+        {
+            sessionIds.Add(sessionId);
+        }
+
+        return sessionIds
+            .Where(id => SessionCache.ContainsKey(id))
+            .ToList();
     }
 
     private static string GetDropsBasePath(bool isServiceMode)

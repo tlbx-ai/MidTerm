@@ -38,6 +38,7 @@ public sealed class MidTermSettings
     public long BackgroundImageRevision { get; set; } = 0;
     public string BackgroundImageFit { get; set; } = "cover";
     public int UiTransparency { get; set; } = 0;
+    public int TerminalTransparency { get; set; } = 0;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
@@ -50,7 +51,7 @@ public sealed class MidTermSettings
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
-    public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.Default;
+    public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
 
@@ -59,6 +60,9 @@ public sealed class MidTermSettings
 
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
+
+    // Sidebar session filter - Shows the sidebar filter input for narrowing visible sessions
+    public bool ShowSidebarSessionFilter { get; set; } = false;
 
     // Middle Manager Bar - Quick-action buttons below terminal area
     public bool ManagerBarEnabled { get; set; } = true;

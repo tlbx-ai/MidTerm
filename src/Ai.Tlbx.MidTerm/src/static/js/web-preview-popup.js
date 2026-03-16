@@ -32,6 +32,16 @@
   var urlDisplay = document.getElementById('url-display');
   var currentUrl = null;
 
+  function syncThemeFromOpener() {
+    if (!window.opener || window.opener.closed) {
+      return;
+    }
+
+    try {
+      document.documentElement.style.cssText = window.opener.document.documentElement.style.cssText;
+    } catch (_) {}
+  }
+
   function getProxyPrefix() {
     return '/webpreview/' + encodeURIComponent(routeKey);
   }
@@ -188,6 +198,7 @@
   }
 
   var initialUrl = params.get('url');
+  syncThemeFromOpener();
   if (initialUrl) {
     loadFrame(initialUrl);
   }
@@ -272,4 +283,6 @@
       previewName: previewName,
     });
   });
+
+  window.addEventListener('focus', syncThemeFromOpener);
 })();

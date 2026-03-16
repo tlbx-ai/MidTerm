@@ -42,10 +42,13 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.False(settings.ShowSidebarSessionFilter);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
+        Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
+        Assert.Equal(0, settings.TerminalTransparency);
     }
 
     [Fact]
@@ -62,10 +65,70 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.False(settings.ShowSidebarSessionFilter);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
+        Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
+        Assert.Equal(0, settings.TerminalTransparency);
+    }
+
+    [Fact]
+    public void Load_MissingTerminalTransparency_InheritsUiTransparency()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "uiTransparency": 40
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.Equal(40, settings.UiTransparency);
+        Assert.Equal(40, settings.TerminalTransparency);
+    }
+
+    [Fact]
+    public void Load_ExplicitTerminalTransparency_IsPreserved()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "uiTransparency": 20,
+          "terminalTransparency": 65
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.Equal(20, settings.UiTransparency);
+        Assert.Equal(65, settings.TerminalTransparency);
+    }
+
+    [Fact]
+    public void Load_ExplicitTerminalEnterModeDefault_IsPreserved()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "terminalEnterMode": "default"
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.Equal(TerminalEnterModeSetting.Default, settings.TerminalEnterMode);
     }
 
     [Fact]
@@ -79,6 +142,7 @@ public sealed class SettingsServiceTests : IDisposable
           "cursorBlink": false,
           "rightClickPaste": false,
           "fileRadar": false,
+          "showSidebarSessionFilter": false,
           "managerBarEnabled": false,
           "tmuxCompatibility": false,
           "showChangelogAfterUpdate": false,
@@ -94,6 +158,7 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.False(settings.CursorBlink);
         Assert.False(settings.RightClickPaste);
         Assert.False(settings.FileRadar);
+        Assert.False(settings.ShowSidebarSessionFilter);
         Assert.False(settings.ManagerBarEnabled);
         Assert.False(settings.TmuxCompatibility);
         Assert.False(settings.ShowChangelogAfterUpdate);
@@ -113,6 +178,24 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.NotNull(settings);
         Assert.Equal(SettingsLoadStatus.ErrorFallbackToDefault, service.LoadStatus);
         Assert.False(string.IsNullOrWhiteSpace(service.LoadError));
+    }
+
+    [Fact]
+    public void Load_ExplicitTrueSidebarSessionFilter_IsPreserved()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "showSidebarSessionFilter": true
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.True(settings.ShowSidebarSessionFilter);
     }
 
     [Fact]
@@ -290,6 +373,7 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Equal(12345, loaded.BackgroundImageRevision);
         Assert.Equal("contain", loaded.BackgroundImageFit);
         Assert.Equal(40, loaded.UiTransparency);
+        Assert.Equal(0, loaded.TerminalTransparency);
         Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, loaded.TerminalEnterMode);
         Assert.Equal(@"C:\legacy\midterm.pem", loaded.CertificatePath);
         Assert.False(File.Exists(oldPath));

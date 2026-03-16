@@ -58,6 +58,22 @@ export async function getSecurityStatus() {
   return client.GET('/api/security/status');
 }
 
+export async function getApiKeys() {
+  return client.GET('/api/security/api-keys');
+}
+
+export async function createApiKey(name: string) {
+  return client.POST('/api/security/api-keys', {
+    body: { name },
+  });
+}
+
+export async function deleteApiKey(id: string) {
+  return client.DELETE('/api/security/api-keys/{id}', {
+    params: { path: { id } },
+  });
+}
+
 export async function getFirewallRuleStatus() {
   return client.GET('/api/security/firewall');
 }
@@ -117,6 +133,20 @@ export async function setSessionBookmark(id: string, bookmarkId: string) {
     params: { path: { id } },
     body: { bookmarkId },
   });
+}
+
+export async function setSessionControl(id: string, agentControlled: boolean): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/control`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ agentControlled }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
 }
 
 // --- Settings ---

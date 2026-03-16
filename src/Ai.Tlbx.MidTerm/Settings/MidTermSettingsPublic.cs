@@ -24,6 +24,7 @@ public sealed partial class MidTermSettingsPublic
     public long BackgroundImageRevision { get; set; } = 0;
     public string BackgroundImageFit { get; set; } = "cover";
     public int UiTransparency { get; set; } = 0;
+    public int? TerminalTransparency { get; set; }
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
@@ -36,11 +37,12 @@ public sealed partial class MidTermSettingsPublic
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
-    public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.Default;
+    public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
+    public bool ShowSidebarSessionFilter { get; set; } = false;
     public bool TmuxCompatibility { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
     public bool DevMode { get; set; } = false;

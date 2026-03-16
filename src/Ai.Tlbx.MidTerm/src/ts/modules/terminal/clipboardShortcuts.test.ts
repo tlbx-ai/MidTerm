@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isCopyShortcut, isPasteShortcut, type ShortcutInput } from './clipboardShortcuts';
+import {
+  isCopyShortcut,
+  isNativeImagePasteShortcut,
+  isPasteShortcut,
+  type ShortcutInput,
+} from './clipboardShortcuts';
 
 function key(
   value: string,
@@ -20,7 +25,7 @@ describe('isPasteShortcut', () => {
     expect(isPasteShortcut(key('V', { ctrlKey: true }))).toBe(true);
     expect(isPasteShortcut(key('v', { ctrlKey: true, shiftKey: true }))).toBe(true);
     expect(isPasteShortcut(key('v', { metaKey: true }))).toBe(true);
-    expect(isPasteShortcut(key('v', { altKey: true }))).toBe(true);
+    expect(isPasteShortcut(key('v', { altKey: true }))).toBe(false);
   });
 
   it('rejects unrelated or ambiguous combinations', () => {
@@ -29,6 +34,14 @@ describe('isPasteShortcut', () => {
     expect(isPasteShortcut(key('v', { altKey: true, shiftKey: true }))).toBe(false);
     expect(isPasteShortcut(key('v', { ctrlKey: true, altKey: true }))).toBe(false);
     expect(isPasteShortcut(key('v', { metaKey: true, shiftKey: true }))).toBe(false);
+  });
+});
+
+describe('isNativeImagePasteShortcut', () => {
+  it('matches Alt+V only', () => {
+    expect(isNativeImagePasteShortcut(key('v', { altKey: true }))).toBe(true);
+    expect(isNativeImagePasteShortcut(key('v', { altKey: true, shiftKey: true }))).toBe(false);
+    expect(isNativeImagePasteShortcut(key('v', { ctrlKey: true }))).toBe(false);
   });
 });
 

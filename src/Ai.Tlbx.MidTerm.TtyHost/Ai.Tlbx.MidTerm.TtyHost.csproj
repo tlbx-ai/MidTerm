@@ -75,9 +75,11 @@
 
   <!-- Windows application manifest -->
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) AND '$(RuntimeIdentifier)' == ''">
+    <ApplicationIcon>..\Ai.Tlbx.MidTerm\src\static\favicon\favicon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
+    <ApplicationIcon>..\Ai.Tlbx.MidTerm\src\static\favicon\favicon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 

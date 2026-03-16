@@ -17,6 +17,7 @@ import { pasteToTerminal } from '../terminal';
 import { sendInput } from '../comms/muxChannel';
 import { getForegroundInfo } from '../process';
 import { createLogger } from '../logging';
+import { getAgentGuidanceFile } from '../midtermGuidance';
 import { isDevMode } from '../sidebar/voiceSection';
 import {
   getActiveDockedClient,
@@ -587,8 +588,7 @@ function handleAgentHint(): void {
   }
 
   const fg = getForegroundInfo(sessionId);
-  const name = (fg.name ?? '').toLowerCase();
-  const guidanceFile = name === 'claude' ? '.midterm/CLAUDE.md' : '.midterm/AGENTS.md';
+  const guidanceFile = getAgentGuidanceFile(fg.name);
   const message = `Read the file ${guidanceFile} for instructions on how to interact with this browser preview.\n`;
 
   sendInput(sessionId, message);

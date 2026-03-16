@@ -4,7 +4,7 @@
  * Theme definitions and application to xterm.js terminals.
  */
 
-import type { ThemeName, TerminalTheme } from '../../types';
+import type { MidTermSettingsPublic, ThemeName, TerminalTheme } from '../../types';
 import { THEMES } from '../../constants';
 import { sessionTerminals } from '../../state';
 import { $currentSettings } from '../../stores';
@@ -16,17 +16,28 @@ import { applyCssTheme } from './cssThemes';
  * If terminalColorScheme is 'auto', falls back to the UI theme.
  */
 export function getEffectiveXtermTheme(): TerminalTheme {
-  const s = $currentSettings.get();
-  const colorScheme = s?.terminalColorScheme ?? 'auto';
-  const key = colorScheme === 'auto' ? (s?.theme ?? 'dark') : colorScheme;
+  return getEffectiveXtermThemeForSettings($currentSettings.get());
+}
+
+export function getEffectiveXtermThemeForSettings(
+  settings: MidTermSettingsPublic | null,
+): TerminalTheme {
+  const colorScheme = settings?.terminalColorScheme ?? 'auto';
+  const key = colorScheme === 'auto' ? (settings?.theme ?? 'dark') : colorScheme;
   const fallbackTheme = THEMES['dark'];
   if (!fallbackTheme) {
     throw new Error("Theme 'dark' not found");
   }
   const baseTheme = THEMES[key] ?? fallbackTheme;
   const theme: TerminalTheme = Object.assign({}, baseTheme);
-  const transparency = Math.min(Math.max(s?.uiTransparency ?? 0, 0), 85);
-  const hasWallpaper = s !== null && s.backgroundImageEnabled && s.backgroundImageFileName !== null;
+  const transparency = Math.min(
+    Math.max(settings?.terminalTransparency ?? settings?.uiTransparency ?? 0, 0),
+    85,
+  );
+  const hasWallpaper =
+    settings !== null &&
+    settings.backgroundImageEnabled &&
+    settings.backgroundImageFileName !== null;
   if (hasWallpaper || transparency > 0) {
     const alpha = Math.max(0.15, 1 - transparency / 100);
     theme.background = withAlpha(theme.background, alpha);

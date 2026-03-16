@@ -13,7 +13,7 @@ import {
 } from '../../stores';
 import { handleDockLayoutChange } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { renderGitPanelInto } from './gitPanel';
+import { refreshGitPanel, renderGitPanelInto } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
 import { closeDiffOverlay } from './gitDiff';
 import { closeCommandsDock } from '../commands/dock';
@@ -27,6 +27,7 @@ const DOCK_MAX_WIDTH = 600;
 const DOCK_WIDTH_KEY = 'mt-git-dock-width';
 
 let activeUnsub: (() => void) | null = null;
+let currentDockSessionId: string | null = null;
 
 function closeFileViewerDockIfOpen(): void {
   if (!$fileViewerDocked.get()) return;
@@ -57,6 +58,7 @@ export function openGitDock(sessionId: string): void {
 
   $gitPanelDocked.set(true);
   setActionButtonActive('git', true);
+  currentDockSessionId = sessionId;
 
   const dockPanel = document.getElementById('git-dock');
   const app = document.getElementById('app');
@@ -87,6 +89,7 @@ export function openGitDock(sessionId: string): void {
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
     if (!$gitPanelDocked.get() || !newId) return;
+    currentDockSessionId = newId;
     const dockBody = document
       .getElementById('git-dock')
       ?.querySelector('.git-dock-body') as HTMLElement | null;
@@ -103,6 +106,7 @@ export function openGitDock(sessionId: string): void {
 export function closeGitDock(): void {
   activeUnsub?.();
   activeUnsub = null;
+  currentDockSessionId = null;
   closeDiffOverlay();
 
   $gitPanelDocked.set(false);
@@ -127,6 +131,8 @@ export function closeGitDock(): void {
 export function setupGitDockResize(): void {
   const dockPanel = document.getElementById('git-dock');
   const gripEl = dockPanel?.querySelector('.git-dock-resize-grip') as HTMLElement | null;
+  const refreshBtn = document.getElementById('git-dock-refresh');
+  const closeBtn = document.getElementById('git-dock-close');
   if (!dockPanel || !gripEl) return;
 
   const panel = dockPanel;
@@ -196,4 +202,13 @@ export function setupGitDockResize(): void {
 
   document.addEventListener('touchend', endResize);
   document.addEventListener('touchcancel', endResize);
+
+  refreshBtn?.addEventListener('click', () => {
+    if (!$gitPanelDocked.get() || !currentDockSessionId) return;
+    void refreshGitPanel(currentDockSessionId);
+  });
+
+  closeBtn?.addEventListener('click', () => {
+    closeGitDock();
+  });
 }

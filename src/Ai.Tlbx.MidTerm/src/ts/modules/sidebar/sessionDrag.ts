@@ -8,6 +8,7 @@
 import { dom, sessionTerminals } from '../../state';
 import { reorderSessions, $sessionList, $activeSessionId } from '../../stores';
 import { persistSessionOrder } from '../comms';
+import { isSessionFilterActive } from './sessionList';
 import {
   showDockOverlay,
   hideDockOverlay,
@@ -43,8 +44,35 @@ function closestSessionItem(el: Element | null): HTMLElement | null {
   return found instanceof HTMLElement ? found : null;
 }
 
+function isSameControlMode(target: HTMLElement | null): boolean {
+  if (!target || !draggedElement) {
+    return false;
+  }
+
+  return target.dataset.controlMode === draggedElement.dataset.controlMode;
+}
+
 // Track elements with active drop indicators (avoids full DOM scan)
 const activeIndicators = new Set<HTMLElement>();
+
+function showLayoutForDragPreview(): void {
+  if (!isLayoutActive()) {
+    return;
+  }
+
+  const layoutRoot = getLayoutRoot();
+  if (!layoutRoot?.classList.contains('hidden')) {
+    return;
+  }
+
+  layoutRoot.classList.remove('hidden');
+  sessionTerminals.forEach((state, sessionId) => {
+    if (!isSessionInLayout(sessionId)) {
+      state.container.classList.add('hidden');
+    }
+  });
+  layoutShownForDrag = true;
+}
 
 /**
  * Initialize drag-and-drop for the session list
@@ -71,6 +99,11 @@ export function initSessionDrag(): void {
 }
 
 function handleDragStart(e: DragEvent): void {
+  if (isSessionFilterActive()) {
+    e.preventDefault();
+    return;
+  }
+
   const target = e.target as HTMLElement;
   const sessionItem = closestSessionItem(target);
   if (!sessionItem) return;
@@ -137,6 +170,12 @@ function handleDragOver(e: DragEvent): void {
 
   // When layout is active, sidebar drag should be dock-only (no reorder semantics).
   if (isLayoutActive()) {
+    const target = e.target as HTMLElement;
+    const sessionItem = closestSessionItem(target);
+    const hoveredSessionId = sessionItem?.dataset.sessionId;
+    if (hoveredSessionId && isSessionInLayout(hoveredSessionId)) {
+      showLayoutForDragPreview();
+    }
     clearAllDropIndicators();
     return;
   }
@@ -145,6 +184,11 @@ function handleDragOver(e: DragEvent): void {
   const sessionItem = closestSessionItem(target);
 
   if (!sessionItem || sessionItem === draggedElement) {
+    clearAllDropIndicators();
+    return;
+  }
+
+  if (!isSameControlMode(sessionItem)) {
     clearAllDropIndicators();
     return;
   }
@@ -210,6 +254,7 @@ function handleDrop(e: DragEvent): void {
   const targetItem = closestSessionItem(target);
 
   if (!targetItem || targetItem === draggedElement) return;
+  if (!isSameControlMode(targetItem)) return;
 
   const targetSessionId = targetItem.dataset.sessionId;
   if (!targetSessionId) return;
@@ -242,6 +287,10 @@ function handleDrop(e: DragEvent): void {
 }
 
 function handleTouchStart(e: TouchEvent): void {
+  if (isSessionFilterActive()) {
+    return;
+  }
+
   const touch = e.touches[0];
   if (!touch) return;
 
@@ -302,6 +351,10 @@ function handleTouchMove(e: TouchEvent): void {
   clearAllDropIndicators();
 
   if (sessionItem && sessionItem !== draggedElement) {
+    if (!isSameControlMode(sessionItem)) {
+      return;
+    }
+
     const rect = sessionItem.getBoundingClientRect();
     const midY = rect.top + rect.height / 2;
     const isAbove = touch.clientY < midY;
@@ -334,7 +387,7 @@ function handleTouchEnd(e: TouchEvent): void {
     const targetItem = closestSessionItem(el);
 
     if (targetItem && targetItem !== draggedElement && !isLayoutActive()) {
-      const targetSessionId = targetItem.dataset.sessionId;
+      const targetSessionId = isSameControlMode(targetItem) ? targetItem.dataset.sessionId : null;
       if (targetSessionId) {
         const sessions = $sessionList.get();
         const fromIndex = sessions.findIndex((s) => s.id === draggedSessionId);
@@ -407,6 +460,7 @@ function handleGlobalDragOver(e: DragEvent): void {
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'move';
     }
+    showLayoutForDragPreview();
     // Show dock overlay
     showDockOverlay(e.clientX, e.clientY, draggedSessionId);
   } else if (isDockOverlayVisible()) {

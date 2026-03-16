@@ -65,6 +65,8 @@
   --bg-surface: #242735; /* L: 12.5% - Input fields, dropdowns */
   --bg-input: #242735; /* Alias for compatibility */
   --bg-dropdown: #242735; /* Alias for compatibility */
+  --bg-elevated-opaque: #161821; /* Opaque modal/card shell */
+  --bg-dropdown-opaque: #242735; /* Opaque dropdown/menu shell */
   --bg-hover: #2d3044; /* L: 16% - Hover states */
   --bg-active: #363a50; /* L: 19% - Active/selected */
   --bg-session-hover: #1c1e2a; /* Subtle hover */
@@ -282,7 +284,7 @@ body {
 
 body {
   position: relative;
-  background: #03040a;
+  background: color-mix(in srgb, var(--bg-terminal) 55%, var(--bg-primary) 45%);
 }
 
 @media (min-width: 769px) {
@@ -312,7 +314,11 @@ body.has-app-background::after {
   content: '';
   position: fixed;
   inset: 0;
-  background: linear-gradient(180deg, rgba(4, 6, 12, 0.25), rgba(4, 6, 12, 0.5));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-primary) 25%, transparent),
+    color-mix(in srgb, var(--bg-primary) 55%, transparent)
+  );
   z-index: -1;
   pointer-events: none;
 }
@@ -369,7 +375,7 @@ body.has-app-background::after {
   box-sizing: border-box;
   border-bottom: 2px solid transparent;
   border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
-  background-color: var(--terminal-bg);
+  background-color: var(--bg-sidebar);
   position: relative;
 }
 
@@ -431,6 +437,86 @@ body.has-app-background::after {
   scrollbar-color: var(--accent-blue-25) var(--bg-sidebar);
 }
 
+.session-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-group + .session-group {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.session-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.session-group-toggle:hover {
+  background: var(--white-03);
+  color: var(--text-primary);
+}
+
+.session-group-caret {
+  flex: 0 0 auto;
+  font-size: var(--fs-base);
+  transition: transform 0.15s ease;
+}
+
+.session-group.collapsed .session-group-caret {
+  transform: rotate(-90deg);
+}
+
+.session-group-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.session-group-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.session-group-agent .session-group-count {
+  background: var(--accent-blue-10);
+  color: var(--accent-blue-hover);
+}
+
+.session-group-attention {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(224, 44, 52, 0.14);
+  color: rgb(224, 44, 52);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.session-group.collapsed .session-group-items {
+  display: none;
+}
+
+.session-filter-empty {
+  padding: 16px 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
 .session-list::-webkit-scrollbar {
   width: 8px;
   background: transparent;
@@ -482,6 +568,10 @@ body.has-app-background::after {
   cursor: pointer;
 }
 
+.session-list.filter-active .session-item:not(.tmux-child):not(.pending) {
+  cursor: pointer;
+}
+
 /* Drag states */
 .session-item.dragging {
   opacity: 0.5;
@@ -517,11 +607,27 @@ body.has-app-background::after {
   border-image: linear-gradient(
       to bottom,
       transparent 0%,
-      #5f4b24 20%,
-      #5f4b24 80%,
+      var(--accent-gold-muted) 20%,
+      var(--accent-gold-muted) 80%,
       transparent 100%
     )
     1;
+}
+
+.session-item.agent-controlled {
+  background-image: linear-gradient(
+    90deg,
+    var(--accent-blue-10) 0,
+    transparent 44px
+  );
+}
+
+.session-item.needs-attention {
+  background-image: linear-gradient(
+    90deg,
+    rgba(224, 44, 52, 0.12) 0,
+    transparent 56px
+  );
 }
 
 .session-item.pending {
@@ -577,6 +683,46 @@ body.has-app-background::after {
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+}
+
+.session-role-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-blue-10);
+  color: var(--accent-blue-hover);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.session-state-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.session-item.supervisor-busy-turn .session-state-badge {
+  background: var(--accent-blue-10);
+  color: var(--accent-blue-hover);
+}
+
+.session-item.supervisor-idle-prompt .session-state-badge,
+.session-item.supervisor-shell .session-state-badge {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+.session-item.supervisor-blocked .session-state-badge,
+.session-item.supervisor-dead .session-state-badge {
+  background: rgba(224, 44, 52, 0.14);
+  color: rgb(224, 44, 52);
 }
 
 .session-title {
@@ -718,7 +864,7 @@ body.has-app-background::after {
   top: 0;
   left: 8px;
   right: 8px;
-  background: var(--bg-input);
+  background: var(--bg-dropdown-opaque);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 12px var(--shadow-color);
@@ -1014,6 +1160,7 @@ body.has-app-background::after {
   );
 }
 
+.session-control,
 .session-pin,
 .session-resize,
 .session-rename,
@@ -1060,12 +1207,22 @@ body.has-app-background::after {
   color: var(--accent-gold);
 }
 
+.session-control.active {
+  color: var(--accent-blue);
+}
+
+.session-control:hover,
 .session-pin:hover,
 .session-resize:hover,
 .session-rename:hover,
 .session-inject:hover {
   background-color: var(--accent-gold);
   color: var(--bg-primary);
+}
+
+.session-control.active:hover {
+  background-color: var(--accent-blue);
+  color: var(--text-on-accent);
 }
 
 .session-close:hover {
@@ -1125,7 +1282,7 @@ body.has-app-background::after {
   border-top: 1px solid var(--border-color);
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  background-color: var(--terminal-bg);
+  background-color: var(--bg-sidebar);
 }
 
 .sidebar-footer .footer-row {
@@ -1285,7 +1442,7 @@ body.has-app-background::after {
   font-size: var(--fs-sm);
   line-height: 1.5;
   border-radius: var(--radius-md);
-  background: rgba(0, 0, 0, 0.7);
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
   pointer-events: none;
   user-select: none;
   opacity: 0.85;
@@ -1307,13 +1464,13 @@ body.has-app-background::after {
 }
 
 .latency-good {
-  color: #7ba2f7 !important;
+  color: var(--accent-blue) !important;
 }
 .latency-warn {
-  color: #e0af68 !important;
+  color: var(--accent-warning) !important;
 }
 .latency-bad {
-  color: #f7768e !important;
+  color: var(--accent-red) !important;
 }
 
 .git-status-overlay {
@@ -1321,14 +1478,14 @@ body.has-app-background::after {
   top: 6px;
   left: 6px;
   z-index: 100;
-  background: rgba(30, 30, 30, 0.92);
-  color: #ccc;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-primary));
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.4;
   padding: 8px 10px;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--border-emphasis) 60%, transparent);
   max-width: 420px;
   pointer-events: none;
   opacity: 0.85;
@@ -1337,7 +1494,11 @@ body.has-app-background::after {
 .git-overlay-header {
   margin-bottom: 4px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-emphasis) 60%, transparent);
+}
+
+.git-overlay-segment + .git-overlay-segment {
+  margin-left: 10px;
 }
 
 .git-overlay-log {
@@ -1350,6 +1511,38 @@ body.has-app-background::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.git-overlay-event-type {
+  margin-left: 4px;
+}
+
+.git-overlay-tone-time {
+  color: color-mix(in srgb, var(--text-muted) 90%, transparent);
+}
+
+.git-overlay-tone-good {
+  color: var(--accent-green);
+}
+
+.git-overlay-tone-bad {
+  color: var(--accent-red);
+}
+
+.git-overlay-tone-info {
+  color: var(--accent-blue);
+}
+
+.git-overlay-tone-warn {
+  color: var(--accent-warning);
+}
+
+.git-overlay-tone-muted {
+  color: var(--text-muted);
+}
+
+.git-overlay-tone-default {
+  color: var(--text-primary);
 }
 
 .terminal-container.hidden {
@@ -1388,7 +1581,11 @@ body.has-app-background::after {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  background: linear-gradient(180deg, rgba(9, 14, 24, 0.76), rgba(9, 14, 24, 0.9));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-blue) 14%, var(--bg-primary)),
+    color-mix(in srgb, var(--accent-blue) 8%, var(--bg-terminal))
+  );
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms ease;
@@ -1403,26 +1600,26 @@ body.has-app-background::after {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  border: 3px solid rgba(124, 171, 255, 0.18);
+  border: 3px solid color-mix(in srgb, var(--accent-blue) 18%, transparent);
   border-top-color: var(--accent-blue);
-  border-right-color: rgba(124, 171, 255, 0.82);
+  border-right-color: color-mix(in srgb, var(--accent-blue) 82%, transparent);
   animation: terminal-transfer-spin 0.85s linear infinite;
-  box-shadow: 0 0 0 10px rgba(124, 171, 255, 0.08);
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent-blue) 8%, transparent);
 }
 
 .terminal-transfer-label {
   max-width: min(80%, 420px);
   padding: 10px 16px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(124, 171, 255, 0.24);
+  background: color-mix(in srgb, var(--bg-elevated) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 24%, transparent);
   color: var(--text-primary);
   font-size: var(--fs-lg);
   font-weight: 600;
   letter-spacing: 0.01em;
   text-align: center;
   text-wrap: balance;
-  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 18px 38px var(--shadow-color);
 }
 
 @keyframes terminal-transfer-spin {
@@ -1470,7 +1667,7 @@ body.has-app-background::after {
 @media (hover: hover) and (pointer: fine) {
   .terminal-container.scrollbar-hover:hover .xterm-viewport {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    scrollbar-color: color-mix(in srgb, var(--text-primary) 25%, transparent) transparent;
   }
 
   .terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar {
@@ -1479,7 +1676,7 @@ body.has-app-background::after {
   }
 
   .terminal-container.scrollbar-hover:hover .xterm-viewport::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.25);
+    background: color-mix(in srgb, var(--text-primary) 25%, transparent);
     border-radius: 4px;
   }
 
@@ -1497,7 +1694,7 @@ body.has-app-background::after {
 @media (hover: none), (pointer: coarse) {
   .terminal-container.scrollbar-hover .xterm-viewport {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    scrollbar-color: color-mix(in srgb, var(--text-primary) 25%, transparent) transparent;
   }
 
   .terminal-container.scrollbar-hover .xterm-viewport::-webkit-scrollbar {
@@ -1506,7 +1703,7 @@ body.has-app-background::after {
   }
 
   .terminal-container.scrollbar-hover .xterm-viewport::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.25);
+    background: color-mix(in srgb, var(--text-primary) 25%, transparent);
     border-radius: 4px;
   }
 
@@ -1522,7 +1719,7 @@ body.has-app-background::after {
 
 .terminal-container.scrollbar-always .xterm-viewport {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 25%, transparent) transparent;
 }
 
 .terminal-container.scrollbar-always .xterm-viewport::-webkit-scrollbar {
@@ -1530,7 +1727,7 @@ body.has-app-background::after {
 }
 
 .terminal-container.scrollbar-always .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.25);
+  background: color-mix(in srgb, var(--text-primary) 25%, transparent);
   border-radius: 4px;
 }
 
@@ -1699,7 +1896,7 @@ body.has-app-background::after {
 
 /* Highlighted zone - gold marching ants border */
 .dock-zone.highlighted {
-  background-color: rgba(255, 193, 7, 0.08);
+  background-color: var(--accent-gold-10);
   border-radius: var(--radius-md);
   background-image:
     repeating-linear-gradient(
@@ -1815,17 +2012,6 @@ body.has-app-background::after {
   background: none !important;
   border: none !important;
   color: var(--text-muted) !important;
-}
-
-#btn-main-browser {
-  background: none !important;
-  border: none !important;
-  color: var(--accent-blue) !important;
-}
-
-#btn-main-browser.main-browser-active {
-  color: var(--accent-green) !important;
-  cursor: default;
 }
 
 .collapsed-title-bar {
@@ -2137,7 +2323,7 @@ body.has-app-background::after {
         padding: 6px;
         border: 1px solid var(--border-color);
         border-radius: 10px;
-        background: var(--bg-sidebar);
+        background: var(--bg-dropdown-opaque);
         box-shadow: 0 8px 24px var(--shadow-color);
         overflow-y: auto;
         z-index: 1004;
@@ -2329,7 +2515,7 @@ body.has-app-background::after {
         padding: 8px;
         border: 1px solid var(--border-color);
         border-radius: 14px;
-        background: var(--bg-dropdown);
+        background: var(--bg-dropdown-opaque);
         box-shadow: 0 18px 36px var(--shadow-color-lg);
         opacity: 0;
         visibility: hidden;
@@ -2821,7 +3007,7 @@ body.has-app-background::after {
 .data-loss-warning {
   left: 50%;
   transform: translateX(-50%);
-  background-color: var(--accent-red, #dc2626);
+  background-color: var(--accent-red);
   color: var(--text-on-accent);
   pointer-events: none;
   bottom: 60px;
@@ -2852,7 +3038,7 @@ body.has-app-background::after {
   display: block;
   background-color: var(--accent-red);
   color: var(--text-on-accent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px var(--shadow-color);
 }
 
 /* Push content down when banner is visible */
@@ -2978,7 +3164,7 @@ body.has-app-background::after {
 }
 
 .sidebar-nav-btn:hover {
-  background-color: #1c1e2a;
+  background-color: var(--bg-session-hover);
   color: var(--text-primary);
 }
 
@@ -3001,12 +3187,60 @@ body.has-app-background::after {
 }
 
 .sidebar-section-label {
-  padding: 6px 12px;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
+  margin: 6px 12px 8px;
+  border-top: 1px solid var(--border-subtle);
+  height: 0;
+}
+
+.session-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px;
   background-color: var(--bg-sidebar);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+}
+
+.session-filter-bar[hidden] {
+  display: none;
+}
+
+.session-filter-input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--btn-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.session-filter-input:hover {
+  border-color: var(--accent-blue);
+}
+
+.session-filter-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-15);
+}
+
+.session-filter-clear {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--fs-xl);
+  line-height: 1;
+}
+
+.session-filter-clear:hover {
+  background: var(--white-03);
+  color: var(--text-primary);
 }
 
 .empty-state button:disabled {
@@ -3296,11 +3530,11 @@ body.has-app-background::after {
 }
 
 .git-found {
-  color: #4ec968;
+  color: var(--accent-green);
 }
 
 .git-not-found {
-  color: #e06c60;
+  color: var(--accent-red);
 }
 
 .path-value-row {
@@ -3401,16 +3635,18 @@ body.has-app-background::after {
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--fs-lg);
+  text-decoration: none;
 }
 
 .btn-secondary:hover {
   background-color: var(--btn-secondary);
+  text-decoration: none;
 }
 
 .btn-danger {
   padding: 8px 20px;
-  background-color: #c0392b;
-  color: #fff;
+  background-color: var(--accent-red);
+  color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -3420,7 +3656,7 @@ body.has-app-background::after {
 }
 
 .btn-danger:hover {
-  background-color: #e74c3c;
+  background-color: color-mix(in srgb, var(--accent-red) 84%, var(--text-on-accent));
 }
 
 .btn-danger:disabled {
@@ -3434,13 +3670,13 @@ body.has-app-background::after {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--overlay-bg-dark, rgba(0, 0, 0, 0.8));
+  background: var(--overlay-bg-dark);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 2000;
-  color: #fff;
+  color: var(--text-on-accent);
   gap: 16px;
   font-size: var(--fs-lg);
 }
@@ -3448,15 +3684,16 @@ body.has-app-background::after {
 .restart-overlay .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
+  border: 3px solid color-mix(in srgb, var(--text-on-accent) 30%, transparent);
+  border-top-color: var(--text-on-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 /* Additional settings input styles */
 .setting-row input[type='text'],
-.setting-row input[type='number'] {
+.setting-row input[type='number'],
+.setting-row input[type='search'] {
   padding: 8px 12px;
   background-color: var(--bg-input);
   color: var(--text-primary);
@@ -3466,12 +3703,14 @@ body.has-app-background::after {
 }
 
 .setting-row input[type='text']:hover,
-.setting-row input[type='number']:hover {
+.setting-row input[type='number']:hover,
+.setting-row input[type='search']:hover {
   border-color: var(--accent-blue);
 }
 
 .setting-row input[type='text']:focus,
-.setting-row input[type='number']:focus {
+.setting-row input[type='number']:focus,
+.setting-row input[type='search']:focus {
   outline: none;
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 3px var(--accent-blue-15);
@@ -3506,6 +3745,102 @@ body.has-app-background::after {
   border-radius: 3px;
   font-family: var(--font-mono);
   color: var(--accent-cyan);
+}
+
+.api-key-create-controls {
+  display: flex;
+  gap: 10px;
+  width: min(100%, 460px);
+  justify-content: flex-end;
+}
+
+.api-key-create-controls input {
+  flex: 1;
+  min-width: 0;
+}
+
+.api-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-key-empty {
+  padding: 14px 16px;
+  border: 1px dashed var(--border-emphasis);
+  border-radius: var(--radius-lg);
+  background: var(--bg-dropdown);
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+}
+
+.api-key-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-dropdown);
+}
+
+.api-key-item-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.api-key-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.api-key-item-name {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.api-key-preview {
+  max-width: none;
+}
+
+.api-key-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+}
+
+.api-key-item-meta strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.api-key-item-actions {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .api-key-create-controls {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .api-key-item {
+    flex-direction: column;
+  }
+
+  .api-key-item-actions {
+    width: 100%;
+  }
 }
 
 /* License items */
@@ -3598,7 +3933,7 @@ body.has-app-background::after {
 
 .update-dismiss-btn:hover {
   color: var(--text-primary);
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: color-mix(in srgb, var(--text-primary) 10%, transparent);
 }
 
 .update-panel.hidden {
@@ -3702,7 +4037,7 @@ body.has-app-background::after {
 }
 
 .dev-badge {
-  color: #fff;
+  color: var(--text-on-accent);
   background: var(--accent-orange);
   padding: 2px 10px;
   border-radius: 4px;
@@ -3712,7 +4047,7 @@ body.has-app-background::after {
 }
 
 .signed-badge {
-  color: #fff;
+  color: var(--text-on-accent);
   background: var(--accent-green);
   padding: 2px 10px;
   border-radius: 4px;
@@ -3910,7 +4245,7 @@ body.has-app-background::after {
 
 .modal-content {
   position: relative;
-  background-color: var(--bg-sidebar);
+  background-color: var(--bg-elevated-opaque);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   max-width: 600px;
@@ -4262,7 +4597,12 @@ body.has-app-background::after {
     calc(20px + env(safe-area-inset-bottom, 0px))
     calc(20px + env(safe-area-inset-left, 0px));
   box-sizing: border-box;
-  background: linear-gradient(135deg, var(--bg-primary) 0%, #0a0b12 50%, var(--bg-primary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-primary) 0%,
+    color-mix(in srgb, var(--bg-terminal) 70%, var(--bg-primary) 30%) 50%,
+    var(--bg-primary) 100%
+  );
   background-size: 400% 400%;
   animation: harbor-drift 30s ease infinite;
 }
@@ -6317,7 +6657,7 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 -2px 12px var(--shadow-color);
 }
 
 .smart-input-overlay.visible {
@@ -6339,7 +6679,7 @@ body.shared-session-mode .session-tab-bar {
   overflow-y: hidden;
   outline: none;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 18%, transparent) transparent;
 }
 
 .smart-input-textarea:focus {
@@ -6359,14 +6699,14 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .smart-input-textarea::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--text-primary) 18%, transparent);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 .smart-input-textarea::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.32);
+  background: color-mix(in srgb, var(--text-primary) 32%, transparent);
   background-clip: padding-box;
 }
 
@@ -6406,18 +6746,18 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .smart-input-mic-btn.recording {
-  background: #e53935;
-  color: #fff;
+  background: var(--accent-red);
+  color: var(--text-on-accent);
   animation: mic-pulse 1s ease-in-out infinite;
 }
 
 @keyframes mic-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-red) 40%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(229, 57, 53, 0);
+    box-shadow: 0 0 0 8px transparent;
   }
 }
 
@@ -6537,7 +6877,7 @@ body.shared-session-mode .session-tab-bar {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--overlay-bg-dark);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6549,7 +6889,7 @@ body.shared-session-mode .session-tab-bar {
   max-width: 90vw;
   max-height: 65vh;
   border-radius: 12px;
-  background: #000;
+  background: var(--bg-terminal);
 }
 
 .camera-capture-controls {
@@ -6562,9 +6902,9 @@ body.shared-session-mode .session-tab-bar {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  border: 3px solid #fff;
+  border: 3px solid var(--text-on-accent);
   background: transparent;
-  color: #fff;
+  color: var(--text-on-accent);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -6573,11 +6913,11 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .camera-capture-snap:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--text-on-accent) 15%, transparent);
 }
 
 .camera-capture-snap:active {
-  background: rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, var(--text-on-accent) 30%, transparent);
 }
 
 .camera-capture-cancel {
@@ -6585,8 +6925,8 @@ body.shared-session-mode .session-tab-bar {
   height: 44px;
   border-radius: 50%;
   border: none;
-  background: var(--btn-secondary, #3a3e52);
-  color: var(--text-primary, #d4d7e8);
+  background: var(--btn-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -6594,7 +6934,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .camera-capture-cancel:hover {
-  background: var(--btn-secondary-hover, #4a4f68);
+  background: var(--btn-secondary-hover);
 }
 
 /* ==========================================================================
@@ -6741,7 +7081,7 @@ body.shared-session-mode .session-tab-bar {
 .touch-popup {
   position: fixed;
   bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-  background: var(--bg-sidebar);
+  background: var(--bg-elevated-opaque);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 8px;
@@ -6816,7 +7156,7 @@ body.shared-session-mode .session-tab-bar {
   position: fixed;
   display: flex;
   gap: 4px;
-  background: var(--bg-sidebar);
+  background: var(--bg-elevated-opaque);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 6px;
@@ -7023,7 +7363,7 @@ body.shared-session-mode .session-tab-bar {
 .file-viewer-video {
   width: 100%;
   max-height: calc(85vh - 100px);
-  background: #000;
+  background: var(--bg-terminal);
 }
 
 /* File viewer: Audio */
@@ -7346,7 +7686,7 @@ body.shared-session-mode .session-tab-bar {
   left: 0;
   width: var(--gutter-width, 3ch);
   text-align: right;
-  color: #4a4a4a;
+  color: var(--text-muted);
   user-select: none;
   padding-right: 1ch;
 }
@@ -7659,6 +7999,42 @@ body.shared-session-mode .session-tab-bar {
   z-index: 50;
 }
 
+.git-dock-header {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  height: var(--bar-height);
+  box-sizing: border-box;
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
+  background-color: var(--terminal-bg);
+  gap: 8px;
+}
+
+.git-dock-brand {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.git-dock-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .git-dock.hidden {
   display: none;
 }
@@ -7681,6 +8057,10 @@ body.shared-session-mode .session-tab-bar {
 .git-dock-body {
   flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-sidebar);
 }
 
 .terminal-page.git-docked .session-tab-panels {
@@ -7862,36 +8242,36 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-tertiary, #1a1a2e);
+  background: var(--bg-tertiary);
 }
 
 #web-preview-iframe {
   width: 100%;
   height: 100%;
   border: none;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 
 .web-preview-dock-body.viewport-constrained #web-preview-iframe {
-  box-shadow: 0 0 0 1px var(--border-color, #333);
+  box-shadow: 0 0 0 1px var(--border-color);
 }
 
 .web-preview-viewport-badge {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 3px;
-  border: 1px solid var(--border-color, #333);
-  background: var(--bg-hover, #2a2a3a);
-  color: var(--text-secondary, #aaa);
+  border: 1px solid var(--border-color);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
   cursor: pointer;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   line-height: 1.4;
   white-space: nowrap;
 }
 
 .web-preview-viewport-badge:hover {
-  color: var(--text-primary, #fff);
-  background: var(--bg-active, #3a3a4a);
+  color: var(--text-primary);
+  background: var(--bg-active);
 }
 
 .web-preview-detached-placeholder {
@@ -8012,7 +8392,7 @@ body.shared-session-mode .session-tab-bar {
   color: var(--accent-blue);
 }
 .manager-btn-delete:hover {
-  color: var(--accent-red, #e06060);
+  color: var(--accent-red);
 }
 
 .manager-bar-add {
@@ -8092,8 +8472,8 @@ body.shared-session-mode .session-tab-bar {
   border-image: linear-gradient(
       to right,
       transparent 0%,
-      #5f4b24 20%,
-      #5f4b24 80%,
+      var(--accent-gold-muted) 20%,
+      var(--accent-gold-muted) 80%,
       transparent 100%
     )
     1;
@@ -8154,8 +8534,8 @@ body.shared-session-mode .session-tab-bar {
   border-image: linear-gradient(
       to right,
       transparent 0%,
-      #5f4b24 20%,
-      #5f4b24 80%,
+      var(--accent-gold-muted) 20%,
+      var(--accent-gold-muted) 80%,
       transparent 100%
     )
     1;
@@ -8183,23 +8563,75 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .git-indicator {
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
-.git-indicator-stats {
-  font-size: var(--fs-sm);
-  font-family: var(--font-mono);
+.git-indicator-meta {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.05;
+}
+
+.git-indicator-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 132px;
+}
+
+.git-indicator-line-primary {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.git-indicator-line-secondary {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
   opacity: 0.9;
 }
 
+.git-indicator-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-indicator-separator,
+.git-indicator-status {
+  flex-shrink: 0;
+}
+
+.git-indicator-separator {
+  color: var(--text-muted);
+}
+
+.git-indicator-status {
+  color: var(--text-muted);
+}
+
+.git-indicator-empty .git-indicator-branch,
+.git-indicator-empty .git-indicator-status,
+.git-indicator-empty .git-indicator-separator {
+  color: var(--text-muted);
+}
+
+.git-indicator-stats {
+  display: flex;
+  gap: 6px;
+}
+
 .git-indicator-added {
-  color: #4ec968;
+  color: var(--accent-green);
 }
 
 .git-indicator-deleted {
-  color: #e06c60;
+  color: var(--accent-red);
 }
 
 .session-tab-panels {
@@ -8519,77 +8951,214 @@ body.shared-session-mode .session-tab-bar {
 .git-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  background: var(--bg-primary);
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-sidebar);
   font-size: var(--fs-base);
+  font-family: var(--font-ui-emoji);
 }
 
-.git-panel-empty {
+.git-panel-summary {
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(180deg, var(--bg-terminal), var(--bg-elevated));
+}
+
+.git-panel-summary-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.git-panel-summary-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-panel-summary-pills {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.git-summary-pill {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  line-height: 1.5;
+}
+
+.git-summary-pill-clean {
+  color: var(--accent-green);
+  background: var(--accent-green-15);
+}
+
+.git-summary-pill-warn {
+  color: var(--accent-orange);
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+}
+
+.git-summary-pill-danger {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 18%, transparent);
+}
+
+.git-panel-summary-subtitle {
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-panel-content {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--text-secondary);
-  gap: 8px;
+  overflow: hidden;
 }
 
-.git-panel-hint {
-  font-size: var(--fs-md);
-  color: var(--text-muted);
+.git-panel-fill {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.git-panel-empty-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.git-panel-empty-copy p {
+  margin: 0;
 }
 
 .git-panel-clean {
-  padding: 12px;
   color: var(--text-secondary);
-  font-size: var(--fs-md);
-  text-align: center;
+}
+
+.git-panel-empty {
+  color: var(--text-secondary);
+}
+
+.git-panel-hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
 }
 
 /* --- Accordion sections --- */
 
+.git-panel-sections {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-blue-25) var(--bg-sidebar);
+}
+
+.git-panel-sections-fill {
+  overflow: hidden;
+}
+
+.git-panel-sections::-webkit-scrollbar,
+.git-commits-list::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+
+.git-panel-sections::-webkit-scrollbar-track,
+.git-commits-list::-webkit-scrollbar-track {
+  background: var(--bg-sidebar);
+}
+
+.git-panel-sections::-webkit-scrollbar-thumb,
+.git-commits-list::-webkit-scrollbar-thumb {
+  background: var(--accent-blue-25);
+  border-radius: 4px;
+}
+
+.git-panel-sections::-webkit-scrollbar-thumb:hover,
+.git-commits-list::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-blue-40);
+}
+
 .git-section {
   display: flex;
   flex-direction: column;
-  min-height: 0;
   border-bottom: 1px solid var(--border-color);
 }
 
 .git-section-expanded {
+  background: color-mix(in srgb, var(--bg-session-active) 55%, transparent);
+}
+
+.git-section-fill {
   flex: 1;
-  overflow: hidden;
+  min-height: 0;
 }
 
 .git-section-header {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
+  gap: 8px;
+  padding: 8px 12px;
   background: none;
   border: none;
-  color: var(--text-secondary);
-  font-size: var(--fs-md);
-  font-weight: 600;
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  font-weight: 500;
   font-family: inherit;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   cursor: pointer;
   flex-shrink: 0;
+  text-align: left;
+  transition:
+    background-color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.git-section-expanded > .git-section-header {
+  box-shadow: inset 2px 0 0 var(--accent-gold);
+  background: color-mix(in srgb, var(--bg-session-active) 85%, transparent);
 }
 
 .git-section-header:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
+  background: var(--bg-session-hover);
+  transform: translateX(2px);
 }
 
 .git-section-chevron {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   flex-shrink: 0;
 }
 
 .git-section-title {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .git-section-count {
@@ -8605,23 +9174,27 @@ body.shared-session-mode .session-tab-bar {
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  font-weight: 400;
+  font-weight: 500;
   display: flex;
   gap: 6px;
   flex-shrink: 0;
 }
 
 .git-loc-add {
-  color: #4ec968;
+  color: var(--accent-green);
 }
 .git-loc-del {
-  color: #e06c60;
+  color: var(--accent-red);
 }
 
 .git-section-body {
+  padding: 4px 0 8px;
+}
+
+.git-section-fill .git-section-body {
   flex: 1;
-  overflow-y: auto;
   min-height: 0;
+  overflow-y: auto;
 }
 
 /* --- File tree --- */
@@ -8629,24 +9202,37 @@ body.shared-session-mode .session-tab-bar {
 .git-tree-dir {
   display: flex;
   align-items: center;
-  padding: 2px 12px;
+  padding: 4px 12px;
 }
 
 .git-tree-dir-name {
-  color: var(--text-secondary);
-  font-size: var(--fs-md);
+  color: var(--text-muted);
+  font-size: var(--fs-base);
 }
 
 .git-tree-file {
   display: flex;
   align-items: center;
-  padding: 3px 12px;
+  padding: 6px 12px;
   cursor: pointer;
-  transition: background-color 0.1s;
+  transition:
+    background-color 0.12s ease,
+    transform 0.12s ease;
 }
 
 .git-tree-file:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-session-hover);
+  transform: translateX(2px);
+}
+
+.git-tree-file-disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.git-tree-file-disabled:hover {
+  background-color: transparent;
+  transform: none;
 }
 
 .git-tree-name {
@@ -8655,15 +9241,15 @@ body.shared-session-mode .session-tab-bar {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
-  font-size: var(--fs-md);
+  font-size: var(--fs-base);
 }
 
 .git-file-indicator {
   flex-shrink: 0;
   font-weight: 600;
   font-family: var(--font-mono);
-  font-size: var(--fs-md);
-  width: 16px;
+  font-size: var(--fs-sm);
+  width: 18px;
   text-align: center;
   margin-left: 8px;
 }
@@ -8683,6 +9269,13 @@ body.shared-session-mode .session-tab-bar {
 .git-commits-section {
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.git-commits-fill {
+  flex: 1;
 }
 
 .git-section-toggle {
@@ -8690,31 +9283,46 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 12px;
+  padding: 8px 12px;
   background: none;
   border: none;
-  color: var(--text-secondary);
-  font-size: var(--fs-md);
+  color: var(--text-primary);
+  font-size: var(--fs-base);
   font-family: inherit;
   cursor: pointer;
+  text-align: left;
+  transition:
+    background-color 0.12s ease,
+    transform 0.12s ease;
 }
 
 .git-section-toggle:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
+  background: var(--bg-session-hover);
+  transform: translateX(2px);
 }
 
 .git-commits-list {
-  max-height: 300px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
 .git-commit-entry {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: var(--fs-base);
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+}
+
+.git-commit-main {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 12px;
-  font-size: var(--fs-md);
+  width: 100%;
+  min-width: 0;
 }
 
 .git-commit-hash {
@@ -8726,23 +9334,16 @@ body.shared-session-mode .session-tab-bar {
 
 .git-commit-msg {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
 }
 
-/* --- Stash footer --- */
-
-.git-stash-footer {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border-color);
-  padding: 6px 12px;
-}
-
-.git-stash-label {
-  color: var(--text-secondary);
-  font-size: var(--fs-md);
+.git-commit-meta {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
 }
 
 /* --- Diff view --- */
@@ -8791,7 +9392,7 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-sidebar);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px var(--shadow-color-md);
   display: flex;
   flex-direction: column;
   resize: both;
@@ -9144,7 +9745,7 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-sidebar);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px var(--shadow-color-md);
   display: flex;
   flex-direction: column;
   resize: both;

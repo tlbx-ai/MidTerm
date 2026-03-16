@@ -6,7 +6,7 @@
  * showing the active terminal and flash it when output heat cools down.
  */
 
-import { MOBILE_BREAKPOINT } from '../../constants';
+import { ASSET_VERSION, MOBILE_BREAKPOINT } from '../../constants';
 import { sessionTerminals } from '../../state';
 import { $activeSessionId, $sessionList } from '../../stores';
 import { t } from '../i18n';
@@ -175,6 +175,7 @@ async function openPiPIfEligibleAsync(): Promise<void> {
 function attachPiPWindow(win: Window): void {
   pipWindow = win;
   buildPiPDocument(win.document);
+  syncPiPTheme(win.document);
   win.addEventListener('pagehide', clearPiPReferences);
   startPreviewLoop();
   updatePiPContent();
@@ -194,19 +195,33 @@ function buildPiPDocument(doc: Document): void {
   viewport.content = 'width=device-width,initial-scale=1';
   doc.head.appendChild(viewport);
 
+  const themeColor = doc.createElement('meta');
+  themeColor.name = 'theme-color';
+  doc.head.appendChild(themeColor);
+
+  const stylesheet = doc.createElement('link');
+  stylesheet.rel = 'stylesheet';
+  stylesheet.href = `/css/app.css?v=${ASSET_VERSION}`;
+  doc.head.appendChild(stylesheet);
+
   const style = doc.createElement('style');
   style.textContent = `
     :root {
-      color-scheme: dark;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color-scheme: light dark;
+      font-family: var(--font-mono);
     }
 
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
-      background: #070a11;
-      color: #d8deeb;
+      background: var(--bg-primary);
+      color: var(--text-terminal);
+    }
+
+    body::before,
+    body::after {
+      content: none !important;
     }
 
     .mm-mobile-pip {
@@ -215,9 +230,14 @@ function buildPiPDocument(doc: Document): void {
       width: 100%;
       display: flex;
       flex-direction: column;
-      border: 2px solid #1f2c45;
+      border: 2px solid color-mix(in srgb, var(--border-emphasis) 80%, transparent);
       border-radius: 12px;
-      background: linear-gradient(180deg, #0f1627 0%, #070a11 100%);
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--bg-elevated) 88%, var(--bg-terminal)) 0%,
+        var(--bg-terminal) 100%
+      );
+      box-shadow: 0 16px 34px var(--shadow-color-md);
       overflow: hidden;
     }
 
@@ -227,8 +247,8 @@ function buildPiPDocument(doc: Document): void {
       justify-content: space-between;
       gap: 8px;
       padding: 8px 10px;
-      border-bottom: 1px solid #1f2c45;
-      background: rgba(11, 18, 33, 0.9);
+      border-bottom: 1px solid color-mix(in srgb, var(--border-emphasis) 70%, transparent);
+      background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
       font-size: 12px;
     }
 
@@ -237,14 +257,14 @@ function buildPiPDocument(doc: Document): void {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      color: #f1f5ff;
+      color: var(--text-primary);
       font-weight: 600;
     }
 
     .mm-mobile-pip__rate {
       flex-shrink: 0;
       font-variant-numeric: tabular-nums;
-      color: #9ea8ba;
+      color: var(--text-muted);
     }
 
     .mm-mobile-pip__preview {
@@ -256,19 +276,19 @@ function buildPiPDocument(doc: Document): void {
       overflow: hidden;
       white-space: pre;
       text-overflow: clip;
-      color: #d8deeb;
+      color: var(--text-terminal);
     }
 
     .mm-mobile-pip.heat-up .mm-mobile-pip__rate {
-      color: #9adf70;
+      color: var(--accent-green);
     }
 
     .mm-mobile-pip.heat-down .mm-mobile-pip__rate {
-      color: #f4d07c;
+      color: var(--accent-warning);
     }
 
     .mm-mobile-pip.heat-idle .mm-mobile-pip__rate {
-      color: #94a3b8;
+      color: var(--text-secondary);
     }
 
     .mm-mobile-pip.cooling-flash {
@@ -277,12 +297,12 @@ function buildPiPDocument(doc: Document): void {
 
     @keyframes mm-mobile-pip-flash {
       0% {
-        box-shadow: 0 0 0 0 rgba(244, 208, 124, 0.9);
-        border-color: #f4d07c;
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-warning) 90%, transparent);
+        border-color: var(--accent-warning);
       }
       100% {
-        box-shadow: 0 0 0 12px rgba(244, 208, 124, 0);
-        border-color: #1f2c45;
+        box-shadow: 0 0 0 12px transparent;
+        border-color: color-mix(in srgb, var(--border-emphasis) 80%, transparent);
       }
     }
   `;
@@ -353,6 +373,10 @@ function clearPiPReferences(): void {
 }
 
 function updatePiPContent(): void {
+  if (pipWindow !== null) {
+    syncPiPTheme(pipWindow.document);
+  }
+
   if (pipTitleEl === null || pipPreviewEl === null) return;
 
   const activeSessionId = $activeSessionId.get();
@@ -366,6 +390,20 @@ function updatePiPContent(): void {
   pipTitleEl.textContent =
     session?.name ?? session?.terminalTitle ?? session?.shellType ?? t('session.terminal');
   pipPreviewEl.textContent = buildTerminalPreview(activeSessionId);
+}
+
+function syncPiPTheme(doc: Document): void {
+  doc.documentElement.style.cssText = document.documentElement.style.cssText;
+
+  const themeColor = doc.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (themeColor !== null) {
+    const currentColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--bg-primary')
+      .trim();
+    if (currentColor.length > 0) {
+      themeColor.content = currentColor;
+    }
+  }
 }
 
 function buildTerminalPreview(sessionId: string): string {

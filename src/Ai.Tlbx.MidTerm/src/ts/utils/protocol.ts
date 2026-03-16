@@ -24,7 +24,9 @@ export interface OutputFrame {
 export function parseOutputFrame(payload: Uint8Array): OutputFrame {
   const cols = (payload[0] ?? 0) | ((payload[1] ?? 0) << 8);
   const rows = (payload[2] ?? 0) | ((payload[3] ?? 0) << 8);
-  const data = payload.slice(4);
+  // The mux layer already takes ownership of the WebSocket payload before it
+  // reaches this parser, so we can return a view here instead of another copy.
+  const data = payload.subarray(4);
   const valid = cols > 0 && cols <= MAX_FRAME_DIMENSION && rows > 0 && rows <= MAX_FRAME_DIMENSION;
 
   return { cols, rows, data, valid };
@@ -40,7 +42,7 @@ export async function parseCompressedOutputFrame(payload: Uint8Array): Promise<O
   const valid = cols > 0 && cols <= MAX_FRAME_DIMENSION && rows > 0 && rows <= MAX_FRAME_DIMENSION;
 
   // Skip uncompressedLen (bytes 4-7) - we don't need it, DecompressionStream handles sizing
-  const compressedData = payload.slice(8);
+  const compressedData = payload.subarray(8);
 
   try {
     const data = await decompressGzip(compressedData);

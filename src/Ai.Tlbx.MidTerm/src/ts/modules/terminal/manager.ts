@@ -21,6 +21,7 @@ import {
   $activeSessionId,
   $currentSettings,
   $isMainBrowser,
+  $sessions,
   $windowsBuildNumber,
 } from '../../stores';
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
@@ -56,7 +57,7 @@ import {
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
-import { getTerminalEnterOverride } from './enterBehavior';
+import { getTerminalEnterOverride, isPowerShellEnterTarget } from './enterBehavior';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -499,11 +500,14 @@ export function writeOutputFrame(
 
   // Write terminal data
   if (frame.data.length > 0) {
-    state.terminal.write(frame.data);
-
-    // Scan output for file paths to make them clickable
-    // See fileLinks.ts for performance notes - can be disabled if needed
-    scanOutputForPaths(sessionId, frame.data);
+    state.terminal.write(frame.data, () => {
+      // Buffered replay should yield the main thread to xterm first so a tab
+      // opening after reconnect catches up visually before File Radar does its
+      // extra decode and pattern matching work.
+      queueMicrotask(() => {
+        scanOutputForPaths(sessionId, frame.data);
+      });
+    });
   }
 }
 
@@ -607,9 +611,14 @@ export function setupTerminalEvents(
     // F12: let browser handle it (open DevTools)
     if (e.key === 'F12') return false;
 
+    const foreground = getForegroundInfo(sessionId);
+    const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
     const enterOverride = getTerminalEnterOverride(
       e,
-      $currentSettings.get()?.terminalEnterMode ?? 'default',
+      $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
+      isPowerShellEnterTarget(foreground.name, foreground.commandLine, sessionShellType)
+        ? 'powershell'
+        : 'default',
     );
     if (enterOverride !== null) {
       sendInput(sessionId, enterOverride);
@@ -633,7 +642,6 @@ export function setupTerminalEvents(
     // Native apps (Codex): sets OS clipboard + injects \x1bv.
     // Path apps (Claude, unknown): uploads image + pastes file path.
     if (isNativeImagePasteShortcut(e)) {
-      const foreground = getForegroundInfo(sessionId);
       void handleNativeImagePaste(sessionId, {
         foregroundName: foreground.name,
         foregroundCommandLine: foreground.commandLine,

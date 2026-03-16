@@ -105,6 +105,8 @@ const translations: Record<string, string> = {
   'sessionTabs.share': 'Share',
   'sessionTabs.web': 'Web Preview',
   'sessionTabs.webShort': 'WEB',
+  'git.noRepoShort': 'No repo',
+  'git.cleanShort': 'Clean',
 };
 
 const originalDocument = globalThis.document;
@@ -145,12 +147,14 @@ describe('tabBar', () => {
       'share',
       'git',
     ]);
-    expect(buttons.map((button) => button.children[1]?.textContent)).toEqual([
+    expect(buttons.slice(0, 3).map((button) => button.children[1]?.textContent)).toEqual([
       'WEB',
       'Commands',
       'Share',
-      'Git',
     ]);
+    expect(buttons[3]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
+    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
+    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
   });
 
   it('uses the registered share handler and updates git stats', async () => {
@@ -168,11 +172,23 @@ describe('tabBar', () => {
     expect(shareClick).toHaveBeenCalledTimes(1);
 
     updateGitIndicator(bar as unknown as HTMLDivElement, {
+      branch: 'feature/git-chip',
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      modified: [{ path: 'a.ts', status: 'modified', additions: 7, deletions: 3 }],
+      untracked: [],
+      conflicted: [],
+      recentCommits: [],
+      stashCount: 0,
+      repoRoot: '/repo',
       totalAdditions: 7,
       totalDeletions: 3,
-    } as { totalAdditions: number; totalDeletions: number });
+    } as any);
 
-    expect(gitButton.children[2]?.innerHTML).toContain('+7');
-    expect(gitButton.children[2]?.innerHTML).toContain('-3');
+    expect(gitButton.querySelector('.git-indicator-stats')?.innerHTML).toContain('+7');
+    expect(gitButton.querySelector('.git-indicator-stats')?.innerHTML).toContain('-3');
+    expect(gitButton.querySelector('.git-indicator-branch')?.textContent).toBe('feature/git-chip');
+    expect(gitButton.querySelector('.git-indicator-status')?.textContent).toBe('~1');
   });
 });
