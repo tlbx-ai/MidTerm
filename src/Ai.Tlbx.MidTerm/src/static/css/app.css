@@ -2014,17 +2014,6 @@ body.has-app-background::after {
   color: var(--text-muted) !important;
 }
 
-#btn-main-browser {
-  background: none !important;
-  border: none !important;
-  color: var(--accent-blue) !important;
-}
-
-#btn-main-browser.main-browser-active {
-  color: var(--accent-green) !important;
-  cursor: default;
-}
-
 .collapsed-title-bar {
   display: none;
   position: fixed;

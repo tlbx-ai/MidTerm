@@ -31,7 +31,8 @@ import {
   ensureTerminalFontLoaded,
   getConfiguredTerminalFontFamily,
 } from './fontConfig';
-import { sendResize } from '../comms';
+import { claimMainBrowser, sendResize } from '../comms';
+import { t } from '../i18n';
 import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
 
@@ -556,15 +557,19 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   }
 
   // Find or create overlay element
-  let overlay = container.querySelector<HTMLElement>('.scaled-overlay');
+  let overlay = container.querySelector<HTMLButtonElement>('.scaled-overlay');
 
   // Helper: ensure overlay exists with click handler
-  const ensureOverlay = (): HTMLElement => {
+  const ensureOverlay = (): HTMLButtonElement => {
     if (overlay) return overlay;
     overlay = document.createElement('button');
     overlay.className = 'scaled-overlay';
+    overlay.type = 'button';
     overlay.addEventListener('click', () => {
-      if (!$isMainBrowser.get()) return;
+      if (!$isMainBrowser.get()) {
+        claimMainBrowser();
+        return;
+      }
       const sessionId = container.id.replace('terminal-', '');
       if (!sessionId) return;
       const layoutPane = container.closest<HTMLElement>('.layout-leaf');
@@ -578,8 +583,17 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     return overlay;
   };
 
+  const setOverlayCopy = (el: HTMLButtonElement, label: string): void => {
+    const title = $isMainBrowser.get()
+      ? t('terminal.resizeToThisViewport')
+      : t('terminal.makeReferenceScaleBrowser');
+    el.title = title;
+    el.setAttribute('aria-label', title);
+    el.innerHTML = `${icon('resize')} ${label}`;
+  };
+
   // Helper: position overlay above connection-status badge when it's visible
-  const positionOverlay = (el: HTMLElement): void => {
+  const positionOverlay = (el: HTMLButtonElement): void => {
     const connBadge = document.getElementById('connection-status');
     const connVisible =
       connBadge &&
@@ -619,8 +633,10 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       const scaleTxt = scale.toPrecision(5);
       diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
     }
-    const resizeHint = $isMainBrowser.get() ? ' — click to resize' : '';
-    el.innerHTML = `${icon('resize')} Scaled to ${pct}%${resizeHint}${diagHtml}`;
+    const overlayLabel = $isMainBrowser.get()
+      ? `${t('terminal.scaledTo')} ${pct}%`
+      : `${t('terminal.scaledContent')} (${pct}%) - ${t('terminal.makeReferenceScaleBrowser')}`;
+    setOverlayCopy(el, `${overlayLabel}${diagHtml}`);
   } else if (termWidth < availWidth - 2 || termHeight < availHeight - 2) {
     // Fits but undersized — no transform, flexbox centers it
     xterm.style.transform = '';
@@ -638,7 +654,10 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       }
       const el = ensureOverlay();
       positionOverlay(el);
-      el.innerHTML = `${icon('resize')} Sized for smaller screen`;
+      const overlayLabel = $isMainBrowser.get()
+        ? t('terminal.sizedForSmallerScreen')
+        : `${t('terminal.sizedForSmallerScreen')} - ${t('terminal.makeReferenceScaleBrowser')}`;
+      setOverlayCopy(el, overlayLabel);
     } else if (overlay) {
       overlay.remove();
       overlay = null;
@@ -873,6 +892,7 @@ export function setupResizeObserver(): void {
 
   $isMainBrowser.subscribe((isMain) => {
     if (isMain && periodicResizeInterval === undefined) {
+      requestAnimationFrame(autoResizeAllTerminalsImmediate);
       periodicResizeInterval = window.setInterval(periodicResizeCheck, 1000);
     } else if (!isMain && periodicResizeInterval !== undefined) {
       clearInterval(periodicResizeInterval);

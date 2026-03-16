@@ -13,6 +13,11 @@
   "sidebar.claimMainBrowser": "Become the leading browser \u2014 terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead.",
   "sidebar.leadingBrowser": "This browser is leading \u2014 terminals auto-resize to fit this window",
   "sidebar.followingBrowser": "Following browser (scale only)",
+  "terminal.scaledContent": "Scaled content",
+  "terminal.scaledTo": "Scaled to",
+  "terminal.sizedForSmallerScreen": "Sized for smaller screen",
+  "terminal.makeReferenceScaleBrowser": "Make this the reference scale browser",
+  "terminal.resizeToThisViewport": "Resize this terminal to this viewport",
   "sidebar.rename": "Rename",
 
   "sidebar.updateAvailable": "Update Available",

@@ -18,7 +18,6 @@ import {
   setSelectSessionCallback,
   sendInput,
   sendActiveSessionHint,
-  claimMainBrowser,
   setSessionBytesCallback,
   setSuppressHeatCallback,
 } from './modules/comms';
@@ -31,7 +30,6 @@ import {
   setShowBellCallback,
   setupResizeObserver,
   setupVisualViewport,
-  autoResizeAllTerminalsImmediate,
   bindSearchEvents,
   scrollToBottom,
   focusActiveTerminal,
@@ -148,8 +146,6 @@ import {
   $activeSessionId,
   $sessionList,
   $currentSettings,
-  $isMainBrowser,
-  $showMainBrowserButton,
   setSession,
   removeSession,
   getSession,
@@ -211,7 +207,6 @@ async function init(): Promise<void> {
 
   cacheDOMElements();
   await initI18n();
-  initMainBrowserButton();
   initTrafficIndicator();
   setSessionBytesCallback((sessionId, bytes) => {
     recordBytes(sessionId, bytes);
@@ -980,49 +975,6 @@ function showBellNotification(sessionId: string): void {
       }, 200);
     }
   }
-}
-
-// =============================================================================
-// Main Browser Toggle
-// =============================================================================
-
-function initMainBrowserButton(): void {
-  const btn = document.getElementById('btn-main-browser');
-  if (!btn) return;
-
-  function updateState(): void {
-    if (!btn) return;
-    const isMain = $isMainBrowser.get();
-    const showButton = $showMainBrowserButton.get();
-
-    if (!showButton || isMain) {
-      btn.style.display = 'none';
-      btn.classList.remove('main-browser-active');
-      return;
-    }
-
-    btn.style.display = '';
-    btn.classList.remove('main-browser-active');
-    btn.title = t('sidebar.claimMainBrowser');
-  }
-
-  updateState();
-
-  btn.addEventListener('click', () => {
-    if ($isMainBrowser.get()) return;
-    claimMainBrowser();
-  });
-
-  $isMainBrowser.subscribe((isMain) => {
-    updateState();
-    if (isMain) {
-      requestAnimationFrame(autoResizeAllTerminalsImmediate);
-    }
-  });
-
-  $showMainBrowserButton.subscribe(() => {
-    updateState();
-  });
 }
 
 // =============================================================================
