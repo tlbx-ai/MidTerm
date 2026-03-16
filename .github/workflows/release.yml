@@ -123,7 +123,7 @@ jobs:
           cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -265,7 +265,7 @@ jobs:
           cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
