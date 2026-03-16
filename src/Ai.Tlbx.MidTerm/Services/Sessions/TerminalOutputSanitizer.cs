@@ -17,10 +17,36 @@ public static partial class TerminalOutputSanitizer
     {
         var withoutEscapes = AnsiEscapePattern().Replace(text, "");
         var sb = new StringBuilder(withoutEscapes.Length);
+        var currentLineStart = 0;
 
-        foreach (var c in withoutEscapes)
+        for (var i = 0; i < withoutEscapes.Length; i++)
         {
-            if (c is '\n' or '\r' or '\t')
+            var c = withoutEscapes[i];
+
+            if (c == '\r')
+            {
+                if (i + 1 < withoutEscapes.Length && withoutEscapes[i + 1] == '\n')
+                {
+                    sb.Append('\n');
+                    currentLineStart = sb.Length;
+                    i++;
+                }
+                else
+                {
+                    sb.Length = currentLineStart;
+                }
+
+                continue;
+            }
+
+            if (c == '\n')
+            {
+                sb.Append(c);
+                currentLineStart = sb.Length;
+                continue;
+            }
+
+            if (c == '\t')
             {
                 sb.Append(c);
                 continue;
@@ -43,7 +69,8 @@ public static partial class TerminalOutputSanitizer
 
     public static string TailLines(string text, int maxLines, out int totalLines, out int returnedLines)
     {
-        var normalized = NormalizeLineEndings(text);
+        var normalized = CollapseBlankLineRuns(NormalizeLineEndings(text), maxBlankLines: 1)
+            .Trim('\n');
         var lines = normalized.Split('\n');
 
         totalLines = lines.Length;
@@ -56,6 +83,45 @@ public static partial class TerminalOutputSanitizer
         var start = Math.Max(0, lines.Length - maxLines);
         returnedLines = lines.Length - start;
         return string.Join('\n', lines[start..]);
+    }
+
+    private static string CollapseBlankLineRuns(string text, int maxBlankLines)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        maxBlankLines = Math.Max(0, maxBlankLines);
+        var lines = text.Split('\n');
+        var sb = new StringBuilder(text.Length);
+        var blankRun = 0;
+
+        foreach (var line in lines)
+        {
+            var isBlank = string.IsNullOrWhiteSpace(line);
+            if (isBlank)
+            {
+                blankRun++;
+                if (blankRun > maxBlankLines)
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                blankRun = 0;
+            }
+
+            if (sb.Length > 0)
+            {
+                sb.Append('\n');
+            }
+
+            sb.Append(line);
+        }
+
+        return sb.ToString();
     }
 
     public static int CountBellEvents(ReadOnlySpan<byte> data)

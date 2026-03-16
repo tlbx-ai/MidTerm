@@ -131,6 +131,7 @@ public static class MtcliScriptWriter
 
         # Web preview (dev browser)
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
+        _MJE() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
         mt_navigate()   { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         # mt_open URL  — open URL in web preview panel and dock it
         mt_open()       { mt_navigate "$1"; _MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
@@ -190,6 +191,40 @@ public static class MtcliScriptWriter
           lines="${1:-120}"
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           _MC "$_MT/api/sessions/$sid/buffer/tail?lines=$lines&stripAnsi=true"
+        }
+        # mt_sendtext [SESSION_ID] TEXT  — send literal text without auto-submit
+        mt_sendtext() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          local text="$*"
+          local body="{\"text\":\"$(_MJE "$text")\",\"appendNewline\":false}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/text"
+        }
+        # mt_prompt [SESSION_ID] TEXT  — send text and press Enter sequentially
+        mt_prompt() {
+          local sid delay_ms sleep_seconds
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          delay_ms="${MT_PROMPT_DELAY_MS:-300}"
+          mt_sendtext "$sid" "$*" || return $?
+          if [ "$delay_ms" -gt 0 ] 2>/dev/null; then
+            sleep_seconds=$(printf '%s.%03d' "$((delay_ms / 1000))" "$((delay_ms % 1000))")
+            sleep "$sleep_seconds"
+          fi
+          mt_enter "$sid"
         }
         # mt_sendkeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         mt_sendkeys() {
@@ -339,6 +374,11 @@ public static class MtcliScriptWriter
         function script:_MShouldRetryAnonymous {
             param([string]$Output)
             return $Output -like "*No browser preview connected for*"
+        }
+        function script:_MSendTextRequest {
+            param([string]$SessionId, [string]$Text, [bool]$AppendNewline = $false)
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ text = $Text; appendNewline = $AppendNewline }) "$script:_MT/api/sessions/$SessionId/input/text"
         }
         # Send null-delimited args to text CLI endpoint (browser commands)
         function script:_MB {
@@ -491,6 +531,34 @@ public static class MtcliScriptWriter
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             $lines = if ($resolved.Remaining.Count -gt 0) { [int]$resolved.Remaining[0] } else { 120 }
             _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer/tail?lines=$lines&stripAnsi=true"
+        }
+        # Mt-SendText [SESSION_ID] TEXT  — send literal text without auto-submit
+        function Mt-SendText {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $text = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
+
+            _MSendTextRequest -SessionId $sessionId -Text $text -AppendNewline:$false
+        }
+        # Mt-Prompt [SESSION_ID] TEXT [-DelayMs N]  — send text and press Enter sequentially
+        function Mt-Prompt {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $text = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
+
+            _MSendTextRequest -SessionId $sessionId -Text $text -AppendNewline:$false
+            if ($DelayMs -gt 0) {
+                Start-Sleep -Milliseconds $DelayMs
+            }
+            Mt-Enter $sessionId
         }
         # Mt-SendKeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         function Mt-SendKeys {

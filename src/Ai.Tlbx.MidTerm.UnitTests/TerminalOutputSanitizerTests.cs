@@ -12,7 +12,17 @@ public sealed class TerminalOutputSanitizerTests
 
         var result = TerminalOutputSanitizer.StripEscapeSequences(text);
 
-        Assert.Equal("error\r\nok", result);
+        Assert.Equal("error\nok", result);
+    }
+
+    [Fact]
+    public void StripEscapeSequences_CarriageReturnKeepsLatestRenderedText()
+    {
+        var text = "Workin\rWorking\nDone";
+
+        var result = TerminalOutputSanitizer.StripEscapeSequences(text);
+
+        Assert.Equal("Working\nDone", result);
     }
 
     [Fact]
@@ -23,6 +33,16 @@ public sealed class TerminalOutputSanitizerTests
         Assert.Equal("c\nd", result);
         Assert.Equal(4, totalLines);
         Assert.Equal(2, returnedLines);
+    }
+
+    [Fact]
+    public void TailLines_CollapsesLargeBlankRuns()
+    {
+        var result = TerminalOutputSanitizer.TailLines("a\n\n\n\nb\n\n\nc", 10, out var totalLines, out var returnedLines);
+
+        Assert.Equal("a\n\nb\n\nc", result);
+        Assert.Equal(5, totalLines);
+        Assert.Equal(5, returnedLines);
     }
 
     [Fact]

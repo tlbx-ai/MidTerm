@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "15";
+    private const string GuidanceVersion = "16";
 
     private static int _port;
     private static AuthService? _authService;
@@ -218,6 +218,8 @@ public static class MidtermDirectory
         | `mt_sessions` | List terminal sessions |
         | `mt_buffer <id>` | Terminal buffer content |
         | `mt_tail [id] [lines]` | Cleaned terminal tail with ANSI stripped |
+        | `mt_sendtext [id] <text...>` | Send literal text without auto-submit |
+        | `mt_prompt [id] <text...>` | Send text, wait briefly, then press `Enter` |
         | `mt_sendkeys [id] <keys...>` | Send named keys like `Enter`, `C-c`, `Escape`, `Up` |
         | `mt_enter` / `mt_ctrlc` / `mt_escape` | Convenience key sends for the current or target session |
         | `mt_up` / `mt_down` / `mt_left` / `mt_right` | Convenience cursor-key sends |
@@ -287,7 +289,7 @@ public static class MidtermDirectory
 
         ## Remote-control another terminal
 
-        mt_sessions → mt_tail SESSION_ID 80 → mt_sendkeys SESSION_ID Up Up Enter → mt_activity SESSION_ID
+        mt_sessions → mt_tail SESSION_ID 80 → mt_prompt SESSION_ID "status update?" → mt_activity SESSION_ID
 
         ## Debug proxy issues
 
@@ -313,7 +315,8 @@ public static class MidtermDirectory
         - mt_open is the CLI command that opens/docks the preview; you do not need to click the panel first
         - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
-        - mt_tail strips ANSI escape sequences so supervisor sessions can read clean terminal output
+        - mt_tail strips ANSI escape sequences and compresses noisy blank-line runs so supervisor sessions can read clean terminal output
+        - For Codex-style TUIs, prefer mt_prompt over typing a newline yourself; it sends text first and then Enter as a separate step
         - mt_sendkeys plus mt_enter / mt_ctrlc / mt_escape / mt_up / mt_down / mt_left / mt_right are the direct terminal steering helpers
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
