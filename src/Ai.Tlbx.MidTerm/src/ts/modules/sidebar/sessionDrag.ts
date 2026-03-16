@@ -55,6 +55,25 @@ function isSameControlMode(target: HTMLElement | null): boolean {
 // Track elements with active drop indicators (avoids full DOM scan)
 const activeIndicators = new Set<HTMLElement>();
 
+function showLayoutForDragPreview(): void {
+  if (!isLayoutActive()) {
+    return;
+  }
+
+  const layoutRoot = getLayoutRoot();
+  if (!layoutRoot?.classList.contains('hidden')) {
+    return;
+  }
+
+  layoutRoot.classList.remove('hidden');
+  sessionTerminals.forEach((state, sessionId) => {
+    if (!isSessionInLayout(sessionId)) {
+      state.container.classList.add('hidden');
+    }
+  });
+  layoutShownForDrag = true;
+}
+
 /**
  * Initialize drag-and-drop for the session list
  */
@@ -151,6 +170,12 @@ function handleDragOver(e: DragEvent): void {
 
   // When layout is active, sidebar drag should be dock-only (no reorder semantics).
   if (isLayoutActive()) {
+    const target = e.target as HTMLElement;
+    const sessionItem = closestSessionItem(target);
+    const hoveredSessionId = sessionItem?.dataset.sessionId;
+    if (hoveredSessionId && isSessionInLayout(hoveredSessionId)) {
+      showLayoutForDragPreview();
+    }
     clearAllDropIndicators();
     return;
   }
@@ -435,6 +460,7 @@ function handleGlobalDragOver(e: DragEvent): void {
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'move';
     }
+    showLayoutForDragPreview();
     // Show dock overlay
     showDockOverlay(e.clientX, e.clientY, draggedSessionId);
   } else if (isDockOverlayVisible()) {
