@@ -3187,12 +3187,9 @@ body.has-app-background::after {
 }
 
 .sidebar-section-label {
-  padding: 6px 12px;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  background-color: var(--bg-sidebar);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  margin: 6px 12px 8px;
+  border-top: 1px solid var(--border-subtle);
+  height: 0;
 }
 
 .session-filter-bar {
