@@ -184,6 +184,44 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
+        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!TryGetPromptInputSequence(
+                    request,
+                    out var interruptData,
+                    out var promptData,
+                    out var submitData,
+                    out var interruptDelayMs,
+                    out var submitDelayMs,
+                    out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            if (interruptData is { Length: > 0 })
+            {
+                await sessionManager.SendInputAsync(id, interruptData, ct);
+                if (interruptDelayMs > 0)
+                {
+                    await Task.Delay(interruptDelayMs, ct);
+                }
+            }
+
+            await sessionManager.SendInputAsync(id, promptData, ct);
+            if (submitDelayMs > 0)
+            {
+                await Task.Delay(submitDelayMs, ct);
+            }
+
+            await sessionManager.SendInputAsync(id, submitData, ct);
+            return Results.Ok();
+        });
+
         app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false) =>
         {
             if (sessionManager.GetSession(id) is null)
@@ -425,6 +463,80 @@ public static partial class SessionApiEndpoints
         }
 
         data = TmuxKeyTranslator.TranslateKeys(request.Keys, request.Literal);
+        return true;
+    }
+
+    internal static bool TryGetPromptInputSequence(
+        SessionPromptRequest request,
+        out byte[]? interruptData,
+        out byte[] promptData,
+        out byte[] submitData,
+        out int interruptDelayMs,
+        out int submitDelayMs,
+        out string error)
+    {
+        interruptData = null;
+        promptData = [];
+        submitData = [];
+        error = "";
+
+        if (request.InterruptDelayMs < 0 || request.SubmitDelayMs < 0)
+        {
+            interruptDelayMs = 0;
+            submitDelayMs = 0;
+            error = "Delay values cannot be negative.";
+            return false;
+        }
+
+        interruptDelayMs = request.InterruptDelayMs;
+        submitDelayMs = request.SubmitDelayMs;
+
+        if (!TryGetInputBytes(new SessionInputRequest
+            {
+                Text = request.Text,
+                Base64 = request.Base64,
+                AppendNewline = false
+            },
+            out promptData,
+            out error))
+        {
+            return false;
+        }
+
+        if (!TryGetKeyInputBytes(new SessionKeyInputRequest
+            {
+                Keys = request.SubmitKeys,
+                Literal = request.LiteralSubmitKeys
+            },
+            out submitData,
+            out error))
+        {
+            error = error == "Provide at least one key."
+                ? "Provide at least one submit key."
+                : error;
+            return false;
+        }
+
+        if (!request.InterruptFirst)
+        {
+            return true;
+        }
+
+        if (!TryGetKeyInputBytes(new SessionKeyInputRequest
+            {
+                Keys = request.InterruptKeys,
+                Literal = request.LiteralInterruptKeys
+            },
+            out var translatedInterruptData,
+            out error))
+        {
+            error = error == "Provide at least one key."
+                ? "Provide at least one interrupt key."
+                : error;
+            return false;
+        }
+
+        interruptData = translatedInterruptData;
         return true;
     }
 

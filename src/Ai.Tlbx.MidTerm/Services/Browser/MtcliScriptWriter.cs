@@ -49,6 +49,12 @@ public static class MtcliScriptWriter
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
         _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
+        _MBOOL() {
+          case "${1:-}" in
+            1|true|TRUE|True|yes|YES|on|ON) printf 'true' ;;
+            *) printf 'false' ;;
+          esac
+        }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
         _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
         _MNOSESSION() { [[ "$1" == *"No browser preview connected for"* ]]; }
@@ -207,9 +213,9 @@ public static class MtcliScriptWriter
           local body="{\"text\":\"$(_MJE "$text")\",\"appendNewline\":false}"
           _MJ -d "$body" "$_MT/api/sessions/$sid/input/text"
         }
-        # mt_prompt [SESSION_ID] TEXT  — send text and press Enter sequentially
+        # mt_prompt [SESSION_ID] TEXT  — atomically send text and submit via the server prompt API
         mt_prompt() {
-          local sid delay_ms sleep_seconds
+          local sid submit_delay_ms interrupt_delay_ms interrupt_first
           if [ $# -gt 0 ] && _MISID "$1"; then
             sid="$1"
             shift
@@ -218,13 +224,27 @@ public static class MtcliScriptWriter
           fi
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
-          delay_ms="${MT_PROMPT_DELAY_MS:-300}"
-          mt_sendtext "$sid" "$*" || return $?
-          if [ "$delay_ms" -gt 0 ] 2>/dev/null; then
-            sleep_seconds=$(printf '%s.%03d' "$((delay_ms / 1000))" "$((delay_ms % 1000))")
-            sleep "$sleep_seconds"
+          submit_delay_ms="${MT_PROMPT_DELAY_MS:-300}"
+          interrupt_delay_ms="${MT_PROMPT_INTERRUPT_DELAY_MS:-150}"
+          interrupt_first="$(_MBOOL "${MT_PROMPT_INTERRUPT_FIRST:-false}")"
+          local body="{\"text\":\"$(_MJE "$*")\",\"interruptFirst\":$interrupt_first,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/prompt"
+        }
+        # mt_prompt_now [SESSION_ID] TEXT  — interrupt first, then atomically send and submit the prompt
+        mt_prompt_now() {
+          local sid submit_delay_ms interrupt_delay_ms
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
           fi
-          mt_enter "$sid"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          submit_delay_ms="${MT_PROMPT_DELAY_MS:-300}"
+          interrupt_delay_ms="${MT_PROMPT_INTERRUPT_DELAY_MS:-150}"
+          local body="{\"text\":\"$(_MJE "$*")\",\"interruptFirst\":true,\"interruptDelayMs\":$interrupt_delay_ms,\"submitDelayMs\":$submit_delay_ms}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/prompt"
         }
         # mt_sendkeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         mt_sendkeys() {
@@ -374,6 +394,14 @@ public static class MtcliScriptWriter
         function script:_MShouldRetryAnonymous {
             param([string]$Output)
             return $Output -like "*No browser preview connected for*"
+        }
+        function script:_MParseBool {
+            param([string]$Value)
+            if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+            switch -Regex ($Value.Trim()) {
+                '^(1|true|yes|on)$' { return $true }
+                default { return $false }
+            }
         }
         function script:_MSendTextRequest {
             param([string]$SessionId, [string]$Text, [bool]$AppendNewline = $false)
@@ -544,7 +572,24 @@ public static class MtcliScriptWriter
 
             _MSendTextRequest -SessionId $sessionId -Text $text -AppendNewline:$false
         }
-        # Mt-Prompt [SESSION_ID] TEXT [-DelayMs N]  — send text and press Enter sequentially
+        function script:_MSendPromptRequest {
+            param(
+                [string]$SessionId,
+                [string]$Text,
+                [bool]$InterruptFirst = $false,
+                [int]$InterruptDelayMs = 150,
+                [int]$SubmitDelayMs = 300
+            )
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($Text)) { Write-Error "Text required."; return }
+            _MJ -d (_MH @{
+                text = $Text
+                interruptFirst = $InterruptFirst
+                interruptDelayMs = $InterruptDelayMs
+                submitDelayMs = $SubmitDelayMs
+            }) "$script:_MT/api/sessions/$SessionId/input/prompt"
+        }
+        # Mt-Prompt [SESSION_ID] TEXT [-DelayMs N]  — atomically send text and submit via the server prompt API
         function Mt-Prompt {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
             $resolved = _MResolveSessionArgs $InputArgs
@@ -554,11 +599,22 @@ public static class MtcliScriptWriter
             if (-not $sessionId) { Write-Error "Session id required."; return }
             if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
 
-            _MSendTextRequest -SessionId $sessionId -Text $text -AppendNewline:$false
-            if ($DelayMs -gt 0) {
-                Start-Sleep -Milliseconds $DelayMs
-            }
-            Mt-Enter $sessionId
+            $interruptDelayMs = if ($env:MT_PROMPT_INTERRUPT_DELAY_MS) { [int]$env:MT_PROMPT_INTERRUPT_DELAY_MS } else { 150 }
+            $interruptFirst = _MParseBool $env:MT_PROMPT_INTERRUPT_FIRST
+            _MSendPromptRequest -SessionId $sessionId -Text $text -InterruptFirst:$interruptFirst -InterruptDelayMs $interruptDelayMs -SubmitDelayMs $DelayMs
+        }
+        # Mt-PromptNow [SESSION_ID] TEXT [-DelayMs N]  — interrupt first, then atomically send and submit the prompt
+        function Mt-PromptNow {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $text = if ($resolved.Remaining.Count -gt 0) { [string]::Join(' ', $resolved.Remaining) } else { "" }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ([string]::IsNullOrWhiteSpace($text)) { Write-Error "Text required."; return }
+
+            $interruptDelayMs = if ($env:MT_PROMPT_INTERRUPT_DELAY_MS) { [int]$env:MT_PROMPT_INTERRUPT_DELAY_MS } else { 150 }
+            _MSendPromptRequest -SessionId $sessionId -Text $text -InterruptFirst:$true -InterruptDelayMs $interruptDelayMs -SubmitDelayMs $DelayMs
         }
         # Mt-SendKeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         function Mt-SendKeys {

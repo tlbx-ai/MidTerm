@@ -55,6 +55,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SessionReorderRequest))]
 [JsonSerializable(typeof(SessionInputRequest))]
 [JsonSerializable(typeof(SessionKeyInputRequest))]
+[JsonSerializable(typeof(SessionPromptRequest))]
 [JsonSerializable(typeof(RenameSessionRequest))]
 [JsonSerializable(typeof(SetSessionControlRequest))]
 [JsonSerializable(typeof(ResizeRequest))]
