@@ -120,7 +120,7 @@ Since local reproducibility isn't achievable with AOT, trust relies on:
 To build locally with the same settings as CI:
 
 ```bash
-# Requires: .NET 10 SDK, Node.js 20+, Visual Studio 2022 (Windows)
+# Requires: .NET 10 SDK, Node.js 24.x, Visual Studio 2022 (Windows)
 
 # 1. Clone at the release tag
 git clone https://github.com/tlbx-ai/MidTerm.git

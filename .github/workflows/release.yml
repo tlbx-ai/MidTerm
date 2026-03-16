@@ -26,7 +26,7 @@ jobs:
       is_dev: ${{ contains(github.ref_name, '-dev') }}
       is_web_only: ${{ steps.release-flags.outputs.is_web_only }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 1
           fetch-tags: false
@@ -56,21 +56,21 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           cache: true
           cache-dependency-path: src/**/packages.lock.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Cache node_modules
         id: npm-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('package-lock.json') }}
@@ -88,7 +88,7 @@ jobs:
           if ($isDev) { $buildArgs.DevRelease = $true }
           ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -114,16 +114,16 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           cache: true
           cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -256,16 +256,16 @@ jobs:
     runs-on: ${{ needs.prepare.outputs.is_dev == 'true' && 'windows-latest' || fromJSON('["self-hosted","windows","signing"]') }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           cache: true
           cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -358,11 +358,11 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm for trusted publishing
