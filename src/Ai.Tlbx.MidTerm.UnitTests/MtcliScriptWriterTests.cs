@@ -68,6 +68,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("MT_PREVIEW_NAME", shell, StringComparison.Ordinal);
         Assert.Contains("mt_session()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_preview()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_preview_reset()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_previews()", shell, StringComparison.Ordinal);
         Assert.Contains("sessionId", shell, StringComparison.Ordinal);
         Assert.Contains("$(_MSID)", shell, StringComparison.Ordinal);
@@ -75,6 +76,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("$(_MPREVIEW)", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Preview", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-PreviewReset", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Previews", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_SESSION_ID", powershell, StringComparison.Ordinal);
         Assert.Contains("previewName=(_MPreview)", powershell, StringComparison.Ordinal);
@@ -154,7 +156,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         var agentsPath = Path.Combine(_tempDir, MidtermDirectory.DirectoryName, "AGENTS.md");
         var agents = File.ReadAllText(agentsPath);
 
-        Assert.Contains("guidance-version: 18", agents, StringComparison.Ordinal);
+        Assert.Contains("guidance-version: 19", agents, StringComparison.Ordinal);
         Assert.Contains("mt_apply_update", agents, StringComparison.Ordinal);
         Assert.Contains("continue with the new build", agents, StringComparison.Ordinal);
         Assert.Contains("mt_open` both sets the target", agents, StringComparison.Ordinal);
@@ -169,6 +171,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_activity", agents, StringComparison.Ordinal);
         Assert.Contains("mt_attention", agents, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_preview_reset", agents, StringComparison.Ordinal);
         Assert.Contains("atomically", agents, StringComparison.Ordinal);
     }
 

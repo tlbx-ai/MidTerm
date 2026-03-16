@@ -168,6 +168,7 @@ public class Program
         var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();
         var sessionSupervisor = app.Services.GetRequiredService<SessionSupervisorService>();
         var aiCliProfileService = app.Services.GetRequiredService<AiCliProfileService>();
+        var workerSessionRegistry = app.Services.GetRequiredService<WorkerSessionRegistryService>();
         var historyService = app.Services.GetRequiredService<HistoryService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
@@ -244,6 +245,7 @@ public class Program
             gitWatcher.UnregisterSession(sessionId);
             shareGrantService.RevokeBySession(sessionId);
             sessionTelemetry.ClearSession(sessionId);
+            workerSessionRegistry.Forget(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -315,7 +317,7 @@ public class Program
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, updateService, webPreviewService, sessionTelemetry, sessionSupervisor, aiCliProfileService);
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, updateService, webPreviewService, sessionTelemetry, sessionSupervisor, aiCliProfileService, workerSessionRegistry);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);

@@ -151,4 +151,104 @@ public sealed class SessionApiEndpointsTests
         Assert.Equal(0, interruptDelayMs);
         Assert.Equal(0, submitDelayMs);
     }
+
+    [Fact]
+    public void TryBuildWorkerAutoResumePlan_UsesRegisteredWorkerWhenShellFallback()
+    {
+        var registry = new WorkerSessionRegistryService();
+        registry.Register("s1", AiCliProfileService.CodexProfile, "codex --yolo", ["/model"], 900, 220);
+
+        var session = new SessionInfoDto
+        {
+            Id = "s1",
+            ShellType = "Pwsh",
+            ForegroundName = "pwsh",
+            Supervisor = new SessionSupervisorInfoDto
+            {
+                State = SessionSupervisorService.ShellState
+            }
+        };
+
+        var ok = SessionApiEndpoints.TryBuildWorkerAutoResumePlan(
+            "s1",
+            new SessionPromptRequest
+            {
+                Text = "continue work"
+            },
+            session,
+            new AiCliProfileService(),
+            registry,
+            out var plan);
+
+        Assert.True(ok);
+        Assert.Equal("codex --yolo", plan.LaunchCommand);
+        Assert.Equal(AiCliProfileService.CodexProfile, plan.Profile);
+        Assert.Equal(["/model"], plan.SlashCommands);
+        Assert.Equal(900, plan.LaunchDelayMs);
+        Assert.Equal(220, plan.SlashCommandDelayMs);
+    }
+
+    [Fact]
+    public void TryBuildWorkerAutoResumePlan_FallsBackToProfileDefaultLaunchCommand()
+    {
+        var session = new SessionInfoDto
+        {
+            Id = "s2",
+            ShellType = "Pwsh",
+            ForegroundName = "pwsh",
+            Supervisor = new SessionSupervisorInfoDto
+            {
+                State = SessionSupervisorService.ShellState
+            }
+        };
+
+        var ok = SessionApiEndpoints.TryBuildWorkerAutoResumePlan(
+            "s2",
+            new SessionPromptRequest
+            {
+                Text = "continue work",
+                Profile = AiCliProfileService.CodexProfile
+            },
+            session,
+            new AiCliProfileService(),
+            new WorkerSessionRegistryService(),
+            out var plan);
+
+        Assert.True(ok);
+        Assert.Equal("codex --yolo", plan.LaunchCommand);
+        Assert.Equal(AiCliProfileService.CodexProfile, plan.Profile);
+        Assert.Empty(plan.SlashCommands);
+        Assert.Equal(1200, plan.LaunchDelayMs);
+    }
+
+    [Fact]
+    public void TryBuildWorkerAutoResumePlan_DoesNothingWhenSessionIsNotShell()
+    {
+        var session = new SessionInfoDto
+        {
+            Id = "s3",
+            ShellType = "Pwsh",
+            ForegroundName = "node",
+            ForegroundCommandLine = "codex --yolo",
+            Supervisor = new SessionSupervisorInfoDto
+            {
+                State = SessionSupervisorService.IdlePromptState
+            }
+        };
+
+        var ok = SessionApiEndpoints.TryBuildWorkerAutoResumePlan(
+            "s3",
+            new SessionPromptRequest
+            {
+                Text = "continue work",
+                Profile = AiCliProfileService.CodexProfile
+            },
+            session,
+            new AiCliProfileService(),
+            new WorkerSessionRegistryService(),
+            out var plan);
+
+        Assert.False(ok);
+        Assert.Equal(string.Empty, plan.LaunchCommand);
+    }
 }

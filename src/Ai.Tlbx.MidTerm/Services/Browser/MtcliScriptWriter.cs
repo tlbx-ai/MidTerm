@@ -151,6 +151,17 @@ public static class MtcliScriptWriter
         mt_clearcookies() { _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
         # mt_hardreload  — clear cookies + reload (fresh session)
         mt_hardreload() { mt_clearcookies; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"; }
+        # mt_preview_reset [URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
+        mt_preview_reset() {
+          local url="${1:-}"
+          local reset_script='(async () => { try { localStorage.clear(); sessionStorage.clear(); if (window.indexedDB && indexedDB.databases) { const dbs = await indexedDB.databases(); for (const db of dbs) { if (db && db.name) { try { indexedDB.deleteDatabase(db.name); } catch { } } } } return JSON.stringify({ ok: true }); } catch (error) { return JSON.stringify({ ok: false, error: String(error) }); } })()'
+          if [ -n "$url" ]; then
+            mt_navigate "$url" >/dev/null
+          fi
+          mt_clearcookies >/dev/null
+          mt_exec "$reset_script" >/dev/null 2>&1 || true
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"
+        }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
         mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MSID)&previewName=$(_MPREVIEW)&limit=$n"; }
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
@@ -566,6 +577,21 @@ public static class MtcliScriptWriter
         function Mt-ClearCookies { _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
         # Mt-HardReload  — clear cookies + reload (fresh session)
         function Mt-HardReload { Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
+        # Mt-PreviewReset [-Url URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
+        function Mt-PreviewReset {
+            param([string]$Url)
+            if ($Url) {
+                Mt-Navigate -Url $Url | Out-Null
+            }
+            Mt-ClearCookies | Out-Null
+            try {
+                $script = "(async () => { try { localStorage.clear(); sessionStorage.clear(); if (window.indexedDB && indexedDB.databases) { const dbs = await indexedDB.databases(); for (const db of dbs) { if (db && db.name) { try { indexedDB.deleteDatabase(db.name); } catch { } } } } return { ok: true }; } catch (error) { return { ok: false, error: String(error) }; } })()"
+                $script | Mt-Exec | Out-Null
+            }
+            catch {
+            }
+            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload"
+        }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
         function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
         # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return

@@ -52,7 +52,8 @@ public static partial class SessionApiEndpoints
         WebPreviewService webPreviewService,
         SessionTelemetryService sessionTelemetry,
         SessionSupervisorService sessionSupervisor,
-        AiCliProfileService aiCliProfileService)
+        AiCliProfileService aiCliProfileService,
+        WorkerSessionRegistryService workerSessionRegistry)
     {
         app.MapGet("/api/state", () =>
         {
@@ -147,6 +148,13 @@ public static partial class SessionApiEndpoints
             }
 
             var slashCommands = aiCliProfileService.NormalizeSlashCommands(resolvedProfile, request.SlashCommands);
+            workerSessionRegistry.Register(
+                sessionId,
+                resolvedProfile,
+                launchCommand,
+                slashCommands,
+                request.LaunchDelayMs,
+                request.SlashCommandDelayMs);
             foreach (var slashCommand in slashCommands)
             {
                 var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
@@ -194,6 +202,7 @@ public static partial class SessionApiEndpoints
 
         app.MapDelete("/api/sessions/{id}", async (string id) =>
         {
+            workerSessionRegistry.Forget(id);
             await sessionManager.CloseSessionAsync(id);
             return Results.Ok();
         });
@@ -282,7 +291,15 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            var session = GetSessionDto(sessionManager, sessionSupervisor, id);
+            var session = await EnsureWorkerReadyForPromptAsync(
+                sessionManager,
+                sessionTelemetry,
+                sessionSupervisor,
+                aiCliProfileService,
+                workerSessionRegistry,
+                id,
+                request,
+                ct);
             if (!TryBuildPromptExecutionPlan(
                     request,
                     session,
@@ -740,6 +757,107 @@ public static partial class SessionApiEndpoints
         }
     }
 
+    private static async Task<SessionInfoDto> EnsureWorkerReadyForPromptAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        SessionSupervisorService sessionSupervisor,
+        AiCliProfileService aiCliProfileService,
+        WorkerSessionRegistryService workerSessionRegistry,
+        string sessionId,
+        SessionPromptRequest request,
+        CancellationToken ct)
+    {
+        var session = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+        if (session.Supervisor?.State != SessionSupervisorService.ShellState)
+        {
+            return session;
+        }
+
+        if (!TryBuildWorkerAutoResumePlan(sessionId, request, session, aiCliProfileService, workerSessionRegistry, out var resumePlan))
+        {
+            return session;
+        }
+
+        await SendInputAndRecordAsync(
+            sessionManager,
+            sessionTelemetry,
+            sessionId,
+            Encoding.UTF8.GetBytes(resumePlan.LaunchCommand + "\r"),
+            ct);
+
+        if (resumePlan.LaunchDelayMs > 0)
+        {
+            await Task.Delay(resumePlan.LaunchDelayMs, ct);
+        }
+
+        foreach (var slashCommand in resumePlan.SlashCommands)
+        {
+            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+            if (!TryBuildPromptExecutionPlan(
+                    new SessionPromptRequest
+                    {
+                        Text = slashCommand,
+                        Mode = "auto",
+                        Profile = resumePlan.Profile,
+                        SubmitDelayMs = resumePlan.SlashCommandDelayMs
+                    },
+                    currentSession,
+                    aiCliProfileService,
+                    out var slashPlan,
+                    out _))
+            {
+                continue;
+            }
+
+            await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, sessionId, slashPlan, ct);
+        }
+
+        return GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+    }
+
+    internal static bool TryBuildWorkerAutoResumePlan(
+        string sessionId,
+        SessionPromptRequest request,
+        SessionInfoDto session,
+        AiCliProfileService aiCliProfileService,
+        WorkerSessionRegistryService workerSessionRegistry,
+        out WorkerAutoResumePlan plan)
+    {
+        plan = new WorkerAutoResumePlan(string.Empty, AiCliProfileService.UnknownProfile, [], 0, 0);
+
+        if (session.Supervisor?.State != SessionSupervisorService.ShellState)
+        {
+            return false;
+        }
+
+        var hasRegistry = workerSessionRegistry.TryGet(sessionId, out var registration);
+        var profile = aiCliProfileService.NormalizeProfile(
+            request.Profile ?? (hasRegistry ? registration!.Profile : null),
+            session);
+
+        if (!aiCliProfileService.IsInteractiveAi(profile))
+        {
+            return false;
+        }
+
+        var launchCommand = hasRegistry
+            ? registration!.LaunchCommand
+            : aiCliProfileService.GetDefaultLaunchCommand(profile);
+
+        if (string.IsNullOrWhiteSpace(launchCommand))
+        {
+            return false;
+        }
+
+        plan = new WorkerAutoResumePlan(
+            launchCommand.Trim(),
+            profile,
+            hasRegistry ? registration!.SlashCommands : [],
+            hasRegistry ? registration!.LaunchDelayMs : 1200,
+            hasRegistry ? registration!.SlashCommandDelayMs : 350);
+        return true;
+    }
+
     private static async Task SendInputAndRecordAsync(
         TtyHostSessionManager sessionManager,
         SessionTelemetryService sessionTelemetry,
@@ -750,6 +868,13 @@ public static partial class SessionApiEndpoints
         sessionTelemetry.RecordInput(sessionId, data.Length);
         await sessionManager.SendInputAsync(sessionId, data, ct);
     }
+
+    internal readonly record struct WorkerAutoResumePlan(
+        string LaunchCommand,
+        string Profile,
+        IReadOnlyList<string> SlashCommands,
+        int LaunchDelayMs,
+        int SlashCommandDelayMs);
 
     private static async Task<string> SaveUploadedFileAsync(
         TtyHostSessionManager sessionManager, string sessionId, IFormFile file)

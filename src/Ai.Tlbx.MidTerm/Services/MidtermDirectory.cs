@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "18";
+    private const string GuidanceVersion = "19";
 
     private static int _port;
     private static AuthService? _authService;
@@ -210,6 +210,7 @@ public static class MidtermDirectory
         | `mt_close_preview` | Close web preview panel |
         | `mt_reload` | Soft-reload preview |
         | `mt_hardreload` | Clear cookies + reload (fresh session) |
+        | `mt_preview_reset [url]` | Best-effort preview recovery: clear cookies + browser storage + hard reload |
         | `mt_target` | Current named preview target |
         | `mt_cookies` | All cookies in the current named preview jar |
         | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
@@ -219,7 +220,7 @@ public static class MidtermDirectory
         | `mt_buffer <id>` | Terminal buffer content |
         | `mt_tail [id] [lines]` | Cleaned terminal tail with ANSI stripped |
         | `mt_sendtext [id] <text...>` | Send literal text without auto-submit |
-        | `mt_prompt [id] <text...>` | State-aware prompt delivery: idle prompts append, busy turns interrupt when needed |
+        | `mt_prompt [id] <text...>` | State-aware prompt delivery: bootstrapped workers auto-resume from shell, idle prompts append, busy turns interrupt when needed |
         | `mt_prompt_now [id] <text...>` | Force interrupt-first prompt delivery |
         | `mt_slash [id] <command...>` | Send slash commands through the prompt path |
         | `mt_sendkeys [id] <keys...>` | Send named keys like `Enter`, `C-c`, `Escape`, `Up` |
@@ -322,11 +323,12 @@ public static class MidtermDirectory
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
         - mt_tail strips ANSI escape sequences and compresses noisy blank-line runs so supervisor sessions can read clean terminal output
         - mt_prompt uses MidTerm's server-side prompt API so text plus submit happen atomically instead of as two client-side calls
-        - mt_prompt is state-aware: shell vs idle prompt vs busy turn should be decided by MidTerm, not guessed ad hoc by the supervisor
+        - mt_prompt is state-aware: bootstrapped workers auto-resume from shell, and shell vs idle prompt vs busy turn should be decided by MidTerm, not guessed ad hoc by the supervisor
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended
         - mt_slash routes slash commands like `/status` or `/compact` through the same prompt path instead of pasting them manually
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
         - mt_bootstrap creates a fresh agent-controlled worker session, injects `.midterm`, launches the chosen AI CLI profile, and can immediately send slash commands
+        - mt_preview_reset [url] is the fast recovery move when a named preview has the wrong logged-in user or stale browser state
         - mt_sendkeys plus mt_enter / mt_ctrlc / mt_escape / mt_up / mt_down / mt_left / mt_right are the direct terminal steering helpers
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
