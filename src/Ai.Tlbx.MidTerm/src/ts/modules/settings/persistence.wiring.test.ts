@@ -95,6 +95,11 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain('bindTerminalFontPreview(');
   });
 
+  it('flushes pending settings before detaching handlers', () => {
+    expect(persistenceSource).toContain('function flushPendingSettingsChanges(): void');
+    expect(persistenceSource).toContain('flushPendingSettingsChanges();');
+  });
+
   it('uses non-submit inline save buttons for text and number settings', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),

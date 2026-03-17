@@ -187,6 +187,44 @@ function buildSettingsUpdateFromRegistry(
   return result as MidTermSettingsUpdate;
 }
 
+function areSettingValuesEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+
+  if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  return false;
+}
+
+function hasPendingSettingsChanges(): boolean {
+  const current = $currentSettings.get();
+  if (!current) {
+    return false;
+  }
+
+  const pending = buildSettingsUpdateFromRegistry(current);
+  const pendingValues = pending as Record<string, unknown>;
+  const currentValues = current as Record<string, unknown>;
+  return getSettingsRegistryWritableEntries().some((entry) => {
+    const key = entry.key;
+    return !areSettingValuesEqual(pendingValues[key], currentValues[key]);
+  });
+}
+
+function flushPendingSettingsChanges(): void {
+  if (terminalFontSettingsSaveTimer !== null) {
+    window.clearTimeout(terminalFontSettingsSaveTimer);
+    terminalFontSettingsSaveTimer = null;
+  }
+
+  if (hasPendingSettingsChanges()) {
+    saveAllSettings();
+  }
+}
+
 /**
  * Populate version info in the about section
  */
@@ -642,14 +680,11 @@ export function bindSettingsAutoSave(): void {
  * Clean up settings event listeners
  */
 export function unbindSettingsAutoSave(): void {
+  flushPendingSettingsChanges();
+
   if (settingsAbortController) {
     settingsAbortController.abort();
     settingsAbortController = null;
-  }
-
-  if (terminalFontSettingsSaveTimer !== null) {
-    window.clearTimeout(terminalFontSettingsSaveTimer);
-    terminalFontSettingsSaveTimer = null;
   }
 }
 
