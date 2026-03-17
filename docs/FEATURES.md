@@ -23,7 +23,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 
 - `F001` MidTerm ships as a Native AOT self-contained web server binary.
 - `F002` MidTerm uses a separate PTY host binary so each terminal runs outside the web server process.
-- `F003` MidTerm targets Windows, macOS, and Linux from the same product model.
+- `F003` MidTerm targets Windows x64, macOS x64/arm64, and Linux x64/arm64 from the same product model.
 - `F004` MidTerm chooses a platform-default shell automatically: `Pwsh` on Windows, `zsh` on macOS, and `bash` on Linux.
 - `F005` MidTerm serves the browser UI over HTTPS rather than exposing a raw terminal socket.
 - `F006` One browser shell hosts terminals, settings, diagnostics, files, git, commands, and previews together.

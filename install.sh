@@ -399,12 +399,6 @@ detect_platform() {
             ;;
     esac
 
-    # Linux only supports x64 for now
-    if [ "$PLATFORM" = "linux" ] && [ "$ARCH" = "arm64" ]; then
-        echo -e "${RED}Linux ARM64 is not yet supported. Using x64.${NC}"
-        ARCH="x64"
-    fi
-
     ASSET_NAME="mt-${PLATFORM}-${ARCH}.tar.gz"
     print_status "Platform" "$OS $ARCH" "$CYAN"
 }

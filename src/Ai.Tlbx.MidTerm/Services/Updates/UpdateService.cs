@@ -675,7 +675,10 @@ public sealed partial class UpdateService : IDisposable
                 : "mt-osx-x64.tar.gz";
         }
 
-        return "mt-linux-x64.tar.gz";
+        return System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
+               System.Runtime.InteropServices.Architecture.Arm64
+            ? "mt-linux-arm64.tar.gz"
+            : "mt-linux-x64.tar.gz";
     }
 
     public static string GetCurrentBinaryPath()

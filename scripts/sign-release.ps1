@@ -57,7 +57,7 @@ try {
     [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($privateKeyB64)) | Set-Content $keyFile -NoNewline
 
     # Process each platform
-    $platforms = @("win-x64", "osx-arm64", "osx-x64", "linux-x64")
+    $platforms = @("win-x64", "osx-arm64", "osx-x64", "linux-x64", "linux-arm64")
 
     foreach ($platform in $platforms) {
         $platformDir = Join-Path $ArtifactsPath $platform

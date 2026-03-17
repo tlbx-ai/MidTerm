@@ -97,6 +97,7 @@ jobs:
   # ── Build macOS + Linux, sign, and upload directly to the draft release ────
   build:
     needs: [prepare, frontend]
+    if: needs.prepare.outputs.is_dev != 'true' || matrix.include_on_dev == true
     permissions:
       contents: write
     strategy:
@@ -105,12 +106,19 @@ jobs:
           - os: macos-14
             rid: osx-arm64
             ext: ''
+            include_on_dev: true
           - os: macos-14
             rid: osx-x64
             ext: ''
+            include_on_dev: false
           - os: ubuntu-latest
             rid: linux-x64
             ext: ''
+            include_on_dev: false
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            ext: ''
+            include_on_dev: false
     runs-on: ${{ matrix.os }}
 
     steps:
