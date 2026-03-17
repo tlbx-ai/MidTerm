@@ -1751,6 +1751,28 @@ EOF
     log "=== PHASE 5 complete ==="
 }
 
+stop_conflicting_midterm_processes() {
+    local install_dir="$1"
+    local process_pattern="^${install_dir}/mt( |$)"
+    local pids
+
+    pids=$(pgrep -f "$process_pattern" 2>/dev/null || true)
+    if [ -z "$pids" ]; then
+        return 0
+    fi
+
+    log "Stopping conflicting MidTerm processes: $(echo "$pids" | tr '\n' ' ')"
+    kill $pids 2>/dev/null || true
+    sleep 1
+
+    pids=$(pgrep -f "$process_pattern" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        log "Force killing remaining MidTerm processes: $(echo "$pids" | tr '\n' ' ')" "WARN"
+        kill -9 $pids 2>/dev/null || true
+        sleep 1
+    fi
+}
+
 install_systemd() {
     local install_dir="$1"
     local service_path="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -1761,6 +1783,7 @@ install_systemd() {
     # Unload existing service if present
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    stop_conflicting_midterm_processes "$install_dir"
 
     # Migration: remove old host service from pre-v4
     if [ -f "$old_host_service" ]; then
@@ -1831,6 +1854,9 @@ install_as_user() {
         log "Existing password hash found and preserved"
         print_step "Password..." "preserved"
         PASSWORD_HASH="$existing_hash"
+    elif [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
+        log "Password hash already prepared before install"
+        print_step "Password..." "preserved"
     elif [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
         # Hash the password now that binary is installed (decode from base64)
         log "Hashing new password..."
