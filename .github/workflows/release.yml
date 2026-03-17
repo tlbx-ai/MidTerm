@@ -133,7 +133,6 @@ jobs:
         if: needs.prepare.outputs.is_web_only == 'true'
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -175,7 +174,8 @@ jobs:
               tar -xzf "staging/${{ matrix.rid }}/previous.tar.gz" -C "staging/${{ matrix.rid }}" ./mthost
               rm "staging/${{ matrix.rid }}/previous.tar.gz"
             else
-              echo "Previous asset $ASSET_NAME not found, falling back to freshly built mthost"
+              echo "Previous asset $ASSET_NAME not found, building fallback mthost"
+              dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
               cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
             fi
           else
@@ -292,7 +292,6 @@ jobs:
         if: needs.prepare.outputs.is_web_only == 'true'
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -334,7 +333,8 @@ jobs:
               tar -xzf "staging/${{ matrix.rid }}/previous.tar.gz" -C "staging/${{ matrix.rid }}" ./mthost
               rm "staging/${{ matrix.rid }}/previous.tar.gz"
             else
-              echo "Previous asset $ASSET_NAME not found, falling back to freshly built mthost"
+              echo "Previous asset $ASSET_NAME not found, building fallback mthost"
+              dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
               cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
             fi
           else
