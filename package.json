@@ -2,6 +2,10 @@
   "name": "midterm",
   "private": true,
   "description": "Frontend build dependencies for MidTerm",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p src/Ai.Tlbx.MidTerm/tsconfig.json",
     "lint": "eslint src/Ai.Tlbx.MidTerm/src/ts/",

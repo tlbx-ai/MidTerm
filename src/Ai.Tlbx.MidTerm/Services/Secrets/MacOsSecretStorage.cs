@@ -182,15 +182,15 @@ public sealed class MacOsSecretStorage : ISecretStorage
     private static extern int SecItemDelete(IntPtr query);
 
     // Security constants (loaded as extern symbols)
-    private static readonly IntPtr kSecClass = GetConstant(SecurityLib, "kSecClass");
-    private static readonly IntPtr kSecClassGenericPassword = GetConstant(SecurityLib, "kSecClassGenericPassword");
-    private static readonly IntPtr kSecAttrService = GetConstant(SecurityLib, "kSecAttrService");
-    private static readonly IntPtr kSecAttrAccount = GetConstant(SecurityLib, "kSecAttrAccount");
-    private static readonly IntPtr kSecValueData = GetConstant(SecurityLib, "kSecValueData");
-    private static readonly IntPtr kSecReturnData = GetConstant(SecurityLib, "kSecReturnData");
-    private static readonly IntPtr kSecMatchLimit = GetConstant(SecurityLib, "kSecMatchLimit");
-    private static readonly IntPtr kSecMatchLimitOne = GetConstant(SecurityLib, "kSecMatchLimitOne");
-    private static readonly IntPtr kSecUseDataProtectionKeychain = GetConstant(SecurityLib, "kSecUseDataProtectionKeychain");
+    private static readonly IntPtr kSecClass = GetIndirectConstant(SecurityLib, "kSecClass");
+    private static readonly IntPtr kSecClassGenericPassword = GetIndirectConstant(SecurityLib, "kSecClassGenericPassword");
+    private static readonly IntPtr kSecAttrService = GetIndirectConstant(SecurityLib, "kSecAttrService");
+    private static readonly IntPtr kSecAttrAccount = GetIndirectConstant(SecurityLib, "kSecAttrAccount");
+    private static readonly IntPtr kSecValueData = GetIndirectConstant(SecurityLib, "kSecValueData");
+    private static readonly IntPtr kSecReturnData = GetIndirectConstant(SecurityLib, "kSecReturnData");
+    private static readonly IntPtr kSecMatchLimit = GetIndirectConstant(SecurityLib, "kSecMatchLimit");
+    private static readonly IntPtr kSecMatchLimitOne = GetIndirectConstant(SecurityLib, "kSecMatchLimitOne");
+    private static readonly IntPtr kSecUseDataProtectionKeychain = GetIndirectConstant(SecurityLib, "kSecUseDataProtectionKeychain");
 
     #endregion
 
@@ -226,7 +226,7 @@ public sealed class MacOsSecretStorage : ISecretStorage
     private const uint kCFStringEncodingUTF8 = 0x08000100;
 
     // kCFBooleanTrue
-    private static readonly IntPtr kCFBooleanTrue = GetConstant(CoreFoundationLib, "kCFBooleanTrue");
+    private static readonly IntPtr kCFBooleanTrue = GetIndirectConstant(CoreFoundationLib, "kCFBooleanTrue");
 
     // Dictionary callback structs
     [DllImport(CoreFoundationLib)]
@@ -240,13 +240,13 @@ public sealed class MacOsSecretStorage : ISecretStorage
 
     private static CFDictionaryKeyCallBacks GetKeyCallBacks()
     {
-        var ptr = GetConstant(CoreFoundationLib, "kCFTypeDictionaryKeyCallBacks");
+        var ptr = GetSymbolAddress(CoreFoundationLib, "kCFTypeDictionaryKeyCallBacks");
         return Marshal.PtrToStructure<CFDictionaryKeyCallBacks>(ptr);
     }
 
     private static CFDictionaryValueCallBacks GetValueCallBacks()
     {
-        var ptr = GetConstant(CoreFoundationLib, "kCFTypeDictionaryValueCallBacks");
+        var ptr = GetSymbolAddress(CoreFoundationLib, "kCFTypeDictionaryValueCallBacks");
         return Marshal.PtrToStructure<CFDictionaryValueCallBacks>(ptr);
     }
 
@@ -275,13 +275,20 @@ public sealed class MacOsSecretStorage : ISecretStorage
 
     #region Symbol loader
 
-    private static IntPtr GetConstant(string library, string name)
+    private static IntPtr GetSymbolAddress(string library, string name)
     {
         var lib = NativeLibrary.Load(library);
         if (!NativeLibrary.TryGetExport(lib, name, out var ptr))
         {
             throw new EntryPointNotFoundException($"Symbol '{name}' not found in {library}");
         }
+
+        return ptr;
+    }
+
+    private static IntPtr GetIndirectConstant(string library, string name)
+    {
+        var ptr = GetSymbolAddress(library, name);
 
         // Security constants are pointers-to-CFStringRef; dereference to get the actual CFStringRef
         return Marshal.ReadIntPtr(ptr);

@@ -224,10 +224,37 @@ detect_platform() {
 }
 
 get_latest_release() {
+    github_api_get() {
+        local url="$1"
+        curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 1 --retry-all-errors \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "User-Agent: MidTerm-Installer" \
+            "$url"
+    }
+
+    resolve_latest_stable_tag_fallback() {
+        local effective_url
+        effective_url=$(curl --fail --silent --show-error --location --head \
+            --output /dev/null --write-out '%{url_effective}' \
+            -H "User-Agent: MidTerm-Installer" \
+            "https://github.com/$REPO_OWNER/$REPO_NAME/releases/latest")
+
+        case "$effective_url" in
+            */releases/tag/*)
+                echo "${effective_url##*/}"
+                return 0
+                ;;
+        esac
+
+        return 1
+    }
+
     if [ "$DEV_CHANNEL" = true ]; then
         printf "  Fetching latest dev release...        "
         # Fetch all releases and find first prerelease
-        ALL_RELEASES=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases")
+        ALL_RELEASES=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases")
 
         # Find the first prerelease entry
         # Use grep/sed to extract the first release where prerelease is true
@@ -253,7 +280,7 @@ get_latest_release() {
 
         if [ -z "$RELEASE_INFO" ]; then
             echo -e "${YELLOW}No dev releases found, falling back to latest stable...${NC}"
-            RELEASE_INFO=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
+            RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
         fi
 
         VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
@@ -268,9 +295,18 @@ get_latest_release() {
         print_status "Version" "$VERSION" "$CYAN"
     else
         printf "  Fetching latest release...            "
-        RELEASE_INFO=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
-        VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
-        ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+        RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest" 2>/dev/null || true)
+        if [ -n "$RELEASE_INFO" ]; then
+            VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
+            ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+        else
+            local latest_tag
+            latest_tag=$(resolve_latest_stable_tag_fallback 2>/dev/null || true)
+            if [ -n "$latest_tag" ]; then
+                VERSION="${latest_tag#v}"
+                ASSET_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$latest_tag/$ASSET_NAME"
+            fi
+        fi
 
         if [ -z "$ASSET_URL" ]; then
             echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
@@ -331,7 +367,7 @@ prompt_service_mode() {
 # This just checks file existence - actual hash is read later after binary install
 check_existing_password_file() {
     local mode="$1"  # "service" or "user"
-    local secrets_path settings_path
+    local secrets_path settings_path hash
 
     # Uses PATH_CONSTANTS defined above - keep in sync!
     if [ "$mode" = "service" ]; then
@@ -342,14 +378,23 @@ check_existing_password_file() {
         settings_path="$UNIX_USER_SETTINGS_DIR/settings.json"
     fi
 
-    # Check secrets.json exists and has content
-    if [ -f "$secrets_path" ] && [ -s "$secrets_path" ]; then
-        return 0
+    # Check secrets.json first (preferred secure storage)
+    if [ -f "$secrets_path" ]; then
+        hash=$(grep -o '"password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            return 0
+        fi
+
+        hash=$(grep -o '"midterm\.password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            return 0
+        fi
     fi
 
-    # Fall back to settings.json (legacy)
+    # Fall back to settings.json (legacy or migration)
     if [ -f "$settings_path" ]; then
-        if grep -q '"passwordHash"' "$settings_path" 2>/dev/null; then
+        hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
             return 0
         fi
     fi
@@ -365,7 +410,13 @@ get_existing_password_hash() {
     # Check secrets.json first (preferred secure storage)
     # Read JSON directly - format is {"password_hash": "$PBKDF2$..."}
     if [ -f "$secrets_path" ]; then
-        local hash=$(grep -o '"password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
+        local hash=$(grep -o '"password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            echo "$hash"
+            return 0
+        fi
+
+        hash=$(grep -o '"midterm\.password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0
@@ -783,7 +834,13 @@ get_existing_user_password_hash() {
     # Check secrets.json first (preferred secure storage)
     # Read JSON directly - format is {"password_hash": "$PBKDF2$..."}
     if [ -f "$secrets_path" ]; then
-        local hash=$(grep -o '"password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
+        local hash=$(grep -o '"password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
+            echo "$hash"
+            return 0
+        fi
+
+        hash=$(grep -o '"midterm\.password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0

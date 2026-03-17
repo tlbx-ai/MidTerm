@@ -36,7 +36,7 @@ $AssetVersionPlaceholder = "__MIDTERM_ASSET_VERSION__"
 # PRECHECK: Required toolchain/dependencies
 # ===========================================
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Error "Node.js is required but was not found in PATH. Install Node.js 20+ and run npm ci."
+    Write-Error "Node.js is required but was not found in PATH. Install Node.js 24.x and run npm ci."
     exit 1
 }
 
