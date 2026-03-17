@@ -7,6 +7,7 @@
 
 import type { TerminalState } from '../../types';
 import type { MidTermSettingsPublic, MidTermSettingsUpdate, UserInfo } from '../../api/types';
+import type { ITerminalOptions } from '@xterm/xterm';
 import { JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
@@ -25,7 +26,12 @@ import {
 } from '../../api/client';
 import { updateTabTitle } from '../tabTitle';
 import { getEffectiveTerminalFontSize } from '../terminal/fontSize';
-import { buildTerminalFontStack, ensureTerminalFontLoaded } from '../terminal/fontConfig';
+import {
+  buildTerminalFontStack,
+  ensureTerminalFontLoaded,
+  DEFAULT_TERMINAL_FONT_WEIGHT,
+  DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+} from '../terminal/fontConfig';
 import { refreshTerminalPresentation } from '../terminal/scaling';
 import {
   applyTerminalScrollbarStyleClass,
@@ -48,7 +54,8 @@ const log = createLogger('settings');
 // AbortController for settings event listeners cleanup
 let settingsAbortController: AbortController | null = null;
 let settingsSaveVersion = 0;
-let fontSizeSaveTimer: number | null = null;
+let terminalFontSettingsSaveTimer: number | null = null;
+type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 
 function applySettingsLocally(settings: MidTermSettingsPublic): void {
   $currentSettings.set(settings);
@@ -178,6 +185,44 @@ function buildSettingsUpdateFromRegistry(
   });
 
   return result as MidTermSettingsUpdate;
+}
+
+function areSettingValuesEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+
+  if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  return false;
+}
+
+function hasPendingSettingsChanges(): boolean {
+  const current = $currentSettings.get();
+  if (!current) {
+    return false;
+  }
+
+  const pending = buildSettingsUpdateFromRegistry(current);
+  const pendingValues = pending as Record<string, unknown>;
+  const currentValues = current as Record<string, unknown>;
+  return getSettingsRegistryWritableEntries().some((entry) => {
+    const key = entry.key;
+    return !areSettingValuesEqual(pendingValues[key], currentValues[key]);
+  });
+}
+
+function flushPendingSettingsChanges(): void {
+  if (terminalFontSettingsSaveTimer !== null) {
+    window.clearTimeout(terminalFontSettingsSaveTimer);
+    terminalFontSettingsSaveTimer = null;
+  }
+
+  if (hasPendingSettingsChanges()) {
+    saveAllSettings();
+  }
 }
 
 /**
@@ -335,6 +380,10 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const theme = getEffectiveXtermThemeForSettings(settings);
   const fontFamily = buildTerminalFontStack(settings.fontFamily);
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
+  const lineHeight = settings.lineHeight;
+  const letterSpacing = settings.letterSpacing;
+  const fontWeight = settings.fontWeight as TerminalFontWeight;
+  const fontWeightBold = settings.fontWeightBold as TerminalFontWeight;
   const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
   let hasFontChanges = false;
@@ -344,7 +393,12 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   for (const [sessionId, state] of sessionTerminals.entries()) {
     if (
       state.terminal.options.fontFamily !== fontFamily ||
-      state.terminal.options.fontSize !== fontSize
+      state.terminal.options.fontSize !== fontSize ||
+      state.terminal.options.lineHeight !== lineHeight ||
+      state.terminal.options.letterSpacing !== letterSpacing ||
+      String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight ||
+      String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
+        fontWeightBold
     ) {
       hasFontChanges = true;
     }
@@ -354,6 +408,10 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
     state.terminal.options.fontFamily = fontFamily;
     state.terminal.options.fontSize = fontSize;
+    state.terminal.options.lineHeight = lineHeight;
+    state.terminal.options.letterSpacing = letterSpacing;
+    state.terminal.options.fontWeight = fontWeight;
+    state.terminal.options.fontWeightBold = fontWeightBold;
     state.terminal.options.theme = theme;
     state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
@@ -514,34 +572,30 @@ export function bindSettingsAutoSave(): void {
   );
 
   const fontSizeInput = document.getElementById('setting-font-size') as HTMLInputElement | null;
-  if (fontSizeInput) {
-    fontSizeInput.addEventListener(
-      'input',
-      () => {
-        if (!fontSizeInput.validity.valid) {
-          return;
-        }
+  bindTerminalFontPreview(
+    fontSizeInput,
+    (current, fontSize) => ({ ...current, fontSize }),
+    (value) => Number.parseInt(value, 10),
+    signal,
+  );
 
-        const current = $currentSettings.get();
-        const fontSize = Number.parseInt(fontSizeInput.value, 10);
-        if (!current || !Number.isFinite(fontSize)) {
-          return;
-        }
+  const lineHeightInput = document.getElementById('setting-line-height') as HTMLInputElement | null;
+  bindTerminalFontPreview(
+    lineHeightInput,
+    (current, lineHeight) => ({ ...current, lineHeight }),
+    (value) => Number.parseFloat(value),
+    signal,
+  );
 
-        applySettingsToTerminals({ ...current, fontSize });
-
-        if (fontSizeSaveTimer !== null) {
-          window.clearTimeout(fontSizeSaveTimer);
-        }
-
-        fontSizeSaveTimer = window.setTimeout(() => {
-          fontSizeSaveTimer = null;
-          saveAllSettings();
-        }, 150);
-      },
-      { signal },
-    );
-  }
+  const letterSpacingInput = document.getElementById(
+    'setting-letter-spacing',
+  ) as HTMLInputElement | null;
+  bindTerminalFontPreview(
+    letterSpacingInput,
+    (current, letterSpacing) => ({ ...current, letterSpacing }),
+    (value) => Number.parseFloat(value),
+    signal,
+  );
 
   const uploadInput = document.getElementById(
     'setting-background-upload',
@@ -626,14 +680,11 @@ export function bindSettingsAutoSave(): void {
  * Clean up settings event listeners
  */
 export function unbindSettingsAutoSave(): void {
+  flushPendingSettingsChanges();
+
   if (settingsAbortController) {
     settingsAbortController.abort();
     settingsAbortController = null;
-  }
-
-  if (fontSizeSaveTimer !== null) {
-    window.clearTimeout(fontSizeSaveTimer);
-    fontSizeSaveTimer = null;
   }
 }
 
@@ -657,6 +708,47 @@ function bindTransparencyPreview(
       }
 
       previewTransparencySettings(resolvePreviewTransparencySettings(current));
+    },
+    { signal },
+  );
+}
+
+function scheduleTerminalFontSettingsSave(): void {
+  if (terminalFontSettingsSaveTimer !== null) {
+    window.clearTimeout(terminalFontSettingsSaveTimer);
+  }
+
+  terminalFontSettingsSaveTimer = window.setTimeout(() => {
+    terminalFontSettingsSaveTimer = null;
+    saveAllSettings();
+  }, 150);
+}
+
+function bindTerminalFontPreview(
+  input: HTMLInputElement | null,
+  applyPatch: (current: MidTermSettingsPublic, value: number) => MidTermSettingsPublic,
+  parse: (value: string) => number,
+  signal: AbortSignal,
+): void {
+  if (!input) {
+    return;
+  }
+
+  input.addEventListener(
+    'input',
+    () => {
+      if (!input.validity.valid) {
+        return;
+      }
+
+      const current = $currentSettings.get();
+      const nextValue = parse(input.value);
+      if (!current || !Number.isFinite(nextValue)) {
+        return;
+      }
+
+      applySettingsToTerminals(applyPatch(current, nextValue));
+      scheduleTerminalFontSettingsSave();
     },
     { signal },
   );

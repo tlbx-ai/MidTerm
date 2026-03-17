@@ -87,13 +87,23 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain(
       "const fontSizeInput = document.getElementById('setting-font-size')",
     );
-    expect(persistenceSource).toContain('fontSizeInput.addEventListener(');
+    expect(persistenceSource).toContain(
+      "const lineHeightInput = document.getElementById('setting-line-height')",
+    );
+    expect(persistenceSource).toContain("const letterSpacingInput = document.getElementById(");
+    expect(persistenceSource).toContain("'setting-letter-spacing'");
+    expect(persistenceSource).toContain('bindTerminalFontPreview(');
+  });
+
+  it('flushes pending settings before detaching handlers', () => {
+    expect(persistenceSource).toContain('function flushPendingSettingsChanges(): void');
+    expect(persistenceSource).toContain('flushPendingSettingsChanges();');
   });
 
   it('uses non-submit inline save buttons for text and number settings', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
     ];
-    expect(inlineSaveButtons).toHaveLength(3);
+    expect(inlineSaveButtons).toHaveLength(5);
   });
 });

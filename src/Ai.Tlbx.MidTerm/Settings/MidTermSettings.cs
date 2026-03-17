@@ -27,6 +27,10 @@ public sealed class MidTermSettings
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
     public string FontFamily { get; set; } = "Cascadia Code";
+    public double LineHeight { get; set; } = 1;
+    public double LetterSpacing { get; set; } = 0;
+    public string FontWeight { get; set; } = "normal";
+    public string FontWeightBold { get; set; } = "bold";
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
     public bool CursorBlink { get; set; } = true;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;

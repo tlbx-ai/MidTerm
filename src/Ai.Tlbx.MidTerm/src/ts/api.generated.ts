@@ -3732,6 +3732,12 @@ export interface components {
       /** Format: int32 */
       fontSize: number;
       fontFamily: string;
+      /** Format: double */
+      lineHeight: number;
+      /** Format: double */
+      letterSpacing: number;
+      fontWeight: string;
+      fontWeightBold: string;
       cursorStyle: components['schemas']['CursorStyleSetting'];
       cursorBlink: boolean;
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];

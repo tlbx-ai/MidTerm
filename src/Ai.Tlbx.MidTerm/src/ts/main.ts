@@ -41,6 +41,7 @@ import {
   pasteToTerminal,
   initMobilePiP,
   recordMobilePiPBytes,
+  isTerminalViewingScrollback,
 } from './modules/terminal';
 import { getConfiguredTerminalFontFamily } from './modules/terminal/fontConfig';
 import {
@@ -373,10 +374,22 @@ function applyScrollbackProtection(): void {
   const activeId = $activeSessionId.get();
   const state = activeId ? sessionTerminals.get(activeId) : null;
   if (!state?.terminal) return;
+  if (state.reconnectFreezeOverlay) return;
+  if (state.terminal.modes.synchronizedOutputMode) return;
 
-  const scrollPosBefore = state.terminal.buffer.active.viewportY;
+  const bufferBefore = state.terminal.buffer.active;
+  if (bufferBefore.viewportY >= bufferBefore.baseY) {
+    return;
+  }
+
+  const scrollPosBefore = bufferBefore.viewportY;
 
   setTimeout(() => {
+    if ($activeSessionId.get() !== activeId) return;
+    if (!state.opened || state.container.classList.contains('hidden')) return;
+    if (state.reconnectFreezeOverlay) return;
+    if (state.terminal.modes.synchronizedOutputMode) return;
+
     const scrollPosAfter = state.terminal.buffer.active.viewportY;
     const delta = Math.abs(scrollPosAfter - scrollPosBefore);
     if (delta > 50) {
@@ -429,6 +442,10 @@ async function createSession(): Promise<void> {
       dom.terminalsArea,
       fontSize,
       getConfiguredTerminalFontFamily(),
+      settings?.lineHeight ?? 1,
+      settings?.letterSpacing ?? 0,
+      settings?.fontWeight ?? 'normal',
+      settings?.fontWeightBold ?? 'bold',
       tempId,
     );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
@@ -559,7 +576,9 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   requestAnimationFrame(() => {
     refreshTerminalPresentation(sessionId, state);
     state.terminal.focus();
-    scrollToBottom(sessionId);
+    if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
+      scrollToBottom(sessionId);
+    }
 
     if (isNewlyCreated) {
       newlyCreatedSessions.delete(sessionId);
@@ -863,6 +882,10 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       dom.terminalsArea,
       fontSize,
       getConfiguredTerminalFontFamily(),
+      settings?.lineHeight ?? 1,
+      settings?.letterSpacing ?? 0,
+      settings?.fontWeight ?? 'normal',
+      settings?.fontWeightBold ?? 'bold',
       logId,
     );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {

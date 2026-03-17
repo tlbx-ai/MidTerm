@@ -60,6 +60,14 @@ export function connectSettingsWebSocket(): void {
 
   ws.onerror = (e) => {
     log.error(() => `Settings WebSocket error: ${e.type}`);
+
+    if (settingsWs !== ws) {
+      return;
+    }
+
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
   };
 }
 

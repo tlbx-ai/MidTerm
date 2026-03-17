@@ -160,43 +160,6 @@ function freezeTerminalDuringReconnect(state: TerminalState): void {
       ? getComputedStyle(viewport).backgroundColor
       : getComputedStyle(state.container).backgroundColor;
   overlay.style.background = backgroundColor;
-
-  const snapshot = document.createElement('canvas');
-  const dpr = window.devicePixelRatio || 1;
-  snapshot.width = Math.max(1, Math.round(containerRect.width * dpr));
-  snapshot.height = Math.max(1, Math.round(containerRect.height * dpr));
-  snapshot.style.width = '100%';
-  snapshot.style.height = '100%';
-  snapshot.style.display = 'block';
-
-  const ctx = snapshot.getContext('2d');
-  if (ctx !== null) {
-    ctx.scale(dpr, dpr);
-    ctx.fillStyle = backgroundColor;
-    ctx.fillRect(0, 0, containerRect.width, containerRect.height);
-
-    const canvases = state.container.querySelectorAll<HTMLCanvasElement>('.xterm-screen canvas');
-    canvases.forEach((canvas) => {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
-        return;
-      }
-
-      try {
-        ctx.drawImage(
-          canvas,
-          rect.left - containerRect.left,
-          rect.top - containerRect.top,
-          rect.width,
-          rect.height,
-        );
-      } catch {
-        // Ignore snapshot copy errors and fall back to a solid background overlay.
-      }
-    });
-  }
-
-  overlay.appendChild(snapshot);
   state.container.appendChild(overlay);
   state.reconnectFreezeOverlay = overlay;
 }
@@ -839,6 +802,10 @@ function writeToTerminal(
   data: Uint8Array,
   generation: number,
 ): void {
+  if (state.reconnectFreezeOverlay && (data.length > 0 || (cols > 0 && rows > 0))) {
+    removeReconnectFreeze(state);
+  }
+
   // Track bracketed paste mode by scanning raw bytes (no string allocation)
   if (data.length >= 8) {
     scanBracketedPaste(data, sessionId);
