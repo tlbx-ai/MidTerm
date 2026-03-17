@@ -94,10 +94,10 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
           retention-days: 1
 
-  # ── Build macOS + Linux, sign, and upload directly to the draft release ────
-  build:
+  # ── Build macOS ARM64 for dev prereleases ──────────────────────────────────
+  build-dev:
     needs: [prepare, frontend]
-    if: needs.prepare.outputs.is_dev != 'true' || matrix.include_on_dev == true
+    if: needs.prepare.outputs.is_dev == 'true'
     permissions:
       contents: write
     strategy:
@@ -106,19 +106,164 @@ jobs:
           - os: macos-14
             rid: osx-arm64
             ext: ''
-            include_on_dev: true
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: src/**/packages.lock.json
+
+      - name: Download frontend
+        uses: actions/download-artifact@v6
+        with:
+          name: frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
+
+      - name: Build mt + mthost
+        if: needs.prepare.outputs.is_web_only != 'true'
+        run: |
+          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+
+      - name: Build mt only
+        if: needs.prepare.outputs.is_web_only == 'true'
+        run: |
+          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+
+      - name: Import Apple Developer ID certificate
+        if: startsWith(matrix.rid, 'osx-')
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Stage artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ github.ref_name }}
+          ASSET_NAME: mt-${{ matrix.rid }}.tar.gz
+        run: |
+          mkdir -p staging/${{ matrix.rid }}
+          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp version.json staging/${{ matrix.rid }}/
+
+          if [[ "${{ needs.prepare.outputs.is_web_only }}" == "true" ]]; then
+            PREVIOUS_URL=$(gh api "repos/${{ github.repository }}/releases?per_page=20" --jq 'first(.[] | select(.tag_name != env.CURRENT_TAG) | .assets[]? | select(.name == env.ASSET_NAME) | .browser_download_url) // ""')
+            if [[ -z "$PREVIOUS_URL" ]]; then
+              echo "Could not find previous asset $ASSET_NAME" >&2
+              exit 1
+            fi
+
+            curl -L "$PREVIOUS_URL" -o "staging/${{ matrix.rid }}/previous.tar.gz"
+            tar -xzf "staging/${{ matrix.rid }}/previous.tar.gz" -C "staging/${{ matrix.rid }}" ./mthost
+            rm "staging/${{ matrix.rid }}/previous.tar.gz"
+          else
+            cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          fi
+
+          if [[ "${{ matrix.rid }}" == osx-* ]]; then
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/${{ matrix.rid }}/mt
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/${{ matrix.rid }}/mthost
+            codesign --verify --strict staging/${{ matrix.rid }}/mt
+            codesign --verify --strict staging/${{ matrix.rid }}/mthost
+          fi
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd staging/${{ matrix.rid }}
+          if command -v sha256sum &> /dev/null; then
+            sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+          else
+            shasum -a 256 mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+          fi
+          echo "=== ${{ matrix.rid }} ==="
+          cat SHA256SUMS.txt
+
+      - name: Notarize
+        if: startsWith(matrix.rid, 'osx-')
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+      - name: Sign version.json
+        shell: pwsh
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+        run: ./scripts/sign-release.ps1 -ArtifactsPath staging
+
+      - name: Package and upload to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $rid = "${{ matrix.rid }}"
+          $archive = "staging/mt-$rid.tar.gz"
+          tar -cf - -C "staging/$rid" . | gzip -9 > $archive
+          gh release upload "${{ github.ref_name }}" $archive
+
+      - name: Clean up keychain
+        if: startsWith(matrix.rid, 'osx-') && always()
+        run: security delete-keychain "$KEYCHAIN_PATH" || true
+
+  # ── Build macOS + Linux for stable/public releases ─────────────────────────
+  build:
+    needs: [prepare, frontend]
+    if: needs.prepare.outputs.is_dev != 'true'
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            rid: osx-arm64
+            ext: ''
           - os: macos-14
             rid: osx-x64
             ext: ''
-            include_on_dev: false
           - os: ubuntu-latest
             rid: linux-x64
             ext: ''
-            include_on_dev: false
           - os: ubuntu-24.04-arm
             rid: linux-arm64
             ext: ''
-            include_on_dev: false
     runs-on: ${{ matrix.os }}
 
     steps:
