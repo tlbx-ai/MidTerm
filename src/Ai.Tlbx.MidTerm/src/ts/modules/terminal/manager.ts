@@ -64,6 +64,10 @@ import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from
 import { getEffectiveTerminalFontSize } from './fontSize';
 import {
   buildTerminalFontStack,
+  DEFAULT_TERMINAL_FONT_WEIGHT,
+  DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  DEFAULT_TERMINAL_LETTER_SPACING,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
   ensureTerminalFontLoaded,
   getBundledTerminalFontFamilies,
   getConfiguredTerminalFontFamily,
@@ -83,6 +87,7 @@ export function setShowBellCallback(cb: (sessionId: string) => void): void {
 
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
+type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 
 // Calibration measurement from hidden terminal (accurate cell dimensions)
 let calibrationMeasurement: {
@@ -90,6 +95,10 @@ let calibrationMeasurement: {
   cellHeight: number;
   fontFamily: string;
   fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  fontWeight: string;
+  fontWeightBold: string;
 } | null = null;
 let calibrationPromise: Promise<void> | null = null;
 
@@ -256,6 +265,12 @@ export function getTerminalOptions(): ITerminalOptions {
   const baseFontSize = currentSettings?.fontSize ?? 14;
   const fontSize = getEffectiveTerminalFontSize(baseFontSize);
   const fontFamily = getConfiguredTerminalFontFamily();
+  const lineHeight = currentSettings?.lineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT;
+  const letterSpacing = currentSettings?.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING;
+  const fontWeight = (currentSettings?.fontWeight ??
+    DEFAULT_TERMINAL_FONT_WEIGHT) as TerminalFontWeight;
+  const fontWeightBold = (currentSettings?.fontWeightBold ??
+    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) as TerminalFontWeight;
   const scrollback = currentSettings?.scrollbackLines ?? 10000;
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
 
@@ -265,8 +280,10 @@ export function getTerminalOptions(): ITerminalOptions {
     cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'none',
     fontFamily: buildTerminalFontStack(fontFamily),
     fontSize: fontSize,
-    letterSpacing: 0,
-    lineHeight: 1,
+    letterSpacing: letterSpacing,
+    lineHeight: lineHeight,
+    fontWeight: fontWeight,
+    fontWeightBold: fontWeightBold,
     scrollback: scrollback,
     minimumContrastRatio: contrast,
     smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
@@ -1038,6 +1055,12 @@ export function initCalibrationTerminal(): Promise<void> {
             cellHeight,
             fontFamily: terminal.options.fontFamily ?? buildTerminalFontStack(),
             fontSize: terminal.options.fontSize ?? 14,
+            lineHeight: terminal.options.lineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT,
+            letterSpacing: terminal.options.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING,
+            fontWeight: String(terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT),
+            fontWeightBold: String(
+              terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+            ),
           };
         }
       }
@@ -1059,6 +1082,10 @@ export function getCalibrationMeasurement(): {
   cellHeight: number;
   fontFamily: string;
   fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  fontWeight: string;
+  fontWeightBold: string;
 } | null {
   return calibrationMeasurement;
 }

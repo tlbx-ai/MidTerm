@@ -232,7 +232,7 @@ export const RECONNECT_JITTER = 0.25;
 
 /** Terminal font stack for monospace rendering */
 export const TERMINAL_FONT_STACK =
-  "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace";
+  "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Symbol', monospace";
 
 /** Padding around terminal content in pixels */
 export const TERMINAL_PADDING = 8;

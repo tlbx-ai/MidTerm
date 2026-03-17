@@ -4,6 +4,11 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed partial class MidTermSettingsPublic
 {
+    private static readonly HashSet<string> ValidFontWeights =
+    [
+        "100", "200", "300", "400", "500", "600", "700", "800", "900", "normal", "bold"
+    ];
+
     public static MidTermSettingsPublic FromSettings(MidTermSettings settings)
     {
         return new MidTermSettingsPublic
@@ -14,6 +19,10 @@ public sealed partial class MidTermSettingsPublic
             DefaultWorkingDirectory = settings.DefaultWorkingDirectory,
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
+            LineHeight = settings.LineHeight,
+            LetterSpacing = settings.LetterSpacing,
+            FontWeight = settings.FontWeight,
+            FontWeightBold = settings.FontWeightBold,
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
             CursorInactiveStyle = settings.CursorInactiveStyle,
@@ -65,6 +74,16 @@ public sealed partial class MidTermSettingsPublic
         settings.DefaultWorkingDirectory = DefaultWorkingDirectory;
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
+        settings.LineHeight = Math.Clamp(LineHeight, 0.8, 3.0);
+        settings.LetterSpacing = Math.Clamp(LetterSpacing, -2.0, 10.0);
+        if (ValidFontWeights.Contains(FontWeight))
+        {
+            settings.FontWeight = FontWeight;
+        }
+        if (ValidFontWeights.Contains(FontWeightBold))
+        {
+            settings.FontWeightBold = FontWeightBold;
+        }
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
         settings.CursorInactiveStyle = CursorInactiveStyle;

@@ -115,6 +115,30 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'bundled font name',
     applyMode: 'immediate',
   }),
+  controlEntry('lineHeight', 'setting-line-height', 'float', 1, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'float, UI clamps to 0.8-3.0',
+    applyMode: 'immediate',
+  }),
+  controlEntry('letterSpacing', 'setting-letter-spacing', 'float', 0, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'float, UI clamps to -2.0-10.0',
+    applyMode: 'immediate',
+  }),
+  controlEntry('fontWeight', 'setting-font-weight', 'select', 'normal', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'known xterm font-weight value',
+    applyMode: 'immediate',
+  }),
+  controlEntry('fontWeightBold', 'setting-font-weight-bold', 'select', 'bold', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'known xterm bold font-weight value',
+    applyMode: 'immediate',
+  }),
   controlEntry('cursorStyle', 'setting-cursor-style', 'select', 'block', {
     editable: true,
     storage: 'settings.json',

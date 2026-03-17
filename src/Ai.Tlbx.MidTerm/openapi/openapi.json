@@ -4019,6 +4019,10 @@
           "defaultWorkingDirectory",
           "fontSize",
           "fontFamily",
+          "lineHeight",
+          "letterSpacing",
+          "fontWeight",
+          "fontWeightBold",
           "cursorStyle",
           "cursorBlink",
           "cursorInactiveStyle",
@@ -4088,6 +4092,20 @@
             "format": "int32"
           },
           "fontFamily": {
+            "type": "string"
+          },
+          "lineHeight": {
+            "type": "number",
+            "format": "double"
+          },
+          "letterSpacing": {
+            "type": "number",
+            "format": "double"
+          },
+          "fontWeight": {
+            "type": "string"
+          },
+          "fontWeightBold": {
             "type": "string"
           },
           "cursorStyle": {

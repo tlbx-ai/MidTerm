@@ -28,6 +28,10 @@ import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal }
 import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
 import {
   buildTerminalFontStack,
+  DEFAULT_TERMINAL_FONT_WEIGHT,
+  DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  DEFAULT_TERMINAL_LETTER_SPACING,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
   ensureTerminalFontLoaded,
   getConfiguredTerminalFontFamily,
 } from './fontConfig';
@@ -163,6 +167,10 @@ function logResizeDiagnostics(
 function measureFromExistingTerminal(
   fontSize: number,
   fontFamily: string,
+  lineHeight: number,
+  letterSpacing: number,
+  fontWeight: string,
+  fontWeightBold: string,
 ): { cellWidth: number; cellHeight: number } | null {
   const expectedFontStack = buildTerminalFontStack(fontFamily);
 
@@ -171,6 +179,22 @@ function measureFromExistingTerminal(
 
     // Only trust measurements from terminals using the same font size we plan to apply.
     if (state.terminal.options.fontSize !== fontSize) continue;
+    if ((state.terminal.options.lineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT) !== lineHeight)
+      continue;
+    if (
+      (state.terminal.options.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING) !== letterSpacing
+    ) {
+      continue;
+    }
+    if (String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight) {
+      continue;
+    }
+    if (
+      String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
+      fontWeightBold
+    ) {
+      continue;
+    }
     const terminalFontFamily = state.terminal.options.fontFamily ?? '';
     if (terminalFontFamily !== expectedFontStack && !terminalFontFamily.includes(fontFamily)) {
       continue;
@@ -204,6 +228,9 @@ function measureFromExistingTerminal(
 function measureFromFont(
   fontSize: number,
   fontFamily: string,
+  lineHeight: number,
+  letterSpacing: number,
+  fontWeight: string,
 ): { cellWidth: number; cellHeight: number } {
   const measureEl = document.createElement('span');
   measureEl.style.cssText = `
@@ -211,13 +238,15 @@ function measureFromFont(
     visibility: hidden;
     font-family: ${buildTerminalFontStack(fontFamily)};
     font-size: ${fontSize}px;
-    line-height: 1;
+    line-height: ${lineHeight};
+    letter-spacing: ${letterSpacing}px;
+    font-weight: ${fontWeight};
     white-space: pre;
   `;
-  measureEl.textContent = 'W';
+  measureEl.textContent = 'WWWWWWWWWW';
   document.body.appendChild(measureEl);
 
-  const cellWidth = measureEl.offsetWidth;
+  const cellWidth = measureEl.offsetWidth / 10;
   const cellHeight = measureEl.offsetHeight;
 
   document.body.removeChild(measureEl);
@@ -237,6 +266,10 @@ export async function calculateOptimalDimensions(
   container: HTMLElement,
   fontSize: number,
   fontFamily: string,
+  lineHeight: number = DEFAULT_TERMINAL_LINE_HEIGHT,
+  letterSpacing: number = DEFAULT_TERMINAL_LETTER_SPACING,
+  fontWeight: string = DEFAULT_TERMINAL_FONT_WEIGHT,
+  fontWeightBold: string = DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
   sessionIdForLog?: string,
 ): Promise<{ cols: number; rows: number } | null> {
   // Allow layout to settle for very small containers before giving up
@@ -253,7 +286,14 @@ export async function calculateOptimalDimensions(
   // 1. Existing open terminal (most accurate, already rendered)
   // 2. Calibration measurement (accurate, from hidden terminal at startup)
   // 3. Font probe (fallback, less accurate)
-  const existingMeasurement = measureFromExistingTerminal(fontSize, fontFamily);
+  const existingMeasurement = measureFromExistingTerminal(
+    fontSize,
+    fontFamily,
+    lineHeight,
+    letterSpacing,
+    fontWeight,
+    fontWeightBold,
+  );
 
   let measurementSource: MeasurementSource;
   let cellWidth: number;
@@ -274,6 +314,10 @@ export async function calculateOptimalDimensions(
     if (
       calibration &&
       calibration.fontSize === fontSize &&
+      calibration.lineHeight === lineHeight &&
+      calibration.letterSpacing === letterSpacing &&
+      calibration.fontWeight === fontWeight &&
+      calibration.fontWeightBold === fontWeightBold &&
       (calibration.fontFamily === buildTerminalFontStack(fontFamily) ||
         calibration.fontFamily.includes(fontFamily))
     ) {
@@ -287,7 +331,13 @@ export async function calculateOptimalDimensions(
         await fontsReadyPromise;
       }
       await ensureTerminalFontLoaded(fontFamily, fontSize);
-      const fontMeasurement = measureFromFont(fontSize, fontFamily);
+      const fontMeasurement = measureFromFont(
+        fontSize,
+        fontFamily,
+        lineHeight,
+        letterSpacing,
+        fontWeight,
+      );
       cellWidth = fontMeasurement.cellWidth;
       cellHeight = fontMeasurement.cellHeight;
     }

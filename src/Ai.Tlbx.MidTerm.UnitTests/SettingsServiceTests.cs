@@ -42,6 +42,10 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.Equal(1, settings.LineHeight);
+        Assert.Equal(0, settings.LetterSpacing);
+        Assert.Equal("normal", settings.FontWeight);
+        Assert.Equal("bold", settings.FontWeightBold);
         Assert.False(settings.ShowSidebarSessionFilter);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);
@@ -65,6 +69,10 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.Equal(1, settings.LineHeight);
+        Assert.Equal(0, settings.LetterSpacing);
+        Assert.Equal("normal", settings.FontWeight);
+        Assert.Equal("bold", settings.FontWeightBold);
         Assert.False(settings.ShowSidebarSessionFilter);
         Assert.True(settings.ManagerBarEnabled);
         Assert.True(settings.TmuxCompatibility);

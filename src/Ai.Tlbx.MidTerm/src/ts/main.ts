@@ -429,6 +429,10 @@ async function createSession(): Promise<void> {
       dom.terminalsArea,
       fontSize,
       getConfiguredTerminalFontFamily(),
+      settings?.lineHeight ?? 1,
+      settings?.letterSpacing ?? 0,
+      settings?.fontWeight ?? 'normal',
+      settings?.fontWeightBold ?? 'bold',
       tempId,
     );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
@@ -863,6 +867,10 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       dom.terminalsArea,
       fontSize,
       getConfiguredTerminalFontFamily(),
+      settings?.lineHeight ?? 1,
+      settings?.letterSpacing ?? 0,
+      settings?.fontWeight ?? 'normal',
+      settings?.fontWeightBold ?? 'bold',
       logId,
     );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
