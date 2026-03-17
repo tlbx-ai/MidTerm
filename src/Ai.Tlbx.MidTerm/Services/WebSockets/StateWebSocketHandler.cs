@@ -19,6 +19,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 
 public sealed class StateWebSocketHandler
@@ -169,8 +170,7 @@ public sealed class StateWebSocketHandler
         }
 
         var connectionToken = new object();
-        var browserId = context.Request.Cookies["mt-client-id"]
-            ?? Guid.NewGuid().ToString("N");
+        var browserId = BuildBrowserConnectionId(context.Request);
 
         async Task SendMainBrowserStatusAsync()
         {
@@ -352,7 +352,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, shareAccess);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, connectionToken, shareAccess);
                         }
                     }
                 }
@@ -419,6 +419,7 @@ public sealed class StateWebSocketHandler
         string json,
         Func<string, bool, object?, string?, Task> sendResponse,
         string browserId,
+        object connectionToken,
         ShareAccessContext? shareAccess)
     {
         WsCommand? cmd;
@@ -473,6 +474,11 @@ public sealed class StateWebSocketHandler
 
                 case "browser.releaseMain":
                     _mainBrowserService.Release(browserId);
+                    await sendResponse(cmd.Id, true, null, null);
+                    break;
+
+                case "browser.setActivity":
+                    _mainBrowserService.UpdateActivity(browserId, connectionToken, cmd.Payload?.IsActive == true);
                     await sendResponse(cmd.Id, true, null, null);
                     break;
 
@@ -574,5 +580,23 @@ public sealed class StateWebSocketHandler
         {
             await sendResponse(cmd.Id, false, null, ex.Message);
         }
+    }
+
+    private static string BuildBrowserConnectionId(HttpRequest request)
+    {
+        var clientId = request.Cookies["mt-client-id"];
+        var tabId = request.Query["tabId"].FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            clientId = Guid.NewGuid().ToString("N");
+        }
+
+        if (string.IsNullOrWhiteSpace(tabId))
+        {
+            return clientId;
+        }
+
+        return $"{clientId}:{tabId}";
     }
 }

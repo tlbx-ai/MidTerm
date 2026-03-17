@@ -35,6 +35,26 @@ export function getOrCreateClientId(): string {
 }
 
 /**
+ * Get or create a tab-local ID for distinguishing multiple tabs in one browser session.
+ */
+export function getOrCreateTabId(): string {
+  const name = 'mt-tab-id';
+
+  try {
+    const existing = sessionStorage.getItem(name);
+    if (existing) {
+      return existing;
+    }
+
+    const id = crypto.randomUUID();
+    sessionStorage.setItem(name, id);
+    return id;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+/**
  * Delete a cookie by name
  */
 export function deleteCookie(name: string): void {

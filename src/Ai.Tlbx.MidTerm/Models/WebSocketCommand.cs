@@ -32,6 +32,9 @@ public sealed class WsCommandPayload
     // session.reorder - array of session IDs in desired order
     public List<string>? SessionIds { get; init; }
 
+    // browser.setActivity
+    public bool? IsActive { get; init; }
+
     // settings.save - full settings object
     public Settings.MidTermSettingsPublic? Settings { get; init; }
 }

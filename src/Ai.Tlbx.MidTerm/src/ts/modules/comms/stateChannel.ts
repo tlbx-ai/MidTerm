@@ -168,6 +168,7 @@ export function connectStateWebSocket(): void {
   ws.onopen = () => {
     stateReconnect.reset();
     $stateWsConnected.set(true);
+    reportBrowserActivity(getCurrentBrowserActivity(), true);
   };
 
   ws.onmessage = (event) => {
@@ -427,6 +428,10 @@ export function sendCommand<T = unknown>(
   action: 'browser.claimMain' | 'browser.releaseMain',
 ): Promise<T>;
 export function sendCommand<T = unknown>(
+  action: 'browser.setActivity',
+  payload: WsCommandPayload<'browser.setActivity'>,
+): Promise<T>;
+export function sendCommand<T = unknown>(
   action: 'session.rename',
   payload: WsCommandPayload<'session.rename'>,
 ): Promise<T>;
@@ -436,7 +441,10 @@ export function sendCommand<T = unknown>(
 ): Promise<T>;
 export async function sendCommand<T = unknown>(
   action: WsCommandAction,
-  payload?: WsCommandPayload<'session.rename'> | WsCommandPayload<'session.reorder'>,
+  payload?:
+    | WsCommandPayload<'session.rename'>
+    | WsCommandPayload<'session.reorder'>
+    | WsCommandPayload<'browser.setActivity'>,
 ): Promise<T> {
   const ws = stateWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -452,6 +460,14 @@ export async function sendCommand<T = unknown>(
         type: 'command',
         id,
         action,
+      };
+      break;
+    case 'browser.setActivity':
+      command = {
+        type: 'command',
+        id,
+        action,
+        payload: payload as WsCommandPayload<'browser.setActivity'>,
       };
       break;
     case 'session.rename':
@@ -619,6 +635,34 @@ export function claimMainBrowser(): void {
   sendCommand('browser.claimMain').catch((e: unknown) => {
     log.warn(() => `Failed to claim main browser: ${String(e)}`);
   });
+}
+
+function getCurrentBrowserActivity(): boolean {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+
+  const visible = document.visibilityState === 'visible' && !document.hidden;
+  const focused = typeof document.hasFocus !== 'function' || document.hasFocus();
+  return visible && focused;
+}
+
+let lastReportedBrowserActivity: boolean | undefined;
+
+export function reportBrowserActivity(
+  isActive: boolean = getCurrentBrowserActivity(),
+  force: boolean = false,
+): void {
+  if (isSharedSessionRoute() || !isStateConnected()) return;
+  if (!force && lastReportedBrowserActivity === isActive) return;
+
+  sendCommand('browser.setActivity', { isActive })
+    .then(() => {
+      lastReportedBrowserActivity = isActive;
+    })
+    .catch((e: unknown) => {
+      log.warn(() => `Failed to report browser activity: ${String(e)}`);
+    });
 }
 
 /**

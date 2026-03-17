@@ -4,12 +4,16 @@
  * Helper functions for WebSocket connection management.
  */
 
+import { getOrCreateTabId } from './cookies';
+
 /**
  * Create WebSocket URL with correct protocol (ws/wss based on page protocol)
  */
 export function createWsUrl(path: string): string {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${location.host}${path}`;
+  const url = new URL(`${protocol}//${location.host}${path}`);
+  url.searchParams.set('tabId', getOrCreateTabId());
+  return url.toString();
 }
 
 /**
