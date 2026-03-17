@@ -5,13 +5,39 @@
 
 set -e
 
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+bootstrap_download() {
+    local url="$1"
+    local dest="$2"
+
+    if command_exists curl; then
+        curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 1 --retry-all-errors \
+            -H "User-Agent: MidTerm-Installer" \
+            "$url" -o "$dest"
+        return
+    fi
+
+    if command_exists wget; then
+        wget -qO "$dest" --user-agent="MidTerm-Installer" "$url"
+        return
+    fi
+
+    echo "Error: MidTerm installer requires 'curl' or 'wget' to download files." >&2
+    echo "Install one of them and run the installer again." >&2
+    exit 1
+}
+
 # When piped to bash, $0 is "bash" not the script path.
 # Save script to temp file and re-exec so sudo re-exec works.
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH" == "/usr/bin/bash" ]]; then
     TEMP_SCRIPT=$(mktemp)
     # Script is being piped - we need to download it to a file
-    curl -fsSL "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.sh" > "$TEMP_SCRIPT"
+    bootstrap_download "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.sh" "$TEMP_SCRIPT"
     chmod +x "$TEMP_SCRIPT"
     exec "$TEMP_SCRIPT" "$@"
 fi
@@ -54,6 +80,166 @@ NC='\033[0m' # No Color
 # Logging
 LOG_FILE=""
 LOG_INITIALIZED=false
+DOWNLOADER=""
+DOWNLOAD_TOOL_NAME=""
+
+pick_downloader() {
+    if command_exists curl; then
+        DOWNLOADER="curl"
+        DOWNLOAD_TOOL_NAME="curl"
+        return 0
+    fi
+
+    if command_exists wget; then
+        DOWNLOADER="wget"
+        DOWNLOAD_TOOL_NAME="wget"
+        return 0
+    fi
+
+    return 1
+}
+
+require_command() {
+    local name="$1"
+    local package_hint="${2:-$1}"
+
+    if command_exists "$name"; then
+        return 0
+    fi
+
+    echo -e "${RED}Missing required command: $name${NC}" >&2
+    echo -e "${GRAY}Install '$package_hint' and run the installer again.${NC}" >&2
+    exit 1
+}
+
+require_any_download_tool() {
+    if pick_downloader; then
+        return 0
+    fi
+
+    echo -e "${RED}Missing required downloader: curl or wget${NC}" >&2
+    echo -e "${GRAY}Install one of them and run the installer again.${NC}" >&2
+    exit 1
+}
+
+validate_archive() {
+    local archive_path="$1"
+
+    if [ ! -s "$archive_path" ]; then
+        log "Downloaded archive is empty: $archive_path" "ERROR"
+        return 1
+    fi
+
+    if command_exists gzip; then
+        if ! gzip -t "$archive_path" >/dev/null 2>&1; then
+            log "gzip validation failed for $archive_path" "ERROR"
+            return 1
+        fi
+    fi
+
+    if ! tar -tzf "$archive_path" >/dev/null 2>&1; then
+        log "tar listing failed for $archive_path" "ERROR"
+        return 1
+    fi
+
+    return 0
+}
+
+download_to_file() {
+    local url="$1"
+    local dest="$2"
+    local description="$3"
+    local attempt max_attempts
+
+    max_attempts=3
+    mkdir -p "$(dirname "$dest")"
+
+    for attempt in 1 2 3; do
+        rm -f "$dest"
+        log "Downloading $description (attempt $attempt/$max_attempts) from: $url"
+
+        if [ "$DOWNLOADER" = "curl" ]; then
+            if curl --fail --silent --show-error --location \
+                --retry 3 --retry-delay 1 --retry-all-errors \
+                -H "User-Agent: MidTerm-Installer" \
+                "$url" -o "$dest"; then
+                if validate_archive "$dest"; then
+                    log "Download and archive validation succeeded for $description"
+                    return 0
+                fi
+            fi
+        else
+            if wget -qO "$dest" --user-agent="MidTerm-Installer" "$url"; then
+                if validate_archive "$dest"; then
+                    log "Download and archive validation succeeded for $description"
+                    return 0
+                fi
+            fi
+        fi
+
+        log "Download attempt $attempt failed for $description" "WARN"
+        sleep "$attempt"
+    done
+
+    log "All download attempts failed for $description" "ERROR"
+    return 1
+}
+
+github_api_get() {
+    local url="$1"
+
+    if [ "$DOWNLOADER" = "curl" ]; then
+        curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 1 --retry-all-errors \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "User-Agent: MidTerm-Installer" \
+            "$url"
+        return
+    fi
+
+    wget -qO- \
+        --header="Accept: application/vnd.github+json" \
+        --header="X-GitHub-Api-Version: 2022-11-28" \
+        --user-agent="MidTerm-Installer" \
+        "$url"
+}
+
+resolve_redirect_url() {
+    local url="$1"
+
+    if [ "$DOWNLOADER" = "curl" ]; then
+        curl --fail --silent --show-error --location --head \
+            --output /dev/null --write-out '%{url_effective}' \
+            -H "User-Agent: MidTerm-Installer" \
+            "$url"
+        return
+    fi
+
+    local headers
+    headers=$(wget --server-response --spider --max-redirect=0 \
+        --user-agent="MidTerm-Installer" "$url" 2>&1 || true)
+
+    printf '%s' "$headers" |
+        tr -d '\r' |
+        grep -i '^[[:space:]]*Location: ' |
+        tail -1 |
+        sed -E 's/^[[:space:]]*[Ll]ocation:[[:space:]]*//'
+}
+
+ensure_prerequisites() {
+    require_command bash bash
+    require_command mktemp coreutils
+    require_command tar tar
+    require_command grep grep
+    require_command sed sed
+    require_command openssl openssl
+    require_any_download_tool
+
+    if [ "$DEV_CHANNEL" = true ]; then
+        require_command awk awk
+    fi
+}
 
 init_log() {
     local mode="$1"  # "service" or "user"
@@ -224,22 +410,34 @@ detect_platform() {
 }
 
 get_latest_release() {
-    github_api_get() {
-        local url="$1"
-        curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 1 --retry-all-errors \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            -H "User-Agent: MidTerm-Installer" \
-            "$url"
+    extract_first_json_string() {
+        local json="$1"
+        local key="$2"
+        printf '%s' "$json" |
+            sed -nE "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\1/p" |
+            head -1
+    }
+
+    extract_asset_url() {
+        local json="$1"
+        local asset_name="$2"
+        local escaped_asset_name
+        escaped_asset_name=$(printf '%s' "$asset_name" | sed 's/[][(){}.^$?+*|\\/]/\\&/g')
+
+        printf '%s' "$json" |
+            sed -nE "s/.*\"browser_download_url\"[[:space:]]*:[[:space:]]*\"([^\"]*\/${escaped_asset_name})\".*/\1/p" |
+            head -1
     }
 
     resolve_latest_stable_tag_fallback() {
         local effective_url
-        effective_url=$(curl --fail --silent --show-error --location --head \
-            --output /dev/null --write-out '%{url_effective}' \
-            -H "User-Agent: MidTerm-Installer" \
-            "https://github.com/$REPO_OWNER/$REPO_NAME/releases/latest")
+        effective_url=$(resolve_redirect_url "https://github.com/$REPO_OWNER/$REPO_NAME/releases/latest")
+
+        case "$effective_url" in
+            /*)
+                effective_url="https://github.com$effective_url"
+                ;;
+        esac
 
         case "$effective_url" in
             */releases/tag/*)
@@ -283,8 +481,8 @@ get_latest_release() {
             RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
         fi
 
-        VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
-        ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | head -1 | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+        VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v?//')
+        ASSET_URL=$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")
 
         if [ -z "$ASSET_URL" ]; then
             echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
@@ -297,8 +495,8 @@ get_latest_release() {
         printf "  Fetching latest release...            "
         RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest" 2>/dev/null || true)
         if [ -n "$RELEASE_INFO" ]; then
-            VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
-            ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+            VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v?//')
+            ASSET_URL=$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")
         else
             local latest_tag
             latest_tag=$(resolve_latest_stable_tag_fallback 2>/dev/null || true)
@@ -1055,12 +1253,16 @@ check_health() {
 install_binary() {
     local install_dir="$1"
     local temp_dir=$(mktemp -d)
+    local archive_path="$temp_dir/$ASSET_NAME"
 
     log "Downloading from: $ASSET_URL"
     printf "  Downloading v%s...                  " "$VERSION"
-    if ! curl -fsSL "$ASSET_URL" -o "$temp_dir/mt.tar.gz"; then
-        log "Download failed" "ERROR"
+    if ! download_to_file "$ASSET_URL" "$archive_path" "$ASSET_NAME"; then
+        log "Download failed for $ASSET_NAME" "ERROR"
         echo -e "${RED}failed${NC}"
+        echo -e "  ${YELLOW}Could not download a valid release archive using $DOWNLOAD_TOOL_NAME.${NC}"
+        echo -e "  ${GRAY}URL: $ASSET_URL${NC}"
+        echo -e "  ${GRAY}Temp file: $archive_path${NC}"
         rm -rf "$temp_dir"
         exit 1
     fi
@@ -1069,7 +1271,14 @@ install_binary() {
 
     log "Extracting to: $temp_dir"
     printf "  Extracting binaries...                "
-    tar -xzf "$temp_dir/mt.tar.gz" -C "$temp_dir"
+    if ! tar -xzf "$archive_path" -C "$temp_dir"; then
+        log "Extraction failed for $archive_path" "ERROR"
+        echo -e "${RED}failed${NC}"
+        echo -e "  ${YELLOW}Downloaded archive could not be extracted.${NC}"
+        echo -e "  ${GRAY}Archive: $archive_path${NC}"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
     echo -e "${GREEN}done${NC}"
 
     # Create install directory
@@ -1121,6 +1330,13 @@ install_as_service() {
 
     # Check for root FIRST - don't initialize logging until elevated (requires write to /usr/local)
     if [ "$EUID" -ne 0 ]; then
+        if ! command_exists sudo; then
+            echo ""
+            echo -e "${RED}System service installation requires root or sudo.${NC}"
+            echo -e "  ${GRAY}Either rerun this installer with sudo, or choose 'User install'.${NC}"
+            exit 1
+        fi
+
         echo ""
         echo -e "${YELLOW}Requesting sudo privileges...${NC}"
         # Re-exec with sudo, passing all collected info as environment variables
@@ -1136,6 +1352,12 @@ install_as_service() {
                      BIND_ADDRESS="$BIND_ADDRESS" \
                      TRUST_CERT="$TRUST_CERT" \
                      "$SCRIPT_PATH" --service $dev_flag
+    fi
+
+    if [ "$PLATFORM" = "linux" ] && ! command_exists systemctl; then
+        echo -e "${RED}System service install is not available: 'systemctl' was not found.${NC}"
+        echo -e "  ${GRAY}Use 'User install' on minimal Linux systems without systemd, or enable systemd first.${NC}"
+        exit 1
     fi
 
     # Now running as root - initialize logging
@@ -1950,6 +2172,7 @@ if [ -z "$INSTALLING_USER" ]; then
 fi
 
 # Main
+ensure_prerequisites
 print_header
 
 # Show channel info
