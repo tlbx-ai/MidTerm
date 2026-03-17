@@ -2170,6 +2170,7 @@ done
 # Handle --service flag for sudo re-exec
 if [[ " $* " == *" --service "* ]] || [ "$1" = "--service" ]; then
     SERVICE_MODE=true
+    ensure_prerequisites
     # Start logging to update.log (service mode)
     if [ -z "$LOGGING_STARTED" ]; then
         setup_logging "service"
