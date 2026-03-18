@@ -159,27 +159,12 @@ jobs:
 
       - name: Stage artifacts
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CURRENT_TAG: ${{ github.ref_name }}
-          ASSET_NAME: mt-${{ matrix.rid }}.tar.gz
         run: |
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
 
-          if [[ "${{ needs.prepare.outputs.is_web_only }}" == "true" ]]; then
-            PREVIOUS_URL=$(gh api "repos/${{ github.repository }}/releases?per_page=20" --jq 'first(.[] | select(.tag_name != env.CURRENT_TAG) | .assets[]? | select(.name == env.ASSET_NAME) | .browser_download_url) // ""')
-            if [[ -n "$PREVIOUS_URL" ]]; then
-              curl -L "$PREVIOUS_URL" -o "staging/${{ matrix.rid }}/previous.tar.gz"
-              tar -xzf "staging/${{ matrix.rid }}/previous.tar.gz" -C "staging/${{ matrix.rid }}" ./mthost
-              rm "staging/${{ matrix.rid }}/previous.tar.gz"
-            else
-              echo "Previous asset $ASSET_NAME not found, building fallback mthost"
-              dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-              cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
-            fi
-          else
+          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
             cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
           fi
 
@@ -190,29 +175,35 @@ jobs:
               --options runtime \
               --timestamp \
               staging/${{ matrix.rid }}/mt
-            codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-              --options runtime \
-              --timestamp \
-              staging/${{ matrix.rid }}/mthost
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
+              codesign --force \
+                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --options runtime \
+                --timestamp \
+                staging/${{ matrix.rid }}/mthost
+              codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            fi
           fi
 
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
+          files=(mt${{ matrix.ext }})
+          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
+            files+=(mthost${{ matrix.ext }})
+          fi
           if command -v sha256sum &> /dev/null; then
-            sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+            sha256sum "${files[@]}" > SHA256SUMS.txt
           else
-            shasum -a 256 mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+            shasum -a 256 "${files[@]}" > SHA256SUMS.txt
           fi
           echo "=== ${{ matrix.rid }} ==="
           cat SHA256SUMS.txt
 
       - name: Notarize
-        if: startsWith(matrix.rid, 'osx-')
+        if: startsWith(matrix.rid, 'osx-') && needs.prepare.outputs.is_web_only != 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -318,27 +309,12 @@ jobs:
 
       - name: Stage artifacts
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CURRENT_TAG: ${{ github.ref_name }}
-          ASSET_NAME: mt-${{ matrix.rid }}.tar.gz
         run: |
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp version.json staging/${{ matrix.rid }}/
 
-          if [[ "${{ needs.prepare.outputs.is_web_only }}" == "true" ]]; then
-            PREVIOUS_URL=$(gh api "repos/${{ github.repository }}/releases?per_page=20" --jq 'first(.[] | select(.tag_name != env.CURRENT_TAG) | .assets[]? | select(.name == env.ASSET_NAME) | .browser_download_url) // ""')
-            if [[ -n "$PREVIOUS_URL" ]]; then
-              curl -L "$PREVIOUS_URL" -o "staging/${{ matrix.rid }}/previous.tar.gz"
-              tar -xzf "staging/${{ matrix.rid }}/previous.tar.gz" -C "staging/${{ matrix.rid }}" ./mthost
-              rm "staging/${{ matrix.rid }}/previous.tar.gz"
-            else
-              echo "Previous asset $ASSET_NAME not found, building fallback mthost"
-              dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-              cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
-            fi
-          else
+          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
             cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
           fi
 
@@ -349,29 +325,35 @@ jobs:
               --options runtime \
               --timestamp \
               staging/${{ matrix.rid }}/mt
-            codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-              --options runtime \
-              --timestamp \
-              staging/${{ matrix.rid }}/mthost
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
+              codesign --force \
+                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --options runtime \
+                --timestamp \
+                staging/${{ matrix.rid }}/mthost
+              codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            fi
           fi
 
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
+          files=(mt${{ matrix.ext }})
+          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
+            files+=(mthost${{ matrix.ext }})
+          fi
           if command -v sha256sum &> /dev/null; then
-            sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+            sha256sum "${files[@]}" > SHA256SUMS.txt
           else
-            shasum -a 256 mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
+            shasum -a 256 "${files[@]}" > SHA256SUMS.txt
           fi
           echo "=== ${{ matrix.rid }} ==="
           cat SHA256SUMS.txt
 
       - name: Notarize
-        if: startsWith(matrix.rid, 'osx-')
+        if: startsWith(matrix.rid, 'osx-') && needs.prepare.outputs.is_web_only != 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -441,33 +423,12 @@ jobs:
 
       - name: Stage artifacts
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CURRENT_TAG: ${{ github.ref_name }}
         run: |
           New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
           Copy-Item src/version.json staging/win-x64/
 
-          if ("${{ needs.prepare.outputs.is_web_only }}" -eq "true") {
-            $releases = gh api "repos/${{ github.repository }}/releases?per_page=20" | ConvertFrom-Json
-            $previousAsset = $releases |
-              Where-Object { $_.tag_name -ne $env:CURRENT_TAG } |
-              ForEach-Object { $_.assets } |
-              Where-Object { $_.name -eq 'mt-win-x64.zip' } |
-              Select-Object -First 1
-
-            if ($null -eq $previousAsset) {
-              throw 'Could not find previous asset mt-win-x64.zip'
-            }
-
-            $archivePath = Join-Path $PWD 'staging/win-x64/previous.zip'
-            Invoke-WebRequest -Uri $previousAsset.browser_download_url -OutFile $archivePath
-            Expand-Archive -Path $archivePath -DestinationPath 'staging/win-x64/previous' -Force
-            Copy-Item 'staging/win-x64/previous/mthost.exe' 'staging/win-x64/mthost.exe'
-            Remove-Item $archivePath -Force
-            Remove-Item 'staging/win-x64/previous' -Recurse -Force
-          } else {
+          if ("${{ needs.prepare.outputs.is_web_only }}" -ne "true") {
             Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
           }
 
@@ -479,7 +440,11 @@ jobs:
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $hashes = Get-ChildItem staging/win-x64/mt.exe, staging/win-x64/mthost.exe | ForEach-Object {
+          $files = @('staging/win-x64/mt.exe')
+          if ("${{ needs.prepare.outputs.is_web_only }}" -ne "true") {
+            $files += 'staging/win-x64/mthost.exe'
+          }
+          $hashes = Get-ChildItem $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           }
