@@ -332,6 +332,8 @@
   "settings.options.themeSolarizedDark": "Solarized Dunkel",
   "settings.options.themeSolarizedLight": "Solarized Hell",
   "settings.options.colorSchemeAuto": "Automatisch (folgt dem Thema)",
+  "settings.options.colorSchemeMacTerminalDark": "Mac Terminal Dunkel",
+  "settings.options.colorSchemeMacTerminalLight": "Mac Terminal Hell",
   "settings.options.colorSchemeMatrix": "Matrix",
   "settings.options.backgroundFitCover": "Ausfüllen",
   "settings.options.backgroundFitContain": "Einpassen",

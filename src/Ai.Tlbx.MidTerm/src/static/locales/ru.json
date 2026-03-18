@@ -332,6 +332,8 @@
   "settings.options.themeSolarizedDark": "Solarized тёмная",
   "settings.options.themeSolarizedLight": "Solarized светлая",
   "settings.options.colorSchemeAuto": "Авто (по теме)",
+  "settings.options.colorSchemeMacTerminalDark": "Mac Terminal тёмная",
+  "settings.options.colorSchemeMacTerminalLight": "Mac Terminal светлая",
   "settings.options.colorSchemeMatrix": "Матрица",
   "settings.options.backgroundFitCover": "Заполнить",
   "settings.options.backgroundFitContain": "Вписать",

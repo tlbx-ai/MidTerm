@@ -75,6 +75,8 @@ public enum TerminalColorSchemeSetting
     [JsonStringEnumMemberName("auto")] Auto,
     [JsonStringEnumMemberName("dark")] Dark,
     [JsonStringEnumMemberName("light")] Light,
+    [JsonStringEnumMemberName("macTerminalDark")] MacTerminalDark,
+    [JsonStringEnumMemberName("macTerminalLight")] MacTerminalLight,
     [JsonStringEnumMemberName("solarizedDark")] SolarizedDark,
     [JsonStringEnumMemberName("solarizedLight")] SolarizedLight,
     [JsonStringEnumMemberName("matrix")] Matrix
