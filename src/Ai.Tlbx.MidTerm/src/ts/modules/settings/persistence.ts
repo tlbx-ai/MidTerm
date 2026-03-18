@@ -57,6 +57,19 @@ let settingsSaveVersion = 0;
 let terminalFontSettingsSaveTimer: number | null = null;
 type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 
+const TERMINAL_COLOR_SCHEME_OPTIONS = [
+  {
+    value: 'macTerminalDark',
+    translationKey: 'settings.options.colorSchemeMacTerminalDark',
+    fallbackText: 'Mac Terminal Dark',
+  },
+  {
+    value: 'macTerminalLight',
+    translationKey: 'settings.options.colorSchemeMacTerminalLight',
+    fallbackText: 'Mac Terminal Light',
+  },
+] as const;
+
 function applySettingsLocally(settings: MidTermSettingsPublic): void {
   $currentSettings.set(settings);
   applyCssTheme(settings.theme);
@@ -303,6 +316,7 @@ export function populateUserDropdown(
  * Populate the settings form with current settings
  */
 export function populateSettingsForm(settings: MidTermSettingsPublic): void {
+  syncTerminalColorSchemeOptions();
   getSettingsRegistryControlEntries().forEach((entry) => {
     setRegistryControlValue(entry, settings[entry.key]);
   });
@@ -786,6 +800,37 @@ function updateTransparencyValue(labelId: string, value: number): void {
   const label = document.getElementById(labelId);
   if (label) {
     label.textContent = `${String(value)}%`;
+  }
+}
+
+export function syncTerminalColorSchemeOptions(): void {
+  const select = document.getElementById(
+    'setting-terminal-color-scheme',
+  ) as HTMLSelectElement | null;
+  if (!select) {
+    return;
+  }
+
+  const solarizedDarkOption = Array.from(select.options).find(
+    (option) => option.value === 'solarizedDark',
+  );
+
+  for (const definition of TERMINAL_COLOR_SCHEME_OPTIONS) {
+    let option =
+      Array.from(select.options).find((entry) => entry.value === definition.value) ?? null;
+    if (!option) {
+      option = document.createElement('option');
+      option.value = definition.value;
+    }
+
+    option.setAttribute('data-i18n', definition.translationKey);
+    const translatedLabel = t(definition.translationKey);
+    option.textContent =
+      translatedLabel && translatedLabel !== definition.translationKey
+        ? translatedLabel
+        : definition.fallbackText;
+
+    select.insertBefore(option, solarizedDarkOption ?? null);
   }
 }
 

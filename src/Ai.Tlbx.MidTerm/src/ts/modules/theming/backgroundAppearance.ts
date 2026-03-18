@@ -25,8 +25,13 @@ const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
 ];
 
 const OPAQUE_SURFACE_VARIABLES: Array<{ name: string; source: string }> = [
+  { name: '--bg-primary-opaque', source: '--bg-primary' },
   { name: '--bg-elevated-opaque', source: '--bg-elevated' },
+  { name: '--bg-sidebar-opaque', source: '--bg-sidebar' },
+  { name: '--bg-settings-opaque', source: '--bg-settings' },
   { name: '--bg-dropdown-opaque', source: '--bg-dropdown' },
+  { name: '--bg-hover-opaque', source: '--bg-hover' },
+  { name: '--bg-active-opaque', source: '--bg-active' },
 ];
 
 interface RgbColor {

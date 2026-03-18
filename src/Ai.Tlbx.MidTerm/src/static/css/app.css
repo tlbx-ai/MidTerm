@@ -3256,7 +3256,7 @@ body.has-app-background::after {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: var(--bg-primary);
+  background-color: var(--bg-settings-opaque, var(--bg-settings));
   z-index: 100;
 }
 
@@ -3276,7 +3276,7 @@ body.has-app-background::after {
 .settings-tabs {
   display: flex;
   flex-direction: column;
-  background: var(--bg-settings);
+  background: var(--bg-settings-opaque, var(--bg-settings));
   border-right: 1px solid var(--border-color);
   padding: 16px 0;
   overflow-y: auto;
@@ -3301,12 +3301,12 @@ body.has-app-background::after {
 }
 
 .settings-tab:hover {
-  background: var(--bg-hover);
+  background: var(--bg-hover-opaque, var(--bg-hover));
   color: var(--text-primary);
 }
 
 .settings-tab.active {
-  background: var(--bg-active);
+  background: var(--bg-active-opaque, var(--bg-active));
   color: var(--accent-gold);
   border-left-color: var(--accent-gold);
 }
@@ -3359,7 +3359,7 @@ body.has-app-background::after {
 
 .settings-section {
   margin-bottom: 20px;
-  background: var(--bg-elevated);
+  background: var(--bg-elevated-opaque, var(--bg-elevated));
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
   padding: 20px;
@@ -3390,7 +3390,7 @@ body.has-app-background::after {
 }
 
 .setting-row:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-hover-opaque, var(--bg-hover));
 }
 
 .setting-row:last-child {
@@ -3458,6 +3458,11 @@ body.has-app-background::after {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.background-image-preview.hidden,
+.background-image-empty.hidden {
+  display: none;
 }
 
 .background-image-empty,
