@@ -62,7 +62,7 @@ public static class UpdateScriptGenerator
         var logFilePath = Path.Combine(settingsDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.ps1");
 
-        var isWebOnly = updateType == UpdateType.WebOnly;
+        var isWebOnly = updateType != UpdateType.Full;
 
         var script = $@"
 # MidTerm Update Script (Windows)

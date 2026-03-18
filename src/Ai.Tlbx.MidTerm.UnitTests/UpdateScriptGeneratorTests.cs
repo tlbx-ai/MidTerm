@@ -82,6 +82,29 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void GenerateUpdateScript_None_AlsoEmitsWebOnlyFlags()
+    {
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.None,
+                deleteSourceAfter: true));
+
+        Assert.Contains("Web-only", scriptText);
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.True(Regex.IsMatch(scriptText, @"\$IsWebOnly\s*=\s*\$?true", RegexOptions.IgnoreCase));
+        }
+        else
+        {
+            Assert.True(Regex.IsMatch(scriptText, @"IS_WEB_ONLY\s*=\s*true", RegexOptions.IgnoreCase));
+        }
+    }
+
+    [Fact]
     public void GenerateUpdateScript_Full_EmitsFullUpdateFlags()
     {
         var scriptText = ReadScript(

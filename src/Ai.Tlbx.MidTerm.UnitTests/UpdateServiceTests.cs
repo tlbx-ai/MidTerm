@@ -185,6 +185,38 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void TryReadLocalUpdateInfo_ManifestAheadOfBinaryButInstalledManifestAlreadyMatches_ReturnsWebOnly()
+    {
+        var localReleaseDir = Path.Combine(_tempDir, "localrelease");
+        Directory.CreateDirectory(localReleaseDir);
+        File.WriteAllText(
+            Path.Combine(localReleaseDir, "version.json"),
+            """
+            {
+              "web": "8.6.16-dev",
+              "pty": "8.3.24",
+              "protocol": 1,
+              "minCompatiblePty": "2.0.0",
+              "webOnly": true
+            }
+            """);
+
+        var installed = new VersionManifest
+        {
+            Web = "8.6.16-dev",
+            Pty = "8.3.24",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0"
+        };
+
+        var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "8.6.15-dev");
+
+        Assert.NotNull(localUpdate);
+        Assert.Equal(UpdateType.WebOnly, localUpdate!.Type);
+        Assert.Equal("8.6.16-dev", localUpdate.Version);
+    }
+
+    [Fact]
     public void TryReadLocalUpdateInfo_NotNewer_ReturnsNull()
     {
         var localReleaseDir = Path.Combine(_tempDir, "localrelease");
