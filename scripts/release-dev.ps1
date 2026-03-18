@@ -107,7 +107,7 @@ if ($localCommit -ne $remoteCommit) {
 }
 
 # Files to update
-$versionJsonPath = "$PSScriptRoot\..\version.json"
+$versionJsonPath = "$PSScriptRoot\..\src\version.json"
 # Csproj files read version dynamically from version.json - no paths needed
 
 # Read current version from version.json
@@ -118,7 +118,7 @@ Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 # Dev versions must be >= main's version. Use the higher of dev/main as the base.
 $devBase = $currentVersion -replace '-dev(\.\d+)?$', ''
 try {
-    $mainJson = git show main:version.json 2>$null | ConvertFrom-Json
+    $mainJson = git show main:src/version.json 2>$null | ConvertFrom-Json
     $mainBase = $mainJson.web -replace '-dev(\.\d+)?$', ''
     if ([version]$mainBase -gt [version]$devBase) {
         Write-Host "  Using main's version ($mainBase) as base (ahead of dev's $devBase)" -ForegroundColor Yellow
@@ -176,7 +176,7 @@ $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray
 node "$PSScriptRoot\sync-npx-launcher-version.mjs" $newVersion
 if ($LASTEXITCODE -ne 0) { throw "Failed to sync npx launcher version" }
-Write-Host "  Synced: packages/npx-launcher/package.json" -ForegroundColor Gray
+Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 
 # Web csproj reads version dynamically from version.json - no update needed
 
@@ -201,7 +201,7 @@ if ($buildExitCode -ne 0) {
     Write-Host ""
     Write-Host "Fix the build errors and try again." -ForegroundColor Yellow
     # Revert version changes
-    git checkout -- $versionJsonPath "$PSScriptRoot\..\packages\npx-launcher\package.json" 2>$null
+    git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
     exit 1
 }
 Write-Host "Build succeeded." -ForegroundColor Green

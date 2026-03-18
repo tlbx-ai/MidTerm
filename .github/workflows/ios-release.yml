@@ -23,10 +23,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase
-          CURRENT=$(cat apps/build-number | tr -d '[:space:]')
+          CURRENT=$(cat src/connectors/build-number | tr -d '[:space:]')
           NEXT=$((CURRENT + 1))
-          echo "$NEXT" > apps/build-number
-          git add apps/build-number
+          echo "$NEXT" > src/connectors/build-number
+          git add src/connectors/build-number
           git commit -m "[ci] build $NEXT"
           git push
           echo "BUILD_NUMBER=$NEXT" >> "$GITHUB_ENV"
@@ -64,13 +64,13 @@ jobs:
 
       - name: Set version
         run: |
-          cd apps/ios
+          cd src/connectors/ios
           sed -i '' "s/MARKETING_VERSION = .*/MARKETING_VERSION = ${{ github.event.inputs.version }};/g" MidTermConnector.xcodeproj/project.pbxproj
           sed -i '' "s/CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = ${{ env.BUILD_NUMBER }};/g" MidTermConnector.xcodeproj/project.pbxproj
 
       - name: Archive
         run: |
-          cd apps/ios
+          cd src/connectors/ios
           xcodebuild archive \
             -project MidTermConnector.xcodeproj \
             -scheme MidTermConnector \

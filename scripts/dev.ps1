@@ -107,10 +107,10 @@ Write-Host "[2/3] Starting esbuild watch..." -ForegroundColor Cyan
 $mainTs = Join-Path $ProjectDir "src/ts/main.ts"
 $outFile = Join-Path $ProjectDir "wwwroot/js/terminal.min.js"
 
-$esbuildBin = Join-Path $RepoRoot "node_modules/.bin/esbuild.cmd"
+$esbuildBin = Join-Path $ProjectDir "node_modules/.bin/esbuild.cmd"
 $esbuildArgs = "$mainTs --bundle --sourcemap=linked --outfile=$outFile --target=es2020 --watch"
 $esbuildProcess = Start-Process -FilePath $esbuildBin -ArgumentList $esbuildArgs `
-    -WorkingDirectory $RepoRoot -PassThru -NoNewWindow
+    -WorkingDirectory $ProjectDir -PassThru -NoNewWindow
 
 Start-Sleep -Milliseconds 500
 

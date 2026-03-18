@@ -29,7 +29,7 @@ $TsSource = Join-Path $PSScriptRoot "src/ts"
 $StaticSource = Join-Path $PSScriptRoot "src/static"
 $OutFile = Join-Path $WwwRoot "js/terminal.min.js"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
-$NodeModulesRoot = Join-Path $RepoRoot "node_modules"
+$NodeModulesRoot = Join-Path $PSScriptRoot "node_modules"
 $AssetVersionPlaceholder = "__MIDTERM_ASSET_VERSION__"
 
 # ===========================================
@@ -108,9 +108,9 @@ function Get-AssetFingerprint {
 $missingDeps = Get-MissingFrontendDeps -Deps $requiredNodeDeps
 if ($missingDeps.Count -gt 0) {
     Write-Host ("Missing frontend npm dependencies: {0}" -f ($missingDeps -join ", ")) -ForegroundColor Yellow
-    Write-Host ("Attempting automatic install: npm ci --include=dev (repo root: {0})" -f $RepoRoot) -ForegroundColor Cyan
+    Write-Host ("Attempting automatic install: npm ci --include=dev (project dir: {0})" -f $PSScriptRoot) -ForegroundColor Cyan
 
-    Push-Location $RepoRoot
+    Push-Location $PSScriptRoot
     try {
         & npm ci --include=dev
     }
@@ -184,8 +184,8 @@ $AssetVersion = Get-AssetFingerprint -Paths @(
     $TsSource,
     $StaticSource,
     $OpenApiSpec,
-    (Join-Path $RepoRoot "package.json"),
-    (Join-Path $RepoRoot "package-lock.json")
+    (Join-Path $PSScriptRoot "package.json"),
+    (Join-Path $PSScriptRoot "package-lock.json")
 )
 
 Write-Host "Asset fingerprint: $AssetVersion" -ForegroundColor DarkGray
@@ -195,7 +195,7 @@ Write-Host "Asset fingerprint: $AssetVersion" -ForegroundColor DarkGray
 # ===========================================
 Write-Host "Type-checking and linting (parallel)..." -ForegroundColor Cyan
 
-$tscPath = Join-Path $PSScriptRoot "../../node_modules/typescript/lib/tsc.js"
+$tscPath = Join-Path $NodeModulesRoot "typescript/lib/tsc.js"
 $tsconfigPath = Join-Path $PSScriptRoot "tsconfig.json"
 
 # Run tsc and ESLint concurrently; collect output so errors are printed cleanly
@@ -538,7 +538,7 @@ foreach ($asset in $swaggerTextAssets) {
 }
 
 # html2canvas vendor library — lazy-loaded by web preview screenshot feature
-$h2cSrc = "node_modules/html2canvas/dist/html2canvas.min.js"
+$h2cSrc = Join-Path $NodeModulesRoot "html2canvas/dist/html2canvas.min.js"
 if (Test-Path $h2cSrc) {
     $dstPath = Join-Path $WwwRoot "js/html2canvas.min.js"
     $result = Process-TextFile -Source $h2cSrc -Destination $dstPath -Compress $Publish

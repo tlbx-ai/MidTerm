@@ -8,7 +8,7 @@
     1. Verifies we're on dev branch with a -dev version
     2. Auto-gathers changelog from all dev tag annotations since the last stable release
     3. Creates and merges a PR from dev to main
-    4. Updates version.json to remove -dev suffix
+    4. Updates src/version.json to remove -dev suffix
     5. Creates a git tag and pushes to trigger GitHub Actions build
 
 .PARAMETER ReleaseTitle
@@ -30,7 +30,7 @@
 .EXAMPLE
     # Fully manual (legacy behavior)
     .\promote.ps1 -ReleaseTitle "Version management improvements" -ReleaseNotes @(
-        "Centralized version management: version.json is now single source of truth",
+        "Centralized version management: src/version.json is now single source of truth",
         "Fixed update failures where wrong version was baked into binaries"
     )
 #>
@@ -53,7 +53,7 @@ if ($currentBranch -ne "dev") {
 }
 
 # Read current version
-$versionJsonPath = "$PSScriptRoot\..\version.json"
+$versionJsonPath = "$PSScriptRoot\..\src\version.json"
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $devVersion = $versionJson.web
 

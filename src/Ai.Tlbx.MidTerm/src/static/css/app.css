@@ -501,8 +501,8 @@ body.has-app-background::after {
   flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(224, 44, 52, 0.14);
-  color: rgb(224, 44, 52);
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  color: var(--accent-red);
   font-size: var(--fs-xs);
   font-weight: 700;
 }
@@ -625,7 +625,7 @@ body.has-app-background::after {
 .session-item.needs-attention {
   background-image: linear-gradient(
     90deg,
-    rgba(224, 44, 52, 0.12) 0,
+    color-mix(in srgb, var(--accent-red) 12%, transparent) 0,
     transparent 56px
   );
 }
@@ -715,14 +715,14 @@ body.has-app-background::after {
 
 .session-item.supervisor-idle-prompt .session-state-badge,
 .session-item.supervisor-shell .session-state-badge {
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   color: var(--text-secondary);
 }
 
 .session-item.supervisor-blocked .session-state-badge,
 .session-item.supervisor-dead .session-state-badge {
-  background: rgba(224, 44, 52, 0.14);
-  color: rgb(224, 44, 52);
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  color: var(--accent-red);
 }
 
 .session-title {

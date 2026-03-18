@@ -42,7 +42,7 @@ No separate signature is required — submitting a PR implies acceptance.
 - Single quotes for strings
 - Semicolons required
 
-See [CLAUDE.md](../CLAUDE.md) for detailed style guidelines.
+See [CLAUDE.md](ai/CLAUDE.md) for detailed style guidelines.
 
 ## Development Setup
 

@@ -33,10 +33,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase
-          CURRENT=$(cat apps/build-number | tr -d '[:space:]')
+          CURRENT=$(cat src/connectors/build-number | tr -d '[:space:]')
           NEXT=$((CURRENT + 1))
-          echo "$NEXT" > apps/build-number
-          git add apps/build-number
+          echo "$NEXT" > src/connectors/build-number
+          git add src/connectors/build-number
           git commit -m "[ci] build $NEXT"
           git push
           echo "BUILD_NUMBER=$NEXT" >> "$GITHUB_ENV"
@@ -53,13 +53,13 @@ jobs:
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/upload.jks
 
       - name: Set version
-        working-directory: apps/android
+        working-directory: src/connectors/android
         run: |
           sed -i "s/versionCode = .*/versionCode = ${{ env.BUILD_NUMBER }}/" app/build.gradle.kts
           sed -i "s/versionName = .*/versionName = \"${{ github.event.inputs.version }}\"/" app/build.gradle.kts
 
       - name: Build signed APK + AAB
-        working-directory: apps/android
+        working-directory: src/connectors/android
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -73,9 +73,9 @@ jobs:
       - name: Rename artifacts
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          cp apps/android/app/build/outputs/apk/release/app-release.apk \
+          cp src/connectors/android/app/build/outputs/apk/release/app-release.apk \
              "$RUNNER_TEMP/MidTermConnector-${VERSION}.apk"
-          cp apps/android/app/build/outputs/bundle/release/app-release.aab \
+          cp src/connectors/android/app/build/outputs/bundle/release/app-release.aab \
              "$RUNNER_TEMP/MidTermConnector-${VERSION}.aab"
 
       - name: Upload AAB to Google Play
@@ -83,7 +83,7 @@ jobs:
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: ai.tlbx.midterm
-          releaseFiles: apps/android/app/build/outputs/bundle/release/app-release.aab
+          releaseFiles: src/connectors/android/app/build/outputs/bundle/release/app-release.aab
           track: ${{ github.event.inputs.track }}
 
       - name: Create or update GitHub Release
@@ -113,7 +113,7 @@ jobs:
       - name: Summary
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          APK_SIZE=$(stat -c%s "apps/android/app/build/outputs/apk/release/app-release.apk")
+          APK_SIZE=$(stat -c%s "src/connectors/android/app/build/outputs/apk/release/app-release.apk")
           APK_KB=$((APK_SIZE / 1024))
           echo "### Android Release v${VERSION} (build ${{ env.BUILD_NUMBER }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
