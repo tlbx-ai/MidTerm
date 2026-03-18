@@ -33,7 +33,7 @@ jobs:
 
       - name: Read release flags
         id: release-flags
-        run: echo "is_web_only=$(jq -r '.webOnly // false' version.json)" >> "$GITHUB_OUTPUT"
+        run: echo "is_web_only=$(jq -r '.webOnly // false' src/version.json)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch tag annotation
         run: git fetch origin tag ${{ github.ref_name }} --no-tags --force
@@ -72,17 +72,18 @@ jobs:
         id: npm-cache
         uses: actions/cache@v5
         with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
+          path: src/Ai.Tlbx.MidTerm/node_modules
+          key: node-modules-${{ hashFiles('src/Ai.Tlbx.MidTerm/package-lock.json') }}
 
       - name: Install npm packages
         if: steps.npm-cache.outputs.cache-hit != 'true'
+        working-directory: src/Ai.Tlbx.MidTerm
         run: npm ci --include=dev --no-audit --no-fund
 
       - name: Build frontend
         shell: pwsh
         run: |
-          $version = (Get-Content version.json | ConvertFrom-Json).web
+          $version = (Get-Content src/version.json | ConvertFrom-Json).web
           $isDev = "${{ github.ref_name }}".Contains("-dev")
           $buildArgs = @{ Publish = $true; Version = $version }
           if ($isDev) { $buildArgs.DevRelease = $true }
@@ -165,7 +166,7 @@ jobs:
         run: |
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
-          cp version.json staging/${{ matrix.rid }}/
+          cp src/version.json staging/${{ matrix.rid }}/
 
           if [[ "${{ needs.prepare.outputs.is_web_only }}" == "true" ]]; then
             PREVIOUS_URL=$(gh api "repos/${{ github.repository }}/releases?per_page=20" --jq 'first(.[] | select(.tag_name != env.CURRENT_TAG) | .assets[]? | select(.name == env.ASSET_NAME) | .browser_download_url) // ""')
@@ -446,7 +447,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
-          Copy-Item version.json staging/win-x64/
+          Copy-Item src/version.json staging/win-x64/
 
           if ("${{ needs.prepare.outputs.is_web_only }}" -eq "true") {
             $releases = gh api "repos/${{ github.repository }}/releases?per_page=20" | ConvertFrom-Json
@@ -531,7 +532,7 @@ jobs:
 
       - name: Publish npm launcher
         shell: bash
-        working-directory: packages/npx-launcher
+        working-directory: src/npx-launcher
         run: |
           VERSION=$(node -p "require('./package.json').version")
           if npm view "@tlbx-ai/midterm@$VERSION" version >/dev/null 2>&1; then

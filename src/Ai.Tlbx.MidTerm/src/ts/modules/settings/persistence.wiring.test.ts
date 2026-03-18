@@ -1,17 +1,20 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { getSettingsRegistryControlEntries, SETTINGS_REGISTRY } from './registry';
 
-const repoRoot = process.cwd();
-const html = readFileSync(path.join(repoRoot, 'src/Ai.Tlbx.MidTerm/src/static/index.html'), 'utf8');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '../../../..');
+const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
 const settingsModelSource = readFileSync(
-  path.join(repoRoot, 'src/Ai.Tlbx.MidTerm/Settings/MidTermSettingsPublic.cs'),
+  path.join(projectRoot, 'Settings/MidTermSettingsPublic.cs'),
   'utf8',
 );
 const persistenceSource = readFileSync(
-  path.join(repoRoot, 'src/Ai.Tlbx.MidTerm/src/ts/modules/settings/persistence.ts'),
+  path.join(projectRoot, 'src/ts/modules/settings/persistence.ts'),
   'utf8',
 );
 

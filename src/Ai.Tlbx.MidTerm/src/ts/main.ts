@@ -20,6 +20,7 @@ import {
   sendActiveSessionHint,
   setSessionBytesCallback,
   setSuppressHeatCallback,
+  reportBrowserActivity,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
@@ -400,6 +401,8 @@ function applyScrollbackProtection(): void {
 
 function setupVisibilityChangeHandler(): void {
   document.addEventListener('visibilitychange', () => {
+    reportBrowserActivity();
+
     if (document.visibilityState === 'visible') {
       // Reconnect WebSockets if they were dropped while in background
       // Buffer refresh is handled by muxChannel's reconnect handler if needed
@@ -420,7 +423,16 @@ function setupVisibilityChangeHandler(): void {
 
   // Also protect against focus from clicking into the browser window
   window.addEventListener('focus', () => {
+    reportBrowserActivity(true);
     applyScrollbackProtection();
+  });
+
+  window.addEventListener('blur', () => {
+    reportBrowserActivity(false);
+  });
+
+  window.addEventListener('pagehide', () => {
+    reportBrowserActivity(false);
   });
 }
 

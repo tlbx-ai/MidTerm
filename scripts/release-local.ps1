@@ -121,7 +121,7 @@ if ($localCommit -ne $remoteCommit) {
 # ===========================================
 # PHASE 2: Compute local version (4th component)
 # ===========================================
-$versionJsonPath = "$PSScriptRoot\..\version.json"
+$versionJsonPath = "$PSScriptRoot\..\src\version.json"
 
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $baseWebVersion = $versionJson.web

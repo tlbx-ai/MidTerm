@@ -140,6 +140,14 @@ export type WsCommand =
       type: 'command';
       id: string;
       action: 'browser.releaseMain';
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'browser.setActivity';
+      payload: {
+        isActive: boolean;
+      };
     };
 
 export type WsCommandAction = WsCommand['action'];
@@ -154,6 +162,9 @@ interface WsCommandPayloadMap {
   };
   'browser.claimMain': undefined;
   'browser.releaseMain': undefined;
+  'browser.setActivity': {
+    isActive: boolean;
+  };
 }
 
 export type WsCommandPayload<A extends WsCommandAction> = WsCommandPayloadMap[A];

@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const COLOR_LITERAL_PATTERN =
@@ -21,6 +22,11 @@ const AUDIT_EXCEPTIONS = new Set<string>([
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/themes.ts',
 ]);
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '../../../..');
+const repoRoot = path.resolve(projectRoot, '..', '..');
+
 describe('runtime theme color audit', () => {
   it('keeps literal colors confined to theme definitions and metadata', () => {
     const violations = collectViolations();
@@ -29,10 +35,9 @@ describe('runtime theme color audit', () => {
 });
 
 function collectViolations(): string[] {
-  const repoRoot = process.cwd();
   const roots = [
-    path.join(repoRoot, 'src', 'Ai.Tlbx.MidTerm', 'src', 'static'),
-    path.join(repoRoot, 'src', 'Ai.Tlbx.MidTerm', 'src', 'ts'),
+    path.join(projectRoot, 'src', 'static'),
+    path.join(projectRoot, 'src', 'ts'),
   ];
 
   const violations: string[] = [];
@@ -59,6 +64,10 @@ function collectViolations(): string[] {
 
 function shouldAuditFile(relativePath: string): boolean {
   if (AUDIT_EXCEPTIONS.has(relativePath)) {
+    return false;
+  }
+
+  if (relativePath.endsWith('.test.ts')) {
     return false;
   }
 

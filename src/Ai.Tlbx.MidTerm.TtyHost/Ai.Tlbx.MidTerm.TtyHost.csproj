@@ -16,7 +16,7 @@
 
   <!-- Read version from version.json - single source of truth -->
   <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;BeforeCompile">
-    <Exec Command="node -p &quot;require('./version.json').pty&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/../.." ConsoleToMsBuild="true">
+    <Exec Command="node -p &quot;require('./src/version.json').pty&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/../.." ConsoleToMsBuild="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="PtyVersion" />
     </Exec>
     <PropertyGroup>
