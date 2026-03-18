@@ -385,7 +385,20 @@ public sealed partial class UpdateService : IDisposable
             return null;
         }
 
-        var versionJsonPath = Path.Combine(LocalReleasePath, "version.json");
+        return TryReadLocalUpdateInfo(LocalReleasePath, _installedManifest, _currentVersion);
+    }
+
+    internal static LocalUpdateInfo? TryReadLocalUpdateInfo(
+        string localReleasePath,
+        VersionManifest installedManifest,
+        string currentVersion)
+    {
+        if (string.IsNullOrWhiteSpace(localReleasePath))
+        {
+            return null;
+        }
+
+        var versionJsonPath = Path.Combine(localReleasePath, "version.json");
         if (!File.Exists(versionJsonPath))
         {
             return null;
@@ -400,18 +413,18 @@ public sealed partial class UpdateService : IDisposable
                 return null;
             }
 
-            if (!IsNewerVersion(manifest.Web, _currentVersion))
+            if (!IsNewerVersion(manifest.Web, currentVersion))
             {
                 return null;
             }
 
-            var updateType = DetermineUpdateType(_installedManifest, manifest);
+            var updateType = DetermineUpdateType(installedManifest, manifest);
 
             return new LocalUpdateInfo
             {
                 Available = true,
                 Version = manifest.Web,
-                Path = LocalReleasePath,
+                Path = localReleasePath,
                 Type = updateType
             };
         }
@@ -719,13 +732,14 @@ public sealed partial class UpdateService : IDisposable
 
         if (source == "local")
         {
+            var localUpdate = CheckLocalUpdate();
             extractedDir = GetLocalUpdatePath();
-            if (string.IsNullOrEmpty(extractedDir))
+            if (localUpdate is null || string.IsNullOrEmpty(extractedDir))
             {
                 return (false, "No local update available");
             }
 
-            updateType = LatestUpdate?.LocalUpdate?.Type ?? UpdateType.Full;
+            updateType = localUpdate.Type;
             deleteSourceAfter = false;
         }
         else

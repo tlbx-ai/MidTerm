@@ -121,6 +121,100 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void TryReadLocalUpdateInfo_WebOnlyManifest_ReturnsWebOnly()
+    {
+        var localReleaseDir = Path.Combine(_tempDir, "localrelease");
+        Directory.CreateDirectory(localReleaseDir);
+        File.WriteAllText(
+            Path.Combine(localReleaseDir, "version.json"),
+            """
+            {
+              "web": "8.6.7-dev",
+              "pty": "8.3.24",
+              "protocol": 1,
+              "minCompatiblePty": "2.0.0",
+              "webOnly": true
+            }
+            """);
+
+        var installed = new VersionManifest
+        {
+            Web = "8.6.6-dev",
+            Pty = "8.3.24",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0"
+        };
+
+        var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "8.6.6-dev");
+
+        Assert.NotNull(localUpdate);
+        Assert.Equal(UpdateType.WebOnly, localUpdate!.Type);
+        Assert.Equal("8.6.7-dev", localUpdate.Version);
+        Assert.Equal(localReleaseDir, localUpdate.Path);
+    }
+
+    [Fact]
+    public void TryReadLocalUpdateInfo_PtyChange_ReturnsFull()
+    {
+        var localReleaseDir = Path.Combine(_tempDir, "localrelease");
+        Directory.CreateDirectory(localReleaseDir);
+        File.WriteAllText(
+            Path.Combine(localReleaseDir, "version.json"),
+            """
+            {
+              "web": "8.6.7-dev",
+              "pty": "8.3.25",
+              "protocol": 1,
+              "minCompatiblePty": "2.0.0",
+              "webOnly": false
+            }
+            """);
+
+        var installed = new VersionManifest
+        {
+            Web = "8.6.6-dev",
+            Pty = "8.3.24",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0"
+        };
+
+        var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "8.6.6-dev");
+
+        Assert.NotNull(localUpdate);
+        Assert.Equal(UpdateType.Full, localUpdate!.Type);
+    }
+
+    [Fact]
+    public void TryReadLocalUpdateInfo_NotNewer_ReturnsNull()
+    {
+        var localReleaseDir = Path.Combine(_tempDir, "localrelease");
+        Directory.CreateDirectory(localReleaseDir);
+        File.WriteAllText(
+            Path.Combine(localReleaseDir, "version.json"),
+            """
+            {
+              "web": "8.6.6-dev",
+              "pty": "8.3.24",
+              "protocol": 1,
+              "minCompatiblePty": "2.0.0",
+              "webOnly": true
+            }
+            """);
+
+        var installed = new VersionManifest
+        {
+            Web = "8.6.6-dev",
+            Pty = "8.3.24",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0"
+        };
+
+        var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "8.6.6-dev");
+
+        Assert.Null(localUpdate);
+    }
+
+    [Fact]
     public void ReadUpdateResult_FileMissing_ReturnsNull()
     {
         var result = UpdateService.ReadUpdateResult(_tempDir);
