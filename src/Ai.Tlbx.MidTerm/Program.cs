@@ -159,7 +159,14 @@ public class Program
             ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
 
         var browserPreviewOriginService = app.Services.GetRequiredService<BrowserPreviewOriginService>();
-        ServerSetup.ConfigureMiddleware(app, settingsService, authService, shareGrantService, browserPreviewOriginService);
+        var browserPreviewRegistry = app.Services.GetRequiredService<BrowserPreviewRegistry>();
+        ServerSetup.ConfigureMiddleware(
+            app,
+            settingsService,
+            authService,
+            shareGrantService,
+            browserPreviewOriginService,
+            browserPreviewRegistry);
 
         MidtermDirectory.Initialize(port, authService);
 
@@ -208,7 +215,6 @@ public class Program
         // Browser control (agent-driven web preview interaction)
         BrowserLog.Initialize(logDirectory);
         var browserCommandService = app.Services.GetRequiredService<BrowserCommandService>();
-        var browserPreviewRegistry = app.Services.GetRequiredService<BrowserPreviewRegistry>();
         var browserUiBridge = app.Services.GetRequiredService<BrowserUiBridge>();
         BrowserScriptWriter.WriteScript(port);
 

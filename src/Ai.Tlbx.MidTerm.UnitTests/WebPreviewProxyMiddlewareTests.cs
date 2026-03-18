@@ -225,4 +225,26 @@ public class WebPreviewProxyMiddlewareTests
             Directory.Delete(tempDir, recursive: true);
         }
     }
+
+    [Theory]
+    [InlineData("/js/config.js", true, true)]
+    [InlineData("/css/app.css", true, true)]
+    [InlineData("/js/html2canvas.min.js", true, false)]
+    [InlineData("/js/config.js", false, false)]
+    [InlineData("/assets/site.js", false, true)]
+    public void ShouldProxyPreviewLeak_UsesPreviewRefererForConflictingAssetRoots(
+        string path,
+        bool hasPreviewReferer,
+        bool expected)
+    {
+        var context = new DefaultHttpContext();
+        if (hasPreviewReferer)
+        {
+            context.Request.Headers.Referer = "https://midterm.local/webpreview/route-a/";
+        }
+
+        var result = WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path);
+
+        Assert.Equal(expected, result);
+    }
 }

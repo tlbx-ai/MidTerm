@@ -1,5 +1,6 @@
 using System.Net;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Settings;
@@ -12,7 +13,8 @@ public static class AuthMiddleware
         WebApplication app,
         SettingsService settingsService,
         AuthService authService,
-        ShareGrantService shareGrantService)
+        ShareGrantService shareGrantService,
+        BrowserPreviewRegistry previewRegistry)
     {
         app.Use(async (context, next) =>
         {
@@ -42,6 +44,12 @@ public static class AuthMiddleware
             }
 
             if (path == "/api/shutdown" && IsLoopback(context))
+            {
+                await next();
+                return;
+            }
+
+            if (AllowsBrowserPreviewWebSocket(context.Request, previewRegistry))
             {
                 await next();
                 return;
@@ -83,6 +91,24 @@ public static class AuthMiddleware
 
             context.Response.Redirect("/login.html");
         });
+    }
+
+    internal static bool AllowsBrowserPreviewWebSocket(
+        HttpRequest request,
+        BrowserPreviewRegistry? previewRegistry)
+    {
+        if (previewRegistry is null
+            || !request.Path.Equals("/ws/browser", StringComparison.Ordinal)
+            || !request.Query.TryGetValue("previewId", out var previewIds)
+            || !request.Query.TryGetValue("token", out var tokens))
+        {
+            return false;
+        }
+
+        return previewRegistry.TryValidate(
+            previewIds.FirstOrDefault(),
+            tokens.FirstOrDefault(),
+            out _);
     }
 
     private static CookieOptions GetSessionCookieOptions(SettingsService settingsService) => new()

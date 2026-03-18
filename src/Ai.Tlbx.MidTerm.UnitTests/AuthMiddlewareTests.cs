@@ -1,4 +1,6 @@
 using Ai.Tlbx.MidTerm.Startup;
+using Ai.Tlbx.MidTerm.Services.Browser;
+using Microsoft.AspNetCore.Http;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -26,5 +28,35 @@ public class AuthMiddlewareTests
     public void IsPublicPath_RemoteControlEndpoints_RemainProtected(string path)
     {
         Assert.False(AuthMiddleware.IsPublicPath(path));
+    }
+
+    [Fact]
+    public void AllowsBrowserPreviewWebSocket_WithValidPreviewToken_ReturnsTrue()
+    {
+        var registry = new BrowserPreviewRegistry();
+        var created = registry.Create("session-a", "default", "route-a");
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/ws/browser";
+        context.Request.QueryString = new QueryString(
+            $"?previewId={created.PreviewId}&token={created.PreviewToken}");
+
+        var allowed = AuthMiddleware.AllowsBrowserPreviewWebSocket(context.Request, registry);
+
+        Assert.True(allowed);
+    }
+
+    [Fact]
+    public void AllowsBrowserPreviewWebSocket_WithWrongToken_ReturnsFalse()
+    {
+        var registry = new BrowserPreviewRegistry();
+        var created = registry.Create("session-a", "default", "route-a");
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/ws/browser";
+        context.Request.QueryString = new QueryString(
+            $"?previewId={created.PreviewId}&token=wrong");
+
+        var allowed = AuthMiddleware.AllowsBrowserPreviewWebSocket(context.Request, registry);
+
+        Assert.False(allowed);
     }
 }

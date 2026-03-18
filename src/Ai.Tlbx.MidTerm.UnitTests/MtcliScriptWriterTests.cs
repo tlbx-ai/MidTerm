@@ -78,6 +78,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Preview", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-PreviewReset", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Previews", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_SESSION_ID", powershell, StringComparison.Ordinal);
         Assert.Contains("previewName=(_MPreview)", powershell, StringComparison.Ordinal);
     }
@@ -114,6 +116,9 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Attention", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_open -Value Mt-Open", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_prompt -Value Mt-Prompt", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_status -Value Mt-Status", powershell, StringComparison.Ordinal);
         Assert.Contains("ValueFromRemainingArguments", powershell, StringComparison.Ordinal);
         Assert.Contains("/buffer/tail?lines=", shell, StringComparison.Ordinal);
         Assert.Contains("/input/keys", powershell, StringComparison.Ordinal);

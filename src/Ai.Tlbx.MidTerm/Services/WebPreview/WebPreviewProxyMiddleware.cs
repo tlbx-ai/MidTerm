@@ -727,19 +727,21 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
-        // Catch-all: if web preview is active and this isn't a known MidTerm path,
-        // it's likely a leaked root-relative URL from the proxied site (e.g. /s/player/...,
-        // /youtubei/v1/...). Proxy it to the upstream target directly.
-        if (!IsInternalProxyRequest(context.Request)
-            && !IsMidTermPath(path.Value ?? "/"))
+        // Catch-all: if a proxied page leaks a root-relative URL outside /webpreview/{routeKey},
+        // proxy it back to the active preview target instead of letting it fall into MidTerm's
+        // own static-file tree. This is especially important for inline and module import specifiers
+        // such as `import "/js/config.js"` that cannot be rewritten client-side.
+        if (!IsInternalProxyRequest(context.Request))
         {
-            if (!TryResolvePreviewFromRequest(context.Request, out routeKey, out var targetUri))
+            var requestPath = path.Value ?? "/";
+            if (!TryResolvePreviewFromRequest(context.Request, out routeKey, out var targetUri)
+                || !ShouldProxyPreviewLeak(context.Request, requestPath))
             {
                 await _next(context);
                 return;
             }
 
-            var proxyPath = path.Value ?? "/";
+            var proxyPath = requestPath;
             if (context.WebSockets.IsWebSocketRequest)
             {
                 await ProxyWebSocketAsync(context, routeKey, targetUri, proxyPath);
@@ -882,6 +884,44 @@ public sealed partial class WebPreviewProxyMiddleware
             or "/web-preview-popup.html"
             or "/THIRD-PARTY-LICENSES.txt"
             or "/midFont-style.css";
+    }
+
+    internal static bool ShouldProxyPreviewLeak(HttpRequest request, string path)
+    {
+        if (!IsMidTermPath(path))
+        {
+            return true;
+        }
+
+        return HasPreviewReferer(request)
+            && IsLeakedPreviewAssetPath(path)
+            && !IsPreviewLocalAssetPath(path);
+    }
+
+    internal static bool HasPreviewReferer(HttpRequest request)
+    {
+        if (!request.Headers.TryGetValue("Referer", out var refererValues))
+        {
+            return false;
+        }
+
+        return Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri)
+            && TryParseProxyRoute(refererUri.AbsolutePath, out _, out _);
+    }
+
+    private static bool IsLeakedPreviewAssetPath(string path)
+    {
+        return path.StartsWith("/js/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/css/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/fonts/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/locales/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/img/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/favicon/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPreviewLocalAssetPath(string path)
+    {
+        return path.Equals("/js/html2canvas.min.js", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ProxyHttpAsync(HttpContext context, string routeKey, Uri targetUri, string path)
