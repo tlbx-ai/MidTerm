@@ -106,6 +106,21 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void GetReleaseManifestUrls_PrefersSourceVersionJsonBeforeLegacyRootPath()
+    {
+        var urls = UpdateService.GetReleaseManifestUrls("v8.6.4-dev");
+
+        Assert.Collection(
+            urls,
+            url => Assert.Equal(
+                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v8.6.4-dev/src/version.json",
+                url),
+            url => Assert.Equal(
+                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v8.6.4-dev/version.json",
+                url));
+    }
+
+    [Fact]
     public void ReadUpdateResult_FileMissing_ReturnsNull()
     {
         var result = UpdateService.ReadUpdateResult(_tempDir);

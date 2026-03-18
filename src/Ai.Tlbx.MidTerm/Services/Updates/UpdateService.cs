@@ -343,18 +343,20 @@ public sealed partial class UpdateService : IDisposable
 
     private async Task<VersionManifest> FetchReleaseManifestAsync(string tagName)
     {
-        try
+        foreach (var url in GetReleaseManifestUrls(tagName))
         {
-            var url = $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/version.json";
-            var json = await _httpClient.GetStringAsync(url);
-            var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
-            if (manifest is not null)
+            try
             {
-                return manifest;
+                var json = await _httpClient.GetStringAsync(url);
+                var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
+                if (manifest is not null)
+                {
+                    return manifest;
+                }
             }
-        }
-        catch
-        {
+            catch
+            {
+            }
         }
 
         var version = tagName.TrimStart('v');
@@ -365,6 +367,15 @@ public sealed partial class UpdateService : IDisposable
             Protocol = 1,
             MinCompatiblePty = version
         };
+    }
+
+    internal static IReadOnlyList<string> GetReleaseManifestUrls(string tagName)
+    {
+        return
+        [
+            $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/src/version.json",
+            $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/version.json"
+        ];
     }
 
     private LocalUpdateInfo? CheckLocalUpdate()
