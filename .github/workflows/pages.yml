@@ -30,6 +30,11 @@ jobs:
           source: ./docs/site
           destination: ./_site
 
+      - name: Verify installer bootstraps are published
+        run: |
+          test -f ./_site/install.sh
+          test -f ./_site/install.ps1
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
 

@@ -343,18 +343,20 @@ public sealed partial class UpdateService : IDisposable
 
     private async Task<VersionManifest> FetchReleaseManifestAsync(string tagName)
     {
-        try
+        foreach (var url in GetReleaseManifestUrls(tagName))
         {
-            var url = $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/version.json";
-            var json = await _httpClient.GetStringAsync(url);
-            var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
-            if (manifest is not null)
+            try
             {
-                return manifest;
+                var json = await _httpClient.GetStringAsync(url);
+                var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
+                if (manifest is not null)
+                {
+                    return manifest;
+                }
             }
-        }
-        catch
-        {
+            catch
+            {
+            }
         }
 
         var version = tagName.TrimStart('v');
@@ -367,6 +369,15 @@ public sealed partial class UpdateService : IDisposable
         };
     }
 
+    internal static IReadOnlyList<string> GetReleaseManifestUrls(string tagName)
+    {
+        return
+        [
+            $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/src/version.json",
+            $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/version.json"
+        ];
+    }
+
     private LocalUpdateInfo? CheckLocalUpdate()
     {
         if (!OperatingSystem.IsWindows())
@@ -374,7 +385,20 @@ public sealed partial class UpdateService : IDisposable
             return null;
         }
 
-        var versionJsonPath = Path.Combine(LocalReleasePath, "version.json");
+        return TryReadLocalUpdateInfo(LocalReleasePath, _installedManifest, _currentVersion);
+    }
+
+    internal static LocalUpdateInfo? TryReadLocalUpdateInfo(
+        string localReleasePath,
+        VersionManifest installedManifest,
+        string currentVersion)
+    {
+        if (string.IsNullOrWhiteSpace(localReleasePath))
+        {
+            return null;
+        }
+
+        var versionJsonPath = Path.Combine(localReleasePath, "version.json");
         if (!File.Exists(versionJsonPath))
         {
             return null;
@@ -389,18 +413,18 @@ public sealed partial class UpdateService : IDisposable
                 return null;
             }
 
-            if (!IsNewerVersion(manifest.Web, _currentVersion))
+            if (!IsNewerVersion(manifest.Web, currentVersion))
             {
                 return null;
             }
 
-            var updateType = DetermineUpdateType(_installedManifest, manifest);
+            var updateType = DetermineUpdateType(installedManifest, manifest);
 
             return new LocalUpdateInfo
             {
                 Available = true,
                 Version = manifest.Web,
-                Path = LocalReleasePath,
+                Path = localReleasePath,
                 Type = updateType
             };
         }
@@ -708,13 +732,14 @@ public sealed partial class UpdateService : IDisposable
 
         if (source == "local")
         {
+            var localUpdate = CheckLocalUpdate();
             extractedDir = GetLocalUpdatePath();
-            if (string.IsNullOrEmpty(extractedDir))
+            if (localUpdate is null || string.IsNullOrEmpty(extractedDir))
             {
                 return (false, "No local update available");
             }
 
-            updateType = LatestUpdate?.LocalUpdate?.Type ?? UpdateType.Full;
+            updateType = localUpdate.Type;
             deleteSourceAfter = false;
         }
         else

@@ -181,7 +181,14 @@ public sealed class WebPreviewService
             return false;
         }
 
-        if (uri.Scheme is not ("http" or "https"))
+        if (uri.Scheme == Uri.UriSchemeFile)
+        {
+            if (!IsLocalFileUri(uri))
+            {
+                return false;
+            }
+        }
+        else if (uri.Scheme is not ("http" or "https"))
         {
             return false;
         }
@@ -1066,9 +1073,27 @@ public sealed class WebPreviewService
             || host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsLocalFileUri(Uri uri)
+    {
+        if (!uri.IsFile)
+        {
+            return false;
+        }
+
+        var host = uri.Host;
+        return string.IsNullOrWhiteSpace(host)
+            || IsLocalAddress(host)
+            || host.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string NormalizeUrl(string url)
     {
         url = url.Trim();
+
+        if (url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+        {
+            return url;
+        }
 
         if (!url.Contains("://"))
         {

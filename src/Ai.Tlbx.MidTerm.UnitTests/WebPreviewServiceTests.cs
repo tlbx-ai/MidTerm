@@ -105,6 +105,29 @@ public class WebPreviewServiceTests
     }
 
     [Fact]
+    public void SetTarget_LocalFileUrl_IsAllowed()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        var localPath = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "midterm-webpreview-local-file", "index.html"));
+        var localFileUri = new Uri(localPath);
+
+        var ok = service.SetTarget("session-1", null, localFileUri.AbsoluteUri);
+
+        Assert.True(ok);
+        Assert.Equal(localFileUri.AbsoluteUri, service.GetTargetUrl("session-1"));
+    }
+
+    [Fact]
+    public void SetTarget_RemoteFileUrl_IsBlocked()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+
+        var ok = service.SetTarget("session-1", null, "file://remote-host/share/index.html");
+
+        Assert.False(ok);
+    }
+
+    [Fact]
     public void SyncSessionCookieForSelfTarget_DoesNotExposeAuthCookieToBrowser()
     {
         var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);

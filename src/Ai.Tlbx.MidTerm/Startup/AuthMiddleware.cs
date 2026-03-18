@@ -1,7 +1,9 @@
 using System.Net;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -12,7 +14,9 @@ public static class AuthMiddleware
         WebApplication app,
         SettingsService settingsService,
         AuthService authService,
-        ShareGrantService shareGrantService)
+        ShareGrantService shareGrantService,
+        BrowserPreviewOriginService previewOriginService,
+        BrowserPreviewRegistry previewRegistry)
     {
         app.Use(async (context, next) =>
         {
@@ -42,6 +46,18 @@ public static class AuthMiddleware
             }
 
             if (path == "/api/shutdown" && IsLoopback(context))
+            {
+                await next();
+                return;
+            }
+
+            if (AllowsPreviewOriginProxyRequest(context.Request, previewOriginService))
+            {
+                await next();
+                return;
+            }
+
+            if (AllowsBrowserPreviewWebSocket(context.Request, previewRegistry))
             {
                 await next();
                 return;
@@ -83,6 +99,40 @@ public static class AuthMiddleware
 
             context.Response.Redirect("/login.html");
         });
+    }
+
+    internal static bool AllowsBrowserPreviewWebSocket(
+        HttpRequest request,
+        BrowserPreviewRegistry? previewRegistry)
+    {
+        if (previewRegistry is null
+            || !request.Path.Equals("/ws/browser", StringComparison.Ordinal)
+            || !request.Query.TryGetValue("previewId", out var previewIds)
+            || !request.Query.TryGetValue("token", out var tokens))
+        {
+            return false;
+        }
+
+        return previewRegistry.TryValidate(
+            previewIds.FirstOrDefault(),
+            tokens.FirstOrDefault(),
+            out _);
+    }
+
+    internal static bool AllowsPreviewOriginProxyRequest(
+        HttpRequest request,
+        BrowserPreviewOriginService? previewOriginService)
+    {
+        if (previewOriginService is null
+            || !previewOriginService.IsEnabled
+            || request.Host.Port != previewOriginService.PreviewPort)
+        {
+            return false;
+        }
+
+        var path = request.Path.Value ?? "/";
+        return path.StartsWith("/webpreview/", StringComparison.OrdinalIgnoreCase)
+            || WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(request, path);
     }
 
     private static CookieOptions GetSessionCookieOptions(SettingsService settingsService) => new()

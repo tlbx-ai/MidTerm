@@ -192,19 +192,27 @@ Write-Host ""
 Write-Host "Running build verification..." -ForegroundColor Cyan
 $buildResult = dotnet build "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj" -c Release 2>&1
 $buildExitCode = $LASTEXITCODE
-if ($buildExitCode -ne 0) {
+$buildLines = @($buildResult | ForEach-Object { "$_" })
+$hasReinvokeSentinel = $buildLines | Where-Object { $_ -match '_REINVOKE_SUCCESS_' }
+$realErrorLines = $buildLines | Where-Object { $_ -match ':\s*error\b' -and $_ -notmatch '_REINVOKE_SUCCESS_' }
+$reinvokeOnlyFailure = $buildExitCode -ne 0 -and $hasReinvokeSentinel -and $realErrorLines.Count -eq 0
+if ($buildExitCode -ne 0 -and -not $reinvokeOnlyFailure) {
     Write-Host ""
     Write-Host "ERROR: Build failed — aborting release before any git changes." -ForegroundColor Red
     Write-Host ""
     Write-Host "Build output:" -ForegroundColor Yellow
-    $buildResult | ForEach-Object { Write-Host "  $_" }
+    $buildLines | ForEach-Object { Write-Host "  $_" }
     Write-Host ""
     Write-Host "Fix the build errors and try again." -ForegroundColor Yellow
     # Revert version changes
     git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
     exit 1
 }
+if ($reinvokeOnlyFailure) {
+    Write-Host "Build succeeded via frontend reinvoke." -ForegroundColor Green
+} else {
 Write-Host "Build succeeded." -ForegroundColor Green
+}
 
 # Git operations
 Write-Host ""

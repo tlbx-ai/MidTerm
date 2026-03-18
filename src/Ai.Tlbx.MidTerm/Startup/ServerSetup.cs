@@ -263,7 +263,8 @@ public static class ServerSetup
         SettingsService settingsService,
         AuthService authService,
         ShareGrantService shareGrantService,
-        BrowserPreviewOriginService previewOriginService)
+        BrowserPreviewOriginService previewOriginService,
+        BrowserPreviewRegistry previewRegistry)
     {
         app.UseResponseCompression();
 
@@ -276,8 +277,10 @@ public static class ServerSetup
 
         app.Use(async (context, next) =>
         {
+            var path = context.Request.Path.Value ?? "/";
             if (previewOriginService.IsPreviewRequest(context)
-                && previewOriginService.ShouldBlockPath(context.Request.Path.Value ?? "/"))
+                && previewOriginService.ShouldBlockPath(path)
+                && !WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path))
             {
                 context.Response.StatusCode = 404;
                 return;
@@ -287,7 +290,13 @@ public static class ServerSetup
         });
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
-        AuthMiddleware.ConfigureAuthMiddleware(app, settingsService, authService, shareGrantService);
+        AuthMiddleware.ConfigureAuthMiddleware(
+            app,
+            settingsService,
+            authService,
+            shareGrantService,
+            previewOriginService,
+            previewRegistry);
 
         // WebSockets must be enabled before the web preview proxy middleware so that
         // context.WebSockets.IsWebSocketRequest is true for proxied WebSocket upgrades

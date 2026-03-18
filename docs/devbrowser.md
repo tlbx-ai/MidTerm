@@ -2,6 +2,8 @@
 
 The web preview reverse proxy (`/webpreview/{routeKey}/*`) intercepts browser requests and forwards them to an upstream target that belongs to one named preview session under one MidTerm terminal session. HTTP requests are straightforward (strip prefix, forward, return response). WebSocket connections are relayed without content modification.
 
+Targets may also be local `file:///...` URLs. MidTerm only accepts `file:` URLs that resolve to the same machine as the running `mt` process. Remote file-share targets such as `file://server/share/...` remain blocked.
+
 ## URL Space Design
 
 The proxy uses a **write-only interception** strategy. Each preview gets its own route prefix (`/webpreview/{routeKey}`), and the injected `UrlRewriteScript` patches outgoing APIs to add that prefix to URLs before they leave JavaScript:
@@ -27,6 +29,8 @@ The `<base href="/webpreview/{routeKey}/">` tag is injected into every HTML resp
 - `document.baseURI` = `https://proxy:2000/webpreview/{routeKey}/` (from `<base>` tag)
 - `location.href` = `https://proxy:2000/webpreview/{routeKey}/page` (real browser URL)
 - Both are consistent — frameworks see the app mounted at `/webpreview/{routeKey}/`
+
+For local file previews there is no upstream HTTP origin. MidTerm serves the requested file directly from disk, still injects the proxy `<base>` tag plus runtime rewrite script, and keeps all subsequent asset requests inside `/webpreview/{routeKey}/...`.
 
 ### Navigation Notifications
 
@@ -88,6 +92,7 @@ These shims exist specifically so MidTerm-in-MidTerm and similar apps can still 
 Browser automation is now scoped per named preview session instead of "whichever iframe connected last":
 
 - `/ws/browser` accepts preview-scoped connections with `previewId` / `token`
+- auth middleware lets valid preview-token `/ws/browser` upgrades through before normal browser-session auth, so isolated preview-origin bridge connections do not get trapped behind `mm-session`
 - `BrowserCommandService` keeps one command listener per connected preview client
 - only one browser bridge connection is accepted per preview id; later duplicates are rejected
 - the shell now exposes `MT_SESSION_ID` automatically; `mt_session` prints it, `mt_preview [name]` switches the current named preview, and `mt_previews` lists the preview set for the current terminal
@@ -100,6 +105,8 @@ Browser automation is now scoped per named preview session instead of "whichever
 The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
 Browser UI instructions (`open`, `dock`, `detach`, `viewport`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no MidTerm browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
+
+When the proxied page leaks root-relative asset URLs outside `/webpreview/{routeKey}` and those URLs collide with MidTerm's own static prefixes (`/js/*`, `/css/*`, `/fonts/*`, `/img/*`, `/locales/*`, `/favicon/*`), MidTerm now treats them as preview traffic when the request referer is a preview route. The only built-in exception today is `/js/html2canvas.min.js`, which remains a local MidTerm asset used by the injected screenshot helper.
 
 ## Embedded MidTerm Guardrails
 
@@ -192,7 +199,7 @@ When a website doesn't load through the web preview:
 | WS status 502 | Upstream rejected connection (wrong Origin, missing cookies, SSL error) |
 | WS 101 but page empty | Framework routing issue — check NavigationManager or router state |
 | Page renders but navigation broken | URL inconsistency between location.href and document.baseURI |
-| CSS/JS 404s | Root-relative URLs claimed by `IsMidTermPath` — only MidTerm's own pages/assets should be listed there |
+| CSS/JS 404s | Root-relative URLs claimed by `IsMidTermPath` or missing leaked-asset fallback — check whether the failing path collides with MidTerm static prefixes and whether the request referer is the preview route |
 | Login redirect loops | Cookies not forwarding — check `requestCookies`/`responseCookies` in proxylog |
 | All assets return HTML | Host redirect (e.g. `foo.com` → `www.foo.com`) drops the path — proxy auto-updates target on first redirect |
 

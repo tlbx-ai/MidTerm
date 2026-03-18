@@ -837,6 +837,62 @@ public static class MtcliScriptWriter
         # Status
         function Mt-Status     { try { & mtbrowser status 2>$null } catch { Mt-Target } }
 
+        # PowerShell aliases matching the documented mt_* helper names
+        Set-Alias -Name mt_query -Value Mt-Query
+        Set-Alias -Name mt_click -Value Mt-Click
+        Set-Alias -Name mt_fill -Value Mt-Fill
+        Set-Alias -Name mt_session -Value Mt-Session
+        Set-Alias -Name mt_preview -Value Mt-Preview
+        Set-Alias -Name mt_exec -Value Mt-Exec
+        Set-Alias -Name mt_wait -Value Mt-Wait
+        Set-Alias -Name mt_screenshot -Value Mt-Screenshot
+        Set-Alias -Name mt_snapshot -Value Mt-Snapshot
+        Set-Alias -Name mt_outline -Value Mt-Outline
+        Set-Alias -Name mt_attrs -Value Mt-Attrs
+        Set-Alias -Name mt_css -Value Mt-Css
+        Set-Alias -Name mt_log -Value Mt-Log
+        Set-Alias -Name mt_text -Value Mt-Text
+        Set-Alias -Name mt_submit -Value Mt-Submit
+        Set-Alias -Name mt_url -Value Mt-Url
+        Set-Alias -Name mt_links -Value Mt-Links
+        Set-Alias -Name mt_forms -Value Mt-Forms
+        Set-Alias -Name mt_navigate -Value Mt-Navigate
+        Set-Alias -Name mt_open -Value Mt-Open
+        Set-Alias -Name mt_reload -Value Mt-Reload
+        Set-Alias -Name mt_target -Value Mt-Target
+        Set-Alias -Name mt_cookies -Value Mt-Cookies
+        Set-Alias -Name mt_previews -Value Mt-Previews
+        Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
+        Set-Alias -Name mt_hardreload -Value Mt-HardReload
+        Set-Alias -Name mt_preview_reset -Value Mt-PreviewReset
+        Set-Alias -Name mt_proxylog -Value Mt-ProxyLog
+        Set-Alias -Name mt_apply_update -Value Mt-ApplyUpdate
+        Set-Alias -Name mt_sessions -Value Mt-Sessions
+        Set-Alias -Name mt_buffer -Value Mt-Buffer
+        Set-Alias -Name mt_tail -Value Mt-Tail
+        Set-Alias -Name mt_sendtext -Value Mt-SendText
+        Set-Alias -Name mt_prompt -Value Mt-Prompt
+        Set-Alias -Name mt_prompt_now -Value Mt-PromptNow
+        Set-Alias -Name mt_slash -Value Mt-Slash
+        Set-Alias -Name mt_sendkeys -Value Mt-SendKeys
+        Set-Alias -Name mt_enter -Value Mt-Enter
+        Set-Alias -Name mt_ctrlc -Value Mt-Ctrlc
+        Set-Alias -Name mt_escape -Value Mt-Escape
+        Set-Alias -Name mt_up -Value Mt-Up
+        Set-Alias -Name mt_down -Value Mt-Down
+        Set-Alias -Name mt_left -Value Mt-Left
+        Set-Alias -Name mt_right -Value Mt-Right
+        Set-Alias -Name mt_inject -Value Mt-Inject
+        Set-Alias -Name mt_activity -Value Mt-Activity
+        Set-Alias -Name mt_attention -Value Mt-Attention
+        Set-Alias -Name mt_bootstrap -Value Mt-Bootstrap
+        Set-Alias -Name mt_new_session -Value Mt-NewSession
+        Set-Alias -Name mt_split -Value Mt-Split
+        Set-Alias -Name mt_detach -Value Mt-Detach
+        Set-Alias -Name mt_dock -Value Mt-Dock
+        Set-Alias -Name mt_viewport -Value Mt-Viewport
+        Set-Alias -Name mt_status -Value Mt-Status
+
         # Direct execution: pwsh .midterm\mtcli.ps1 query ".error"
         if ($args.Count -gt 0) {
             $cmd = $args[0]
