@@ -4046,6 +4046,8 @@ export interface components {
       | 'auto'
       | 'dark'
       | 'light'
+      | 'macTerminalDark'
+      | 'macTerminalLight'
       | 'solarizedDark'
       | 'solarizedLight'
       | 'matrix';

@@ -332,6 +332,8 @@
   "settings.options.themeSolarizedDark": "Solarized ডার্ক",
   "settings.options.themeSolarizedLight": "Solarized লাইট",
   "settings.options.colorSchemeAuto": "স্বয়ংক্রিয় (থিম অনুসরণ)",
+  "settings.options.colorSchemeMacTerminalDark": "Mac Terminal ডার্ক",
+  "settings.options.colorSchemeMacTerminalLight": "Mac Terminal লাইট",
   "settings.options.colorSchemeMatrix": "ম্যাট্রিক্স",
   "settings.options.backgroundFitCover": "কভার",
   "settings.options.backgroundFitContain": "সম্পূর্ণ দেখান",

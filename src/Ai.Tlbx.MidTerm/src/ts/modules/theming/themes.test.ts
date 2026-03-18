@@ -49,4 +49,30 @@ describe('themes', () => {
 
     expect(theme.background).toBe('rgba(5, 5, 10, 0.650)');
   });
+
+  it('resolves the mac terminal dark palette', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalColorScheme: 'macTerminalDark',
+      }),
+    );
+
+    expect(theme.background).toBe('#000000');
+    expect(theme.foreground).toBe('#FFFFFF');
+    expect(theme.blue).toBe('#6444ED');
+    expect(theme.brightBlue).toBe('#D09AF9');
+  });
+
+  it('resolves the mac terminal light palette', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalColorScheme: 'macTerminalLight',
+      }),
+    );
+
+    expect(theme.background).toBe('#FFFFFF');
+    expect(theme.foreground).toBe('#000000');
+    expect(theme.blue).toBe('#0000B2');
+    expect(theme.brightBlue).toBe('#0000FF');
+  });
 });

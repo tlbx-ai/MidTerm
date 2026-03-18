@@ -5235,6 +5235,8 @@
           "auto",
           "dark",
           "light",
+          "macTerminalDark",
+          "macTerminalLight",
           "solarizedDark",
           "solarizedLight",
           "matrix"
