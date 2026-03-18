@@ -742,6 +742,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
 
             var proxyPath = requestPath;
+            _service.RememberLeakedPathRoute(routeKey, proxyPath);
             if (context.WebSockets.IsWebSocketRequest)
             {
                 await ProxyWebSocketAsync(context, routeKey, targetUri, proxyPath);
@@ -774,7 +775,7 @@ public sealed partial class WebPreviewProxyMiddleware
             || refererPath.StartsWith(ProxyPrefix + "/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool TryResolvePreviewFromRequest(HttpRequest request, out string routeKey, out Uri targetUri)
+    internal bool TryResolvePreviewFromRequest(HttpRequest request, out string routeKey, out Uri targetUri)
     {
         routeKey = "";
         targetUri = null!;
@@ -785,6 +786,16 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             routeKey = directRouteKey;
             targetUri = directTargetUri;
+            return true;
+        }
+
+        var requestPath = request.Path.Value ?? "/";
+        if (_service.TryGetRouteKeyByLeakedPath(requestPath, out var leakedRouteKey)
+            && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
+            && leakedTargetUri is not null)
+        {
+            routeKey = leakedRouteKey;
+            targetUri = leakedTargetUri;
             return true;
         }
 
@@ -800,7 +811,10 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (!TryParseProxyRoute(refererUri.AbsolutePath, out routeKey, out _))
         {
-            return false;
+            if (!_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out routeKey))
+            {
+                return false;
+            }
         }
 
         if (!_service.TryGetTargetUriByRouteKey(routeKey, out var refererTargetUri) || refererTargetUri is null)

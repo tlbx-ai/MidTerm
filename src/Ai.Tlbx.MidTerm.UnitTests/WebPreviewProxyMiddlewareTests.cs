@@ -250,4 +250,43 @@ public class WebPreviewProxyMiddlewareTests
 
         Assert.Equal(expected, result);
     }
+
+    [Fact]
+    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRefererPath()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/router/router-lib.js";
+        context.Request.Headers.Referer = "https://midterm.local/js/login.js";
+
+        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
+
+        Assert.True(resolved);
+        Assert.Equal(routeKey, resolvedRouteKey);
+        Assert.Equal("https://example.com/", targetUri.ToString());
+    }
+
+    [Fact]
+    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRequestPath()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/js/login.js";
+
+        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
+
+        Assert.True(resolved);
+        Assert.Equal(routeKey, resolvedRouteKey);
+        Assert.Equal("https://example.com/", targetUri.ToString());
+    }
 }
