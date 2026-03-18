@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Services;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
@@ -17,6 +18,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string InternalProxyRequestHeaderValue = "1";
     private const int WsBufferSize = 8192;
     private static readonly TimeSpan WsCloseTimeout = TimeSpan.FromSeconds(5);
+    private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
 
     // Injected into proxied HTML to rewrite URLs in fetch/XHR/DOM at runtime.
     // Rewrites root-relative URLs to /webpreview/... and absolute external URLs
@@ -687,11 +689,25 @@ public sealed partial class WebPreviewProxyMiddleware
 
             if (context.WebSockets.IsWebSocketRequest)
             {
-                await ProxyWebSocketAsync(context, routeKey, targetUri, remainingPath);
+                if (targetUri.IsFile)
+                {
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                }
+                else
+                {
+                    await ProxyWebSocketAsync(context, routeKey, targetUri, remainingPath);
+                }
             }
             else
             {
-                await ProxyHttpAsync(context, routeKey, targetUri, remainingPath);
+                if (targetUri.IsFile)
+                {
+                    await ProxyFileAsync(context, routeKey, targetUri, remainingPath);
+                }
+                else
+                {
+                    await ProxyHttpAsync(context, routeKey, targetUri, remainingPath);
+                }
             }
 
             return;
@@ -1088,6 +1104,33 @@ public sealed partial class WebPreviewProxyMiddleware
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return routePrefix + directory;
+    }
+
+    private static Uri BuildRequestedFileUri(Uri targetUri, string requestPath)
+    {
+        if (string.IsNullOrEmpty(requestPath) || requestPath == "/")
+        {
+            return targetUri;
+        }
+
+        var decodedPath = Uri.UnescapeDataString(requestPath);
+        if (decodedPath.StartsWith('/')
+            && decodedPath.Length >= 4
+            && char.IsLetter(decodedPath[1])
+            && decodedPath[2] == ':'
+            && decodedPath[3] == '/')
+        {
+            return new Uri($"file://{decodedPath}");
+        }
+
+        return new Uri(targetUri, decodedPath.TrimStart('/'));
+    }
+
+    private static string GetContentType(string localPath)
+    {
+        return ContentTypeProvider.TryGetContentType(localPath, out var contentType)
+            ? contentType
+            : "application/octet-stream";
     }
 
     internal void PrimeRootFallbacksFromHtml(string routeKey, string html)
@@ -1506,6 +1549,86 @@ public sealed partial class WebPreviewProxyMiddleware
             await using var stream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
             await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
+    }
+
+    private async Task ProxyFileAsync(HttpContext context, string routeKey, Uri targetUri, string path)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var requestedFileUri = BuildRequestedFileUri(targetUri, path);
+        if (!requestedFileUri.IsFile)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var localPath = requestedFileUri.LocalPath;
+        if (Directory.Exists(localPath))
+        {
+            localPath = Path.Combine(localPath, "index.html");
+        }
+
+        if (!File.Exists(localPath))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync("File not found.", context.RequestAborted);
+            return;
+        }
+
+        var contentType = GetContentType(localPath);
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = contentType;
+        context.Response.ContentLength = new FileInfo(localPath).Length;
+
+        if (HttpMethods.IsHead(context.Request.Method))
+        {
+            return;
+        }
+
+        if (contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            await ProxyLocalHtmlResponseAsync(context, routeKey, requestedFileUri, localPath);
+            return;
+        }
+
+        await using var stream = File.OpenRead(localPath);
+        await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
+    }
+
+    private async Task ProxyLocalHtmlResponseAsync(HttpContext context, string routeKey, Uri requestedFileUri, string localPath)
+    {
+        var html = await File.ReadAllTextAsync(localPath, context.RequestAborted);
+
+        var routePrefix = _service.BuildProxyPrefix(routeKey);
+        html = RootRelativeAttrRegex().Replace(html, $"$1{routePrefix}/");
+        html = RootRelativeSrcsetRegex().Replace(html, $"$1{routePrefix}/");
+        html = RootRelativeCssUrlRegex().Replace(html, $"url({routePrefix}/");
+
+        html = MetaRefreshRegex().Replace(html, m =>
+        {
+            var prefix = m.Groups[1].Value;
+            var url = m.Groups[2].Value;
+            if (url.StartsWith('/') && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+                return prefix + routePrefix + url;
+            return m.Value;
+        });
+
+        html = ExistingBaseTagRegex().Replace(html, "");
+        html = UpstreamSecurityMetaTagRegex().Replace(html, "");
+
+        var baseHref = ComputeBaseHref(routePrefix, requestedFileUri.ToString());
+        var targetOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
+        var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
+        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix), 1);
+
+        context.Response.Headers.Remove("Content-Length");
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(html, context.RequestAborted);
     }
 
     private async Task ProxyExternalWebSocketAsync(HttpContext context, string routeKey)

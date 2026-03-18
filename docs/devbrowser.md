@@ -2,6 +2,8 @@
 
 The web preview reverse proxy (`/webpreview/{routeKey}/*`) intercepts browser requests and forwards them to an upstream target that belongs to one named preview session under one MidTerm terminal session. HTTP requests are straightforward (strip prefix, forward, return response). WebSocket connections are relayed without content modification.
 
+Targets may also be local `file:///...` URLs. MidTerm only accepts `file:` URLs that resolve to the same machine as the running `mt` process. Remote file-share targets such as `file://server/share/...` remain blocked.
+
 ## URL Space Design
 
 The proxy uses a **write-only interception** strategy. Each preview gets its own route prefix (`/webpreview/{routeKey}`), and the injected `UrlRewriteScript` patches outgoing APIs to add that prefix to URLs before they leave JavaScript:
@@ -27,6 +29,8 @@ The `<base href="/webpreview/{routeKey}/">` tag is injected into every HTML resp
 - `document.baseURI` = `https://proxy:2000/webpreview/{routeKey}/` (from `<base>` tag)
 - `location.href` = `https://proxy:2000/webpreview/{routeKey}/page` (real browser URL)
 - Both are consistent — frameworks see the app mounted at `/webpreview/{routeKey}/`
+
+For local file previews there is no upstream HTTP origin. MidTerm serves the requested file directly from disk, still injects the proxy `<base>` tag plus runtime rewrite script, and keeps all subsequent asset requests inside `/webpreview/{routeKey}/...`.
 
 ### Navigation Notifications
 

@@ -1,7 +1,9 @@
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using System.Reflection;
+using System.Text;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -184,5 +186,43 @@ public class WebPreviewProxyMiddlewareTests
                 "/_astro/"
             },
             prefixes);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_FileTarget_ServesLocalHtmlDocument()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "midterm-webpreview-file-target", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var indexPath = Path.Combine(tempDir, "index.html");
+        await File.WriteAllTextAsync(indexPath, "<html><head></head><body>preview</body></html>");
+
+        try
+        {
+            var service = new WebPreviewService(serverPort: 2000);
+            Assert.True(service.SetTarget("session-1", null, new Uri(indexPath).AbsoluteUri));
+            Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+
+            var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+            var context = new DefaultHttpContext();
+            var responseBody = new MemoryStream();
+            context.Features.Set<IHttpResponseBodyFeature>(new StreamResponseBodyFeature(responseBody));
+            context.Request.Method = HttpMethods.Get;
+            context.Request.Path = $"/webpreview/{routeKey}/";
+            context.Request.Scheme = "https";
+            context.Request.Host = new HostString("midterm.local");
+
+            await middleware.InvokeAsync(context);
+
+            responseBody.Position = 0;
+            var html = await new StreamReader(responseBody, Encoding.UTF8).ReadToEndAsync();
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.Contains("<body>preview</body>", html, StringComparison.Ordinal);
+            Assert.Contains("<base href=\"/webpreview/", html, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 }
