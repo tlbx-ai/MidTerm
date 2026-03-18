@@ -312,7 +312,7 @@ jobs:
         run: |
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
-          cp version.json staging/${{ matrix.rid }}/
+          cp src/version.json staging/${{ matrix.rid }}/
 
           if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
             cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
