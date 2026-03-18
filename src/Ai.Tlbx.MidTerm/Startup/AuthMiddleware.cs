@@ -3,6 +3,7 @@ using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -14,6 +15,7 @@ public static class AuthMiddleware
         SettingsService settingsService,
         AuthService authService,
         ShareGrantService shareGrantService,
+        BrowserPreviewOriginService previewOriginService,
         BrowserPreviewRegistry previewRegistry)
     {
         app.Use(async (context, next) =>
@@ -44,6 +46,12 @@ public static class AuthMiddleware
             }
 
             if (path == "/api/shutdown" && IsLoopback(context))
+            {
+                await next();
+                return;
+            }
+
+            if (AllowsPreviewOriginProxyRequest(context.Request, previewOriginService))
             {
                 await next();
                 return;
@@ -109,6 +117,22 @@ public static class AuthMiddleware
             previewIds.FirstOrDefault(),
             tokens.FirstOrDefault(),
             out _);
+    }
+
+    internal static bool AllowsPreviewOriginProxyRequest(
+        HttpRequest request,
+        BrowserPreviewOriginService? previewOriginService)
+    {
+        if (previewOriginService is null
+            || !previewOriginService.IsEnabled
+            || request.Host.Port != previewOriginService.PreviewPort)
+        {
+            return false;
+        }
+
+        var path = request.Path.Value ?? "/";
+        return path.StartsWith("/webpreview/", StringComparison.OrdinalIgnoreCase)
+            || WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(request, path);
     }
 
     private static CookieOptions GetSessionCookieOptions(SettingsService settingsService) => new()

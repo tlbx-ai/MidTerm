@@ -59,4 +59,45 @@ public class AuthMiddlewareTests
 
         Assert.False(allowed);
     }
+
+    [Fact]
+    public void AllowsPreviewOriginProxyRequest_WebPreviewRouteOnPreviewOrigin_ReturnsTrue()
+    {
+        var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
+        var context = new DefaultHttpContext();
+        context.Request.Host = new HostString("midterm.local", 2001);
+        context.Request.Path = "/webpreview/route-a/";
+
+        var allowed = AuthMiddleware.AllowsPreviewOriginProxyRequest(context.Request, previewOrigin);
+
+        Assert.True(allowed);
+    }
+
+    [Fact]
+    public void AllowsPreviewOriginProxyRequest_LeakedLoginPathWithPreviewReferer_ReturnsTrue()
+    {
+        var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
+        var context = new DefaultHttpContext();
+        context.Request.Host = new HostString("midterm.local", 2001);
+        context.Request.Path = "/login.html";
+        context.Request.Headers.Referer = "https://midterm.local:2001/webpreview/route-a/";
+
+        var allowed = AuthMiddleware.AllowsPreviewOriginProxyRequest(context.Request, previewOrigin);
+
+        Assert.True(allowed);
+    }
+
+    [Fact]
+    public void AllowsPreviewOriginProxyRequest_MainOriginLeakedPath_ReturnsFalse()
+    {
+        var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
+        var context = new DefaultHttpContext();
+        context.Request.Host = new HostString("midterm.local", 2000);
+        context.Request.Path = "/login.html";
+        context.Request.Headers.Referer = "https://midterm.local:2001/webpreview/route-a/";
+
+        var allowed = AuthMiddleware.AllowsPreviewOriginProxyRequest(context.Request, previewOrigin);
+
+        Assert.False(allowed);
+    }
 }

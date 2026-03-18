@@ -277,8 +277,10 @@ public static class ServerSetup
 
         app.Use(async (context, next) =>
         {
+            var path = context.Request.Path.Value ?? "/";
             if (previewOriginService.IsPreviewRequest(context)
-                && previewOriginService.ShouldBlockPath(context.Request.Path.Value ?? "/"))
+                && previewOriginService.ShouldBlockPath(path)
+                && !WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path))
             {
                 context.Response.StatusCode = 404;
                 return;
@@ -293,6 +295,7 @@ public static class ServerSetup
             settingsService,
             authService,
             shareGrantService,
+            previewOriginService,
             previewRegistry);
 
         // WebSockets must be enabled before the web preview proxy middleware so that
