@@ -31,7 +31,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F008` MidTerm supports system-service installs for always-on remote access.
 - `F009` The Windows installer can configure firewall access for the service install.
 - `F010` The installers prompt for a required password on first install.
-- `F011` Installer updates preserve an existing password hash instead of forcing re-entry.
+- `F011` Installer updates preserve an existing password by default and allow setting a replacement password during reinstall.
 - `F012` Installers can reuse an existing valid local certificate.
 - `F013` Installers can trust the generated local certificate on the machine.
 - `F014` Installers log their actions to `update.log` in the mode-specific log location.

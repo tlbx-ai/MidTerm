@@ -292,7 +292,7 @@ MidTerm treats installer and self-update reliability as part of the architecture
 The root `install.ps1` and `install.sh` scripts handle:
 
 - service mode versus user mode decisions
-- password setup and preservation
+- password setup, preservation, and intentional replacement during reinstall
 - certificate reuse or trust flows
 - platform-specific install paths and service registration
 - channel selection and release download
