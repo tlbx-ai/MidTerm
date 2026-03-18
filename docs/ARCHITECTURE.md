@@ -293,7 +293,7 @@ The root `install.ps1` and `install.sh` scripts handle:
 
 - service mode versus user mode decisions
 - password setup, preservation, and intentional replacement during reinstall
-- certificate reuse or trust flows
+- certificate reuse plus trust flows for both newly generated and reused certificates
 - platform-specific install paths and service registration
 - channel selection and release download
 - update logging

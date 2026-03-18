@@ -33,7 +33,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F010` The installers prompt for a required password on first install.
 - `F011` Installer updates preserve an existing password by default and allow setting a replacement password during reinstall.
 - `F012` Installers can reuse an existing valid local certificate.
-- `F013` Installers can trust the generated local certificate on the machine.
+- `F013` Installers can trust the current local certificate on the machine, including reused certificates during reinstall.
 - `F014` Installers log their actions to `update.log` in the mode-specific log location.
 - `F015` Installers detect the current OS and architecture and fetch the matching release asset.
 - `F016` Installers support stable and dev release channels.
