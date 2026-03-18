@@ -6,6 +6,8 @@
   var previewId = params.get('previewId') || '';
   var previewToken = params.get('previewToken') || '';
   var previewOrigin = params.get('origin') || window.location.origin;
+  var initialViewportWidth = parseInt(params.get('viewportWidth') || '0', 10) || 0;
+  var initialViewportHeight = parseInt(params.get('viewportHeight') || '0', 10) || 0;
   var sandboxEnabled = params.get('sandbox') === '1';
   var sandboxBaseFlags = [
     'allow-scripts',
@@ -28,6 +30,7 @@
     ? 'midterm-web-preview-' + sessionId + '-' + previewName
     : 'midterm-web-preview';
   var channel = new BroadcastChannel(channelName);
+  var previewHost = document.getElementById('preview-host');
   var frame = document.getElementById('preview-frame');
   var urlDisplay = document.getElementById('url-display');
   var currentUrl = null;
@@ -69,6 +72,68 @@
   function setCurrentUrl(url) {
     currentUrl = url;
     urlDisplay.textContent = url || '';
+  }
+
+  function resetViewport() {
+    if (!frame || !previewHost) {
+      return;
+    }
+
+    previewHost.classList.remove('viewport-constrained');
+    frame.style.flex = '';
+    frame.style.alignSelf = '';
+    frame.style.width = '';
+    frame.style.height = '';
+    frame.style.maxWidth = '';
+    frame.style.maxHeight = '';
+  }
+
+  function syncPopupViewportSize(targetWidth, targetHeight, attempt) {
+    if (!frame || attempt > 4) {
+      return;
+    }
+
+    var widthDelta = Math.round(targetWidth - frame.clientWidth);
+    var heightDelta = Math.round(targetHeight - frame.clientHeight);
+    if (Math.abs(widthDelta) <= 1 && Math.abs(heightDelta) <= 1) {
+      return;
+    }
+
+    try {
+      window.resizeBy(widthDelta, heightDelta);
+    } catch (_) {
+      return;
+    }
+
+    window.setTimeout(function () {
+      syncPopupViewportSize(targetWidth, targetHeight, attempt + 1);
+    }, 40);
+  }
+
+  function applyViewport(width, height) {
+    if (!frame || !previewHost) {
+      return;
+    }
+
+    if (width <= 0 && height <= 0) {
+      resetViewport();
+      return;
+    }
+
+    var targetWidth = width > 0 ? width : Math.max(frame.clientWidth, 1);
+    var targetHeight = height > 0 ? height : Math.max(frame.clientHeight, 1);
+
+    previewHost.classList.add('viewport-constrained');
+    frame.style.flex = 'none';
+    frame.style.alignSelf = 'center';
+    frame.style.width = targetWidth + 'px';
+    frame.style.height = targetHeight + 'px';
+    frame.style.maxWidth = targetWidth + 'px';
+    frame.style.maxHeight = targetHeight + 'px';
+
+    window.requestAnimationFrame(function () {
+      syncPopupViewportSize(targetWidth, targetHeight, 0);
+    });
   }
 
   function decodeIframeNavigationUrl(iframeUrl, targetOrigin) {
@@ -199,6 +264,9 @@
 
   var initialUrl = params.get('url');
   syncThemeFromOpener();
+  if (initialViewportWidth > 0 || initialViewportHeight > 0) {
+    applyViewport(initialViewportWidth, initialViewportHeight);
+  }
   if (initialUrl) {
     loadFrame(initialUrl);
   }
@@ -208,6 +276,8 @@
       loadFrame(e.data.url);
     } else if (e.data.type === 'refresh') {
       loadFrame(currentUrl);
+    } else if (e.data.type === 'viewport') {
+      applyViewport(Number(e.data.width) || 0, Number(e.data.height) || 0);
     }
   };
 
