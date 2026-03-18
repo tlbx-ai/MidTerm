@@ -229,7 +229,10 @@ public class WebPreviewProxyMiddlewareTests
     [Theory]
     [InlineData("/js/config.js", true, true)]
     [InlineData("/css/app.css", true, true)]
+    [InlineData("/", true, true)]
+    [InlineData("/login.html", true, true)]
     [InlineData("/js/html2canvas.min.js", true, false)]
+    [InlineData("/ws/browser", true, false)]
     [InlineData("/js/config.js", false, false)]
     [InlineData("/assets/site.js", false, true)]
     public void ShouldProxyPreviewLeak_UsesPreviewRefererForConflictingAssetRoots(

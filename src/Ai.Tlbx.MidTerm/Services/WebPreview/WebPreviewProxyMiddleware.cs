@@ -894,8 +894,8 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return HasPreviewReferer(request)
-            && IsLeakedPreviewAssetPath(path)
-            && !IsPreviewLocalAssetPath(path);
+            && IsLeakedPreviewPath(path)
+            && !IsPreviewLocalPath(path);
     }
 
     internal static bool HasPreviewReferer(HttpRequest request)
@@ -909,9 +909,12 @@ public sealed partial class WebPreviewProxyMiddleware
             && TryParseProxyRoute(refererUri.AbsolutePath, out _, out _);
     }
 
-    private static bool IsLeakedPreviewAssetPath(string path)
+    private static bool IsLeakedPreviewPath(string path)
     {
-        return path.StartsWith("/js/", StringComparison.OrdinalIgnoreCase)
+        return path is "/"
+            or "/index.html"
+            or "/login.html"
+            || path.StartsWith("/js/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/css/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/fonts/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/locales/", StringComparison.OrdinalIgnoreCase)
@@ -919,7 +922,7 @@ public sealed partial class WebPreviewProxyMiddleware
             || path.StartsWith("/favicon/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsPreviewLocalAssetPath(string path)
+    private static bool IsPreviewLocalPath(string path)
     {
         return path.Equals("/js/html2canvas.min.js", StringComparison.OrdinalIgnoreCase);
     }
