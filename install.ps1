@@ -226,6 +226,48 @@ function Prompt-Password
     exit 1
 }
 
+function Prompt-ExistingPasswordAction
+{
+    Write-Host ""
+    Write-Host "  Password:" -ForegroundColor Cyan
+    Write-Host "  Existing password found in secure storage." -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  [1] Keep existing password (default)" -ForegroundColor Cyan
+    Write-Host "      - No password change" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  [2] Set a new password now" -ForegroundColor Cyan
+    Write-Host "      - Replaces the existing password" -ForegroundColor Gray
+    Write-Host ""
+
+    $maxAttempts = 3
+    for ($i = 0; $i -lt $maxAttempts; $i++)
+    {
+        $choice = Read-Host "  Your choice [1/2]"
+
+        if ([string]::IsNullOrWhiteSpace($choice) -or $choice -eq "1")
+        {
+            return "Preserve"
+        }
+
+        if ($choice -eq "2")
+        {
+            return "Replace"
+        }
+
+        Write-Host "  Error: Please enter 1 or 2." -ForegroundColor Red
+        if ($i -lt $maxAttempts - 1)
+        {
+            Write-Host "  Please try again." -ForegroundColor Yellow
+        }
+        else
+        {
+            Write-Host "  Using default: keep existing password." -ForegroundColor Yellow
+        }
+    }
+
+    return "Preserve"
+}
+
 function Test-ExistingCertificate
 {
     param(
@@ -1486,9 +1528,17 @@ if ($asService)
     # Check for existing password in secure storage (preserve on update)
     if (Test-ExistingPassword)
     {
-        Write-Host ""
-        Write-Host "  Existing password found in secure storage - preserving..." -ForegroundColor Green
-        $passwordHash = $null  # Don't overwrite - existing secrets.bin will be preserved
+        $passwordAction = Prompt-ExistingPasswordAction
+        if ($passwordAction -eq "Replace")
+        {
+            $passwordHash = Prompt-Password -InstallDir $installDir
+        }
+        else
+        {
+            Write-Host ""
+            Write-Host "  Existing password found in secure storage - preserving..." -ForegroundColor Green
+            $passwordHash = $null  # Don't overwrite - existing secrets.bin will be preserved
+        }
     }
     else
     {
@@ -1670,9 +1720,18 @@ else
 
     if ($hasExistingPassword)
     {
-        Write-Host ""
-        Write-Host "  Existing password found in secure storage - preserving..." -ForegroundColor Green
-        $passwordHash = $null  # Don't overwrite - existing secrets.bin will be preserved
+        $passwordAction = Prompt-ExistingPasswordAction
+        if ($passwordAction -eq "Replace")
+        {
+            $tempDir = Join-Path $env:TEMP "MidTerm-Install"
+            $passwordHash = Prompt-Password -InstallDir $tempDir
+        }
+        else
+        {
+            Write-Host ""
+            Write-Host "  Existing password found in secure storage - preserving..." -ForegroundColor Green
+            $passwordHash = $null  # Don't overwrite - existing secrets.bin will be preserved
+        }
     }
     else
     {

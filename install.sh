@@ -322,6 +322,7 @@ INSTALLING_USER="${INSTALLING_USER:-}"
 INSTALLING_UID="${INSTALLING_UID:-}"
 INSTALLING_GID="${INSTALLING_GID:-}"
 PASSWORD_HASH="${PASSWORD_HASH:-}"
+PASSWORD_ACTION="${PASSWORD_ACTION:-}"
 PORT="${PORT:-2000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 TRUST_CERT="${TRUST_CERT:-}"
@@ -707,6 +708,48 @@ prompt_password() {
 
     echo -e "  ${RED}Too many failed attempts. Exiting.${NC}"
     exit 1
+}
+
+prompt_existing_password_action() {
+    echo ""
+    echo -e "  ${CYAN}Password:${NC}"
+    echo -e "  ${GREEN}An existing password was found.${NC}"
+    echo ""
+    echo -e "  ${CYAN}[1] Keep existing password${NC} (default)"
+    echo -e "      ${GRAY}- No password change${NC}"
+    echo ""
+    echo -e "  ${CYAN}[2] Set a new password now${NC}"
+    echo -e "      ${GRAY}- Replaces the existing password${NC}"
+    echo ""
+
+    local max_attempts=3
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        read -p "  Your choice [1/2]: " password_choice < /dev/tty
+
+        case "$password_choice" in
+            ""|1)
+                PASSWORD_ACTION="preserve"
+                return 0
+                ;;
+            2)
+                PASSWORD_ACTION="replace"
+                return 0
+                ;;
+            *)
+                echo -e "  ${RED}Error: Please enter 1 or 2.${NC}"
+                attempt=$((attempt + 1))
+                if [ $attempt -lt $max_attempts ]; then
+                    echo -e "  ${YELLOW}Please try again.${NC}"
+                else
+                    echo -e "  ${YELLOW}Using default: keep existing password.${NC}"
+                    PASSWORD_ACTION="preserve"
+                    return 0
+                fi
+                ;;
+        esac
+    done
 }
 
 prompt_network_config() {
@@ -1342,6 +1385,7 @@ install_as_service() {
                      INSTALLING_UID="$INSTALLING_UID" \
                      INSTALLING_GID="$INSTALLING_GID" \
                      PASSWORD_HASH="$PASSWORD_HASH" \
+                     PASSWORD_ACTION="$PASSWORD_ACTION" \
                      PORT="$PORT" \
                      BIND_ADDRESS="$BIND_ADDRESS" \
                      TRUST_CERT="$TRUST_CERT" \
@@ -1383,12 +1427,29 @@ install_as_service() {
     #
     # Re-check secrets.json in case a different user installed previously
     # (our pre-sudo read may have failed due to permissions, but now we're root)
-    if [[ -z "$PASSWORD_HASH" ]] || [[ "$PASSWORD_HASH" != '$PBKDF2$'* && "$PASSWORD_HASH" != "__PENDING64__:"* ]]; then
+    local should_write_password=false
+
+    if [ "$PASSWORD_ACTION" = "preserve" ]; then
+        if [[ "$PASSWORD_HASH" != '$PBKDF2$'* ]]; then
+            existing_hash=$(get_existing_password_hash || true)
+            if [ -n "$existing_hash" ]; then
+                PASSWORD_HASH="$existing_hash"
+            fi
+        fi
+
+        if [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
+            log "Existing password preserved"
+        else
+            log "Existing password could not be loaded after elevation - user must set password via web UI" "WARN"
+            print_step "Password..." "not set (use web UI)" "$YELLOW"
+            PASSWORD_HASH=""
+        fi
+    elif [[ -z "$PASSWORD_HASH" ]] || [[ "$PASSWORD_HASH" != '$PBKDF2$'* && "$PASSWORD_HASH" != "__PENDING64__:"* ]]; then
         existing_hash=$(get_existing_password_hash || true)
         if [ -n "$existing_hash" ]; then
             PASSWORD_HASH="$existing_hash"
-            log "Existing password hash found after elevation"
-            print_step "Password..." "preserved" "$GREEN"
+            PASSWORD_ACTION="preserve"
+            log "Fell back to preserving existing password hash after elevation"
         else
             log "No password available - user must set password via web UI" "WARN"
             print_step "Password..." "not set (use web UI)" "$YELLOW"
@@ -1405,6 +1466,7 @@ install_as_service() {
         hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
+            should_write_password=true
             log "Password hashed successfully"
             print_step "Hashing password..." "done"
         else
@@ -1413,11 +1475,23 @@ install_as_service() {
             exit 1
         fi
     elif [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
-        print_step "Password..." "preserved"
+        case "$PASSWORD_ACTION" in
+            new)
+                should_write_password=true
+                print_step "Password..." "set" "$GREEN"
+                ;;
+            replace)
+                should_write_password=true
+                print_step "Password..." "updated" "$GREEN"
+                ;;
+            *)
+                print_step "Password..." "preserved" "$GREEN"
+                ;;
+        esac
     fi
 
     # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
-    if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
+    if [ "$should_write_password" = true ] && [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode 2>/dev/null; then
             log "Password stored in secure secrets storage"
             print_step "Storing password..." "done"
@@ -1843,14 +1917,31 @@ install_as_user() {
 
     log "=== PHASE 2: Password configuration ==="
     # Handle password - either preserve existing or hash the pending one
+    local should_write_password=false
     existing_hash=$(get_existing_user_password_hash || true)
-    if [ -n "$existing_hash" ]; then
+    if [ "$PASSWORD_ACTION" = "preserve" ] && [ -n "$existing_hash" ]; then
+        log "Existing password hash found and preserved"
+        print_step "Password..." "preserved"
+        PASSWORD_HASH="$existing_hash"
+    elif [ "$PASSWORD_ACTION" = "preserve" ]; then
+        log "Password was marked for preservation but no existing hash was found" "WARN"
+        print_step "Password..." "not found, prompting" "$YELLOW"
+        prompt_password
+        PASSWORD_ACTION="new"
+    elif [ -n "$existing_hash" ]; then
         log "Existing password hash found and preserved"
         print_step "Password..." "preserved"
         PASSWORD_HASH="$existing_hash"
     elif [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
-        log "Password hash already prepared before install"
-        print_step "Password..." "preserved"
+        if [ "$PASSWORD_ACTION" = "replace" ]; then
+            log "Replacement password hash already prepared before install"
+            should_write_password=true
+            print_step "Password..." "updated"
+        else
+            log "Password hash already prepared before install"
+            should_write_password=true
+            print_step "Password..." "set"
+        fi
     elif [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
         # Hash the password now that binary is installed (decode from base64)
         log "Hashing new password..."
@@ -1861,6 +1952,7 @@ install_as_user() {
         hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
+            should_write_password=true
             log "Password hashed successfully"
             print_step "Hashing password..." "done"
         else
@@ -1884,6 +1976,7 @@ install_as_user() {
             hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
             if [[ "$hash" == '$PBKDF2$'* ]]; then
                 PASSWORD_HASH="$hash"
+                should_write_password=true
                 log "Password hashed successfully"
                 print_step "Hashing password..." "done"
             else
@@ -1895,7 +1988,7 @@ install_as_user() {
     fi
 
     # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
-    if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
+    if [ "$should_write_password" = true ] && [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash 2>/dev/null; then
             log "Password stored in secure secrets storage"
             print_step "Storing password..." "done"
@@ -2218,10 +2311,17 @@ if [ "$SERVICE_MODE" = true ]; then
     # If it fails (permissions, corruption, missing), prompt here (interactive OK before sudo)
     existing_hash=$(get_existing_password_hash 2>/dev/null || true)
     if [ -n "$existing_hash" ]; then
-        PASSWORD_HASH="$existing_hash"
-        _pw_status="existing (preserved)"
+        prompt_existing_password_action
+        if [ "$PASSWORD_ACTION" = "replace" ]; then
+            prompt_password
+            _pw_status="new (replacing existing)"
+        else
+            PASSWORD_HASH="$existing_hash"
+            _pw_status="existing (preserved)"
+        fi
     else
         prompt_password
+        PASSWORD_ACTION="new"
         _pw_status="new"
     fi
 
@@ -2245,10 +2345,17 @@ else
     # User mode: try to read existing hash, prompt if not found
     existing_hash=$(get_existing_user_password_hash 2>/dev/null || true)
     if [ -n "$existing_hash" ]; then
-        PASSWORD_HASH="$existing_hash"
-        _pw_status="existing (preserved)"
+        prompt_existing_password_action
+        if [ "$PASSWORD_ACTION" = "replace" ]; then
+            prompt_password
+            _pw_status="new (replacing existing)"
+        else
+            PASSWORD_HASH="$existing_hash"
+            _pw_status="existing (preserved)"
+        fi
     else
         prompt_password
+        PASSWORD_ACTION="new"
         _pw_status="new"
     fi
 
