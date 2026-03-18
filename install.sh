@@ -1168,15 +1168,36 @@ execute_certificate_trust() {
     fi
 
     if [ "$(uname -s)" = "Darwin" ]; then
+        local existing_hashes current_hash
+        existing_hashes=$(security find-certificate -a -Z -c ai.tlbx.midterm /Library/Keychains/System.keychain 2>/dev/null | \
+            sed -n 's/^SHA-256 hash: //p')
+        current_hash=$(openssl x509 -in "$cert_path" -noout -fingerprint -sha256 2>/dev/null | \
+            cut -d= -f2 | tr -d ':')
+
+        if [ -n "$existing_hashes" ]; then
+            while IFS= read -r cert_hash; do
+                [ -z "$cert_hash" ] && continue
+                if [ -n "$current_hash" ] && [ "$cert_hash" = "$current_hash" ]; then
+                    continue
+                fi
+                security delete-certificate -Z "$cert_hash" -t /Library/Keychains/System.keychain >/dev/null 2>&1 || true
+            done <<< "$existing_hashes"
+        fi
+
         local output exit_code
+        set +e
         output=$(security add-trusted-cert -d -r trustRoot \
             -k /Library/Keychains/System.keychain "$cert_path" 2>&1)
         exit_code=$?
+        set -e
         if [ $exit_code -eq 0 ]; then
             print_step "Trusting certificate..." "done"
         else
             print_step "Trusting certificate..." "manual trust needed" "$YELLOW"
             log "Could not auto-trust certificate (code: $exit_code): $output"
+            if [ -n "$current_hash" ]; then
+                log "Current certificate SHA-256: $current_hash"
+            fi
         fi
     else
         if cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
@@ -1200,9 +1221,11 @@ prompt_certificate_trust() {
     if [[ "$trust_choice" != "n" && "$trust_choice" != "N" ]]; then
         if [ "$(uname -s)" = "Darwin" ]; then
             local output exit_code
+            set +e
             output=$(sudo security add-trusted-cert -d -r trustRoot \
                 -k /Library/Keychains/System.keychain "$cert_path" 2>&1)
             exit_code=$?
+            set -e
             if [ $exit_code -eq 0 ]; then
                 print_step "Trusting certificate..." "done"
             else
@@ -1507,6 +1530,7 @@ install_as_service() {
     if check_existing_certificate "$existing_cert"; then
         log "Existing certificate is valid, reusing"
         CERT_PATH="$existing_cert"
+        execute_certificate_trust "$CERT_PATH"
     elif ! generate_certificate "$install_dir" "$settings_dir" true; then
         log "Certificate generation failed - app will use fallback" "WARN"
         print_step "Certificate..." "fallback (generation failed)" "$YELLOW"
@@ -2004,6 +2028,7 @@ install_as_user() {
     if check_existing_certificate "$existing_cert"; then
         log "Existing certificate is valid, reusing"
         CERT_PATH="$existing_cert"
+        prompt_certificate_trust "$CERT_PATH"
     elif ! generate_certificate "$install_dir" "$settings_dir" false; then
         log "Certificate generation failed - app will use fallback" "WARN"
         print_step "Certificate..." "fallback (generation failed)" "$YELLOW"
