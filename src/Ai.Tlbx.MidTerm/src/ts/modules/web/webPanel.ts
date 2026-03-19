@@ -73,6 +73,7 @@ const SANDBOX_BASE_FLAGS = [
 ];
 
 const log = createLogger('webPanel');
+const PREVIEW_CONTEXT_COOKIE_NAME = 'mt-preview-ctx';
 let urlInput: HTMLInputElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
 let previewTabs: HTMLElement | null = null;
@@ -214,6 +215,27 @@ function getProxyPrefix(routeKey: string): string {
 
 function getCookieBridgePath(routeKey: string): string {
   return `${getProxyPrefix(routeKey)}/_cookies`;
+}
+
+function setPreviewContextCookie(previewClient: BrowserPreviewClientResponse): void {
+  const routeKey = previewClient.routeKey.trim();
+  if (!routeKey || !previewClient.previewId || !previewClient.previewToken) {
+    return;
+  }
+
+  const payload = encodeURIComponent(
+    JSON.stringify({
+      sessionId: previewClient.sessionId ?? '',
+      previewName: previewClient.previewName,
+      routeKey: previewClient.routeKey,
+      previewId: previewClient.previewId,
+      previewToken: previewClient.previewToken,
+    }),
+  );
+
+  document.cookie =
+    `${PREVIEW_CONTEXT_COOKIE_NAME}=${payload}; ` +
+    `path=${getProxyPrefix(routeKey)}/; secure; samesite=lax`;
 }
 
 function shouldAllowSameOriginSandbox(frameOrigin?: string): boolean {
@@ -471,6 +493,7 @@ export async function loadPreview(): Promise<void> {
 
   try {
     applyIframeSandbox(previewClient.origin);
+    setPreviewContextCookie(previewClient);
     iframe.name = JSON.stringify(previewClient);
     iframe.src = buildProxyUrl(
       currentUrl,

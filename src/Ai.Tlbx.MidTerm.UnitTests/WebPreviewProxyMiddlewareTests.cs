@@ -113,6 +113,19 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_LoadsPreviewContextFromCookieFallback()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("mtReadCookie(\"mt-preview-ctx\")", script, StringComparison.Ordinal);
+        Assert.Contains("decodeURIComponent(mtCookieCtx)", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RewriteRefererForUpstream_TargetWithBasePath_PreservesTargetBase()
     {
         var service = new WebPreviewService(serverPort: 2000);
@@ -186,6 +199,28 @@ public class WebPreviewProxyMiddlewareTests
                 "/_astro/"
             },
             prefixes);
+    }
+
+    [Fact]
+    public void RewriteRootRelativeModuleSpecifiers_RewritesInlineAndDynamicImports()
+    {
+        const string source = """
+            <script type="module">
+              import "/js/config.js";
+              import login from "/js/login.js";
+              export * from "/router/router-lib.js";
+              const page = import("/components/PasswordInput/PasswordInput.js");
+            </script>
+            """;
+
+        var rewritten = WebPreviewProxyMiddleware.RewriteRootRelativeModuleSpecifiers(
+            source,
+            "/webpreview/route-1");
+
+        Assert.Contains("""import "/webpreview/route-1/js/config.js"""", rewritten, StringComparison.Ordinal);
+        Assert.Contains("""import login from "/webpreview/route-1/js/login.js"""", rewritten, StringComparison.Ordinal);
+        Assert.Contains("""export * from "/webpreview/route-1/router/router-lib.js"""", rewritten, StringComparison.Ordinal);
+        Assert.Contains("""import("/webpreview/route-1/components/PasswordInput/PasswordInput.js")""", rewritten, StringComparison.Ordinal);
     }
 
     [Fact]

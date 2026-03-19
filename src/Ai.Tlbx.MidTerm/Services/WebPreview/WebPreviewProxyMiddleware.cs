@@ -30,7 +30,22 @@ public sealed partial class WebPreviewProxyMiddleware
           // Save real parent before cloaking (used for navigation notifications)
           var _realParent=window.parent;
           var mtCtx=null;
+          function mtReadCookie(name){
+            try{
+              var parts=(document.cookie||"").split(/;\s*/);
+              for(var i=0;i<parts.length;i++){
+                if(parts[i].indexOf(name+"=")===0)return parts[i].slice(name.length+1);
+              }
+            }catch(e){}
+            return "";
+          }
           try{mtCtx=window.name?JSON.parse(window.name):null;}catch(e){mtCtx=null;}
+          if(!mtCtx){
+            try{
+              var mtCookieCtx=mtReadCookie("mt-preview-ctx");
+              mtCtx=mtCookieCtx?JSON.parse(decodeURIComponent(mtCookieCtx)):null;
+            }catch(e){mtCtx=null;}
+          }
           function mtMsg(type,extra){
             if(!mtCtx)return null;
             var msg=extra||{};
@@ -1139,6 +1154,9 @@ public sealed partial class WebPreviewProxyMiddleware
             baseHref = ComputeBaseHref(routePrefix, finalUrl);
         }
 
+        // Rewrite inline ESM specifiers before the browser resolves them.
+        html = RewriteRootRelativeModuleSpecifiers(html, routePrefix);
+
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
         var targetOrigin = targetUri.GetLeftPart(UriPartial.Authority);
@@ -1257,6 +1275,19 @@ public sealed partial class WebPreviewProxyMiddleware
         context.Response.Headers.Remove("Content-Encoding");
         context.Response.ContentType = "text/css; charset=utf-8";
         await context.Response.WriteAsync(css, context.RequestAborted);
+    }
+
+    private async Task ProxyJavaScriptResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse)
+    {
+        var script = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+        var routePrefix = _service.BuildProxyPrefix(routeKey);
+        script = RewriteRootRelativeModuleSpecifiers(script, routePrefix);
+
+        context.Response.Headers.Remove("Content-Length");
+        context.Response.Headers.Remove("Content-Encoding");
+        context.Response.ContentType = upstreamResponse.Content.Headers.ContentType?.ToString()
+            ?? "application/javascript; charset=utf-8";
+        await context.Response.WriteAsync(script, context.RequestAborted);
     }
 
     private async Task ProxyExternalAsync(HttpContext context, string routeKey)
@@ -1600,6 +1631,10 @@ public sealed partial class WebPreviewProxyMiddleware
         else if (contentType is "text/css")
         {
             await ProxyCssResponseAsync(context, routeKey, upstreamResponse);
+        }
+        else if (contentType is "application/javascript" or "text/javascript")
+        {
+            await ProxyJavaScriptResponseAsync(context, routeKey, upstreamResponse);
         }
         else
         {
@@ -2264,6 +2299,18 @@ public sealed partial class WebPreviewProxyMiddleware
     [GeneratedRegex(@"(url\(\s*[""']?)(https?://[^""')>\s]+)", RegexOptions.IgnoreCase)]
     private static partial Regex AbsoluteUrlCssRegex();
 
+    [GeneratedRegex(@"(\bimport\s+[^;""'\r\n]*?\bfrom\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex JSImportFromRegex();
+
+    [GeneratedRegex(@"(\bimport\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex JSImportBareRegex();
+
+    [GeneratedRegex(@"(\bimport\s*\(\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex JSImportDynamicRegex();
+
+    [GeneratedRegex(@"(\bexport\s+[^;""'\r\n]*?\bfrom\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex JSExportFromRegex();
+
     // Matches rewritten proxy paths in HTML/CSS attributes so we can prime root
     // fallback prefixes before the browser requests them.
     [GeneratedRegex(@"[""'(=]\s*(/webpreview/[^""')\s,>]+)", RegexOptions.IgnoreCase)]
@@ -2302,6 +2349,20 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return prefix + routePrefix + "/_ext?u=" + Uri.EscapeDataString(url);
+    }
+
+    internal static string RewriteRootRelativeModuleSpecifiers(string content, string routePrefix)
+    {
+        if (string.IsNullOrEmpty(content) || string.IsNullOrEmpty(routePrefix))
+        {
+            return content;
+        }
+
+        content = JSImportFromRegex().Replace(content, $"$1{routePrefix}/$2$3");
+        content = JSImportBareRegex().Replace(content, $"$1{routePrefix}/$2$3");
+        content = JSImportDynamicRegex().Replace(content, $"$1{routePrefix}/$2$3");
+        content = JSExportFromRegex().Replace(content, $"$1{routePrefix}/$2$3");
+        return content;
     }
 
     private static bool IsFontResponse(string? contentType, string? path)

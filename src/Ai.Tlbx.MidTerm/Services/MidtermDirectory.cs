@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "19";
+    private const string GuidanceVersion = "20";
 
     private static int _port;
     private static AuthService? _authService;
@@ -182,6 +182,7 @@ public static class MidtermDirectory
         - Batch JS reads: `mt_exec "JSON.stringify({a: expr1, b: expr2})"`
         - After actions, verify with `mt_wait` or `mt_query`, not `mt_outline`
         - Check `mt_log error` after unexpected behavior
+        - After `mt_apply_update`, the web frontend can disappear while your terminal keeps running in `mthost`; reopen MidTerm from the terminal and use `mt_open` again instead of assuming the session died
         - Browser commands return plain text. Auth tokens in mtcli scripts are ephemeral and machine-local.
 
         | Command | What it does |
@@ -329,6 +330,7 @@ public static class MidtermDirectory
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
         - mt_bootstrap creates a fresh agent-controlled worker session, injects `.midterm`, launches the chosen AI CLI profile, and can immediately send slash commands
         - mt_preview_reset [url] is the fast recovery move when a named preview has the wrong logged-in user or stale browser state
+        - After a MidTerm web update, the browser frontend can close while your terminal keeps running in mthost; reopen MidTerm from the terminal and run mt_open again for the current preview instead of recreating the session
         - mt_sendkeys plus mt_enter / mt_ctrlc / mt_escape / mt_up / mt_down / mt_left / mt_right are the direct terminal steering helpers
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
