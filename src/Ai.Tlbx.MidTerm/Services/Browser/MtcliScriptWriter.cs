@@ -87,14 +87,17 @@ public static class MtcliScriptWriter
             printf '?sessionId=%s&previewName=%s' "$(_MSID)" "$(_MPREVIEW)"
           fi
         }
-        _MSTATUS() {
-          local args=("status")
+        _MSTATUS_URL() {
           if [ -n "$(_MSID)" ]; then
-            args+=("--session" "$(_MSID)" "--preview" "$(_MPREVIEW)")
+            printf '%s/api/browser/status-text?sessionId=%s&previewName=%s' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
           elif [ -n "${MT_PREVIEW_NAME:-}" ]; then
-            args+=("--preview" "$(_MPREVIEW)")
+            printf '%s/api/browser/status-text?previewName=%s' "$_MT" "$(_MPREVIEW)"
+          else
+            printf '%s/api/browser/status-text' "$_MT"
           fi
-          _MB "${args[@]}"
+        }
+        _MSTATUS() {
+          _MC "$(_MSTATUS_URL)"
         }
         _MSTATUSREADY() {
           case "${1:-}" in
@@ -171,7 +174,6 @@ public static class MtcliScriptWriter
         # mt_open URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
           local url="$1" open_out status
-          mt_navigate "$url" >/dev/null || return $?
           open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\"}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
@@ -550,6 +552,15 @@ public static class MtcliScriptWriter
             if (-not $env:MT_SESSION_ID) { return "" }
             "?sessionId=$([Uri]::EscapeDataString($env:MT_SESSION_ID))&previewName=$([Uri]::EscapeDataString((_MPreview)))"
         }
+        function script:_MStatusUrl {
+            if ($env:MT_SESSION_ID) {
+                return "$script:_MT/api/browser/status-text?sessionId=$([Uri]::EscapeDataString($env:MT_SESSION_ID))&previewName=$([Uri]::EscapeDataString((_MPreview)))"
+            }
+            if ($env:MT_PREVIEW_NAME) {
+                return "$script:_MT/api/browser/status-text?previewName=$([Uri]::EscapeDataString((_MPreview)))"
+            }
+            return "$script:_MT/api/browser/status-text"
+        }
         function script:_MStatusArgs {
             $argsList = @("status")
             if ($env:MT_SESSION_ID) {
@@ -560,7 +571,7 @@ public static class MtcliScriptWriter
             $argsList
         }
         function script:_MStatus {
-            _MB @(_MStatusArgs)
+            _MC (_MStatusUrl)
         }
         function script:_MStatusIsControllable {
             param([string]$Output)
@@ -643,7 +654,6 @@ public static class MtcliScriptWriter
         # Mt-Open -Url URL  — open URL in web preview panel, dock it, and wait until controllable
         function Mt-Open {
             param([string]$Url)
-            Mt-Navigate -Url $Url | Out-Null
             $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) "$script:_MT/api/browser/open"
             $status = _MWaitForControllableStatus
             if ($openResponse) {

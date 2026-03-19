@@ -241,4 +241,21 @@ public class WebPreviewServiceTests
 
         Assert.False(service.TryGetRouteKeyByLeakedPath("/js/login.js", out _));
     }
+
+    [Fact]
+    public void SetTarget_IncrementsTargetRevisionForSamePreview()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+
+        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
+        var first = service.GetPreviewSession("session-1");
+        Assert.NotNull(first);
+
+        Assert.True(service.SetTarget("session-1", null, "https://example.org"));
+        var second = service.GetPreviewSession("session-1");
+        Assert.NotNull(second);
+
+        Assert.Equal(1, first!.TargetRevision);
+        Assert.Equal(2, second!.TargetRevision);
+    }
 }

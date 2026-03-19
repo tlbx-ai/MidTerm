@@ -217,6 +217,7 @@ describe('stateChannel browser-ui handling', () => {
       routeKey: 'route-1',
       url: 'http://localhost:3000',
       active: true,
+      targetRevision: 1,
     });
 
     ws.onmessage?.({
@@ -247,6 +248,7 @@ describe('stateChannel browser-ui handling', () => {
       routeKey: 'route-1',
       url: 'http://localhost:3000',
       active: true,
+      targetRevision: 1,
     });
   });
 });

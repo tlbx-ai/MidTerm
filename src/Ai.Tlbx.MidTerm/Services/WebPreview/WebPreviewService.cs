@@ -247,6 +247,7 @@ public sealed class WebPreviewService
 
         state.TargetUri = uri;
         state.TargetUrl = uri.ToString();
+        state.TargetRevision++;
         LoadCookiesFromDisk(state, uri);
         return true;
     }
@@ -256,6 +257,7 @@ public sealed class WebPreviewService
         var state = GetOrCreateState(sessionId, previewName);
         state.TargetUrl = null;
         state.TargetUri = null;
+        state.TargetRevision++;
         ResetCookieJar(state);
     }
 
@@ -597,7 +599,8 @@ public sealed class WebPreviewService
             PreviewName = state.PreviewName,
             RouteKey = state.RouteKey,
             Url = state.TargetUrl,
-            Active = state.TargetUri is not null
+            Active = state.TargetUri is not null,
+            TargetRevision = state.TargetRevision
         };
     }
 
@@ -1269,6 +1272,7 @@ public sealed class WebPreviewService
         public int LogIdCounter;
         public string? TargetUrl;
         public Uri? TargetUri;
+        public long TargetRevision;
         public CookieContainer CookieContainer { get; set; }
         public HttpClient HttpClient { get; set; }
 

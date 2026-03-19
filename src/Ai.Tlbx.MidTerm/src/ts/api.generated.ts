@@ -4180,6 +4180,8 @@ export interface components {
       routeKey: string;
       url: null | string;
       active: boolean;
+      /** Format: int64 */
+      targetRevision: number;
     };
     WebPreviewSessionListResponse: {
       previews: components['schemas']['WebPreviewSessionInfo'][];
@@ -4207,6 +4209,8 @@ export interface components {
       routeKey: null | string;
       url: null | string;
       active: boolean;
+      /** Format: int64 */
+      targetRevision: number;
     };
     WorkerBootstrapRequest: {
       name?: null | string;

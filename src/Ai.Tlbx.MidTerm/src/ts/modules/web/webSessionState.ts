@@ -12,6 +12,7 @@ export interface WebPreviewState {
   routeKey: string | null;
   url: string | null;
   active: boolean;
+  targetRevision: number;
   mode: WebPreviewMode;
   dockedClient: BrowserPreviewClientResponse | null;
 }
@@ -31,6 +32,7 @@ function buildPreviewState(previewName: string): WebPreviewState {
     routeKey: null,
     url: null,
     active: false,
+    targetRevision: 0,
     mode: 'hidden',
     dockedClient: null,
   };
@@ -159,6 +161,7 @@ export function upsertSessionPreview(
   state.routeKey = routeKey;
   state.url = preview.url ?? null;
   state.active = preview.active;
+  state.targetRevision = preview.targetRevision;
   ensureState(preview.sessionId).previews.set(state.previewName, state);
   return state;
 }
@@ -186,6 +189,7 @@ export function syncSessionPreviews(
         preview.routeKey = null;
         preview.url = null;
         preview.active = false;
+        preview.targetRevision = 0;
         preview.dockedClient = null;
       }
       continue;

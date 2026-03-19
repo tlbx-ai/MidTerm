@@ -7,4 +7,5 @@ public sealed class WebPreviewTargetResponse
     public string? RouteKey { get; set; }
     public string? Url { get; set; }
     public bool Active { get; set; }
+    public long TargetRevision { get; set; }
 }

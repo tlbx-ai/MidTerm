@@ -5759,7 +5759,8 @@
           "previewName",
           "routeKey",
           "url",
-          "active"
+          "active",
+          "targetRevision"
         ],
         "type": "object",
         "properties": {
@@ -5780,6 +5781,10 @@
           },
           "active": {
             "type": "boolean"
+          },
+          "targetRevision": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -5876,7 +5881,8 @@
           "previewName",
           "routeKey",
           "url",
-          "active"
+          "active",
+          "targetRevision"
         ],
         "type": "object",
         "properties": {
@@ -5903,6 +5909,10 @@
           },
           "active": {
             "type": "boolean"
+          },
+          "targetRevision": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
