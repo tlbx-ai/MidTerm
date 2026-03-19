@@ -366,7 +366,9 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
+          # Hosted dev builds can use setup-dotnet cache; the self-hosted stable runner
+          # has been observed hanging inside this cache path before dotnet install starts.
+          cache: ${{ needs.prepare.outputs.is_dev == 'true' }}
           cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
