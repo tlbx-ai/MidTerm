@@ -789,6 +789,24 @@ public static class Program
                         Log.Verbose(() => $"Order set to {order}");
                         break;
 
+                    case TtyHostMessageType.SetClipboardImage:
+                        var clipboardRequest = TtyHostProtocol.ParseSetClipboardImage(payload);
+                        if (clipboardRequest is null || string.IsNullOrWhiteSpace(clipboardRequest.FilePath))
+                        {
+                            var invalidAck = TtyHostProtocol.CreateSetClipboardImageAck(false, "Invalid clipboard image request");
+                            EnqueueFrame(channelWriter, invalidAck);
+                            break;
+                        }
+
+                        var clipboardResult = await LocalClipboard.SetImageAsync(
+                            clipboardRequest.FilePath,
+                            clipboardRequest.MimeType).ConfigureAwait(false);
+                        var clipboardAck = TtyHostProtocol.CreateSetClipboardImageAck(
+                            clipboardResult.Success,
+                            clipboardResult.Error);
+                        EnqueueFrame(channelWriter, clipboardAck);
+                        break;
+
                     case TtyHostMessageType.Ping:
                         var pongMsg = TtyHostProtocol.CreatePong(payload);
                         EnqueueFrame(channelWriter, pongMsg);

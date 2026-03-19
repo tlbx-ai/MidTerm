@@ -340,6 +340,31 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
+    public async Task<bool> SetClipboardImageAsync(
+        string filePath,
+        string? mimeType,
+        CancellationToken ct = default)
+    {
+        if (!IsConnected) return false;
+
+        try
+        {
+            var msg = TtyHostProtocol.CreateSetClipboardImage(filePath, mimeType);
+            var response = await SendRequestAsync(msg, TtyHostMessageType.SetClipboardImageAck, ct).ConfigureAwait(false);
+            if (response is null)
+            {
+                return false;
+            }
+
+            var parsed = TtyHostProtocol.ParseSetClipboardImageAck(response);
+            return parsed?.Success == true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<byte[]?> PingAsync(byte[] pingData, CancellationToken ct = default)
     {
         if (!IsConnected) return null;
@@ -603,6 +628,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.ResizeAck:
             case TtyHostMessageType.SetNameAck:
             case TtyHostMessageType.SetOrderAck:
+            case TtyHostMessageType.SetClipboardImageAck:
             case TtyHostMessageType.CloseAck:
             case TtyHostMessageType.Info:
             case TtyHostMessageType.Pong:

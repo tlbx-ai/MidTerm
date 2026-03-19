@@ -321,9 +321,8 @@ public class Program
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
-        var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, updateService, webPreviewService, sessionTelemetry, sessionSupervisor, aiCliProfileService, workerSessionRegistry);
+        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, updateService, webPreviewService, sessionTelemetry, sessionSupervisor, aiCliProfileService, workerSessionRegistry);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
