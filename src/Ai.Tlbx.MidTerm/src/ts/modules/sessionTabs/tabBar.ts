@@ -3,7 +3,7 @@
  *
  * Creates and manages the session bar UI for each session.
  * Tabs: Terminal | Files
- * Right-aligned actions: WEB | Commands | Share | Git dock toggle
+ * Right-aligned actions: WEB | Share | Git dock toggle
  */
 
 import type { GitStatusResponse } from '../git/types';
@@ -19,12 +19,6 @@ const WEB_BUTTON_ICON =
   '<path d="M4 12h16"></path>' +
   '<path d="M12 4a11.5 11.5 0 0 1 0 16"></path>' +
   '<path d="M12 4a11.5 11.5 0 0 0 0 16"></path>' +
-  '</svg>';
-
-const COMMANDS_BUTTON_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M12 5.5v8"></path>' +
-  '<circle cx="12" cy="18" r="1.25" fill="currentColor" stroke="none"></circle>' +
   '</svg>';
 
 const SHARE_BUTTON_ICON =
@@ -197,13 +191,12 @@ function createActionButton(
   return btn;
 }
 
-let commandsClickHandler: (() => void) | null = null;
 let gitClickHandler: (() => void) | null = null;
 let webClickHandler: (() => void) | null = null;
 let shareClickHandler: ((sessionId: string) => void) | null = null;
 
-export function setCommandsClickHandler(handler: () => void): void {
-  commandsClickHandler = handler;
+export function setCommandsClickHandler(_handler: () => void): void {
+  // Commands is temporarily hidden from the IDE bar, so registration is ignored.
 }
 
 export function setGitClickHandler(handler: () => void): void {
@@ -262,16 +255,6 @@ export function createTabBar(
     () => webClickHandler?.(),
   );
   actions.appendChild(webBtn);
-
-  const cmdBtn = createActionButton(
-    'commands',
-    'ide-bar-btn ide-bar-commands',
-    t('sessionTabs.commands'),
-    t('sessionTabs.commands'),
-    COMMANDS_BUTTON_ICON,
-    () => commandsClickHandler?.(),
-  );
-  actions.appendChild(cmdBtn);
 
   const shareBtn = createActionButton(
     'share',

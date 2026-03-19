@@ -100,7 +100,6 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 const translations: Record<string, string> = {
   'session.terminal': 'Terminal',
   'sessionTabs.files': 'Files',
-  'sessionTabs.commands': 'Commands',
   'sessionTabs.git': 'Git',
   'sessionTabs.share': 'Share',
   'sessionTabs.web': 'Web Preview',
@@ -141,20 +140,14 @@ describe('tabBar', () => {
     const actions = bar.children[3];
     const buttons = actions.children;
 
-    expect(buttons.map((button) => button.dataset.action)).toEqual([
-      'web',
-      'commands',
-      'share',
-      'git',
-    ]);
-    expect(buttons.slice(0, 3).map((button) => button.children[1]?.textContent)).toEqual([
+    expect(buttons.map((button) => button.dataset.action)).toEqual(['web', 'share', 'git']);
+    expect(buttons.slice(0, 2).map((button) => button.children[1]?.textContent)).toEqual([
       'WEB',
-      'Commands',
       'Share',
     ]);
-    expect(buttons[3]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
-    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
-    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
+    expect(buttons[2]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
+    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
+    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
   });
 
   it('uses the registered share handler and updates git stats', async () => {
@@ -165,8 +158,8 @@ describe('tabBar', () => {
 
     const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
     const actions = bar.children[3];
-    const shareButton = actions.children[2];
-    const gitButton = actions.children[3];
+    const shareButton = actions.children[1];
+    const gitButton = actions.children[2];
 
     shareButton.click();
     expect(shareClick).toHaveBeenCalledTimes(1);
