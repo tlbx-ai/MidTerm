@@ -125,6 +125,10 @@ describe('backgroundAppearance', () => {
     expect(primaryAlpha).toBeGreaterThan(terminalAlpha);
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
+    expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
+    expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#161821');
+    expect(rootStyle.getPropertyValue('--bg-hover-opaque')).toBe('#2D3044');
+    expect(rootStyle.getPropertyValue('--bg-active-opaque')).toBe('#363A50');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#242735');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#161821');
   });
@@ -146,6 +150,8 @@ describe('backgroundAppearance', () => {
       'url("/api/settings/background-image?v=12")',
     );
     expect(rootStyle.getPropertyValue('--app-background-size')).toBe('contain');
+    expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#EAE2D8');
+    expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#FEFCF9');
     expect(bodyClassList.contains('has-app-background')).toBe(true);

@@ -2876,7 +2876,10 @@
           "previewId",
           "browserId",
           "connectedAtUtc",
-          "isMainBrowser"
+          "isMainBrowser",
+          "isVisible",
+          "hasFocus",
+          "isTopLevel"
         ],
         "type": "object",
         "properties": {
@@ -2909,6 +2912,15 @@
             "format": "date-time"
           },
           "isMainBrowser": {
+            "type": "boolean"
+          },
+          "isVisible": {
+            "type": "boolean"
+          },
+          "hasFocus": {
+            "type": "boolean"
+          },
+          "isTopLevel": {
             "type": "boolean"
           }
         }

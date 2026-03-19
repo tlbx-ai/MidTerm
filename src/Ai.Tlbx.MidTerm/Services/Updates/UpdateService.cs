@@ -419,6 +419,13 @@ public sealed partial class UpdateService : IDisposable
             }
 
             var updateType = DetermineUpdateType(installedManifest, manifest);
+            if (updateType == UpdateType.None &&
+                !string.Equals(manifest.Web, currentVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                // If the installed manifest already advanced but the running mt.exe is still older,
+                // treat the retry as web-only so the updater does not restart mthost unnecessarily.
+                updateType = UpdateType.WebOnly;
+            }
 
             return new LocalUpdateInfo
             {

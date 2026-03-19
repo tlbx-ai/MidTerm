@@ -165,6 +165,38 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.SetNameAck, []);
     }
 
+    public static byte[] CreateSetClipboardImage(string filePath, string? mimeType)
+    {
+        var payload = new ClipboardImageRequest
+        {
+            FilePath = filePath,
+            MimeType = mimeType
+        };
+        var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.ClipboardImageRequest);
+        return CreateFrame(TtyHostMessageType.SetClipboardImage, json);
+    }
+
+    public static ClipboardImageRequest? ParseSetClipboardImage(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ClipboardImageRequest);
+    }
+
+    public static byte[] CreateSetClipboardImageAck(bool success, string? error = null)
+    {
+        var payload = new ClipboardImageResponse
+        {
+            Success = success,
+            Error = error
+        };
+        var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.ClipboardImageResponse);
+        return CreateFrame(TtyHostMessageType.SetClipboardImageAck, json);
+    }
+
+    public static ClipboardImageResponse? ParseSetClipboardImageAck(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ClipboardImageResponse);
+    }
+
     private static byte[] CreateFrame(TtyHostMessageType type, byte[] payload)
     {
         var frame = new byte[HeaderSize + payload.Length];
@@ -265,6 +297,8 @@ public enum TtyHostMessageType : byte
     ResizeAck = 0x21,
     SetName = 0x22,
     SetNameAck = 0x23,
+    SetClipboardImage = 0x26,
+    SetClipboardImageAck = 0x27,
     Close = 0x30,
     CloseAck = 0x31,
 
@@ -356,9 +390,23 @@ public sealed class ForegroundChangePayload
     public string? Cwd { get; set; }
 }
 
+public sealed class ClipboardImageRequest
+{
+    public string FilePath { get; set; } = string.Empty;
+    public string? MimeType { get; set; }
+}
+
+public sealed class ClipboardImageResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+}
+
 [JsonSerializable(typeof(SessionInfo))]
 [JsonSerializable(typeof(StateChangePayload))]
 [JsonSerializable(typeof(ForegroundChangePayload))]
+[JsonSerializable(typeof(ClipboardImageRequest))]
+[JsonSerializable(typeof(ClipboardImageResponse))]
 public partial class TtyHostJsonContext : JsonSerializerContext
 {
 }

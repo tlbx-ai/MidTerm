@@ -17,6 +17,7 @@ const persistenceSource = readFileSync(
   path.join(projectRoot, 'src/ts/modules/settings/persistence.ts'),
   'utf8',
 );
+const cssSource = readFileSync(path.join(projectRoot, 'src/static/css/app.css'), 'utf8');
 
 const NON_PERSISTED_SETTING_IDS = new Set([
   'setting-background-upload',
@@ -108,5 +109,24 @@ describe('settings persistence wiring', () => {
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
     ];
     expect(inlineSaveButtons).toHaveLength(5);
+  });
+
+  it('keeps the background upload preview clean when an image exists', () => {
+    expect(cssSource).toContain('.background-image-preview.hidden');
+    expect(cssSource).toContain('.background-image-empty.hidden');
+  });
+
+  it('keeps settings surfaces opaque under UI transparency', () => {
+    expect(cssSource).toContain('background-color: var(--bg-settings-opaque, var(--bg-settings));');
+    expect(cssSource).toContain('background: var(--bg-elevated-opaque, var(--bg-elevated));');
+    expect(cssSource).toContain('background: var(--bg-active-opaque, var(--bg-active));');
+  });
+
+  it('backfills the mac terminal palettes into the terminal colors select at runtime', () => {
+    expect(persistenceSource).toContain('syncTerminalColorSchemeOptions();');
+    expect(persistenceSource).toContain("value: 'macTerminalDark'");
+    expect(persistenceSource).toContain("value: 'macTerminalLight'");
+    expect(persistenceSource).toContain("option.value === 'solarizedDark'");
+    expect(persistenceSource).toContain("document.createElement('option')");
   });
 });

@@ -25,13 +25,20 @@ import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
 import { renderUpdatePanel } from '../updating/checker';
 import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
-import { detachPreview, dockBack } from '../web/webDetach';
+import {
+  detachPreview,
+  dockBack,
+  isDetachedOpenForSession,
+  setDetachedPreviewViewport,
+} from '../web/webDetach';
 import { setViewportSize, openWebPreviewDock } from '../web/webDock';
 import { setWebPreviewTarget } from '../web/webApi';
 import {
+  getSessionPreview,
   getSessionSelectedPreviewName,
   setSessionMode,
   setSessionSelectedPreviewName,
+  upsertSessionPreview,
 } from '../web/webSessionState';
 import { syncActiveWebPreview } from '../web';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
@@ -536,7 +543,9 @@ function handleBrowserUiCommand(msg: BrowserUiMessage): void {
       }
       setSessionMode(target.sessionId, target.previewName, 'docked');
       dockBack(target.sessionId, target.previewName);
-      void syncActiveWebPreview();
+      if ($activeSessionId.get() === target.sessionId) {
+        void syncActiveWebPreview();
+      }
       break;
     }
     case 'viewport': {
@@ -544,11 +553,27 @@ function handleBrowserUiCommand(msg: BrowserUiMessage): void {
       if (!target) {
         break;
       }
+      const preview = getSessionPreview(target.sessionId, target.previewName);
+      if (
+        preview?.mode === 'detached' &&
+        isDetachedOpenForSession(target.sessionId, target.previewName) &&
+        setDetachedPreviewViewport(
+          target.sessionId,
+          target.previewName,
+          msg.width ?? 0,
+          msg.height ?? 0,
+        )
+      ) {
+        break;
+      }
+
       setSessionMode(target.sessionId, target.previewName, 'docked');
-      openWebPreviewDock();
-      void syncActiveWebPreview().finally(() => {
-        setViewportSize(msg.width ?? 0, msg.height ?? 0);
-      });
+      if ($activeSessionId.get() === target.sessionId) {
+        openWebPreviewDock();
+        void syncActiveWebPreview().finally(() => {
+          setViewportSize(msg.width ?? 0, msg.height ?? 0);
+        });
+      }
       break;
     }
     case 'open': {
@@ -580,10 +605,6 @@ function resolveBrowserUiTarget(
     msg.previewName ?? getSessionSelectedPreviewName(sessionId),
   );
 
-  if ($activeSessionId.get() !== sessionId) {
-    selectSession(sessionId, { closeSettingsPanel: false });
-  }
-
   return { sessionId, previewName };
 }
 
@@ -597,10 +618,11 @@ async function handleBrowserOpen(
     return;
   }
 
+  upsertSessionPreview(result);
   setSessionSelectedPreviewName(sessionId, previewName);
   setSessionMode(sessionId, previewName, 'docked');
   if ($activeSessionId.get() !== sessionId) {
-    selectSession(sessionId, { closeSettingsPanel: false });
+    return;
   }
   $webPreviewUrl.set(url);
   openWebPreviewDock();

@@ -215,4 +215,30 @@ public class WebPreviewServiceTests
         Assert.Single(session2Previews.Previews);
         Assert.Equal("user2", session2Previews.Previews[0].PreviewName);
     }
+
+    [Fact]
+    public void RememberLeakedPathRoute_TracksRouteKeyForLaterResolution()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+
+        service.RememberLeakedPathRoute(routeKey, "/js/login.js?v=3");
+
+        Assert.True(service.TryGetRouteKeyByLeakedPath("/js/login.js", out var resolvedRouteKey));
+        Assert.Equal(routeKey, resolvedRouteKey);
+    }
+
+    [Fact]
+    public void DeletePreviewSession_ClearsRememberedLeakedPathsForThatRoute()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", "user2", "https://example.com"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", "user2", out var routeKey));
+        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
+
+        Assert.True(service.DeletePreviewSession("session-1", "user2"));
+
+        Assert.False(service.TryGetRouteKeyByLeakedPath("/js/login.js", out _));
+    }
 }

@@ -5,7 +5,12 @@
  * and docking them back into the main panel.
  */
 
-import { $activeSessionId, $webPreviewDetached, $webPreviewUrl } from '../../stores';
+import {
+  $activeSessionId,
+  $webPreviewDetached,
+  $webPreviewUrl,
+  $webPreviewViewport,
+} from '../../stores';
 import { hideDetachedPlaceholder, loadPreview } from './webPanel';
 import { createLogger } from '../logging';
 import {
@@ -97,6 +102,10 @@ export async function detachPreview(sessionId?: string, previewName?: string): P
   }
 
   setSessionDockedClient(targetSessionId, targetPreviewName, previewClient);
+  const activeViewport =
+    targetSessionId === $activeSessionId.get() && targetPreviewName === getActivePreviewName()
+      ? $webPreviewViewport.get()
+      : null;
 
   const popupUrl =
     '/web-preview-popup.html' +
@@ -106,6 +115,10 @@ export async function detachPreview(sessionId?: string, previewName?: string): P
     `&previewId=${encodeURIComponent(previewClient.previewId)}` +
     `&previewToken=${encodeURIComponent(previewClient.previewToken)}` +
     (previewClient.origin ? `&origin=${encodeURIComponent(previewClient.origin)}` : '') +
+    (activeViewport
+      ? `&viewportWidth=${encodeURIComponent(String(activeViewport.width))}` +
+        `&viewportHeight=${encodeURIComponent(String(activeViewport.height))}`
+      : '') +
     (isDevMode() ? '&sandbox=1' : '') +
     (url ? `&url=${encodeURIComponent(url)}` : '');
 
@@ -207,6 +220,35 @@ export function isDetachedOpenForSession(
     const popup = popups.get(key);
     return !!popup && !popup.closed;
   });
+}
+
+/** Apply a viewport override to an already-detached popup preview. */
+export function setDetachedPreviewViewport(
+  sessionId: string,
+  previewName: string,
+  width: number,
+  height: number,
+): boolean {
+  const key = popupKey(sessionId, previewName);
+  const popup = popups.get(key);
+  const channel = channels.get(key);
+  if (!popup || popup.closed || !channel) {
+    return false;
+  }
+
+  channel.postMessage({
+    type: 'viewport',
+    width,
+    height,
+  });
+
+  try {
+    popup.focus();
+  } catch {
+    // Ignore popup focus failures from the host browser.
+  }
+
+  return true;
 }
 
 function closePopupForPreview(sessionId: string, previewName: string): void {

@@ -21,6 +21,7 @@ public sealed class WebPreviewService
     private readonly string? _cookiesDirectory;
     private readonly ConcurrentDictionary<string, PreviewState> _previews = new();
     private readonly ConcurrentDictionary<string, string> _routeKeyToPreviewKey = new();
+    private readonly ConcurrentDictionary<string, string> _leakedPathToRouteKey = new(StringComparer.OrdinalIgnoreCase);
 
     public WebPreviewService(int serverPort, string? cookiesDirectory = null)
         : this(serverPort, previewOriginService: null, cookiesDirectory)
@@ -98,6 +99,7 @@ public sealed class WebPreviewService
         }
 
         _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
+        ClearLeakedPathRoutes(state.RouteKey);
         state.Dispose();
         return true;
     }
@@ -114,6 +116,7 @@ public sealed class WebPreviewService
             if (_previews.TryRemove(key, out var state))
             {
                 _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
+                ClearLeakedPathRoutes(state.RouteKey);
                 state.Dispose();
             }
         }
@@ -141,6 +144,37 @@ public sealed class WebPreviewService
 
         targetUri = null;
         return false;
+    }
+
+    public void RememberLeakedPathRoute(string routeKey, string path)
+    {
+        if (string.IsNullOrWhiteSpace(routeKey))
+        {
+            return;
+        }
+
+        var normalizedPath = NormalizeLeakedPath(path);
+        if (string.IsNullOrEmpty(normalizedPath))
+        {
+            return;
+        }
+
+        _leakedPathToRouteKey[normalizedPath] = routeKey;
+    }
+
+    public bool TryGetRouteKeyByLeakedPath(string path, out string routeKey)
+    {
+        routeKey = "";
+        var normalizedPath = NormalizeLeakedPath(path);
+        if (string.IsNullOrEmpty(normalizedPath)
+            || !_leakedPathToRouteKey.TryGetValue(normalizedPath, out var rememberedRouteKey)
+            || string.IsNullOrEmpty(rememberedRouteKey))
+        {
+            return false;
+        }
+
+        routeKey = rememberedRouteKey;
+        return true;
     }
 
     public string? GetTargetUrl(string sessionId, string? previewName = null)
@@ -637,6 +671,41 @@ public sealed class WebPreviewService
         }
 
         return state;
+    }
+
+    private void ClearLeakedPathRoutes(string routeKey)
+    {
+        foreach (var entry in _leakedPathToRouteKey)
+        {
+            if (string.Equals(entry.Value, routeKey, StringComparison.Ordinal)
+                && _leakedPathToRouteKey.TryGetValue(entry.Key, out var currentRouteKey)
+                && string.Equals(currentRouteKey, routeKey, StringComparison.Ordinal))
+            {
+                _leakedPathToRouteKey.TryRemove(entry.Key, out _);
+            }
+        }
+    }
+
+    private static string NormalizeLeakedPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return "";
+        }
+
+        var normalized = path.Trim();
+        if (!normalized.StartsWith('/'))
+        {
+            normalized = "/" + normalized;
+        }
+
+        var queryIndex = normalized.IndexOfAny(['?', '#']);
+        if (queryIndex >= 0)
+        {
+            normalized = normalized[..queryIndex];
+        }
+
+        return normalized;
     }
 
     private static string BuildPreviewKey(string sessionId, string previewName)

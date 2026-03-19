@@ -73,11 +73,27 @@ const SANDBOX_BASE_FLAGS = [
 ];
 
 const log = createLogger('webPanel');
+const PREVIEW_CONTEXT_COOKIE_NAME = 'mt-preview-ctx';
+const PREVIEW_QUERY_ID_PARAM = '__mtPreviewId';
+const PREVIEW_QUERY_TOKEN_PARAM = '__mtPreviewToken';
 let urlInput: HTMLInputElement | null = null;
-let iframe: HTMLIFrameElement | null = null;
+let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
+let activeFrameKey: string | null = null;
+const previewFrames = new Map<string, HTMLIFrameElement>();
+
+const FRAME_ALLOW_ATTR = `
+  camera *;
+  microphone *;
+  geolocation *;
+  fullscreen *;
+  autoplay *;
+  clipboard-read *;
+  clipboard-write *;
+  display-capture *;
+`;
 
 /** Get the URL currently loaded in the iframe. */
 export function getLoadedUrl(): string | null {
@@ -128,7 +144,7 @@ export function renderPreviewTabs(): void {
 /** Initialize the web preview panel. */
 export function initWebPanel(): void {
   urlInput = document.getElementById('web-preview-url-input') as HTMLInputElement | null;
-  iframe = document.getElementById('web-preview-iframe') as HTMLIFrameElement | null;
+  iframeHost = document.getElementById('web-preview-iframe-host');
   previewTabs = document.getElementById('web-preview-tabs');
 
   const goBtn = document.getElementById('web-preview-go');
@@ -158,7 +174,7 @@ export function initWebPanel(): void {
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
 
   window.addEventListener('message', (e: MessageEvent<unknown>) => {
-    if (!iframe || e.source !== iframe.contentWindow) {
+    if (!findPreviewIframeByWindow(e.source)) {
       return;
     }
 
@@ -216,6 +232,27 @@ function getCookieBridgePath(routeKey: string): string {
   return `${getProxyPrefix(routeKey)}/_cookies`;
 }
 
+function setPreviewContextCookie(previewClient: BrowserPreviewClientResponse): void {
+  const routeKey = previewClient.routeKey.trim();
+  if (!routeKey || !previewClient.previewId || !previewClient.previewToken) {
+    return;
+  }
+
+  const payload = encodeURIComponent(
+    JSON.stringify({
+      sessionId: previewClient.sessionId ?? '',
+      previewName: previewClient.previewName,
+      routeKey: previewClient.routeKey,
+      previewId: previewClient.previewId,
+      previewToken: previewClient.previewToken,
+    }),
+  );
+
+  document.cookie =
+    `${PREVIEW_CONTEXT_COOKIE_NAME}=${payload}; ` +
+    `path=${getProxyPrefix(routeKey)}/; secure; samesite=lax`;
+}
+
 function shouldAllowSameOriginSandbox(frameOrigin?: string): boolean {
   if (!frameOrigin) {
     return false;
@@ -236,15 +273,16 @@ function getSandboxFlags(frameOrigin?: string): string {
   return flags.join(' ');
 }
 
-function applyIframeSandbox(frameOrigin?: string): void {
-  if (!iframe) {
+function applyIframeSandbox(frameOrigin?: string, targetFrame?: HTMLIFrameElement | null): void {
+  const frame = targetFrame ?? getActiveIframe();
+  if (!frame) {
     return;
   }
   if (isDevMode()) {
-    iframe.setAttribute('sandbox', getSandboxFlags(frameOrigin));
+    frame.setAttribute('sandbox', getSandboxFlags(frameOrigin));
     return;
   }
-  iframe.removeAttribute('sandbox');
+  frame.removeAttribute('sandbox');
 }
 
 async function handleGo(): Promise<void> {
@@ -279,15 +317,19 @@ async function handleGo(): Promise<void> {
 
 function buildProxyUrl(
   targetUrl: string,
-  routeKey: string,
+  previewClient: BrowserPreviewClientResponse,
   frameOrigin = window.location.origin,
 ): string {
   const parsed = new URL(targetUrl);
   const path = parsed.pathname || '/';
-  const prefix = getProxyPrefix(routeKey);
+  const prefix = getProxyPrefix(previewClient.routeKey);
   const proxyUrl = new URL(path === '/' ? `${prefix}/` : `${prefix}${path}`, frameOrigin);
   proxyUrl.search = parsed.search;
   proxyUrl.hash = parsed.hash;
+  if (previewClient.previewId && previewClient.previewToken) {
+    proxyUrl.searchParams.set(PREVIEW_QUERY_ID_PARAM, previewClient.previewId);
+    proxyUrl.searchParams.set(PREVIEW_QUERY_TOKEN_PARAM, previewClient.previewToken);
+  }
   return proxyUrl.toString();
 }
 
@@ -365,6 +407,69 @@ function isActivePreviewMessage(message: PreviewBridgeMessage): boolean {
   );
 }
 
+function getPreviewFrameKey(sessionId: string, previewName: string): string {
+  return `${sessionId}::${previewName}`;
+}
+
+function getActivePreviewFrameKey(): string | null {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    return null;
+  }
+
+  return getPreviewFrameKey(sessionId, getActivePreviewName());
+}
+
+function getActiveIframe(): HTMLIFrameElement | null {
+  const key = activeFrameKey ?? getActivePreviewFrameKey();
+  if (!key) {
+    return null;
+  }
+
+  return previewFrames.get(key) ?? null;
+}
+
+function createPreviewIframe(frameKey: string): HTMLIFrameElement | null {
+  if (!iframeHost) {
+    return null;
+  }
+
+  const frame = document.createElement('iframe');
+  frame.className = 'web-preview-iframe hidden';
+  frame.src = 'about:blank';
+  frame.setAttribute('allow', FRAME_ALLOW_ATTR.trim());
+  frame.dataset.previewFrameKey = frameKey;
+  iframeHost.appendChild(frame);
+  previewFrames.set(frameKey, frame);
+  return frame;
+}
+
+function ensurePreviewIframe(sessionId: string, previewName: string): HTMLIFrameElement | null {
+  const frameKey = getPreviewFrameKey(sessionId, previewName);
+  return previewFrames.get(frameKey) ?? createPreviewIframe(frameKey);
+}
+
+function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFrameElement | null {
+  if (!source) {
+    return null;
+  }
+
+  for (const frame of previewFrames.values()) {
+    if (frame.contentWindow === source) {
+      return frame;
+    }
+  }
+
+  return null;
+}
+
+function setVisiblePreviewFrame(frameKey: string | null): void {
+  activeFrameKey = frameKey;
+  for (const [key, frame] of previewFrames) {
+    frame.classList.toggle('hidden', key !== frameKey);
+  }
+}
+
 function postCookieBridgeResponse(
   target: WindowProxy | null,
   message: PreviewCookieResponseMessage,
@@ -440,20 +545,19 @@ async function handleCookieBridgeRequest(
 
 /** Load the current active named preview into the iframe. */
 export async function loadPreview(): Promise<void> {
-  if (!iframe) {
+  if (!iframeHost) {
     return;
   }
 
-  applyIframeSandbox();
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   const currentPreview = getActivePreview();
   const currentUrl = currentPreview?.url ?? $webPreviewUrl.get();
+  const frameKey = sessionId ? getPreviewFrameKey(sessionId, previewName) : null;
   loadedUrl = currentUrl;
 
   if (!currentUrl || !sessionId) {
-    iframe.name = '';
-    iframe.src = 'about:blank';
+    setVisiblePreviewFrame(null);
     return;
   }
 
@@ -463,23 +567,34 @@ export async function loadPreview(): Promise<void> {
   }
 
   if (!previewClient) {
-    iframe.name = '';
-    iframe.src = 'about:blank';
+    setVisiblePreviewFrame(null);
     log.warn(() => `Failed to create browser preview client for ${sessionId}/${previewName}`);
     return;
   }
 
+  const frame = ensurePreviewIframe(sessionId, previewName);
+  if (!frame) {
+    log.warn(() => `Failed to allocate dock iframe for ${sessionId}/${previewName}`);
+    return;
+  }
+
   try {
-    applyIframeSandbox(previewClient.origin);
-    iframe.name = JSON.stringify(previewClient);
-    iframe.src = buildProxyUrl(
+    applyIframeSandbox(previewClient.origin, frame);
+    setPreviewContextCookie(previewClient);
+    frame.name = JSON.stringify(previewClient);
+    const proxyUrl = buildProxyUrl(
       currentUrl,
-      previewClient.routeKey,
+      previewClient,
       previewClient.origin ?? window.location.origin,
     );
+    if (frame.src !== proxyUrl) {
+      frame.src = proxyUrl;
+    }
+    setVisiblePreviewFrame(frameKey);
   } catch {
-    iframe.name = '';
-    iframe.src = 'about:blank';
+    frame.name = '';
+    frame.src = 'about:blank';
+    frame.classList.add('hidden');
   }
 }
 
@@ -533,8 +648,9 @@ function updateUrlBarFromIframe(
 
 /** Show the web preview iframe and hide the detached placeholder. */
 export function showIframe(): void {
-  if (iframe) {
-    iframe.classList.remove('hidden');
+  const frameKey = getActivePreviewFrameKey();
+  if (frameKey) {
+    setVisiblePreviewFrame(frameKey);
   }
   const placeholder = document.getElementById('web-preview-detached-msg');
   if (placeholder) {
@@ -544,19 +660,31 @@ export function showIframe(): void {
 
 /** Hide the web preview iframe. */
 export function hideIframe(): void {
-  if (iframe) {
-    iframe.classList.add('hidden');
-  }
+  setVisiblePreviewFrame(null);
 }
 
 /** Unload the iframe by navigating to about:blank and hiding it. */
-export function unloadIframe(): void {
-  if (iframe) {
-    iframe.name = '';
-    iframe.src = 'about:blank';
-    iframe.classList.add('hidden');
+export function unloadIframe(sessionId?: string | null, previewName?: string | null): void {
+  const frameKey =
+    sessionId && previewName
+      ? getPreviewFrameKey(sessionId, previewName)
+      : getActivePreviewFrameKey();
+  if (!frameKey) {
+    loadedUrl = null;
+    return;
   }
-  loadedUrl = null;
+
+  const frame = previewFrames.get(frameKey);
+  if (frame) {
+    frame.name = '';
+    frame.src = 'about:blank';
+    frame.classList.add('hidden');
+  }
+
+  if (activeFrameKey === frameKey) {
+    activeFrameKey = null;
+    loadedUrl = null;
+  }
 }
 
 /** Show the detached placeholder message and hide the iframe. */
@@ -620,6 +748,7 @@ function decodeScreenshotDataUrl(dataUrl: string): Blob | null {
 async function handleScreenshot(download = false): Promise<void> {
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
+  const iframe = getActiveIframe();
   if (!sessionId || !iframe || iframe.src === 'about:blank') {
     return;
   }

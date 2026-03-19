@@ -203,6 +203,8 @@ When a website doesn't load through the web preview:
 | Login redirect loops | Cookies not forwarding — check `requestCookies`/`responseCookies` in proxylog |
 | All assets return HTML | Host redirect (e.g. `foo.com` → `www.foo.com`) drops the path — proxy auto-updates target on first redirect |
 
+Leaked root-relative asset chains can lose the original `/webpreview/{routeKey}` referer after the first rescued request. MidTerm now remembers which preview first claimed leaked paths like `/js/login.js`, so follow-up imports from referers such as `/js/login.js` or `/js3/html2-login.js` can still recover the same `routeKey` instead of falling through to local `404`s on the preview origin.
+
 ## Implementation Files
 
 | File | Role |

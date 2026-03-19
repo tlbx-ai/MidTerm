@@ -113,6 +113,37 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_LoadsPreviewContextFromCookieFallback()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("mtReadCookie(\"mt-preview-ctx\")", script, StringComparison.Ordinal);
+        Assert.Contains("decodeURIComponent(mtCookieCtx)", script, StringComparison.Ordinal);
+        Assert.Contains("params.get(\"__mtPreviewId\")", script, StringComparison.Ordinal);
+        Assert.Contains("params.get(\"__mtPreviewToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("history.replaceState(history.state,\"\",url.pathname+url.search+url.hash)", script, StringComparison.Ordinal);
+        Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
+        Assert.Contains("routeMatch=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
+        Assert.Contains("\"routeKey=\"+encodeURIComponent(routeMatch[1])", script, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
+    [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
+    [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
+    [InlineData("", "")]
+    public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
+    {
+        var sanitized = WebPreviewProxyMiddleware.StripPreviewBootstrapQuery(query);
+
+        Assert.Equal(expected, sanitized);
+    }
+
+    [Fact]
     public void RewriteRefererForUpstream_TargetWithBasePath_PreservesTargetBase()
     {
         var service = new WebPreviewService(serverPort: 2000);
@@ -189,6 +220,28 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void RewriteRootRelativeModuleSpecifiers_RewritesInlineAndDynamicImports()
+    {
+        const string source = """
+            <script type="module">
+              import "/js/config.js";
+              import login from "/js/login.js";
+              export * from "/router/router-lib.js";
+              const page = import("/components/PasswordInput/PasswordInput.js");
+            </script>
+            """;
+
+        var rewritten = WebPreviewProxyMiddleware.RewriteRootRelativeModuleSpecifiers(
+            source,
+            "/webpreview/route-1");
+
+        Assert.Contains("import \"/webpreview/route-1/js/config.js\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("import login from \"/webpreview/route-1/js/login.js\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("export * from \"/webpreview/route-1/router/router-lib.js\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("import(\"/webpreview/route-1/components/PasswordInput/PasswordInput.js\")", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task InvokeAsync_FileTarget_ServesLocalHtmlDocument()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "midterm-webpreview-file-target", Guid.NewGuid().ToString("N"));
@@ -249,5 +302,44 @@ public class WebPreviewProxyMiddlewareTests
         var result = WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path);
 
         Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRefererPath()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/router/router-lib.js";
+        context.Request.Headers.Referer = "https://midterm.local/js/login.js";
+
+        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
+
+        Assert.True(resolved);
+        Assert.Equal(routeKey, resolvedRouteKey);
+        Assert.Equal("https://example.com/", targetUri.ToString());
+    }
+
+    [Fact]
+    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRequestPath()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/js/login.js";
+
+        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
+
+        Assert.True(resolved);
+        Assert.Equal(routeKey, resolvedRouteKey);
+        Assert.Equal("https://example.com/", targetUri.ToString());
     }
 }

@@ -126,7 +126,6 @@ public static class ServerSetup
         builder.Services.AddSingleton<WindowsFirewallService>();
         builder.Services.AddSingleton<MainBrowserService>();
         builder.Services.AddSingleton<BackgroundImageService>();
-        builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
         builder.Services.AddSingleton<SessionControlStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();

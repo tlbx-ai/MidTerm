@@ -3454,6 +3454,9 @@ export interface components {
       /** Format: date-time */
       connectedAtUtc: string;
       isMainBrowser: boolean;
+      isVisible: boolean;
+      hasFocus: boolean;
+      isTopLevel: boolean;
     };
     BrowserCommandRequest: {
       command: string;

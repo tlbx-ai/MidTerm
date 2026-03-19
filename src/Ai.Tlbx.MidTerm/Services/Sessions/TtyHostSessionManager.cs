@@ -340,6 +340,20 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return info;
     }
 
+    public async Task<bool> SetClipboardImageAsync(
+        string sessionId,
+        string filePath,
+        string? mimeType,
+        CancellationToken ct = default)
+    {
+        if (!_clients.TryGetValue(sessionId, out var client))
+        {
+            return false;
+        }
+
+        return await client.SetClipboardImageAsync(filePath, mimeType, ct).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Get or create the temp directory for file uploads for a session.
     /// </summary>

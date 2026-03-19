@@ -1,0 +1,14 @@
+THIRD-PARTY NOTICES
+===================
+
+The following attribution notices apply to third-party software redistributed
+with MidTerm.
+
+
+================================================================================
+Swagger UI
+https://github.com/swagger-api/swagger-ui
+================================================================================
+
+swagger-ui
+Copyright 2020-2021 SmartBear Software Inc.

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Settings;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
@@ -11,6 +12,7 @@ public sealed class BrowserWebSocketHandler
 {
     private readonly BrowserCommandService _commandService;
     private readonly BrowserPreviewRegistry _previewRegistry;
+    private readonly WebPreviewService _webPreviewService;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
@@ -18,12 +20,14 @@ public sealed class BrowserWebSocketHandler
     public BrowserWebSocketHandler(
         BrowserCommandService commandService,
         BrowserPreviewRegistry previewRegistry,
+        WebPreviewService webPreviewService,
         SettingsService settingsService,
         AuthService authService,
         ShutdownService shutdownService)
     {
         _commandService = commandService;
         _previewRegistry = previewRegistry;
+        _webPreviewService = webPreviewService;
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
@@ -33,7 +37,11 @@ public sealed class BrowserWebSocketHandler
     {
         var queryPreviewId = context.Request.Query["previewId"].FirstOrDefault();
         var queryPreviewToken = context.Request.Query["token"].FirstOrDefault();
+        var queryRouteKey = context.Request.Query["routeKey"].FirstOrDefault();
         var hasPreviewAuth = _previewRegistry.TryValidate(queryPreviewId, queryPreviewToken, out var previewClient);
+        var previewSession = !string.IsNullOrWhiteSpace(queryRouteKey)
+            ? _webPreviewService.GetPreviewSessionByRouteKey(queryRouteKey)
+            : null;
 
         if (!hasPreviewAuth)
         {
@@ -48,12 +56,26 @@ public sealed class BrowserWebSocketHandler
         var sendLock = new SemaphoreSlim(1, 1);
         var shutdownToken = _shutdownService.Token;
         var connectionId = Guid.NewGuid().ToString("N");
-        var sessionId = previewClient?.SessionId ?? context.Request.Query["sessionId"].FirstOrDefault();
-        var previewName = previewClient?.PreviewName;
+        var sessionId = previewClient?.SessionId
+            ?? previewSession?.SessionId
+            ?? context.Request.Query["sessionId"].FirstOrDefault();
+        var previewName = previewClient?.PreviewName ?? previewSession?.PreviewName;
         var previewId = previewClient?.PreviewId ?? queryPreviewId;
         var browserId = previewClient?.BrowserId ?? context.Request.Cookies["mt-client-id"];
+        var isVisible = ParseBooleanQuery(context.Request.Query["visible"].FirstOrDefault());
+        var hasFocus = ParseBooleanQuery(context.Request.Query["focus"].FirstOrDefault());
+        var isTopLevel = ParseBooleanQuery(context.Request.Query["topLevel"].FirstOrDefault());
 
-        if (!_commandService.TryRegisterClient(connectionId, sessionId, previewName, previewId, OnCommandReady, browserId))
+        if (!_commandService.TryRegisterClient(
+                connectionId,
+                sessionId,
+                previewName,
+                previewId,
+                OnCommandReady,
+                browserId,
+                isVisible,
+                hasFocus,
+                isTopLevel))
         {
             BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
             await ws.CloseAsync(
@@ -161,5 +183,12 @@ public sealed class BrowserWebSocketHandler
                 }
             }
         }
+    }
+
+    private static bool ParseBooleanQuery(string? value)
+    {
+        return string.Equals(value, "1", StringComparison.Ordinal)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -47,7 +47,6 @@ public static partial class SessionApiEndpoints
     public static void MapSessionEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
-        ClipboardService clipboardService,
         UpdateService updateService,
         WebPreviewService webPreviewService,
         SessionTelemetryService sessionTelemetry,
@@ -417,8 +416,7 @@ public static partial class SessionApiEndpoints
 
             if (IsImageUpload(file, targetPath))
             {
-                var preferredProcessId = session.HostPid > 0 ? session.HostPid : session.Pid;
-                await clipboardService.SetImageAsync(targetPath, file.ContentType, preferredProcessId);
+                await sessionManager.SetClipboardImageAsync(id, targetPath, file.ContentType);
             }
 
             // To make Johannes happy
@@ -448,8 +446,7 @@ public static partial class SessionApiEndpoints
 
             var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
 
-            var preferredProcessId = session.HostPid > 0 ? session.HostPid : session.Pid;
-            var success = await clipboardService.SetImageAsync(targetPath, file.ContentType, preferredProcessId);
+            var success = await sessionManager.SetClipboardImageAsync(id, targetPath, file.ContentType);
             if (!success)
             {
                 return Results.Problem("Failed to set clipboard");
