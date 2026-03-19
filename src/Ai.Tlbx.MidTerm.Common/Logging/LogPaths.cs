@@ -89,8 +89,7 @@ public static class LogPaths
             return Path.Combine(UnixServiceLogDir, "update.log");
         }
 
-        var userDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(userDir, ".midterm", "update.log");
+        return Path.Combine(GetLogDirectory(isWindowsService, isUnixService), "update.log");
     }
 
     public static bool DetectWindowsServiceMode()
