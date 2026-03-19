@@ -43,6 +43,7 @@ import {
 import { syncActiveWebPreview } from '../web';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
+import { checkVersionAndReload } from '../../utils/versionCheck';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -141,6 +142,7 @@ import {
 
 // Track if we've restored layout from storage (only do once on first session list)
 let layoutRestoredFromStorage = false;
+let stateWsHasConnected = false;
 
 // Pending dock instructions for sessions that haven't appeared in state yet
 interface PendingDock {
@@ -174,8 +176,13 @@ export function connectStateWebSocket(): void {
 
   ws.onopen = () => {
     stateReconnect.reset();
+    const isReconnect = stateWsHasConnected;
+    stateWsHasConnected = true;
     $stateWsConnected.set(true);
     reportBrowserActivity(getCurrentBrowserActivity(), true);
+    if (isReconnect) {
+      void checkVersionAndReload();
+    }
   };
 
   ws.onmessage = (event) => {

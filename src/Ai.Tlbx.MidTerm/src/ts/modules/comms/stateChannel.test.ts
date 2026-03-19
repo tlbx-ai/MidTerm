@@ -32,12 +32,15 @@ const mocks = vi.hoisted(() => ({
   swapLayoutSessions: vi.fn(),
   initializeFromSession: vi.fn(),
   selectSession: vi.fn(),
+  checkVersionAndReload: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../utils', () => ({
   ReconnectController: class {
     reset(): void {}
-    schedule(): void {}
+    schedule(callback?: () => void): void {
+      callback?.();
+    }
   },
   createWsUrl: () => 'ws://midterm.test/ws/state',
   closeWebSocket: mocks.closeWebSocket,
@@ -127,6 +130,10 @@ vi.mock('../layout/layoutStore', () => ({
   dockSession: mocks.dockSession,
   isSessionInLayout: mocks.isSessionInLayout,
   swapLayoutSessions: mocks.swapLayoutSessions,
+}));
+
+vi.mock('../../utils/versionCheck', () => ({
+  checkVersionAndReload: mocks.checkVersionAndReload,
 }));
 
 class MockWebSocket {
@@ -250,5 +257,22 @@ describe('stateChannel browser-ui handling', () => {
       active: true,
       targetRevision: 1,
     });
+  });
+
+  it('checks frontend version on state websocket reconnect', async () => {
+    const { ws } = await loadHarness();
+
+    ws.onopen?.(new Event('open'));
+    expect(mocks.checkVersionAndReload).not.toHaveBeenCalled();
+
+    ws.onclose?.(new CloseEvent('close'));
+
+    const next = MockWebSocket.instances[1];
+    if (!next) {
+      throw new Error('Reconnect WebSocket was not created');
+    }
+
+    next.onopen?.(new Event('open'));
+    expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
   });
 });
