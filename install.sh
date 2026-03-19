@@ -2,6 +2,12 @@
 # MidTerm macOS/Linux Installer
 # Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 # Dev:   curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash -s -- --dev
+#
+# Design goals:
+# - fetch and validate an official MidTerm release before touching system paths
+# - collect choices before sudo so the elevated leg can stay non-interactive
+# - preserve existing auth/settings unless the user explicitly replaces them
+# - keep the touched paths narrow and auditable for users who inspect the script
 
 set -e
 
@@ -75,7 +81,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 GRAY='\033[0;90m'
+WHITE='\033[1;37m'
 NC='\033[0m' # No Color
+
+PHASE_RULE_WIDTH=34
+STATUS_LABEL_WIDTH=12
+STEP_LABEL_WIDTH=32
 
 # Logging
 LOG_FILE=""
@@ -109,6 +120,7 @@ require_command() {
 
     echo -e "${RED}Missing required command: $name${NC}" >&2
     echo -e "${GRAY}Install '$package_hint' and run the installer again.${NC}" >&2
+    print_dependency_help "$package_hint"
     exit 1
 }
 
@@ -119,7 +131,27 @@ require_any_download_tool() {
 
     echo -e "${RED}Missing required downloader: curl or wget${NC}" >&2
     echo -e "${GRAY}Install one of them and run the installer again.${NC}" >&2
+    print_dependency_help "curl"
+    print_dependency_help "wget"
     exit 1
+}
+
+print_dependency_help() {
+    local package_hint="$1"
+    local os_name
+    os_name=$(uname -s 2>/dev/null || echo "")
+
+    case "$os_name" in
+        Darwin)
+            echo -e "${GRAY}macOS (Homebrew): brew install ${package_hint}${NC}" >&2
+            ;;
+        Linux)
+            echo -e "${GRAY}Ubuntu/Debian: sudo apt-get install -y ${package_hint}${NC}" >&2
+            echo -e "${GRAY}Fedora/RHEL:   sudo dnf install -y ${package_hint}${NC}" >&2
+            echo -e "${GRAY}Arch:          sudo pacman -S ${package_hint}${NC}" >&2
+            echo -e "${GRAY}Alpine:        sudo apk add ${package_hint}${NC}" >&2
+            ;;
+    esac
 }
 
 validate_archive() {
@@ -228,16 +260,21 @@ resolve_redirect_url() {
 }
 
 ensure_prerequisites() {
+    # Fail fast on all commands we rely on later so users get one actionable
+    # message before the script starts downloading or prompting.
     require_command bash bash
     require_command mktemp coreutils
     require_command tar tar
     require_command grep grep
     require_command sed sed
-    require_command openssl openssl
+    require_command stty coreutils
+    require_command tee coreutils
+    require_command base64 coreutils
+    require_command pgrep procps/procps-ng
     require_any_download_tool
 
     if [ "$DEV_CHANNEL" = true ]; then
-        require_command awk awk
+        require_command awk gawk
     fi
 }
 
@@ -294,27 +331,65 @@ log_echo() {
 }
 
 # Structured output helpers
+repeat_char() {
+    local char="$1"
+    local count="$2"
+    local out=""
+
+    while [ "$count" -gt 0 ]; do
+        out="${out}${char}"
+        count=$((count - 1))
+    done
+
+    printf '%s' "$out"
+}
+
+print_midterm_banner() {
+    echo ""
+    echo -e "            ${WHITE}//   \\\\${NC}"
+    echo -e "           ${WHITE}//     \\\\         __  __ _     _ _____${NC}"
+    echo -e "          ${WHITE}//       \\\\       |  \\/  (_) __| |_   _|__ _ __ _ __ ___${NC}"
+    echo -e "         ${WHITE}//  ( ${CYAN}·${WHITE} )  \\\\      | |\\/| | |/ _\` | | |/ _ \\\\ '__| '_ \` _ \\\\${NC}"
+    echo -e "        ${WHITE}//           \\\\     | |  | | | (_| | | |  __/ |  | | | | | |${NC}"
+    echo -e "       ${WHITE}//             \\\\    |_|  |_|_|\\__,_| |_|\\___|_|  |_| |_| |_|${NC}"
+    echo -e "      ${WHITE}//               \\\\   ${GREEN}by J. Schmidt - https://github.com/tlbx-ai/MidTerm${NC}"
+    echo ""
+}
+
 print_phase() {
     local title="$1"
-    local pad_len=$((38 - ${#title}))
+    local prefix="── ${title} "
+    local pad_len=$((PHASE_RULE_WIDTH - ${#prefix}))
     [ $pad_len -lt 2 ] && pad_len=2
-    local padding=$(printf '─%.0s' $(seq 1 $pad_len))
+    local padding
+    padding=$(repeat_char '─' "$pad_len")
     echo ""
-    echo -e "  ${CYAN}── ${title} ${padding}${NC}"
+    echo -e "  ${CYAN}${prefix}${padding}${NC}"
 }
 
 print_status() {
     local label="$1"
     local value="$2"
     local color="${3:-$GRAY}"
-    printf "  %-14s: %b%s%b\n" "$label" "$color" "$value" "$NC"
+    printf "  %-*s : %b%s%b\n" "$STATUS_LABEL_WIDTH" "$label" "$color" "$value" "$NC"
 }
 
 print_step() {
     local label="$1"
     local status="$2"
     local color="${3:-$GREEN}"
-    printf "  %-34s%b%s%b\n" "$label" "$color" "$status" "$NC"
+    printf "  %-*s %b%s%b\n" "$STEP_LABEL_WIDTH" "$label" "$color" "$status" "$NC"
+}
+
+print_step_inline() {
+    local label="$1"
+    printf "  %-*s " "$STEP_LABEL_WIDTH" "$label"
+}
+
+finish_step_inline() {
+    local status="$1"
+    local color="${2:-$GREEN}"
+    echo -e "${color}${status}${NC}"
 }
 
 # Variables passed through sudo
@@ -364,9 +439,8 @@ setup_logging() {
 }
 
 print_header() {
-    echo ""
-    echo -e "${CYAN}  MidTerm Installer${NC}"
-    echo -e "${CYAN}  ========================${NC}"
+    print_midterm_banner
+    echo -e "  ${CYAN}Installer${NC}"
     echo ""
 }
 
@@ -445,7 +519,9 @@ get_latest_release() {
     }
 
     if [ "$DEV_CHANNEL" = true ]; then
-        printf "  Fetching latest dev release...        "
+        local fetch_status="done"
+        local fetch_color="$GREEN"
+        print_step_inline "Fetching latest dev release..."
         # Fetch all releases and find first prerelease
         ALL_RELEASES=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases")
 
@@ -472,7 +548,8 @@ get_latest_release() {
         ')
 
         if [ -z "$RELEASE_INFO" ]; then
-            echo -e "${YELLOW}No dev releases found, falling back to latest stable...${NC}"
+            fetch_status="dev missing, using stable"
+            fetch_color="$YELLOW"
             RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
         fi
 
@@ -480,14 +557,15 @@ get_latest_release() {
         ASSET_URL=$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")
 
         if [ -z "$ASSET_URL" ]; then
+            finish_step_inline "failed" "$RED"
             echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
             exit 1
         fi
 
-        echo -e "${GREEN}done${NC}"
+        finish_step_inline "$fetch_status" "$fetch_color"
         print_status "Version" "$VERSION" "$CYAN"
     else
-        printf "  Fetching latest release...            "
+        print_step_inline "Fetching latest release..."
         RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest" 2>/dev/null || true)
         if [ -n "$RELEASE_INFO" ]; then
             VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v?//')
@@ -502,11 +580,12 @@ get_latest_release() {
         fi
 
         if [ -z "$ASSET_URL" ]; then
+            finish_step_inline "failed" "$RED"
             echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
             exit 1
         fi
 
-        echo -e "${GREEN}done${NC}"
+        finish_step_inline "done" "$GREEN"
         print_status "Version" "$VERSION" "$CYAN"
     fi
 }
@@ -918,6 +997,14 @@ show_certificate_fingerprint() {
         return
     fi
 
+    if ! command_exists openssl; then
+        echo ""
+        echo -e "  ${YELLOW}Certificate fingerprint unavailable: openssl not installed.${NC}"
+        echo -e "  ${GRAY}Install openssl if you want the SHA-256 fingerprint displayed here.${NC}"
+        echo ""
+        return
+    fi
+
     # Compute SHA-256 fingerprint using openssl
     local fingerprint
     fingerprint=$(openssl x509 -in "$cert_path" -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)
@@ -950,12 +1037,12 @@ generate_certificate() {
     log "  install_dir: $install_dir"
     log "  settings_dir: $settings_dir"
     log "  is_service: $is_service"
-    printf "  Generating certificate...              "
+    print_step_inline "Generating certificate..."
 
     local mt_path="$install_dir/mt"
     if [ ! -f "$mt_path" ]; then
         log "mt not found at $mt_path" "ERROR"
-        echo -e "${RED}failed (mt not found)${NC}"
+        finish_step_inline "failed (mt not found)" "$RED"
         return 1
     fi
 
@@ -976,7 +1063,7 @@ generate_certificate() {
 
     if [ $exit_code -ne 0 ]; then
         log "Certificate generation failed" "ERROR"
-        echo -e "${RED}failed${NC}"
+        finish_step_inline "failed" "$RED"
         return 1
     fi
 
@@ -992,7 +1079,7 @@ generate_certificate() {
     fi
 
     log "Certificate path: $CERT_PATH"
-    echo -e "${GREEN}done${NC}"
+    finish_step_inline "done" "$GREEN"
 
     return 0
 }
@@ -1136,6 +1223,12 @@ check_existing_certificate() {
     local cert_path="$1"
     [ ! -f "$cert_path" ] && return 1
 
+    if ! command_exists openssl; then
+        print_step "Certificate..." "preserved (inspection unavailable)"
+        log "openssl not installed; preserving existing certificate without expiry inspection" "WARN"
+        return 0
+    fi
+
     # Check expiry using openssl
     local expiry_date
     expiry_date=$(openssl x509 -in "$cert_path" -noout -enddate 2>/dev/null | cut -d= -f2)
@@ -1188,14 +1281,21 @@ execute_certificate_trust() {
         return 0
     fi
 
+    # Trust is best-effort. If this fails, the install is still usable and the
+    # user can trust the certificate manually later.
     if [ "$(uname -s)" = "Darwin" ]; then
         local existing_hashes current_hash
         existing_hashes=$(security find-certificate -a -Z -c ai.tlbx.midterm /Library/Keychains/System.keychain 2>/dev/null | \
             sed -n 's/^SHA-256 hash: //p')
-        current_hash=$(openssl x509 -in "$cert_path" -noout -fingerprint -sha256 2>/dev/null | \
-            cut -d= -f2 | tr -d ':')
+        if command_exists openssl; then
+            current_hash=$(openssl x509 -in "$cert_path" -noout -fingerprint -sha256 2>/dev/null | \
+                cut -d= -f2 | tr -d ':')
+        else
+            current_hash=""
+            log "openssl not installed; skipping stale certificate cleanup before trusting current macOS certificate" "WARN"
+        fi
 
-        if [ -n "$existing_hashes" ]; then
+        if [ -n "$existing_hashes" ] && [ -n "$current_hash" ]; then
             while IFS= read -r cert_hash; do
                 [ -z "$cert_hash" ] && continue
                 if [ -n "$current_hash" ] && [ "$cert_hash" = "$current_hash" ]; then
@@ -1337,30 +1437,30 @@ install_binary() {
     local archive_path="$temp_dir/$ASSET_NAME"
 
     log "Downloading from: $ASSET_URL"
-    printf "  Downloading v%s...                  " "$VERSION"
+    print_step_inline "Downloading v${VERSION}..."
     if ! download_to_file "$ASSET_URL" "$archive_path" "$ASSET_NAME"; then
         log "Download failed for $ASSET_NAME" "ERROR"
-        echo -e "${RED}failed${NC}"
+        finish_step_inline "failed" "$RED"
         echo -e "  ${YELLOW}Could not download a valid release archive using $DOWNLOAD_TOOL_NAME.${NC}"
         echo -e "  ${GRAY}URL: $ASSET_URL${NC}"
         echo -e "  ${GRAY}Temp file: $archive_path${NC}"
         rm -rf "$temp_dir"
         exit 1
     fi
-    echo -e "${GREEN}done${NC}"
+    finish_step_inline "done" "$GREEN"
     log "Download complete"
 
     log "Extracting to: $temp_dir"
-    printf "  Extracting binaries...                "
+    print_step_inline "Extracting binaries..."
     if ! tar -xzf "$archive_path" -C "$temp_dir"; then
         log "Extraction failed for $archive_path" "ERROR"
-        echo -e "${RED}failed${NC}"
+        finish_step_inline "failed" "$RED"
         echo -e "  ${YELLOW}Downloaded archive could not be extracted.${NC}"
         echo -e "  ${GRAY}Archive: $archive_path${NC}"
         rm -rf "$temp_dir"
         exit 1
     fi
-    echo -e "${GREEN}done${NC}"
+    finish_step_inline "done" "$GREEN"
 
     if ! require_extracted_binaries "$temp_dir"; then
         rm -rf "$temp_dir"
@@ -1414,7 +1514,8 @@ install_as_service() {
     local lib_dir="/usr/local/lib/MidTerm"
     local settings_dir="$UNIX_SERVICE_SETTINGS_DIR"
 
-    # Check for root FIRST - don't initialize logging until elevated (requires write to /usr/local)
+    # Check for root first. Service-mode logging lives under /usr/local/var/log,
+    # so we do not initialize the service log file until the elevated leg.
     if [ "$EUID" -ne 0 ]; then
         if ! command_exists sudo; then
             echo ""
@@ -1539,14 +1640,17 @@ install_as_service() {
         esac
     fi
 
-    # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
+    # Store password in secure secrets storage. A failed new/replacement write is
+    # fatal; we do not want to continue into a misleading partially secured state.
     if [ "$should_write_password" = true ] && [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode 2>/dev/null; then
             log "Password stored in secure secrets storage"
             print_step "Storing password..." "done"
         else
-            log "Failed to store password in secure storage" "WARN"
-            print_step "Storing password..." "warning" "$YELLOW"
+            log "Failed to store password in secure secrets storage" "ERROR"
+            print_step "Storing password..." "failed" "$RED"
+            echo -e "  ${RED}Password setup did not complete. Installation aborted to avoid an insecure state.${NC}"
+            exit 1
         fi
     fi
 
@@ -1569,7 +1673,8 @@ install_as_service() {
     fi
 
     log "=== PHASE 4: Writing settings ==="
-    # Write settings with runAsUser info
+    # Write only installer-owned settings here. Existing user preferences remain
+    # in settings.json and are merged by mt on first start.
     if [ -n "$INSTALLING_USER" ] && [ -n "$INSTALLING_UID" ]; then
         write_service_settings
         log "Settings written to $settings_dir/settings.json"
@@ -1626,7 +1731,7 @@ install_launchd() {
     log "  Plist path: $plist_path"
     log "  Install dir: $install_dir"
     log "  Service user: $INSTALLING_USER"
-    printf "  Creating launchd service...            "
+    print_step_inline "Creating launchd service..."
 
     # Create log directory and ensure log files are owned by the service user.
     # The self-update script runs as the service user and needs write access to these files.
@@ -1756,7 +1861,7 @@ LAUNCHER_EOF
     # the subsequent bootstrap can fail with "error 5: Input/output error"
     sleep 2
 
-    echo -e "${GREEN}done${NC}"
+    finish_step_inline "done" "$GREEN"
 
     # Migration: remove old org launchd service
     local old_org_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist"
@@ -1813,7 +1918,7 @@ EOF
 
     # Load and start service
     log "Starting launchd service..."
-    printf "  Starting service...                   "
+    print_step_inline "Starting service..."
 
     # Bootstrap registers the service with launchd (modern macOS).
     # After bootout, launchd may still be cleaning up — retry with backoff.
@@ -1839,7 +1944,7 @@ EOF
     else
         bootstrap_ok=false
         log "Service NOT found in launchd after all registration attempts" "ERROR"
-        echo -e "${RED}failed${NC}"
+        finish_step_inline "failed" "$RED"
         echo -e "  ${GRAY}Check logs at: /usr/local/var/log/MidTerm.log${NC}"
         return 1
     fi
@@ -1869,7 +1974,7 @@ EOF
 
     if [ -n "$pid" ]; then
         log "Service started successfully with PID $pid (via pgrep)"
-        echo -e "${GREEN}done (PID $pid)${NC}"
+        finish_step_inline "done (PID $pid)" "$GREEN"
     else
         # Method 2: Parse launchctl list output (JSON-like format)
         # Note: launchctl list $LABEL returns JSON-like dict, NOT tabular format
@@ -1886,17 +1991,17 @@ EOF
 
         if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
             log "Service started successfully with PID $pid (via launchctl)"
-            echo -e "${GREEN}done (PID $pid)${NC}"
+            finish_step_inline "done (PID $pid)" "$GREEN"
         else
             # Service registered but not running - check for errors
             log "Service not running. Last exit code: $last_exit" "WARN"
 
             if [ -n "$last_exit" ] && [ "$last_exit" != "0" ] 2>/dev/null; then
                 log "Service failed to start with exit code $last_exit" "ERROR"
-                echo -e "${RED}failed (exit code: $last_exit)${NC}"
+                finish_step_inline "failed (exit code: $last_exit)" "$RED"
             else
                 log "Service registered but may still be starting" "WARN"
-                echo -e "${YELLOW}starting...${NC}"
+                finish_step_inline "starting..." "$YELLOW"
             fi
             echo -e "  ${GRAY}Check logs: tail -f /usr/local/var/log/MidTerm.log${NC}"
         fi
@@ -1967,7 +2072,7 @@ install_systemd() {
     local service_path="/etc/systemd/system/${SERVICE_NAME}.service"
     local old_host_service="/etc/systemd/system/${OLD_HOST_SERVICE_NAME}.service"
 
-    printf "  Creating systemd service...            "
+    print_step_inline "Creating systemd service..."
 
     # Unload existing service if present
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
@@ -2001,10 +2106,10 @@ Environment=PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
 WantedBy=multi-user.target
 EOF
 
-    echo -e "${GREEN}done${NC}"
+    finish_step_inline "done" "$GREEN"
 
     # Reload and start service
-    printf "  Starting service...                   "
+    print_step_inline "Starting service..."
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
 
@@ -2012,12 +2117,12 @@ EOF
         # Give it a moment to initialize
         sleep 1
         if systemctl is-active --quiet "$SERVICE_NAME"; then
-            echo -e "${GREEN}done${NC}"
+            finish_step_inline "done" "$GREEN"
         else
-            echo -e "${YELLOW}starting...${NC}"
+            finish_step_inline "starting..." "$YELLOW"
         fi
     else
-        echo -e "${RED}failed${NC}"
+        finish_step_inline "failed" "$RED"
         echo -e "  ${GRAY}Check logs with: journalctl -u $SERVICE_NAME -f${NC}"
     fi
 }
@@ -2108,14 +2213,17 @@ install_as_user() {
         fi
     fi
 
-    # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
+    # Store password in secure secrets storage. Like service mode, this is fatal
+    # for a new/replacement password if the secret cannot be persisted.
     if [ "$should_write_password" = true ] && [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash 2>/dev/null; then
             log "Password stored in secure secrets storage"
             print_step "Storing password..." "done"
         else
-            log "Failed to store password in secure storage" "WARN"
-            print_step "Storing password..." "warning" "$YELLOW"
+            log "Failed to store password in secure secrets storage" "ERROR"
+            print_step "Storing password..." "failed" "$RED"
+            echo -e "  ${RED}Password setup did not complete. Installation aborted to avoid an insecure state.${NC}"
+            exit 1
         fi
     fi
 
@@ -2199,6 +2307,8 @@ EOF
 
 detect_existing_install() {
     # Probe for existing installations (quiet — sets globals for display)
+    EXISTING_SERVICE_PRESENT=false
+    EXISTING_USER_PRESENT=false
     EXISTING_SERVICE_VERSION=""
     EXISTING_USER_VERSION=""
     EXISTING_SERVICE_PASSWORD=false
@@ -2209,6 +2319,11 @@ detect_existing_install() {
     EXISTING_USER_CERT_DAYS=""
 
     # Service install
+    if [ -f "$UNIX_SERVICE_BIN_DIR/mt" ] || [ -f "$UNIX_SERVICE_BIN_DIR/mthost" ] || \
+        [ -d "$UNIX_SERVICE_SETTINGS_DIR" ] || [ -d "/usr/local/lib/MidTerm" ] || \
+        [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ] || [ -f "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" ]; then
+        EXISTING_SERVICE_PRESENT=true
+    fi
     if [ -f "$UNIX_SERVICE_BIN_DIR/mt" ]; then
         EXISTING_SERVICE_VERSION=$("$UNIX_SERVICE_BIN_DIR/mt" --version 2>/dev/null || echo "installed")
     fi
@@ -2217,23 +2332,29 @@ detect_existing_install() {
     fi
     local svc_cert="$UNIX_SERVICE_SETTINGS_DIR/midterm.pem"
     if [ -f "$svc_cert" ]; then
-        local expiry
-        expiry=$(openssl x509 -in "$svc_cert" -noout -enddate 2>/dev/null | cut -d= -f2)
-        if [ -n "$expiry" ]; then
-            local exp_ts now_ts
-            exp_ts=$(date -d "$expiry" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry" +%s 2>/dev/null)
-            now_ts=$(date +%s)
-            if [ -n "$exp_ts" ]; then
-                local days=$(( (exp_ts - now_ts) / 86400 ))
-                if [ $days -gt 0 ]; then
-                    EXISTING_SERVICE_CERT=true
-                    EXISTING_SERVICE_CERT_DAYS="$days"
+        EXISTING_SERVICE_CERT=true
+        if command_exists openssl; then
+            local expiry
+            expiry=$(openssl x509 -in "$svc_cert" -noout -enddate 2>/dev/null | cut -d= -f2)
+            if [ -n "$expiry" ]; then
+                local exp_ts now_ts
+                exp_ts=$(date -d "$expiry" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry" +%s 2>/dev/null)
+                now_ts=$(date +%s)
+                if [ -n "$exp_ts" ]; then
+                    local days=$(( (exp_ts - now_ts) / 86400 ))
+                    if [ $days -gt 0 ]; then
+                        EXISTING_SERVICE_CERT_DAYS="$days"
+                    fi
                 fi
             fi
         fi
     fi
 
     # User install
+    if [ -f "$HOME/.local/bin/mt" ] || [ -f "$HOME/.local/bin/mthost" ] || \
+        [ -d "$HOME/.local/lib/MidTerm" ] || [ -d "$UNIX_USER_SETTINGS_DIR" ]; then
+        EXISTING_USER_PRESENT=true
+    fi
     if [ -f "$HOME/.local/bin/mt" ]; then
         EXISTING_USER_VERSION=$("$HOME/.local/bin/mt" --version 2>/dev/null || echo "installed")
     fi
@@ -2242,17 +2363,19 @@ detect_existing_install() {
     fi
     local usr_cert="$UNIX_USER_SETTINGS_DIR/midterm.pem"
     if [ -f "$usr_cert" ]; then
-        local expiry
-        expiry=$(openssl x509 -in "$usr_cert" -noout -enddate 2>/dev/null | cut -d= -f2)
-        if [ -n "$expiry" ]; then
-            local exp_ts now_ts
-            exp_ts=$(date -d "$expiry" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry" +%s 2>/dev/null)
-            now_ts=$(date +%s)
-            if [ -n "$exp_ts" ]; then
-                local days=$(( (exp_ts - now_ts) / 86400 ))
-                if [ $days -gt 0 ]; then
-                    EXISTING_USER_CERT=true
-                    EXISTING_USER_CERT_DAYS="$days"
+        EXISTING_USER_CERT=true
+        if command_exists openssl; then
+            local expiry
+            expiry=$(openssl x509 -in "$usr_cert" -noout -enddate 2>/dev/null | cut -d= -f2)
+            if [ -n "$expiry" ]; then
+                local exp_ts now_ts
+                exp_ts=$(date -d "$expiry" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry" +%s 2>/dev/null)
+                now_ts=$(date +%s)
+                if [ -n "$exp_ts" ]; then
+                    local days=$(( (exp_ts - now_ts) / 86400 ))
+                    if [ $days -gt 0 ]; then
+                        EXISTING_USER_CERT_DAYS="$days"
+                    fi
                 fi
             fi
         fi
@@ -2260,15 +2383,20 @@ detect_existing_install() {
 
     # Show existing install info
     local has_existing=false
-    if [ -n "$EXISTING_SERVICE_VERSION" ] || [ -n "$EXISTING_USER_VERSION" ]; then
+    if [ "$EXISTING_SERVICE_PRESENT" = true ] || [ "$EXISTING_USER_PRESENT" = true ] || \
+        [ -n "$EXISTING_SERVICE_VERSION" ] || [ -n "$EXISTING_USER_VERSION" ]; then
         has_existing=true
     fi
 
     if [ "$has_existing" = true ]; then
         print_phase "Existing Install"
 
-        if [ -n "$EXISTING_SERVICE_VERSION" ]; then
-            print_status "Version" "$EXISTING_SERVICE_VERSION" "$CYAN"
+        if [ "$EXISTING_SERVICE_PRESENT" = true ]; then
+            if [ -n "$EXISTING_SERVICE_VERSION" ]; then
+                print_status "Version" "$EXISTING_SERVICE_VERSION" "$CYAN"
+            else
+                print_status "Version" "present (traces detected)" "$YELLOW"
+            fi
             print_status "Location" "$UNIX_SERVICE_BIN_DIR/mt"
 
             if [ "$EXISTING_SERVICE_PASSWORD" = true ]; then
@@ -2278,12 +2406,26 @@ detect_existing_install() {
             fi
 
             if [ "$EXISTING_SERVICE_CERT" = true ]; then
-                print_status "Certificate" "valid ($EXISTING_SERVICE_CERT_DAYS days left)" "$GREEN"
+                if [ -n "$EXISTING_SERVICE_CERT_DAYS" ]; then
+                    print_status "Certificate" "valid ($EXISTING_SERVICE_CERT_DAYS days left)" "$GREEN"
+                else
+                    print_status "Certificate" "present (inspection unavailable)" "$YELLOW"
+                fi
             else
                 print_status "Certificate" "not found or expired" "$YELLOW"
             fi
-        elif [ -n "$EXISTING_USER_VERSION" ]; then
-            print_status "Version" "$EXISTING_USER_VERSION" "$CYAN"
+        fi
+
+        if [ "$EXISTING_SERVICE_PRESENT" = true ] && [ "$EXISTING_USER_PRESENT" = true ]; then
+            echo ""
+        fi
+
+        if [ "$EXISTING_USER_PRESENT" = true ]; then
+            if [ -n "$EXISTING_USER_VERSION" ]; then
+                print_status "Version" "$EXISTING_USER_VERSION" "$CYAN"
+            else
+                print_status "Version" "present (traces detected)" "$YELLOW"
+            fi
             print_status "Location" "$HOME/.local/bin/mt"
 
             if [ "$EXISTING_USER_PASSWORD" = true ]; then
@@ -2293,7 +2435,11 @@ detect_existing_install() {
             fi
 
             if [ "$EXISTING_USER_CERT" = true ]; then
-                print_status "Certificate" "valid ($EXISTING_USER_CERT_DAYS days left)" "$GREEN"
+                if [ -n "$EXISTING_USER_CERT_DAYS" ]; then
+                    print_status "Certificate" "valid ($EXISTING_USER_CERT_DAYS days left)" "$GREEN"
+                else
+                    print_status "Certificate" "present (inspection unavailable)" "$YELLOW"
+                fi
             else
                 print_status "Certificate" "not found or expired" "$YELLOW"
             fi
@@ -2301,6 +2447,27 @@ detect_existing_install() {
     else
         print_phase "New Install"
         echo -e "  ${GRAY}No existing installation detected${NC}"
+    fi
+}
+
+enforce_cross_mode_policy() {
+    # Service mode and user mode are both supported, but the installer refuses
+    # to let them coexist. That keeps upgrades and uninstall/repair behavior
+    # deterministic instead of guessing which install should "win".
+    if [ "$SERVICE_MODE" = true ] && [ "$EXISTING_USER_PRESENT" = true ]; then
+        echo ""
+        echo -e "  ${RED}Cannot install as a system service while a user install still exists.${NC}"
+        echo -e "  ${GRAY}Uninstall the user-mode copy first, then rerun the installer.${NC}"
+        echo -e "  ${GRAY}User traces: ~/.local/bin/mt or ~/.midterm${NC}"
+        exit 1
+    fi
+
+    if [ "$SERVICE_MODE" != true ] && [ "$EXISTING_SERVICE_PRESENT" = true ]; then
+        echo ""
+        echo -e "  ${RED}Cannot install in user mode while a system service install still exists.${NC}"
+        echo -e "  ${GRAY}Uninstall the service-mode copy first, then rerun the installer.${NC}"
+        echo -e "  ${GRAY}Service traces: /usr/local/bin/mt or /usr/local/etc/midterm${NC}"
+        exit 1
     fi
 }
 
@@ -2381,6 +2548,7 @@ detect_platform
 get_latest_release
 detect_existing_install
 prompt_service_mode
+enforce_cross_mode_policy
 
 # Start logging for user mode (service mode logging starts after sudo elevation)
 if [ "$SERVICE_MODE" != true ]; then

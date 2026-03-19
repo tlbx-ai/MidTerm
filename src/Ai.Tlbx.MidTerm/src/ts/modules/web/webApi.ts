@@ -12,6 +12,7 @@ export interface WebPreviewSessionInfo {
   routeKey: string;
   url: string | null;
   active: boolean;
+  targetRevision: number;
 }
 
 export interface WebPreviewSessionListResponse {
@@ -24,6 +25,7 @@ export interface WebPreviewTargetResponse {
   routeKey: string;
   url: string | null;
   active: boolean;
+  targetRevision: number;
 }
 
 export interface BrowserPreviewClientResponse {

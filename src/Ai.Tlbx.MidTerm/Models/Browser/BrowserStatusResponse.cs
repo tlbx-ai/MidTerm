@@ -3,7 +3,15 @@ namespace Ai.Tlbx.MidTerm.Models.Browser;
 public sealed class BrowserStatusResponse
 {
     public bool Connected { get; init; }
+    public bool Controllable { get; init; }
+    public bool HasTarget { get; init; }
+    public bool HasUiClient { get; init; }
+    public bool IsScoped { get; init; }
+    public string State { get; init; } = "disconnected";
+    public string? ScopeDescription { get; init; }
+    public string? StatusMessage { get; init; }
     public int ConnectedClientCount { get; init; }
+    public int TotalConnectedClientCount { get; init; }
     public int ConnectedUiClientCount { get; init; }
     public string? TargetUrl { get; init; }
     public BrowserClientInfo? DefaultClient { get; init; }

@@ -20,6 +20,12 @@ import { createLogger } from '../logging';
 import { getAgentGuidanceFile } from '../midtermGuidance';
 import { isDevMode } from '../sidebar/voiceSection';
 import {
+  buildPreviewLoadToken,
+  PREVIEW_LOAD_TOKEN_ATTRIBUTE,
+  PREVIEW_LOAD_TOKEN_DATASET_KEY,
+  shouldReloadPreviewFrame,
+} from './previewLoadToken';
+import {
   getActiveDockedClient,
   getActivePreview,
   getActivePreviewName,
@@ -553,11 +559,12 @@ export async function loadPreview(): Promise<void> {
   const previewName = getActivePreviewName();
   const currentPreview = getActivePreview();
   const currentUrl = currentPreview?.url ?? $webPreviewUrl.get();
+  const currentTargetRevision = currentPreview?.targetRevision ?? 0;
   const frameKey = sessionId ? getPreviewFrameKey(sessionId, previewName) : null;
-  loadedUrl = currentUrl;
 
   if (!currentUrl || !sessionId) {
     setVisiblePreviewFrame(null);
+    loadedUrl = null;
     return;
   }
 
@@ -587,14 +594,23 @@ export async function loadPreview(): Promise<void> {
       previewClient,
       previewClient.origin ?? window.location.origin,
     );
-    if (frame.src !== proxyUrl) {
+    if (shouldReloadPreviewFrame(frame, proxyUrl, currentUrl, currentTargetRevision)) {
+      if (frame.src === proxyUrl) {
+        frame.src = 'about:blank';
+      }
       frame.src = proxyUrl;
     }
+    frame.dataset[PREVIEW_LOAD_TOKEN_DATASET_KEY] = buildPreviewLoadToken(
+      currentUrl,
+      currentTargetRevision,
+    );
     setVisiblePreviewFrame(frameKey);
+    loadedUrl = currentUrl;
   } catch {
     frame.name = '';
     frame.src = 'about:blank';
     frame.classList.add('hidden');
+    frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
   }
 }
 
@@ -679,6 +695,7 @@ export function unloadIframe(sessionId?: string | null, previewName?: string | n
     frame.name = '';
     frame.src = 'about:blank';
     frame.classList.add('hidden');
+    frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
   }
 
   if (activeFrameKey === frameKey) {

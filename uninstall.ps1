@@ -21,11 +21,26 @@ $CertificateSubject = "CN=ai.tlbx.midterm"
 $WIN_SERVICE_SETTINGS_DIR = "$env:ProgramData\MidTerm"
 $WIN_SERVICE_INSTALL_DIR = "$env:ProgramFiles\MidTerm"
 
-function Write-Header
+function Write-Banner
 {
     Write-Host ""
-    Write-Host "  MidTerm Uninstaller" -ForegroundColor Cyan
-    Write-Host "  ===================" -ForegroundColor Cyan
+    Write-Host "            //   \\" -ForegroundColor White
+    Write-Host "           //     \\         __  __ _     _ _____" -ForegroundColor White
+    Write-Host "          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___" -ForegroundColor White
+    Write-Host "         //  ( " -NoNewline -ForegroundColor White
+    Write-Host "·" -NoNewline -ForegroundColor Cyan
+    Write-Host " )  \\      | |\/| | |/ _` | | |/ _ \\ '__| '_ ` _ \\" -ForegroundColor White
+    Write-Host "        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |" -ForegroundColor White
+    Write-Host "       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|" -ForegroundColor White
+    Write-Host "      //               \\   " -NoNewline -ForegroundColor White
+    Write-Host "by J. Schmidt - https://github.com/tlbx-ai/MidTerm" -ForegroundColor Green
+    Write-Host ""
+}
+
+function Write-Header
+{
+    Write-Banner
+    Write-Host "  Uninstaller" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -384,16 +399,6 @@ if ($serviceTraces)
             "-OriginalLocalAppData", $OriginalLocalAppData,
             "-OriginalTempRoot", $OriginalTempRoot
         )
-
-        if (Get-Command sudo -ErrorAction SilentlyContinue)
-        {
-            & sudo $psExe @baseArguments
-            if ($LASTEXITCODE -ne 0)
-            {
-                exit $LASTEXITCODE
-            }
-            return
-        }
 
         $proc = Start-Process $psExe -ArgumentList $baseArguments -Verb RunAs -PassThru
         $proc.WaitForExit()

@@ -389,7 +389,7 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public void Load_InvalidMergeSettings_DeletesMergeFileAndContinues()
+    public void Load_InvalidMergeSettings_KeepsMergeFileForRetry_AndContinues()
     {
         if (!OperatingSystem.IsWindows()) return;
 
@@ -403,7 +403,7 @@ public sealed class SettingsServiceTests : IDisposable
         var loaded = service.Load();
 
         Assert.NotNull(loaded);
-        Assert.False(File.Exists(mergePath));
+        Assert.True(File.Exists(mergePath));
     }
 
     [Fact]

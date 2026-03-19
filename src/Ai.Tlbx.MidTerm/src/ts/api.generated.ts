@@ -3492,8 +3492,17 @@ export interface components {
     };
     BrowserStatusResponse: {
       connected: boolean;
+      controllable: boolean;
+      hasTarget: boolean;
+      hasUiClient: boolean;
+      isScoped: boolean;
+      state: string;
+      scopeDescription: null | string;
+      statusMessage: null | string;
       /** Format: int32 */
       connectedClientCount: number;
+      /** Format: int32 */
+      totalConnectedClientCount: number;
       /** Format: int32 */
       connectedUiClientCount: number;
       targetUrl: null | string;
@@ -4171,6 +4180,8 @@ export interface components {
       routeKey: string;
       url: null | string;
       active: boolean;
+      /** Format: int64 */
+      targetRevision: number;
     };
     WebPreviewSessionListResponse: {
       previews: components['schemas']['WebPreviewSessionInfo'][];
@@ -4198,6 +4209,8 @@ export interface components {
       routeKey: null | string;
       url: null | string;
       active: boolean;
+      /** Format: int64 */
+      targetRevision: number;
     };
     WorkerBootstrapRequest: {
       name?: null | string;

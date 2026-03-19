@@ -24,7 +24,7 @@ public static class BrowserEndpoints
 
         if (uiBridge is not null)
         {
-            MapUiEndpoints(app, uiBridge);
+            MapUiEndpoints(app, uiBridge, webPreviewService);
         }
     }
 
@@ -46,6 +46,20 @@ public static class BrowserEndpoints
                 previewId,
                 uiBridge?.ConnectedBrowserCount ?? 0);
             return Results.Json(status, AppJsonContext.Default.BrowserStatusResponse);
+        });
+
+        app.MapGet("/api/browser/status-text", (string? sessionId, string? previewName, string? previewId) =>
+        {
+            var targetUrl = !string.IsNullOrWhiteSpace(sessionId)
+                ? webPreviewService.GetTargetUrl(sessionId, previewName)
+                : null;
+            var status = commandService.GetStatusText(
+                targetUrl,
+                sessionId,
+                previewName,
+                previewId,
+                uiBridge?.ConnectedBrowserCount ?? 0);
+            return Results.Text(status);
         });
     }
 
@@ -81,7 +95,10 @@ public static class BrowserEndpoints
         });
     }
 
-    private static void MapUiEndpoints(WebApplication app, BrowserUiBridge uiBridge)
+    private static void MapUiEndpoints(
+        WebApplication app,
+        BrowserUiBridge uiBridge,
+        WebPreviewService webPreviewService)
     {
         app.MapPost("/api/browser/detach", (Models.WebPreview.WebPreviewSessionRequest request) =>
         {
@@ -117,10 +134,23 @@ public static class BrowserEndpoints
 
         app.MapPost("/api/browser/open", (Models.WebPreview.WebPreviewTargetRequest request) =>
         {
+            var sessionId = NormalizeOptional(request.SessionId);
+            var previewName = NormalizeOptional(request.PreviewName);
+            var url = request.Url ?? "";
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (!webPreviewService.SetTarget(sessionId, previewName, url))
+            {
+                return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
+            }
+
             return uiBridge.RequestOpen(
-                NormalizeOptional(request.SessionId),
-                NormalizeOptional(request.PreviewName),
-                request.Url ?? "",
+                sessionId,
+                previewName,
+                url,
                 out var error)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
@@ -161,8 +191,8 @@ public static class BrowserEndpoints
                     targetUrl,
                     sessionId,
                     previewName,
-                    previewId).TrimEnd('\n', '\r');
-                status += $"\nui clients: {uiBridge?.ConnectedBrowserCount ?? 0}\n";
+                    previewId,
+                    uiBridge?.ConnectedBrowserCount ?? 0).TrimEnd('\n', '\r');
                 return Results.Text(status);
             }
 

@@ -7,4 +7,5 @@ public sealed class WebPreviewSessionInfo
     public string RouteKey { get; init; } = "";
     public string? Url { get; init; }
     public bool Active { get; init; }
+    public long TargetRevision { get; init; }
 }

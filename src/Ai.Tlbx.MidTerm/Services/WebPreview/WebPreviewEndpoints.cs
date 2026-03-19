@@ -280,7 +280,8 @@ public static partial class WebPreviewEndpoints
             PreviewName = preview.PreviewName,
             RouteKey = preview.RouteKey,
             Url = preview.Url,
-            Active = preview.Active
+            Active = preview.Active,
+            TargetRevision = preview.TargetRevision
         };
     }
 

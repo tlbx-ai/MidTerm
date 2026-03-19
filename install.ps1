@@ -1,6 +1,12 @@
 # MidTerm Windows Installer
 # Usage: irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 # Dev:   & ([scriptblock]::Create((irm https://tlbx-ai.github.io/MidTerm/install.ps1))) -Dev
+#
+# Design goals:
+# - install only official MidTerm release artifacts into known locations
+# - collect interactive choices before elevation so the elevated leg can be replayed
+# - preserve existing auth/settings unless the user explicitly replaces them
+# - keep service-mode and user-mode installs mutually exclusive for predictable repair
 
 param(
     [string]$RunAsUser,
@@ -108,11 +114,51 @@ $WIN_USER_SETTINGS_DIR = "$env:USERPROFILE\.midterm"
 $WIN_SECRETS_FILENAME = "secrets.bin"
 # ============================================================================
 
-function Write-Header
+$script:StatusLabelWidth = 12
+
+function Write-Banner
 {
     Write-Host ""
-    Write-Host "  MidTerm Installer" -ForegroundColor Cyan
-    Write-Host "  ========================" -ForegroundColor Cyan
+    Write-Host "            //   \\" -ForegroundColor White
+    Write-Host "           //     \\         __  __ _     _ _____" -ForegroundColor White
+    Write-Host "          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___" -ForegroundColor White
+    Write-Host "         //  ( " -NoNewline -ForegroundColor White
+    Write-Host "·" -NoNewline -ForegroundColor Cyan
+    Write-Host " )  \\      | |\/| | |/ _` | | |/ _ \\ '__| '_ ` _ \\" -ForegroundColor White
+    Write-Host "        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |" -ForegroundColor White
+    Write-Host "       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|" -ForegroundColor White
+    Write-Host "      //               \\   " -NoNewline -ForegroundColor White
+    Write-Host "by J. Schmidt - https://github.com/tlbx-ai/MidTerm" -ForegroundColor Green
+    Write-Host ""
+}
+
+function Write-Section
+{
+    param([string]$Title)
+
+    $prefix = "  -- $Title "
+    $padLength = [Math]::Max(2, 34 - $prefix.Length)
+    Write-Host ""
+    Write-Host ($prefix + ("-" * $padLength)) -ForegroundColor Cyan
+}
+
+function Write-StatusLine
+{
+    param(
+        [string]$Label,
+        [string]$Value,
+        [ConsoleColor]$Color = [ConsoleColor]::Gray
+    )
+
+    $padded = $Label.PadRight($script:StatusLabelWidth)
+    Write-Host ("  {0} : " -f $padded) -NoNewline
+    Write-Host $Value -ForegroundColor $Color
+}
+
+function Write-Header
+{
+    Write-Banner
+    Write-Host "  Installer" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -167,6 +213,49 @@ function Test-ExistingPassword
         catch { }
     }
     return $false
+}
+
+function Test-ExistingServiceInstall
+{
+    return (
+        (Test-Path $WIN_SERVICE_INSTALL_DIR) -or
+        (Test-Path $WIN_SERVICE_SETTINGS_DIR) -or
+        (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm") -or
+        (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) -or
+        (Get-Service -Name $OldHostServiceName -ErrorAction SilentlyContinue)
+    )
+}
+
+function Test-ExistingUserInstall
+{
+    return (
+        (Test-Path $WIN_USER_INSTALL_DIR) -or
+        (Test-Path $WIN_USER_SETTINGS_DIR) -or
+        (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm")
+    )
+}
+
+function Assert-NoCrossModeConflict
+{
+    param([bool]$AsService)
+
+    if ($AsService -and (Test-ExistingUserInstall))
+    {
+        Write-Host ""
+        Write-Host "  Cannot install as a system service while a user install still exists." -ForegroundColor Red
+        Write-Host "  Uninstall the user-mode copy first, then rerun the installer." -ForegroundColor Gray
+        Write-Host "  User traces: $WIN_USER_INSTALL_DIR or $WIN_USER_SETTINGS_DIR" -ForegroundColor Gray
+        exit 1
+    }
+
+    if (-not $AsService -and (Test-ExistingServiceInstall))
+    {
+        Write-Host ""
+        Write-Host "  Cannot install in user mode while a system service install still exists." -ForegroundColor Red
+        Write-Host "  Uninstall the service-mode copy first, then rerun the installer." -ForegroundColor Gray
+        Write-Host "  Service traces: $WIN_SERVICE_INSTALL_DIR or $WIN_SERVICE_SETTINGS_DIR" -ForegroundColor Gray
+        exit 1
+    }
 }
 
 function Prompt-Password
@@ -764,7 +853,8 @@ function Write-ServiceSettings
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
-    # Build install-time settings for merge
+    # Build install-time settings for merge. These are installer-owned knobs
+    # such as service identity and certificate location, not user preferences.
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
@@ -793,8 +883,9 @@ function Write-ServiceSettings
         Write-Host "  Settings: $settingsPath" -ForegroundColor Gray
     }
 
-    # Store password hash in secure storage (DPAPI-protected secrets.bin)
-    # Use --service-mode to ensure it writes to ProgramData, not user profile
+    # Store password hash in secure storage (DPAPI-protected secrets.bin).
+    # Use --service-mode so it lands in ProgramData instead of the invoking
+    # admin profile. This is intentionally fatal if it fails.
     if ($PasswordHash)
     {
         $mtPath = Join-Path $InstallDir "mt.exe"
@@ -806,7 +897,7 @@ function Write-ServiceSettings
         }
         catch
         {
-            Write-Host "  Warning: Failed to store password in secure storage: $_" -ForegroundColor Yellow
+            throw "Failed to store password in secure storage at $secretsPath. Installation aborted to avoid an insecure state. $_"
         }
     }
 
@@ -1072,16 +1163,15 @@ function Install-MidTerm
         Start-Sleep -Seconds 2
 
         # Show final status
-        Write-Host ""
-        Write-Host "Process Status:" -ForegroundColor Cyan
+        Write-Section "Status"
         $serviceStatus = (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue).Status
         $mmProc = Get-Process -Name "mt" -ErrorAction SilentlyContinue
 
-        if ($serviceStatus -eq "Running") { Write-Host "  Service    : Running" -ForegroundColor Green }
-        else { Write-Host "  Service    : $serviceStatus" -ForegroundColor Red }
+        if ($serviceStatus -eq "Running") { Write-StatusLine "Service" "Running" Green }
+        else { Write-StatusLine "Service" "$serviceStatus" Red }
 
-        if ($mmProc) { Write-Host "  mt (web)   : Running (PID $($mmProc.Id))" -ForegroundColor Green }
-        else { Write-Host "  mt (web)   : Starting..." -ForegroundColor Yellow }
+        if ($mmProc) { Write-StatusLine "mt (web)" "Running (PID $($mmProc.Id))" Green }
+        else { Write-StatusLine "mt (web)" "Starting..." Yellow }
 
         # Check health endpoint (HTTPS with self-signed cert requires SkipCertificateCheck)
         try
@@ -1120,18 +1210,14 @@ public class TrustAllCerts {
 
             if ($health)
             {
-                Write-Host ""
-                Write-Host "Health Check:" -ForegroundColor Cyan
-                if ($health.healthy) { Write-Host "  Status     : Healthy" -ForegroundColor Green }
-                else { Write-Host "  Status     : Unhealthy" -ForegroundColor Red; if ($health.hostError) { Write-Host "  Error      : $($health.hostError)" -ForegroundColor Red } }
-                Write-Host "  Version    : $($health.version)" -ForegroundColor Gray
+                if ($health.healthy) { Write-StatusLine "Health" "Healthy" Green }
+                else { Write-StatusLine "Health" "Unhealthy" Red; if ($health.hostError) { Write-StatusLine "Error" "$($health.hostError)" Red } }
+                Write-StatusLine "Version" "$($health.version)" Gray
             }
         }
         catch
         {
-            Write-Host ""
-            Write-Host "Health Check:" -ForegroundColor Cyan
-            Write-Host "  Status     : Could not connect to https://localhost:$Port" -ForegroundColor Yellow
+            Write-StatusLine "Health" "Could not connect to https://localhost:$Port" Yellow
         }
     }
     else
@@ -1178,7 +1264,7 @@ public class TrustAllCerts {
             }
             catch
             {
-                Write-Host "  Warning: Failed to store password in secure storage: $_" -ForegroundColor Yellow
+                throw "Failed to store password in secure storage at $userSettingsDir\secrets.bin. Installation aborted to avoid an insecure state. $_"
             }
         }
 
@@ -1192,15 +1278,15 @@ public class TrustAllCerts {
     Write-Log "  Settings: $settingsDir"
     Write-Log "=========================================="
 
+    Write-Section "Complete"
+    Write-Host "  Installation complete" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Installation complete!" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "  Location: $installDir" -ForegroundColor Gray
-    Write-Host "  URL:      https://localhost:$Port" -ForegroundColor Cyan
-    Write-Host "  Note:     Browser may show certificate warning until trusted" -ForegroundColor Yellow
+    Write-StatusLine "Location" "$installDir" Gray
+    Write-StatusLine "URL" "https://localhost:$Port" Cyan
+    Write-StatusLine "Note" "Browser may show certificate warning until trusted" Yellow
     if ($AsService -and (Test-NetworkBinding -BindAddress $BindAddress) -and -not $ConfigureFirewall)
     {
-        Write-Host "  Network:  Windows Firewall may still block other PCs from reaching this port" -ForegroundColor Yellow
+        Write-StatusLine "Network" "Windows Firewall may still block other PCs from reaching this port" Yellow
     }
     Write-Host ""
 }
@@ -1353,6 +1439,8 @@ function Create-UninstallScript
 
     $uninstallScript = Join-Path $InstallDir "uninstall.ps1"
 
+    # Keep the local uninstall stub tiny so it always delegates to the latest
+    # published uninstaller instead of freezing old removal logic on disk.
     $content = @"
 # MidTerm Uninstaller
 `$ErrorActionPreference = "Stop"
@@ -1481,10 +1569,13 @@ for ($i = 0; $i -lt $maxAttempts; $i++)
 
 if ($asService)
 {
+    Assert-NoCrossModeConflict -AsService $true
+
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     $installDir = $WIN_SERVICE_INSTALL_DIR
 
-    # Check for existing password in secure storage (preserve on update)
+    # Check for existing password in secure storage so reinstall/update keeps the
+    # current auth state unless the user explicitly chooses Replace.
     if (Test-ExistingPassword)
     {
         $passwordAction = Prompt-ExistingPasswordAction
@@ -1552,32 +1643,9 @@ if ($asService)
         } else {
             (Get-Command powershell -ErrorAction Stop).Source
         }
-        $elevated = $false
-
-        # Strategy 1: Try sudo (Windows 11 24H2+, keeps output in same terminal)
-        if (Get-Command sudo -ErrorAction SilentlyContinue)
-        {
-            try
-            {
-                Write-Host "  Using sudo for elevation..." -ForegroundColor Gray
-                & sudo $psExe @baseArguments
-                if ($LASTEXITCODE -eq 0)
-                {
-                    $elevated = $true
-                }
-                else
-                {
-                    Write-Host "  sudo exited with code $LASTEXITCODE, trying UAC elevation..." -ForegroundColor Yellow
-                }
-            }
-            catch
-            {
-                Write-Host "  sudo failed, trying UAC elevation..." -ForegroundColor Yellow
-            }
-        }
-
-        # Strategy 2: Start-Process -Verb RunAs (UAC prompt, streams output via log file)
-        if (-not $elevated)
+        # Elevate with UAC and stream output via a temp log file.
+        # We intentionally use RunAs only; the built-in Windows path is more
+        # predictable than optional "sudo" support across different machines.
         {
             $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
             if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
@@ -1657,12 +1725,15 @@ if ($asService)
 }
 else
 {
+    Assert-NoCrossModeConflict -AsService $false
+
     # User install - still require password
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     $userSettingsDir = $WIN_USER_SETTINGS_DIR
     $userSecretsPath = Join-Path $userSettingsDir $WIN_SECRETS_FILENAME
 
-    # Check for existing password in secure storage
+    # Check for existing password in secure storage so user-mode reinstalls keep
+    # the current auth state unless the user explicitly chooses Replace.
     $hasExistingPassword = $false
     if (Test-Path $userSecretsPath)
     {

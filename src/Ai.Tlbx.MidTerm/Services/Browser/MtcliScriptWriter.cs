@@ -87,6 +87,38 @@ public static class MtcliScriptWriter
             printf '?sessionId=%s&previewName=%s' "$(_MSID)" "$(_MPREVIEW)"
           fi
         }
+        _MSTATUS_URL() {
+          if [ -n "$(_MSID)" ]; then
+            printf '%s/api/browser/status-text?sessionId=%s&previewName=%s' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
+          elif [ -n "${MT_PREVIEW_NAME:-}" ]; then
+            printf '%s/api/browser/status-text?previewName=%s' "$_MT" "$(_MPREVIEW)"
+          else
+            printf '%s/api/browser/status-text' "$_MT"
+          fi
+        }
+        _MSTATUS() {
+          _MC "$(_MSTATUS_URL)"
+        }
+        _MSTATUSREADY() {
+          case "${1:-}" in
+            *"controllable: yes"*) return 0 ;;
+            *) return 1 ;;
+          esac
+        }
+        _MWAITCONTROLLABLE() {
+          local tries=${1:-25}
+          local i status=""
+          for ((i=0; i<tries; i++)); do
+            status=$(_MSTATUS 2>/dev/null) || true
+            if _MSTATUSREADY "$status"; then
+              printf '%s' "$status"
+              return 0
+            fi
+            sleep 0.2
+          done
+          printf '%s' "$status"
+          return 1
+        }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # mt_query SELECTOR [--text]  — query DOM; --text for text-only (smaller output)
@@ -139,8 +171,23 @@ public static class MtcliScriptWriter
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
         _MJE() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
         mt_navigate()   { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
-        # mt_open URL  — open URL in web preview panel and dock it
-        mt_open()       { mt_navigate "$1"; _MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" "$_MT/api/browser/open"; }
+        # mt_open URL  — open URL in web preview panel, dock it, and wait until controllable
+        mt_open() {
+          local url="$1" open_out status
+          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\"}" "$_MT/api/browser/open") || {
+            local code=$?
+            [ -n "$open_out" ] && printf '%s\n' "$open_out"
+            return $code
+          }
+          status=$(_MWAITCONTROLLABLE 25)
+          local status_code=$?
+          [ -n "$open_out" ] && printf '%s\n' "$open_out"
+          [ -n "$status" ] && printf '%s\n' "$status"
+          if [ $status_code -ne 0 ]; then
+            echo "warning: preview target updated, but no controllable browser attached within 5s." >&2
+            return 1
+          fi
+        }
         # mt_close_preview  — close web preview panel
         mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
         mt_reload()     { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"soft\"}" "$_MT/api/webpreview/reload"; }
@@ -383,7 +430,7 @@ public static class MtcliScriptWriter
         }
 
         # Status
-        mt_status()     { mtbrowser status 2>/dev/null || _MC "$_MT/api/webpreview/target$(_MQ)"; }
+        mt_status()     { _MSTATUS || _MC "$_MT/api/webpreview/target$(_MQ)"; }
 
         # Direct execution: .midterm/mtcli.sh query ".error"
         if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
@@ -505,6 +552,49 @@ public static class MtcliScriptWriter
             if (-not $env:MT_SESSION_ID) { return "" }
             "?sessionId=$([Uri]::EscapeDataString($env:MT_SESSION_ID))&previewName=$([Uri]::EscapeDataString((_MPreview)))"
         }
+        function script:_MStatusUrl {
+            if ($env:MT_SESSION_ID) {
+                return "$script:_MT/api/browser/status-text?sessionId=$([Uri]::EscapeDataString($env:MT_SESSION_ID))&previewName=$([Uri]::EscapeDataString((_MPreview)))"
+            }
+            if ($env:MT_PREVIEW_NAME) {
+                return "$script:_MT/api/browser/status-text?previewName=$([Uri]::EscapeDataString((_MPreview)))"
+            }
+            return "$script:_MT/api/browser/status-text"
+        }
+        function script:_MStatusArgs {
+            $argsList = @("status")
+            if ($env:MT_SESSION_ID) {
+                $argsList += @("--session", $env:MT_SESSION_ID, "--preview", (_MPreview))
+            } elseif ($env:MT_PREVIEW_NAME) {
+                $argsList += @("--preview", (_MPreview))
+            }
+            $argsList
+        }
+        function script:_MStatus {
+            _MC (_MStatusUrl)
+        }
+        function script:_MStatusIsControllable {
+            param([string]$Output)
+            return $Output -like "*controllable: yes*"
+        }
+        function script:_MWaitForControllableStatus {
+            param([int]$Attempts = 25, [int]$DelayMs = 200)
+            $last = ""
+            for ($i = 0; $i -lt $Attempts; $i++) {
+                $last = _MStatus
+                if (_MStatusIsControllable $last) {
+                    return [pscustomobject]@{
+                        Ready = $true
+                        Output = $last
+                    }
+                }
+                Start-Sleep -Milliseconds $DelayMs
+            }
+            [pscustomobject]@{
+                Ready = $false
+                Output = $last
+            }
+        }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # Mt-Query -Selector CSS_SELECTOR [-Text]  — query DOM; -Text for text-only
@@ -561,11 +651,20 @@ public static class MtcliScriptWriter
             param([string]$Url)
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
         }
-        # Mt-Open -Url URL  — open URL in web preview panel and dock it
+        # Mt-Open -Url URL  — open URL in web preview panel, dock it, and wait until controllable
         function Mt-Open {
             param([string]$Url)
-            Mt-Navigate -Url $Url
-            _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) "$script:_MT/api/browser/open"
+            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) "$script:_MT/api/browser/open"
+            $status = _MWaitForControllableStatus
+            if ($openResponse) {
+                $openResponse
+            }
+            if ($status.Output) {
+                $status.Output
+            }
+            if (-not $status.Ready) {
+                throw "Preview target updated, but no controllable browser attached within 5s."
+            }
         }
         # Mt-ClosePreview  — close web preview panel
         function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target$(_MQuery)" }
@@ -835,7 +934,7 @@ public static class MtcliScriptWriter
         }
 
         # Status
-        function Mt-Status     { try { & mtbrowser status 2>$null } catch { Mt-Target } }
+        function Mt-Status     { try { _MStatus } catch { Mt-Target } }
 
         # PowerShell aliases matching the documented mt_* helper names
         Set-Alias -Name mt_query -Value Mt-Query
