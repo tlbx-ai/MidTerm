@@ -243,6 +243,7 @@ detect_service_traces() {
     path_exists "$UNIX_SERVICE_BIN_DIR/mt" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/mthost" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/mt-host" ||
+        path_exists "$UNIX_SERVICE_BIN_DIR/version.json" ||
         path_exists "$UNIX_SERVICE_LIB_DIR" ||
         path_exists "$UNIX_SERVICE_SETTINGS_DIR" ||
         path_exists "$UNIX_SERVICE_LOG_DIR/MidTerm.log" ||
@@ -277,11 +278,49 @@ stop_service_processes() {
         fi
     else
         if command_exists systemctl; then
-            systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
-            systemctl disable "$SERVICE_NAME" >/dev/null 2>&1 || true
-            systemctl stop "$OLD_HOST_SERVICE_NAME" >/dev/null 2>&1 || true
-            systemctl disable "$OLD_HOST_SERVICE_NAME" >/dev/null 2>&1 || true
-            systemctl daemon-reload >/dev/null 2>&1 || true
+            run_systemctl_with_timeout() {
+                local timeout_seconds="$1"
+                shift
+
+                if command_exists timeout; then
+                    timeout "$timeout_seconds" systemctl "$@" >/dev/null 2>&1
+                    return $?
+                fi
+
+                systemctl "$@" >/dev/null 2>&1 &
+                local cmd_pid=$!
+                local waited=0
+
+                while kill -0 "$cmd_pid" >/dev/null 2>&1; do
+                    if [ "$waited" -ge "$timeout_seconds" ]; then
+                        kill "$cmd_pid" >/dev/null 2>&1 || true
+                        wait "$cmd_pid" >/dev/null 2>&1 || true
+                        return 124
+                    fi
+
+                    sleep 1
+                    waited=$((waited + 1))
+                done
+
+                wait "$cmd_pid" >/dev/null 2>&1
+            }
+
+            stop_linux_unit() {
+                local unit_name="$1"
+
+                systemctl kill "$unit_name" >/dev/null 2>&1 || true
+
+                if ! run_systemctl_with_timeout 15 stop "$unit_name"; then
+                    print_warn "Timed out stopping $unit_name; continuing with forced cleanup."
+                    systemctl kill -s SIGKILL "$unit_name" >/dev/null 2>&1 || true
+                fi
+
+                run_systemctl_with_timeout 10 disable "$unit_name" || true
+                systemctl reset-failed "$unit_name" >/dev/null 2>&1 || true
+            }
+
+            stop_linux_unit "$SERVICE_NAME"
+            stop_linux_unit "$OLD_HOST_SERVICE_NAME"
         fi
     fi
 }
@@ -335,6 +374,7 @@ cleanup_service_scope() {
     remove_path "$UNIX_SERVICE_BIN_DIR/mt" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/mthost" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/mt-host" || true
+    remove_path "$UNIX_SERVICE_BIN_DIR/version.json" || true
     remove_path "$UNIX_SERVICE_LIB_DIR" || true
     remove_path "$UNIX_SERVICE_SETTINGS_DIR" || true
     remove_path "$UNIX_SERVICE_LOG_DIR/MidTerm.log" || true
@@ -345,6 +385,8 @@ cleanup_service_scope() {
     remove_system_trust
 
     if [ "$(uname -s)" != "Darwin" ] && command_exists systemctl; then
+        systemctl reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
+        systemctl reset-failed "$OLD_HOST_SERVICE_NAME" >/dev/null 2>&1 || true
         systemctl daemon-reload >/dev/null 2>&1 || true
     fi
 
