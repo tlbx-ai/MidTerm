@@ -733,6 +733,10 @@ public sealed partial class UpdateService : IDisposable
 
     public async Task<(bool Success, string Message)> ApplyUpdateAsync(SettingsService settingsService, string? source)
     {
+        var artifacts = GetUpdateArtifacts(settingsService);
+        ResetUpdateArtifacts(artifacts);
+        AppendUpdateLog(artifacts.LogPath, $"Preparing update request (source={source ?? "github"})");
+
         string? extractedDir;
         UpdateType updateType;
         var deleteSourceAfter = true;
@@ -743,7 +747,7 @@ public sealed partial class UpdateService : IDisposable
             extractedDir = GetLocalUpdatePath();
             if (localUpdate is null || string.IsNullOrEmpty(extractedDir))
             {
-                return (false, "No local update available");
+                return FailUpdate(artifacts, "No local update available");
             }
 
             updateType = localUpdate.Type;
@@ -754,17 +758,20 @@ public sealed partial class UpdateService : IDisposable
             var update = LatestUpdate;
             if (update is null || !update.Available)
             {
-                return (false, "No update available");
+                return FailUpdate(artifacts, "No update available");
             }
 
             extractedDir = await DownloadUpdateAsync();
             if (string.IsNullOrEmpty(extractedDir))
             {
-                return (false, "Failed to download update");
+                return FailUpdate(artifacts, "Failed to download update");
             }
 
             updateType = update.Type;
         }
+
+        AppendUpdateLog(artifacts.LogPath, $"Downloaded update payload to {extractedDir}");
+        AppendUpdateLog(artifacts.LogPath, $"Update type: {updateType}");
 
         if (OperatingSystem.IsLinux() &&
             updateType == UpdateType.WebOnly &&
@@ -773,7 +780,8 @@ public sealed partial class UpdateService : IDisposable
             var applied = TryApplyLinuxServiceWebOnlyUpdate(
                 extractedDir,
                 settingsService.SettingsDirectory,
-                deleteSourceAfter);
+                deleteSourceAfter,
+                artifacts);
             if (!applied.Success)
             {
                 return applied;
@@ -790,50 +798,63 @@ public sealed partial class UpdateService : IDisposable
 
         if (OperatingSystem.IsMacOS())
         {
-            var stagingDir = Path.Combine(settingsService.SettingsDirectory, "update-staging");
-            Directory.CreateDirectory(stagingDir);
-
-            var mtSrc = Path.Combine(extractedDir, "mt");
-            if (File.Exists(mtSrc))
+            if (settingsService.IsRunningAsService)
             {
-                File.Copy(mtSrc, Path.Combine(stagingDir, "mt"), overwrite: true);
-            }
-
-            if (updateType != UpdateType.WebOnly)
-            {
-                var mthostSrc = Path.Combine(extractedDir, "mthost");
-                if (File.Exists(mthostSrc))
+                var staged = TryStageMacOsServiceUpdate(
+                    extractedDir,
+                    settingsService.SettingsDirectory,
+                    updateType,
+                    deleteSourceAfter,
+                    artifacts);
+                if (!staged.Success)
                 {
-                    File.Copy(mthostSrc, Path.Combine(stagingDir, "mthost"), overwrite: true);
+                    return staged;
                 }
             }
-
-            var vjSrc = Path.Combine(extractedDir, "version.json");
-            if (File.Exists(vjSrc))
+            else
             {
-                File.Copy(vjSrc, Path.Combine(stagingDir, "version.json"), overwrite: true);
-            }
-
-            if (deleteSourceAfter)
-            {
-                try { Directory.Delete(extractedDir, recursive: true); } catch { }
+                var applied = TryApplyUnixUserUpdateInProcess(
+                    extractedDir,
+                    updateType,
+                    deleteSourceAfter,
+                    artifacts);
+                if (!applied.Success)
+                {
+                    return applied;
+                }
             }
 
             _ = Task.Run(async () =>
             {
                 await Task.Delay(1000);
+                if (!settingsService.IsRunningAsService)
+                {
+                    TrySpawnReplacementProcess();
+                }
                 Environment.Exit(0);
             });
 
-            return (true, "Update staged. Server will restart shortly.");
+            return (true, settingsService.IsRunningAsService
+                ? "Update staged. Service will restart shortly."
+                : "Update installed. Server will restart shortly.");
         }
 
-        var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
-            extractedDir,
-            GetCurrentBinaryPath(),
-            settingsService.SettingsDirectory,
-            updateType,
-            deleteSourceAfter);
+        string scriptPath;
+        try
+        {
+            scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
+                extractedDir,
+                GetCurrentBinaryPath(),
+                settingsService.SettingsDirectory,
+                updateType,
+                deleteSourceAfter);
+        }
+        catch (Exception ex)
+        {
+            return FailUpdate(artifacts, "Failed to prepare update script", ex.Message);
+        }
+
+        AppendUpdateLog(artifacts.LogPath, $"Generated external update script at {scriptPath}");
 
         // Delay then execute update script
         _ = Task.Run(async () =>
@@ -846,6 +867,8 @@ public sealed partial class UpdateService : IDisposable
             }
             catch (Exception ex)
             {
+                AppendUpdateLog(artifacts.LogPath, $"Update execution failed: {ex.Message}", "ERROR");
+                WriteUpdateResult(artifacts, success: false, "Failed to execute update script", ex.Message);
                 Log.Error(() => $"Update execution failed: {ex.Message}");
             }
         });
@@ -856,34 +879,38 @@ public sealed partial class UpdateService : IDisposable
     private static (bool Success, string Message) TryApplyLinuxServiceWebOnlyUpdate(
         string extractedDir,
         string settingsDirectory,
-        bool deleteSourceAfter)
+        bool deleteSourceAfter,
+        UpdateArtifacts artifacts)
     {
         string? backupDir = null;
         string? currentMtPath = null;
         string? currentVersionJsonPath = null;
         string? backupMtPath = null;
         string? backupVersionJsonPath = null;
+        Action<string, string> writeLog = (message, level) => AppendUpdateLog(artifacts.LogPath, message, level);
 
         try
         {
             var installDir = Path.GetDirectoryName(GetCurrentBinaryPath());
             if (string.IsNullOrEmpty(installDir))
             {
-                return (false, "Could not determine install directory");
+                return FailUpdate(artifacts, "Could not determine install directory");
             }
 
             var newMtPath = Path.Combine(extractedDir, "mt");
             var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
             currentMtPath = Path.Combine(installDir, "mt");
             currentVersionJsonPath = Path.Combine(installDir, "version.json");
+            writeLog($"Applying Linux service web-only update in-process from {extractedDir}", "INFO");
 
             if (!File.Exists(newMtPath) || !File.Exists(newVersionJsonPath))
             {
-                return (false, "Downloaded update is incomplete");
+                return FailUpdate(artifacts, "Downloaded update is incomplete");
             }
 
             backupDir = Path.Combine(settingsDirectory, "update-backup");
             Directory.CreateDirectory(backupDir);
+            writeLog($"Using backup directory {backupDir}", "INFO");
 
             backupMtPath = Path.Combine(backupDir, "mt.bak");
             backupVersionJsonPath = Path.Combine(backupDir, "version.json.bak");
@@ -891,15 +918,17 @@ public sealed partial class UpdateService : IDisposable
             if (File.Exists(currentMtPath))
             {
                 File.Copy(currentMtPath, backupMtPath, overwrite: true);
+                writeLog("Backed up mt", "INFO");
             }
 
             if (File.Exists(currentVersionJsonPath))
             {
                 File.Copy(currentVersionJsonPath, backupVersionJsonPath, overwrite: true);
+                writeLog("Backed up version.json", "INFO");
             }
 
-            InstallUnixFileAtomically(newMtPath, currentMtPath, makeExecutable: true);
-            InstallUnixFileAtomically(newVersionJsonPath, currentVersionJsonPath, makeExecutable: false);
+            InstallUnixFileAtomically(newMtPath, currentMtPath, makeExecutable: true, writeLog);
+            InstallUnixFileAtomically(newVersionJsonPath, currentVersionJsonPath, makeExecutable: false, writeLog);
 
             try
             {
@@ -928,14 +957,124 @@ public sealed partial class UpdateService : IDisposable
                 }
             }
 
+            WriteUpdateResult(artifacts, success: true, "Update installed successfully");
             Log.Info(() => "Applied Linux web-only service update in-process; waiting for systemd restart");
+            writeLog("Applied Linux web-only service update in-process; waiting for service manager restart", "INFO");
             return (true, "Update installed");
         }
         catch (Exception ex)
         {
-            TryRestoreLinuxServiceWebOnlyUpdate(currentMtPath, backupMtPath, currentVersionJsonPath, backupVersionJsonPath);
+            TryRestoreLinuxServiceWebOnlyUpdate(
+                currentMtPath,
+                backupMtPath,
+                currentVersionJsonPath,
+                backupVersionJsonPath,
+                writeLog);
+            WriteUpdateResult(artifacts, success: false, "Failed to install update", ex.Message);
             Log.Error(() => $"Failed to apply Linux web-only service update in-process: {ex.Message}");
             return (false, $"Failed to install update: {ex.Message}");
+        }
+    }
+
+    private static (bool Success, string Message) TryStageMacOsServiceUpdate(
+        string extractedDir,
+        string settingsDirectory,
+        UpdateType updateType,
+        bool deleteSourceAfter,
+        UpdateArtifacts artifacts)
+    {
+        try
+        {
+            AppendUpdateLog(artifacts.LogPath, "Preparing macOS staged update");
+            EnsureMacOsLauncherScript(settingsDirectory, artifacts);
+
+            var stagingDir = Path.Combine(settingsDirectory, "update-staging");
+            RecreateDirectory(stagingDir);
+            AppendUpdateLog(artifacts.LogPath, $"Staging update in {stagingDir}");
+
+            StageMacOsFile(extractedDir, stagingDir, "mt", artifacts, required: true);
+            if (updateType != UpdateType.WebOnly)
+            {
+                StageMacOsFile(extractedDir, stagingDir, "mthost", artifacts, required: true);
+            }
+
+            StageMacOsFile(extractedDir, stagingDir, "version.json", artifacts, required: true);
+
+            if (deleteSourceAfter)
+            {
+                TryDeleteExtractedPayload(extractedDir);
+            }
+
+            AppendUpdateLog(artifacts.LogPath, "macOS update staged; launchd wrapper will apply it on restart");
+            return (true, "Update staged");
+        }
+        catch (Exception ex)
+        {
+            AppendUpdateLog(artifacts.LogPath, $"Failed to stage macOS update: {ex.Message}", "ERROR");
+            WriteUpdateResult(artifacts, success: false, "Failed to stage update", ex.Message);
+            return (false, $"Failed to stage update: {ex.Message}");
+        }
+    }
+
+    private static (bool Success, string Message) TryApplyUnixUserUpdateInProcess(
+        string extractedDir,
+        UpdateType updateType,
+        bool deleteSourceAfter,
+        UpdateArtifacts artifacts)
+    {
+        string? backupDir = null;
+        string? installDir = null;
+        var replacedFiles = new List<(string CurrentPath, string BackupPath, bool MakeExecutable)>();
+        Action<string, string> writeLog = (message, level) => AppendUpdateLog(artifacts.LogPath, message, level);
+
+        try
+        {
+            installDir = Path.GetDirectoryName(GetCurrentBinaryPath());
+            if (string.IsNullOrEmpty(installDir))
+            {
+                return FailUpdate(artifacts, "Could not determine install directory");
+            }
+
+            backupDir = Path.Combine(Path.GetTempPath(), $"midterm-update-backup-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(backupDir);
+            writeLog($"Applying Unix user update in-process from {extractedDir}", "INFO");
+
+            ReplaceUnixManagedFile(extractedDir, installDir, "mt", makeExecutable: true, backupDir, replacedFiles, artifacts, required: true);
+            if (updateType != UpdateType.WebOnly)
+            {
+                ReplaceUnixManagedFile(extractedDir, installDir, "mthost", makeExecutable: true, backupDir, replacedFiles, artifacts, required: true);
+            }
+
+            ReplaceUnixManagedFile(extractedDir, installDir, "version.json", makeExecutable: false, backupDir, replacedFiles, artifacts, required: true);
+
+            if (deleteSourceAfter)
+            {
+                TryDeleteExtractedPayload(extractedDir);
+            }
+
+            WriteUpdateResult(artifacts, success: true, "Update installed successfully");
+            writeLog("Unix user update installed in-process; spawning replacement process", "INFO");
+            return (true, "Update installed");
+        }
+        catch (Exception ex)
+        {
+            writeLog($"Failed to apply Unix user update in-process: {ex.Message}", "ERROR");
+            TryRestoreUnixFiles(replacedFiles, writeLog);
+            WriteUpdateResult(artifacts, success: false, "Failed to install update", ex.Message);
+            return (false, $"Failed to install update: {ex.Message}");
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(backupDir))
+            {
+                try
+                {
+                    Directory.Delete(backupDir, recursive: true);
+                }
+                catch
+                {
+                }
+            }
         }
     }
 
@@ -943,7 +1082,8 @@ public sealed partial class UpdateService : IDisposable
         string? currentMtPath,
         string? backupMtPath,
         string? currentVersionJsonPath,
-        string? backupVersionJsonPath)
+        string? backupVersionJsonPath,
+        Action<string, string>? writeLog = null)
     {
         try
         {
@@ -951,11 +1091,12 @@ public sealed partial class UpdateService : IDisposable
                 !string.IsNullOrEmpty(backupMtPath) &&
                 File.Exists(backupMtPath))
             {
-                InstallUnixFileAtomically(backupMtPath, currentMtPath, makeExecutable: true);
+                InstallUnixFileAtomically(backupMtPath, currentMtPath, makeExecutable: true, writeLog);
             }
         }
         catch (Exception restoreEx)
         {
+            writeLog?.Invoke($"Failed to restore mt after update error: {restoreEx.Message}", "ERROR");
             Log.Error(() => $"Failed to restore mt after update error: {restoreEx.Message}");
         }
 
@@ -965,36 +1106,435 @@ public sealed partial class UpdateService : IDisposable
                 !string.IsNullOrEmpty(backupVersionJsonPath) &&
                 File.Exists(backupVersionJsonPath))
             {
-                InstallUnixFileAtomically(backupVersionJsonPath, currentVersionJsonPath, makeExecutable: false);
+                InstallUnixFileAtomically(backupVersionJsonPath, currentVersionJsonPath, makeExecutable: false, writeLog);
             }
         }
         catch (Exception restoreEx)
         {
+            writeLog?.Invoke($"Failed to restore version.json after update error: {restoreEx.Message}", "ERROR");
             Log.Error(() => $"Failed to restore version.json after update error: {restoreEx.Message}");
         }
     }
 
-    private static void InstallUnixFileAtomically(string sourcePath, string destinationPath, bool makeExecutable)
+    internal static void InstallUnixFileAtomically(
+        string sourcePath,
+        string destinationPath,
+        bool makeExecutable,
+        Action<string, string>? writeLog = null)
     {
         var tempPath = destinationPath + ".new";
 
-        File.Copy(sourcePath, tempPath, overwrite: true);
+        try
+        {
+            File.Copy(sourcePath, tempPath, overwrite: true);
+            ApplyUnixPermissions(tempPath, makeExecutable);
+            File.Move(tempPath, destinationPath, overwrite: true);
+            writeLog?.Invoke($"Installed {Path.GetFileName(destinationPath)} via sibling temp swap", "INFO");
+            return;
+        }
+        catch (Exception ex)
+        {
+            try { File.Delete(tempPath); } catch { }
+            writeLog?.Invoke(
+                $"Sibling temp swap failed for {destinationPath}: {ex.Message}. Falling back to in-place overwrite.",
+                "WARN");
+        }
 
-        if (makeExecutable && (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()))
+        if (!File.Exists(destinationPath))
+        {
+            throw new IOException($"Failed to replace {destinationPath}: destination file does not exist and sibling temp swap was not possible.");
+        }
+
+        using var sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var destinationStream = new FileStream(destinationPath, FileMode.Truncate, FileAccess.Write, FileShare.None);
+        sourceStream.CopyTo(destinationStream);
+        destinationStream.Flush(flushToDisk: true);
+        ApplyUnixPermissions(destinationPath, makeExecutable);
+
+        if (new FileInfo(destinationPath).Length != new FileInfo(sourcePath).Length)
+        {
+            throw new IOException($"Failed to replace {destinationPath}: destination size did not match source size after in-place overwrite.");
+        }
+
+        writeLog?.Invoke($"Installed {Path.GetFileName(destinationPath)} via in-place overwrite fallback", "INFO");
+    }
+
+    private static void ApplyUnixPermissions(string path, bool makeExecutable)
+    {
+        if (!makeExecutable || (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS()))
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        catch
+        {
+        }
+    }
+
+    private static UpdateArtifacts GetUpdateArtifacts(SettingsService settingsService)
+    {
+        var isWindowsService = settingsService.IsRunningAsService && OperatingSystem.IsWindows();
+        var isUnixService = settingsService.IsRunningAsService && !OperatingSystem.IsWindows();
+        var logPath = LogPaths.GetUpdateLogPath(isWindowsService, isUnixService, settingsService.SettingsDirectory);
+        var resultPath = Path.Combine(settingsService.SettingsDirectory, "update-result.json");
+        return new UpdateArtifacts(logPath, resultPath);
+    }
+
+    private static void ResetUpdateArtifacts(UpdateArtifacts artifacts)
+    {
+        try
+        {
+            var logDir = Path.GetDirectoryName(artifacts.LogPath);
+            if (!string.IsNullOrEmpty(logDir))
+            {
+                Directory.CreateDirectory(logDir);
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            var resultDir = Path.GetDirectoryName(artifacts.ResultPath);
+            if (!string.IsNullOrEmpty(resultDir))
+            {
+                Directory.CreateDirectory(resultDir);
+            }
+        }
+        catch
+        {
+        }
+
+        try { File.WriteAllText(artifacts.LogPath, string.Empty); } catch { }
+        try { File.Delete(artifacts.ResultPath); } catch { }
+    }
+
+    private static void AppendUpdateLog(string logPath, string message, string level = "INFO")
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}{Environment.NewLine}";
+            File.AppendAllText(logPath, line);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void WriteUpdateResult(UpdateArtifacts artifacts, bool success, string message, string details = "")
+    {
+        try
+        {
+            var result = new UpdateResult
+            {
+                Success = success,
+                Message = message,
+                Details = details,
+                Timestamp = DateTime.UtcNow.ToString("O"),
+                LogFile = artifacts.LogPath
+            };
+
+            File.WriteAllText(
+                artifacts.ResultPath,
+                JsonSerializer.Serialize(result, AppJsonContext.Default.UpdateResult));
+        }
+        catch (Exception ex)
+        {
+            AppendUpdateLog(artifacts.LogPath, $"Failed to write update result: {ex.Message}", "ERROR");
+        }
+    }
+
+    private static (bool Success, string Message) FailUpdate(UpdateArtifacts artifacts, string message, string details = "")
+    {
+        AppendUpdateLog(artifacts.LogPath, string.IsNullOrEmpty(details) ? message : $"{message}: {details}", "ERROR");
+        WriteUpdateResult(artifacts, success: false, message, details);
+        return (false, message);
+    }
+
+    private static void RecreateDirectory(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+
+        Directory.CreateDirectory(path);
+    }
+
+    private static void StageMacOsFile(
+        string extractedDir,
+        string stagingDir,
+        string fileName,
+        UpdateArtifacts artifacts,
+        bool required)
+    {
+        var sourcePath = Path.Combine(extractedDir, fileName);
+        if (!File.Exists(sourcePath))
+        {
+            if (required)
+            {
+                throw new IOException($"Downloaded update is missing required file: {fileName}");
+            }
+
+            return;
+        }
+
+        var tempPath = Path.Combine(stagingDir, fileName + ".tmp");
+        var destinationPath = Path.Combine(stagingDir, fileName);
+        File.Copy(sourcePath, tempPath, overwrite: true);
+        ApplyUnixPermissions(tempPath, fileName is "mt" or "mthost");
+        File.Move(tempPath, destinationPath, overwrite: true);
+        AppendUpdateLog(artifacts.LogPath, $"Staged {fileName}");
+    }
+
+    private static void ReplaceUnixManagedFile(
+        string extractedDir,
+        string installDir,
+        string fileName,
+        bool makeExecutable,
+        string backupDir,
+        List<(string CurrentPath, string BackupPath, bool MakeExecutable)> replacedFiles,
+        UpdateArtifacts artifacts,
+        bool required)
+    {
+        var sourcePath = Path.Combine(extractedDir, fileName);
+        var destinationPath = Path.Combine(installDir, fileName);
+        if (!File.Exists(sourcePath))
+        {
+            if (required)
+            {
+                throw new IOException($"Downloaded update is missing required file: {fileName}");
+            }
+
+            return;
+        }
+
+        if (File.Exists(destinationPath))
+        {
+            var backupPath = Path.Combine(backupDir, fileName + ".bak");
+            File.Copy(destinationPath, backupPath, overwrite: true);
+            replacedFiles.Add((destinationPath, backupPath, makeExecutable));
+            AppendUpdateLog(artifacts.LogPath, $"Backed up {fileName}");
+        }
+
+        InstallUnixFileAtomically(
+            sourcePath,
+            destinationPath,
+            makeExecutable,
+            (message, level) => AppendUpdateLog(artifacts.LogPath, message, level));
+    }
+
+    private static void TryRestoreUnixFiles(
+        IEnumerable<(string CurrentPath, string BackupPath, bool MakeExecutable)> replacedFiles,
+        Action<string, string> writeLog)
+    {
+        foreach (var (currentPath, backupPath, makeExecutable) in replacedFiles.Reverse())
         {
             try
             {
-                File.SetUnixFileMode(tempPath,
-                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                if (!File.Exists(backupPath))
+                {
+                    continue;
+                }
+
+                InstallUnixFileAtomically(backupPath, currentPath, makeExecutable, writeLog);
+                writeLog($"Restored {Path.GetFileName(currentPath)} from backup", "INFO");
             }
-            catch
+            catch (Exception ex)
             {
+                writeLog($"Failed to restore {currentPath}: {ex.Message}", "ERROR");
             }
         }
+    }
 
-        File.Move(tempPath, destinationPath, overwrite: true);
+    private static void TryDeleteExtractedPayload(string extractedDir)
+    {
+        try
+        {
+            var tempDir = Path.GetDirectoryName(extractedDir);
+            if (!string.IsNullOrEmpty(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+            else
+            {
+                Directory.Delete(extractedDir, recursive: true);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static void EnsureMacOsLauncherScript(string settingsDirectory, UpdateArtifacts artifacts)
+    {
+        var launcherPath = Path.Combine(settingsDirectory, "launcher.sh");
+        File.WriteAllText(launcherPath, GetMacOsLauncherScriptContents(settingsDirectory, artifacts.LogPath));
+        ApplyUnixPermissions(launcherPath, makeExecutable: true);
+        AppendUpdateLog(artifacts.LogPath, $"Refreshed macOS launcher shim at {launcherPath}");
+    }
+
+    internal static string GetMacOsLauncherScriptContents(string settingsDirectory, string updateLogPath)
+    {
+        var installDir = Path.GetDirectoryName(GetCurrentBinaryPath()) ?? "/usr/local/bin";
+        var stagingDir = Path.Combine(settingsDirectory, "update-staging");
+        var resultPath = Path.Combine(settingsDirectory, "update-result.json");
+        var backupDir = Path.Combine(settingsDirectory, "update-backup");
+        return $@"#!/bin/bash
+set -euo pipefail
+
+CONFIG_DIR='{EscapeForBash(settingsDirectory)}'
+INSTALL_DIR='{EscapeForBash(installDir)}'
+STAGING='{EscapeForBash(stagingDir)}'
+LOG_FILE='{EscapeForBash(updateLogPath)}'
+RESULT_FILE='{EscapeForBash(resultPath)}'
+BACKUP_DIR='{EscapeForBash(backupDir)}'
+
+mkdir -p ""$(dirname ""$LOG_FILE"")"" 2>/dev/null || true
+exec >> ""$LOG_FILE"" 2>&1 < /dev/null
+
+log() {{
+    local level=""${{2:-INFO}}""
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S.%3N')
+    echo ""[$timestamp] [$level] $1""
+}}
+
+write_result() {{
+    local success=""$1""
+    local message=""$2""
+    local details=""${{3:-}}""
+    cat > ""$RESULT_FILE"" << RESULT_EOF
+{{
+  ""success"": $success,
+  ""message"": ""$message"",
+  ""details"": ""$details"",
+  ""timestamp"": ""$(date -u '+%Y-%m-%dT%H:%M:%SZ')"",
+  ""logFile"": ""$LOG_FILE""
+}}
+RESULT_EOF
+}}
+
+apply_file() {{
+    local src=""$1""
+    local dst=""$2""
+    local desc=""$3""
+    local make_exec=""${{4:-false}}""
+
+    if [[ ! -f ""$src"" ]] || [[ ! -s ""$src"" ]]; then
+        log ""Missing or empty staged $desc: $src"" ""ERROR""
+        return 1
+    fi
+
+    if [[ -f ""$dst"" ]]; then
+        cat ""$src"" > ""$dst""
+    else
+        cp ""$src"" ""$dst""
+    fi
+
+    if [[ ""$make_exec"" == ""true"" ]]; then
+        chmod +x ""$dst""
+    fi
+
+    if [[ ! -s ""$dst"" ]]; then
+        log ""Installed $desc is empty after copy: $dst"" ""ERROR""
+        return 1
+    fi
+
+    log ""Installed $desc""
+}}
+
+rollback() {{
+    if [[ ! -d ""$BACKUP_DIR"" ]]; then
+        return
+    fi
+
+    log ""Rolling back staged macOS update"" ""WARN""
+    [[ -f ""$BACKUP_DIR/mt.bak"" ]] && cat ""$BACKUP_DIR/mt.bak"" > ""$INSTALL_DIR/mt"" && chmod +x ""$INSTALL_DIR/mt"" || true
+    [[ -f ""$BACKUP_DIR/mthost.bak"" ]] && cat ""$BACKUP_DIR/mthost.bak"" > ""$INSTALL_DIR/mthost"" && chmod +x ""$INSTALL_DIR/mthost"" || true
+    [[ -f ""$BACKUP_DIR/version.json.bak"" ]] && cat ""$BACKUP_DIR/version.json.bak"" > ""$INSTALL_DIR/version.json"" || true
+}}
+
+if [[ -d ""$STAGING"" ]] && [[ -f ""$STAGING/mt"" ]]; then
+    rm -rf ""$BACKUP_DIR"" 2>/dev/null || true
+    mkdir -p ""$BACKUP_DIR""
+    rm -f ""$RESULT_FILE"" 2>/dev/null || true
+
+    log ""Applying staged macOS update from $STAGING""
+
+    [[ -f ""$INSTALL_DIR/mt"" ]] && cp -f ""$INSTALL_DIR/mt"" ""$BACKUP_DIR/mt.bak""
+    [[ -f ""$INSTALL_DIR/mthost"" ]] && cp -f ""$INSTALL_DIR/mthost"" ""$BACKUP_DIR/mthost.bak""
+    [[ -f ""$INSTALL_DIR/version.json"" ]] && cp -f ""$INSTALL_DIR/version.json"" ""$BACKUP_DIR/version.json.bak""
+
+    if apply_file ""$STAGING/mt"" ""$INSTALL_DIR/mt"" ""mt"" true \
+        && {{ [[ ! -f ""$STAGING/mthost"" ]] || apply_file ""$STAGING/mthost"" ""$INSTALL_DIR/mthost"" ""mthost"" true; }} \
+        && apply_file ""$STAGING/version.json"" ""$INSTALL_DIR/version.json"" ""version.json"" false; then
+        write_result true ""Update applied""
+        rm -rf ""$STAGING"" ""$BACKUP_DIR"" 2>/dev/null || true
+        log ""macOS staged update applied successfully""
+    else
+        rollback
+        write_result false ""Failed to apply staged update"" ""See update log for details""
+        log ""macOS staged update failed; previous binaries restored"" ""ERROR""
+    fi
+fi
+
+exec ""$INSTALL_DIR/mt"" ""$@""
+";
+    }
+
+    private static string EscapeForBash(string value)
+    {
+        return value.Replace("'", "'\\''");
+    }
+
+    private static void TrySpawnReplacementProcess()
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+            {
+                return;
+            }
+
+            var cliArgs = Environment.GetCommandLineArgs();
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exePath,
+                WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
+                UseShellExecute = false,
+                RedirectStandardInput = true
+            };
+
+            foreach (var arg in cliArgs.Skip(1))
+            {
+                psi.ArgumentList.Add(arg);
+            }
+
+            var process = System.Diagnostics.Process.Start(psi);
+            if (process is not null)
+            {
+                try { process.StandardInput.Close(); } catch { }
+            }
+        }
+        catch
+        {
+        }
     }
 
     public static UpdateResult? ReadUpdateResult(string settingsDirectory, bool clear = false)
@@ -1058,6 +1598,8 @@ internal sealed class GitHubRelease
     public bool Prerelease { get; set; }
     public List<GitHubAsset>? Assets { get; set; }
 }
+
+internal readonly record struct UpdateArtifacts(string LogPath, string ResultPath);
 
 internal sealed class GitHubAsset
 {

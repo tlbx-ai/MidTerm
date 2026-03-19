@@ -318,6 +318,44 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Null(exception);
     }
 
+    [Fact]
+    public void InstallUnixFileAtomically_FallsBackToInPlaceOverwrite_WhenSiblingTempPathIsUnavailable()
+    {
+        var sourcePath = Path.Combine(_tempDir, "mt-source");
+        var destinationPath = Path.Combine(_tempDir, "mt-destination");
+        var blockedTempPath = destinationPath + ".new";
+        File.WriteAllText(sourcePath, "new-version");
+        File.WriteAllText(destinationPath, "old");
+        Directory.CreateDirectory(blockedTempPath);
+
+        var logLines = new List<string>();
+
+        UpdateService.InstallUnixFileAtomically(
+            sourcePath,
+            destinationPath,
+            makeExecutable: false,
+            (message, level) => logLines.Add($"{level}:{message}"));
+
+        Assert.Equal("new-version", File.ReadAllText(destinationPath));
+        Assert.Contains(logLines, line => line.Contains("Falling back to in-place overwrite.", StringComparison.Ordinal));
+        Assert.Contains(logLines, line => line.Contains("in-place overwrite fallback", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GetMacOsLauncherScriptContents_IncludesRollbackAndResultHandling()
+    {
+        var settingsDir = Path.Combine(_tempDir, "settings");
+        var logPath = Path.Combine(_tempDir, "update.log");
+
+        var script = UpdateService.GetMacOsLauncherScriptContents(settingsDir, logPath);
+
+        Assert.Contains("BACKUP_DIR=", script, StringComparison.Ordinal);
+        Assert.Contains("rollback()", script, StringComparison.Ordinal);
+        Assert.Contains("write_result false \"Failed to apply staged update\"", script, StringComparison.Ordinal);
+        Assert.Contains("\"logFile\": \"$LOG_FILE\"", script, StringComparison.Ordinal);
+        Assert.Contains("exec \"$INSTALL_DIR/mt\" \"$@\"", script, StringComparison.Ordinal);
+    }
+
     private static GitHubRelease CreateRelease(string tagName, bool prerelease, params string[] assetNames)
     {
         return new GitHubRelease

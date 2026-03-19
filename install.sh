@@ -1639,36 +1639,107 @@ install_launchd() {
     # launchd calls this instead of mt directly. On each respawn,
     # the launcher applies any staged update BEFORE exec'ing mt.
     # This eliminates race conditions: mt is never running when its binary is overwritten.
-    cat > "$launcher_path" << 'LAUNCHER_EOF'
+cat > "$launcher_path" << 'LAUNCHER_EOF'
 #!/bin/bash
-# MidTerm Launcher — update-aware wrapper for launchd
+# MidTerm Launcher - update-aware wrapper for launchd
 # launchd calls this instead of mt directly. On each respawn,
 # this script applies any staged update before exec'ing mt.
+
+set -euo pipefail
 
 CONFIG_DIR="/usr/local/etc/midterm"
 INSTALL_DIR="/usr/local/bin"
 STAGING="$CONFIG_DIR/update-staging"
+LOG_FILE="/usr/local/var/log/update.log"
+RESULT_FILE="$CONFIG_DIR/update-result.json"
+BACKUP_DIR="$CONFIG_DIR/update-backup"
+
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+exec >> "$LOG_FILE" 2>&1 < /dev/null
+
+log() {
+    local level="${2:-INFO}"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S.%3N')
+    echo "[$timestamp] [$level] $1"
+}
+
+write_result() {
+    local success="$1"
+    local message="$2"
+    local details="${3:-}"
+    cat > "$RESULT_FILE" << RESULT_EOF
+{
+  "success": $success,
+  "message": "$message",
+  "details": "$details",
+  "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "logFile": "$LOG_FILE"
+}
+RESULT_EOF
+}
+
+apply_file() {
+    local src="$1"
+    local dst="$2"
+    local desc="$3"
+    local make_exec="${4:-false}"
+
+    if [ ! -f "$src" ] || [ ! -s "$src" ]; then
+        log "Missing or empty staged $desc: $src" "ERROR"
+        return 1
+    fi
+
+    if [ -f "$dst" ]; then
+        cat "$src" > "$dst"
+    else
+        cp "$src" "$dst"
+    fi
+
+    if [ "$make_exec" = "true" ]; then
+        chmod +x "$dst"
+    fi
+
+    if [ ! -s "$dst" ]; then
+        log "Installed $desc is empty after copy: $dst" "ERROR"
+        return 1
+    fi
+
+    log "Installed $desc"
+}
+
+rollback() {
+    if [ ! -d "$BACKUP_DIR" ]; then
+        return
+    fi
+
+    log "Rolling back staged macOS update" "WARN"
+    [ -f "$BACKUP_DIR/mt.bak" ] && cat "$BACKUP_DIR/mt.bak" > "$INSTALL_DIR/mt" && chmod +x "$INSTALL_DIR/mt" || true
+    [ -f "$BACKUP_DIR/mthost.bak" ] && cat "$BACKUP_DIR/mthost.bak" > "$INSTALL_DIR/mthost" && chmod +x "$INSTALL_DIR/mthost" || true
+    [ -f "$BACKUP_DIR/version.json.bak" ] && cat "$BACKUP_DIR/version.json.bak" > "$INSTALL_DIR/version.json" || true
+}
 
 if [ -d "$STAGING" ] && [ -f "$STAGING/mt" ]; then
-    # Verify staged files are non-empty before applying (guards against partial downloads)
-    if [ -s "$STAGING/mt" ]; then
-        # Apply staged update — mt is NOT running, no race possible
-        cat "$STAGING/mt" > "$INSTALL_DIR/mt"
-        chmod +x "$INSTALL_DIR/mt"
+    rm -rf "$BACKUP_DIR" 2>/dev/null || true
+    mkdir -p "$BACKUP_DIR"
+    rm -f "$RESULT_FILE" 2>/dev/null || true
 
-        [ -f "$STAGING/mthost" ] && [ -s "$STAGING/mthost" ] && \
-            cat "$STAGING/mthost" > "$INSTALL_DIR/mthost" && chmod +x "$INSTALL_DIR/mthost"
-        [ -f "$STAGING/version.json" ] && \
-            cat "$STAGING/version.json" > "$INSTALL_DIR/version.json"
+    log "Applying staged macOS update from $STAGING"
 
-        # Write result (read by mt on startup via bootstrap API)
-        printf '{"success":true,"message":"Update applied","timestamp":"%s"}\n' \
-            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$CONFIG_DIR/update-result.json"
+    [ -f "$INSTALL_DIR/mt" ] && cp -f "$INSTALL_DIR/mt" "$BACKUP_DIR/mt.bak"
+    [ -f "$INSTALL_DIR/mthost" ] && cp -f "$INSTALL_DIR/mthost" "$BACKUP_DIR/mthost.bak"
+    [ -f "$INSTALL_DIR/version.json" ] && cp -f "$INSTALL_DIR/version.json" "$BACKUP_DIR/version.json.bak"
 
-        rm -rf "$STAGING"
+    if apply_file "$STAGING/mt" "$INSTALL_DIR/mt" "mt" true \
+        && { [ ! -f "$STAGING/mthost" ] || apply_file "$STAGING/mthost" "$INSTALL_DIR/mthost" "mthost" true; } \
+        && apply_file "$STAGING/version.json" "$INSTALL_DIR/version.json" "version.json" false; then
+        write_result true "Update applied"
+        rm -rf "$STAGING" "$BACKUP_DIR" 2>/dev/null || true
+        log "macOS staged update applied successfully"
     else
-        # Staged mt binary is empty/corrupt — discard staging dir
-        rm -rf "$STAGING"
+        rollback
+        write_result false "Failed to apply staged update" "See update log for details"
+        log "macOS staged update failed; previous binaries restored" "ERROR"
     fi
 fi
 
