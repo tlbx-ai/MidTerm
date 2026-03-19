@@ -4202,6 +4202,7 @@ export interface components {
       sessionId?: null | string;
       previewName?: null | string;
       url: string;
+      activateSession?: null | boolean;
     };
     WebPreviewTargetResponse: {
       sessionId: null | string;

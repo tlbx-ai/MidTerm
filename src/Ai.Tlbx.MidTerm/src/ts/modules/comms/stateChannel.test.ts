@@ -275,4 +275,40 @@ describe('stateChannel browser-ui handling', () => {
     next.onopen?.(new Event('open'));
     expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
   });
+
+  it('activates the target session when browser open explicitly requests it', async () => {
+    const { stores, ws } = await loadHarness();
+    mocks.setWebPreviewTarget.mockResolvedValue({
+      sessionId: 'agent5678',
+      previewName: 'default',
+      routeKey: 'route-1',
+      url: 'http://localhost:3000',
+      active: true,
+      targetRevision: 1,
+    });
+    mocks.selectSession.mockImplementation((sessionId: string) => {
+      stores.$activeSessionId.set(sessionId);
+    });
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'open',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        url: 'http://localhost:3000',
+        activateSession: true,
+      }),
+    } as MessageEvent<string>);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.selectSession).toHaveBeenCalledWith('agent5678', {
+      closeSettingsPanel: false,
+    });
+    expect(stores.$activeSessionId.get()).toBe('agent5678');
+    expect(mocks.openWebPreviewDock).toHaveBeenCalledTimes(1);
+    expect(mocks.syncActiveWebPreview).toHaveBeenCalledTimes(1);
+  });
 });

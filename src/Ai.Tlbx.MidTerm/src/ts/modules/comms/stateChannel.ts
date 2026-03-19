@@ -77,6 +77,7 @@ interface BrowserUiMessage {
   url?: string;
   sessionId?: string;
   previewName?: string;
+  activateSession?: boolean;
 }
 
 interface StateUpdateMessage {
@@ -590,7 +591,12 @@ function handleBrowserUiCommand(msg: BrowserUiMessage): void {
       }
       setSessionMode(target.sessionId, target.previewName, 'docked');
       if (msg.url) {
-        void handleBrowserOpen(target.sessionId, target.previewName, msg.url);
+        void handleBrowserOpen(
+          target.sessionId,
+          target.previewName,
+          msg.url,
+          msg.activateSession === true,
+        );
       }
       break;
     }
@@ -619,6 +625,7 @@ async function handleBrowserOpen(
   sessionId: string,
   previewName: string,
   url: string,
+  activateSession = false,
 ): Promise<void> {
   const result = await setWebPreviewTarget(sessionId, previewName, url);
   if (!result?.active) {
@@ -628,6 +635,9 @@ async function handleBrowserOpen(
   upsertSessionPreview(result);
   setSessionSelectedPreviewName(sessionId, previewName);
   setSessionMode(sessionId, previewName, 'docked');
+  if (activateSession && $activeSessionId.get() !== sessionId) {
+    selectSession(sessionId, { closeSettingsPanel: false });
+  }
   if ($activeSessionId.get() !== sessionId) {
     return;
   }

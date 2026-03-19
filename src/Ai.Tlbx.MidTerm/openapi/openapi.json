@@ -5872,6 +5872,12 @@
           },
           "url": {
             "type": "string"
+          },
+          "activateSession": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },

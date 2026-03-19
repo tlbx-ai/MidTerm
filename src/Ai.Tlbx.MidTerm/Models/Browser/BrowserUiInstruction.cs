@@ -9,6 +9,7 @@ public sealed class BrowserUiInstruction
     public string? Url { get; set; }
     public string? SessionId { get; set; }
     public string? PreviewName { get; set; }
+    public bool? ActivateSession { get; set; }
 }
 
 public sealed class ViewportRequest

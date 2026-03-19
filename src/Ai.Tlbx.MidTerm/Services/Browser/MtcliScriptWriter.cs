@@ -174,7 +174,7 @@ public static class MtcliScriptWriter
         # mt_open URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
           local url="$1" open_out status
-          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\"}" "$_MT/api/browser/open") || {
+          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
             return $code
@@ -654,7 +654,7 @@ public static class MtcliScriptWriter
         # Mt-Open -Url URL  — open URL in web preview panel, dock it, and wait until controllable
         function Mt-Open {
             param([string]$Url)
-            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) "$script:_MT/api/browser/open"
+            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
             $status = _MWaitForControllableStatus
             if ($openResponse) {
                 $openResponse
