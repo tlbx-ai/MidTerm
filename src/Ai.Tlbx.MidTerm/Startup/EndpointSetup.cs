@@ -13,6 +13,7 @@ using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Updates;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Ai.Tlbx.MidTerm.Services.Certificates;
 using Ai.Tlbx.MidTerm.Services.Security;
@@ -660,6 +661,7 @@ public static class EndpointSetup
         GitWatcherService gitWatcher,
         BrowserCommandService browserCommandService,
         BrowserPreviewRegistry browserPreviewRegistry,
+        WebPreviewService webPreviewService,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
@@ -670,6 +672,7 @@ public static class EndpointSetup
         var browserHandler = new BrowserWebSocketHandler(
             browserCommandService,
             browserPreviewRegistry,
+            webPreviewService,
             settingsService,
             authService,
             shutdownService);

@@ -123,6 +123,24 @@ public class WebPreviewProxyMiddlewareTests
 
         Assert.Contains("mtReadCookie(\"mt-preview-ctx\")", script, StringComparison.Ordinal);
         Assert.Contains("decodeURIComponent(mtCookieCtx)", script, StringComparison.Ordinal);
+        Assert.Contains("params.get(\"__mtPreviewId\")", script, StringComparison.Ordinal);
+        Assert.Contains("params.get(\"__mtPreviewToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("history.replaceState(history.state,\"\",url.pathname+url.search+url.hash)", script, StringComparison.Ordinal);
+        Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
+        Assert.Contains("routeMatch=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
+        Assert.Contains("\"routeKey=\"+encodeURIComponent(routeMatch[1])", script, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
+    [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
+    [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
+    [InlineData("", "")]
+    public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
+    {
+        var sanitized = WebPreviewProxyMiddleware.StripPreviewBootstrapQuery(query);
+
+        Assert.Equal(expected, sanitized);
     }
 
     [Fact]
@@ -217,10 +235,10 @@ public class WebPreviewProxyMiddlewareTests
             source,
             "/webpreview/route-1");
 
-        Assert.Contains("""import "/webpreview/route-1/js/config.js"""", rewritten, StringComparison.Ordinal);
-        Assert.Contains("""import login from "/webpreview/route-1/js/login.js"""", rewritten, StringComparison.Ordinal);
-        Assert.Contains("""export * from "/webpreview/route-1/router/router-lib.js"""", rewritten, StringComparison.Ordinal);
-        Assert.Contains("""import("/webpreview/route-1/components/PasswordInput/PasswordInput.js")""", rewritten, StringComparison.Ordinal);
+        Assert.Contains("import \"/webpreview/route-1/js/config.js\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("import login from \"/webpreview/route-1/js/login.js\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("export * from \"/webpreview/route-1/router/router-lib.js\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("import(\"/webpreview/route-1/components/PasswordInput/PasswordInput.js\")", rewritten, StringComparison.Ordinal);
     }
 
     [Fact]

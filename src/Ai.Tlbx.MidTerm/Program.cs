@@ -355,6 +355,7 @@ public class Program
             gitWatcher,
             browserCommandService,
             browserPreviewRegistry,
+            webPreviewService,
             tmuxLayoutBridge,
             browserUiBridge);
 

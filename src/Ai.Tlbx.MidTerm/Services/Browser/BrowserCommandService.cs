@@ -25,7 +25,10 @@ public sealed class BrowserCommandService
         string? previewName,
         string? previewId,
         Action<BrowserWsMessage> listener,
-        string? browserId = null)
+        string? browserId = null,
+        bool isVisible = false,
+        bool hasFocus = false,
+        bool isTopLevel = false)
     {
         lock (_clientGate)
         {
@@ -42,6 +45,9 @@ public sealed class BrowserCommandService
                 PreviewName = string.IsNullOrWhiteSpace(previewName) ? null : previewName,
                 PreviewId = string.IsNullOrWhiteSpace(previewId) ? null : previewId,
                 BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
+                IsVisible = isVisible,
+                HasFocus = hasFocus,
+                IsTopLevel = isTopLevel,
                 Listener = listener,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
@@ -213,6 +219,9 @@ public sealed class BrowserCommandService
             lines.Add($"{clientLabel} preview name: {client.PreviewName ?? "(default)"}");
             lines.Add($"{clientLabel} session: {client.SessionId ?? "(none)"}");
             lines.Add($"{clientLabel} browser: {client.BrowserId ?? "(none)"}");
+            lines.Add($"{clientLabel} visible: {(client.IsVisible ? "yes" : "no")}");
+            lines.Add($"{clientLabel} focused: {(client.HasFocus ? "yes" : "no")}");
+            lines.Add($"{clientLabel} top level: {(client.IsTopLevel ? "yes" : "no")}");
         }
         else
         {
@@ -426,6 +435,7 @@ public sealed class BrowserCommandService
                 .ToArray();
         }
 
+        matches = PreferInteractive(matches);
         matches = PreferPreviewScoped(matches);
         matches = PreferMainBrowser(matches);
 
@@ -446,6 +456,19 @@ public sealed class BrowserCommandService
 
         client = matches[0];
         return true;
+    }
+
+    private static BrowserClient[] PreferInteractive(BrowserClient[] clients)
+    {
+        if (clients.Length == 0)
+        {
+            return clients;
+        }
+
+        var bestScore = clients.Max(GetInteractiveScore);
+        return clients
+            .Where(c => GetInteractiveScore(c) == bestScore)
+            .ToArray();
     }
 
     private BrowserClient[] PreferPreviewScoped(BrowserClient[] clients)
@@ -478,7 +501,7 @@ public sealed class BrowserCommandService
             return false;
         }
 
-        var preferred = PreferMainBrowser(PreferPreviewScoped(clients));
+        var preferred = PreferMainBrowser(PreferPreviewScoped(PreferInteractive(clients)));
         if (preferred.Length == 0)
         {
             return false;
@@ -511,8 +534,32 @@ public sealed class BrowserCommandService
             BrowserId = client.BrowserId,
             ConnectedAtUtc = client.ConnectedAtUtc,
             IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
-                && string.Equals(client.BrowserId, mainBrowserId, StringComparison.Ordinal)
+                && string.Equals(client.BrowserId, mainBrowserId, StringComparison.Ordinal),
+            IsVisible = client.IsVisible,
+            HasFocus = client.HasFocus,
+            IsTopLevel = client.IsTopLevel
         };
+    }
+
+    private static int GetInteractiveScore(BrowserClient client)
+    {
+        var score = 0;
+        if (client.HasFocus)
+        {
+            score += 4;
+        }
+
+        if (client.IsVisible)
+        {
+            score += 2;
+        }
+
+        if (client.IsTopLevel)
+        {
+            score += 1;
+        }
+
+        return score;
     }
 
     private sealed class BrowserClient
@@ -522,6 +569,9 @@ public sealed class BrowserCommandService
         public string? PreviewName { get; init; }
         public string? PreviewId { get; init; }
         public string? BrowserId { get; init; }
+        public bool IsVisible { get; init; }
+        public bool HasFocus { get; init; }
+        public bool IsTopLevel { get; init; }
         public required Action<BrowserWsMessage> Listener { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
     }

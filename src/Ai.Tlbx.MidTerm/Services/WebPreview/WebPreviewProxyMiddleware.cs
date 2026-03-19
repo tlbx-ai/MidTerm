@@ -14,6 +14,8 @@ namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 public sealed partial class WebPreviewProxyMiddleware
 {
     private const string ProxyPrefix = "/webpreview";
+    private const string PreviewBootstrapIdQueryParam = "__mtPreviewId";
+    private const string PreviewBootstrapTokenQueryParam = "__mtPreviewToken";
     private const string InternalProxyRequestHeaderName = "X-MidTerm-Internal-Proxy";
     private const string InternalProxyRequestHeaderValue = "1";
     private const int WsBufferSize = 8192;
@@ -39,6 +41,34 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){}
             return "";
           }
+          function mtReadBootstrapContext(){
+            try{
+              var params=new URLSearchParams(location.search);
+              var previewId=params.get("__mtPreviewId")||"";
+              var previewToken=params.get("__mtPreviewToken")||"";
+              if(!previewId||!previewToken)return null;
+              return {previewId:previewId,previewToken:previewToken};
+            }catch(e){}
+            return null;
+          }
+          function mtPersistPreviewContext(){
+            if(!mtCtx||!mtCtx.previewId||!mtCtx.previewToken)return;
+            try{window.name=JSON.stringify(mtCtx);}catch(e){}
+            try{
+              var match=(location.pathname||"").match(/^\/webpreview\/[^/]+/);
+              var cookiePath=match?match[0]+"/":"/";
+              document.cookie="mt-preview-ctx="+encodeURIComponent(JSON.stringify(mtCtx))+"; path="+cookiePath+"; secure; samesite=lax";
+            }catch(e){}
+          }
+          function mtStripBootstrapQuery(){
+            try{
+              var url=new URL(location.href);
+              if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken"))return;
+              url.searchParams.delete("__mtPreviewId");
+              url.searchParams.delete("__mtPreviewToken");
+              history.replaceState(history.state,"",url.pathname+url.search+url.hash);
+            }catch(e){}
+          }
           try{mtCtx=window.name?JSON.parse(window.name):null;}catch(e){mtCtx=null;}
           if(!mtCtx){
             try{
@@ -46,6 +76,11 @@ public sealed partial class WebPreviewProxyMiddleware
               mtCtx=mtCookieCtx?JSON.parse(decodeURIComponent(mtCookieCtx)):null;
             }catch(e){mtCtx=null;}
           }
+          if(!mtCtx){
+            mtCtx=mtReadBootstrapContext();
+          }
+          mtPersistPreviewContext();
+          mtStripBootstrapQuery();
           function mtMsg(type,extra){
             if(!mtCtx)return null;
             var msg=extra||{};
@@ -588,21 +623,62 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){res.success=false;res.error=e.message||String(e);}
             bws.send(JSON.stringify(res));
           }
+          var bwsReconnectTimer=0,bwsStateKey="";
+          function curBwsState(){
+            var hasFocus=false,topLevel=false;
+            try{hasFocus=!!document.hasFocus();}catch(e){}
+            try{topLevel=window.top===window.self;}catch(e){}
+            return {visible:document.visibilityState==="visible",focus:hasFocus,topLevel:topLevel};
+          }
+          function curBwsStateKey(){
+            var s=curBwsState();
+            return (s.visible?"1":"0")+(s.focus?"1":"0")+(s.topLevel?"1":"0");
+          }
+          function withBwsState(wsUrl){
+            var s=curBwsState();
+            wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"visible="+(s.visible?"1":"0")+"&focus="+(s.focus?"1":"0")+"&topLevel="+(s.topLevel?"1":"0");
+            return wsUrl;
+          }
+          function schedBwsReconnect(delay){
+            if(bwsReconnectTimer)return;
+            bwsReconnectTimer=setTimeout(function(){bwsReconnectTimer=0;connectBws();},delay||0);
+          }
+          function refreshBwsState(){
+            var nextKey=curBwsStateKey();
+            if(nextKey===bwsStateKey)return;
+            bwsStateKey=nextKey;
+            if(bws&&(bws.readyState===0||bws.readyState===1)){
+              try{bws.close();}catch(e){}
+              return;
+            }
+            schedBwsReconnect(50);
+          }
           function connectBws(){
             try{
+              if(bws&&(bws.readyState===0||bws.readyState===1))return;
               var proto=location.protocol==="https:"?"wss:":"ws:";
               var wsUrl=proto+"//"+location.host+"/ws/browser";
+              var routeMatch=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+              if(routeMatch&&routeMatch[1]){
+                wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"routeKey="+encodeURIComponent(routeMatch[1]);
+              }
               if(mtCtx&&mtCtx.previewId&&mtCtx.previewToken){
-                wsUrl+="?previewId="+encodeURIComponent(mtCtx.previewId)+"&token="+encodeURIComponent(mtCtx.previewToken);
+                wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"previewId="+encodeURIComponent(mtCtx.previewId)+"&token="+encodeURIComponent(mtCtx.previewToken);
                 if(mtCtx.sessionId)wsUrl+="&sessionId="+encodeURIComponent(mtCtx.sessionId);
               }
+              wsUrl=withBwsState(wsUrl);
+              var stateKey=curBwsStateKey();
               bws=new OWS(wsUrl);
-              bws.onopen=function(){bwsReady=true;};
+              bws.onopen=function(){bwsReady=true;bwsStateKey=stateKey;};
               bws.onmessage=function(e){try{handleBCmd(JSON.parse(e.data));}catch(ex){}};
-              bws.onclose=function(){bwsReady=false;setTimeout(connectBws,3000);};
+              bws.onclose=function(){bwsReady=false;bws=null;schedBwsReconnect(3000);};
               bws.onerror=function(){};
             }catch(e){}
           }
+          document.addEventListener("visibilitychange",refreshBwsState);
+          window.addEventListener("focus",refreshBwsState);
+          window.addEventListener("blur",refreshBwsState);
+          window.addEventListener("pageshow",refreshBwsState);
           connectBws();
         })();</script>
         """;
@@ -973,7 +1049,8 @@ public sealed partial class WebPreviewProxyMiddleware
                 primaryPath = "/" + primaryPath;
         }
 
-        var currentUrl = BuildUpstreamUrlFromPath(targetUri, primaryPath, context.Request.QueryString.Value);
+        var requestQuery = StripPreviewBootstrapQuery(context.Request.QueryString.Value);
+        var currentUrl = BuildUpstreamUrlFromPath(targetUri, primaryPath, requestQuery);
 
         var originalMethod = new HttpMethod(context.Request.Method);
         byte[]? requestBodyBuffer = null;
@@ -1020,7 +1097,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
             if (fallbackPath != primaryPath)
             {
-                var fallbackUrl = BuildUpstreamUrlFromPath(targetUri, fallbackPath, context.Request.QueryString.Value);
+                var fallbackUrl = BuildUpstreamUrlFromPath(targetUri, fallbackPath, requestQuery);
                 var (fallbackResponse, fallbackError, fallbackFinalUrl) = await SendUpstreamAsync(
                     context, routeKey, originalMethod, fallbackUrl, BuildRequest, context.RequestAborted);
 
@@ -1936,7 +2013,7 @@ public sealed partial class WebPreviewProxyMiddleware
             wsPath = BuildUpstreamPath(targetUri, path);
         }
 
-        var upstreamUrl = BuildUpstreamWsUrlFromPath(targetUri, wsPath, context.Request.QueryString.Value);
+        var upstreamUrl = BuildUpstreamWsUrlFromPath(targetUri, wsPath, StripPreviewBootstrapQuery(context.Request.QueryString.Value));
         var upstreamUri = new Uri(upstreamUrl);
         var upstreamOrigin = $"{targetUri.Scheme}://{targetUri.Authority}";
         await ProxyWebSocketToUpstreamAsync(context, routeKey, upstreamUri, upstreamOrigin, targetUri);
@@ -2186,6 +2263,38 @@ public sealed partial class WebPreviewProxyMiddleware
         if (!string.IsNullOrEmpty(queryString))
             sb.Append(queryString);
         return sb.ToString();
+    }
+
+    internal static string StripPreviewBootstrapQuery(string? queryString)
+    {
+        if (string.IsNullOrWhiteSpace(queryString))
+        {
+            return "";
+        }
+
+        var parsed = QueryHelpers.ParseQuery(queryString);
+        if (!parsed.ContainsKey(PreviewBootstrapIdQueryParam)
+            && !parsed.ContainsKey(PreviewBootstrapTokenQueryParam))
+        {
+            return queryString ?? "";
+        }
+
+        var sanitized = new List<KeyValuePair<string, string?>>();
+        foreach (var entry in parsed)
+        {
+            if (entry.Key.Equals(PreviewBootstrapIdQueryParam, StringComparison.Ordinal)
+                || entry.Key.Equals(PreviewBootstrapTokenQueryParam, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (var value in entry.Value)
+            {
+                sanitized.Add(new KeyValuePair<string, string?>(entry.Key, value));
+            }
+        }
+
+        return QueryString.Create(sanitized).Value ?? "";
     }
 
     private static bool PathAlreadyUnderTarget(string path, string targetBase)

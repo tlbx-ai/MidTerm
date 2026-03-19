@@ -14,7 +14,7 @@ import {
 } from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { restoreLastUrl, showIframe, unloadIframe } from './webPanel';
+import { hideIframe, restoreLastUrl, showIframe, unloadIframe } from './webPanel';
 import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
@@ -68,6 +68,9 @@ export function updateAllDockMargins(): void {
   }
   document
     .querySelectorAll<HTMLElement>('.session-tab-panels')
+    .forEach((p) => (p.style.marginRight = total > 0 ? `${total}px` : ''));
+  document
+    .querySelectorAll<HTMLElement>('.manager-bar, .smart-input-docked')
     .forEach((p) => (p.style.marginRight = total > 0 ? `${total}px` : ''));
 }
 
@@ -124,7 +127,7 @@ export function closeWebPreviewDock(): void {
   setActionButtonActive('web', false);
 
   // Unload iframe to stop all network activity
-  unloadIframe();
+  unloadIframe(activeId, activePreviewName);
   if (!detachedActive && !isEmbeddedWebPreviewContext() && activeId) {
     void clearWebPreviewTarget(activeId, activePreviewName);
   }
@@ -162,9 +165,11 @@ export function suspendWebPreviewDock(): void {
 
 /** Hide the dock panel when detaching to a popup window, keeping the action button active. */
 export function hideWebPreviewDockForDetach(): void {
+  const activeId = $activeSessionId.get();
+  const activePreviewName = getActivePreviewName();
   $webPreviewDocked.set(false);
   setActionButtonActive('web', true);
-  unloadIframe();
+  unloadIframe(activeId, activePreviewName);
 
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {
@@ -183,7 +188,7 @@ export function applyWebPreviewHiddenState(): void {
   const activePreviewName = getActivePreviewName();
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
-  unloadIframe();
+  hideIframe();
   if (!isEmbeddedWebPreviewContext() && activeId) {
     void clearWebPreviewTarget(activeId, activePreviewName);
   }
@@ -211,7 +216,8 @@ export function setupWebPreviewDockResize(): void {
   let startX = 0;
   let startWidth = 0;
 
-  const iframe = panel.querySelector<HTMLIFrameElement>('iframe');
+  const getIframes = (): HTMLIFrameElement[] =>
+    Array.from(panel.querySelectorAll<HTMLIFrameElement>('.web-preview-iframe'));
 
   function beginResize(clientX: number): void {
     isResizing = true;
@@ -220,7 +226,9 @@ export function setupWebPreviewDockResize(): void {
     grip.classList.add('active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
-    if (iframe) iframe.style.pointerEvents = 'none';
+    for (const iframe of getIframes()) {
+      iframe.style.pointerEvents = 'none';
+    }
   }
 
   function updateResize(clientX: number): void {
@@ -236,7 +244,9 @@ export function setupWebPreviewDockResize(): void {
     grip.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    if (iframe) iframe.style.pointerEvents = '';
+    for (const iframe of getIframes()) {
+      iframe.style.pointerEvents = '';
+    }
     adjustInnerDockPositions();
     updateAllDockMargins();
     localStorage.setItem(DOCK_WIDTH_KEY, String(panel.offsetWidth));
@@ -283,7 +293,7 @@ export function setupWebPreviewDockResize(): void {
  * Pass width=0, height=0 to reset to full size.
  */
 export function setViewportSize(width: number, height: number): void {
-  const iframe = document.getElementById('web-preview-iframe');
+  const iframe = document.querySelector<HTMLIFrameElement>('.web-preview-iframe:not(.hidden)');
   const body = document.querySelector<HTMLElement>('.web-preview-dock-body');
   const badge = document.getElementById('web-preview-viewport-badge');
   if (!iframe || !body) return;
@@ -293,6 +303,9 @@ export function setViewportSize(width: number, height: number): void {
     iframe.style.height = '';
     iframe.style.maxWidth = '';
     iframe.style.maxHeight = '';
+    iframe.style.left = '';
+    iframe.style.top = '';
+    iframe.style.transform = '';
     body.classList.remove('viewport-constrained');
     $webPreviewViewport.set(null);
     if (badge) badge.classList.add('hidden');
@@ -304,6 +317,9 @@ export function setViewportSize(width: number, height: number): void {
   iframe.style.height = `${height}px`;
   iframe.style.maxWidth = `${width}px`;
   iframe.style.maxHeight = `${height}px`;
+  iframe.style.left = '50%';
+  iframe.style.top = '50%';
+  iframe.style.transform = 'translate(-50%, -50%)';
   body.classList.add('viewport-constrained');
   $webPreviewViewport.set({ width, height });
 

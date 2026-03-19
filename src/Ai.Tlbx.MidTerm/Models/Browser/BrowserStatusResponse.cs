@@ -18,4 +18,7 @@ public sealed class BrowserClientInfo
     public string? BrowserId { get; init; }
     public DateTimeOffset ConnectedAtUtc { get; init; }
     public bool IsMainBrowser { get; init; }
+    public bool IsVisible { get; init; }
+    public bool HasFocus { get; init; }
+    public bool IsTopLevel { get; init; }
 }

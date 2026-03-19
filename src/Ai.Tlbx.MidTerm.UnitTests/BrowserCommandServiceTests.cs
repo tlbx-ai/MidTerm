@@ -98,6 +98,52 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
+    public async Task ExecuteCommandAsync_WithHiddenNewerClient_PrefersVisibleClient()
+    {
+        var service = new BrowserCommandService();
+        BrowserWsMessage? captured = null;
+
+        Assert.True(service.TryRegisterClient(
+            "visible-client",
+            "session-a",
+            "default",
+            "preview-visible",
+            msg =>
+            {
+                captured = msg;
+                service.ReceiveResult(new BrowserWsResult
+                {
+                    Id = msg.Id,
+                    Success = true,
+                    Result = "visible-ok",
+                    PreviewId = "preview-visible"
+                });
+            },
+            browserId: "browser-a",
+            isVisible: true));
+        Assert.True(service.TryRegisterClient(
+            "hidden-client",
+            "session-a",
+            "default",
+            "preview-hidden",
+            _ => { },
+            browserId: "browser-a",
+            isVisible: false));
+
+        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "url",
+            SessionId = "session-a",
+            PreviewName = "default"
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("visible-ok", result.Result);
+        Assert.NotNull(captured);
+        Assert.Equal("preview-visible", captured!.PreviewId);
+    }
+
+    [Fact]
     public async Task UnregisterClient_CancelsOnlyPendingCommandsForThatPreview()
     {
         var service = new BrowserCommandService();
@@ -197,6 +243,31 @@ public class BrowserCommandServiceTests
         Assert.Equal("codex1", status.DefaultClient.PreviewName);
         Assert.Equal("preview-b", status.DefaultClient.PreviewId);
         Assert.Single(status.Clients);
+    }
+
+    [Fact]
+    public void GetStatus_DefaultClient_ExposesInteractiveFlags()
+    {
+        var service = new BrowserCommandService();
+
+        Assert.True(service.TryRegisterClient(
+            "c1",
+            "session-a",
+            "default",
+            "preview-a",
+            _ => { },
+            browserId: "browser-a",
+            isVisible: true,
+            hasFocus: true,
+            isTopLevel: false));
+
+        var status = service.GetStatus("http://192.168.178.1/", sessionId: "session-a");
+
+        Assert.True(status.Connected);
+        Assert.NotNull(status.DefaultClient);
+        Assert.True(status.DefaultClient!.IsVisible);
+        Assert.True(status.DefaultClient.HasFocus);
+        Assert.False(status.DefaultClient.IsTopLevel);
     }
 
     [Fact]
