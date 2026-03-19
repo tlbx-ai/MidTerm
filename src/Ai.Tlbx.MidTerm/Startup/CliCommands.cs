@@ -27,7 +27,7 @@ public static class CliCommands
             return true;
         }
 
-        if (args.Contains("--update"))
+        if (args.Contains("--update") || args.Contains("--apply-update"))
         {
             var updateService = new UpdateService();
             Console.WriteLine("Checking for updates...");

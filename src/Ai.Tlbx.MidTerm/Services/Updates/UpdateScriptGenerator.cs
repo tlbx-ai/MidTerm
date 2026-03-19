@@ -687,7 +687,7 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var currentMthostPath = Path.Combine(installDir, "mthost");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         var resultFilePath = Path.Combine(configDir, "update-result.json");
-        var logFilePath = Path.Combine(logDir, "update.log");
+        var logFilePath = LogPaths.GetUpdateLogPath(false, isServiceMode, configDir);
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
         var isWebOnly = updateType == UpdateType.WebOnly;
@@ -718,7 +718,7 @@ set -euo pipefail
 # pipes for stdin/stdout/stderr. When mt exits, those pipes break and any write
 # to stdout/stderr sends SIGPIPE which kills this script. Redirect everything
 # to the log file BEFORE any output happens.
-_early_log_dir='{EscapeForBash(logDir)}'
+_early_log_dir='{EscapeForBash(Path.GetDirectoryName(logFilePath) ?? logDir)}'
 mkdir -p ""$_early_log_dir"" 2>/dev/null || true
 exec > ""{EscapeForBash(logFilePath)}"" 2>&1 < /dev/null
 
@@ -736,6 +736,7 @@ NEW_VERSION_JSON='{EscapeForBash(newVersionJsonPath)}'
 EXTRACTED_DIR='{EscapeForBash(extractedDir)}'
 LOG_FILE='{EscapeForBash(logFilePath)}'
 RESULT_FILE='{EscapeForBash(resultFilePath)}'
+BACKUP_DIR='{EscapeForBash(Path.Combine(configDir, "update-backup"))}'
 MAX_RETRIES={MaxRetries}
 IS_WEB_ONLY={( isWebOnly ? "true" : "false")}
 DELETE_SOURCE={( deleteSourceAfter ? "true" : "false")}
@@ -748,7 +749,7 @@ STARTED_OK=false
 # On Linux, systemd typically runs as root, but we preserve existing ownership
 SERVICE_USER=""""
 if [[ -f ""$CONFIG_DIR/settings.json"" ]]; then
-    SERVICE_USER=$(stat -f '%Su' ""$CONFIG_DIR/settings.json"" 2>/dev/null || stat -c '%U' ""$CONFIG_DIR/settings.json"" 2>/dev/null || echo """")
+    SERVICE_USER=$(stat -c '%U' ""$CONFIG_DIR/settings.json"" 2>/dev/null || echo """")
 fi
 
 # === Helper Functions ===
@@ -835,8 +836,8 @@ verify_copy() {{
         return 1
     fi
 
-    local src_size=$(stat -f%z ""$src"" 2>/dev/null || stat -c%s ""$src"" 2>/dev/null)
-    local dst_size=$(stat -f%z ""$dst"" 2>/dev/null || stat -c%s ""$dst"" 2>/dev/null)
+    local src_size=$(stat -c%s ""$src"" 2>/dev/null)
+    local dst_size=$(stat -c%s ""$dst"" 2>/dev/null)
 
     if [[ ""$src_size"" != ""$dst_size"" ]]; then
         echo ""Copy verification failed: size mismatch for $dst (expected $src_size bytes, got $dst_size bytes)""
@@ -884,21 +885,21 @@ cleanup() {{
         kill_process_by_path ""$CURRENT_MT""
 
         # Restore binary backups
-        if [[ -f ""$CURRENT_MT.bak"" ]]; then
+        if [[ -f ""$BACKUP_DIR/mt.bak"" ]]; then
             log ""Restoring mt from backup...""
-            cp -f ""$CURRENT_MT.bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
+            cp -f ""$BACKUP_DIR/mt.bak"" ""$CURRENT_MT"" 2>/dev/null || log ""Failed to restore mt"" ""ERROR""
             chmod +x ""$CURRENT_MT"" 2>/dev/null || true
         fi
 
-        if [[ -f ""$CURRENT_MTHOST.bak"" ]]; then
+        if [[ -f ""$BACKUP_DIR/mthost.bak"" ]]; then
             log ""Restoring mthost from backup...""
-            cp -f ""$CURRENT_MTHOST.bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
+            cp -f ""$BACKUP_DIR/mthost.bak"" ""$CURRENT_MTHOST"" 2>/dev/null || log ""Failed to restore mthost"" ""ERROR""
             chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
         fi
 
-        if [[ -f ""$CURRENT_VERSION_JSON.bak"" ]]; then
+        if [[ -f ""$BACKUP_DIR/version.json.bak"" ]]; then
             log ""Restoring version.json from backup...""
-            cp -f ""$CURRENT_VERSION_JSON.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
+            cp -f ""$BACKUP_DIR/version.json.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
         fi
 
         # Restore credential files from CONFIG_DIR (not INSTALL_DIR!)
@@ -946,6 +947,7 @@ trap cleanup EXIT
 
 # Ensure log directory exists and has correct ownership
 mkdir -p ""$LOG_DIR"" 2>/dev/null || true
+mkdir -p ""$BACKUP_DIR"" 2>/dev/null || true
 
 # Log file is already truncated by exec > redirect at script start
 rm -f ""$RESULT_FILE"" 2>/dev/null || true
@@ -1027,19 +1029,19 @@ log '=== PHASE 3: Creating backups ==='
 
 if [[ -f ""$CURRENT_MT"" ]]; then
     log ""Backing up mt...""
-    cp -f ""$CURRENT_MT"" ""$CURRENT_MT.bak""
+    cp -f ""$CURRENT_MT"" ""$BACKUP_DIR/mt.bak""
     log ""mt backed up""
 fi
 
 if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     log ""Backing up mthost...""
-    cp -f ""$CURRENT_MTHOST"" ""$CURRENT_MTHOST.bak""
+    cp -f ""$CURRENT_MTHOST"" ""$BACKUP_DIR/mthost.bak""
     log ""mthost backed up""
 fi
 
 if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
     log ""Backing up version.json...""
-    cp -f ""$CURRENT_VERSION_JSON"" ""$CURRENT_VERSION_JSON.bak""
+    cp -f ""$CURRENT_VERSION_JSON"" ""$BACKUP_DIR/version.json.bak""
     log ""version.json backed up""
 fi
 
@@ -1081,8 +1083,8 @@ log '=== Certificate Diagnostics ==='
 
 # Check cert file
 if [[ -f ""$CERT_PATH"" ]]; then
-    cert_size=$(stat -f%z ""$CERT_PATH"" 2>/dev/null || stat -c%s ""$CERT_PATH"" 2>/dev/null)
-    cert_mtime=$(stat -f%m ""$CERT_PATH"" 2>/dev/null || stat -c%Y ""$CERT_PATH"" 2>/dev/null)
+    cert_size=$(stat -c%s ""$CERT_PATH"" 2>/dev/null)
+    cert_mtime=$(stat -c%Y ""$CERT_PATH"" 2>/dev/null)
     log ""  midterm.pem: Size=$cert_size bytes""
 
     # Get cert info using openssl
@@ -1104,7 +1106,7 @@ fi
 
 # Check key file
 if [[ -f ""$KEY_ENC_PATH"" ]]; then
-    key_size=$(stat -f%z ""$KEY_ENC_PATH"" 2>/dev/null || stat -c%s ""$KEY_ENC_PATH"" 2>/dev/null)
+    key_size=$(stat -c%s ""$KEY_ENC_PATH"" 2>/dev/null)
     log ""  midterm.key.enc: Size=$key_size bytes""
 else
     log '  WARNING: midterm.key.enc does NOT exist!' ""WARN""
@@ -1246,7 +1248,7 @@ fi
 
 # Check if key file still exists
 if [[ -f ""$KEY_ENC_PATH"" ]]; then
-    key_size=$(stat -f%z ""$KEY_ENC_PATH"" 2>/dev/null || stat -c%s ""$KEY_ENC_PATH"" 2>/dev/null)
+    key_size=$(stat -c%s ""$KEY_ENC_PATH"" 2>/dev/null)
     log ""  Key file OK: $key_size bytes""
 else
     log '  WARNING: Key file missing after update!' ""WARN""
@@ -1259,9 +1261,7 @@ log """"
 log '=== PHASE 6: Cleanup ==='
 
 # Clean up binary backups
-rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
-rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
-rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
+rm -rf ""$BACKUP_DIR"" 2>/dev/null || true
 
 # Clean up credential backups (in CONFIG_DIR, not INSTALL_DIR!)
 rm -f ""$CONFIG_DIR/settings.json.bak"" 2>/dev/null || true

@@ -200,6 +200,47 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
         }
     }
 
+    [Fact]
+    public void GenerateUpdateScript_Linux_StoresBackupsOutsideInstallDirectory()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        Assert.Contains("BACKUP_DIR=", scriptText, StringComparison.Ordinal);
+        Assert.Contains("$BACKUP_DIR/mt.bak", scriptText, StringComparison.Ordinal);
+        Assert.DoesNotContain("$CURRENT_MT.bak", scriptText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GenerateUpdateScript_Linux_UsesResolvedUpdateLogPath()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        Assert.Contains("LOG_FILE='", scriptText, StringComparison.Ordinal);
+        Assert.Contains("/logs/update.log", scriptText, StringComparison.Ordinal);
+    }
+
     private static string ReadScript(string path)
     {
         return File.ReadAllText(path);
