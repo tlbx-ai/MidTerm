@@ -766,6 +766,28 @@ public sealed partial class UpdateService : IDisposable
             updateType = update.Type;
         }
 
+        if (OperatingSystem.IsLinux() &&
+            updateType == UpdateType.WebOnly &&
+            settingsService.IsRunningAsService)
+        {
+            var applied = TryApplyLinuxServiceWebOnlyUpdate(
+                extractedDir,
+                settingsService.SettingsDirectory,
+                deleteSourceAfter);
+            if (!applied.Success)
+            {
+                return applied;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1000);
+                Environment.Exit(0);
+            });
+
+            return (true, "Update installed. Service will restart shortly.");
+        }
+
         if (OperatingSystem.IsMacOS())
         {
             var stagingDir = Path.Combine(settingsService.SettingsDirectory, "update-staging");
@@ -829,6 +851,150 @@ public sealed partial class UpdateService : IDisposable
         });
 
         return (true, "Update started. Server will restart shortly.");
+    }
+
+    private static (bool Success, string Message) TryApplyLinuxServiceWebOnlyUpdate(
+        string extractedDir,
+        string settingsDirectory,
+        bool deleteSourceAfter)
+    {
+        string? backupDir = null;
+        string? currentMtPath = null;
+        string? currentVersionJsonPath = null;
+        string? backupMtPath = null;
+        string? backupVersionJsonPath = null;
+
+        try
+        {
+            var installDir = Path.GetDirectoryName(GetCurrentBinaryPath());
+            if (string.IsNullOrEmpty(installDir))
+            {
+                return (false, "Could not determine install directory");
+            }
+
+            var newMtPath = Path.Combine(extractedDir, "mt");
+            var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
+            currentMtPath = Path.Combine(installDir, "mt");
+            currentVersionJsonPath = Path.Combine(installDir, "version.json");
+
+            if (!File.Exists(newMtPath) || !File.Exists(newVersionJsonPath))
+            {
+                return (false, "Downloaded update is incomplete");
+            }
+
+            backupDir = Path.Combine(settingsDirectory, "update-backup");
+            Directory.CreateDirectory(backupDir);
+
+            backupMtPath = Path.Combine(backupDir, "mt.bak");
+            backupVersionJsonPath = Path.Combine(backupDir, "version.json.bak");
+
+            if (File.Exists(currentMtPath))
+            {
+                File.Copy(currentMtPath, backupMtPath, overwrite: true);
+            }
+
+            if (File.Exists(currentVersionJsonPath))
+            {
+                File.Copy(currentVersionJsonPath, backupVersionJsonPath, overwrite: true);
+            }
+
+            InstallUnixFileAtomically(newMtPath, currentMtPath, makeExecutable: true);
+            InstallUnixFileAtomically(newVersionJsonPath, currentVersionJsonPath, makeExecutable: false);
+
+            try
+            {
+                Directory.Delete(backupDir, recursive: true);
+            }
+            catch
+            {
+            }
+
+            if (deleteSourceAfter)
+            {
+                try
+                {
+                    var tempDir = Path.GetDirectoryName(extractedDir);
+                    if (!string.IsNullOrEmpty(tempDir))
+                    {
+                        Directory.Delete(tempDir, recursive: true);
+                    }
+                    else
+                    {
+                        Directory.Delete(extractedDir, recursive: true);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            Log.Info(() => "Applied Linux web-only service update in-process; waiting for systemd restart");
+            return (true, "Update installed");
+        }
+        catch (Exception ex)
+        {
+            TryRestoreLinuxServiceWebOnlyUpdate(currentMtPath, backupMtPath, currentVersionJsonPath, backupVersionJsonPath);
+            Log.Error(() => $"Failed to apply Linux web-only service update in-process: {ex.Message}");
+            return (false, $"Failed to install update: {ex.Message}");
+        }
+    }
+
+    private static void TryRestoreLinuxServiceWebOnlyUpdate(
+        string? currentMtPath,
+        string? backupMtPath,
+        string? currentVersionJsonPath,
+        string? backupVersionJsonPath)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(currentMtPath) &&
+                !string.IsNullOrEmpty(backupMtPath) &&
+                File.Exists(backupMtPath))
+            {
+                InstallUnixFileAtomically(backupMtPath, currentMtPath, makeExecutable: true);
+            }
+        }
+        catch (Exception restoreEx)
+        {
+            Log.Error(() => $"Failed to restore mt after update error: {restoreEx.Message}");
+        }
+
+        try
+        {
+            if (!string.IsNullOrEmpty(currentVersionJsonPath) &&
+                !string.IsNullOrEmpty(backupVersionJsonPath) &&
+                File.Exists(backupVersionJsonPath))
+            {
+                InstallUnixFileAtomically(backupVersionJsonPath, currentVersionJsonPath, makeExecutable: false);
+            }
+        }
+        catch (Exception restoreEx)
+        {
+            Log.Error(() => $"Failed to restore version.json after update error: {restoreEx.Message}");
+        }
+    }
+
+    private static void InstallUnixFileAtomically(string sourcePath, string destinationPath, bool makeExecutable)
+    {
+        var tempPath = destinationPath + ".new";
+
+        File.Copy(sourcePath, tempPath, overwrite: true);
+
+        if (makeExecutable && (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()))
+        {
+            try
+            {
+                File.SetUnixFileMode(tempPath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            }
+            catch
+            {
+            }
+        }
+
+        File.Move(tempPath, destinationPath, overwrite: true);
     }
 
     public static UpdateResult? ReadUpdateResult(string settingsDirectory, bool clear = false)
