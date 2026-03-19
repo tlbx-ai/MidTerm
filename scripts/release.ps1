@@ -224,7 +224,7 @@ $isPtyBreaking = $mthostUpdate -eq "yes"
 if ($isPtyBreaking) {
     Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
 } else {
-    Write-Host "Release type: Web-only (mt only, sessions preserved)" -ForegroundColor Green
+    Write-Host "Release type: Web-only updater (release archives still include mthost; running installs keep their current host)" -ForegroundColor Green
 }
 
 # Update version.json
@@ -241,7 +241,7 @@ if ($isPtyBreaking) {
     if ($ptyParts.Count -eq 4) {
         $versionJson.pty = "$($ptyParts[0]).$($ptyParts[1]).$($ptyParts[2])"
     }
-    # Mark as web-only release so sign-release.ps1 skips mthost checksum
+    # Mark as web-only so the updater preserves the installed mthost/checksum contract
     $versionJson | Add-Member -NotePropertyName "webOnly" -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
@@ -256,7 +256,7 @@ Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 if ($isPtyBreaking) {
     Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  TtyHost: skipped (web-only release)" -ForegroundColor DarkGray
+    Write-Host "  TtyHost: binary still ships in release archives; updater remains web-only" -ForegroundColor DarkGray
 }
 
 # Git operations

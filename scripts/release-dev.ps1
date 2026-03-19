@@ -148,7 +148,7 @@ $isPtyBreaking = $mthostUpdate -eq "yes"
 if ($isPtyBreaking) {
     Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
 } else {
-    Write-Host "Release type: Web-only (mt only, sessions preserved)" -ForegroundColor Green
+    Write-Host "Release type: Web-only updater (release archives still include mthost; running installs keep their current host)" -ForegroundColor Green
 }
 
 # Update version.json
@@ -184,7 +184,7 @@ Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 if ($isPtyBreaking) {
     Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  TtyHost: skipped (web-only release)" -ForegroundColor DarkGray
+    Write-Host "  TtyHost: binary still ships in release archives; updater remains web-only" -ForegroundColor DarkGray
 }
 
 # Pre-release build verification (catches ESLint, TypeScript, C# errors before committing)

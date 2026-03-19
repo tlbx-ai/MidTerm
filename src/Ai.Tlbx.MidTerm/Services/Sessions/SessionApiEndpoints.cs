@@ -10,6 +10,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
@@ -47,6 +48,7 @@ public static partial class SessionApiEndpoints
     public static void MapSessionEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
+        ClipboardService clipboardService,
         UpdateService updateService,
         WebPreviewService webPreviewService,
         SessionTelemetryService sessionTelemetry,
@@ -416,7 +418,13 @@ public static partial class SessionApiEndpoints
 
             if (IsImageUpload(file, targetPath))
             {
-                await sessionManager.SetClipboardImageAsync(id, targetPath, file.ContentType);
+                await TrySetClipboardImageAsync(
+                    sessionManager,
+                    clipboardService,
+                    session,
+                    id,
+                    targetPath,
+                    file.ContentType);
             }
 
             // To make Johannes happy
@@ -446,7 +454,13 @@ public static partial class SessionApiEndpoints
 
             var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
 
-            var success = await sessionManager.SetClipboardImageAsync(id, targetPath, file.ContentType);
+            var success = await TrySetClipboardImageAsync(
+                sessionManager,
+                clipboardService,
+                session,
+                id,
+                targetPath,
+                file.ContentType);
             if (!success)
             {
                 return Results.Problem("Failed to set clipboard");
@@ -873,6 +887,24 @@ public static partial class SessionApiEndpoints
         int LaunchDelayMs,
         int SlashCommandDelayMs);
 
+    internal static int GetPreferredClipboardProcessId(SessionInfo session)
+    {
+        return session.HostPid > 0 ? session.HostPid : session.Pid;
+    }
+
+    internal static async Task<bool> TrySetClipboardImageAsync(
+        Func<CancellationToken, Task<bool>> sessionScopedSetter,
+        Func<CancellationToken, Task<bool>> fallbackSetter,
+        CancellationToken ct = default)
+    {
+        if (await sessionScopedSetter(ct).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        return await fallbackSetter(ct).ConfigureAwait(false);
+    }
+
     private static async Task<string> SaveUploadedFileAsync(
         TtyHostSessionManager sessionManager, string sessionId, IFormFile file)
     {
@@ -901,6 +933,22 @@ public static partial class SessionApiEndpoints
         }
 
         return targetPath;
+    }
+
+    private static Task<bool> TrySetClipboardImageAsync(
+        TtyHostSessionManager sessionManager,
+        ClipboardService clipboardService,
+        SessionInfo session,
+        string sessionId,
+        string targetPath,
+        string? mimeType,
+        CancellationToken ct = default)
+    {
+        var preferredProcessId = GetPreferredClipboardProcessId(session);
+        return TrySetClipboardImageAsync(
+            token => sessionManager.SetClipboardImageAsync(sessionId, targetPath, mimeType, token),
+            _ => clipboardService.SetImageAsync(targetPath, mimeType, preferredProcessId),
+            ct);
     }
 
     private static string GetUploadDirectory(TtyHostSessionManager sessionManager, string sessionId)

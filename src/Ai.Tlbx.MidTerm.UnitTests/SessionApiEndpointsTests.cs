@@ -1,4 +1,5 @@
 using System.Text;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -250,5 +251,67 @@ public sealed class SessionApiEndpointsTests
 
         Assert.False(ok);
         Assert.Equal(string.Empty, plan.LaunchCommand);
+    }
+
+    [Fact]
+    public void GetPreferredClipboardProcessId_PrefersHostPid()
+    {
+        var session = new SessionInfo
+        {
+            Pid = 41,
+            HostPid = 99
+        };
+
+        var preferred = SessionApiEndpoints.GetPreferredClipboardProcessId(session);
+
+        Assert.Equal(99, preferred);
+    }
+
+    [Fact]
+    public void GetPreferredClipboardProcessId_FallsBackToSessionPid()
+    {
+        var session = new SessionInfo
+        {
+            Pid = 41,
+            HostPid = 0
+        };
+
+        var preferred = SessionApiEndpoints.GetPreferredClipboardProcessId(session);
+
+        Assert.Equal(41, preferred);
+    }
+
+    [Fact]
+    public async Task TrySetClipboardImageAsync_SkipsFallbackWhenSessionScopedSetterSucceeds()
+    {
+        var fallbackCalled = false;
+
+        var ok = await SessionApiEndpoints.TrySetClipboardImageAsync(
+            _ => Task.FromResult(true),
+            _ =>
+            {
+                fallbackCalled = true;
+                return Task.FromResult(true);
+            });
+
+        Assert.True(ok);
+        Assert.False(fallbackCalled);
+    }
+
+    [Fact]
+    public async Task TrySetClipboardImageAsync_UsesFallbackWhenSessionScopedSetterFails()
+    {
+        var fallbackCalled = false;
+
+        var ok = await SessionApiEndpoints.TrySetClipboardImageAsync(
+            _ => Task.FromResult(false),
+            _ =>
+            {
+                fallbackCalled = true;
+                return Task.FromResult(true);
+            });
+
+        Assert.True(ok);
+        Assert.True(fallbackCalled);
     }
 }

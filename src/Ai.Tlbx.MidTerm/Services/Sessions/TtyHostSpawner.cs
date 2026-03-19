@@ -19,6 +19,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 /// </summary>
 public static class TtyHostSpawner
 {
+    private const string MtBinaryPathEnvironmentVariable = "MT_BINARY_PATH";
     private static readonly string TtyHostPath = GetTtyHostPath();
     private static bool _integrityVerified;
     private static readonly object _verifyLock = new();
@@ -336,6 +337,12 @@ public static class TtyHostSpawner
                 };
             }
 
+            var mtBinaryPath = GetMidTermBinaryPath();
+            if (!string.IsNullOrWhiteSpace(mtBinaryPath))
+            {
+                psi.Environment[MtBinaryPathEnvironmentVariable] = mtBinaryPath;
+            }
+
             var process = Process.Start(psi);
             if (process is null)
             {
@@ -392,7 +399,12 @@ public static class TtyHostSpawner
         var programArguments = new List<string>(ParseUnixArgs(args));
         programArguments.Insert(0, TtyHostPath);
 
-        var plistContent = BuildMacOsLaunchAgentPlist(label, programArguments, stdoutPath, stderrPath);
+        var plistContent = BuildMacOsLaunchAgentPlist(
+            label,
+            programArguments,
+            stdoutPath,
+            stderrPath,
+            GetMidTermBinaryPath());
         File.WriteAllText(plistPath, plistContent, Encoding.UTF8);
 
         _ = RunProcessSync("launchctl", ["bootout", $"gui/{uid}/{label}"], out _, out _, logFailures: false);
@@ -457,7 +469,8 @@ public static class TtyHostSpawner
         string label,
         IReadOnlyList<string> programArguments,
         string stdoutPath,
-        string stderrPath)
+        string stderrPath,
+        string? mtBinaryPath = null)
     {
         var argsBuilder = new StringBuilder();
         foreach (var argument in programArguments)
@@ -495,7 +508,7 @@ public static class TtyHostSpawner
     <dict>
         <key>PATH</key>
         <string>{{EscapeXml(pathVar)}}</string>
-    </dict>
+{{(string.IsNullOrWhiteSpace(mtBinaryPath) ? string.Empty : $"        <key>{MtBinaryPathEnvironmentVariable}</key>\n        <string>{EscapeXml(mtBinaryPath)}</string>\n")}}    </dict>
 </dict>
 </plist>
 """;
@@ -1081,6 +1094,41 @@ public static class TtyHostSpawner
         }
 
         return sameDirPath;
+    }
+
+    private static string? GetMidTermBinaryPath()
+    {
+        var envPath = Environment.GetEnvironmentVariable(MtBinaryPathEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(envPath))
+        {
+            return envPath;
+        }
+
+        var exeName = OperatingSystem.IsWindows() ? "mt.exe" : "mt";
+        var baseDir = AppContext.BaseDirectory;
+        if (!string.IsNullOrWhiteSpace(baseDir))
+        {
+            var sameDirPath = Path.Combine(baseDir, exeName);
+            if (File.Exists(sameDirPath))
+            {
+                return sameDirPath;
+            }
+        }
+
+        var currentExe = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(currentExe))
+        {
+            return null;
+        }
+
+        if (string.Equals(Path.GetFileName(currentExe), exeName, StringComparison.OrdinalIgnoreCase))
+        {
+            return currentExe;
+        }
+
+        return string.Equals(Path.GetFileNameWithoutExtension(currentExe), "dotnet", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : currentExe;
     }
 
 #if WINDOWS

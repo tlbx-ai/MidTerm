@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Reflection;
+using System.Text;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -10,6 +12,13 @@ public static class CliCommands
 {
     public static bool HandleSpecialCommands(string[] args)
     {
+        var clipboardWriteImageIdx = Array.IndexOf(args, "--clipboard-write-image");
+        if (clipboardWriteImageIdx >= 0)
+        {
+            HandleClipboardWriteImage(args, clipboardWriteImageIdx);
+            return true;
+        }
+
         if (args.Contains("--check-update"))
         {
             var updateService = new UpdateService();
@@ -180,6 +189,224 @@ public static class CliCommands
         }
 
         return false;
+    }
+
+    private static void HandleClipboardWriteImage(string[] args, int clipboardWriteImageIdx)
+    {
+        if (clipboardWriteImageIdx + 1 >= args.Length)
+        {
+            Console.Error.WriteLine("Error: --clipboard-write-image requires a file path");
+            Environment.Exit(1);
+        }
+
+        var filePath = args[clipboardWriteImageIdx + 1];
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        {
+            Console.Error.WriteLine("Error: Clipboard source file not found");
+            Environment.Exit(1);
+        }
+
+        var mimeType = TryGetFlagValue(args, "--mime");
+        var success = WriteClipboardImageAsync(filePath, mimeType).GetAwaiter().GetResult();
+        if (!success)
+        {
+            Environment.Exit(1);
+        }
+    }
+
+    private static async Task<bool> WriteClipboardImageAsync(string filePath, string? mimeType)
+    {
+        var resolvedMimeType = ResolveMimeType(filePath, mimeType);
+        if (resolvedMimeType is null)
+        {
+            Console.Error.WriteLine("Error: Unsupported clipboard image type");
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return await WriteClipboardImageWindowsAsync(filePath);
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return await WriteClipboardImageMacOsDirectAsync(filePath);
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return await WriteClipboardImageLinuxAsync(filePath, resolvedMimeType);
+        }
+
+        Console.Error.WriteLine("Error: Clipboard image paste is not supported on this OS");
+        return false;
+    }
+
+    private static async Task<bool> WriteClipboardImageWindowsAsync(string filePath)
+    {
+        var escapedPath = filePath.Replace("'", "''");
+        var script =
+            "Add-Type -AssemblyName System.Windows.Forms; " +
+            "Add-Type -AssemblyName System.Drawing; " +
+            $"$path = '{escapedPath}'; " +
+            "$image = [System.Drawing.Image]::FromFile($path); " +
+            "try { " +
+            "  $data = New-Object System.Windows.Forms.DataObject; " +
+            "  $data.SetData([System.Windows.Forms.DataFormats]::Bitmap, $image); " +
+            "  $files = New-Object System.Collections.Specialized.StringCollection; " +
+            "  [void]$files.Add($path); " +
+            "  $data.SetFileDropList($files); " +
+            "  [System.Windows.Forms.Clipboard]::SetDataObject($data, $true); " +
+            "} finally { " +
+            "  $image.Dispose(); " +
+            "}";
+
+        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        var result = await RunProcessCaptureAsync("powershell.exe", ["-NoProfile", "-STA", "-EncodedCommand", encodedScript]);
+        if (result.Started && result.ExitCode == 0)
+        {
+            return true;
+        }
+
+        var error = string.IsNullOrWhiteSpace(result.Stderr)
+            ? (result.Started ? $"powershell.exe exited with code {result.ExitCode}" : result.Error)
+            : result.Stderr.Trim();
+        Console.Error.WriteLine(error);
+        return false;
+    }
+
+    private static async Task<bool> WriteClipboardImageMacOsDirectAsync(string filePath)
+    {
+        var escapedPath = filePath.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var script = $"set the clipboard to (read (POSIX file \"{escapedPath}\") as picture)";
+        var result = await RunProcessCaptureAsync("/usr/bin/osascript", ["-e", script]);
+        if (result.Started && result.ExitCode == 0)
+        {
+            return true;
+        }
+
+        var error = string.IsNullOrWhiteSpace(result.Stderr)
+            ? (result.Started ? $"/usr/bin/osascript exited with code {result.ExitCode}" : result.Error)
+            : result.Stderr.Trim();
+        Console.Error.WriteLine(error);
+        return false;
+    }
+
+    private static async Task<bool> WriteClipboardImageLinuxAsync(string filePath, string mimeType)
+    {
+        var waylandResult = await RunProcessCaptureAsync(
+            "wl-copy",
+            ["--type", mimeType],
+            standardInputFilePath: filePath);
+        if (waylandResult.Started && waylandResult.ExitCode == 0)
+        {
+            return true;
+        }
+
+        var xclipResult = await RunProcessCaptureAsync(
+            "xclip",
+            ["-selection", "clipboard", "-t", mimeType, "-i", filePath]);
+        if (xclipResult.Started && xclipResult.ExitCode == 0)
+        {
+            return true;
+        }
+
+        var error = !string.IsNullOrWhiteSpace(xclipResult.Stderr)
+            ? xclipResult.Stderr.Trim()
+            : !string.IsNullOrWhiteSpace(waylandResult.Stderr)
+                ? waylandResult.Stderr.Trim()
+                : xclipResult.Started
+                    ? $"xclip exited with code {xclipResult.ExitCode}"
+                    : waylandResult.Started
+                        ? $"wl-copy exited with code {waylandResult.ExitCode}"
+                        : xclipResult.Error;
+        Console.Error.WriteLine(error);
+        return false;
+    }
+
+    private static async Task<(bool Started, int ExitCode, string Stdout, string Stderr, string Error)> RunProcessCaptureAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? standardInputFilePath = null)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    RedirectStandardInput = standardInputFilePath is not null
+                }
+            };
+
+            foreach (var argument in arguments)
+            {
+                process.StartInfo.ArgumentList.Add(argument);
+            }
+
+            process.Start();
+
+            if (standardInputFilePath is not null)
+            {
+                await using var inputFile = File.OpenRead(standardInputFilePath);
+                await inputFile.CopyToAsync(process.StandardInput.BaseStream);
+                await process.StandardInput.FlushAsync();
+                process.StandardInput.Close();
+            }
+
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+            var stderr = await process.StandardError.ReadToEndAsync();
+            return (true, process.ExitCode, stdout, stderr, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            return (false, -1, string.Empty, string.Empty, ex.Message);
+        }
+    }
+
+    private static string? ResolveMimeType(string filePath, string? mimeType)
+    {
+        if (!string.IsNullOrWhiteSpace(mimeType) &&
+            mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return NormalizeMimeType(mimeType);
+        }
+
+        return Path.GetExtension(filePath).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" => "image/jpeg",
+            ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            ".webp" => "image/webp",
+            ".tif" => "image/tiff",
+            ".tiff" => "image/tiff",
+            _ => null
+        };
+    }
+
+    private static string NormalizeMimeType(string mimeType)
+    {
+        var normalized = mimeType.Trim().ToLowerInvariant();
+        return normalized == "image/jpg" ? "image/jpeg" : normalized;
+    }
+
+    private static string? TryGetFlagValue(string[] args, string flag)
+    {
+        var idx = Array.IndexOf(args, flag);
+        if (idx < 0 || idx + 1 >= args.Length)
+        {
+            return null;
+        }
+
+        return args[idx + 1];
     }
 
     public static void PrintHelp()

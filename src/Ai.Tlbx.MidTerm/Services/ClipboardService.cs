@@ -11,6 +11,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class ClipboardService
 {
+    private const string MtBinaryPathEnvironmentVariable = "MT_BINARY_PATH";
     private const string MacOsClipboardLabelPrefix = "ai.tlbx.midterm.clipboard.set.";
     private static readonly Regex MacOsExitCodeRegex = new(@"\blast exit code = (?<code>-?\d+)\b", RegexOptions.Compiled);
     private readonly SettingsService _settingsService;
@@ -41,12 +42,12 @@ public sealed class ClipboardService
 
         if (OperatingSystem.IsWindows())
         {
-            return await SetImageWindowsAsync(filePath, preferredProcessId);
+            return await SetImageWindowsAsync(filePath, resolvedMimeType, preferredProcessId);
         }
 
         if (OperatingSystem.IsMacOS())
         {
-            return await SetImageMacOsAsync(filePath);
+            return await SetImageMacOsAsync(filePath, resolvedMimeType);
         }
 
         if (OperatingSystem.IsLinux())
@@ -63,27 +64,16 @@ public sealed class ClipboardService
     }
 
     [SupportedOSPlatform("windows")]
-    private async Task<bool> SetImageWindowsAsync(string filePath, int? preferredProcessId)
+    private async Task<bool> SetImageWindowsAsync(string filePath, string mimeType, int? preferredProcessId)
     {
-        var escapedPath = filePath.Replace("'", "''");
-        var script =
-            "Add-Type -AssemblyName System.Windows.Forms; " +
-            "Add-Type -AssemblyName System.Drawing; " +
-            $"$path = '{escapedPath}'; " +
-            "$image = [System.Drawing.Image]::FromFile($path); " +
-            "try { " +
-            "  $data = New-Object System.Windows.Forms.DataObject; " +
-            "  $data.SetData([System.Windows.Forms.DataFormats]::Bitmap, $image); " +
-            "  $files = New-Object System.Collections.Specialized.StringCollection; " +
-            "  [void]$files.Add($path); " +
-            "  $data.SetFileDropList($files); " +
-            "  [System.Windows.Forms.Clipboard]::SetDataObject($data, $true); " +
-            "} finally { " +
-            "  $image.Dispose(); " +
-            "}";
+        var mtBinaryPath = GetMidTermBinaryPath();
+        if (string.IsNullOrWhiteSpace(mtBinaryPath) || !File.Exists(mtBinaryPath))
+        {
+            Log.Warn(() => $"[Clipboard] Helper missing mt binary: {mtBinaryPath ?? "(null)"}");
+            return false;
+        }
 
-        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        var args = new[] { "-NoProfile", "-STA", "-EncodedCommand", encodedScript };
+        var args = BuildClipboardHelperArguments(filePath, mimeType);
 
 #if WINDOWS
         if (_settingsService.IsRunningAsService)
@@ -103,7 +93,7 @@ public sealed class ClipboardService
 
             var runAsUser = _settingsService.Load().RunAsUser;
             var result = await TtyHostSpawner.RunCommandAsUserAsync(
-                "powershell.exe",
+                mtBinaryPath,
                 args,
                 workingDir,
                 runAsUser,
@@ -120,36 +110,40 @@ public sealed class ClipboardService
                 : result.Stderr.Trim();
 
             Log.Warn(() => $"[Clipboard] Service-mode clipboard sync failed (runAsUser={runAsUser ?? "(auto)"}): {failure}");
+            return false;
         }
 #endif
 
-        return await RunProcessAsync("powershell.exe", args);
+        return await RunProcessAsync(mtBinaryPath, args);
     }
 
-    private static async Task<bool> SetImageMacOsAsync(string filePath)
+    private static async Task<bool> SetImageMacOsAsync(string filePath, string mimeType)
     {
-        var escapedPath = filePath.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        var script = $"set the clipboard to (read (POSIX file \"{escapedPath}\") as picture)";
+        var mtBinaryPath = GetMidTermBinaryPath();
+        if (string.IsNullOrWhiteSpace(mtBinaryPath) || !File.Exists(mtBinaryPath))
+        {
+            Log.Warn(() => $"[Clipboard] macOS helper missing mt binary: {mtBinaryPath ?? "(null)"}");
+            return false;
+        }
 
-        // Works in user mode when mt runs inside a GUI session.
-        if (await RunProcessAsync("osascript", ["-e", script], logFailures: false))
+        if (await RunProcessAsync(mtBinaryPath, BuildClipboardHelperArguments(filePath, mimeType), logFailures: false))
         {
             return true;
         }
 
-        // Service mode on macOS runs outside Aqua (non-GUI audit session), where
-        // direct osascript clipboard access is denied. Execute via GUI launchd domain.
-        return await SetImageMacOsViaGuiLaunchAgentAsync(script);
+        return await SetImageMacOsViaGuiLaunchAgentAsync(filePath, mimeType, mtBinaryPath);
     }
 
     private static async Task<bool> SetImageLinuxAsync(string filePath, string mimeType)
     {
-        if (await RunProcessAsync("wl-copy", ["--type", mimeType], standardInputFilePath: filePath, logFailures: false))
+        var mtBinaryPath = GetMidTermBinaryPath();
+        if (string.IsNullOrWhiteSpace(mtBinaryPath) || !File.Exists(mtBinaryPath))
         {
-            return true;
+            Log.Warn(() => $"[Clipboard] Linux helper missing mt binary: {mtBinaryPath ?? "(null)"}");
+            return false;
         }
 
-        return await RunProcessAsync("xclip", ["-selection", "clipboard", "-t", mimeType, "-i", filePath]);
+        return await RunProcessAsync(mtBinaryPath, BuildClipboardHelperArguments(filePath, mimeType));
     }
 
     private static string? ResolveMimeType(string filePath, string? mimeType)
@@ -181,7 +175,7 @@ public sealed class ClipboardService
         return normalized == "image/jpg" ? "image/jpeg" : normalized;
     }
 
-    private static async Task<bool> SetImageMacOsViaGuiLaunchAgentAsync(string appleScript)
+    private static async Task<bool> SetImageMacOsViaGuiLaunchAgentAsync(string filePath, string mimeType, string mtBinaryPath)
     {
         var uid = geteuid();
         if (uid == 0)
@@ -199,7 +193,7 @@ public sealed class ClipboardService
 
         var plist = BuildMacOsLaunchAgentPlist(
             label,
-            ["/usr/bin/osascript", "-e", appleScript],
+            BuildClipboardHelperProgramArguments(filePath, mimeType, mtBinaryPath),
             stdoutPath,
             stderrPath);
 
@@ -303,6 +297,51 @@ public sealed class ClipboardService
 </dict>
 </plist>
 """;
+    }
+
+    private static string? GetMidTermBinaryPath()
+    {
+        var envPath = Environment.GetEnvironmentVariable(MtBinaryPathEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(envPath))
+        {
+            return envPath;
+        }
+
+        var exeName = OperatingSystem.IsWindows() ? "mt.exe" : "mt";
+        var baseDir = AppContext.BaseDirectory;
+        if (!string.IsNullOrWhiteSpace(baseDir))
+        {
+            var sameDirPath = Path.Combine(baseDir, exeName);
+            if (File.Exists(sameDirPath))
+            {
+                return sameDirPath;
+            }
+        }
+
+        var currentExe = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(currentExe))
+        {
+            return null;
+        }
+
+        if (string.Equals(Path.GetFileName(currentExe), exeName, StringComparison.OrdinalIgnoreCase))
+        {
+            return currentExe;
+        }
+
+        return string.Equals(Path.GetFileNameWithoutExtension(currentExe), "dotnet", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : currentExe;
+    }
+
+    private static string[] BuildClipboardHelperArguments(string filePath, string mimeType)
+    {
+        return ["--clipboard-write-image", filePath, "--mime", mimeType];
+    }
+
+    private static string[] BuildClipboardHelperProgramArguments(string filePath, string mimeType, string mtBinaryPath)
+    {
+        return [mtBinaryPath, .. BuildClipboardHelperArguments(filePath, mimeType)];
     }
 
     private static string EscapeXml(string value)
