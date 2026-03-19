@@ -249,6 +249,7 @@ describe('stateChannel browser-ui handling', () => {
       'default',
       'http://localhost:3000',
     );
+    expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
     expect(mocks.upsertSessionPreview).toHaveBeenCalledWith({
       sessionId: 'agent5678',
       previewName: 'default',

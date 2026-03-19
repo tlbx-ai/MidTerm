@@ -534,6 +534,8 @@ function handleBrowserUiCommand(msg: BrowserUiMessage): void {
     return;
   }
 
+  void checkVersionAndReload();
+
   switch (msg.command) {
     case 'detach': {
       const target = resolveBrowserUiTarget(msg);
