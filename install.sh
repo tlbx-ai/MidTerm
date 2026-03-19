@@ -511,190 +511,24 @@ get_latest_release() {
     fi
 }
 
-archive_contains_mthost() {
-    local archive_path="$1"
-    tar -tzf "$archive_path" 2>/dev/null | grep -Eq '(^|/)(\./)?mthost$|^mthost$|^\./mthost$'
-}
-
-download_text_url() {
-    local url="$1"
-
-    if [ "$DOWNLOADER" = "curl" ]; then
-        curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 1 --retry-all-errors \
-            -H "User-Agent: MidTerm-Installer" \
-            "$url"
-        return
-    fi
-
-    wget -qO- --user-agent="MidTerm-Installer" "$url"
-}
-
-fetch_release_manifest() {
-    local tag_name="$1"
-    local url manifest
-
-    for url in \
-        "https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$tag_name/src/version.json" \
-        "https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$tag_name/version.json"; do
-        manifest=$(download_text_url "$url" 2>/dev/null || true)
-        if [ -n "$manifest" ]; then
-            printf '%s\n' "$manifest"
-            return 0
-        fi
-    done
-
-    return 1
-}
-
-release_asset_contains_mthost() {
-    local asset_url="$1"
-    local temp_dir archive_path
-
-    temp_dir=$(mktemp -d)
-    archive_path="$temp_dir/$ASSET_NAME"
-
-    if ! download_to_file "$asset_url" "$archive_path" "$ASSET_NAME" >/dev/null 2>&1; then
-        rm -rf "$temp_dir"
-        return 1
-    fi
-
-    if archive_contains_mthost "$archive_path"; then
-        rm -rf "$temp_dir"
-        return 0
-    fi
-
-    rm -rf "$temp_dir"
-    return 1
-}
-
-find_mthost_asset_for_pty() {
-    local desired_pty="$1"
-    local page releases_json release_tags tag tag_manifest tag_pty asset_url
-
-    for page in 1 2 3 4 5; do
-        releases_json=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=100&page=$page" 2>/dev/null || true)
-        [ -z "$releases_json" ] && break
-
-        release_tags=$(printf '%s' "$releases_json" |
-            grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' |
-            sed -E 's/.*"([^"]+)"$/\1/')
-        [ -z "$release_tags" ] && break
-
-        while IFS= read -r tag; do
-            [ -z "$tag" ] && continue
-            case "$tag" in
-                *-dev*) continue ;;
-            esac
-
-            tag_manifest=$(fetch_release_manifest "$tag" 2>/dev/null || true)
-            [ -z "$tag_manifest" ] && continue
-
-            tag_pty=$(printf '%s' "$tag_manifest" |
-                sed -nE 's/.*"pty"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' |
-                head -1)
-            [ "$tag_pty" != "$desired_pty" ] && continue
-
-            asset_url="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$tag/$ASSET_NAME"
-            if release_asset_contains_mthost "$asset_url"; then
-                printf '%s|%s\n' "$tag" "$asset_url"
-                return 0
-            fi
-        done <<< "$release_tags"
-    done
-
-    return 1
-}
-
-stage_matching_mthost_if_needed() {
+require_extracted_binaries() {
     local temp_dir="$1"
-    local install_dir="$2"
-    local manifest_path="$temp_dir/version.json"
-    local manifest_json desired_pty current_pty match_info match_tag match_url
-    local host_temp_dir host_archive host_binary
 
-    if [ -f "$temp_dir/mthost" ]; then
-        return 0
-    fi
-
-    if [ ! -f "$manifest_path" ]; then
-        log "version.json missing from latest archive; cannot resolve matching mthost" "ERROR"
+    if [ ! -f "$temp_dir/mt" ]; then
+        log "Release archive did not contain mt" "ERROR"
         echo -e "${RED}failed${NC}"
-        echo -e "  ${YELLOW}The latest release archive did not include version.json or mthost.${NC}"
+        echo -e "  ${YELLOW}The downloaded release archive is incomplete: mt is missing.${NC}"
         return 1
     fi
 
-    manifest_json=$(cat "$manifest_path")
-    desired_pty=$(printf '%s' "$manifest_json" |
-        sed -nE 's/.*"pty"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' |
-        head -1)
-
-    if [ -z "$desired_pty" ]; then
-        log "Could not determine desired PTY version from version.json" "ERROR"
+    if [ ! -f "$temp_dir/mthost" ]; then
+        log "Release archive did not contain mthost" "ERROR"
         echo -e "${RED}failed${NC}"
-        echo -e "  ${YELLOW}The latest release manifest did not declare a PTY version.${NC}"
+        echo -e "  ${YELLOW}The downloaded release archive is incomplete: mthost is missing.${NC}"
+        echo -e "  ${GRAY}This installer expects full release archives for every platform.${NC}"
         return 1
     fi
 
-    if [ -f "$install_dir/mthost" ]; then
-        current_pty=$("$install_dir/mthost" --version 2>/dev/null | awk '{print $2}' | head -1 || true)
-        if [ "$current_pty" = "$desired_pty" ]; then
-            log "Keeping existing mthost version $current_pty"
-            return 0
-        fi
-    fi
-
-    log "Latest mt archive is web-only; resolving mthost for PTY version $desired_pty"
-    printf "  Staging mthost v%s...                 " "$desired_pty"
-
-    match_info=$(find_mthost_asset_for_pty "$desired_pty")
-    if [ -z "$match_info" ]; then
-        log "Could not find a release asset containing mthost for PTY version $desired_pty" "ERROR"
-        echo -e "${RED}failed${NC}"
-        echo -e "  ${YELLOW}Could not locate mthost for PTY version $desired_pty.${NC}"
-        return 1
-    fi
-
-    match_tag="${match_info%%|*}"
-    match_url="${match_info#*|}"
-    log "Using mthost from $match_tag for PTY version $desired_pty"
-
-    host_temp_dir=$(mktemp -d)
-    host_archive="$host_temp_dir/$ASSET_NAME"
-
-    if ! download_to_file "$match_url" "$host_archive" "matching mthost archive"; then
-        log "Failed to download matching mthost archive from $match_url" "ERROR"
-        rm -rf "$host_temp_dir"
-        echo -e "${RED}failed${NC}"
-        return 1
-    fi
-
-    if ! tar -xzf "$host_archive" -C "$host_temp_dir"; then
-        log "Failed to extract matching mthost archive $host_archive" "ERROR"
-        rm -rf "$host_temp_dir"
-        echo -e "${RED}failed${NC}"
-        return 1
-    fi
-
-    host_binary="$host_temp_dir/mthost"
-    if [ ! -f "$host_binary" ]; then
-        log "Matching archive $match_tag did not contain mthost after extraction" "ERROR"
-        rm -rf "$host_temp_dir"
-        echo -e "${RED}failed${NC}"
-        return 1
-    fi
-
-    if ! cp "$host_binary" "$temp_dir/mthost"; then
-        log "Failed to stage mthost into $temp_dir" "ERROR"
-        rm -rf "$host_temp_dir"
-        echo -e "${RED}failed${NC}"
-        return 1
-    fi
-
-    chmod +x "$temp_dir/mthost"
-    rm -rf "$host_temp_dir"
-    echo -e "${GREEN}done${NC}"
-    log "mthost staged from $match_tag"
     return 0
 }
 
@@ -1528,7 +1362,7 @@ install_binary() {
     fi
     echo -e "${GREEN}done${NC}"
 
-    if ! stage_matching_mthost_if_needed "$temp_dir" "$install_dir"; then
+    if ! require_extracted_binaries "$temp_dir"; then
         rm -rf "$temp_dir"
         exit 1
     fi

@@ -24,16 +24,11 @@ jobs:
       contents: write
     outputs:
       is_dev: ${{ contains(github.ref_name, '-dev') }}
-      is_web_only: ${{ steps.release-flags.outputs.is_web_only }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
           fetch-tags: false
-
-      - name: Read release flags
-        id: release-flags
-        run: echo "is_web_only=$(jq -r '.webOnly // false' src/version.json)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch tag annotation
         run: git fetch origin tag ${{ github.ref_name }} --no-tags --force
@@ -125,15 +120,9 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
       - name: Build mt + mthost
-        if: needs.prepare.outputs.is_web_only != 'true'
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-
-      - name: Build mt only
-        if: needs.prepare.outputs.is_web_only == 'true'
-        run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -163,10 +152,7 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
-
-          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
-            cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
-          fi
+          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -176,24 +162,19 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
-              codesign --force \
-                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-                --options runtime \
-                --timestamp \
-                staging/${{ matrix.rid }}/mthost
-              codesign --verify --strict staging/${{ matrix.rid }}/mthost
-            fi
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/${{ matrix.rid }}/mthost
+            codesign --verify --strict staging/${{ matrix.rid }}/mthost
           fi
 
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
-          files=(mt${{ matrix.ext }})
-          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
-            files+=(mthost${{ matrix.ext }})
-          fi
+          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }})
           if command -v sha256sum &> /dev/null; then
             sha256sum "${files[@]}" > SHA256SUMS.txt
           else
@@ -203,7 +184,7 @@ jobs:
           cat SHA256SUMS.txt
 
       - name: Notarize
-        if: startsWith(matrix.rid, 'osx-') && needs.prepare.outputs.is_web_only != 'true'
+        if: startsWith(matrix.rid, 'osx-')
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -275,15 +256,9 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
       - name: Build mt + mthost
-        if: needs.prepare.outputs.is_web_only != 'true'
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-
-      - name: Build mt only
-        if: needs.prepare.outputs.is_web_only == 'true'
-        run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -313,10 +288,7 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
-
-          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
-            cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
-          fi
+          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -326,24 +298,19 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
-              codesign --force \
-                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-                --options runtime \
-                --timestamp \
-                staging/${{ matrix.rid }}/mthost
-              codesign --verify --strict staging/${{ matrix.rid }}/mthost
-            fi
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/${{ matrix.rid }}/mthost
+            codesign --verify --strict staging/${{ matrix.rid }}/mthost
           fi
 
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
-          files=(mt${{ matrix.ext }})
-          if [[ "${{ needs.prepare.outputs.is_web_only }}" != "true" ]]; then
-            files+=(mthost${{ matrix.ext }})
-          fi
+          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }})
           if command -v sha256sum &> /dev/null; then
             sha256sum "${files[@]}" > SHA256SUMS.txt
           else
@@ -353,7 +320,7 @@ jobs:
           cat SHA256SUMS.txt
 
       - name: Notarize
-        if: startsWith(matrix.rid, 'osx-') && needs.prepare.outputs.is_web_only != 'true'
+        if: startsWith(matrix.rid, 'osx-')
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -410,16 +377,9 @@ jobs:
 
       - name: Build mt + mthost
         shell: pwsh
-        if: needs.prepare.outputs.is_web_only != 'true'
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-
-      - name: Build mt only
-        shell: pwsh
-        if: needs.prepare.outputs.is_web_only == 'true'
-        run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Stage artifacts
         shell: pwsh
@@ -427,10 +387,7 @@ jobs:
           New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
           Copy-Item src/version.json staging/win-x64/
-
-          if ("${{ needs.prepare.outputs.is_web_only }}" -ne "true") {
-            Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
-          }
+          Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
 
       - name: Sign Windows binaries (Certum Authenticode)
         if: needs.prepare.outputs.is_dev != 'true'
@@ -440,10 +397,7 @@ jobs:
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe')
-          if ("${{ needs.prepare.outputs.is_web_only }}" -ne "true") {
-            $files += 'staging/win-x64/mthost.exe'
-          }
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mthost.exe')
           $hashes = Get-ChildItem $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
