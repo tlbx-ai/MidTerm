@@ -34,6 +34,8 @@ jobs:
         run: |
           test -f ./_site/install.sh
           test -f ./_site/install.ps1
+          test -f ./_site/uninstall.sh
+          test -f ./_site/uninstall.ps1
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4

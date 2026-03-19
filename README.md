@@ -49,6 +49,22 @@ curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 ```
 
+### Uninstall
+
+**macOS / Linux**
+
+```bash
+curl -fsSL https://tlbx-ai.github.io/MidTerm/uninstall.sh | bash
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://tlbx-ai.github.io/MidTerm/uninstall.ps1 | iex
+```
+
+The uninstaller removes only known MidTerm-owned locations. It cleans user-scope files first, then asks for elevation only if it needs to remove service-mode files, trusted certificates, firewall rules, or other system-owned traces.
+
 **Quick launch via `npx`**
 
 ```bash
