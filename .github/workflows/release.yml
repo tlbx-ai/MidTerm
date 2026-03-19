@@ -364,12 +364,21 @@ jobs:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-dotnet@v5
+        if: needs.prepare.outputs.is_dev == 'true'
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          # Hosted dev builds can use setup-dotnet cache; the self-hosted stable runner
-          # has been observed hanging inside this cache path before dotnet install starts.
-          cache: ${{ needs.prepare.outputs.is_dev == 'true' }}
+          cache: true
           cache-dependency-path: src/**/packages.lock.json
+
+      - name: Verify local .NET SDK on self-hosted Windows runner
+        if: needs.prepare.outputs.is_dev != 'true'
+        shell: pwsh
+        run: |
+          $sdks = dotnet --list-sdks
+          if (-not ($sdks | Select-String '^10\.0\.')) {
+            throw "Required .NET 10 SDK not found on self-hosted runner."
+          }
+          dotnet --version
 
       - name: Download frontend
         uses: actions/download-artifact@v6
