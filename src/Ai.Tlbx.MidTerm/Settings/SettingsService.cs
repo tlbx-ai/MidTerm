@@ -341,13 +341,19 @@ public sealed class SettingsService
             }
 
             Save(current);
-            File.Delete(mergePath);
+            try
+            {
+                File.Delete(mergePath);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Merged install settings but could not delete merge-settings.json: {ex.Message}");
+            }
             Log.Info(() => "Merged install settings from merge-settings.json");
         }
         catch (Exception ex)
         {
-            Log.Warn(() => $"Failed to merge install settings: {ex.Message}");
-            try { File.Delete(mergePath); } catch { }
+            Log.Warn(() => $"Failed to merge install settings; keeping merge-settings.json for retry: {ex.Message}");
         }
     }
 

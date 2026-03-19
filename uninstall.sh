@@ -60,16 +60,28 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 GRAY='\033[0;90m'
+WHITE='\033[1;37m'
 NC='\033[0m'
 
 INSTALLING_USER="${INSTALLING_USER:-}"
 INSTALLING_HOME="${INSTALLING_HOME:-}"
 ELEVATED=false
 
-print_header() {
+print_midterm_banner() {
     echo ""
-    echo -e "  ${CYAN}MidTerm Uninstaller${NC}"
-    echo -e "  ${CYAN}===================${NC}"
+    echo -e "            ${WHITE}//   \\\\${NC}"
+    echo -e "           ${WHITE}//     \\\\         __  __ _     _ _____${NC}"
+    echo -e "          ${WHITE}//       \\\\       |  \\/  (_) __| |_   _|__ _ __ _ __ ___${NC}"
+    echo -e "         ${WHITE}//  ( ${CYAN}·${WHITE} )  \\\\      | |\\/| | |/ _\` | | |/ _ \\\\ '__| '_ \` _ \\\\${NC}"
+    echo -e "        ${WHITE}//           \\\\     | |  | | | (_| | | |  __/ |  | | | | | |${NC}"
+    echo -e "       ${WHITE}//             \\\\    |_|  |_|_|\\__,_| |_|\\___|_|  |_| |_| |_|${NC}"
+    echo -e "      ${WHITE}//               \\\\   ${GREEN}by J. Schmidt - https://github.com/tlbx-ai/MidTerm${NC}"
+    echo ""
+}
+
+print_header() {
+    print_midterm_banner
+    echo -e "  ${CYAN}Uninstaller${NC}"
     echo ""
 }
 
@@ -278,6 +290,19 @@ stop_service_processes() {
         fi
     else
         if command_exists systemctl; then
+            linux_unit_exists() {
+                local unit_name="$1"
+                local load_state
+
+                load_state=$(systemctl show -p LoadState --value "$unit_name" 2>/dev/null || true)
+                [ -n "$load_state" ] && [ "$load_state" != "not-found" ]
+            }
+
+            linux_unit_active_state() {
+                local unit_name="$1"
+                systemctl show -p ActiveState --value "$unit_name" 2>/dev/null || true
+            }
+
             run_systemctl_with_timeout() {
                 local timeout_seconds="$1"
                 shift
@@ -307,15 +332,35 @@ stop_service_processes() {
 
             stop_linux_unit() {
                 local unit_name="$1"
+                local active_state
 
-                systemctl kill "$unit_name" >/dev/null 2>&1 || true
-
-                if ! run_systemctl_with_timeout 15 stop "$unit_name"; then
-                    print_warn "Timed out stopping $unit_name; continuing with forced cleanup."
-                    systemctl kill -s SIGKILL "$unit_name" >/dev/null 2>&1 || true
+                if ! linux_unit_exists "$unit_name"; then
+                    return 0
                 fi
 
-                run_systemctl_with_timeout 10 disable "$unit_name" || true
+                active_state=$(linux_unit_active_state "$unit_name")
+                case "$active_state" in
+                    active|activating|deactivating|reloading)
+                        if run_systemctl_with_timeout 15 stop "$unit_name"; then
+                            print_info "Stopped service: $unit_name"
+                        else
+                            print_warn "Stop timed out for $unit_name; forcing cleanup."
+                            systemctl kill "$unit_name" >/dev/null 2>&1 || true
+                            sleep 1
+                            if [ "$(linux_unit_active_state "$unit_name")" != "inactive" ]; then
+                                systemctl kill -s SIGKILL "$unit_name" >/dev/null 2>&1 || true
+                            fi
+                            print_info "Forced cleanup completed for $unit_name."
+                        fi
+                        ;;
+                    *)
+                        print_info "Service already stopped: $unit_name"
+                        ;;
+                esac
+
+                if systemctl is-enabled --quiet "$unit_name" 2>/dev/null; then
+                    run_systemctl_with_timeout 10 disable "$unit_name" || true
+                fi
                 systemctl reset-failed "$unit_name" >/dev/null 2>&1 || true
             }
 
