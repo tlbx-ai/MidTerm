@@ -161,8 +161,8 @@ public static class BrowserEndpoints
                     targetUrl,
                     sessionId,
                     previewName,
-                    previewId).TrimEnd('\n', '\r');
-                status += $"\nui clients: {uiBridge?.ConnectedBrowserCount ?? 0}\n";
+                    previewId,
+                    uiBridge?.ConnectedBrowserCount ?? 0).TrimEnd('\n', '\r');
                 return Results.Text(status);
             }
 

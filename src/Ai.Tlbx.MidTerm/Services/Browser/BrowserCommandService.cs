@@ -190,27 +190,34 @@ public sealed class BrowserCommandService
         string? targetUrl,
         string? sessionId = null,
         string? previewName = null,
-        string? previewId = null)
+        string? previewId = null,
+        int connectedUiClientCount = 0)
     {
         var snapshot = GetStatusSnapshot(
             targetUrl,
             sessionId,
             previewName,
             previewId,
-            connectedUiClientCount: 0);
+            connectedUiClientCount);
         var status = snapshot.Response;
-
-        if (!status.Connected)
+        var headline = status.State switch
         {
-            return $"disconnected\n{snapshot.DisconnectedReason ?? "Open the web preview panel in MidTerm to enable browser commands."}\n";
-        }
-
-        var clientLabel = snapshot.IsScoped ? "selected" : "default";
+            "ready" => "connected",
+            "ambiguous" => "connected (ambiguous)",
+            _ => "disconnected"
+        };
+        var clientLabel = status.IsScoped ? "selected" : "default";
         var lines = new List<string>
         {
-            "connected",
+            headline,
+            $"state: {status.State}",
+            $"controllable: {(status.Controllable ? "yes" : "no")}",
+            $"scope: {status.ScopeDescription ?? "(global)"}",
+            $"target configured: {(status.HasTarget ? "yes" : "no")}",
             $"target: {status.TargetUrl ?? "(none)"}",
-            $"clients: {status.ConnectedClientCount}"
+            $"ui clients: {status.ConnectedUiClientCount}",
+            $"matching browser clients: {status.ConnectedClientCount}",
+            $"browser clients total: {status.TotalConnectedClientCount}"
         };
 
         if (status.DefaultClient is { } client)
@@ -226,6 +233,21 @@ public sealed class BrowserCommandService
         else
         {
             lines.Add($"{clientLabel} preview: ambiguous");
+        }
+
+        if (!string.IsNullOrWhiteSpace(status.StatusMessage))
+        {
+            lines.Add($"reason: {status.StatusMessage}");
+        }
+
+        if (status.State == "waiting" && status.HasTarget)
+        {
+            lines.Add("hint: The preview target is set, but no controllable browser has attached yet. Open the preview panel in MidTerm or wait for it to finish docking.");
+        }
+
+        if (status.State == "ambiguous")
+        {
+            lines.Add("hint: Narrow the scope with --session, --preview, or --preview-id so MidTerm can pick a single browser preview.");
         }
 
         return string.Join('\n', lines) + "\n";
@@ -256,17 +278,38 @@ public sealed class BrowserCommandService
         var clients = _clients.Values
             .OrderByDescending(c => c.ConnectedAtUtc)
             .ToArray();
+        var isScoped = HasStatusScope(sessionId, previewName, previewId);
+        var hasTarget = !string.IsNullOrWhiteSpace(targetUrl);
+        var hasUiClient = connectedUiClientCount > 0;
+        var scopeDescription = BuildScopeDescription(sessionId, previewName, previewId);
 
         if (clients.Length == 0)
         {
+            var message = BuildUnavailableStatusMessage(
+                sessionId,
+                previewName,
+                previewId,
+                hasTarget,
+                hasUiClient);
             return new BrowserStatusSnapshot
             {
-                IsScoped = HasStatusScope(sessionId, previewName, previewId),
-                DisconnectedReason = "Open the web preview panel in MidTerm to enable browser commands.",
+                IsScoped = isScoped,
                 Response = new BrowserStatusResponse
                 {
                     Connected = false,
+                    Controllable = false,
+                    HasTarget = hasTarget,
+                    HasUiClient = hasUiClient,
+                    IsScoped = isScoped,
+                    State = ResolveState(
+                        connected: false,
+                        controllable: false,
+                        hasTarget: hasTarget,
+                        hasUiClient: hasUiClient),
+                    ScopeDescription = scopeDescription,
+                    StatusMessage = message,
                     ConnectedClientCount = 0,
+                    TotalConnectedClientCount = 0,
                     ConnectedUiClientCount = connectedUiClientCount,
                     TargetUrl = targetUrl
                 }
@@ -276,14 +319,31 @@ public sealed class BrowserCommandService
         var matches = FilterClients(clients, sessionId, previewName, previewId);
         if (matches.Length == 0)
         {
+            var message = BuildUnavailableStatusMessage(
+                sessionId,
+                previewName,
+                previewId,
+                hasTarget,
+                hasUiClient);
             return new BrowserStatusSnapshot
             {
-                IsScoped = HasStatusScope(sessionId, previewName, previewId),
-                DisconnectedReason = BuildDisconnectedReason(sessionId, previewName, previewId),
+                IsScoped = isScoped,
                 Response = new BrowserStatusResponse
                 {
                     Connected = false,
+                    Controllable = false,
+                    HasTarget = hasTarget,
+                    HasUiClient = hasUiClient,
+                    IsScoped = isScoped,
+                    State = ResolveState(
+                        connected: false,
+                        controllable: false,
+                        hasTarget: hasTarget,
+                        hasUiClient: hasUiClient),
+                    ScopeDescription = scopeDescription,
+                    StatusMessage = message,
                     ConnectedClientCount = 0,
+                    TotalConnectedClientCount = clients.Length,
                     ConnectedUiClientCount = connectedUiClientCount,
                     TargetUrl = targetUrl
                 }
@@ -291,18 +351,32 @@ public sealed class BrowserCommandService
         }
 
         var mainBrowserId = _mainBrowserService?.GetMainBrowserId();
+        var resolved = TryResolveDefaultClient(matches, out var client);
+        var statusMessage = resolved
+            ? null
+            : BuildAmbiguousStatusMessage(sessionId, previewName, previewId);
         return new BrowserStatusSnapshot
         {
-            IsScoped = HasStatusScope(sessionId, previewName, previewId),
+            IsScoped = isScoped,
             Response = new BrowserStatusResponse
             {
                 Connected = true,
+                Controllable = resolved,
+                HasTarget = hasTarget,
+                HasUiClient = hasUiClient,
+                IsScoped = isScoped,
+                State = ResolveState(
+                    connected: true,
+                    controllable: resolved,
+                    hasTarget: hasTarget,
+                    hasUiClient: hasUiClient),
+                ScopeDescription = scopeDescription,
+                StatusMessage = statusMessage,
                 ConnectedClientCount = matches.Length,
+                TotalConnectedClientCount = clients.Length,
                 ConnectedUiClientCount = connectedUiClientCount,
                 TargetUrl = targetUrl,
-                DefaultClient = TryResolveDefaultClient(matches, out var client)
-                    ? CreateClientInfo(client, mainBrowserId)
-                    : null,
+                DefaultClient = resolved ? CreateClientInfo(client, mainBrowserId) : null,
                 Clients = matches
                     .Select(c => CreateClientInfo(c, mainBrowserId))
                     .ToArray()
@@ -339,6 +413,57 @@ public sealed class BrowserCommandService
             || !string.IsNullOrWhiteSpace(previewId);
     }
 
+    private static string BuildScopeDescription(string? sessionId, string? previewName, string? previewId)
+    {
+        if (!string.IsNullOrWhiteSpace(previewId))
+        {
+            return $"preview '{previewId}'";
+        }
+
+        if (!string.IsNullOrWhiteSpace(sessionId) && !string.IsNullOrWhiteSpace(previewName))
+        {
+            return $"session '{sessionId}', preview '{previewName}'";
+        }
+
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            return $"session '{sessionId}'";
+        }
+
+        if (!string.IsNullOrWhiteSpace(previewName))
+        {
+            return $"preview '{previewName}'";
+        }
+
+        return "(global)";
+    }
+
+    private static string BuildUnavailableStatusMessage(
+        string? sessionId,
+        string? previewName,
+        string? previewId,
+        bool hasTarget,
+        bool hasUiClient)
+    {
+        var reason = BuildDisconnectedReason(sessionId, previewName, previewId);
+        if (hasTarget && hasUiClient)
+        {
+            return $"Target is configured, but no browser preview is attached yet. {reason}";
+        }
+
+        if (hasTarget)
+        {
+            return $"Target is configured, but no browser preview is connected yet. {reason}";
+        }
+
+        if (hasUiClient)
+        {
+            return $"A MidTerm UI is connected, but no matching browser preview is attached. {reason}";
+        }
+
+        return reason;
+    }
+
     private static string BuildDisconnectedReason(string? sessionId, string? previewName, string? previewId)
     {
         if (!string.IsNullOrWhiteSpace(previewId))
@@ -357,6 +482,50 @@ public sealed class BrowserCommandService
         }
 
         return "Open the web preview panel in MidTerm to enable browser commands.";
+    }
+
+    private static string BuildAmbiguousStatusMessage(string? sessionId, string? previewName, string? previewId)
+    {
+        if (!string.IsNullOrWhiteSpace(previewId))
+        {
+            return $"Multiple browser clients are attached for preview '{previewId}'.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(previewName))
+        {
+            return $"Multiple browser clients are attached for preview '{previewName}' in session '{sessionId ?? "(any)"}'.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            return $"Multiple browser clients are attached for session '{sessionId}'.";
+        }
+
+        return "Multiple browser previews are connected. Narrow the scope so MidTerm can select one deterministically.";
+    }
+
+    private static string ResolveState(
+        bool connected,
+        bool controllable,
+        bool hasTarget,
+        bool hasUiClient)
+    {
+        if (connected && controllable)
+        {
+            return "ready";
+        }
+
+        if (connected)
+        {
+            return "ambiguous";
+        }
+
+        if (hasTarget || hasUiClient)
+        {
+            return "waiting";
+        }
+
+        return "disconnected";
     }
 
     private void CancelPendingForClient(string connectionId)
@@ -586,7 +755,6 @@ public sealed class BrowserCommandService
     private sealed class BrowserStatusSnapshot
     {
         public required BrowserStatusResponse Response { get; init; }
-        public string? DisconnectedReason { get; init; }
         public bool IsScoped { get; init; }
     }
 }

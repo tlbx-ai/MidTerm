@@ -237,8 +237,12 @@ public class BrowserCommandServiceTests
             previewName: "codex1");
 
         Assert.True(status.Connected);
+        Assert.True(status.Controllable);
+        Assert.Equal("ready", status.State);
         Assert.Equal(1, status.ConnectedClientCount);
+        Assert.Equal(3, status.TotalConnectedClientCount);
         Assert.NotNull(status.DefaultClient);
+        Assert.Equal("session 'session-a', preview 'codex1'", status.ScopeDescription);
         Assert.Equal("session-a", status.DefaultClient!.SessionId);
         Assert.Equal("codex1", status.DefaultClient.PreviewName);
         Assert.Equal("preview-b", status.DefaultClient.PreviewId);
@@ -264,6 +268,8 @@ public class BrowserCommandServiceTests
         var status = service.GetStatus("http://192.168.178.1/", sessionId: "session-a");
 
         Assert.True(status.Connected);
+        Assert.True(status.Controllable);
+        Assert.Equal("ready", status.State);
         Assert.NotNull(status.DefaultClient);
         Assert.True(status.DefaultClient!.IsVisible);
         Assert.True(status.DefaultClient.HasFocus);
@@ -279,9 +285,31 @@ public class BrowserCommandServiceTests
         var status = service.GetStatusText(
             "https://localhost:5001/teacher?dev=1",
             sessionId: "session-a",
-            previewName: "codex1");
+            previewName: "codex1",
+            connectedUiClientCount: 1);
 
         Assert.Contains("disconnected", status, StringComparison.Ordinal);
+        Assert.Contains("state: waiting", status, StringComparison.Ordinal);
+        Assert.Contains("controllable: no", status, StringComparison.Ordinal);
+        Assert.Contains("ui clients: 1", status, StringComparison.Ordinal);
+        Assert.Contains("target configured: yes", status, StringComparison.Ordinal);
         Assert.Contains("preview 'codex1' in session 'session-a'", status, StringComparison.Ordinal);
+        Assert.Contains("no controllable browser has attached yet", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GetStatus_WithMultipleBrowsersAndNoScope_IsAmbiguous()
+    {
+        var service = new BrowserCommandService();
+        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }, browserId: "browser-a"));
+        Assert.True(service.TryRegisterClient("c2", "session-b", "default", "preview-b", _ => { }, browserId: "browser-b"));
+
+        var status = service.GetStatus("https://localhost:5001/");
+
+        Assert.True(status.Connected);
+        Assert.False(status.Controllable);
+        Assert.Equal("ambiguous", status.State);
+        Assert.Null(status.DefaultClient);
+        Assert.Contains("Multiple browser previews are connected", status.StatusMessage ?? "", StringComparison.Ordinal);
     }
 }

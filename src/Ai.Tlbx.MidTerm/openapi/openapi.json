@@ -3074,7 +3074,15 @@
       "BrowserStatusResponse": {
         "required": [
           "connected",
+          "controllable",
+          "hasTarget",
+          "hasUiClient",
+          "isScoped",
+          "state",
+          "scopeDescription",
+          "statusMessage",
           "connectedClientCount",
+          "totalConnectedClientCount",
           "connectedUiClientCount",
           "targetUrl",
           "defaultClient",
@@ -3085,7 +3093,38 @@
           "connected": {
             "type": "boolean"
           },
+          "controllable": {
+            "type": "boolean"
+          },
+          "hasTarget": {
+            "type": "boolean"
+          },
+          "hasUiClient": {
+            "type": "boolean"
+          },
+          "isScoped": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "scopeDescription": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "statusMessage": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "connectedClientCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalConnectedClientCount": {
             "type": "integer",
             "format": "int32"
           },

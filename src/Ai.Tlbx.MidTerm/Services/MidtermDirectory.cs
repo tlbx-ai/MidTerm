@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "20";
+    private const string GuidanceVersion = "21";
 
     private static int _port;
     private static AuthService? _authService;
@@ -275,7 +275,7 @@ public static class MidtermDirectory
 
         mt_open "http://localhost:3000" → mt_status → mt_outline → mt_query ".error" --text
 
-        `mt_open` both sets the target and asks MidTerm to open/dock the preview panel.
+        `mt_open` both sets the target and asks MidTerm to open/dock the preview panel, then waits until that preview is actually controllable.
         Use `mt_navigate` only when the panel is already open and you just want to change the target URL.
 
         ## Multi-role browser sessions
@@ -319,7 +319,8 @@ public static class MidtermDirectory
 
         - mt_outline is 10x smaller than mt_query — always start there
         - mt_text is shorter than mt_query SEL --text — use it for page text
-        - mt_open is the CLI command that opens/docks the preview; you do not need to click the panel first
+        - mt_open is the CLI command that opens/docks the preview and now fails loudly if the preview never becomes controllable
+        - mt_status reports `state: ready`, `state: waiting`, or `state: ambiguous` so you can tell whether the browser bridge is actually usable
         - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
         - mt_tail strips ANSI escape sequences and compresses noisy blank-line runs so supervisor sessions can read clean terminal output
@@ -334,7 +335,7 @@ public static class MidtermDirectory
         - mt_sendkeys plus mt_enter / mt_ctrlc / mt_escape / mt_up / mt_down / mt_left / mt_right are the direct terminal steering helpers
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
-        - If mt_status still shows "disconnected" after mt_open, treat that as a MidTerm bug and inspect mt_proxylog plus mt_log error
+        - If mt_status still shows `state: waiting` after mt_open, treat that as a MidTerm browser-attachment bug and inspect mt_proxylog plus mt_log error
         - Browser command failures now print the server error body instead of silently returning nothing
         - If mt_status reports multiple clients, MidTerm prefers the focused/visible preview client first, then falls back to the main browser's newest preview connection
         - If mt_open returns "No MidTerm browser UI is connected", there is no live browser tab attached to /ws/state

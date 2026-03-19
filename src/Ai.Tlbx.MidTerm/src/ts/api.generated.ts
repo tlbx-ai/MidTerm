@@ -3492,8 +3492,17 @@ export interface components {
     };
     BrowserStatusResponse: {
       connected: boolean;
+      controllable: boolean;
+      hasTarget: boolean;
+      hasUiClient: boolean;
+      isScoped: boolean;
+      state: string;
+      scopeDescription: null | string;
+      statusMessage: null | string;
       /** Format: int32 */
       connectedClientCount: number;
+      /** Format: int32 */
+      totalConnectedClientCount: number;
       /** Format: int32 */
       connectedUiClientCount: number;
       targetUrl: null | string;
