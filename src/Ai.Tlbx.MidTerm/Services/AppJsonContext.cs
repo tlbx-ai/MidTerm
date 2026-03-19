@@ -14,6 +14,7 @@ using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.Share;
 using Ai.Tlbx.MidTerm.Models.Security;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -134,6 +135,19 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LanguageSetting))]
 [JsonSerializable(typeof(ManagerBarButton))]
 [JsonSerializable(typeof(List<ManagerBarButton>))]
+[JsonSerializable(typeof(HubMachineSettings))]
+[JsonSerializable(typeof(List<HubMachineSettings>))]
+[JsonSerializable(typeof(HubMachineInfo))]
+[JsonSerializable(typeof(List<HubMachineInfo>))]
+[JsonSerializable(typeof(HubMachineState))]
+[JsonSerializable(typeof(List<HubMachineState>))]
+[JsonSerializable(typeof(HubStateResponse))]
+[JsonSerializable(typeof(HubMachineUpsertRequest))]
+[JsonSerializable(typeof(HubMachinePinRequest))]
+[JsonSerializable(typeof(HubUpdateRolloutRequest))]
+[JsonSerializable(typeof(HubUpdateRolloutItem))]
+[JsonSerializable(typeof(List<HubUpdateRolloutItem>))]
+[JsonSerializable(typeof(HubUpdateRolloutResponse))]
 
 // --- WebPreview ---
 [JsonSerializable(typeof(WebPreviewTargetRequest))]

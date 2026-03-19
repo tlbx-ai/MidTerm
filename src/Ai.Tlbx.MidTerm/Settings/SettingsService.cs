@@ -217,6 +217,47 @@ public sealed class SettingsService
         settings.PasswordHash = _secretStorage.GetSecret(SecretKeys.PasswordHash);
         settings.CertificatePassword = _secretStorage.GetSecret(SecretKeys.CertificatePassword);
         settings.VoiceServerPassword = _secretStorage.GetSecret(SecretKeys.VoiceServerPassword);
+        LoadHubMachineSecrets(settings);
+    }
+
+    private void LoadHubMachineSecrets(MidTermSettings settings)
+    {
+        foreach (var machine in settings.HubMachines)
+        {
+            machine.ApiKey = null;
+            machine.Password = null;
+        }
+
+        var raw = _secretStorage.GetSecret(SecretKeys.HubMachineSecrets);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        try
+        {
+            var secrets = JsonSerializer.Deserialize(raw, SettingsJsonContext.Default.HubMachineSecrets);
+            if (secrets is null)
+            {
+                return;
+            }
+
+            var lookup = secrets.Machines.ToDictionary(secret => secret.Id, StringComparer.Ordinal);
+            foreach (var machine in settings.HubMachines)
+            {
+                if (!lookup.TryGetValue(machine.Id, out var secret))
+                {
+                    continue;
+                }
+
+                machine.ApiKey = secret.ApiKey;
+                machine.Password = secret.Password;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"Failed to load hub machine secrets: {ex.Message}");
+        }
     }
 
     private static void ApplyMissingDefaults(MidTermSettings settings, string json)
@@ -505,6 +546,31 @@ public sealed class SettingsService
         if (!string.IsNullOrEmpty(settings.VoiceServerPassword))
         {
             _secretStorage.SetSecret(SecretKeys.VoiceServerPassword, settings.VoiceServerPassword);
+        }
+
+        var hubSecrets = new HubMachineSecrets
+        {
+            Machines = settings.HubMachines
+                .Where(machine =>
+                    !string.IsNullOrWhiteSpace(machine.ApiKey) ||
+                    !string.IsNullOrWhiteSpace(machine.Password))
+                .Select(machine => new HubMachineSecretSettings
+                {
+                    Id = machine.Id,
+                    ApiKey = machine.ApiKey,
+                    Password = machine.Password
+                })
+                .ToList()
+        };
+
+        if (hubSecrets.Machines.Count > 0)
+        {
+            var hubJson = JsonSerializer.Serialize(hubSecrets, SettingsJsonContext.Default.HubMachineSecrets);
+            _secretStorage.SetSecret(SecretKeys.HubMachineSecrets, hubJson);
+        }
+        else
+        {
+            _secretStorage.DeleteSecret(SecretKeys.HubMachineSecrets);
         }
     }
 

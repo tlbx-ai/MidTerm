@@ -3,6 +3,9 @@ using System.Text.Json.Serialization;
 namespace Ai.Tlbx.MidTerm.Settings;
 
 [JsonSerializable(typeof(MidTermSettings))]
+[JsonSerializable(typeof(HubMachineSecrets))]
+[JsonSerializable(typeof(HubMachineSecretSettings))]
+[JsonSerializable(typeof(List<HubMachineSecretSettings>))]
 [JsonSerializable(typeof(ManagerBarButton))]
 [JsonSerializable(typeof(List<ManagerBarButton>))]
 [JsonSerializable(typeof(CursorStyleSetting))]

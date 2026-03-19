@@ -8,6 +8,7 @@ import { startLatencyMeasurement, stopLatencyMeasurement } from '../diagnostics'
 
 export type SettingsTab =
   | 'general'
+  | 'hub'
   | 'appearance'
   | 'behavior'
   | 'security'
@@ -18,6 +19,7 @@ const STORAGE_KEY = 'settings-tab';
 const DEFAULT_TAB: SettingsTab = 'general';
 const VALID_TABS: SettingsTab[] = [
   'general',
+  'hub',
   'appearance',
   'behavior',
   'security',

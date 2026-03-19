@@ -3669,6 +3669,16 @@ export interface components {
     HistoryReorderRequest: {
       orderedIds: string[];
     };
+    HubMachineInfo: {
+      id: string;
+      name: string;
+      baseUrl: string;
+      enabled: boolean;
+      hasApiKey: boolean;
+      hasPassword: boolean;
+      lastFingerprint: null | string;
+      pinnedFingerprint: null | string;
+    };
     /** Format: binary */
     IFormFile: string;
     InjectGuidanceResponse: {
@@ -3795,6 +3805,7 @@ export interface components {
       runAsUserSid: null | string;
       authenticationEnabled: boolean;
       certificatePath: null | string;
+      hubMachines: components['schemas']['HubMachineInfo'][];
     };
     NetworkEndpointInfo: {
       name: string;

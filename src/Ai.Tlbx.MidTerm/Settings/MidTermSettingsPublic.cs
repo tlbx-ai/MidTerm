@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Common.Shells;
+using Ai.Tlbx.MidTerm.Models.Hub;
 
 namespace Ai.Tlbx.MidTerm.Settings;
 
@@ -65,4 +66,7 @@ public sealed partial class MidTermSettingsPublic
 
     // HTTPS
     public string? CertificatePath { get; set; }
+
+    // Hub
+    public List<HubMachineInfo> HubMachines { get; set; } = [];
 }

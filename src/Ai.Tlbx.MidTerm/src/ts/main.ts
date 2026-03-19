@@ -64,6 +64,9 @@ import {
   initHeatIndicator,
   recordBytes,
   suppressAllHeat,
+  renderSessionList,
+  updateEmptyState,
+  updateMobileTitle,
 } from './modules/sidebar';
 import { initI18n, t } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
@@ -122,6 +125,21 @@ import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
 import { initWebPreview } from './modules/web';
+import {
+  attachHubChannel,
+  bindHubSettings,
+  deleteRemoteSession,
+  detachHubChannel,
+  getFirstHubSessionId,
+  getHubSession,
+  getHubSessionRecord,
+  initHubRuntime,
+  isHubSessionId,
+  refreshHubState,
+  renameRemoteSession,
+  renderHubSettings,
+  subscribeHubState,
+} from './modules/hub';
 import {
   initSessionShareButton,
   isSharedSessionRoute,
@@ -273,12 +291,20 @@ async function init(): Promise<void> {
   initWebPreview();
   initSessionShareButton();
   initDockState();
+  initHubRuntime();
+  subscribeHubState(() => {
+    renderSessionList();
+    updateEmptyState();
+    updateMobileTitle();
+    renderHubSettings();
+  });
 
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
   void fetchBootstrap();
   requestNotificationPermission();
   initDiagnosticsPanel();
+  bindHubSettings();
 
   setupVisibilityChangeHandler();
   initPwaInstall();
@@ -538,6 +564,57 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     closeSettings();
   }
 
+  if (isHubSessionId(sessionId)) {
+    const sessionInfo = getHubSession(sessionId);
+    if (!sessionInfo) {
+      return;
+    }
+
+    detachHubChannel();
+    sessionTerminals.forEach((state, id) => {
+      if (!isSessionInLayout(id)) {
+        state.container.classList.add('hidden');
+      }
+    });
+
+    $activeSessionId.set(sessionId);
+    suppressAllHeat(1500);
+
+    const state = createTerminalForSession(sessionId, sessionInfo);
+    const tabState = ensureSessionWrapper(sessionId);
+    reparentTerminalContainer(sessionId, state.container);
+    if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
+      dom.terminalsArea.appendChild(tabState.wrapper);
+    }
+
+    dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((w) => {
+      (w as HTMLElement).classList.toggle(
+        'hidden',
+        w.getAttribute('data-session-id') !== sessionId,
+      );
+    });
+
+    state.container.classList.remove('hidden');
+    if (isLayoutActive()) {
+      getLayoutRoot()?.classList.add('hidden');
+    }
+
+    attachHubChannel(sessionId);
+
+    requestAnimationFrame(() => {
+      refreshTerminalPresentation(sessionId, state);
+      state.terminal.focus();
+      if (!isTerminalViewingScrollback(state)) {
+        scrollToBottom(sessionId);
+      }
+    });
+
+    dom.emptyState?.classList.add('hidden');
+    return;
+  }
+
+  detachHubChannel();
+
   // If session is in layout, focus it there instead of switching to standalone
   if (isSessionInLayout(sessionId)) {
     suppressAllHeat(1500);
@@ -602,6 +679,29 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 }
 
 function deleteSession(sessionId: string): void {
+  if (isHubSessionId(sessionId)) {
+    const record = getHubSessionRecord(sessionId);
+    destroySessionWrapper(sessionId);
+    destroyTerminalForSession(sessionId);
+    if ($activeSessionId.get() === sessionId) {
+      $activeSessionId.set(null);
+    }
+    detachHubChannel(sessionId);
+    if (record) {
+      deleteRemoteSession(record.machineId, record.remoteSessionId)
+        .then(() => refreshHubState())
+        .catch((e: unknown) => {
+          log.error(() => `Failed to delete remote session ${sessionId}: ${String(e)}`);
+        });
+    }
+
+    const nextLocal = $sessionList.get()[0]?.id ?? getFirstHubSessionId();
+    if (nextLocal) {
+      selectSession(nextLocal, { closeSettingsPanel: false });
+    }
+    return;
+  }
+
   // Remove from layout if present
   handleSessionClosed(sessionId);
 
@@ -638,6 +738,10 @@ function deleteSession(sessionId: string): void {
 }
 
 async function injectGuidance(sessionId: string): Promise<void> {
+  if (isHubSessionId(sessionId)) {
+    return;
+  }
+
   try {
     const res = await fetch(`/api/sessions/${sessionId}/inject-guidance`, { method: 'POST' });
     if (!res.ok) {
@@ -653,6 +757,19 @@ async function injectGuidance(sessionId: string): Promise<void> {
 }
 
 function renameSession(sessionId: string, newName: string | null): void {
+  if (isHubSessionId(sessionId)) {
+    const record = getHubSessionRecord(sessionId);
+    if (!record) return;
+
+    const trimmedName = (newName || '').trim();
+    renameRemoteSession(record.machineId, record.remoteSessionId, { name: trimmedName })
+      .then(() => refreshHubState())
+      .catch((e: unknown) => {
+        log.error(() => `Failed to rename remote session ${sessionId}: ${String(e)}`);
+      });
+    return;
+  }
+
   const session = getSession(sessionId);
   if (!session) return;
 
@@ -701,6 +818,10 @@ function getSessionFamilyIds(sessionId: string): string[] {
 }
 
 function toggleAgentControl(sessionId: string): void {
+  if (isHubSessionId(sessionId)) {
+    return;
+  }
+
   const session = getSession(sessionId);
   if (!session) return;
 

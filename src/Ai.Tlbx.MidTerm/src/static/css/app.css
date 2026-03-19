@@ -2,6 +2,104 @@
   box-sizing: border-box;
 }
 
+.hub-machine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-machine-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  background: var(--bg-elevated);
+}
+
+.hub-machine-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.hub-machine-card-header h3 {
+  margin: 0 0 4px;
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+}
+
+.hub-machine-url {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.hub-machine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.hub-machine-grid label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.hub-machine-grid code,
+.hub-machine-grid span {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.hub-machine-grid code {
+  font-family: var(--font-mono);
+}
+
+.hub-machine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-machine-status {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.hub-status-online {
+  background: var(--accent-green-15);
+  color: var(--accent-green);
+}
+
+.hub-status-offline {
+  background: var(--accent-red-15);
+  color: var(--accent-red);
+}
+
+.hub-status-connecting {
+  background: var(--accent-orange-15);
+  color: var(--accent-orange);
+}
+
+.hub-status-disabled {
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+.hub-machine-error {
+  margin-bottom: 10px;
+  font-size: var(--fs-xs);
+  color: var(--accent-red);
+}
+
 /* Terminal Fonts */
 @font-face {
   font-family: 'JetBrains Mono';

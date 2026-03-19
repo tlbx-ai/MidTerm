@@ -18,6 +18,7 @@ using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Services.Power;
+using Ai.Tlbx.MidTerm.Services.Hub;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -144,6 +145,8 @@ public static class ServerSetup
         builder.Services.AddSingleton<GitWatcherService>();
         builder.Services.AddSingleton<CommandService>();
         builder.Services.AddSingleton<ShutdownService>();
+        builder.Services.AddSingleton<HubService>();
+        builder.Services.AddSingleton<HubMuxWebSocketHandler>();
         builder.Services.AddSingleton(sp =>
         {
             var (port, bindAddress) = ArgumentParser.Parse(args);
