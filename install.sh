@@ -2103,65 +2103,25 @@ install_as_user() {
 
 create_uninstall_script() {
     local lib_dir="$1"
-    local is_service="$2"
-
     local uninstall_script="$lib_dir/uninstall.sh"
 
-    if [ "$is_service" = true ]; then
-        cat > "$uninstall_script" << 'EOF'
+    cat > "$uninstall_script" << 'EOF'
 #!/bin/bash
 # MidTerm Uninstaller
 
 set -e
 
-echo "Uninstalling MidTerm..."
+SCRIPT_URL="https://tlbx-ai.github.io/MidTerm/uninstall.sh"
 
-if [ "$(uname -s)" = "Darwin" ]; then
-    # macOS - unload service (try modern bootout first, fallback to legacy unload)
-    sudo launchctl bootout system/ai.tlbx.midterm 2>/dev/null || sudo launchctl unload /Library/LaunchDaemons/ai.tlbx.midterm.plist 2>/dev/null || true
-    sudo rm -f /Library/LaunchDaemons/ai.tlbx.midterm.plist
-    # Cleanup old service names from previous org
-    sudo launchctl bootout system/com.aitlbx.MidTerm 2>/dev/null || sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm.plist 2>/dev/null || true
-    sudo rm -f /Library/LaunchDaemons/com.aitlbx.MidTerm.plist
-    sudo launchctl bootout system/com.aitlbx.MidTerm-host 2>/dev/null || sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm-host.plist 2>/dev/null || true
-    sudo rm -f /Library/LaunchDaemons/com.aitlbx.MidTerm-host.plist
+if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$SCRIPT_URL" | bash
+elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$SCRIPT_URL" | bash
 else
-    # Linux - stop and remove service
-    sudo systemctl stop MidTerm 2>/dev/null || true
-    sudo systemctl disable MidTerm 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/MidTerm.service
-    # Cleanup old host service if present (from pre-v4)
-    sudo systemctl stop MidTerm-host 2>/dev/null || true
-    sudo systemctl disable MidTerm-host 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/MidTerm-host.service
-    sudo systemctl daemon-reload
+    echo "Error: MidTerm uninstaller requires 'curl' or 'wget'." >&2
+    exit 1
 fi
-
-sudo rm -f /usr/local/bin/mt
-sudo rm -f /usr/local/bin/mthost
-sudo rm -f /usr/local/bin/mt-host  # legacy cleanup
-sudo rm -rf /usr/local/lib/MidTerm
-sudo rm -rf /usr/local/etc/midterm
-
-echo "MidTerm uninstalled."
 EOF
-    else
-        cat > "$uninstall_script" << EOF
-#!/bin/bash
-# MidTerm Uninstaller
-
-set -e
-
-echo "Uninstalling MidTerm..."
-
-rm -f "$HOME/.local/bin/mt"
-rm -f "$HOME/.local/bin/mthost"
-rm -f "$HOME/.local/bin/mt-host"  # legacy cleanup
-rm -rf "$HOME/.local/lib/MidTerm"
-
-echo "MidTerm uninstalled."
-EOF
-    fi
 
     chmod +x "$uninstall_script"
 }

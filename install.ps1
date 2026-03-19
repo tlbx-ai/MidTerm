@@ -1353,58 +1353,17 @@ function Create-UninstallScript
 
     $uninstallScript = Join-Path $InstallDir "uninstall.ps1"
 
-    if ($IsService)
-    {
-        $content = @"
+    $content = @"
 # MidTerm Uninstaller
 `$ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-Write-Host "Uninstalling MidTerm..." -ForegroundColor Cyan
+`$scriptUrl = 'https://tlbx-ai.github.io/MidTerm/uninstall.ps1'
+`$scriptContent = Invoke-RestMethod -Uri `$scriptUrl
+`$scriptBlock = [ScriptBlock]::Create(`$scriptContent)
 
-# Stop and remove service
-Stop-Service -Name "$ServiceName" -Force -ErrorAction SilentlyContinue
-sc.exe delete "$ServiceName" | Out-Null
-
-# Remove old host service if present (migration cleanup)
-Stop-Service -Name "$OldHostServiceName" -Force -ErrorAction SilentlyContinue
-sc.exe delete "$OldHostServiceName" 2>`$null | Out-Null
-
-# Remove registry entry
-Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm" -Force -ErrorAction SilentlyContinue
-
-# Remove settings
-Remove-Item -Path "`$env:ProgramData\MidTerm" -Recurse -Force -ErrorAction SilentlyContinue
-
-# Remove install directory (schedule for next reboot if locked)
-`$installDir = "$InstallDir"
-Start-Sleep -Seconds 2
-Remove-Item -Path `$installDir -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "MidTerm uninstalled." -ForegroundColor Green
+& `$scriptBlock
 "@
-    }
-    else
-    {
-        $content = @"
-# MidTerm Uninstaller
-`$ErrorActionPreference = "Stop"
-
-Write-Host "Uninstalling MidTerm..." -ForegroundColor Cyan
-
-# Remove from PATH
-`$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-`$newPath = (`$userPath -split ";" | Where-Object { `$_ -ne "$InstallDir" }) -join ";"
-[Environment]::SetEnvironmentVariable("Path", `$newPath, "User")
-
-# Remove registry entry
-Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm" -Force -ErrorAction SilentlyContinue
-
-# Remove install directory
-Remove-Item -Path "$InstallDir" -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "MidTerm uninstalled." -ForegroundColor Green
-"@
-    }
 
     Set-Content -Path $uninstallScript -Value $content
 }
