@@ -25,6 +25,7 @@ import {
   PREVIEW_LOAD_TOKEN_DATASET_KEY,
   shouldReloadPreviewFrame,
 } from './previewLoadToken';
+import { buildProxyUrl, stripInternalPreviewQueryParams } from './previewProxyUrl';
 import {
   getActiveDockedClient,
   getActivePreview,
@@ -80,8 +81,6 @@ const SANDBOX_BASE_FLAGS = [
 
 const log = createLogger('webPanel');
 const PREVIEW_CONTEXT_COOKIE_NAME = 'mt-preview-ctx';
-const PREVIEW_QUERY_ID_PARAM = '__mtPreviewId';
-const PREVIEW_QUERY_TOKEN_PARAM = '__mtPreviewToken';
 let urlInput: HTMLInputElement | null = null;
 let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
@@ -321,24 +320,6 @@ async function handleGo(): Promise<void> {
   await loadPreview();
 }
 
-function buildProxyUrl(
-  targetUrl: string,
-  previewClient: BrowserPreviewClientResponse,
-  frameOrigin = window.location.origin,
-): string {
-  const parsed = new URL(targetUrl);
-  const path = parsed.pathname || '/';
-  const prefix = getProxyPrefix(previewClient.routeKey);
-  const proxyUrl = new URL(path === '/' ? `${prefix}/` : `${prefix}${path}`, frameOrigin);
-  proxyUrl.search = parsed.search;
-  proxyUrl.hash = parsed.hash;
-  if (previewClient.previewId && previewClient.previewToken) {
-    proxyUrl.searchParams.set(PREVIEW_QUERY_ID_PARAM, previewClient.previewId);
-    proxyUrl.searchParams.set(PREVIEW_QUERY_TOKEN_PARAM, previewClient.previewToken);
-  }
-  return proxyUrl.toString();
-}
-
 function decodeIframeNavigationUrl(
   iframeUrl: string,
   routeKey: string,
@@ -359,6 +340,8 @@ function decodeIframeNavigationUrl(
   } else {
     return parsed.toString();
   }
+
+  stripInternalPreviewQueryParams(parsed);
 
   const baseOrigin =
     targetOrigin ||
@@ -592,6 +575,7 @@ export async function loadPreview(): Promise<void> {
     const proxyUrl = buildProxyUrl(
       currentUrl,
       previewClient,
+      currentTargetRevision,
       previewClient.origin ?? window.location.origin,
     );
     if (shouldReloadPreviewFrame(frame, proxyUrl, currentUrl, currentTargetRevision)) {
