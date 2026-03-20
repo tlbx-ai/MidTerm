@@ -38,14 +38,7 @@ public static class WelcomeScreen
             : OperatingSystem.IsLinux() ? "Linux"
             : "Unknown";
 
-        Console.Write($"  Version:  {version}");
-        if (UpdateService.IsDevEnvironment)
-        {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.Write(" [LOCAL]");
-            Console.ResetColor();
-        }
-        Console.WriteLine();
+        Console.WriteLine($"  Version:  {version}");
         Console.WriteLine($"  Platform: {platform}");
         Console.WriteLine($"  Shell:    {settings.DefaultShell}");
         Console.Write($"  Mode:     ");

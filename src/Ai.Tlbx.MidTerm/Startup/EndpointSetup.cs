@@ -33,6 +33,14 @@ public static class EndpointSetup
     private static bool _codeSigned;
     private static bool _codeSigningChecked;
 
+    private static string GetDisplayVersion(string version)
+    {
+        // Do not label dev-environment builds as [LOCAL]. MidTerm currently has
+        // no trustworthy source/install-origin signal here, and published GitHub
+        // prereleases were being misclassified as local builds in the UI.
+        return version;
+    }
+
     public static async Task DetectGitAsync()
     {
         _cachedGitVersion = await GitCommandRunner.GetGitVersionAsync();
@@ -174,7 +182,7 @@ public static class EndpointSetup
 
             var updateResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory, clear: true);
             var isDevMode = UpdateService.IsDevEnvironment || settings.DevMode;
-            var displayVersion = isDevMode ? $"{version} [LOCAL]" : version;
+            var displayVersion = GetDisplayVersion(version);
 
             var features = new FeatureFlags
             {
@@ -243,7 +251,7 @@ public static class EndpointSetup
                  UpdateService.CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
 
             var isDevMode2 = UpdateService.IsDevEnvironment || settingsService.Load().DevMode;
-            var displayVersion = isDevMode2 ? $"{version} [LOCAL]" : version;
+            var displayVersion = GetDisplayVersion(version);
 
             var response = new SystemResponse
             {
@@ -269,7 +277,7 @@ public static class EndpointSetup
         app.MapGet("/api/version", () =>
         {
             var isDevMode3 = UpdateService.IsDevEnvironment || settingsService.Load().DevMode;
-            var displayVersion = isDevMode3 ? $"{version} [LOCAL]" : version;
+            var displayVersion = GetDisplayVersion(version);
             return Results.Text(displayVersion);
         });
 

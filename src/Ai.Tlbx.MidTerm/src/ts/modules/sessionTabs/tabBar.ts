@@ -2,7 +2,7 @@
  * Session Tab Bar
  *
  * Creates and manages the session bar UI for each session.
- * Tabs: Terminal | Lens | Files
+ * Tabs: Terminal | Files
  * Right-aligned actions: Lens | WEB | Share | Git dock toggle
  */
 
@@ -51,6 +51,10 @@ function getTabLabels(): Record<SessionTabId, string> {
     agent: t('sessionTabs.agent'),
     files: t('sessionTabs.files'),
   };
+}
+
+function getVisibleTabs(): SessionTabId[] {
+  return ['terminal', 'files'];
 }
 
 function createActionIcon(svgMarkup: string): HTMLSpanElement {
@@ -243,14 +247,16 @@ export function createTabBar(
   });
   bar.appendChild(cwdSpan);
 
-  for (const [tabId, label] of Object.entries(getTabLabels())) {
+  const labels = getTabLabels();
+  for (const tabId of getVisibleTabs()) {
+    const label = labels[tabId];
     const btn = document.createElement('button');
     btn.className = 'session-tab';
     if (tabId === 'terminal') btn.classList.add('active');
     btn.dataset.tab = tabId;
     btn.textContent = label;
     btn.addEventListener('click', () => {
-      onTabSelect(tabId as SessionTabId);
+      onTabSelect(tabId);
     });
     bar.appendChild(btn);
   }

@@ -139,11 +139,17 @@ describe('tabBar', () => {
     const { createTabBar } = await import('./tabBar');
 
     const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
+    const tabButtons = bar.children.filter((child) =>
+      child.className.split(/\s+/).includes('session-tab'),
+    );
     const actions = bar.querySelector('.ide-bar-actions');
     expect(actions).not.toBeNull();
     if (!actions) {
       throw new Error('Expected IDE actions container');
     }
+
+    expect(tabButtons.map((button) => button.dataset.tab)).toEqual(['terminal', 'files']);
+
     const buttons = actions.children;
 
     expect(buttons.map((button) => button.dataset.action)).toEqual(['lens', 'web', 'share', 'git']);
