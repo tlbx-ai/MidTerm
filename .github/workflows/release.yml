@@ -90,7 +90,7 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
           retention-days: 1
 
-  # ── Build macOS ARM64 for dev prereleases ──────────────────────────────────
+  # ── Build macOS ARM64 + Linux ARM64 for dev prereleases ────────────────────
   build-dev:
     needs: [prepare, frontend]
     if: needs.prepare.outputs.is_dev == 'true'
@@ -101,6 +101,9 @@ jobs:
         include:
           - os: macos-14
             rid: osx-arm64
+            ext: ''
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
             ext: ''
     runs-on: ${{ matrix.os }}
 

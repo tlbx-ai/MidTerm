@@ -773,29 +773,6 @@ public sealed partial class UpdateService : IDisposable
         AppendUpdateLog(artifacts.LogPath, $"Downloaded update payload to {extractedDir}");
         AppendUpdateLog(artifacts.LogPath, $"Update type: {updateType}");
 
-        if (OperatingSystem.IsLinux() &&
-            updateType == UpdateType.WebOnly &&
-            settingsService.IsRunningAsService)
-        {
-            var applied = TryApplyLinuxServiceWebOnlyUpdate(
-                extractedDir,
-                settingsService.SettingsDirectory,
-                deleteSourceAfter,
-                artifacts);
-            if (!applied.Success)
-            {
-                return applied;
-            }
-
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(1000);
-                Environment.Exit(0);
-            });
-
-            return (true, "Update installed. Service will restart shortly.");
-        }
-
         if (OperatingSystem.IsMacOS())
         {
             if (settingsService.IsRunningAsService)

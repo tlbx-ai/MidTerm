@@ -198,21 +198,59 @@ Write-Host "Type-checking and linting (parallel)..." -ForegroundColor Cyan
 $tscPath = Join-Path $NodeModulesRoot "typescript/lib/tsc.js"
 $tsconfigPath = Join-Path $PSScriptRoot "tsconfig.json"
 
-# Run tsc and ESLint concurrently; collect output so errors are printed cleanly
-$tscJob = Start-Job -ScriptBlock {
-    param($tscPath, $tsconfigPath)
-    $out = & node $tscPath --noEmit --pretty false --project $tsconfigPath 2>&1
-    [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
-} -ArgumentList $tscPath, $tsconfigPath
+# Run tsc and ESLint concurrently when background jobs are available.
+# On some Linux ARM64 pwsh installs, Start-Job fails to launch the helper process.
+$tscResult = $null
+$eslintResult = $null
+$tscJob = $null
+$eslintJob = $null
 
-$eslintJob = Start-Job -ScriptBlock {
-    param($TsSource)
-    $out = & npx eslint $TsSource 2>&1
-    [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
-} -ArgumentList $TsSource
+try {
+    $tscJob = Start-Job -ScriptBlock {
+        param($tscPath, $tsconfigPath)
+        $out = & node $tscPath --noEmit --pretty false --project $tsconfigPath 2>&1
+        [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+    } -ArgumentList $tscPath, $tsconfigPath
 
-$tscResult   = $tscJob   | Wait-Job | Receive-Job
-$eslintResult = $eslintJob | Wait-Job | Receive-Job
+    $eslintJob = Start-Job -ScriptBlock {
+        param($TsSource)
+        $out = & npx eslint $TsSource 2>&1
+        [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+    } -ArgumentList $TsSource
+
+    $tscResult = $tscJob | Wait-Job | Receive-Job
+    $eslintResult = $eslintJob | Wait-Job | Receive-Job
+}
+catch {
+    Write-Host "Background jobs unavailable; running type-check and lint sequentially..." -ForegroundColor Yellow
+
+    if ($null -ne $tscJob) {
+        Remove-Job $tscJob -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $eslintJob) {
+        Remove-Job $eslintJob -Force -ErrorAction SilentlyContinue
+    }
+
+    $tscOutput = & node $tscPath --noEmit --pretty false --project $tsconfigPath 2>&1
+    $tscResult = [PSCustomObject]@{
+        Output = $tscOutput
+        ExitCode = $LASTEXITCODE
+    }
+
+    $eslintOutput = & npx eslint $TsSource 2>&1
+    $eslintResult = [PSCustomObject]@{
+        Output = $eslintOutput
+        ExitCode = $LASTEXITCODE
+    }
+}
+finally {
+    if ($null -ne $tscJob) {
+        Remove-Job $tscJob -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $eslintJob) {
+        Remove-Job $eslintJob -Force -ErrorAction SilentlyContinue
+    }
+}
 
 if ($tscResult.Output) {
     Write-Host "::group::TypeScript type-check output"

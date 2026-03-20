@@ -174,7 +174,8 @@ if ($isPtyBreaking) {
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray
-node "$PSScriptRoot\sync-npx-launcher-version.mjs" $newVersion
+$syncNpxLauncherScript = Join-Path $PSScriptRoot "sync-npx-launcher-version.mjs"
+node $syncNpxLauncherScript $newVersion
 if ($LASTEXITCODE -ne 0) { throw "Failed to sync npx launcher version" }
 Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 
