@@ -2335,50 +2335,28 @@
           <button id="btn-close-manager-action" class="modal-close">&times;</button>
         </div>
         <div class="modal-body manager-action-modal-body">
-          <div class="form-group">
-            <label for="manager-action-label" data-i18n="managerBar.modal.label">Label</label>
-            <input
-              type="text"
-              id="manager-action-label"
-              data-i18n-placeholder="managerBar.modal.labelPlaceholder"
-              placeholder="Label"
-            />
+          <div class="manager-action-intro" data-i18n="managerBar.modal.intro">
+            Build a reusable action for the active terminal session.
           </div>
 
-          <div class="manager-action-modal-grid">
-            <div class="form-group">
-              <label for="manager-action-type" data-i18n="managerBar.modal.type">Type</label>
-              <select id="manager-action-type">
-                <option value="single" data-i18n="managerBar.type.single">Single Command</option>
-                <option value="chain" data-i18n="managerBar.type.chain">Command Chain</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label for="manager-action-trigger" data-i18n="managerBar.modal.trigger"
-                >Trigger</label
-              >
-              <select id="manager-action-trigger">
-                <option value="fireAndForget" data-i18n="managerBar.trigger.fireAndForget">
-                  Fire and Forget
-                </option>
-                <option value="onCooldown" data-i18n="managerBar.trigger.onCooldown">
-                  On Cooldown
-                </option>
-                <option value="repeatCount" data-i18n="managerBar.trigger.repeatCount">
-                  Repeat n Times
-                </option>
-                <option value="repeatInterval" data-i18n="managerBar.trigger.repeatInterval">
-                  Repeat Every n Time Unit
-                </option>
-                <option value="schedule" data-i18n="managerBar.trigger.schedule">Scheduled</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group manager-action-prompts-group">
+          <section class="manager-action-panel manager-action-panel-primary">
             <div class="manager-action-section-header">
-              <label data-i18n="managerBar.modal.prompts">Prompts</label>
+              <div class="manager-action-section-copy-wrap">
+                <div
+                  id="manager-action-prompts-title"
+                  class="manager-action-section-title"
+                  data-i18n="managerBar.modal.promptSectionSingle"
+                >
+                  Prompt
+                </div>
+                <div
+                  id="manager-action-prompts-copy"
+                  class="manager-action-section-copy"
+                  data-i18n="managerBar.modal.promptSectionSingleCopy"
+                >
+                  Write the exact prompt MidTerm should send to the active session.
+                </div>
+              </div>
               <button
                 type="button"
                 id="manager-action-add-prompt"
@@ -2389,63 +2367,167 @@
               </button>
             </div>
             <div id="manager-action-prompts"></div>
-          </div>
 
-          <div
-            id="manager-action-cooldown-hint"
-            class="manager-action-hint hidden"
-            data-i18n="managerBar.modal.cooldownHint"
-          >
-            Runs when the session heat drops below 75%.
-          </div>
-          <div
-            id="manager-action-chain-hint"
-            class="manager-action-hint hidden"
-            data-i18n="managerBar.modal.chainHint"
-          >
-            Chain follow-ups wait for cooldown automatically.
-          </div>
-
-          <div
-            id="manager-action-repeat-count-group"
-            class="form-group manager-action-trigger-group hidden"
-          >
-            <label for="manager-action-repeat-count" data-i18n="managerBar.modal.repeatCount">
-              Repeat Count
-            </label>
-            <input type="number" id="manager-action-repeat-count" min="1" value="2" />
-          </div>
-
-          <div
-            id="manager-action-repeat-interval-group"
-            class="form-group manager-action-trigger-group hidden"
-          >
-            <label data-i18n="managerBar.modal.repeatEvery">Repeat Every</label>
-            <div class="manager-action-repeat-interval-row">
-              <input type="number" id="manager-action-repeat-every-value" min="1" value="5" />
-              <select id="manager-action-repeat-every-unit">
-                <option value="seconds" data-i18n="managerBar.intervalUnit.seconds">seconds</option>
-                <option value="minutes" data-i18n="managerBar.intervalUnit.minutes">minutes</option>
-                <option value="hours" data-i18n="managerBar.intervalUnit.hours">hours</option>
-                <option value="days" data-i18n="managerBar.intervalUnit.days">days</option>
-              </select>
+            <div class="form-group manager-action-label-group">
+              <label for="manager-action-label" data-i18n="managerBar.modal.labelOptional">
+                Label (optional)
+              </label>
+              <input
+                type="text"
+                id="manager-action-label"
+                data-i18n-placeholder="managerBar.modal.labelPlaceholder"
+                placeholder="Use the first prompt line"
+              />
+              <div class="manager-action-field-note" data-i18n="managerBar.modal.labelHelp">
+                Leave this blank to use the first non-empty prompt line as the button label.
+              </div>
             </div>
-          </div>
 
-          <div id="manager-action-schedule-group" class="form-group hidden">
-            <div class="manager-action-section-header">
-              <label data-i18n="managerBar.modal.schedule">Schedule</label>
-              <button
-                type="button"
-                id="manager-action-add-schedule"
-                class="btn-secondary"
-                data-i18n="managerBar.modal.addSchedule"
+            <div
+              id="manager-action-chain-hint"
+              class="manager-action-context-note hidden"
+              data-i18n="managerBar.modal.chainHint"
+            >
+              Chain follow-ups wait for cooldown automatically.
+            </div>
+          </section>
+
+          <section class="manager-action-panel">
+            <div class="manager-action-section-copy-wrap">
+              <div
+                class="manager-action-section-title"
+                data-i18n="managerBar.modal.behaviorSection"
               >
-                Add schedule
-              </button>
+                Behavior
+              </div>
+              <div
+                class="manager-action-section-copy"
+                data-i18n="managerBar.modal.behaviorSectionCopy"
+              >
+                Choose how many prompts belong to this action and when the full action should start.
+              </div>
             </div>
-            <div id="manager-action-schedule-list"></div>
-          </div>
+
+            <div class="manager-action-modal-grid">
+              <div class="form-group">
+                <label for="manager-action-type" data-i18n="managerBar.modal.type">Type</label>
+                <select id="manager-action-type">
+                  <option value="single" data-i18n="managerBar.type.single">Single Command</option>
+                  <option value="chain" data-i18n="managerBar.type.chain">Command Chain</option>
+                </select>
+                <div id="manager-action-type-description" class="manager-action-field-note"></div>
+              </div>
+
+              <div class="form-group">
+                <label for="manager-action-trigger" data-i18n="managerBar.modal.trigger"
+                  >Trigger</label
+                >
+                <select id="manager-action-trigger">
+                  <option value="fireAndForget" data-i18n="managerBar.trigger.fireAndForget">
+                    Fire and Forget
+                  </option>
+                  <option value="onCooldown" data-i18n="managerBar.trigger.onCooldown">
+                    On Cooldown
+                  </option>
+                  <option value="repeatCount" data-i18n="managerBar.trigger.repeatCount">
+                    Repeat n Times
+                  </option>
+                  <option value="repeatInterval" data-i18n="managerBar.trigger.repeatInterval">
+                    Repeat Every n Time Unit
+                  </option>
+                  <option value="schedule" data-i18n="managerBar.trigger.schedule">
+                    Scheduled
+                  </option>
+                </select>
+                <div
+                  id="manager-action-trigger-description"
+                  class="manager-action-field-note"
+                ></div>
+              </div>
+            </div>
+          </section>
+
+          <section id="manager-action-trigger-details" class="manager-action-panel hidden">
+            <div class="manager-action-section-copy-wrap">
+              <div class="manager-action-section-title" data-i18n="managerBar.modal.triggerDetails">
+                Trigger Details
+              </div>
+              <div
+                class="manager-action-section-copy"
+                data-i18n="managerBar.modal.triggerDetailsCopy"
+              >
+                Only the controls that matter for the selected trigger are shown here.
+              </div>
+            </div>
+
+            <div
+              id="manager-action-cooldown-hint"
+              class="manager-action-context-note hidden"
+              data-i18n="managerBar.modal.cooldownHint"
+            >
+              Runs when the session heat drops below 75%.
+            </div>
+
+            <div
+              id="manager-action-repeat-count-group"
+              class="form-group manager-action-trigger-group hidden"
+            >
+              <label for="manager-action-repeat-count" data-i18n="managerBar.modal.repeatCount">
+                Repeat Count
+              </label>
+              <input type="number" id="manager-action-repeat-count" min="1" value="2" />
+              <div class="manager-action-field-note" data-i18n="managerBar.modal.repeatCountHelp">
+                The full action runs again after it finishes and the session cools down.
+              </div>
+            </div>
+
+            <div
+              id="manager-action-repeat-interval-group"
+              class="form-group manager-action-trigger-group hidden"
+            >
+              <label data-i18n="managerBar.modal.repeatEvery">Repeat Every</label>
+              <div class="manager-action-repeat-interval-row">
+                <input type="number" id="manager-action-repeat-every-value" min="1" value="5" />
+                <select id="manager-action-repeat-every-unit">
+                  <option value="seconds" data-i18n="managerBar.intervalUnit.seconds">
+                    seconds
+                  </option>
+                  <option value="minutes" data-i18n="managerBar.intervalUnit.minutes">
+                    minutes
+                  </option>
+                  <option value="hours" data-i18n="managerBar.intervalUnit.hours">hours</option>
+                  <option value="days" data-i18n="managerBar.intervalUnit.days">days</option>
+                </select>
+              </div>
+              <div
+                class="manager-action-field-note"
+                data-i18n="managerBar.modal.repeatIntervalHelp"
+              >
+                The full action is queued on this cadence. Chain steps still wait for cooldown.
+              </div>
+            </div>
+
+            <div id="manager-action-schedule-group" class="form-group hidden">
+              <div class="manager-action-section-header">
+                <div class="manager-action-section-copy-wrap">
+                  <label data-i18n="managerBar.modal.schedule">Schedule</label>
+                  <div class="manager-action-field-note" data-i18n="managerBar.modal.scheduleHelp">
+                    Add one or more start times. MidTerm will queue the full action at the next
+                    matching slot.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="manager-action-add-schedule"
+                  class="btn-secondary"
+                  data-i18n="managerBar.modal.addSchedule"
+                >
+                  Add schedule
+                </button>
+              </div>
+              <div id="manager-action-schedule-list"></div>
+            </div>
+          </section>
 
           <div id="manager-action-error" class="error-message hidden"></div>
 

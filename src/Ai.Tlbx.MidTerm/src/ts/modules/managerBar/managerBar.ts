@@ -68,6 +68,10 @@ let modalErrorEl: HTMLElement | null = null;
 let labelInput: HTMLInputElement | null = null;
 let typeSelect: HTMLSelectElement | null = null;
 let triggerSelect: HTMLSelectElement | null = null;
+let promptsTitleEl: HTMLElement | null = null;
+let promptsCopyEl: HTMLElement | null = null;
+let typeDescriptionEl: HTMLElement | null = null;
+let triggerDescriptionEl: HTMLElement | null = null;
 let promptsContainer: HTMLElement | null = null;
 let addPromptBtn: HTMLButtonElement | null = null;
 let repeatCountInput: HTMLInputElement | null = null;
@@ -77,6 +81,7 @@ let scheduleContainer: HTMLElement | null = null;
 let addScheduleBtn: HTMLButtonElement | null = null;
 let cooldownHintEl: HTMLElement | null = null;
 let chainHintEl: HTMLElement | null = null;
+let triggerDetailsEl: HTMLElement | null = null;
 let repeatCountGroupEl: HTMLElement | null = null;
 let repeatIntervalGroupEl: HTMLElement | null = null;
 let scheduleGroupEl: HTMLElement | null = null;
@@ -110,6 +115,10 @@ export function initManagerBar(): void {
   labelInput = document.getElementById('manager-action-label') as HTMLInputElement | null;
   typeSelect = document.getElementById('manager-action-type') as HTMLSelectElement | null;
   triggerSelect = document.getElementById('manager-action-trigger') as HTMLSelectElement | null;
+  promptsTitleEl = document.getElementById('manager-action-prompts-title');
+  promptsCopyEl = document.getElementById('manager-action-prompts-copy');
+  typeDescriptionEl = document.getElementById('manager-action-type-description');
+  triggerDescriptionEl = document.getElementById('manager-action-trigger-description');
   promptsContainer = document.getElementById('manager-action-prompts');
   addPromptBtn = document.getElementById('manager-action-add-prompt') as HTMLButtonElement | null;
   repeatCountInput = document.getElementById(
@@ -127,6 +136,7 @@ export function initManagerBar(): void {
   ) as HTMLButtonElement | null;
   cooldownHintEl = document.getElementById('manager-action-cooldown-hint');
   chainHintEl = document.getElementById('manager-action-chain-hint');
+  triggerDetailsEl = document.getElementById('manager-action-trigger-details');
   repeatCountGroupEl = document.getElementById('manager-action-repeat-count-group');
   repeatIntervalGroupEl = document.getElementById('manager-action-repeat-interval-group');
   scheduleGroupEl = document.getElementById('manager-action-schedule-group');
@@ -237,12 +247,14 @@ function bindModalEvents(): void {
     const prompts = readPromptValues();
     prompts.push('');
     renderPromptEditors(prompts.length, prompts, getModalActionType());
+    focusPrimaryPrompt(prompts.length - 1);
   });
 
   addScheduleBtn?.addEventListener('click', () => {
     const schedule = readScheduleValues();
     schedule.push({ timeOfDay: '09:00', repeat: 'daily' });
     renderScheduleEditors(schedule);
+    focusNewestScheduleTime();
   });
 
   scheduleContainer?.addEventListener('click', (event) => {
@@ -446,8 +458,7 @@ function openActionModal(existing?: NormalizedManagerButton): void {
   syncModalSections();
 
   modalEl.classList.remove('hidden');
-  labelInput.focus();
-  labelInput.select();
+  focusPrimaryPrompt();
 }
 
 function closeActionModal(): void {
@@ -595,8 +606,34 @@ function syncModalSections(): void {
   const actionType = getModalActionType();
   const triggerKind = getModalTriggerKind();
 
+  if (promptsTitleEl) {
+    promptsTitleEl.textContent = t(
+      actionType === 'chain'
+        ? 'managerBar.modal.promptSectionChain'
+        : 'managerBar.modal.promptSectionSingle',
+    );
+  }
+  if (promptsCopyEl) {
+    promptsCopyEl.textContent = t(
+      actionType === 'chain'
+        ? 'managerBar.modal.promptSectionChainCopy'
+        : 'managerBar.modal.promptSectionSingleCopy',
+    );
+  }
+  if (typeDescriptionEl) {
+    typeDescriptionEl.textContent = t(
+      actionType === 'chain'
+        ? 'managerBar.modal.typeChainDescription'
+        : 'managerBar.modal.typeSingleDescription',
+    );
+  }
+  if (triggerDescriptionEl) {
+    triggerDescriptionEl.textContent = t(`managerBar.modal.triggerDescription.${triggerKind}`);
+  }
+
   cooldownHintEl?.classList.toggle('hidden', triggerKind !== 'onCooldown');
   chainHintEl?.classList.toggle('hidden', actionType !== 'chain');
+  triggerDetailsEl?.classList.toggle('hidden', triggerKind === 'fireAndForget');
   repeatCountGroupEl?.classList.toggle('hidden', triggerKind !== 'repeatCount');
   repeatIntervalGroupEl?.classList.toggle('hidden', triggerKind !== 'repeatInterval');
   scheduleGroupEl?.classList.toggle('hidden', triggerKind !== 'schedule');
@@ -845,4 +882,30 @@ function escapeHtml(value: string): string {
   const div = document.createElement('div');
   div.textContent = value;
   return div.innerHTML;
+}
+
+function focusPrimaryPrompt(index: number = 0): void {
+  window.requestAnimationFrame(() => {
+    const prompts = promptsContainer?.querySelectorAll<HTMLTextAreaElement>(
+      '.manager-action-prompt-input',
+    );
+    const prompt = prompts?.[index] ?? prompts?.[0];
+    if (!prompt) return;
+
+    prompt.focus();
+    const cursor = prompt.value.length;
+    prompt.setSelectionRange(cursor, cursor);
+  });
+}
+
+function focusNewestScheduleTime(): void {
+  window.requestAnimationFrame(() => {
+    const times = scheduleContainer?.querySelectorAll<HTMLInputElement>(
+      '.manager-action-schedule-time',
+    );
+    const input = times?.[times.length - 1];
+    if (!input) return;
+
+    input.focus();
+  });
 }
