@@ -5127,6 +5127,40 @@ body.has-app-background::after {
   width: min(520px, 92vw);
 }
 
+.dev-error-modal {
+  width: min(920px, 94vw);
+  max-height: min(85vh, 960px);
+  animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.dev-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dev-error-summary {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-lg);
+  line-height: 1.5;
+}
+
+.dev-error-detail {
+  margin: 0;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+}
+
 .share-dialog-body {
   display: flex;
   flex-direction: column;

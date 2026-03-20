@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { onTabActivated, onTabDeactivated, switchTab } from '../sessionTabs';
+import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import {
   attachSessionLens,
   getLensSnapshot,
@@ -77,6 +78,11 @@ async function activateAgentView(sessionId: string): Promise<void> {
     openLiveLensStream(sessionId, snapshot.latestSequence);
   } catch (error) {
     log.warn(() => `Failed to activate Lens for ${sessionId}: ${String(error)}`);
+    showDevErrorDialog({
+      title: 'Lens failed to open',
+      context: `Lens activation failed for session ${sessionId}`,
+      error,
+    });
     renderUnavailable(state.panel, t('agentView.loadError'));
   }
 }
@@ -338,6 +344,11 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
     renderCurrentAgentView(sessionId);
   } catch (error) {
     log.warn(() => `Failed to refresh Lens snapshot for ${sessionId}: ${String(error)}`);
+    showDevErrorDialog({
+      title: 'Lens refresh failed',
+      context: `Lens snapshot refresh failed for session ${sessionId}`,
+      error,
+    });
     renderUnavailable(state.panel, t('agentView.loadError'));
   } finally {
     state.refreshInFlight = false;
@@ -877,6 +888,11 @@ async function handleInterruptTurn(sessionId: string, turnId: string): Promise<v
     await refreshLensSnapshot(sessionId);
   } catch (error) {
     log.warn(() => `Failed to interrupt Lens turn for ${sessionId}: ${String(error)}`);
+    showDevErrorDialog({
+      title: 'Lens interrupt failed',
+      context: `Lens interrupt failed for session ${sessionId}, turn ${turnId}`,
+      error,
+    });
   } finally {
     state.interruptPending = false;
     renderCurrentAgentView(sessionId);
@@ -922,6 +938,11 @@ async function runRequestAction(
     log.warn(
       () => `Failed to resolve Lens request ${requestId} for ${sessionId}: ${String(error)}`,
     );
+    showDevErrorDialog({
+      title: 'Lens request failed',
+      context: `Lens request action failed for session ${sessionId}, request ${requestId}`,
+      error,
+    });
   } finally {
     state.requestBusyIds.delete(requestId);
     renderCurrentAgentView(sessionId);
