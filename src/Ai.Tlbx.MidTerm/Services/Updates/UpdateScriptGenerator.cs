@@ -1330,12 +1330,21 @@ write_result true ""Update completed successfully""
             if (runOutsideServiceCgroup && OperatingSystem.IsLinux())
             {
                 var unitName = $"midterm-update-{Guid.NewGuid():N}";
+                var useSudo = CanRunSudoWithoutPrompt();
                 var systemdRunPsi = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "/usr/bin/systemd-run",
+                    FileName = useSudo ? "/usr/bin/sudo" : "/usr/bin/systemd-run",
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
                 };
+
+                if (useSudo)
+                {
+                    systemdRunPsi.ArgumentList.Add("-n");
+                    systemdRunPsi.ArgumentList.Add("/usr/bin/systemd-run");
+                }
 
                 systemdRunPsi.ArgumentList.Add("--unit");
                 systemdRunPsi.ArgumentList.Add(unitName);
@@ -1344,7 +1353,29 @@ write_result true ""Update completed successfully""
                 systemdRunPsi.ArgumentList.Add("/bin/bash");
                 systemdRunPsi.ArgumentList.Add(scriptPath);
 
-                System.Diagnostics.Process.Start(systemdRunPsi);
+                using var process = System.Diagnostics.Process.Start(systemdRunPsi)
+                    ?? throw new InvalidOperationException("Failed to start systemd-run for the Linux service updater.");
+
+                if (!process.WaitForExit(10000))
+                {
+                    try { process.Kill(); } catch { }
+                    throw new TimeoutException("Timed out waiting for systemd-run to launch the Linux service updater.");
+                }
+
+                var stdout = process.StandardOutput.ReadToEnd().Trim();
+                var stderr = process.StandardError.ReadToEnd().Trim();
+                if (process.ExitCode != 0)
+                {
+                    var details = string.Join(" | ", new[] { stderr, stdout }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                    if (string.IsNullOrWhiteSpace(details))
+                    {
+                        details = $"exit code {process.ExitCode}";
+                    }
+
+                    throw new InvalidOperationException(
+                        "Failed to launch the Linux service updater outside the MidTerm service cgroup: " + details);
+                }
+
                 return;
             }
 
@@ -1368,6 +1399,47 @@ write_result true ""Update completed successfully""
             psi.ArgumentList.Add(scriptPath);
 
             System.Diagnostics.Process.Start(psi);
+        }
+    }
+
+    private static bool CanRunSudoWithoutPrompt()
+    {
+        if (!OperatingSystem.IsLinux() || !File.Exists("/usr/bin/sudo"))
+        {
+            return false;
+        }
+
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/usr/bin/sudo",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            psi.ArgumentList.Add("-n");
+            psi.ArgumentList.Add("true");
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process is null)
+            {
+                return false;
+            }
+
+            if (!process.WaitForExit(3000))
+            {
+                try { process.Kill(); } catch { }
+                return false;
+            }
+
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 

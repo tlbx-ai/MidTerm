@@ -849,7 +849,10 @@ public sealed partial class UpdateService : IDisposable
             {
                 await Task.Delay(3000);
                 UpdateScriptGenerator.ExecuteUpdateScript(scriptPath, runOutsideServiceCgroup);
-                Environment.Exit(0);
+                if (!runOutsideServiceCgroup)
+                {
+                    Environment.Exit(0);
+                }
             }
             catch (Exception ex)
             {
