@@ -150,6 +150,10 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
             state.Status = attachResult.Status == "accepted" ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
             state.LastError = attachResult.Status == "accepted" ? null : attachResult.Message;
+            if (attachResult.Status == "accepted")
+            {
+                EnsurePulseSessionSeeded(sessionId, profile);
+            }
             return attachResult.Status == "accepted";
         }
         finally
@@ -538,6 +542,29 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             CodexMode => CodexMode,
             _ => OffMode
         };
+    }
+
+    private void EnsurePulseSessionSeeded(string sessionId, string profile)
+    {
+        if (_pulse.GetSnapshot(sessionId) is not null)
+        {
+            return;
+        }
+
+        _pulse.Append(new LensPulseEvent
+        {
+            EventId = $"seed-{Guid.NewGuid():N}",
+            SessionId = sessionId,
+            Provider = profile,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Type = "session.started",
+            SessionState = new LensPulseSessionStatePayload
+            {
+                State = "starting",
+                StateLabel = "Starting",
+                Reason = "Lens runtime attached and waiting for provider events."
+            }
+        });
     }
 
     private static string ToStatusValue(HostRuntimeStatus status)

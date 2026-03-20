@@ -27,6 +27,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
         Assert.True(runtime.IsAttached(session.Id));
+        Assert.NotNull(pulse.GetSnapshot(session.Id));
 
         var turn = await runtime.StartTurnAsync(
             session.Id,
@@ -97,6 +98,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
         Assert.True(runtime.IsAttached(session.Id));
+        Assert.NotNull(pulse.GetSnapshot(session.Id));
 
         var turn = await runtime.StartTurnAsync(
             session.Id,
@@ -169,6 +171,7 @@ public sealed class SessionLensHostRuntimeServiceTests
 
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
+        Assert.NotNull(pulse.GetSnapshot(session.Id));
 
         _ = await runtime.StartTurnAsync(
             session.Id,
@@ -237,6 +240,7 @@ public sealed class SessionLensHostRuntimeServiceTests
 
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
+        Assert.NotNull(pulse.GetSnapshot(session.Id));
 
         _ = await runtime.StartTurnAsync(
             session.Id,
