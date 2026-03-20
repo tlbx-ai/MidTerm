@@ -8627,14 +8627,16 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .manager-action-modal-content {
-  width: min(980px, calc(100vw - 40px));
-  max-height: min(90vh, 980px);
+  width: min(820px, calc(100vw - 32px));
+  max-height: min(88vh, 860px);
+  border-radius: 18px;
 }
 
 .manager-action-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
+  padding: 16px 18px 18px;
   font-size: var(--fs-lg);
 }
 
@@ -8643,62 +8645,22 @@ body.shared-session-mode .session-tab-bar {
   display: none !important;
 }
 
-.manager-action-intro {
-  color: var(--text-secondary);
-  font-size: var(--fs-xl);
-  line-height: 1.55;
-}
-
-.manager-action-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  border-radius: 14px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--bg-elevated) 88%, transparent),
-    color-mix(in srgb, var(--bg-secondary) 88%, transparent)
-  );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
-}
-
-.manager-action-panel-primary {
-  border-color: color-mix(in srgb, var(--accent-blue) 24%, var(--border-color));
-}
-
-.manager-action-section-copy-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.manager-action-section-title {
-  color: var(--text-primary);
-  font-size: var(--fs-2xl);
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.manager-action-section-copy {
-  color: var(--text-secondary);
-  font-size: var(--fs-lg);
-  line-height: 1.55;
-}
-
 .manager-action-modal-grid {
   display: grid;
-  gap: 18px;
+  gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.manager-action-modal-grid-compact {
+  align-items: start;
 }
 
 .manager-action-modal-body label {
   display: block;
   color: var(--text-primary);
-  font-size: var(--fs-xl);
-  font-weight: 500;
-  margin-bottom: 8px;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  margin-bottom: 6px;
 }
 
 .manager-action-modal-body input,
@@ -8708,15 +8670,16 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-input);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 12px 14px;
   font: inherit;
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
 }
 
 .manager-action-modal-body textarea {
   resize: vertical;
-  min-height: 130px;
+  min-height: 176px;
+  line-height: 1.5;
 }
 
 .manager-action-modal-body input:focus,
@@ -8727,34 +8690,29 @@ body.shared-session-mode .session-tab-bar {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 35%, transparent);
 }
 
-.manager-action-section-header {
+.manager-action-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
-.manager-action-field-note {
-  color: var(--text-muted);
-  font-size: var(--fs-lg);
-  line-height: 1.45;
-  margin-top: 8px;
+.manager-action-prompts-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .manager-action-prompt-row,
 .manager-action-schedule-row {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  gap: 8px;
 }
 
 .manager-action-prompt-row + .manager-action-prompt-row,
 .manager-action-schedule-row + .manager-action-schedule-row {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .manager-action-prompt-header {
@@ -8766,58 +8724,64 @@ body.shared-session-mode .session-tab-bar {
 
 .manager-action-prompt-label {
   color: var(--text-secondary);
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 
 .manager-action-prompt-input {
-  min-height: 150px;
+  min-height: 176px;
+}
+
+.manager-action-prompt-row-chain .manager-action-prompt-input {
+  min-height: 112px;
 }
 
 .manager-action-context-note {
   color: var(--text-secondary);
-  font-size: var(--fs-lg);
-  line-height: 1.5;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-secondary));
-  border: 1px solid color-mix(in srgb, var(--accent-blue) 20%, var(--border-color));
+  font-size: var(--fs-md);
+  line-height: 1.4;
+  margin-top: 8px;
 }
 
-.manager-action-trigger-group {
+.manager-action-trigger-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manager-action-trigger-group,
+.manager-action-label-group {
   margin-bottom: 0;
 }
 
 .manager-action-repeat-interval-row,
 .manager-action-schedule-row {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: center;
 }
 
 .manager-action-repeat-interval-row {
-  grid-template-columns: minmax(0, 160px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 132px) minmax(0, 1fr);
 }
 
 .manager-action-schedule-row {
-  padding: 14px;
+  padding-top: 2px;
 }
 
-.manager-action-label-group {
-  margin-bottom: 0;
+.manager-action-modal-body .btn-secondary {
+  padding: 9px 14px;
+  font-size: var(--fs-md);
 }
 
-.manager-action-schedule-row .btn-secondary,
-.manager-action-prompt-row .btn-secondary,
-.manager-action-section-header .btn-secondary {
-  padding: 10px 18px;
-  font-size: var(--fs-lg);
+.manager-action-modal-body .modal-footer {
+  margin-top: 8px;
 }
 
 @media (max-width: 900px) {
   .manager-action-modal-content {
-    width: min(100vw - 16px, 980px);
+    width: min(100vw - 16px, 820px);
   }
 
   .manager-action-modal-grid,
@@ -8826,7 +8790,7 @@ body.shared-session-mode .session-tab-bar {
     grid-template-columns: 1fr;
   }
 
-  .manager-action-section-header,
+  .manager-action-toolbar,
   .manager-action-prompt-header {
     align-items: stretch;
     flex-direction: column;

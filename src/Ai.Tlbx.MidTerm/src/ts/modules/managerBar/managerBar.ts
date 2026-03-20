@@ -458,6 +458,10 @@ function openActionModal(existing?: NormalizedManagerButton): void {
   syncModalSections();
 
   modalEl.classList.remove('hidden');
+  const modalBody = modalEl.querySelector<HTMLElement>('.manager-action-modal-body');
+  if (modalBody) {
+    modalBody.scrollTop = 0;
+  }
   focusPrimaryPrompt();
 }
 
@@ -526,7 +530,7 @@ function renderPromptEditors(count: number, values: string[], actionType: Manage
   const rows = Math.max(count, 1);
   for (let index = 0; index < rows; index += 1) {
     const row = document.createElement('div');
-    row.className = 'manager-action-prompt-row';
+    row.className = `manager-action-prompt-row manager-action-prompt-row-${actionType}`;
 
     const header = document.createElement('div');
     header.className = 'manager-action-prompt-header';
@@ -550,7 +554,7 @@ function renderPromptEditors(count: number, values: string[], actionType: Manage
 
     const textarea = document.createElement('textarea');
     textarea.className = 'manager-action-prompt-input';
-    textarea.rows = actionType === 'chain' ? 4 : 8;
+    textarea.rows = actionType === 'chain' ? 3 : 7;
     textarea.value = values[index] ?? '';
     textarea.placeholder = t('managerBar.modal.promptPlaceholder');
 
@@ -892,7 +896,11 @@ function focusPrimaryPrompt(index: number = 0): void {
     const prompt = prompts?.[index] ?? prompts?.[0];
     if (!prompt) return;
 
-    prompt.focus();
+    try {
+      prompt.focus({ preventScroll: true });
+    } catch {
+      prompt.focus();
+    }
     const cursor = prompt.value.length;
     prompt.setSelectionRange(cursor, cursor);
   });
