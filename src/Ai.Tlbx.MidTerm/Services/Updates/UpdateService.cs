@@ -833,13 +833,22 @@ public sealed partial class UpdateService : IDisposable
 
         AppendUpdateLog(artifacts.LogPath, $"Generated external update script at {scriptPath}");
 
+        var runOutsideServiceCgroup =
+            OperatingSystem.IsLinux() &&
+            settingsService.IsRunningAsService;
+        AppendUpdateLog(
+            artifacts.LogPath,
+            runOutsideServiceCgroup
+                ? "Launching update script via transient systemd unit to survive service shutdown"
+                : "Launching update script directly from the current process context");
+
         // Delay then execute update script
         _ = Task.Run(async () =>
         {
             try
             {
                 await Task.Delay(3000);
-                UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
+                UpdateScriptGenerator.ExecuteUpdateScript(scriptPath, runOutsideServiceCgroup);
                 Environment.Exit(0);
             }
             catch (Exception ex)

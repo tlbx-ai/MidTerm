@@ -1306,7 +1306,7 @@ write_result true ""Update completed successfully""
         return scriptPath;
     }
 
-    public static void ExecuteUpdateScript(string scriptPath)
+    public static void ExecuteUpdateScript(string scriptPath, bool runOutsideServiceCgroup = false)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -1327,6 +1327,27 @@ write_result true ""Update completed successfully""
         }
         else
         {
+            if (runOutsideServiceCgroup && OperatingSystem.IsLinux())
+            {
+                var unitName = $"midterm-update-{Guid.NewGuid():N}";
+                var systemdRunPsi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "/usr/bin/systemd-run",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                systemdRunPsi.ArgumentList.Add("--unit");
+                systemdRunPsi.ArgumentList.Add(unitName);
+                systemdRunPsi.ArgumentList.Add("--collect");
+                systemdRunPsi.ArgumentList.Add("--no-block");
+                systemdRunPsi.ArgumentList.Add("/bin/bash");
+                systemdRunPsi.ArgumentList.Add(scriptPath);
+
+                System.Diagnostics.Process.Start(systemdRunPsi);
+                return;
+            }
+
             // Linux: setsid creates a new session so the script survives mt's exit.
             //
             // CRITICAL: Do NOT use RedirectStandard* here! It creates pipes between mt and
