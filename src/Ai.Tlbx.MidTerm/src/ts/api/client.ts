@@ -40,6 +40,15 @@ const client = createClient<paths>({ baseUrl: '' });
 // Re-export all types from api/types.ts for backward compatibility
 export * from './types';
 
+async function throwHttpError(response: Response, fallback: string): Promise<never> {
+  const detail = (await response.text()).trim();
+  if (detail) {
+    throw new Error(`HTTP ${response.status}: ${detail}`);
+  }
+
+  throw new Error(`HTTP ${response.status}: ${response.statusText || fallback}`);
+}
+
 // =============================================================================
 // API Functions
 // =============================================================================
@@ -213,7 +222,7 @@ export async function attachSessionLens(id: string): Promise<void> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens attach failed.');
   }
 }
 
@@ -227,7 +236,7 @@ export async function sendLensTurn(
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens turn failed.');
   }
 
   if (!data) {
@@ -243,7 +252,7 @@ export async function getLensSnapshot(id: string): Promise<LensPulseSnapshotResp
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens snapshot fetch failed.');
   }
 
   if (!data) {
@@ -262,7 +271,7 @@ export async function getLensEvents(
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens events fetch failed.');
   }
 
   if (!data) {
@@ -282,7 +291,7 @@ export async function interruptLensTurn(
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens interrupt failed.');
   }
 
   if (!data) {
@@ -304,7 +313,7 @@ export async function approveLensRequest(
   );
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens approval failed.');
   }
 
   if (!data) {
@@ -328,7 +337,7 @@ export async function declineLensRequest(
   );
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens decline failed.');
   }
 
   if (!data) {
@@ -349,7 +358,7 @@ export async function resolveLensUserInput(
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwHttpError(response, 'Lens user-input resolution failed.');
   }
 
   if (!data) {

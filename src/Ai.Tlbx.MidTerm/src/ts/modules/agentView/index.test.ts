@@ -51,6 +51,12 @@ describe('agentView dev errors', () => {
       createElement: () => ({
         className: '',
         textContent: '',
+        appendChild: vi.fn(),
+        replaceChildren: vi.fn(),
+      }),
+      createDocumentFragment: () => ({
+        appendChild: vi.fn(),
+        childNodes: [],
       }),
     });
     onTabActivated.mockReset();

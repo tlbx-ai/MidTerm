@@ -32,6 +32,25 @@ interface SessionLensViewState {
   refreshInFlight: boolean;
   interruptPending: boolean;
   requestBusyIds: Set<string>;
+  activationState:
+    | 'idle'
+    | 'opening'
+    | 'attaching'
+    | 'waiting-snapshot'
+    | 'loading-events'
+    | 'connecting-stream'
+    | 'ready'
+    | 'failed';
+  activationDetail: string;
+  activationTrace: LensActivationTraceEntry[];
+  activationError: string | null;
+}
+
+interface LensActivationTraceEntry {
+  tone: 'info' | 'positive' | 'warning' | 'attention';
+  meta: string;
+  summary: string;
+  detail: string;
 }
 
 export function initAgentView(): void {
@@ -65,25 +84,78 @@ async function activateAgentView(sessionId: string): Promise<void> {
     return;
   }
 
+  state.snapshot = null;
+  state.events = [];
+  state.streamConnected = false;
+  state.activationTrace = [];
+  state.activationError = null;
+  setActivationState(
+    state,
+    'opening',
+    'Lens pane opened. Preparing native runtime attach.',
+    'Lens pane opened.',
+    'MidTerm is switching from the terminal surface to the Lens surface for this session.',
+  );
+  setActivationState(
+    state,
+    'attaching',
+    'Requesting Lens runtime attach.',
+    'Attaching Lens runtime.',
+    'Starting or reconnecting the backend-owned Lens runtime for this session.',
+  );
+  renderCurrentAgentView(sessionId);
+
   try {
     await attachSessionLens(sessionId);
-    const [snapshot, eventFeed] = await Promise.all([
-      getLensSnapshot(sessionId),
-      getLensEvents(sessionId),
-    ]);
+    setActivationState(
+      state,
+      'waiting-snapshot',
+      'Lens runtime accepted the attach request.',
+      'Lens runtime attached.',
+      'Waiting for the first canonical Lens snapshot from MidTerm.',
+    );
+    renderCurrentAgentView(sessionId);
+
+    const snapshot = await waitForInitialLensSnapshot(sessionId, state);
+
+    setActivationState(
+      state,
+      'loading-events',
+      'Lens snapshot is ready. Loading recent events.',
+      'Lens snapshot ready.',
+      'Loading the canonical Lens event backlog for this session.',
+    );
+    renderCurrentAgentView(sessionId);
+    const eventFeed = await getLensEvents(sessionId);
     state.snapshot = snapshot;
     state.events = eventFeed.events.slice(-60);
     state.streamConnected = false;
+    setActivationState(
+      state,
+      'connecting-stream',
+      'Lens data is loaded. Connecting the live stream.',
+      'Lens event backlog loaded.',
+      'Opening the live Lens event stream so the pane updates in real time.',
+    );
     renderCurrentAgentView(sessionId);
     openLiveLensStream(sessionId, snapshot.latestSequence);
   } catch (error) {
     log.warn(() => `Failed to activate Lens for ${sessionId}: ${String(error)}`);
+    state.activationError = describeError(error);
+    setActivationState(
+      state,
+      'failed',
+      'Lens startup failed before the first stable snapshot became available.',
+      'Lens startup failed.',
+      state.activationError,
+      'attention',
+    );
     showDevErrorDialog({
       title: 'Lens failed to open',
       context: `Lens activation failed for session ${sessionId}`,
       error,
     });
-    renderUnavailable(state.panel, t('agentView.loadError'));
+    renderCurrentAgentView(sessionId);
   }
 }
 
@@ -103,6 +175,10 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     refreshInFlight: false,
     interruptPending: false,
     requestBusyIds: new Set<string>(),
+    activationState: 'idle',
+    activationDetail: '',
+    activationTrace: [],
+    activationError: null,
   };
   viewStates.set(sessionId, created);
   return created;
@@ -281,6 +357,14 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
       }
 
       current.streamConnected = true;
+      setActivationState(
+        current,
+        'ready',
+        'Lens live stream connected.',
+        'Live Lens stream connected.',
+        'Realtime canonical Lens events are now flowing into this pane.',
+        'positive',
+      );
       renderCurrentAgentView(sessionId);
     },
     onEvent: (lensEvent) => {
@@ -341,15 +425,34 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
   state.refreshInFlight = true;
   try {
     state.snapshot = await getLensSnapshot(sessionId);
+    if (state.activationState !== 'ready') {
+      setActivationState(
+        state,
+        'ready',
+        'Lens snapshot refreshed.',
+        'Lens snapshot refreshed.',
+        'The Lens read model is available and the pane is rendering live data.',
+        'positive',
+      );
+    }
     renderCurrentAgentView(sessionId);
   } catch (error) {
     log.warn(() => `Failed to refresh Lens snapshot for ${sessionId}: ${String(error)}`);
+    state.activationError = describeError(error);
+    setActivationState(
+      state,
+      'failed',
+      'Lens snapshot refresh failed.',
+      'Lens refresh failed.',
+      state.activationError,
+      'attention',
+    );
     showDevErrorDialog({
       title: 'Lens refresh failed',
       context: `Lens snapshot refresh failed for session ${sessionId}`,
       error,
     });
-    renderUnavailable(state.panel, t('agentView.loadError'));
+    renderCurrentAgentView(sessionId);
   } finally {
     state.refreshInFlight = false;
   }
@@ -362,41 +465,11 @@ function renderCurrentAgentView(sessionId: string): void {
   }
 
   if (!state.snapshot) {
-    renderUnavailable(state.panel, 'Lens snapshot pending.');
+    renderActivationView(state.panel, state);
     return;
   }
 
   renderAgentView(state.panel, state.snapshot, state.events, state.streamConnected, state);
-}
-
-function renderUnavailable(panel: HTMLDivElement, message: string): void {
-  panel.dataset.agentTurnId = '';
-  setText(panel, 'title', t('agentView.unavailableTitle'));
-  setText(panel, 'subtitle', message);
-  setText(panel, 'session-state', t('agentView.unavailableTitle'));
-  setText(panel, 'session-meta', message);
-  setText(panel, 'thread-state', t('agentView.unavailableTitle'));
-  setText(panel, 'thread-meta', message);
-  setText(panel, 'turn-state', t('agentView.unavailableTitle'));
-  setText(panel, 'turn-meta', message);
-  setText(panel, 'request-state', '0');
-  setText(panel, 'request-meta', message);
-  clearContainer(panel, 'chips');
-  renderOutput(panel, 'assistant-output', message);
-  renderOutput(panel, 'reasoning-output', message);
-  renderOutput(panel, 'plan-output', message);
-  renderOutput(panel, 'tool-output', message);
-  renderOutput(panel, 'diff-output', message);
-  renderEmptyList(panel, 'requests', message);
-  renderEmptyList(panel, 'items', message);
-  renderEmptyList(panel, 'events', message);
-  renderEmptyList(panel, 'notices', message);
-  const interruptButton = panel.querySelector<HTMLButtonElement>('[data-agent-action="interrupt"]');
-  if (interruptButton) {
-    interruptButton.hidden = true;
-    interruptButton.disabled = false;
-    interruptButton.textContent = 'Stop turn';
-  }
 }
 
 function renderAgentView(
@@ -477,6 +550,93 @@ function renderAgentView(
   renderOutput(panel, 'diff-output', snapshot.streams.unifiedDiff, 'No diff stream yet.');
 }
 
+function renderActivationView(panel: HTMLDivElement, state: SessionLensViewState): void {
+  const failed = state.activationState === 'failed';
+  const title = failed ? 'Lens startup failed' : 'Opening Lens';
+  const subtitle =
+    state.activationDetail || (failed ? t('agentView.loadError') : 'Connecting Lens runtime…');
+
+  panel.dataset.agentTurnId = '';
+  setText(panel, 'title', title);
+  setText(panel, 'subtitle', subtitle);
+  setText(panel, 'session-state', prettify(state.activationState));
+  setText(panel, 'session-meta', subtitle);
+  setText(panel, 'thread-state', failed ? 'Blocked' : 'Connecting');
+  setText(
+    panel,
+    'thread-meta',
+    failed
+      ? 'Lens could not complete its startup sequence.'
+      : 'Waiting for mtagenthost, provider attach, and the first canonical snapshot.',
+  );
+  setText(panel, 'turn-state', failed ? 'Failed' : 'Starting');
+  setText(
+    panel,
+    'turn-meta',
+    failed
+      ? 'Lens never reached a stable renderable state.'
+      : 'Lens startup now stays visible instead of hiding behind one async wait.',
+  );
+  setText(panel, 'request-state', '0');
+  setText(panel, 'request-meta', failed ? 'Startup blocked' : 'Startup in progress');
+  renderActivationChips(panel, state);
+  const bootTranscript = state.activationTrace
+    .map((entry) => `${entry.meta}\n${entry.summary}\n${entry.detail}`)
+    .join('\n\n');
+  const failureDetail = state.activationError ? `\n\n${state.activationError}` : '';
+  const combined = `${subtitle}${bootTranscript ? `\n\n${bootTranscript}` : ''}${failureDetail}`;
+
+  renderOutput(
+    panel,
+    'assistant-output',
+    combined,
+    failed ? t('agentView.loadError') : 'Connecting Lens runtime…',
+  );
+  renderOutput(
+    panel,
+    'reasoning-output',
+    failed
+      ? state.activationError || 'No reasoning stream.'
+      : 'Waiting for runtime reasoning stream…',
+  );
+  renderOutput(
+    panel,
+    'plan-output',
+    failed ? state.activationError || 'No plan stream.' : 'Waiting for provider plan data…',
+  );
+  renderOutput(
+    panel,
+    'tool-output',
+    failed
+      ? state.activationError || 'No tool output.'
+      : 'Waiting for mtagenthost / provider tool output…',
+  );
+  renderOutput(
+    panel,
+    'diff-output',
+    failed ? state.activationError || 'No diff stream.' : 'No diff stream yet.',
+  );
+  renderEmptyList(
+    panel,
+    'requests',
+    failed ? 'Lens startup failed before requests became available.' : 'Lens startup in progress.',
+  );
+  renderEmptyList(
+    panel,
+    'items',
+    failed ? 'Lens startup failed before items became available.' : 'Lens startup in progress.',
+  );
+  renderActivationEvents(panel, state.activationTrace);
+  renderActivationNotices(panel, state.activationTrace, state.activationError);
+
+  const interruptButton = panel.querySelector<HTMLButtonElement>('[data-agent-action="interrupt"]');
+  if (interruptButton) {
+    interruptButton.hidden = true;
+    interruptButton.disabled = false;
+    interruptButton.textContent = 'Stop turn';
+  }
+}
+
 function renderChips(
   panel: HTMLDivElement,
   snapshot: LensPulseSnapshotResponse,
@@ -515,6 +675,40 @@ function renderChips(
     tone: streamConnected ? 'positive' : 'warning',
     text: streamConnected ? 'Live' : 'Reconnecting',
   });
+
+  const fragment = document.createDocumentFragment();
+  for (const chip of chips) {
+    const node = document.createElement('span');
+    node.className = `agent-chip agent-chip-${chip.tone.replace(/[^a-z0-9-]/gi, '-')}`;
+    node.textContent = chip.text;
+    fragment.appendChild(node);
+  }
+
+  container.replaceChildren(fragment);
+}
+
+function renderActivationChips(panel: HTMLDivElement, state: SessionLensViewState): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="chips"]');
+  if (!container) {
+    return;
+  }
+
+  const chips = [
+    { tone: 'profile', text: 'Lens Boot' },
+    {
+      tone:
+        state.activationState === 'failed'
+          ? 'attention'
+          : state.activationState === 'ready'
+            ? 'positive'
+            : 'warning',
+      text: prettify(state.activationState),
+    },
+    {
+      tone: state.streamConnected ? 'positive' : 'warning',
+      text: state.streamConnected ? 'Live' : 'Connecting',
+    },
+  ];
 
   const fragment = document.createDocumentFragment();
   for (const chip of chips) {
@@ -628,6 +822,25 @@ function renderEvents(panel: HTMLDivElement, events: LensPulseEvent[]): void {
   container.replaceChildren(fragment);
 }
 
+function renderActivationEvents(panel: HTMLDivElement, trace: LensActivationTraceEntry[]): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="events"]');
+  if (!container) {
+    return;
+  }
+
+  if (trace.length === 0) {
+    renderEmptyContainer(container, 'Lens startup has not emitted any boot steps yet.');
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const entry of [...trace].reverse()) {
+    fragment.appendChild(createActivityItem(entry.tone, entry.meta, entry.summary, entry.detail));
+  }
+
+  container.replaceChildren(fragment);
+}
+
 function renderNotices(panel: HTMLDivElement, notices: LensPulseRuntimeNotice[]): void {
   const container = panel.querySelector<HTMLElement>('[data-agent-field="notices"]');
   if (!container) {
@@ -649,6 +862,36 @@ function renderNotices(panel: HTMLDivElement, notices: LensPulseRuntimeNotice[])
         notice.detail || 'No extra detail',
       ),
     );
+  }
+
+  container.replaceChildren(fragment);
+}
+
+function renderActivationNotices(
+  panel: HTMLDivElement,
+  trace: LensActivationTraceEntry[],
+  activationError: string | null,
+): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="notices"]');
+  if (!container) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  if (activationError) {
+    fragment.appendChild(
+      createActivityItem('attention', 'startup failure', 'Lens startup failed.', activationError),
+    );
+  }
+
+  const warnings = trace.filter((entry) => entry.tone === 'warning' || entry.tone === 'attention');
+  for (const entry of warnings.slice(-5).reverse()) {
+    fragment.appendChild(createActivityItem(entry.tone, entry.meta, entry.summary, entry.detail));
+  }
+
+  if (!fragment.childNodes.length) {
+    renderEmptyContainer(container, 'No runtime notices yet.');
+    return;
   }
 
   container.replaceChildren(fragment);
@@ -864,10 +1107,6 @@ function renderEmptyContainer(container: HTMLElement, text: string): void {
   container.replaceChildren(empty);
 }
 
-function clearContainer(panel: HTMLDivElement, field: string): void {
-  panel.querySelector<HTMLElement>(`[data-agent-field="${field}"]`)?.replaceChildren();
-}
-
 function setText(panel: HTMLDivElement, field: string, value: string): void {
   const element = panel.querySelector<HTMLElement>(`[data-agent-field="${field}"]`);
   if (element) {
@@ -947,6 +1186,82 @@ async function runRequestAction(
     state.requestBusyIds.delete(requestId);
     renderCurrentAgentView(sessionId);
   }
+}
+
+async function waitForInitialLensSnapshot(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<LensPulseSnapshotResponse> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    try {
+      const snapshot = await getLensSnapshot(sessionId);
+      if (attempt > 1) {
+        appendActivationTrace(
+          state,
+          'positive',
+          `snapshot retry ${attempt}`,
+          'Lens snapshot became available.',
+          `MidTerm produced the first canonical Lens snapshot on retry ${attempt}.`,
+        );
+      }
+      return snapshot;
+    } catch (error) {
+      lastError = error;
+      appendActivationTrace(
+        state,
+        attempt === 12 ? 'attention' : 'warning',
+        `snapshot retry ${attempt}`,
+        'Lens snapshot not ready yet.',
+        describeError(error),
+      );
+      renderCurrentAgentView(sessionId);
+      if (attempt < 12) {
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function setActivationState(
+  state: SessionLensViewState,
+  activationState: SessionLensViewState['activationState'],
+  activationDetail: string,
+  summary: string,
+  detail: string,
+  tone: LensActivationTraceEntry['tone'] = 'info',
+): void {
+  state.activationState = activationState;
+  state.activationDetail = activationDetail;
+  appendActivationTrace(state, tone, activationState, summary, detail);
+}
+
+function appendActivationTrace(
+  state: SessionLensViewState,
+  tone: LensActivationTraceEntry['tone'],
+  phase: string,
+  summary: string,
+  detail: string,
+): void {
+  state.activationTrace = [
+    ...state.activationTrace,
+    {
+      tone,
+      meta: `${prettify(phase)} • ${formatClockTime(new Date())}`,
+      summary,
+      detail,
+    },
+  ].slice(-12);
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack?.trim() || error.message || error.name;
+  }
+
+  return typeof error === 'string' ? error : JSON.stringify(error, null, 2);
 }
 
 function summarizeTurnState(snapshot: LensPulseSnapshotResponse): string {
@@ -1086,4 +1401,12 @@ function formatAbsoluteTime(value: string): string {
     minute: '2-digit',
     second: '2-digit',
   }).format(date);
+}
+
+function formatClockTime(value: Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(value);
 }
