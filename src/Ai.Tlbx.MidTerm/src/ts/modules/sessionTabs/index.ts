@@ -29,6 +29,7 @@ export {
   isTabVisible,
   setCommandsClickHandler,
   setGitClickHandler,
+  setActionVisible,
   setLensClickHandler,
   setShareClickHandler,
   setTabVisible,

@@ -12,11 +12,12 @@ import {
   isTabVisible,
   setActiveTab,
   setActionActive,
+  setActionVisible,
   setTabVisible,
   updateCwd,
   updateGitIndicator,
 } from './tabBar';
-import { $processStates, $sessionList } from '../../stores';
+import { $activeSessionId, $processStates, $sessionList } from '../../stores';
 import { sessionTerminals } from '../../state';
 import type { GitStatusResponse } from '../git/types';
 import type { Session } from '../../types';
@@ -177,6 +178,7 @@ export function syncSessionTabCapabilities(
   const showAgentTab = shouldShowAgentTab(session);
   state.lensAvailable = showAgentTab;
   setTabVisible(state.tabBar, 'agent', false);
+  setActionVisible(state.tabBar, 'lens', showAgentTab);
 
   if (!showAgentTab && state.activeTab === 'agent') {
     switchTab(sessionId, 'terminal');
@@ -199,12 +201,27 @@ export function switchTab(
   const previousTab = state.activeTab;
   if (previousTab === tab) return;
 
-  state.panels[previousTab].classList.remove('active');
+  if (previousTab === 'agent') {
+    state.wrapper.classList.remove('lens-split-active');
+    state.panels.agent.classList.remove('active');
+    if (tab !== 'terminal') {
+      state.panels.terminal.classList.remove('active');
+    }
+  } else {
+    state.panels[previousTab].classList.remove('active');
+  }
   tabDeactivationCallbacks[previousTab]?.(sessionId);
 
   state.activeTab = tab;
-  state.panels[tab].classList.add('active');
-  setActiveTab(state.tabBar, tab);
+  if (tab === 'agent') {
+    state.wrapper.classList.add('lens-split-active');
+    state.panels.terminal.classList.add('active');
+    state.panels.agent.classList.add('active');
+    setActiveTab(state.tabBar, 'terminal');
+  } else {
+    state.panels[tab].classList.add('active');
+    setActiveTab(state.tabBar, tab);
+  }
 
   tabActivationCallbacks[tab]?.(sessionId, state.panels[tab]);
 
@@ -242,8 +259,9 @@ export function getTabBarHeight(): number {
 }
 
 export function setActionButtonActive(actionId: IdeBarActionId, active: boolean): void {
-  for (const state of sessionTabStates.values()) {
-    setActionActive(state.tabBar, actionId, active);
+  const activeSessionId = $activeSessionId.get();
+  for (const [sessionId, state] of sessionTabStates.entries()) {
+    setActionActive(state.tabBar, actionId, active && sessionId === activeSessionId);
   }
 }
 

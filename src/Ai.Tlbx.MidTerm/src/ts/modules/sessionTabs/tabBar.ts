@@ -331,6 +331,19 @@ export function setActionActive(
   btn?.classList.toggle('sidebar-active', active);
 }
 
+export function setActionVisible(
+  bar: HTMLDivElement,
+  actionId: IdeBarActionId,
+  visible: boolean,
+): void {
+  const btn = bar.querySelector<HTMLButtonElement>(`[data-action="${actionId}"]`);
+  if (!btn) {
+    return;
+  }
+
+  btn.hidden = !visible;
+}
+
 export function updateCwd(bar: HTMLDivElement, cwd: string): void {
   const cwdSpan = bar.querySelector('.session-cwd');
   if (cwdSpan) {

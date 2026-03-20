@@ -45,6 +45,7 @@ vi.mock('./tabBar', () => ({
   isTabVisible: (bar: HTMLDivElement, tab: string) => visibleTabs.get(bar.dataset.sessionId ?? '')?.has(tab) ?? false,
   setActiveTab: vi.fn(),
   setActionActive: vi.fn(),
+  setActionVisible: vi.fn(),
   setTabVisible: (bar: HTMLDivElement, tab: string, visible: boolean) => {
     const tabs = visibleTabs.get(bar.dataset.sessionId ?? '');
     if (!tabs) return;
