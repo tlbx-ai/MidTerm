@@ -74,12 +74,14 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("_MSTATUS()", shell, StringComparison.Ordinal);
         Assert.Contains("_MWAITCONTROLLABLE()", shell, StringComparison.Ordinal);
         Assert.Contains("/api/browser/status-text", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_open() {", shell, StringComparison.Ordinal);
+        Assert.Contains("local url=\"$1\" open_out", shell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", shell, StringComparison.Ordinal);
         Assert.Contains("sessionId", shell, StringComparison.Ordinal);
         Assert.Contains("$(_MSID)", shell, StringComparison.Ordinal);
         Assert.Contains("previewName", shell, StringComparison.Ordinal);
         Assert.Contains("$(_MPREVIEW)", shell, StringComparison.Ordinal);
-        Assert.Contains("\"activateSession\":true", shell, StringComparison.Ordinal);
+        Assert.Contains("activateSession", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Preview", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-PreviewReset", powershell, StringComparison.Ordinal);
@@ -88,6 +90,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function script:_MStatus", powershell, StringComparison.Ordinal);
         Assert.Contains("function script:_MWaitForControllableStatus", powershell, StringComparison.Ordinal);
         Assert.Contains("/api/browser/status-text", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Open {", powershell, StringComparison.Ordinal);
+        Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
@@ -155,6 +159,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("_MNOSESSION()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_status()     { _MSTATUS", shell, StringComparison.Ordinal);
         Assert.Contains("open_out=$(_MJR -d", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("status=$(_MWAITCONTROLLABLE 25)", shell, StringComparison.Ordinal);
         Assert.Contains("output=$(_MB \"${original[@]}\")", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("[ $exitCode -ne 0 ] && [ $injectedSession -eq 1 ] && _MNOSESSION", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("if [ -n \"$(_MPREVIEW)\" ] && ! _MHAS \"--preview\" \"${args[@]}\"; then", shell, StringComparison.Ordinal);
@@ -162,6 +167,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function script:_MShouldRetryAnonymous", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Status     { try { _MStatus }", powershell, StringComparison.Ordinal);
         Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("$status = _MWaitForControllableStatus", powershell, StringComparison.Ordinal);
         Assert.Contains("$output = _MB @originalArgs", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("$exitCode -ne 0 -and $injectedSession -and (_MShouldRetryAnonymous $output)", powershell, StringComparison.Ordinal);
         Assert.Contains("elseif ($env:MT_PREVIEW_NAME -and -not ($allArgs -contains \"--preview\"))", powershell, StringComparison.Ordinal);

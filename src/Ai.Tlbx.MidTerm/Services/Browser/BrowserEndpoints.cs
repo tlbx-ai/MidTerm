@@ -24,7 +24,7 @@ public static class BrowserEndpoints
 
         if (uiBridge is not null)
         {
-            MapUiEndpoints(app, uiBridge, webPreviewService);
+            MapUiEndpoints(app, commandService, uiBridge, webPreviewService);
         }
     }
 
@@ -97,6 +97,7 @@ public static class BrowserEndpoints
 
     private static void MapUiEndpoints(
         WebApplication app,
+        BrowserCommandService commandService,
         BrowserUiBridge uiBridge,
         WebPreviewService webPreviewService)
     {
@@ -132,7 +133,7 @@ public static class BrowserEndpoints
                 : Results.Text(error + "\n", statusCode: 409);
         });
 
-        app.MapPost("/api/browser/open", (Models.WebPreview.WebPreviewTargetRequest request) =>
+        app.MapPost("/api/browser/open", async (Models.WebPreview.WebPreviewTargetRequest request, CancellationToken cancellationToken) =>
         {
             var sessionId = NormalizeOptional(request.SessionId);
             var previewName = NormalizeOptional(request.PreviewName);
@@ -148,14 +149,32 @@ public static class BrowserEndpoints
                 return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
             }
 
-            return uiBridge.RequestOpen(
+            if (!uiBridge.RequestOpen(
                 sessionId,
                 previewName,
                 url,
                 activateSession,
-                out var error)
-                ? Results.Ok()
-                : Results.Text(error + "\n", statusCode: 409);
+                out var error))
+            {
+                return Results.Text(error + "\n", statusCode: 409);
+            }
+
+            var status = await commandService.WaitForControllableAsync(
+                url,
+                sessionId,
+                previewName,
+                connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
+                cancellationToken: cancellationToken);
+
+            var statusText = commandService.GetStatusText(
+                url,
+                sessionId,
+                previewName,
+                connectedUiClientCount: uiBridge.ConnectedBrowserCount);
+
+            return status.Controllable
+                ? Results.Text(statusText)
+                : Results.Text(statusText, statusCode: 409);
         });
     }
 

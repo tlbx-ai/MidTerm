@@ -173,20 +173,13 @@ public static class MtcliScriptWriter
         mt_navigate()   { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         # mt_open URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
-          local url="$1" open_out status
+          local url="$1" open_out
           open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
             return $code
           }
-          status=$(_MWAITCONTROLLABLE 25)
-          local status_code=$?
           [ -n "$open_out" ] && printf '%s\n' "$open_out"
-          [ -n "$status" ] && printf '%s\n' "$status"
-          if [ $status_code -ne 0 ]; then
-            echo "warning: preview target updated, but no controllable browser attached within 5s." >&2
-            return 1
-          fi
         }
         # mt_close_preview  — close web preview panel
         mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
@@ -655,15 +648,8 @@ public static class MtcliScriptWriter
         function Mt-Open {
             param([string]$Url)
             $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
-            $status = _MWaitForControllableStatus
             if ($openResponse) {
                 $openResponse
-            }
-            if ($status.Output) {
-                $status.Output
-            }
-            if (-not $status.Ready) {
-                throw "Preview target updated, but no controllable browser attached within 5s."
             }
         }
         # Mt-ClosePreview  — close web preview panel
