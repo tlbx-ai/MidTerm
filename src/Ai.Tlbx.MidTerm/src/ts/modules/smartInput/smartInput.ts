@@ -12,11 +12,11 @@
  * Touch keys: the touch controller bar is embedded as a collapsible second row.
  */
 
-import { sendSessionPrompt } from '../../api/client';
 import { $currentSettings, $activeSessionId } from '../../stores';
 import { sendInput } from '../comms';
 import { t } from '../i18n';
-import { isLensActiveSession, createLensPromptRequest } from '../lens/input';
+import { sendLensTurn } from '../../api/client';
+import { isLensActiveSession, createLensTurnRequest } from '../lens/input';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { handleFileDrop, pasteToTerminal } from '../terminal';
 import { hideTouchController } from '../touchController';
@@ -481,7 +481,7 @@ function updateAutoSendVisibility(): void {
 
 async function submitSmartInput(sessionId: string, text: string): Promise<void> {
   if (isLensActiveSession(sessionId)) {
-    await sendSessionPrompt(sessionId, createLensPromptRequest(text));
+    await sendLensTurn(sessionId, createLensTurnRequest(text));
     return;
   }
 

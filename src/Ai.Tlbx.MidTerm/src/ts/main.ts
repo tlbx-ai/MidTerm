@@ -121,7 +121,6 @@ import {
   getActiveTab,
   isTabAvailable,
   reparentTerminalContainer,
-  setActionButtonActive,
   switchTab,
 } from './modules/sessionTabs';
 import { initAgentView, destroyAgentView } from './modules/agentView';
@@ -651,7 +650,6 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
   const activeTab = getActiveTab(sessionId);
-  const lensActive = activeTab === 'agent';
 
   // Ensure session wrapper with tabs (standalone mode only)
   const tabState = ensureSessionWrapper(sessionId);
@@ -668,11 +666,10 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   if (isLayoutActive()) {
     getLayoutRoot()?.classList.add('hidden');
   }
-  setActionButtonActive('lens', lensActive);
 
   requestAnimationFrame(() => {
     refreshTerminalPresentation(sessionId, state);
-    if (!lensActive) {
+    if (activeTab !== 'agent') {
       state.terminal.focus();
     }
     if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
@@ -1401,7 +1398,7 @@ function bindEvents(): void {
   bindClick('btn-mobile-tab-agent', () => {
     const activeId = $activeSessionId.get();
     if (activeId && isTabAvailable(activeId, 'agent')) {
-      switchTab(activeId, 'agent', { forceHidden: true });
+      switchTab(activeId, 'agent');
       syncMobileTabActionState();
     }
   });

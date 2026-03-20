@@ -100,7 +100,6 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 const translations: Record<string, string> = {
   'session.terminal': 'Terminal',
   'sessionTabs.agent': 'Lens',
-  'sessionTabs.lens': 'Lens',
   'sessionTabs.files': 'Files',
   'sessionTabs.git': 'Git',
   'sessionTabs.share': 'Share',
@@ -148,19 +147,18 @@ describe('tabBar', () => {
       throw new Error('Expected IDE actions container');
     }
 
-    expect(tabButtons.map((button) => button.dataset.tab)).toEqual(['terminal', 'files']);
+    expect(tabButtons.map((button) => button.dataset.tab)).toEqual(['terminal', 'agent', 'files']);
 
     const buttons = actions.children;
 
-    expect(buttons.map((button) => button.dataset.action)).toEqual(['lens', 'web', 'share', 'git']);
-    expect(buttons.slice(0, 3).map((button) => button.children[1]?.textContent)).toEqual([
-      'Lens',
+    expect(buttons.map((button) => button.dataset.action)).toEqual(['web', 'share', 'git']);
+    expect(buttons.slice(0, 2).map((button) => button.children[1]?.textContent)).toEqual([
       'WEB',
       'Share',
     ]);
-    expect(buttons[3]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
-    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
-    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
+    expect(buttons[2]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
+    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
+    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
   });
 
   it('uses the registered share handler and updates git stats', async () => {
@@ -175,8 +173,8 @@ describe('tabBar', () => {
     if (!actions) {
       throw new Error('Expected IDE actions container');
     }
-    const shareButton = actions.children[2];
-    const gitButton = actions.children[3];
+    const shareButton = actions.children[1];
+    const gitButton = actions.children[2];
 
     shareButton.click();
     expect(shareClick).toHaveBeenCalledTimes(1);

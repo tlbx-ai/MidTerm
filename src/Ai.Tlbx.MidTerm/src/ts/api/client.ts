@@ -15,6 +15,15 @@ import type {
   MidTermSettingsUpdate,
   CreateSessionRequest,
   SessionPromptRequest,
+  LensTurnRequest,
+  LensTurnStartResponse,
+  LensInterruptRequest,
+  LensCommandAcceptedResponse,
+  LensRequestDecisionRequest,
+  LensUserInputAnswerRequest,
+  LensPulseSnapshotResponse,
+  LensPulseEventListResponse,
+  LensPulseEvent,
   CreateHistoryRequest,
   HistoryPatchRequest,
   CreateShareLinkRequest,
@@ -196,6 +205,194 @@ export async function sendSessionPrompt(id: string, request: SessionPromptReques
   if (!response.ok) {
     throw new Error(await response.text());
   }
+}
+
+export async function attachSessionLens(id: string): Promise<void> {
+  const { response } = await client.POST('/api/sessions/{id}/lens/attach', {
+    params: { path: { id } },
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
+export async function sendLensTurn(
+  id: string,
+  request: LensTurnRequest,
+): Promise<LensTurnStartResponse> {
+  const { data, response } = await client.POST('/api/sessions/{id}/lens/turns', {
+    params: { path: { id } },
+    body: request,
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  if (!data) {
+    throw new Error('Lens turn did not return a response payload.');
+  }
+
+  return data as LensTurnStartResponse;
+}
+
+export async function getLensSnapshot(id: string): Promise<LensPulseSnapshotResponse> {
+  const { data, response } = await client.GET('/api/sessions/{id}/lens/snapshot', {
+    params: { path: { id } },
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  if (!data) {
+    throw new Error('Lens snapshot did not return a response payload.');
+  }
+
+  return data as LensPulseSnapshotResponse;
+}
+
+export async function getLensEvents(
+  id: string,
+  afterSequence = 0,
+): Promise<LensPulseEventListResponse> {
+  const { data, response } = await client.GET('/api/sessions/{id}/lens/events', {
+    params: { path: { id }, query: { afterSequence } },
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  if (!data) {
+    throw new Error('Lens events did not return a response payload.');
+  }
+
+  return data as LensPulseEventListResponse;
+}
+
+export async function interruptLensTurn(
+  id: string,
+  request: LensInterruptRequest,
+): Promise<LensCommandAcceptedResponse> {
+  const { data, response } = await client.POST('/api/sessions/{id}/lens/interrupt', {
+    params: { path: { id } },
+    body: request,
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  if (!data) {
+    throw new Error('Lens interrupt did not return a response payload.');
+  }
+
+  return data as LensCommandAcceptedResponse;
+}
+
+export async function approveLensRequest(
+  id: string,
+  requestId: string,
+): Promise<LensCommandAcceptedResponse> {
+  const { data, response } = await client.POST(
+    '/api/sessions/{id}/lens/requests/{requestId}/approve',
+    {
+      params: { path: { id, requestId } },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  if (!data) {
+    throw new Error('Lens approval did not return a response payload.');
+  }
+
+  return data as LensCommandAcceptedResponse;
+}
+
+export async function declineLensRequest(
+  id: string,
+  requestId: string,
+  request: LensRequestDecisionRequest = { decision: 'decline' },
+): Promise<LensCommandAcceptedResponse> {
+  const { data, response } = await client.POST(
+    '/api/sessions/{id}/lens/requests/{requestId}/decline',
+    {
+      params: { path: { id, requestId } },
+      body: request,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  if (!data) {
+    throw new Error('Lens decline did not return a response payload.');
+  }
+
+  return data as LensCommandAcceptedResponse;
+}
+
+export async function resolveLensUserInput(
+  id: string,
+  requestId: string,
+  request: LensUserInputAnswerRequest,
+): Promise<LensCommandAcceptedResponse> {
+  const { data, response } = await client.POST('/api/sessions/{id}/lens/user-input/{requestId}', {
+    params: { path: { id, requestId } },
+    body: request,
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  if (!data) {
+    throw new Error('Lens user-input resolution did not return a response payload.');
+  }
+
+  return data as LensCommandAcceptedResponse;
+}
+
+export interface LensEventStreamCallbacks {
+  onEvent(event: LensPulseEvent): void;
+  onOpen?(): void;
+  onError?(error: Event): void;
+}
+
+export function openLensEventStream(
+  id: string,
+  afterSequence: number,
+  callbacks: LensEventStreamCallbacks,
+): () => void {
+  const url = new URL(
+    `/api/sessions/${encodeURIComponent(id)}/lens/events/stream`,
+    window.location.origin,
+  );
+  url.searchParams.set('afterSequence', String(afterSequence));
+
+  const source = new EventSource(url.toString());
+  source.addEventListener('lens', (event: MessageEvent<string>) => {
+    const payload = JSON.parse(event.data) as LensPulseEvent;
+    callbacks.onEvent(payload);
+  });
+
+  source.onopen = () => {
+    callbacks.onOpen?.();
+  };
+
+  source.onerror = (event) => {
+    callbacks.onError?.(event);
+  };
+
+  return () => {
+    source.close();
+  };
 }
 
 // --- Settings ---

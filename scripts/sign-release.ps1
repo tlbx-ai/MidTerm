@@ -80,15 +80,16 @@ try {
 
         # Compute checksums for binaries. Web-only releases still ship mthost in archives,
         # but the signed manifest intentionally omits it so in-place updaters can preserve
-        # the currently installed host binary.
+        # the currently installed PTY host binary. mtagenthost is managed by the web update
+        # line and should always be signed when present.
         $checksums = @{}
-        $binaries = if ($isWebOnly) { @("mt") } else { @("mt", "mthost") }
+        $binaries = if ($isWebOnly) { @("mt", "mtagenthost") } else { @("mt", "mthost", "mtagenthost") }
         $ext = if ($platform -eq "win-x64") { ".exe" } else { "" }
         $expectedFiles = $binaries | ForEach-Object { "$_$ext" }
         $checksumManifestPath = Join-Path $platformDir "SHA256SUMS.txt"
 
         if ($isWebOnly) {
-            Write-Host "    Web-only updater: signing mt checksum only; archive may still include mthost" -ForegroundColor Cyan
+            Write-Host "    Web-only updater: signing mt + mtagenthost; archive may still include mthost" -ForegroundColor Cyan
         }
 
         if (Test-Path $checksumManifestPath) {

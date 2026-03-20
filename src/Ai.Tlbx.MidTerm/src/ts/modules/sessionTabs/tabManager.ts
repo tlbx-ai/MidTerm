@@ -12,7 +12,6 @@ import {
   isTabVisible,
   setActiveTab,
   setActionActive,
-  setActionVisible,
   setTabVisible,
   updateCwd,
   updateGitIndicator,
@@ -177,8 +176,7 @@ export function syncSessionTabCapabilities(
 
   const showAgentTab = shouldShowAgentTab(session);
   state.lensAvailable = showAgentTab;
-  setTabVisible(state.tabBar, 'agent', false);
-  setActionVisible(state.tabBar, 'lens', showAgentTab);
+  setTabVisible(state.tabBar, 'agent', showAgentTab);
 
   if (!showAgentTab && state.activeTab === 'agent') {
     switchTab(sessionId, 'terminal');
@@ -201,27 +199,12 @@ export function switchTab(
   const previousTab = state.activeTab;
   if (previousTab === tab) return;
 
-  if (previousTab === 'agent') {
-    state.wrapper.classList.remove('lens-split-active');
-    state.panels.agent.classList.remove('active');
-    if (tab !== 'terminal') {
-      state.panels.terminal.classList.remove('active');
-    }
-  } else {
-    state.panels[previousTab].classList.remove('active');
-  }
+  state.panels[previousTab].classList.remove('active');
   tabDeactivationCallbacks[previousTab]?.(sessionId);
 
   state.activeTab = tab;
-  if (tab === 'agent') {
-    state.wrapper.classList.add('lens-split-active');
-    state.panels.terminal.classList.add('active');
-    state.panels.agent.classList.add('active');
-    setActiveTab(state.tabBar, 'terminal');
-  } else {
-    state.panels[tab].classList.add('active');
-    setActiveTab(state.tabBar, tab);
-  }
+  state.panels[tab].classList.add('active');
+  setActiveTab(state.tabBar, tab);
 
   tabActivationCallbacks[tab]?.(sessionId, state.panels[tab]);
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const sendSessionPrompt = vi.fn();
+const sendLensTurn = vi.fn();
 const pasteToTerminal = vi.fn();
 const isLensActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
 
@@ -31,23 +31,14 @@ vi.mock('../../stores', () => ({
 }));
 
 vi.mock('../../api/client', () => ({
-  sendSessionPrompt,
+  sendLensTurn,
 }));
 
 vi.mock('../lens/input', () => ({
   isLensActiveSession,
-  createLensPromptRequest: (text: string) => ({
+  createLensTurnRequest: (text: string, attachments: unknown[] = []) => ({
     text,
-    mode: 'auto',
-    interruptFirst: false,
-    interruptKeys: ['C-c'],
-    literalInterruptKeys: false,
-    interruptDelayMs: 150,
-    submitKeys: ['Enter'],
-    literalSubmitKeys: false,
-    submitDelayMs: 300,
-    followupSubmitCount: 0,
-    followupSubmitDelayMs: 250,
+    attachments,
   }),
 }));
 
@@ -71,7 +62,7 @@ vi.mock('../logging', () => ({
 
 describe('fileDrop', () => {
   beforeEach(() => {
-    sendSessionPrompt.mockReset();
+    sendLensTurn.mockReset();
     pasteToTerminal.mockReset();
     isLensActiveSession.mockReset();
     isLensActiveSession.mockReturnValue(false);
@@ -107,17 +98,19 @@ describe('fileDrop', () => {
 
     await handleFileDrop(files);
 
-    expect(sendSessionPrompt).toHaveBeenCalledTimes(1);
-    expect(sendSessionPrompt).toHaveBeenCalledWith(
-      's1',
-      expect.objectContaining({
-        text: expect.stringContaining('Attached file:\n- Q:/repo/uploads/pic.png'),
-      }),
-    );
-    expect(sendSessionPrompt).toHaveBeenCalledWith(
+    expect(sendLensTurn).toHaveBeenCalledTimes(1);
+    expect(sendLensTurn).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({
         text: expect.stringContaining('File "note.txt":\nhello from note'),
+        attachments: [
+          expect.objectContaining({
+            kind: 'image',
+            path: 'Q:/repo/uploads/pic.png',
+            mimeType: 'image/png',
+            displayName: 'pic.png',
+          }),
+        ],
       }),
     );
     expect(pasteToTerminal).not.toHaveBeenCalled();
@@ -133,7 +126,7 @@ describe('fileDrop', () => {
 
     await handleFileDrop(files);
 
-    expect(sendSessionPrompt).not.toHaveBeenCalled();
+    expect(sendLensTurn).not.toHaveBeenCalled();
     expect(pasteToTerminal).toHaveBeenNthCalledWith(1, 's1', 'plain text', false);
     expect(pasteToTerminal).toHaveBeenNthCalledWith(2, 's1', 'Q:/repo/uploads/pic.png', true);
   });

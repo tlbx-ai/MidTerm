@@ -829,6 +829,402 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/{id}/lens/attach': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/turns': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['LensTurnRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensTurnStartResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/interrupt': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['LensInterruptRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensCommandAcceptedResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/requests/{requestId}/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          requestId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensCommandAcceptedResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/requests/{requestId}/resolve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          requestId: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['LensRequestDecisionRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensCommandAcceptedResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/requests/{requestId}/decline': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          requestId: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['LensRequestDecisionRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensCommandAcceptedResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/user-input/{requestId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          requestId: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['LensUserInputAnswerRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensCommandAcceptedResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/snapshot': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensPulseSnapshotResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          afterSequence?: number;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['LensPulseEventListResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/lens/events/stream': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          afterSequence?: number;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/event-stream': string;
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sessions/{id}/buffer': {
     parameters: {
       query?: never;
@@ -3858,6 +4254,232 @@ export interface components {
       lastUsed: string;
       /** Format: int32 */
       order: number;
+    };
+    LensAttachmentReference: {
+      kind: string;
+      path: string;
+      mimeType: null | string;
+      displayName: null | string;
+    };
+    LensCommandAcceptedResponse: {
+      sessionId: string;
+      status: string;
+      requestId: null | string;
+      turnId: null | string;
+    };
+    LensInterruptRequest: {
+      turnId?: null | string;
+    };
+    LensPulseAnsweredQuestion: {
+      questionId: string;
+      answers: string[];
+    };
+    LensPulseContentDeltaPayload: {
+      streamKind: string;
+      delta: string;
+    };
+    LensPulseDiffUpdatedPayload: {
+      unifiedDiff: string;
+    };
+    LensPulseEvent: {
+      /** Format: int64 */
+      sequence: number;
+      eventId: string;
+      sessionId: string;
+      provider: string;
+      threadId: string;
+      turnId: null | string;
+      itemId: null | string;
+      requestId: null | string;
+      /** Format: date-time */
+      createdAt: string;
+      type: string;
+      raw: null | components['schemas']['LensPulseEventRaw'];
+      sessionState: null | components['schemas']['LensPulseSessionStatePayload'];
+      threadState: null | components['schemas']['LensPulseThreadStatePayload'];
+      turnStarted: null | components['schemas']['LensPulseTurnStartedPayload'];
+      turnCompleted: null | components['schemas']['LensPulseTurnCompletedPayload'];
+      contentDelta: null | components['schemas']['LensPulseContentDeltaPayload'];
+      planDelta: null | components['schemas']['LensPulsePlanDeltaPayload'];
+      planCompleted: null | components['schemas']['LensPulsePlanCompletedPayload'];
+      diffUpdated: null | components['schemas']['LensPulseDiffUpdatedPayload'];
+      item: null | components['schemas']['LensPulseItemPayload'];
+      requestOpened: null | components['schemas']['LensPulseRequestOpenedPayload'];
+      requestResolved: null | components['schemas']['LensPulseRequestResolvedPayload'];
+      userInputRequested: null | components['schemas']['LensPulseUserInputRequestedPayload'];
+      userInputResolved: null | components['schemas']['LensPulseUserInputResolvedPayload'];
+      runtimeMessage: null | components['schemas']['LensPulseRuntimeMessagePayload'];
+    };
+    LensPulseEventListResponse: {
+      sessionId: string;
+      /** Format: int64 */
+      latestSequence: number;
+      events: components['schemas']['LensPulseEvent'][];
+    };
+    LensPulseEventRaw: {
+      source: string;
+      method: null | string;
+      payloadJson: null | string;
+    };
+    LensPulseItemPayload: {
+      itemType: string;
+      status: string;
+      title?: null | string;
+      detail?: null | string;
+    };
+    LensPulseItemSummary: {
+      itemId: string;
+      turnId: null | string;
+      itemType: string;
+      status: string;
+      title: null | string;
+      detail: null | string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    LensPulsePlanCompletedPayload: {
+      planMarkdown: string;
+    };
+    LensPulsePlanDeltaPayload: {
+      delta: string;
+    };
+    LensPulseQuestion: {
+      id: string;
+      header: string;
+      question: string;
+      multiSelect: boolean;
+      options: components['schemas']['LensPulseQuestionOption'][];
+    };
+    LensPulseQuestionOption: {
+      label: string;
+      description: string;
+    };
+    LensPulseRequestOpenedPayload: {
+      requestType: string;
+      requestTypeLabel: string;
+      detail?: null | string;
+    };
+    LensPulseRequestResolvedPayload: {
+      requestType: string;
+      decision?: null | string;
+    };
+    LensPulseRequestSummary: {
+      requestId: string;
+      turnId: null | string;
+      kind: string;
+      kindLabel: string;
+      state: string;
+      detail: null | string;
+      decision: null | string;
+      questions: components['schemas']['LensPulseQuestion'][];
+      answers: components['schemas']['LensPulseAnsweredQuestion'][];
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    LensPulseRuntimeMessagePayload: {
+      message: string;
+      detail?: null | string;
+    };
+    LensPulseRuntimeNotice: {
+      eventId: string;
+      type: string;
+      message: string;
+      detail: null | string;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    LensPulseSessionStatePayload: {
+      state: string;
+      stateLabel: string;
+      reason?: null | string;
+    };
+    LensPulseSessionSummary: {
+      state: string;
+      stateLabel: string;
+      reason: null | string;
+      lastError: null | string;
+      /** Format: date-time */
+      lastEventAt: null | string;
+    };
+    LensPulseSnapshotResponse: {
+      sessionId: string;
+      provider: string;
+      /** Format: date-time */
+      generatedAt: string;
+      /** Format: int64 */
+      latestSequence: number;
+      session: components['schemas']['LensPulseSessionSummary'];
+      thread: components['schemas']['LensPulseThreadSummary'];
+      currentTurn: components['schemas']['LensPulseTurnSummary'];
+      streams: components['schemas']['LensPulseStreamsSummary'];
+      items: components['schemas']['LensPulseItemSummary'][];
+      requests: components['schemas']['LensPulseRequestSummary'][];
+      notices: components['schemas']['LensPulseRuntimeNotice'][];
+    };
+    LensPulseStreamsSummary: {
+      assistantText: string;
+      reasoningText: string;
+      reasoningSummaryText: string;
+      planText: string;
+      commandOutput: string;
+      fileChangeOutput: string;
+      unifiedDiff: string;
+    };
+    LensPulseThreadStatePayload: {
+      state: string;
+      stateLabel: string;
+      providerThreadId?: null | string;
+    };
+    LensPulseThreadSummary: {
+      threadId: string;
+      state: string;
+      stateLabel: string;
+    };
+    LensPulseTurnCompletedPayload: {
+      state: string;
+      stateLabel: string;
+      stopReason?: null | string;
+      errorMessage?: null | string;
+    };
+    LensPulseTurnStartedPayload: {
+      model?: null | string;
+      effort?: null | string;
+    };
+    LensPulseTurnSummary: {
+      turnId: null | string;
+      state: string;
+      stateLabel: string;
+      model: null | string;
+      effort: null | string;
+      /** Format: date-time */
+      startedAt: null | string;
+      /** Format: date-time */
+      completedAt: null | string;
+    };
+    LensPulseUserInputRequestedPayload: {
+      questions: components['schemas']['LensPulseQuestion'][];
+    };
+    LensPulseUserInputResolvedPayload: {
+      answers: components['schemas']['LensPulseAnsweredQuestion'][];
+    };
+    LensRequestDecisionRequest: {
+      decision: string;
+    };
+    LensTurnRequest: {
+      text?: null | string;
+      model?: null | string;
+      effort?: null | string;
+      attachments: components['schemas']['LensAttachmentReference'][];
+    };
+    LensTurnStartResponse: {
+      sessionId: string;
+      provider: string;
+      threadId: string;
+      turnId: null | string;
+      status: string;
+    };
+    LensUserInputAnswerRequest: {
+      answers: components['schemas']['LensPulseAnsweredQuestion'][];
     };
     LocalUpdateInfo: {
       available: boolean;

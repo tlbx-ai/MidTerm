@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Sign Windows binaries (mt.exe, mthost.exe) using Certum SimplySign cloud certificate.
+# Sign Windows binaries (mt.exe, mthost.exe, mtagenthost.exe) using Certum SimplySign cloud certificate.
 # Designed to run on a self-hosted GitHub Actions runner during stable releases.
 # Plays a notification sound and waits for the user to authenticate in SimplySign Desktop.
 
@@ -41,6 +41,7 @@ Write-Host "Running as user: $([System.Security.Principal.WindowsIdentity]::GetC
 
 $mtPath = Join-Path $StagingPath "mt.exe"
 $mthostPath = Join-Path $StagingPath "mthost.exe"
+$mtagenthostPath = Join-Path $StagingPath "mtagenthost.exe"
 
 if (-not (Test-Path $mtPath))
 {
@@ -56,6 +57,15 @@ if ($hasMthost)
 else
 {
     Write-Host "mthost.exe not found (web-only release), signing mt.exe only" -ForegroundColor Yellow
+}
+
+if (Test-Path $mtagenthostPath)
+{
+    $binaries += $mtagenthostPath
+}
+else
+{
+    Write-Host "mtagenthost.exe not found in staging" -ForegroundColor Yellow
 }
 
 # ── Build signtool arguments ─────────────────────────────────────────────────

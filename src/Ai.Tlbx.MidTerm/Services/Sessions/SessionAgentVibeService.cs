@@ -11,6 +11,7 @@ public sealed class SessionAgentVibeService
     private readonly AiCliProfileService _profileService;
     private readonly AiCliCapabilityService _capabilityService;
     private readonly SessionAgentFeedService _feedService;
+    private readonly SessionLensRuntimeService _lensRuntime;
 
     public SessionAgentVibeService(
         TtyHostSessionManager sessionManager,
@@ -18,7 +19,8 @@ public sealed class SessionAgentVibeService
         SessionSupervisorService sessionSupervisor,
         AiCliProfileService profileService,
         AiCliCapabilityService capabilityService,
-        SessionAgentFeedService feedService)
+        SessionAgentFeedService feedService,
+        SessionLensRuntimeService lensRuntime)
     {
         _sessionManager = sessionManager;
         _sessionTelemetry = sessionTelemetry;
@@ -26,6 +28,7 @@ public sealed class SessionAgentVibeService
         _profileService = profileService;
         _capabilityService = capabilityService;
         _feedService = feedService;
+        _lensRuntime = lensRuntime;
     }
 
     public async Task<AgentSessionVibeResponse?> BuildVibeAsync(
@@ -53,6 +56,21 @@ public sealed class SessionAgentVibeService
         var activity = _sessionTelemetry.GetActivity(sessionId, activitySeconds, bellLimit);
         var buffer = await _sessionManager.GetBufferAsync(sessionId, ct).ConfigureAwait(false);
         var tailText = BuildTailText(buffer, tailLines);
+
+        if (_lensRuntime.TryGetSnapshot(sessionId, out var runtimeSnapshot))
+        {
+            return BuildNativeVibe(
+                sessionId,
+                profile,
+                providerLabel,
+                capability,
+                supervisor,
+                activity,
+                tailLines,
+                tailText,
+                runtimeSnapshot,
+                now);
+        }
 
         return new AgentSessionVibeResponse
         {
@@ -100,6 +118,125 @@ public sealed class SessionAgentVibeService
                 TailLineCount = Math.Max(1, tailLines),
                 TailText = tailText,
                 EmptyMessage = "No recent output in the terminal buffer."
+            }
+        };
+    }
+
+    private static AgentSessionVibeResponse BuildNativeVibe(
+        string sessionId,
+        string profile,
+        string providerLabel,
+        AiCliCapabilitySnapshot capability,
+        SessionSupervisorInfoDto supervisor,
+        SessionActivityResponse activity,
+        int tailLines,
+        string terminalTailText,
+        LensRuntimeSnapshot runtimeSnapshot,
+        DateTimeOffset now)
+    {
+        var transportSummary = $"{runtimeSnapshot.TransportLabel} is attached as a native Lens sidecar. The visible terminal remains separate and available beside Lens.";
+        var chips = new List<AgentSessionVibeChip>
+        {
+            new()
+            {
+                Text = providerLabel,
+                Tone = "profile"
+            },
+            new()
+            {
+                Text = runtimeSnapshot.StatusLabel,
+                Tone = runtimeSnapshot.Status == "error" ? "attention" : runtimeSnapshot.Status == "running" ? "positive" : "info"
+            },
+            new()
+            {
+                Text = "Native sidecar",
+                Tone = "positive"
+            }
+        };
+
+        if (!string.IsNullOrWhiteSpace(runtimeSnapshot.PendingQuestion))
+        {
+            chips.Add(new AgentSessionVibeChip
+            {
+                Text = "Waiting for input",
+                Tone = "attention"
+            });
+        }
+
+        var capabilities = capability.Capabilities
+            .Select(capabilityItem => capabilityItem.Key == "native"
+                ? new AgentSessionVibeCapability
+                {
+                    Key = capabilityItem.Key,
+                    Label = capabilityItem.Label,
+                    Status = "live",
+                    StatusLabel = "Live",
+                    Detail = runtimeSnapshot.TransportLabel + " is actively feeding Lens for this session."
+                }
+                : capabilityItem.Key == "terminal"
+                    ? new AgentSessionVibeCapability
+                    {
+                        Key = capabilityItem.Key,
+                        Label = capabilityItem.Label,
+                        Status = capabilityItem.Status,
+                        StatusLabel = capabilityItem.StatusLabel,
+                        Detail = "xterm still owns the visible terminal surface and remains available beside Lens."
+                    }
+                    : capabilityItem)
+            .ToList();
+
+        var nativeTail = !string.IsNullOrWhiteSpace(runtimeSnapshot.AssistantText)
+            ? runtimeSnapshot.AssistantText
+            : !string.IsNullOrWhiteSpace(runtimeSnapshot.UnifiedDiff)
+                ? runtimeSnapshot.UnifiedDiff
+                : terminalTailText;
+
+        return new AgentSessionVibeResponse
+        {
+            SessionId = sessionId,
+            Source = "native",
+            GeneratedAt = now,
+            Header = new AgentSessionVibeHeader
+            {
+                Title = providerLabel,
+                Subtitle = $"{providerLabel} • {runtimeSnapshot.StatusLabel}",
+                Provider = profile,
+                ProviderLabel = providerLabel,
+                State = runtimeSnapshot.Status,
+                StateLabel = runtimeSnapshot.StatusLabel,
+                NeedsAttention = runtimeSnapshot.Status == "error" || supervisor.NeedsAttention,
+                AttentionReason = runtimeSnapshot.LastError ?? supervisor.AttentionReason,
+                TransportSummary = transportSummary,
+                Chips = chips
+            },
+            Lane = new AgentSessionVibeLane
+            {
+                Mode = "native-live",
+                Tone = runtimeSnapshot.Status == "error" ? "attention" : runtimeSnapshot.Status == "running" ? "positive" : "info",
+                Label = "Native Lens",
+                Detail = transportSummary
+            },
+            Capabilities = capabilities,
+            Overview = new AgentSessionVibeOverview
+            {
+                StateValue = runtimeSnapshot.StatusLabel,
+                StateMeta = runtimeSnapshot.PendingQuestion is null ? "Native sidecar active" : "Waiting for input",
+                ActivityValue = $"{runtimeSnapshot.Activities.Count.ToString(CultureInfo.InvariantCulture)} events",
+                ActivityMeta = runtimeSnapshot.TransportLabel,
+                LastOutputValue = FormatRelativeTime(runtimeSnapshot.LastEventAt, now),
+                LastOutputMeta = FormatAbsoluteTime(runtimeSnapshot.LastEventAt),
+                BellsValue = activity.TotalBellCount.ToString(CultureInfo.InvariantCulture),
+                BellsMeta = activity.LastBellAt is null
+                    ? "No recent terminal bell"
+                    : $"Last bell {FormatRelativeTime(activity.LastBellAt, now)}"
+            },
+            Activities = runtimeSnapshot.Activities,
+            Heatmap = activity.Heatmap,
+            Terminal = new AgentSessionVibeTerminal
+            {
+                TailLineCount = Math.Max(1, tailLines),
+                TailText = nativeTail?.TrimEnd() ?? string.Empty,
+                EmptyMessage = "No native Lens output has arrived yet."
             }
         };
     }

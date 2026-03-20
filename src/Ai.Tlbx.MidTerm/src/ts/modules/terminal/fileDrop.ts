@@ -6,8 +6,9 @@
  */
 
 import { $activeSessionId } from '../../stores';
-import { sendSessionPrompt } from '../../api/client';
-import { createLensPromptRequest, isLensActiveSession } from '../lens/input';
+import { sendLensTurn } from '../../api/client';
+import type { LensAttachmentReference } from '../../api/types';
+import { createLensTurnRequest, isLensActiveSession } from '../lens/input';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
 import { resolveImagePasteMode } from './imagePasteMode';
@@ -481,6 +482,7 @@ export async function handleFileDrop(files: FileList): Promise<void> {
         )
       : null;
   const uploadedPaths: string[] = [];
+  const lensAttachments: LensAttachmentReference[] = [];
   const textSnippets: string[] = [];
 
   try {
@@ -488,14 +490,34 @@ export async function handleFileDrop(files: FileList): Promise<void> {
       // Image files: upload and collect path
       if (isImageFile(file.name)) {
         const path = await uploadFile(activeId, file);
-        if (path) uploadedPaths.push(path);
+        if (path) {
+          uploadedPaths.push(path);
+          if (lensActive) {
+            lensAttachments.push({
+              kind: 'image',
+              path,
+              mimeType: file.type || null,
+              displayName: file.name,
+            });
+          }
+        }
         continue;
       }
 
       // Binary/document files: upload and paste path (PDFs, archives, etc.)
       if (isRejectedFile(file.name)) {
         const path = await uploadFile(activeId, file);
-        if (path) uploadedPaths.push(path);
+        if (path) {
+          uploadedPaths.push(path);
+          if (lensActive) {
+            lensAttachments.push({
+              kind: 'file',
+              path,
+              mimeType: file.type || null,
+              displayName: file.name,
+            });
+          }
+        }
         continue;
       }
 
@@ -526,23 +548,16 @@ export async function handleFileDrop(files: FileList): Promise<void> {
 
     if (lensActive) {
       const promptParts: string[] = [];
-      if (uploadedPaths.length > 0) {
-        const header =
-          uploadedPaths.length === 1
-            ? 'Attached file:'
-            : `Attached files (${uploadedPaths.length}):`;
-        promptParts.push(`${header}\n${uploadedPaths.map((path) => `- ${path}`).join('\n')}`);
-      }
       if (textSnippets.length > 0) {
         promptParts.push(textSnippets.join('\n\n'));
       }
 
       const promptText = promptParts.join('\n\n').trim();
-      if (promptText.length > 0) {
+      if (promptText.length > 0 || lensAttachments.length > 0) {
         if (overlay) {
           overlay.setLabel(t('fileDrop.transferringToLens'));
         }
-        await sendSessionPrompt(activeId, createLensPromptRequest(promptText));
+        await sendLensTurn(activeId, createLensTurnRequest(promptText, lensAttachments));
       }
       return;
     }

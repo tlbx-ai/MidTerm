@@ -30,7 +30,6 @@ export {
   setCommandsClickHandler,
   setGitClickHandler,
   setActionVisible,
-  setLensClickHandler,
   setShareClickHandler,
   setTabVisible,
   setWebClickHandler,

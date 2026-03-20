@@ -23,6 +23,12 @@
         "contentHash": "GGYLfzV/G/ct80OZ45JxnWP7NvMX1BCugn/lX7TH5o0lcVaviavsLMTxmFV2AybXWjbi3h6FF1vgZiTK6PXndw=="
       },
       "ai.tlbx.midterm.api": {
+        "type": "Project",
+        "dependencies": {
+          "Ai.Tlbx.MidTerm.Common": "[4.0.1, )"
+        }
+      },
+      "ai.tlbx.midterm.common": {
         "type": "Project"
       }
     }

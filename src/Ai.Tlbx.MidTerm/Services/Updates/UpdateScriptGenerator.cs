@@ -19,6 +19,7 @@ namespace Ai.Tlbx.MidTerm.Services.Updates;
 /// </summary>
 public static class UpdateScriptGenerator
 {
+    private const string AgentHostBinaryName = "mtagenthost";
     private const string ServiceName = "MidTerm";
     private const string LaunchdLabel = "ai.tlbx.midterm";
     private const string SystemdService = "MidTerm";
@@ -54,8 +55,10 @@ public static class UpdateScriptGenerator
         var settingsDir = settingsDirectory;
         var newMtPath = Path.Combine(extractedDir, "mt.exe");
         var newMthostPath = Path.Combine(extractedDir, "mthost.exe");
+        var newAgentHostPath = Path.Combine(extractedDir, $"{AgentHostBinaryName}.exe");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost.exe");
+        var currentAgentHostPath = Path.Combine(installDir, $"{AgentHostBinaryName}.exe");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         // Log and result files go in settings directory so they're accessible after update
         var resultFilePath = Path.Combine(settingsDir, "update-result.json");
@@ -77,13 +80,15 @@ $ErrorActionPreference = 'Stop'
 
 # === Configuration ===
 # IMPORTANT: These directories are DIFFERENT - don't confuse them!
-$InstallDir = '{EscapeForPowerShell(installDir)}'           # Binaries: mt.exe, mthost.exe
+$InstallDir = '{EscapeForPowerShell(installDir)}'           # Binaries: mt.exe, mthost.exe, {AgentHostBinaryName}.exe
 $SettingsDir = '{EscapeForPowerShell(settingsDir)}'         # Settings, secrets, certs
 $CurrentMt = '{EscapeForPowerShell(currentBinaryPath)}'
 $CurrentMthost = '{EscapeForPowerShell(currentMthostPath)}'
+$CurrentAgentHost = '{EscapeForPowerShell(currentAgentHostPath)}'
 $CurrentVersionJson = '{EscapeForPowerShell(currentVersionJsonPath)}'
 $NewMt = '{EscapeForPowerShell(newMtPath)}'
 $NewMthost = '{EscapeForPowerShell(newMthostPath)}'
+$NewAgentHost = '{EscapeForPowerShell(newAgentHostPath)}'
 $NewVersionJson = '{EscapeForPowerShell(newVersionJsonPath)}'
 $ExtractedDir = '{EscapeForPowerShell(extractedDir)}'
 $LogFile = '{EscapeForPowerShell(logFilePath)}'
@@ -287,6 +292,12 @@ try {{
         }}
     }}
 
+    if (Test-Path $CurrentAgentHost) {{
+        if (-not (WaitForFileWritable $CurrentAgentHost)) {{
+            throw ""{AgentHostBinaryName}.exe is still locked after $MaxRetries retries. Another process may be using it.""
+        }}
+    }}
+
     Log 'All file handles released'
 
     # ============================================
@@ -305,6 +316,12 @@ try {{
         Log 'Backing up mthost.exe...'
         Copy-Item $CurrentMthost ""$CurrentMthost.bak"" -Force -ErrorAction Stop
         Log 'mthost.exe backed up'
+    }}
+
+    if (Test-Path $CurrentAgentHost) {{
+        Log 'Backing up {AgentHostBinaryName}.exe...'
+        Copy-Item $CurrentAgentHost ""$CurrentAgentHost.bak"" -Force -ErrorAction Stop
+        Log '{AgentHostBinaryName}.exe backed up'
     }}
 
     if (Test-Path $CurrentVersionJson) {{
@@ -422,6 +439,10 @@ try {{
         SafeCopy $NewMthost $CurrentMthost 'mthost.exe'
     }}
 
+    if (Test-Path $NewAgentHost) {{
+        SafeCopy $NewAgentHost $CurrentAgentHost '{AgentHostBinaryName}.exe'
+    }}
+
     if (Test-Path $NewVersionJson) {{
         SafeCopy $NewVersionJson $CurrentVersionJson 'version.json'
     }}
@@ -513,6 +534,7 @@ try {{
 
     Remove-Item ""$CurrentMt.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentMthost.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$CurrentAgentHost.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentVersionJson.bak"" -Force -ErrorAction SilentlyContinue
 
     # Clean up credential backups (in SettingsDir, not InstallDir!)
@@ -573,6 +595,16 @@ try {{
                 Log 'mthost.exe restored'
             }} catch {{
                 Log ""Failed to restore mthost.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        if (Test-Path ""$CurrentAgentHost.bak"") {{
+            Log 'Restoring {AgentHostBinaryName}.exe from backup...'
+            try {{
+                Copy-Item ""$CurrentAgentHost.bak"" $CurrentAgentHost -Force -ErrorAction Stop
+                Log '{AgentHostBinaryName}.exe restored'
+            }} catch {{
+                Log ""Failed to restore {AgentHostBinaryName}.exe: $_"" 'ERROR'
             }}
         }}
 
@@ -683,8 +715,10 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var logDir = LogPaths.GetLogDirectory(false, isServiceMode);
         var newMtPath = Path.Combine(extractedDir, "mt");
         var newMthostPath = Path.Combine(extractedDir, "mthost");
+        var newAgentHostPath = Path.Combine(extractedDir, AgentHostBinaryName);
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost");
+        var currentAgentHostPath = Path.Combine(installDir, AgentHostBinaryName);
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         var resultFilePath = Path.Combine(configDir, "update-result.json");
         var logFilePath = LogPaths.GetUpdateLogPath(false, isServiceMode, configDir);
@@ -724,14 +758,16 @@ exec > ""{EscapeForBash(logFilePath)}"" 2>&1 < /dev/null
 
 # === Configuration ===
 # IMPORTANT: These directories are DIFFERENT - don't confuse them!
-INSTALL_DIR='{EscapeForBash(installDir)}'           # Binaries: mt, mthost
+INSTALL_DIR='{EscapeForBash(installDir)}'           # Binaries: mt, mthost, {AgentHostBinaryName}
 CONFIG_DIR='{EscapeForBash(configDir)}'             # Settings, secrets, certs
 LOG_DIR='{EscapeForBash(logDir)}'                   # Log files
 CURRENT_MT='{EscapeForBash(currentBinaryPath)}'
 CURRENT_MTHOST='{EscapeForBash(currentMthostPath)}'
+CURRENT_AGENTHOST='{EscapeForBash(currentAgentHostPath)}'
 CURRENT_VERSION_JSON='{EscapeForBash(currentVersionJsonPath)}'
 NEW_MT='{EscapeForBash(newMtPath)}'
 NEW_MTHOST='{EscapeForBash(newMthostPath)}'
+NEW_AGENTHOST='{EscapeForBash(newAgentHostPath)}'
 NEW_VERSION_JSON='{EscapeForBash(newVersionJsonPath)}'
 EXTRACTED_DIR='{EscapeForBash(extractedDir)}'
 LOG_FILE='{EscapeForBash(logFilePath)}'
@@ -918,6 +954,12 @@ cleanup() {{
             chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
         fi
 
+        if [[ -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ]]; then
+            log ""Restoring {AgentHostBinaryName} from backup...""
+            cp -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ""$CURRENT_AGENTHOST"" 2>/dev/null || log ""Failed to restore {AgentHostBinaryName}"" ""ERROR""
+            chmod +x ""$CURRENT_AGENTHOST"" 2>/dev/null || true
+        fi
+
         if [[ -f ""$BACKUP_DIR/version.json.bak"" ]]; then
             log ""Restoring version.json from backup...""
             cp -f ""$BACKUP_DIR/version.json.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
@@ -1064,6 +1106,14 @@ if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     fi
 fi
 
+if [[ -f ""$CURRENT_AGENTHOST"" ]]; then
+    if ! wait_for_file_writable ""$CURRENT_AGENTHOST""; then
+        log ""{AgentHostBinaryName} is still locked after $MAX_RETRIES retries"" ""ERROR""
+        write_result false ""{AgentHostBinaryName} is still locked. Another process may be using it.""
+        exit 1
+    fi
+fi
+
 log ""All file handles released""
 
 # ============================================
@@ -1082,6 +1132,12 @@ if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     log ""Backing up mthost...""
     cp -f ""$CURRENT_MTHOST"" ""$BACKUP_DIR/mthost.bak""
     log ""mthost backed up""
+fi
+
+if [[ -f ""$CURRENT_AGENTHOST"" ]]; then
+    log ""Backing up {AgentHostBinaryName}...""
+    cp -f ""$CURRENT_AGENTHOST"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
+    log ""{AgentHostBinaryName} backed up""
 fi
 
 if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
@@ -1187,6 +1243,13 @@ fi
 if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$NEW_MTHOST"" ]]; then
     if ! safe_copy ""$NEW_MTHOST"" ""$CURRENT_MTHOST"" ""mthost""; then
         write_result false ""Failed to install mthost""
+        exit 1
+    fi
+fi
+
+if [[ -f ""$NEW_AGENTHOST"" ]]; then
+    if ! safe_copy ""$NEW_AGENTHOST"" ""$CURRENT_AGENTHOST"" ""{AgentHostBinaryName}""; then
+        write_result false ""Failed to install {AgentHostBinaryName}""
         exit 1
     fi
 fi

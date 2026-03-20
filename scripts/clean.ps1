@@ -5,7 +5,7 @@ Write-Host "# Clean build artifacts"
 Write-Host "#################################################"
 Write-Host ""
 
-Stop-Process -Name MSBuild, VBCSCompiler, mt, mthost -Force -ErrorAction SilentlyContinue
+Stop-Process -Name MSBuild, VBCSCompiler, mt, mthost, mtagenthost -Force -ErrorAction SilentlyContinue
 
 Remove-Item -Path .vs, TestResults -Recurse -Force -ErrorAction SilentlyContinue
 

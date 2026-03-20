@@ -20,6 +20,7 @@ if (-not (Test-Path "$Source\mt.exe")) {
 
 $mtSize = [math]::Round((Get-Item "$Source\mt.exe").Length / 1MB, 1)
 $mthostSize = [math]::Round((Get-Item "$Source\mthost.exe").Length / 1MB, 1)
+$mtagenthostSize = [math]::Round((Get-Item "$Source\mtagenthost.exe").Length / 1MB, 1)
 
 Write-Host "Source:      $Source" -ForegroundColor Gray
 Write-Host "Destination: $Dest" -ForegroundColor Gray
@@ -30,6 +31,7 @@ Stop-Service MidTerm -ErrorAction SilentlyContinue
 
 Write-Host "Killing mthost processes..." -ForegroundColor Gray
 Get-Process mthost -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process mtagenthost -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep 1
 
 Write-Host "Copying files..." -ForegroundColor Gray
@@ -37,6 +39,8 @@ Copy-Item "$Source\mt.exe" "$Dest\mt.exe" -Force
 Write-Host "  mt.exe ($mtSize MB)" -ForegroundColor DarkGray
 Copy-Item "$Source\mthost.exe" "$Dest\mthost.exe" -Force
 Write-Host "  mthost.exe ($mthostSize MB)" -ForegroundColor DarkGray
+Copy-Item "$Source\mtagenthost.exe" "$Dest\mtagenthost.exe" -Force
+Write-Host "  mtagenthost.exe ($mtagenthostSize MB)" -ForegroundColor DarkGray
 
 Write-Host "Starting MidTerm service..." -ForegroundColor Gray
 Start-Service MidTerm

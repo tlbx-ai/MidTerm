@@ -9024,13 +9024,6 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
-.session-wrapper.lens-split-active .session-tab-panels {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(380px, 0.95fr);
-  gap: 0;
-  background: var(--bg-terminal);
-}
-
 .session-tab-panel {
   display: none;
   height: 100%;
@@ -9042,14 +9035,6 @@ body.shared-session-mode .session-tab-bar {
 .session-tab-panel.active {
   display: flex;
   flex-direction: column;
-}
-
-.session-wrapper.lens-split-active .session-tab-panel[data-panel='terminal'] {
-  border-right: 1px solid var(--border-color);
-}
-
-.session-wrapper.lens-split-active .session-tab-panel[data-panel='agent'] {
-  min-width: 0;
 }
 
 .agent-view-panel {
@@ -9364,6 +9349,52 @@ body.shared-session-mode .session-tab-bar {
   line-height: 1.45;
 }
 
+.agent-request-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.agent-request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-request-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-request-question {
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.agent-request-input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.agent-request-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-request-choice {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
 .agent-heatmap {
   display: flex;
   align-items: end;
@@ -9410,16 +9441,6 @@ body.shared-session-mode .session-tab-bar {
 }
 
 @media (max-width: 1100px) {
-  .session-wrapper.lens-split-active .session-tab-panels {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(260px, 0.85fr) minmax(320px, 1.15fr);
-  }
-
-  .session-wrapper.lens-split-active .session-tab-panel[data-panel='terminal'] {
-    border-right: none;
-    border-bottom: 1px solid var(--border-color);
-  }
-
   .agent-view-grid {
     grid-template-columns: 1fr;
   }

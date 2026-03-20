@@ -2,8 +2,8 @@
  * Session Tab Bar
  *
  * Creates and manages the session bar UI for each session.
- * Tabs: Terminal | Files
- * Right-aligned actions: Lens | WEB | Share | Git dock toggle
+ * Tabs: Terminal | Lens | Files
+ * Right-aligned actions: WEB | Share | Git dock toggle
  */
 
 import type { GitStatusResponse } from '../git/types';
@@ -11,13 +11,7 @@ import { t } from '../i18n';
 
 export type SessionTabId = 'terminal' | 'agent' | 'files';
 
-export type IdeBarActionId = 'git' | 'commands' | 'web' | 'share' | 'lens';
-
-const LENS_BUTTON_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M2.2 12s3.45-6.3 9.8-6.3 9.8 6.3 9.8 6.3-3.45 6.3-9.8 6.3S2.2 12 2.2 12z"></path>' +
-  '<circle cx="12" cy="12" r="2.8"></circle>' +
-  '</svg>';
+export type IdeBarActionId = 'git' | 'commands' | 'web' | 'share';
 
 const WEB_BUTTON_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
@@ -54,7 +48,7 @@ function getTabLabels(): Record<SessionTabId, string> {
 }
 
 function getVisibleTabs(): SessionTabId[] {
-  return ['terminal', 'files'];
+  return ['terminal', 'agent', 'files'];
 }
 
 function createActionIcon(svgMarkup: string): HTMLSpanElement {
@@ -205,8 +199,6 @@ function createActionButton(
 let gitClickHandler: (() => void) | null = null;
 let webClickHandler: (() => void) | null = null;
 let shareClickHandler: ((sessionId: string) => void) | null = null;
-let lensClickHandler: ((sessionId: string) => void) | null = null;
-
 export function setCommandsClickHandler(_handler: () => void): void {
   // Commands is temporarily hidden from the IDE bar, so registration is ignored.
 }
@@ -221,10 +213,6 @@ export function setWebClickHandler(handler: () => void): void {
 
 export function setShareClickHandler(handler: (sessionId: string) => void): void {
   shareClickHandler = handler;
-}
-
-export function setLensClickHandler(handler: (sessionId: string) => void): void {
-  lensClickHandler = handler;
 }
 
 export function createTabBar(
@@ -263,16 +251,6 @@ export function createTabBar(
 
   const actions = document.createElement('div');
   actions.className = 'ide-bar-actions';
-
-  const lensBtn = createActionButton(
-    'lens',
-    'ide-bar-btn ide-bar-lens',
-    t('sessionTabs.lens'),
-    t('sessionTabs.lens'),
-    LENS_BUTTON_ICON,
-    () => lensClickHandler?.(sessionId),
-  );
-  actions.appendChild(lensBtn);
 
   const webBtn = createActionButton(
     'web',

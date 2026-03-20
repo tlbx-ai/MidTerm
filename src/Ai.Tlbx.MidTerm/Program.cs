@@ -327,6 +327,8 @@ public class Program
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
+        var lensPulse = app.Services.GetRequiredService<SessionLensPulseService>();
+        var lensRuntime = app.Services.GetRequiredService<SessionLensRuntimeService>();
         var agentVibe = app.Services.GetRequiredService<SessionAgentVibeService>();
         SessionApiEndpoints.MapSessionEndpoints(
             app,
@@ -337,6 +339,8 @@ public class Program
             sessionTelemetry,
             agentFeed,
             sessionSupervisor,
+            lensPulse,
+            lensRuntime,
             agentVibe,
             aiCliProfileService,
             workerSessionRegistry);

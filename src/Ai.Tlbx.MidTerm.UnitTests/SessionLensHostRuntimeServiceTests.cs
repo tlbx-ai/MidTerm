@@ -1,0 +1,319 @@
+using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Xunit;
+
+namespace Ai.Tlbx.MidTerm.UnitTests;
+
+public sealed class SessionLensHostRuntimeServiceTests
+{
+    [Fact]
+    public async Task SessionLensRuntimeService_CanDelegateToMtAgentHostSyntheticMode()
+    {
+        var pulse = new SessionLensPulseService();
+        var ingress = new SessionLensHostIngressService(pulse);
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "synthetic");
+        await using var sessionManager = new TtyHostSessionManager();
+        var profileService = new AiCliProfileService();
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+        var session = new SessionInfoDto
+        {
+            Id = "session-runtime-1",
+            CurrentDirectory = AppContext.BaseDirectory,
+            ForegroundName = "codex"
+        };
+
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        Assert.True(attached);
+        Assert.True(runtime.IsAttached(session.Id));
+
+        var turn = await runtime.StartTurnAsync(
+            session.Id,
+            new LensTurnRequest
+            {
+                Text = "Inspect the workspace.",
+                Attachments = []
+            });
+
+        Assert.Equal("codex", turn.Provider);
+        Assert.Equal("started", turn.Status);
+
+        var resolved = await runtime.ResolveRequestAsync(
+            session.Id,
+            "req-approval-1",
+            new LensRequestDecisionRequest
+            {
+                Decision = "accept"
+            });
+
+        Assert.Equal("accepted", resolved.Status);
+
+        var events = await WaitForEventsAsync(
+            pulse,
+            session.Id,
+            current => current.Events.Any(lensEvent => lensEvent.Type == "request.resolved"));
+        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "session.ready");
+        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "turn.started");
+        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "request.opened");
+        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "request.resolved");
+
+        var snapshot = await WaitForSnapshotAsync(
+            pulse,
+            session.Id,
+            current => current.Requests.Any(request => request.Kind == "approval" && request.Decision == "accept"));
+        Assert.NotNull(snapshot);
+        Assert.Equal("codex", snapshot!.Provider);
+        Assert.Equal("Synthetic codex reply for: Inspect the workspace.", snapshot.Streams.AssistantText);
+        Assert.Contains(snapshot.Requests, request => request.Kind == "approval" && request.Decision == "accept");
+
+        Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+        Assert.Equal("mtagenthost-stdio", runtimeSnapshot.TransportKey);
+        Assert.Equal("running", runtimeSnapshot.Status);
+        Assert.Equal("Synthetic codex reply for: Inspect the workspace.", runtimeSnapshot.AssistantText);
+    }
+
+    [Fact]
+    public async Task SessionLensRuntimeService_CanDelegateToMtAgentHostCodexMode()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var pulse = new SessionLensPulseService();
+        var ingress = new SessionLensHostIngressService(pulse);
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+        await using var sessionManager = new TtyHostSessionManager();
+        var profileService = new AiCliProfileService();
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+        var imagePath = Path.Combine(fakeCodex.Root, "sample.png");
+        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4]);
+
+        var session = new SessionInfoDto
+        {
+            Id = "session-runtime-codex-1",
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "codex"
+        };
+
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        Assert.True(attached);
+        Assert.True(runtime.IsAttached(session.Id));
+
+        var turn = await runtime.StartTurnAsync(
+            session.Id,
+            new LensTurnRequest
+            {
+                Text = "Inspect attachments and ask approval.",
+                Attachments =
+                [
+                    new LensAttachmentReference
+                    {
+                        Kind = "image",
+                        Path = imagePath,
+                        MimeType = "image/png"
+                    }
+                ]
+            });
+
+        Assert.Equal("codex", turn.Provider);
+        Assert.Equal("accepted", turn.Status);
+
+        var requestSnapshot = await WaitForSnapshotAsync(
+            pulse,
+            session.Id,
+            current => current.Requests.Any(request => request.Kind == "command_execution_approval" && request.State == "open"));
+        Assert.NotNull(requestSnapshot);
+        var pendingRequest = Assert.Single(requestSnapshot!.Requests, request => request.Kind == "command_execution_approval" && request.State == "open");
+
+        var resolved = await runtime.ResolveRequestAsync(
+            session.Id,
+            pendingRequest.RequestId,
+            new LensRequestDecisionRequest
+            {
+                Decision = "accept"
+            });
+
+        Assert.Equal("accepted", resolved.Status);
+
+        var snapshot = await WaitForSnapshotAsync(
+            pulse,
+            session.Id,
+            current => current.CurrentTurn.State == "completed" &&
+                       current.Requests.Any(request => request.Kind == "command_execution_approval" && request.Decision == "accept"));
+        Assert.NotNull(snapshot);
+        Assert.Contains("images=1", snapshot!.Streams.AssistantText, StringComparison.Ordinal);
+        Assert.Contains(snapshot.Requests, request => request.Kind == "command_execution_approval" && request.Decision == "accept");
+
+        Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+        Assert.Equal("mtagenthost-stdio", runtimeSnapshot.TransportKey);
+        Assert.Equal("ready", runtimeSnapshot.Status);
+        Assert.Contains("images=1", runtimeSnapshot.AssistantText ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SessionLensRuntimeService_CanResolveMtAgentHostCodexUserInput()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var pulse = new SessionLensPulseService();
+        var ingress = new SessionLensHostIngressService(pulse);
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+        await using var sessionManager = new TtyHostSessionManager();
+        var profileService = new AiCliProfileService();
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+        var session = new SessionInfoDto
+        {
+            Id = "session-runtime-codex-user-1",
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "codex"
+        };
+
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        Assert.True(attached);
+
+        _ = await runtime.StartTurnAsync(
+            session.Id,
+            new LensTurnRequest
+            {
+                Text = "Inspect the repo and ask user for the mode.",
+                Attachments = []
+            });
+
+        var requestSnapshot = await WaitForSnapshotAsync(
+            pulse,
+            session.Id,
+            current => current.Requests.Any(request => request.Kind == "tool_user_input" && request.State == "open"));
+        Assert.NotNull(requestSnapshot);
+        var pendingRequest = Assert.Single(requestSnapshot!.Requests, request => request.Kind == "tool_user_input" && request.State == "open");
+
+        var resolved = await runtime.ResolveUserInputAsync(
+            session.Id,
+            pendingRequest.RequestId,
+            new LensUserInputAnswerRequest
+            {
+                Answers =
+                [
+                    new LensPulseAnsweredQuestion
+                    {
+                        QuestionId = "choice",
+                        Answers = ["Safe"]
+                    }
+                ]
+            });
+
+        Assert.Equal("accepted", resolved.Status);
+
+        var snapshot = await WaitForSnapshotAsync(
+            pulse,
+            session.Id,
+            current => current.CurrentTurn.State == "completed" &&
+                       current.Requests.Any(request => request.Kind == "tool_user_input" &&
+                                                       request.Answers.Any(answer => answer.QuestionId == "choice" &&
+                                                                                    answer.Answers.Contains("Safe", StringComparer.Ordinal))));
+        Assert.NotNull(snapshot);
+        Assert.Contains(
+            snapshot!.Requests,
+            request => request.Kind == "tool_user_input" &&
+                       request.Answers.Any(answer => answer.QuestionId == "choice" &&
+                                                    answer.Answers.Contains("Safe", StringComparer.Ordinal)));
+    }
+
+    [Fact]
+    public async Task SessionLensRuntimeService_CanInterruptMtAgentHostCodexTurn()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var pulse = new SessionLensPulseService();
+        var ingress = new SessionLensHostIngressService(pulse);
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+        await using var sessionManager = new TtyHostSessionManager();
+        var profileService = new AiCliProfileService();
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+        var session = new SessionInfoDto
+        {
+            Id = "session-runtime-codex-interrupt-1",
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "codex"
+        };
+
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        Assert.True(attached);
+
+        _ = await runtime.StartTurnAsync(
+            session.Id,
+            new LensTurnRequest
+            {
+                Text = "Run a turn that will be interrupted.",
+                Attachments = []
+            });
+
+        var startedSnapshot = await WaitForSnapshotAsync(
+            pulse,
+            session.Id,
+            current => !string.IsNullOrWhiteSpace(current.CurrentTurn.TurnId) &&
+                       string.Equals(current.CurrentTurn.State, "running", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(startedSnapshot);
+
+        var interrupted = await runtime.InterruptTurnAsync(
+            session.Id,
+            new LensInterruptRequest
+            {
+                TurnId = startedSnapshot!.CurrentTurn.TurnId
+            });
+
+        Assert.Equal("accepted", interrupted.Status);
+
+        var finalSnapshot = await WaitForSnapshotAsync(
+            pulse,
+            session.Id,
+            current => string.Equals(current.CurrentTurn.State, "interrupted", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(finalSnapshot);
+        Assert.Equal("Interrupted", finalSnapshot!.CurrentTurn.StateLabel);
+
+        var events = await WaitForEventsAsync(
+            pulse,
+            session.Id,
+            current => current.Events.Any(lensEvent => lensEvent.Type == "turn.aborted"));
+        Assert.Contains(
+            events.Events,
+            lensEvent => lensEvent.Type == "turn.aborted" &&
+                         string.Equals(lensEvent.TurnCompleted?.StopReason, "interrupt", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<LensPulseEventListResponse> WaitForEventsAsync(
+        SessionLensPulseService pulse,
+        string sessionId,
+        Func<LensPulseEventListResponse, bool> predicate)
+    {
+        for (var i = 0; i < 80; i++)
+        {
+            var events = pulse.GetEvents(sessionId);
+            if (predicate(events))
+            {
+                return events;
+            }
+
+            await Task.Delay(25);
+        }
+
+        return pulse.GetEvents(sessionId);
+    }
+
+    private static async Task<LensPulseSnapshotResponse?> WaitForSnapshotAsync(
+        SessionLensPulseService pulse,
+        string sessionId,
+        Func<LensPulseSnapshotResponse, bool> predicate)
+    {
+        for (var i = 0; i < 80; i++)
+        {
+            var snapshot = pulse.GetSnapshot(sessionId);
+            if (snapshot is not null && predicate(snapshot))
+            {
+                return snapshot;
+            }
+
+            await Task.Delay(25);
+        }
+
+        return pulse.GetSnapshot(sessionId);
+    }
+}

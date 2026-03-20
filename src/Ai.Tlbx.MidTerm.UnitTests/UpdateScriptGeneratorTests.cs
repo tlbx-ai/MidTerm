@@ -201,6 +201,31 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void GenerateUpdateScript_ManagesMtAgentHostAlongsideMt()
+    {
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.WebOnly,
+                deleteSourceAfter: true));
+
+        Assert.Contains("mtagenthost", scriptText, StringComparison.Ordinal);
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains("$CurrentAgentHost", scriptText, StringComparison.Ordinal);
+            Assert.Contains("$NewAgentHost", scriptText, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("CURRENT_AGENTHOST=", scriptText, StringComparison.Ordinal);
+            Assert.Contains("NEW_AGENTHOST=", scriptText, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void GenerateUpdateScript_Linux_StoresBackupsOutsideInstallDirectory()
     {
         if (OperatingSystem.IsWindows())

@@ -134,7 +134,11 @@ public static class ServerSetup
         builder.Services.AddSingleton<AiCliProfileService>();
         builder.Services.AddSingleton<AiCliCapabilityService>();
         builder.Services.AddSingleton<SessionAgentFeedService>();
+        builder.Services.AddSingleton<SessionLensPulseService>();
+        builder.Services.AddSingleton<SessionLensHostIngressService>();
+        builder.Services.AddSingleton<SessionLensHostRuntimeService>();
         builder.Services.AddSingleton<SessionSupervisorService>();
+        builder.Services.AddSingleton<SessionLensRuntimeService>();
         builder.Services.AddSingleton<SessionAgentVibeService>();
         builder.Services.AddSingleton<WorkerSessionRegistryService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>

@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>mtagenthost</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;BeforeCompile">
+    <Exec Command="node -p &quot;require('./src/version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/../.." ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
+    </Exec>
+    <PropertyGroup>
+      <Version>$(WebVersion)</Version>
+    </PropertyGroup>
+  </Target>
+
+  <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(IsPublishing)' == 'true'">
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <IlcTrimMetadata>true</IlcTrimMetadata>
+    <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
+    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+    <StackTraceSupport>true</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+    <UseSizeOptimizedLinq>false</UseSizeOptimizedLinq>
+    <DebuggerSupport>false</DebuggerSupport>
+    <DebugType>none</DebugType>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
+    <Http3Support>false</Http3Support>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <MetricsSupport>false</MetricsSupport>
+    <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPublishing)' == 'true' And $(RuntimeIdentifier.StartsWith('win'))">
+    <LinkerArg Include="/OPT:REF" />
+    <LinkerArg Include="/OPT:ICF" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
+  </ItemGroup>
+
+</Project>

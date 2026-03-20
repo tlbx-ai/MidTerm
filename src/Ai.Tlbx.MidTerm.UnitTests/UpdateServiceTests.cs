@@ -351,6 +351,7 @@ public sealed class UpdateServiceTests : IDisposable
 
         Assert.Contains("BACKUP_DIR=", script, StringComparison.Ordinal);
         Assert.Contains("rollback()", script, StringComparison.Ordinal);
+        Assert.Contains("mtagenthost", script, StringComparison.Ordinal);
         Assert.Contains("write_result false \"Failed to apply staged update\"", script, StringComparison.Ordinal);
         Assert.Contains("\"logFile\": \"$LOG_FILE\"", script, StringComparison.Ordinal);
         Assert.Contains("exec \"$INSTALL_DIR/mt\" \"$@\"", script, StringComparison.Ordinal);

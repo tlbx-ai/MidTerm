@@ -117,6 +117,8 @@ describe('tabManager', () => {
     expect(getActiveTab('s1')).toBe('agent');
     expect(terminalPanel?.children).toContain(terminalContainer);
     expect(agentPanel?.children).not.toContain(terminalContainer);
+    expect(terminalPanel?.classList.remove).toHaveBeenCalledWith('active');
+    expect(agentPanel?.classList.add).toHaveBeenCalledWith('active');
 
     switchTab('s1', 'terminal');
 
