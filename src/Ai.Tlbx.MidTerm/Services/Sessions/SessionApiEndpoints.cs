@@ -52,7 +52,9 @@ public static partial class SessionApiEndpoints
         UpdateService updateService,
         WebPreviewService webPreviewService,
         SessionTelemetryService sessionTelemetry,
+        SessionAgentFeedService agentFeed,
         SessionSupervisorService sessionSupervisor,
+        SessionAgentVibeService agentVibe,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry)
     {
@@ -156,6 +158,12 @@ public static partial class SessionApiEndpoints
                 slashCommands,
                 request.LaunchDelayMs,
                 request.SlashCommandDelayMs);
+            agentFeed.NoteWorkerBootstrap(
+                sessionId,
+                resolvedProfile,
+                launchCommand,
+                slashCommands,
+                guidanceInjected);
             foreach (var slashCommand in slashCommands)
             {
                 var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
@@ -204,6 +212,7 @@ public static partial class SessionApiEndpoints
         app.MapDelete("/api/sessions/{id}", async (string id) =>
         {
             workerSessionRegistry.Forget(id);
+            agentFeed.Forget(id);
             await sessionManager.CloseSessionAsync(id);
             return Results.Ok();
         });
@@ -282,6 +291,7 @@ public static partial class SessionApiEndpoints
             }
 
             await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            agentFeed.NoteKeyInput(id, request);
             return Results.Ok();
         });
 
@@ -312,6 +322,8 @@ public static partial class SessionApiEndpoints
             }
 
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
+            var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
+            agentFeed.NotePrompt(id, resolvedProfile, request);
             return Results.Ok();
         });
 
@@ -371,6 +383,36 @@ public static partial class SessionApiEndpoints
 
             var response = sessionTelemetry.GetActivity(id, seconds, bellLimit);
             return Results.Json(response, AppJsonContext.Default.SessionActivityResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/agent", async (
+            string id,
+            int tailLines = 80,
+            int activitySeconds = 90,
+            int bellLimit = 8,
+            CancellationToken ct = default) =>
+        {
+            var response = await agentVibe.BuildVibeAsync(id, tailLines, activitySeconds, bellLimit, ct);
+            return response is null
+                ? Results.NotFound()
+                : Results.Json(response, AppJsonContext.Default.AgentSessionVibeResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/agent/feed", async (
+            string id,
+            int tailLines = 80,
+            int activitySeconds = 90,
+            int bellLimit = 8,
+            CancellationToken ct = default) =>
+        {
+            var vibe = await agentVibe.BuildVibeAsync(id, tailLines, activitySeconds, bellLimit, ct);
+            if (vibe is null)
+            {
+                return Results.NotFound();
+            }
+
+            var feed = agentFeed.GetFeed(id, vibe.Activities, vibe.GeneratedAt);
+            return Results.Json(feed, AppJsonContext.Default.AgentSessionFeedResponse);
         });
 
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>

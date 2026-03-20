@@ -37,6 +37,17 @@ export type CreateSessionRequest = Schemas['CreateSessionRequest'];
 export type RenameSessionRequest = Schemas['RenameSessionRequest'];
 export type ResizeRequest = Schemas['ResizeRequest'];
 export type ResizeResponse = Schemas['ResizeResponse'];
+export type SessionPromptRequest = Schemas['SessionPromptRequest'];
+export type AgentSessionFeedResponse = Schemas['AgentSessionFeedResponse'];
+export type AgentSessionVibeChip = Schemas['AgentSessionVibeChip'];
+export type AgentSessionVibeHeader = Schemas['AgentSessionVibeHeader'];
+export type AgentSessionVibeLane = Schemas['AgentSessionVibeLane'];
+export type AgentSessionVibeCapability = Schemas['AgentSessionVibeCapability'];
+export type AgentSessionVibeOverview = Schemas['AgentSessionVibeOverview'];
+export type AgentSessionVibeActivity = Schemas['AgentSessionVibeActivity'];
+export type AgentSessionVibeHeatSample = Schemas['SessionActivityHeatSample'];
+export type AgentSessionVibeTerminal = Schemas['AgentSessionVibeTerminal'];
+export type AgentSessionVibeResponse = Schemas['AgentSessionVibeResponse'];
 
 // Settings
 export type MidTermSettingsPublic = Schemas['MidTermSettingsPublic'];

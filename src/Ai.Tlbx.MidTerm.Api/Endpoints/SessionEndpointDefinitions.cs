@@ -87,6 +87,14 @@ public static class SessionEndpointDefinitions
             await handler.GetActivityAsync(id, seconds, bellLimit))
             .Produces<SessionActivityResponse>(StatusCodes.Status200OK, "application/json");
 
+        app.MapGet("/api/sessions/{id}/agent", async (string id, ISessionHandler handler, int tailLines = 80, int activitySeconds = 90, int bellLimit = 8) =>
+            await handler.GetAgentVibeAsync(id, tailLines, activitySeconds, bellLimit))
+            .Produces<AgentSessionVibeResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/sessions/{id}/agent/feed", async (string id, ISessionHandler handler, int tailLines = 80, int activitySeconds = 90, int bellLimit = 8) =>
+            await handler.GetAgentFeedAsync(id, tailLines, activitySeconds, bellLimit))
+            .Produces<AgentSessionFeedResponse>(StatusCodes.Status200OK, "application/json");
+
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, ISessionHandler handler, bool auto = false) =>
             await handler.RenameSessionAsync(id, request, auto))
             .Produces(StatusCodes.Status200OK);

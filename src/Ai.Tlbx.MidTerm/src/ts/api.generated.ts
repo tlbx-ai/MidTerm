@@ -985,6 +985,88 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/{id}/agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          tailLines?: number;
+          activitySeconds?: number;
+          bellLimit?: number;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentSessionVibeResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{id}/agent/feed': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          tailLines?: number;
+          activitySeconds?: number;
+          bellLimit?: number;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentSessionFeedResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sessions/{id}/name': {
     parameters: {
       query?: never;
@@ -3401,6 +3483,80 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    AgentSessionFeedResponse: {
+      sessionId: string;
+      source: string;
+      /** Format: date-time */
+      generatedAt: string;
+      activities: components['schemas']['AgentSessionVibeActivity'][];
+    };
+    AgentSessionVibeActivity: {
+      id: string;
+      tone: string;
+      kind: string;
+      summary: string;
+      detail: null | string;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    AgentSessionVibeCapability: {
+      key: string;
+      label: string;
+      status: string;
+      statusLabel: string;
+      detail: string;
+    };
+    AgentSessionVibeChip: {
+      text: string;
+      tone: string;
+    };
+    AgentSessionVibeHeader: {
+      title: string;
+      subtitle: string;
+      provider: string;
+      providerLabel: string;
+      state: string;
+      stateLabel: string;
+      needsAttention: boolean;
+      attentionReason: null | string;
+      transportSummary: string;
+      chips: components['schemas']['AgentSessionVibeChip'][];
+    };
+    AgentSessionVibeLane: {
+      mode: string;
+      tone: string;
+      label: string;
+      detail: string;
+    };
+    AgentSessionVibeOverview: {
+      stateValue: string;
+      stateMeta: string;
+      activityValue: string;
+      activityMeta: string;
+      lastOutputValue: string;
+      lastOutputMeta: string;
+      bellsValue: string;
+      bellsMeta: string;
+    };
+    AgentSessionVibeResponse: {
+      sessionId: string;
+      source: string;
+      /** Format: date-time */
+      generatedAt: string;
+      header: components['schemas']['AgentSessionVibeHeader'];
+      lane: components['schemas']['AgentSessionVibeLane'];
+      capabilities: components['schemas']['AgentSessionVibeCapability'][];
+      overview: components['schemas']['AgentSessionVibeOverview'];
+      activities: components['schemas']['AgentSessionVibeActivity'][];
+      heatmap: components['schemas']['SessionActivityHeatSample'][];
+      terminal: components['schemas']['AgentSessionVibeTerminal'];
+    };
+    AgentSessionVibeTerminal: {
+      /** Format: int32 */
+      tailLineCount: number;
+      tailText: string;
+      emptyMessage: string;
+    };
     ApiKeyInfoResponse: {
       id: string;
       name: string;

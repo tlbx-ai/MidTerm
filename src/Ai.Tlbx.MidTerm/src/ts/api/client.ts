@@ -14,6 +14,7 @@ import type {
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
   CreateSessionRequest,
+  SessionPromptRequest,
   CreateHistoryRequest,
   HistoryPatchRequest,
   CreateShareLinkRequest,
@@ -21,6 +22,8 @@ import type {
   ClaimShareRequest,
   ClaimShareResponse,
   ShareBootstrapResponse,
+  AgentSessionFeedResponse,
+  AgentSessionVibeResponse,
 } from './types';
 
 const client = createClient<paths>({ baseUrl: '' });
@@ -142,6 +145,52 @@ export async function setSessionControl(id: string, agentControlled: boolean): P
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ agentControlled }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
+export async function getSessionAgentVibe(
+  id: string,
+  tailLines: number,
+  activitySeconds: number,
+  bellLimit: number,
+): Promise<AgentSessionVibeResponse> {
+  const { data } = await client.GET('/api/sessions/{id}/agent', {
+    params: {
+      path: { id },
+      query: { tailLines, activitySeconds, bellLimit },
+    },
+  });
+
+  return data as AgentSessionVibeResponse;
+}
+
+export async function getSessionAgentFeed(
+  id: string,
+  tailLines: number,
+  activitySeconds: number,
+  bellLimit: number,
+): Promise<AgentSessionFeedResponse> {
+  const { data } = await client.GET('/api/sessions/{id}/agent/feed', {
+    params: {
+      path: { id },
+      query: { tailLines, activitySeconds, bellLimit },
+    },
+  });
+
+  return data as AgentSessionFeedResponse;
+}
+
+export async function sendSessionPrompt(id: string, request: SessionPromptRequest): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/input/prompt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
   });
 
   if (!response.ok) {

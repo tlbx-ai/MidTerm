@@ -781,6 +781,118 @@
         }
       }
     },
+    "/api/sessions/{id}/agent": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tailLines",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 80
+            }
+          },
+          {
+            "name": "activitySeconds",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 90
+            }
+          },
+          {
+            "name": "bellLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionVibeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/agent/feed": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tailLines",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 80
+            }
+          },
+          {
+            "name": "activitySeconds",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 90
+            }
+          },
+          {
+            "name": "bellLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionFeedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/name": {
       "put": {
         "tags": [
@@ -2662,6 +2774,302 @@
   },
   "components": {
     "schemas": {
+      "AgentSessionFeedResponse": {
+        "required": [
+          "sessionId",
+          "source",
+          "generatedAt",
+          "activities"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "activities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeActivity"
+            }
+          }
+        }
+      },
+      "AgentSessionVibeActivity": {
+        "required": [
+          "id",
+          "tone",
+          "kind",
+          "summary",
+          "detail",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentSessionVibeCapability": {
+        "required": [
+          "key",
+          "label",
+          "status",
+          "statusLabel",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeChip": {
+        "required": [
+          "text",
+          "tone"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeHeader": {
+        "required": [
+          "title",
+          "subtitle",
+          "provider",
+          "providerLabel",
+          "state",
+          "stateLabel",
+          "needsAttention",
+          "attentionReason",
+          "transportSummary",
+          "chips"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providerLabel": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "boolean"
+          },
+          "attentionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "transportSummary": {
+            "type": "string"
+          },
+          "chips": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeChip"
+            }
+          }
+        }
+      },
+      "AgentSessionVibeLane": {
+        "required": [
+          "mode",
+          "tone",
+          "label",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeOverview": {
+        "required": [
+          "stateValue",
+          "stateMeta",
+          "activityValue",
+          "activityMeta",
+          "lastOutputValue",
+          "lastOutputMeta",
+          "bellsValue",
+          "bellsMeta"
+        ],
+        "type": "object",
+        "properties": {
+          "stateValue": {
+            "type": "string"
+          },
+          "stateMeta": {
+            "type": "string"
+          },
+          "activityValue": {
+            "type": "string"
+          },
+          "activityMeta": {
+            "type": "string"
+          },
+          "lastOutputValue": {
+            "type": "string"
+          },
+          "lastOutputMeta": {
+            "type": "string"
+          },
+          "bellsValue": {
+            "type": "string"
+          },
+          "bellsMeta": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeResponse": {
+        "required": [
+          "sessionId",
+          "source",
+          "generatedAt",
+          "header",
+          "lane",
+          "capabilities",
+          "overview",
+          "activities",
+          "heatmap",
+          "terminal"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "header": {
+            "$ref": "#/components/schemas/AgentSessionVibeHeader"
+          },
+          "lane": {
+            "$ref": "#/components/schemas/AgentSessionVibeLane"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeCapability"
+            }
+          },
+          "overview": {
+            "$ref": "#/components/schemas/AgentSessionVibeOverview"
+          },
+          "activities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeActivity"
+            }
+          },
+          "heatmap": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionActivityHeatSample"
+            }
+          },
+          "terminal": {
+            "$ref": "#/components/schemas/AgentSessionVibeTerminal"
+          }
+        }
+      },
+      "AgentSessionVibeTerminal": {
+        "required": [
+          "tailLineCount",
+          "tailText",
+          "emptyMessage"
+        ],
+        "type": "object",
+        "properties": {
+          "tailLineCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tailText": {
+            "type": "string"
+          },
+          "emptyMessage": {
+            "type": "string"
+          }
+        }
+      },
       "ApiKeyInfoResponse": {
         "required": [
           "id",

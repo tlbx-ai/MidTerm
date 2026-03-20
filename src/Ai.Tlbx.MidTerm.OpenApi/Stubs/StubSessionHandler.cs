@@ -75,6 +75,12 @@ public class StubSessionHandler : ISessionHandler
     public Task<IResult> GetActivityAsync(string id, int seconds, int bellLimit) =>
         Task.FromResult<IResult>(Results.Json(new SessionActivityResponse { SessionId = id }));
 
+    public Task<IResult> GetAgentVibeAsync(string id, int tailLines, int activitySeconds, int bellLimit) =>
+        Task.FromResult<IResult>(Results.Json(new AgentSessionVibeResponse { SessionId = id }));
+
+    public Task<IResult> GetAgentFeedAsync(string id, int tailLines, int activitySeconds, int bellLimit) =>
+        Task.FromResult<IResult>(Results.Json(new AgentSessionFeedResponse { SessionId = id }));
+
     public Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto) =>
         Task.FromResult<IResult>(Results.Ok());
 

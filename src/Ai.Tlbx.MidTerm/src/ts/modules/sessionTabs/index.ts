@@ -12,6 +12,7 @@ export {
   getSessionWrapper,
   getTabPanel,
   getActiveTab,
+  isTabAvailable,
   getTabBarHeight,
   setActionButtonActive,
   updateGitIndicatorForSession,
@@ -20,12 +21,16 @@ export {
   updateSessionCwd,
   onTabActivated,
   onTabDeactivated,
+  syncSessionTabCapabilities,
 } from './tabManager';
 export type { SessionTabId } from './tabBar';
 export type { IdeBarActionId } from './tabBar';
 export {
+  isTabVisible,
   setCommandsClickHandler,
   setGitClickHandler,
+  setLensClickHandler,
   setShareClickHandler,
+  setTabVisible,
   setWebClickHandler,
 } from './tabBar';

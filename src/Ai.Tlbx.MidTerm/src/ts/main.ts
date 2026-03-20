@@ -118,9 +118,13 @@ import {
   initSessionTabs,
   ensureSessionWrapper,
   destroySessionWrapper,
+  getActiveTab,
+  isTabAvailable,
   reparentTerminalContainer,
+  setActionButtonActive,
   switchTab,
 } from './modules/sessionTabs';
+import { initAgentView, destroyAgentView } from './modules/agentView';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
@@ -284,6 +288,7 @@ async function init(): Promise<void> {
   initMobilePiP();
   initManagerBar();
   initSessionTabs();
+  initAgentView();
   initFileBrowser();
   initGitPanel();
   connectGitWebSocket();
@@ -645,6 +650,8 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const sessionInfo = getSession(sessionId);
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
+  const activeTab = getActiveTab(sessionId);
+  const lensActive = activeTab === 'agent';
 
   // Ensure session wrapper with tabs (standalone mode only)
   const tabState = ensureSessionWrapper(sessionId);
@@ -661,10 +668,13 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   if (isLayoutActive()) {
     getLayoutRoot()?.classList.add('hidden');
   }
+  setActionButtonActive('lens', lensActive);
 
   requestAnimationFrame(() => {
     refreshTerminalPresentation(sessionId, state);
-    state.terminal.focus();
+    if (!lensActive) {
+      state.terminal.focus();
+    }
     if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
       scrollToBottom(sessionId);
     }
@@ -708,6 +718,7 @@ function deleteSession(sessionId: string): void {
   // Remove session tab wrapper, feature panels, and dock state
   removeSessionDockState(sessionId);
   removeSmartInputSessionState(sessionId);
+  destroyAgentView(sessionId);
   destroyFileBrowser(sessionId);
   destroyGitSession(sessionId);
   destroyCommandsSession(sessionId);
@@ -1247,12 +1258,16 @@ function clickActiveSessionTabBarControl(selector: string): void {
 }
 
 function syncMobileTabActionState(): void {
-  const tabBar = getActiveSessionTabBar();
-  const activeTab = tabBar?.querySelector('.session-tab.active')?.getAttribute('data-tab');
+  const activeSessionId = $activeSessionId.get();
+  const activeTab = activeSessionId ? getActiveTab(activeSessionId) : null;
   const terminalBtn = document.getElementById('btn-mobile-tab-terminal');
+  const agentBtn = document.getElementById('btn-mobile-tab-agent');
   const filesBtn = document.getElementById('btn-mobile-tab-files');
+  const agentVisible = activeSessionId ? isTabAvailable(activeSessionId, 'agent') : false;
 
   terminalBtn?.classList.toggle('active', activeTab === 'terminal');
+  agentBtn?.toggleAttribute('hidden', !agentVisible);
+  agentBtn?.classList.toggle('active', activeTab === 'agent');
   filesBtn?.classList.toggle('active', activeTab === 'files');
 }
 
@@ -1380,6 +1395,13 @@ function bindEvents(): void {
     const activeId = $activeSessionId.get();
     if (activeId) {
       switchTab(activeId, 'terminal');
+      syncMobileTabActionState();
+    }
+  });
+  bindClick('btn-mobile-tab-agent', () => {
+    const activeId = $activeSessionId.get();
+    if (activeId && isTabAvailable(activeId, 'agent')) {
+      switchTab(activeId, 'agent', { forceHidden: true });
       syncMobileTabActionState();
     }
   });

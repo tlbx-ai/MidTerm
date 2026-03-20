@@ -9,14 +9,17 @@ import { createLogger } from '../logging';
 import type { SessionTabId, IdeBarActionId } from './tabBar';
 import {
   createTabBar,
+  isTabVisible,
   setActiveTab,
   setActionActive,
+  setTabVisible,
   updateCwd,
   updateGitIndicator,
 } from './tabBar';
-import { $processStates } from '../../stores';
+import { $processStates, $sessionList } from '../../stores';
 import { sessionTerminals } from '../../state';
 import type { GitStatusResponse } from '../git/types';
+import type { Session } from '../../types';
 
 const log = createLogger('tabManager');
 
@@ -25,6 +28,7 @@ interface SessionTabState {
   tabBar: HTMLDivElement;
   panels: Record<SessionTabId, HTMLDivElement>;
   activeTab: SessionTabId;
+  lensAvailable: boolean;
 }
 
 const sessionTabStates = new Map<string, SessionTabState>();
@@ -33,6 +37,21 @@ const tabActivationCallbacks: Partial<
   Record<SessionTabId, (sessionId: string, panel: HTMLDivElement) => void>
 > = {};
 const tabDeactivationCallbacks: Partial<Record<SessionTabId, (sessionId: string) => void>> = {};
+
+function isInteractiveAgentProfile(profile: string | null | undefined): boolean {
+  return (
+    profile === 'codex' ||
+    profile === 'claude' ||
+    profile === 'open-code' ||
+    profile === 'generic-ai'
+  );
+}
+
+function shouldShowAgentTab(session: Session | null | undefined): boolean {
+  return (
+    session?.agentControlled === true || isInteractiveAgentProfile(session?.supervisor?.profile)
+  );
+}
 
 export function onTabActivated(
   tab: SessionTabId,
@@ -60,7 +79,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const panelsContainer = document.createElement('div');
   panelsContainer.className = 'session-tab-panels';
 
-  const tabs: SessionTabId[] = ['terminal', 'files'];
+  const tabs: SessionTabId[] = ['terminal', 'agent', 'files'];
   const panels = {} as Record<SessionTabId, HTMLDivElement>;
 
   for (const tabId of tabs) {
@@ -68,6 +87,10 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     panel.className = 'session-tab-panel';
     if (tabId === 'terminal') panel.classList.add('active');
     panel.dataset.panel = tabId;
+
+    if (tabId === 'agent') {
+      panel.classList.add('agent-tab-panel');
+    }
 
     if (tabId === 'files') {
       panel.innerHTML =
@@ -86,6 +109,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     tabBar,
     panels,
     activeTab: 'terminal',
+    lensAvailable: false,
   };
 
   sessionTabStates.set(sessionId, state);
@@ -99,6 +123,11 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   if (processState?.foregroundCwd) {
     updateCwd(tabBar, processState.foregroundCwd);
   }
+
+  syncSessionTabCapabilities(
+    sessionId,
+    $sessionList.get().find((session) => session.id === sessionId) ?? null,
+  );
 
   return state;
 }
@@ -123,9 +152,49 @@ export function getActiveTab(sessionId: string): SessionTabId {
   return sessionTabStates.get(sessionId)?.activeTab ?? 'terminal';
 }
 
-export function switchTab(sessionId: string, tab: SessionTabId): void {
+export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
+  const state = sessionTabStates.get(sessionId);
+  if (!state) {
+    return tab !== 'agent';
+  }
+
+  if (tab === 'agent') {
+    return state.lensAvailable;
+  }
+
+  return isTabVisible(state.tabBar, tab);
+}
+
+export function syncSessionTabCapabilities(
+  sessionId: string,
+  session: Session | null | undefined,
+): void {
+  const state = sessionTabStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  const showAgentTab = shouldShowAgentTab(session);
+  state.lensAvailable = showAgentTab;
+  setTabVisible(state.tabBar, 'agent', false);
+
+  if (!showAgentTab && state.activeTab === 'agent') {
+    switchTab(sessionId, 'terminal');
+  }
+}
+
+export function switchTab(
+  sessionId: string,
+  tab: SessionTabId,
+  options?: { forceHidden?: boolean },
+): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) return;
+  if (tab === 'agent') {
+    if (!state.lensAvailable) return;
+  } else if (!options?.forceHidden && !isTabVisible(state.tabBar, tab)) {
+    return;
+  }
 
   const previousTab = state.activeTab;
   if (previousTab === tab) return;
@@ -193,6 +262,12 @@ export function initSessionTabs(): void {
       if (processState.foregroundCwd) {
         updateSessionCwd(sessionId, processState.foregroundCwd);
       }
+    }
+  });
+
+  $sessionList.subscribe((sessions) => {
+    for (const session of sessions) {
+      syncSessionTabCapabilities(session.id, session);
     }
   });
 

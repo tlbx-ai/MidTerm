@@ -12,9 +12,12 @@
  * Touch keys: the touch controller bar is embedded as a collapsible second row.
  */
 
+import { sendSessionPrompt } from '../../api/client';
 import { $currentSettings, $activeSessionId } from '../../stores';
 import { sendInput } from '../comms';
 import { t } from '../i18n';
+import { isLensActiveSession, createLensPromptRequest } from '../lens/input';
+import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { handleFileDrop, pasteToTerminal } from '../terminal';
 import { hideTouchController } from '../touchController';
 import { startTranscription, stopTranscription } from './transcription';
@@ -33,15 +36,27 @@ const SMART_INPUT_SUBMIT_DELAY_MS = 200;
 const sessionDrafts = new Map<string, string>();
 
 export function isSmartInputMode(): boolean {
+  if (isLensActiveSession($activeSessionId.get())) {
+    return true;
+  }
+
   const mode = $currentSettings.get()?.inputMode;
   return mode === 'smartinput';
 }
 
 export function isBothMode(): boolean {
+  if (isLensActiveSession($activeSessionId.get())) {
+    return false;
+  }
+
   return $currentSettings.get()?.inputMode === 'both';
 }
 
 function hasSmartInput(): boolean {
+  if (isLensActiveSession($activeSessionId.get())) {
+    return true;
+  }
+
   const mode = $currentSettings.get()?.inputMode;
   return mode === 'smartinput' || mode === 'both';
 }
@@ -51,24 +66,24 @@ export function initSmartInput(): void {
     persistDraftForSession(lastSessionId);
     lastSessionId = sessionId;
     syncDraftForActiveSession();
+    syncSmartInputVisibility(isLensActiveSession(sessionId));
   });
 
   $currentSettings.subscribe((settings) => {
     if (!settings) return;
     persistDraftForSession($activeSessionId.get());
-    if (settings.inputMode === 'smartinput') {
-      hideSmartInput();
-      const activeId = $activeSessionId.get();
-      if (activeId) {
-        showSmartInput();
-      }
-    } else if (settings.inputMode === 'both') {
-      hideSmartInput();
-      showDockedBar();
-    } else {
-      hideSmartInput();
-      hideDockedBar();
-      releaseTouchController();
+    syncSmartInputVisibility();
+  });
+
+  onTabActivated('agent', (sessionId) => {
+    if ($activeSessionId.get() === sessionId) {
+      syncSmartInputVisibility(true);
+    }
+  });
+
+  onTabDeactivated('agent', (sessionId) => {
+    if ($activeSessionId.get() === sessionId) {
+      syncSmartInputVisibility();
     }
   });
 
@@ -97,6 +112,37 @@ export function hideSmartInput(): void {
     releaseTouchController();
   }
   dockedBar?.classList.remove('visible');
+}
+
+function syncSmartInputVisibility(focusTextarea: boolean = false): void {
+  const activeId = $activeSessionId.get();
+  if (isLensActiveSession(activeId)) {
+    showDockedBar(focusTextarea);
+    return;
+  }
+
+  const settings = $currentSettings.get();
+  if (!settings) {
+    return;
+  }
+
+  if (settings.inputMode === 'smartinput') {
+    hideSmartInput();
+    if (activeId) {
+      showSmartInput();
+    }
+    return;
+  }
+
+  if (settings.inputMode === 'both') {
+    hideSmartInput();
+    showDockedBar(focusTextarea);
+    return;
+  }
+
+  hideSmartInput();
+  hideDockedBar();
+  releaseTouchController();
 }
 
 function showDockedBar(focusTextarea: boolean = false): void {
@@ -434,6 +480,11 @@ function updateAutoSendVisibility(): void {
 }
 
 async function submitSmartInput(sessionId: string, text: string): Promise<void> {
+  if (isLensActiveSession(sessionId)) {
+    await sendSessionPrompt(sessionId, createLensPromptRequest(text));
+    return;
+  }
+
   // Smart Input is closer to a paste/submit workflow than raw keyboard input.
   // Using the shared paste path preserves BPM handling, and a short settle
   // delay before Enter is more reliable for JS TUIs such as Codex.

@@ -174,6 +174,7 @@ public class Program
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
         var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();
+        var agentFeed = app.Services.GetRequiredService<SessionAgentFeedService>();
         var sessionSupervisor = app.Services.GetRequiredService<SessionSupervisorService>();
         var aiCliProfileService = app.Services.GetRequiredService<AiCliProfileService>();
         var workerSessionRegistry = app.Services.GetRequiredService<WorkerSessionRegistryService>();
@@ -221,6 +222,7 @@ public class Program
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
+            agentFeed.NoteForeground(sessionId, payload);
             var session = sessionManager.GetSession(sessionId);
             if (session is not null && !string.IsNullOrEmpty(payload.Name) && !string.IsNullOrEmpty(payload.Cwd))
             {
@@ -253,6 +255,7 @@ public class Program
             shareGrantService.RevokeBySession(sessionId);
             sessionTelemetry.ClearSession(sessionId);
             workerSessionRegistry.Forget(sessionId);
+            agentFeed.Forget(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -324,7 +327,19 @@ public class Program
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        SessionApiEndpoints.MapSessionEndpoints(app, sessionManager, clipboardService, updateService, webPreviewService, sessionTelemetry, sessionSupervisor, aiCliProfileService, workerSessionRegistry);
+        var agentVibe = app.Services.GetRequiredService<SessionAgentVibeService>();
+        SessionApiEndpoints.MapSessionEndpoints(
+            app,
+            sessionManager,
+            clipboardService,
+            updateService,
+            webPreviewService,
+            sessionTelemetry,
+            agentFeed,
+            sessionSupervisor,
+            agentVibe,
+            aiCliProfileService,
+            workerSessionRegistry);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);

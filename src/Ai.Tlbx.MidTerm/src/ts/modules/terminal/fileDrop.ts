@@ -6,6 +6,8 @@
  */
 
 import { $activeSessionId } from '../../stores';
+import { sendSessionPrompt } from '../../api/client';
+import { createLensPromptRequest, isLensActiveSession } from '../lens/input';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
 import { resolveImagePasteMode } from './imagePasteMode';
@@ -461,6 +463,7 @@ export async function handleFileDrop(files: FileList): Promise<void> {
   if (!activeId || files.length === 0) return;
 
   const fileList = Array.from(files);
+  const lensActive = isLensActiveSession(activeId);
   const needsUpload = fileList.some((file) => isImageFile(file.name) || isRejectedFile(file.name));
   const needsLongTextTransfer = fileList.some(
     (file) =>
@@ -472,10 +475,13 @@ export async function handleFileDrop(files: FileList): Promise<void> {
     needsUpload || needsLongTextTransfer
       ? showTransferOverlay(
           activeId,
-          needsUpload ? t('fileDrop.uploadingToTerminal') : t('fileDrop.transferringText'),
+          needsUpload
+            ? t(lensActive ? 'fileDrop.uploadingToLens' : 'fileDrop.uploadingToTerminal')
+            : t(lensActive ? 'fileDrop.transferringTextLens' : 'fileDrop.transferringText'),
         )
       : null;
   const uploadedPaths: string[] = [];
+  const textSnippets: string[] = [];
 
   try {
     for (const file of fileList) {
@@ -503,6 +509,11 @@ export async function handleFileDrop(files: FileList): Promise<void> {
       try {
         const content = await readFileAsText(file);
         const sanitized = sanitizePasteContent(content);
+        if (lensActive) {
+          textSnippets.push(`File "${file.name}":\n${sanitized}`);
+          continue;
+        }
+
         if (overlay) {
           overlay.setLabel(t('fileDrop.transferringText'));
         }
@@ -513,7 +524,29 @@ export async function handleFileDrop(files: FileList): Promise<void> {
       }
     }
 
-    // Paste collected file paths (if any)
+    if (lensActive) {
+      const promptParts: string[] = [];
+      if (uploadedPaths.length > 0) {
+        const header =
+          uploadedPaths.length === 1
+            ? 'Attached file:'
+            : `Attached files (${uploadedPaths.length}):`;
+        promptParts.push(`${header}\n${uploadedPaths.map((path) => `- ${path}`).join('\n')}`);
+      }
+      if (textSnippets.length > 0) {
+        promptParts.push(textSnippets.join('\n\n'));
+      }
+
+      const promptText = promptParts.join('\n\n').trim();
+      if (promptText.length > 0) {
+        if (overlay) {
+          overlay.setLabel(t('fileDrop.transferringToLens'));
+        }
+        await sendSessionPrompt(activeId, createLensPromptRequest(promptText));
+      }
+      return;
+    }
+
     if (uploadedPaths.length > 0) {
       if (overlay) {
         overlay.setLabel(t('fileDrop.transferringToTerminal'));

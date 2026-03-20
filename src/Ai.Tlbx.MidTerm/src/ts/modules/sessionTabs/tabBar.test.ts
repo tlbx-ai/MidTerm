@@ -99,6 +99,8 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 
 const translations: Record<string, string> = {
   'session.terminal': 'Terminal',
+  'sessionTabs.agent': 'Lens',
+  'sessionTabs.lens': 'Lens',
   'sessionTabs.files': 'Files',
   'sessionTabs.git': 'Git',
   'sessionTabs.share': 'Share',
@@ -137,17 +139,22 @@ describe('tabBar', () => {
     const { createTabBar } = await import('./tabBar');
 
     const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
-    const actions = bar.children[3];
+    const actions = bar.querySelector('.ide-bar-actions');
+    expect(actions).not.toBeNull();
+    if (!actions) {
+      throw new Error('Expected IDE actions container');
+    }
     const buttons = actions.children;
 
-    expect(buttons.map((button) => button.dataset.action)).toEqual(['web', 'share', 'git']);
-    expect(buttons.slice(0, 2).map((button) => button.children[1]?.textContent)).toEqual([
+    expect(buttons.map((button) => button.dataset.action)).toEqual(['lens', 'web', 'share', 'git']);
+    expect(buttons.slice(0, 3).map((button) => button.children[1]?.textContent)).toEqual([
+      'Lens',
       'WEB',
       'Share',
     ]);
-    expect(buttons[2]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
-    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
-    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
+    expect(buttons[3]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
+    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
+    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
   });
 
   it('uses the registered share handler and updates git stats', async () => {
@@ -157,9 +164,13 @@ describe('tabBar', () => {
     setShareClickHandler(shareClick);
 
     const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
-    const actions = bar.children[3];
-    const shareButton = actions.children[1];
-    const gitButton = actions.children[2];
+    const actions = bar.querySelector('.ide-bar-actions');
+    expect(actions).not.toBeNull();
+    if (!actions) {
+      throw new Error('Expected IDE actions container');
+    }
+    const shareButton = actions.children[2];
+    const gitButton = actions.children[3];
 
     shareButton.click();
     expect(shareClick).toHaveBeenCalledTimes(1);

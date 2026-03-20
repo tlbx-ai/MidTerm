@@ -30,6 +30,8 @@ public interface ISessionHandler
     Task<IResult> GetBufferTextAsync(string id, bool includeBase64);
     Task<IResult> GetBufferTailAsync(string id, int lines, bool stripAnsi);
     Task<IResult> GetActivityAsync(string id, int seconds, int bellLimit);
+    Task<IResult> GetAgentVibeAsync(string id, int tailLines, int activitySeconds, int bellLimit);
+    Task<IResult> GetAgentFeedAsync(string id, int tailLines, int activitySeconds, int bellLimit);
     Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto);
     Task<IResult> SetSessionControlAsync(string id, SetSessionControlRequest request);
     Task<IResult> UploadFileAsync(string id, IFormFile file);

@@ -132,7 +132,10 @@ public static class ServerSetup
         builder.Services.AddSingleton<SessionControlStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
         builder.Services.AddSingleton<AiCliProfileService>();
+        builder.Services.AddSingleton<AiCliCapabilityService>();
+        builder.Services.AddSingleton<SessionAgentFeedService>();
         builder.Services.AddSingleton<SessionSupervisorService>();
+        builder.Services.AddSingleton<SessionAgentVibeService>();
         builder.Services.AddSingleton<WorkerSessionRegistryService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
             new TtyHostSessionManager(
