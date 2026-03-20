@@ -13,13 +13,11 @@ import {
   openLensEventStream,
   type LensPulseEvent,
   type LensPulseRequestSummary,
-  type LensPulseSnapshotResponse,
-  type LensPulseItemSummary,
   type LensPulseRuntimeNotice,
+  type LensPulseSnapshotResponse,
 } from '../../api/client';
 
 const log = createLogger('agentView');
-
 const viewStates = new Map<string, SessionLensViewState>();
 
 interface SessionLensViewState {
@@ -47,10 +45,33 @@ interface SessionLensViewState {
 }
 
 interface LensActivationTraceEntry {
-  tone: 'info' | 'positive' | 'warning' | 'attention';
+  tone: TranscriptTone;
   meta: string;
   summary: string;
   detail: string;
+}
+
+type TranscriptKind =
+  | 'user'
+  | 'assistant'
+  | 'tool'
+  | 'request'
+  | 'plan'
+  | 'diff'
+  | 'system'
+  | 'notice';
+type TranscriptTone = 'info' | 'positive' | 'warning' | 'attention';
+
+export interface LensTranscriptEntry {
+  id: string;
+  order: number;
+  kind: TranscriptKind;
+  tone: TranscriptTone;
+  label: string;
+  title: string;
+  body: string;
+  meta: string;
+  requestId?: string;
 }
 
 export function initAgentView(): void {
@@ -89,12 +110,13 @@ async function activateAgentView(sessionId: string): Promise<void> {
   state.streamConnected = false;
   state.activationTrace = [];
   state.activationError = null;
+
   setActivationState(
     state,
     'opening',
-    'Lens pane opened. Preparing native runtime attach.',
+    'Lens pane opened. Preparing transcript runtime attach.',
     'Lens pane opened.',
-    'MidTerm is switching from the terminal surface to the Lens surface for this session.',
+    'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
   );
   setActivationState(
     state,
@@ -121,21 +143,23 @@ async function activateAgentView(sessionId: string): Promise<void> {
     setActivationState(
       state,
       'loading-events',
-      'Lens snapshot is ready. Loading recent events.',
+      'Lens snapshot is ready. Loading recent transcript events.',
       'Lens snapshot ready.',
       'Loading the canonical Lens event backlog for this session.',
     );
     renderCurrentAgentView(sessionId);
+
     const eventFeed = await getLensEvents(sessionId);
     state.snapshot = snapshot;
-    state.events = eventFeed.events.slice(-60);
+    state.events = eventFeed.events.slice(-200);
     state.streamConnected = false;
+
     setActivationState(
       state,
       'connecting-stream',
       'Lens data is loaded. Connecting the live stream.',
       'Lens event backlog loaded.',
-      'Opening the live Lens event stream so the pane updates in real time.',
+      'Opening the live Lens event stream so the transcript updates in real time.',
     );
     renderCurrentAgentView(sessionId);
     openLiveLensStream(sessionId, snapshot.latestSequence);
@@ -180,6 +204,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     activationTrace: [],
     activationError: null,
   };
+
   viewStates.set(sessionId, created);
   return created;
 }
@@ -206,114 +231,49 @@ function ensureAgentViewSkeleton(sessionId: string, panel: HTMLDivElement): void
         </div>
       </div>
       <div class="agent-view-chip-row" data-agent-field="chips"></div>
-      <div class="agent-view-grid">
-        <div class="agent-view-column">
-          <article class="agent-card-grid">
-            <section class="agent-card">
-              <div class="agent-card-label">Session</div>
-              <div class="agent-card-value" data-agent-field="session-state"></div>
-              <div class="agent-card-meta" data-agent-field="session-meta"></div>
-            </section>
-            <section class="agent-card">
-              <div class="agent-card-label">Thread</div>
-              <div class="agent-card-value" data-agent-field="thread-state"></div>
-              <div class="agent-card-meta" data-agent-field="thread-meta"></div>
-            </section>
-            <section class="agent-card">
-              <div class="agent-card-label">Turn</div>
-              <div class="agent-card-value" data-agent-field="turn-state"></div>
-              <div class="agent-card-meta" data-agent-field="turn-meta"></div>
-            </section>
-            <section class="agent-card">
-              <div class="agent-card-label">Requests</div>
-              <div class="agent-card-value" data-agent-field="request-state"></div>
-              <div class="agent-card-meta" data-agent-field="request-meta"></div>
-            </section>
-          </article>
-          <section class="agent-card agent-card-wide">
+      <div class="agent-lens-layout">
+        <section class="agent-transcript-card">
+          <div class="agent-card-header">
+            <div>
+              <div class="agent-card-label">Transcript</div>
+              <div class="agent-card-meta" data-agent-field="transcript-meta"></div>
+            </div>
+          </div>
+          <div class="agent-transcript" data-agent-field="transcript"></div>
+        </section>
+        <aside class="agent-side-rail">
+          <section class="agent-card">
+            <div class="agent-card-label">Session</div>
+            <div class="agent-summary-list" data-agent-field="summary"></div>
+          </section>
+          <section class="agent-card">
             <div class="agent-card-header">
               <div>
                 <div class="agent-card-label">Requests</div>
-                <div class="agent-card-meta">Approvals and user-input prompts from the runtime.</div>
+                <div class="agent-card-meta">Open approvals and structured questions.</div>
               </div>
             </div>
-            <div class="agent-activity-list" data-agent-field="requests"></div>
+            <div class="agent-side-list" data-agent-field="requests"></div>
           </section>
-          <section class="agent-card agent-card-wide">
+          <section class="agent-card">
             <div class="agent-card-header">
               <div>
-                <div class="agent-card-label">Items</div>
-                <div class="agent-card-meta">Tool calls and message lifecycle from the canonical Lens stream.</div>
+                <div class="agent-card-label">Notices</div>
+                <div class="agent-card-meta">Warnings and runtime failures from the Lens host.</div>
               </div>
             </div>
-            <div class="agent-activity-list" data-agent-field="items"></div>
+            <div class="agent-side-list" data-agent-field="notices"></div>
           </section>
-          <section class="agent-card agent-card-wide">
+          <section class="agent-card">
             <div class="agent-card-header">
               <div>
-                <div class="agent-card-label">Timeline</div>
-                <div class="agent-card-meta">Latest canonical Lens events.</div>
+                <div class="agent-card-label">Raw Events</div>
+                <div class="agent-card-meta">Latest canonical Lens events for debugging.</div>
               </div>
             </div>
-            <div class="agent-activity-list" data-agent-field="events"></div>
+            <div class="agent-side-list" data-agent-field="events"></div>
           </section>
-        </div>
-        <div class="agent-view-column">
-          <section class="agent-card agent-card-wide agent-output-card">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Assistant Output</div>
-                <div class="agent-card-meta">Assistant text reconstructed by the backend reducer.</div>
-              </div>
-            </div>
-            <pre class="agent-output" data-agent-field="assistant-output"></pre>
-          </section>
-          <section class="agent-card agent-card-wide">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Reasoning</div>
-                <div class="agent-card-meta">Reasoning and summaries when the provider emits them.</div>
-              </div>
-            </div>
-            <pre class="agent-output" data-agent-field="reasoning-output"></pre>
-          </section>
-          <section class="agent-card agent-card-wide">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Plan</div>
-                <div class="agent-card-meta">Structured plan/proposed-plan data from the runtime.</div>
-              </div>
-            </div>
-            <pre class="agent-output" data-agent-field="plan-output"></pre>
-          </section>
-          <section class="agent-card agent-card-wide">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Tool Output</div>
-                <div class="agent-card-meta">Command and file-change output streams.</div>
-              </div>
-            </div>
-            <pre class="agent-output" data-agent-field="tool-output"></pre>
-          </section>
-          <section class="agent-card agent-card-wide">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Diff</div>
-                <div class="agent-card-meta">Latest unified diff from the canonical Lens stream.</div>
-              </div>
-            </div>
-            <pre class="agent-output" data-agent-field="diff-output"></pre>
-          </section>
-          <section class="agent-card agent-card-wide">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Runtime Notices</div>
-                <div class="agent-card-meta">Warnings and errors emitted by the native harness.</div>
-              </div>
-            </div>
-            <div class="agent-activity-list" data-agent-field="notices"></div>
-          </section>
-        </div>
+        </aside>
       </div>
     </section>
   `;
@@ -362,7 +322,7 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
         'ready',
         'Lens live stream connected.',
         'Live Lens stream connected.',
-        'Realtime canonical Lens events are now flowing into this pane.',
+        'Realtime canonical Lens events are now flowing into the transcript.',
         'positive',
       );
       renderCurrentAgentView(sessionId);
@@ -373,7 +333,7 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
         return;
       }
 
-      current.events = [...current.events, lensEvent].slice(-60);
+      current.events = [...current.events, lensEvent].slice(-200);
       renderCurrentAgentView(sessionId);
       scheduleSnapshotRefresh(sessionId);
     },
@@ -402,11 +362,7 @@ function closeLensStream(sessionId: string): void {
 
 function scheduleSnapshotRefresh(sessionId: string): void {
   const state = viewStates.get(sessionId);
-  if (!state) {
-    return;
-  }
-
-  if (state.refreshScheduled !== null) {
+  if (!state || state.refreshScheduled !== null) {
     return;
   }
 
@@ -431,7 +387,7 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
         'ready',
         'Lens snapshot refreshed.',
         'Lens snapshot refreshed.',
-        'The Lens read model is available and the pane is rendering live data.',
+        'The Lens read model is available and the transcript is rendering live data.',
         'positive',
       );
     }
@@ -492,62 +448,25 @@ function renderAgentView(
   );
   setText(
     panel,
-    'session-state',
-    snapshot.session.stateLabel || prettify(snapshot.session.state || 'unknown'),
-  );
-  setText(
-    panel,
-    'session-meta',
-    snapshot.session.lastEventAt
-      ? `Last event ${formatAbsoluteTime(snapshot.session.lastEventAt)}`
-      : snapshot.session.reason || 'No session updates yet.',
-  );
-  setText(
-    panel,
-    'thread-state',
-    snapshot.thread.stateLabel || prettify(snapshot.thread.state || 'unknown'),
-  );
-  setText(panel, 'thread-meta', snapshot.thread.threadId || 'Provider thread pending');
-  setText(panel, 'turn-state', summarizeTurnState(snapshot));
-  setText(panel, 'turn-meta', summarizeTurnMeta(snapshot));
-  setText(panel, 'request-state', `${openRequests.length}/${snapshot.requests.length}`);
-  setText(
-    panel,
-    'request-meta',
-    openRequests[0]?.kindLabel ?? latestNotice?.message ?? 'No open requests.',
+    'transcript-meta',
+    streamConnected
+      ? 'Live canonical transcript from MidTerm.'
+      : 'Transcript is reconnecting to the live event stream.',
   );
 
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncInterruptAction(panel, snapshot, state.interruptPending);
   renderChips(panel, snapshot, latestNotice !== null, streamConnected);
-  renderRequests(panel, snapshot.sessionId, snapshot.requests, state.requestBusyIds);
-  renderItems(panel, snapshot.items);
-  renderEvents(panel, events);
+  renderSummary(panel, snapshot, openRequests.length);
+  renderRequestList(panel, snapshot.sessionId, snapshot.requests, state.requestBusyIds);
   renderNotices(panel, snapshot.notices);
-  renderOutput(
+  renderEvents(panel, events);
+  renderTranscript(
     panel,
-    'assistant-output',
-    snapshot.streams.assistantText,
-    'No assistant output yet.',
+    buildLensTranscriptEntries(snapshot, events),
+    snapshot.sessionId,
+    state.requestBusyIds,
   );
-  renderOutput(
-    panel,
-    'reasoning-output',
-    [snapshot.streams.reasoningSummaryText, snapshot.streams.reasoningText]
-      .filter(Boolean)
-      .join('\n\n'),
-    'No reasoning stream yet.',
-  );
-  renderOutput(panel, 'plan-output', snapshot.streams.planText, 'No plan stream yet.');
-  renderOutput(
-    panel,
-    'tool-output',
-    [snapshot.streams.commandOutput, snapshot.streams.fileChangeOutput]
-      .filter(Boolean)
-      .join('\n\n'),
-    'No tool output yet.',
-  );
-  renderOutput(panel, 'diff-output', snapshot.streams.unifiedDiff, 'No diff stream yet.');
 }
 
 function renderActivationView(panel: HTMLDivElement, state: SessionLensViewState): void {
@@ -559,75 +478,17 @@ function renderActivationView(panel: HTMLDivElement, state: SessionLensViewState
   panel.dataset.agentTurnId = '';
   setText(panel, 'title', title);
   setText(panel, 'subtitle', subtitle);
-  setText(panel, 'session-state', prettify(state.activationState));
-  setText(panel, 'session-meta', subtitle);
-  setText(panel, 'thread-state', failed ? 'Blocked' : 'Connecting');
   setText(
     panel,
-    'thread-meta',
-    failed
-      ? 'Lens could not complete its startup sequence.'
-      : 'Waiting for mtagenthost, provider attach, and the first canonical snapshot.',
+    'transcript-meta',
+    failed ? 'Lens never reached a stable transcript state.' : 'Boot progress stays visible here.',
   );
-  setText(panel, 'turn-state', failed ? 'Failed' : 'Starting');
-  setText(
-    panel,
-    'turn-meta',
-    failed
-      ? 'Lens never reached a stable renderable state.'
-      : 'Lens startup now stays visible instead of hiding behind one async wait.',
-  );
-  setText(panel, 'request-state', '0');
-  setText(panel, 'request-meta', failed ? 'Startup blocked' : 'Startup in progress');
   renderActivationChips(panel, state);
-  const bootTranscript = state.activationTrace
-    .map((entry) => `${entry.meta}\n${entry.summary}\n${entry.detail}`)
-    .join('\n\n');
-  const failureDetail = state.activationError ? `\n\n${state.activationError}` : '';
-  const combined = `${subtitle}${bootTranscript ? `\n\n${bootTranscript}` : ''}${failureDetail}`;
-
-  renderOutput(
-    panel,
-    'assistant-output',
-    combined,
-    failed ? t('agentView.loadError') : 'Connecting Lens runtime…',
-  );
-  renderOutput(
-    panel,
-    'reasoning-output',
-    failed
-      ? state.activationError || 'No reasoning stream.'
-      : 'Waiting for runtime reasoning stream…',
-  );
-  renderOutput(
-    panel,
-    'plan-output',
-    failed ? state.activationError || 'No plan stream.' : 'Waiting for provider plan data…',
-  );
-  renderOutput(
-    panel,
-    'tool-output',
-    failed
-      ? state.activationError || 'No tool output.'
-      : 'Waiting for mtagenthost / provider tool output…',
-  );
-  renderOutput(
-    panel,
-    'diff-output',
-    failed ? state.activationError || 'No diff stream.' : 'No diff stream yet.',
-  );
-  renderEmptyList(
-    panel,
-    'requests',
-    failed ? 'Lens startup failed before requests became available.' : 'Lens startup in progress.',
-  );
-  renderEmptyList(
-    panel,
-    'items',
-    failed ? 'Lens startup failed before items became available.' : 'Lens startup in progress.',
-  );
-  renderActivationEvents(panel, state.activationTrace);
+  renderActivationSummary(panel, state);
+  renderTranscript(panel, buildActivationTranscriptEntries(state), '', new Set<string>());
+  renderActivationRequests(panel, state);
   renderActivationNotices(panel, state.activationTrace, state.activationError);
+  renderActivationEvents(panel, state.activationTrace);
 
   const interruptButton = panel.querySelector<HTMLButtonElement>('[data-agent-action="interrupt"]');
   if (interruptButton) {
@@ -637,17 +498,121 @@ function renderActivationView(panel: HTMLDivElement, state: SessionLensViewState
   }
 }
 
+function renderSummary(
+  panel: HTMLDivElement,
+  snapshot: LensPulseSnapshotResponse,
+  openRequestCount: number,
+): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="summary"]');
+  if (!container) {
+    return;
+  }
+
+  const summaryEntries = [
+    {
+      label: 'Session',
+      value: snapshot.session.stateLabel || prettify(snapshot.session.state || 'unknown'),
+      meta: snapshot.session.lastEventAt
+        ? `Last event ${formatAbsoluteTime(snapshot.session.lastEventAt)}`
+        : snapshot.session.reason || 'No session updates yet.',
+    },
+    {
+      label: 'Thread',
+      value: snapshot.thread.stateLabel || prettify(snapshot.thread.state || 'unknown'),
+      meta: snapshot.thread.threadId || 'Provider thread pending',
+    },
+    {
+      label: 'Turn',
+      value: summarizeTurnState(snapshot),
+      meta: summarizeTurnMeta(snapshot),
+    },
+    {
+      label: 'Requests',
+      value: `${openRequestCount}/${snapshot.requests.length}`,
+      meta: openRequestCount > 0 ? 'Action needed in transcript.' : 'No open requests.',
+    },
+  ];
+
+  const fragment = document.createDocumentFragment();
+  for (const entry of summaryEntries) {
+    const row = document.createElement('div');
+    row.className = 'agent-summary-item';
+
+    const label = document.createElement('div');
+    label.className = 'agent-summary-label';
+    label.textContent = entry.label;
+
+    const value = document.createElement('div');
+    value.className = 'agent-summary-value';
+    value.textContent = entry.value;
+
+    const meta = document.createElement('div');
+    meta.className = 'agent-summary-meta';
+    meta.textContent = entry.meta;
+
+    row.append(label, value, meta);
+    fragment.appendChild(row);
+  }
+
+  container.replaceChildren(fragment);
+}
+
+function renderActivationSummary(panel: HTMLDivElement, state: SessionLensViewState): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="summary"]');
+  if (!container) {
+    return;
+  }
+
+  const summaryEntries = [
+    {
+      label: 'Stage',
+      value: prettify(state.activationState),
+      meta: state.activationDetail,
+    },
+    {
+      label: 'Live Stream',
+      value: state.streamConnected ? 'Connected' : 'Connecting',
+      meta: state.streamConnected
+        ? 'SSE stream is open.'
+        : 'Waiting for first stable runtime events.',
+    },
+    {
+      label: 'Snapshot',
+      value: state.activationState === 'failed' ? 'Unavailable' : 'Pending',
+      meta: failedCopy(state),
+    },
+  ];
+
+  const fragment = document.createDocumentFragment();
+  for (const entry of summaryEntries) {
+    const row = document.createElement('div');
+    row.className = 'agent-summary-item';
+
+    const label = document.createElement('div');
+    label.className = 'agent-summary-label';
+    label.textContent = entry.label;
+
+    const value = document.createElement('div');
+    value.className = 'agent-summary-value';
+    value.textContent = entry.value;
+
+    const meta = document.createElement('div');
+    meta.className = 'agent-summary-meta';
+    meta.textContent = entry.meta;
+
+    row.append(label, value, meta);
+    fragment.appendChild(row);
+  }
+
+  container.replaceChildren(fragment);
+}
+
 function renderChips(
   panel: HTMLDivElement,
   snapshot: LensPulseSnapshotResponse,
   hasRuntimeNotice: boolean,
   streamConnected: boolean,
 ): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="chips"]');
-  if (!container) {
-    return;
-  }
-
   const chips = [
     { tone: 'profile', text: prettify(snapshot.provider || 'agent') },
     {
@@ -676,24 +641,11 @@ function renderChips(
     text: streamConnected ? 'Live' : 'Reconnecting',
   });
 
-  const fragment = document.createDocumentFragment();
-  for (const chip of chips) {
-    const node = document.createElement('span');
-    node.className = `agent-chip agent-chip-${chip.tone.replace(/[^a-z0-9-]/gi, '-')}`;
-    node.textContent = chip.text;
-    fragment.appendChild(node);
-  }
-
-  container.replaceChildren(fragment);
+  renderChipContainer(panel, chips);
 }
 
 function renderActivationChips(panel: HTMLDivElement, state: SessionLensViewState): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="chips"]');
-  if (!container) {
-    return;
-  }
-
-  const chips = [
+  renderChipContainer(panel, [
     { tone: 'profile', text: 'Lens Boot' },
     {
       tone:
@@ -708,7 +660,17 @@ function renderActivationChips(panel: HTMLDivElement, state: SessionLensViewStat
       tone: state.streamConnected ? 'positive' : 'warning',
       text: state.streamConnected ? 'Live' : 'Connecting',
     },
-  ];
+  ]);
+}
+
+function renderChipContainer(
+  panel: HTMLDivElement,
+  chips: Array<{ tone: string; text: string }>,
+): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="chips"]');
+  if (!container) {
+    return;
+  }
 
   const fragment = document.createDocumentFragment();
   for (const chip of chips) {
@@ -742,7 +704,408 @@ function syncInterruptAction(
   button.textContent = pending ? 'Stopping…' : 'Stop turn';
 }
 
-function renderRequests(
+function renderTranscript(
+  panel: HTMLDivElement,
+  entries: LensTranscriptEntry[],
+  sessionId: string,
+  busyRequestIds: ReadonlySet<string>,
+): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="transcript"]');
+  if (!container) {
+    return;
+  }
+
+  if (entries.length === 0) {
+    renderEmptyContainer(container, 'No transcript entries yet.');
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const entry of entries) {
+    fragment.appendChild(createTranscriptEntry(entry, sessionId, busyRequestIds));
+  }
+
+  container.replaceChildren(fragment);
+}
+
+export function buildLensTranscriptEntries(
+  snapshot: LensPulseSnapshotResponse,
+  events: LensPulseEvent[],
+): LensTranscriptEntry[] {
+  const entries: LensTranscriptEntry[] = [];
+  const byKey = new Map<string, LensTranscriptEntry>();
+  const requestSummaryById = new Map(
+    snapshot.requests.map((request) => [request.requestId, request]),
+  );
+  const sortedEvents = [...events].sort((left, right) => left.sequence - right.sequence);
+
+  const ensureEntry = (
+    key: string,
+    create: () => LensTranscriptEntry,
+    orderOverride?: number,
+  ): LensTranscriptEntry => {
+    const existing = byKey.get(key);
+    if (existing) {
+      if (typeof orderOverride === 'number') {
+        existing.order = Math.max(existing.order, orderOverride);
+      }
+      return existing;
+    }
+
+    const entry = create();
+    if (typeof orderOverride === 'number') {
+      entry.order = orderOverride;
+    }
+    byKey.set(key, entry);
+    entries.push(entry);
+    return entry;
+  };
+
+  for (const lensEvent of sortedEvents) {
+    const order = lensEvent.sequence;
+
+    if (lensEvent.item && lensEvent.itemId) {
+      const itemKind = transcriptKindFromItem(lensEvent.item.itemType);
+      const itemEntry = ensureEntry(`item:${lensEvent.itemId}`, () => ({
+        id: `item:${lensEvent.itemId}`,
+        order,
+        kind: itemKind,
+        tone: toneFromState(lensEvent.item?.status),
+        label: transcriptLabel(itemKind),
+        title: lensEvent.item?.title || prettify(lensEvent.item?.itemType || 'item'),
+        body: lensEvent.item?.detail || lensEvent.item?.title || '',
+        meta: `${prettify(lensEvent.item?.status || 'updated')} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+      }));
+      itemEntry.kind = itemKind;
+      itemEntry.tone = toneFromState(lensEvent.item.status);
+      itemEntry.label = transcriptLabel(itemKind);
+      itemEntry.title = lensEvent.item.title || prettify(lensEvent.item.itemType || 'item');
+      itemEntry.body = lensEvent.item.detail || lensEvent.item.title || itemEntry.body;
+      itemEntry.meta = `${prettify(lensEvent.item.status)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      itemEntry.order = order;
+    }
+
+    if (lensEvent.contentDelta) {
+      const streamKind = lensEvent.contentDelta.streamKind;
+      const transcriptKind = transcriptKindFromStream(streamKind);
+      const key = `${transcriptKind}:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}:${streamKind}`;
+      const contentEntry = ensureEntry(key, () => ({
+        id: key,
+        order,
+        kind: transcriptKind,
+        tone: transcriptKind === 'assistant' ? 'info' : 'warning',
+        label: transcriptStreamLabel(streamKind),
+        title: transcriptStreamTitle(streamKind),
+        body: '',
+        meta: `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+      }));
+      contentEntry.body += lensEvent.contentDelta.delta;
+      contentEntry.meta = `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      contentEntry.order = order;
+    }
+
+    if (lensEvent.planDelta || lensEvent.planCompleted) {
+      const key = `plan:${lensEvent.turnId || lensEvent.sequence}`;
+      const planEntry = ensureEntry(key, () => ({
+        id: key,
+        order,
+        kind: 'plan',
+        tone: 'info',
+        label: 'Plan',
+        title: 'Plan',
+        body: '',
+        meta: `Plan • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+      }));
+      if (lensEvent.planDelta?.delta) {
+        planEntry.body += lensEvent.planDelta.delta;
+      }
+      if (lensEvent.planCompleted?.planMarkdown) {
+        planEntry.body = lensEvent.planCompleted.planMarkdown;
+      }
+      planEntry.meta = `Plan • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      planEntry.order = order;
+    }
+
+    if (lensEvent.diffUpdated) {
+      const key = `diff:${lensEvent.turnId || lensEvent.sequence}`;
+      const diffEntry = ensureEntry(key, () => ({
+        id: key,
+        order,
+        kind: 'diff',
+        tone: 'warning',
+        label: 'Diff',
+        title: 'Working diff',
+        body: lensEvent.diffUpdated?.unifiedDiff || '',
+        meta: `Diff • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+      }));
+      diffEntry.body = lensEvent.diffUpdated.unifiedDiff;
+      diffEntry.meta = `Diff • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      diffEntry.order = order;
+    }
+
+    if (
+      lensEvent.requestOpened ||
+      lensEvent.userInputRequested ||
+      lensEvent.requestResolved ||
+      lensEvent.userInputResolved
+    ) {
+      const requestId = lensEvent.requestId || `request:${lensEvent.sequence}`;
+      const summary = requestSummaryById.get(requestId);
+      const requestEntry = ensureEntry(`request:${requestId}`, () =>
+        createRequestTranscriptEntry(requestId, summary, lensEvent, order),
+      );
+      updateRequestTranscriptEntry(requestEntry, summary, lensEvent);
+      requestEntry.order = order;
+    }
+
+    const eventEntry = buildSystemEntryFromEvent(lensEvent, order);
+    if (eventEntry) {
+      entries.push(eventEntry);
+    }
+  }
+
+  let fallbackOrder = snapshot.latestSequence + 1;
+  for (const request of snapshot.requests) {
+    const key = `request:${request.requestId}`;
+    const entry = ensureEntry(key, () =>
+      createRequestTranscriptEntry(request.requestId, request, null, fallbackOrder),
+    );
+    updateRequestTranscriptEntry(entry, request, null);
+    entry.order = Math.max(entry.order, fallbackOrder);
+    fallbackOrder += 1;
+  }
+
+  if (
+    !entries.some((entry) => entry.kind === 'assistant') &&
+    snapshot.streams.assistantText.trim()
+  ) {
+    entries.push({
+      id: 'fallback-assistant',
+      order: fallbackOrder,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: 'Assistant',
+      body: snapshot.streams.assistantText,
+      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+    });
+    fallbackOrder += 1;
+  }
+
+  if (!entries.some((entry) => entry.kind === 'plan') && snapshot.streams.planText.trim()) {
+    entries.push({
+      id: 'fallback-plan',
+      order: fallbackOrder,
+      kind: 'plan',
+      tone: 'info',
+      label: 'Plan',
+      title: 'Plan',
+      body: snapshot.streams.planText,
+      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+    });
+    fallbackOrder += 1;
+  }
+
+  if (!entries.some((entry) => entry.kind === 'diff') && snapshot.streams.unifiedDiff.trim()) {
+    entries.push({
+      id: 'fallback-diff',
+      order: fallbackOrder,
+      kind: 'diff',
+      tone: 'warning',
+      label: 'Diff',
+      title: 'Working diff',
+      body: snapshot.streams.unifiedDiff,
+      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+    });
+    fallbackOrder += 1;
+  }
+
+  if (
+    !entries.some((entry) => entry.kind === 'tool') &&
+    [snapshot.streams.commandOutput, snapshot.streams.fileChangeOutput].join('\n').trim()
+  ) {
+    entries.push({
+      id: 'fallback-tool-output',
+      order: fallbackOrder,
+      kind: 'tool',
+      tone: 'warning',
+      label: 'Tool',
+      title: 'Tool output',
+      body: [snapshot.streams.commandOutput, snapshot.streams.fileChangeOutput]
+        .filter(Boolean)
+        .join('\n\n'),
+      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+    });
+  }
+
+  return entries
+    .filter(
+      (entry) =>
+        entry.body.trim() ||
+        entry.kind === 'request' ||
+        entry.kind === 'system' ||
+        entry.kind === 'notice',
+    )
+    .sort((left, right) => left.order - right.order);
+}
+
+function createRequestTranscriptEntry(
+  requestId: string,
+  request: LensPulseRequestSummary | undefined,
+  lensEvent: LensPulseEvent | null,
+  order: number,
+): LensTranscriptEntry {
+  return {
+    id: `request:${requestId}`,
+    order,
+    kind: 'request',
+    tone: request?.state === 'resolved' ? 'positive' : 'warning',
+    label: 'Request',
+    title:
+      request?.kindLabel ||
+      lensEvent?.requestOpened?.requestTypeLabel ||
+      lensEvent?.type ||
+      'Request',
+    body:
+      request?.detail ||
+      lensEvent?.requestOpened?.detail ||
+      lensEvent?.userInputRequested?.questions.map((question) => question.question).join('\n') ||
+      'Action required.',
+    meta: request
+      ? `${prettify(request.state)} • ${formatAbsoluteTime(request.updatedAt)}`
+      : `Request • ${lensEvent ? formatAbsoluteTime(lensEvent.createdAt) : ''}`.trim(),
+    requestId,
+  };
+}
+
+function updateRequestTranscriptEntry(
+  entry: LensTranscriptEntry,
+  request: LensPulseRequestSummary | undefined,
+  lensEvent: LensPulseEvent | null,
+): void {
+  entry.kind = 'request';
+  entry.label = 'Request';
+  entry.tone = request?.state === 'resolved' ? 'positive' : 'warning';
+  entry.title =
+    request?.kindLabel ||
+    lensEvent?.requestOpened?.requestTypeLabel ||
+    lensEvent?.type ||
+    entry.title;
+  entry.body =
+    summarizeRequest(request) ||
+    lensEvent?.requestOpened?.detail ||
+    lensEvent?.userInputRequested?.questions.map((question) => question.question).join('\n') ||
+    entry.body;
+  entry.meta = request
+    ? `${prettify(request.state)} • ${formatAbsoluteTime(request.updatedAt)}`
+    : lensEvent
+      ? `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`
+      : entry.meta;
+}
+
+function buildSystemEntryFromEvent(
+  lensEvent: LensPulseEvent,
+  order: number,
+): LensTranscriptEntry | null {
+  if (lensEvent.runtimeMessage) {
+    return {
+      id: `runtime:${lensEvent.eventId}`,
+      order,
+      kind: lensEvent.type === 'runtime.error' ? 'notice' : 'system',
+      tone: lensEvent.type === 'runtime.error' ? 'attention' : toneFromEvent(lensEvent.type),
+      label: lensEvent.type === 'runtime.error' ? 'Error' : 'Runtime',
+      title: prettify(lensEvent.type),
+      body: [lensEvent.runtimeMessage.message, lensEvent.runtimeMessage.detail]
+        .filter(Boolean)
+        .join('\n\n'),
+      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+    };
+  }
+
+  if (lensEvent.turnCompleted?.errorMessage) {
+    return {
+      id: `turn:${lensEvent.eventId}`,
+      order,
+      kind: 'notice',
+      tone: toneFromEvent(lensEvent.type),
+      label: 'Turn',
+      title: lensEvent.turnCompleted.stateLabel || prettify(lensEvent.type),
+      body: lensEvent.turnCompleted.errorMessage,
+      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+    };
+  }
+
+  if (lensEvent.turnStarted || lensEvent.turnCompleted) {
+    return {
+      id: `turn:${lensEvent.eventId}`,
+      order,
+      kind: 'system',
+      tone: toneFromEvent(lensEvent.type),
+      label: 'Turn',
+      title: lensEvent.turnCompleted?.stateLabel || prettify(lensEvent.type),
+      body:
+        [
+          lensEvent.turnStarted?.model,
+          lensEvent.turnStarted?.effort,
+          lensEvent.turnCompleted?.stopReason,
+        ]
+          .filter(Boolean)
+          .join(' • ') || 'Turn lifecycle update.',
+      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+    };
+  }
+
+  if (lensEvent.sessionState || lensEvent.threadState) {
+    return {
+      id: `state:${lensEvent.eventId}`,
+      order,
+      kind: 'system',
+      tone: toneFromEvent(lensEvent.type),
+      label: lensEvent.sessionState ? 'Session' : 'Thread',
+      title:
+        lensEvent.sessionState?.stateLabel ||
+        lensEvent.threadState?.stateLabel ||
+        prettify(lensEvent.type),
+      body:
+        lensEvent.sessionState?.reason ||
+        lensEvent.threadState?.providerThreadId ||
+        'State update.',
+      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+    };
+  }
+
+  return null;
+}
+
+function buildActivationTranscriptEntries(state: SessionLensViewState): LensTranscriptEntry[] {
+  if (state.activationTrace.length === 0) {
+    return [
+      {
+        id: 'activation:pending',
+        order: 0,
+        kind: 'system',
+        tone: state.activationState === 'failed' ? 'attention' : 'warning',
+        label: 'Boot',
+        title: state.activationState === 'failed' ? 'Lens startup failed' : 'Opening Lens',
+        body: state.activationDetail || 'Waiting for Lens boot steps…',
+        meta: prettify(state.activationState),
+      },
+    ];
+  }
+
+  return state.activationTrace.map((entry, index) => ({
+    id: `activation:${index}`,
+    order: index,
+    kind: entry.tone === 'attention' ? 'notice' : 'system',
+    tone: entry.tone,
+    label: 'Boot',
+    title: entry.summary,
+    body: entry.detail,
+    meta: entry.meta,
+  }));
+}
+
+function renderRequestList(
   panel: HTMLDivElement,
   sessionId: string,
   requests: LensPulseRequestSummary[],
@@ -754,91 +1117,31 @@ function renderRequests(
   }
 
   if (requests.length === 0) {
-    renderEmptyContainer(container, 'No requests yet.');
+    renderEmptyContainer(container, 'No request cards right now.');
     return;
   }
 
   const fragment = document.createDocumentFragment();
-  for (const request of requests.slice(0, 12)) {
+  for (const request of requests.slice(0, 8)) {
     fragment.appendChild(
-      createRequestItem(sessionId, request, busyRequestIds.has(request.requestId)),
+      createRequestSideItem(sessionId, request, busyRequestIds.has(request.requestId)),
     );
   }
-
   container.replaceChildren(fragment);
 }
 
-function renderItems(panel: HTMLDivElement, items: LensPulseItemSummary[]): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="items"]');
+function renderActivationRequests(panel: HTMLDivElement, state: SessionLensViewState): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="requests"]');
   if (!container) {
     return;
   }
 
-  if (items.length === 0) {
-    renderEmptyContainer(container, 'No items yet.');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const item of items.slice(0, 16)) {
-    fragment.appendChild(
-      createActivityItem(
-        toneFromState(item.status),
-        `${prettify(item.itemType)} • ${formatAbsoluteTime(item.updatedAt)}`,
-        item.title || prettify(item.itemType),
-        item.detail || item.turnId || 'No detail',
-      ),
-    );
-  }
-
-  container.replaceChildren(fragment);
-}
-
-function renderEvents(panel: HTMLDivElement, events: LensPulseEvent[]): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="events"]');
-  if (!container) {
-    return;
-  }
-
-  if (events.length === 0) {
-    renderEmptyContainer(container, 'No Lens events yet.');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const lensEvent of [...events].slice(-20).reverse()) {
-    const summary = summarizeEvent(lensEvent);
-    const detail = summarizeEventDetail(lensEvent);
-    fragment.appendChild(
-      createActivityItem(
-        toneFromEvent(lensEvent.type),
-        `${lensEvent.type} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
-        summary,
-        detail,
-      ),
-    );
-  }
-
-  container.replaceChildren(fragment);
-}
-
-function renderActivationEvents(panel: HTMLDivElement, trace: LensActivationTraceEntry[]): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="events"]');
-  if (!container) {
-    return;
-  }
-
-  if (trace.length === 0) {
-    renderEmptyContainer(container, 'Lens startup has not emitted any boot steps yet.');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const entry of [...trace].reverse()) {
-    fragment.appendChild(createActivityItem(entry.tone, entry.meta, entry.summary, entry.detail));
-  }
-
-  container.replaceChildren(fragment);
+  renderEmptyContainer(
+    container,
+    state.activationState === 'failed'
+      ? 'Lens startup failed before request cards became available.'
+      : 'Request cards will appear here once the runtime is attached.',
+  );
 }
 
 function renderNotices(panel: HTMLDivElement, notices: LensPulseRuntimeNotice[]): void {
@@ -855,7 +1158,7 @@ function renderNotices(panel: HTMLDivElement, notices: LensPulseRuntimeNotice[])
   const fragment = document.createDocumentFragment();
   for (const notice of notices.slice(0, 8)) {
     fragment.appendChild(
-      createActivityItem(
+      createSideItem(
         notice.type === 'runtime.error' ? 'attention' : 'warning',
         `${notice.type} • ${formatAbsoluteTime(notice.createdAt)}`,
         notice.message,
@@ -880,13 +1183,15 @@ function renderActivationNotices(
   const fragment = document.createDocumentFragment();
   if (activationError) {
     fragment.appendChild(
-      createActivityItem('attention', 'startup failure', 'Lens startup failed.', activationError),
+      createSideItem('attention', 'startup failure', 'Lens startup failed.', activationError),
     );
   }
 
-  const warnings = trace.filter((entry) => entry.tone === 'warning' || entry.tone === 'attention');
-  for (const entry of warnings.slice(-5).reverse()) {
-    fragment.appendChild(createActivityItem(entry.tone, entry.meta, entry.summary, entry.detail));
+  for (const entry of trace
+    .filter((item) => item.tone !== 'info')
+    .slice(-4)
+    .reverse()) {
+    fragment.appendChild(createSideItem(entry.tone, entry.meta, entry.summary, entry.detail));
   }
 
   if (!fragment.childNodes.length) {
@@ -897,42 +1202,133 @@ function renderActivationNotices(
   container.replaceChildren(fragment);
 }
 
-function createActivityItem(
+function renderEvents(panel: HTMLDivElement, events: LensPulseEvent[]): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="events"]');
+  if (!container) {
+    return;
+  }
+
+  if (events.length === 0) {
+    renderEmptyContainer(container, 'No Lens events yet.');
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const lensEvent of [...events].slice(-12).reverse()) {
+    fragment.appendChild(
+      createSideItem(
+        toneFromEvent(lensEvent.type),
+        `${lensEvent.type} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+        summarizeEvent(lensEvent),
+        summarizeEventDetail(lensEvent),
+      ),
+    );
+  }
+
+  container.replaceChildren(fragment);
+}
+
+function renderActivationEvents(panel: HTMLDivElement, trace: LensActivationTraceEntry[]): void {
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="events"]');
+  if (!container) {
+    return;
+  }
+
+  if (trace.length === 0) {
+    renderEmptyContainer(container, 'Lens startup has not emitted any boot steps yet.');
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const entry of [...trace].reverse()) {
+    fragment.appendChild(createSideItem(entry.tone, entry.meta, entry.summary, entry.detail));
+  }
+
+  container.replaceChildren(fragment);
+}
+
+function createTranscriptEntry(
+  entry: LensTranscriptEntry,
+  sessionId: string,
+  busyRequestIds: ReadonlySet<string>,
+): HTMLElement {
+  const article = document.createElement('article');
+  article.className = `agent-transcript-entry agent-transcript-${entry.kind} agent-transcript-${entry.tone}`;
+
+  const header = document.createElement('div');
+  header.className = 'agent-transcript-header';
+
+  const badge = document.createElement('span');
+  badge.className = `agent-transcript-badge agent-transcript-badge-${entry.kind}`;
+  badge.textContent = entry.label;
+
+  const title = document.createElement('div');
+  title.className = 'agent-transcript-title';
+  title.textContent = entry.title;
+
+  const meta = document.createElement('div');
+  meta.className = 'agent-transcript-meta';
+  meta.textContent = entry.meta;
+
+  header.append(badge, title, meta);
+  article.appendChild(header);
+
+  const body = document.createElement(
+    entry.kind === 'diff' || entry.kind === 'tool' || entry.kind === 'plan' ? 'pre' : 'div',
+  );
+  body.className = 'agent-transcript-body';
+  body.textContent = entry.body;
+  article.appendChild(body);
+
+  if (entry.requestId) {
+    const state = viewStates.get(sessionId);
+    const request = state?.snapshot?.requests.find(
+      (candidate) => candidate.requestId === entry.requestId,
+    );
+    if (request) {
+      article.appendChild(
+        createRequestActionBlock(sessionId, request, busyRequestIds.has(request.requestId)),
+      );
+    }
+  }
+
+  return article;
+}
+
+function createSideItem(
   tone: string,
   metaText: string,
   summaryText: string,
   detailText: string,
 ): HTMLElement {
   const item = document.createElement('article');
-  item.className = `agent-activity-item agent-activity-${tone.replace(/[^a-z0-9-]/gi, '-')}`;
+  item.className = `agent-side-item agent-side-${tone.replace(/[^a-z0-9-]/gi, '-')}`;
 
   const meta = document.createElement('div');
-  meta.className = 'agent-activity-meta';
+  meta.className = 'agent-side-meta';
   meta.textContent = metaText;
 
   const summary = document.createElement('div');
-  summary.className = 'agent-activity-summary';
+  summary.className = 'agent-side-summary';
   summary.textContent = summaryText;
 
   const detail = document.createElement('div');
-  detail.className = 'agent-activity-detail';
+  detail.className = 'agent-side-detail';
   detail.textContent = detailText;
 
-  item.appendChild(meta);
-  item.appendChild(summary);
-  item.appendChild(detail);
+  item.append(meta, summary, detail);
   return item;
 }
 
-function createRequestItem(
+function createRequestSideItem(
   sessionId: string,
   request: LensPulseRequestSummary,
   busy: boolean,
 ): HTMLElement {
-  const item = createActivityItem(
+  const item = createSideItem(
     request.state === 'resolved' ? 'positive' : 'warning',
     `${request.kindLabel} • ${formatAbsoluteTime(request.updatedAt)}`,
-    request.detail || summarizeRequest(request),
+    request.detail || summarizeRequest(request) || request.kindLabel,
     request.state === 'resolved' && request.decision
       ? `Resolved as ${request.decision}`
       : request.state === 'resolved'
@@ -940,10 +1336,18 @@ function createRequestItem(
         : 'Open',
   );
 
-  if (request.state === 'resolved') {
-    return item;
+  if (request.state !== 'resolved') {
+    item.appendChild(createRequestActionBlock(sessionId, request, busy));
   }
 
+  return item;
+}
+
+function createRequestActionBlock(
+  sessionId: string,
+  request: LensPulseRequestSummary,
+  busy: boolean,
+): HTMLElement {
   const actions = document.createElement('div');
   actions.className = 'agent-request-actions';
 
@@ -969,31 +1373,33 @@ function createRequestItem(
     });
 
     actions.appendChild(form);
-  } else {
-    const approve = document.createElement('button');
-    approve.type = 'button';
-    approve.className = 'agent-view-btn agent-view-btn-primary';
-    approve.disabled = busy;
-    approve.textContent = busy ? 'Working…' : 'Approve';
-    approve.addEventListener('click', () => {
-      void handleApproveRequest(sessionId, request.requestId);
-    });
-
-    const decline = document.createElement('button');
-    decline.type = 'button';
-    decline.className = 'agent-view-btn';
-    decline.disabled = busy;
-    decline.textContent = 'Decline';
-    decline.addEventListener('click', () => {
-      void handleDeclineRequest(sessionId, request.requestId);
-    });
-
-    actions.appendChild(approve);
-    actions.appendChild(decline);
+    return actions;
   }
 
-  item.appendChild(actions);
-  return item;
+  const buttonRow = document.createElement('div');
+  buttonRow.className = 'agent-request-button-row';
+
+  const approve = document.createElement('button');
+  approve.type = 'button';
+  approve.className = 'agent-view-btn agent-view-btn-primary';
+  approve.disabled = busy;
+  approve.textContent = busy ? 'Working…' : 'Approve';
+  approve.addEventListener('click', () => {
+    void handleApproveRequest(sessionId, request.requestId);
+  });
+
+  const decline = document.createElement('button');
+  decline.type = 'button';
+  decline.className = 'agent-view-btn';
+  decline.disabled = busy;
+  decline.textContent = 'Decline';
+  decline.addEventListener('click', () => {
+    void handleDeclineRequest(sessionId, request.requestId);
+  });
+
+  buttonRow.append(approve, decline);
+  actions.appendChild(buttonRow);
+  return actions;
 }
 
 function createQuestionField(question: LensPulseRequestSummary['questions'][number]): HTMLElement {
@@ -1076,33 +1482,9 @@ function collectQuestionAnswers(
   });
 }
 
-function renderOutput(
-  panel: HTMLDivElement,
-  field: string,
-  text: string | null | undefined,
-  empty = 'No data yet.',
-): void {
-  const element = panel.querySelector<HTMLElement>(`[data-agent-field="${field}"]`);
-  if (!element) {
-    return;
-  }
-
-  const normalized = text?.trimEnd();
-  element.textContent = normalized && normalized.length > 0 ? normalized : empty;
-}
-
-function renderEmptyList(panel: HTMLDivElement, field: string, text: string): void {
-  const container = panel.querySelector<HTMLElement>(`[data-agent-field="${field}"]`);
-  if (!container) {
-    return;
-  }
-
-  renderEmptyContainer(container, text);
-}
-
 function renderEmptyContainer(container: HTMLElement, text: string): void {
   const empty = document.createElement('div');
-  empty.className = 'agent-activity-empty';
+  empty.className = 'agent-side-empty';
   empty.textContent = text;
   container.replaceChildren(empty);
 }
@@ -1231,7 +1613,7 @@ function setActivationState(
   activationDetail: string,
   summary: string,
   detail: string,
-  tone: LensActivationTraceEntry['tone'] = 'info',
+  tone: TranscriptTone = 'info',
 ): void {
   state.activationState = activationState;
   state.activationDetail = activationDetail;
@@ -1240,7 +1622,7 @@ function setActivationState(
 
 function appendActivationTrace(
   state: SessionLensViewState,
-  tone: LensActivationTraceEntry['tone'],
+  tone: TranscriptTone,
   phase: string,
   summary: string,
   detail: string,
@@ -1282,18 +1664,22 @@ function summarizeTurnMeta(snapshot: LensPulseSnapshotResponse): string {
     .join(' • ');
 }
 
-function summarizeRequest(request: LensPulseRequestSummary): string {
+function summarizeRequest(request: LensPulseRequestSummary | undefined): string {
+  if (!request) {
+    return '';
+  }
+
   if (request.questions.length > 0) {
-    return request.questions.map((question) => question.question).join(' • ');
+    return request.questions.map((question) => question.question).join('\n');
   }
 
   if (request.answers.length > 0) {
     return request.answers
       .map((answer) => `${answer.questionId}: ${answer.answers.join(', ')}`)
-      .join(' • ');
+      .join('\n');
   }
 
-  return request.turnId || 'No detail';
+  return request.detail || request.turnId || '';
 }
 
 function summarizeEvent(lensEvent: LensPulseEvent): string {
@@ -1334,7 +1720,7 @@ function summarizeEventDetail(lensEvent: LensPulseEvent): string {
   );
 }
 
-function toneFromEvent(eventType: string): string {
+function toneFromEvent(eventType: string): TranscriptTone {
   if (eventType.endsWith('error')) {
     return 'attention';
   }
@@ -1355,7 +1741,7 @@ function toneFromEvent(eventType: string): string {
   return 'info';
 }
 
-function toneFromState(state: string | null | undefined): string {
+function toneFromState(state: string | null | undefined): TranscriptTone {
   const normalized = (state || '').toLowerCase();
   if (
     normalized.includes('error') ||
@@ -1381,6 +1767,90 @@ function toneFromState(state: string | null | undefined): string {
     return 'positive';
   }
   return 'info';
+}
+
+function transcriptKindFromItem(itemType: string): TranscriptKind {
+  const normalized = itemType.toLowerCase();
+  if (normalized.includes('assistant')) {
+    return 'assistant';
+  }
+  if (normalized.includes('user') || normalized.includes('input')) {
+    return 'user';
+  }
+  return 'tool';
+}
+
+function transcriptKindFromStream(streamKind: string): TranscriptKind {
+  const normalized = streamKind.toLowerCase();
+  if (normalized === 'assistant_text') {
+    return 'assistant';
+  }
+  if (normalized === 'reasoning_text' || normalized === 'reasoning_summary_text') {
+    return 'system';
+  }
+  if (normalized === 'command_output' || normalized === 'file_change_output') {
+    return 'tool';
+  }
+  return 'system';
+}
+
+function transcriptLabel(kind: TranscriptKind): string {
+  switch (kind) {
+    case 'user':
+      return 'You';
+    case 'assistant':
+      return 'Assistant';
+    case 'tool':
+      return 'Tool';
+    case 'request':
+      return 'Request';
+    case 'plan':
+      return 'Plan';
+    case 'diff':
+      return 'Diff';
+    case 'notice':
+      return 'Error';
+    default:
+      return 'System';
+  }
+}
+
+function transcriptStreamLabel(streamKind: string): string {
+  switch (streamKind) {
+    case 'assistant_text':
+      return 'Assistant';
+    case 'reasoning_text':
+    case 'reasoning_summary_text':
+      return 'Reasoning';
+    case 'command_output':
+    case 'file_change_output':
+      return 'Tool';
+    default:
+      return prettify(streamKind);
+  }
+}
+
+function transcriptStreamTitle(streamKind: string): string {
+  switch (streamKind) {
+    case 'assistant_text':
+      return 'Assistant response';
+    case 'reasoning_text':
+      return 'Reasoning';
+    case 'reasoning_summary_text':
+      return 'Reasoning summary';
+    case 'command_output':
+      return 'Command output';
+    case 'file_change_output':
+      return 'File change output';
+    default:
+      return prettify(streamKind);
+  }
+}
+
+function failedCopy(state: SessionLensViewState): string {
+  return state.activationState === 'failed'
+    ? 'Lens could not complete its startup sequence.'
+    : 'Waiting for mtagenthost, provider attach, and the first canonical snapshot.';
 }
 
 function prettify(value: string): string {
