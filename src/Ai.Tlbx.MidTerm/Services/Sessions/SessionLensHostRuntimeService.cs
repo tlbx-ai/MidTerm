@@ -6,6 +6,7 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -19,15 +20,18 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private readonly ConcurrentDictionary<string, HostRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly SessionLensHostIngressService _ingress;
     private readonly SessionLensPulseService _pulse;
+    private readonly SettingsService _settingsService;
     private readonly string _mode;
 
     public SessionLensHostRuntimeService(
         SessionLensHostIngressService ingress,
         SessionLensPulseService pulse,
+        SettingsService settingsService,
         string? mode = null)
     {
         _ingress = ingress;
         _pulse = pulse;
+        _settingsService = settingsService;
         _mode = NormalizeMode(mode ?? Environment.GetEnvironmentVariable(HostModeEnvironmentVariable));
     }
 
@@ -100,6 +104,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 EnableRaisingEvents = true
             };
             PrependPath(process.StartInfo, Path.GetDirectoryName(executablePath));
+            LensHostEnvironmentResolver.ApplyUserProfileEnvironment(process.StartInfo, _settingsService.Load());
 
             if (!process.Start())
             {

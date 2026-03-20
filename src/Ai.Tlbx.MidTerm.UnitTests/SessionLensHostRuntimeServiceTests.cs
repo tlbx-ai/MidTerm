@@ -1,6 +1,7 @@
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -8,12 +9,14 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class SessionLensHostRuntimeServiceTests
 {
+    private static SettingsService CreateSettingsService() => new();
+
     [Fact]
     public async Task SessionLensRuntimeService_CanDelegateToMtAgentHostSyntheticMode()
     {
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "synthetic");
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "synthetic");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -81,7 +84,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -158,7 +161,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -227,7 +230,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -294,7 +297,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         {
             var pulse = new SessionLensPulseService();
             var ingress = new SessionLensHostIngressService(pulse);
-            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
             await using var sessionManager = new TtyHostSessionManager();
             var profileService = new AiCliProfileService();
             await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
