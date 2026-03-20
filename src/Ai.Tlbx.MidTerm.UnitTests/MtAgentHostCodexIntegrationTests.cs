@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostCodexIntegrationTests
 {
     [Fact]
@@ -318,11 +319,12 @@ public sealed class MtAgentHostCodexIntegrationTests
 
     private static Process StartAgentHost(string hostDll)
     {
+        var dotnetHost = ResolveDotNetHostPath();
         var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "dotnet",
+                FileName = dotnetHost,
                 Arguments = $"\"{hostDll}\" --stdio",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
@@ -333,6 +335,24 @@ public sealed class MtAgentHostCodexIntegrationTests
         };
         process.Start();
         return process;
+    }
+
+    private static string ResolveDotNetHostPath()
+    {
+        var dotnetHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (!string.IsNullOrWhiteSpace(dotnetHost) && File.Exists(dotnetHost))
+        {
+            return dotnetHost;
+        }
+
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(processPath) &&
+            string.Equals(Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return processPath;
+        }
+
+        return "dotnet";
     }
 
     private static string ResolveAgentHostDll()

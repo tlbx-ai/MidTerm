@@ -50,9 +50,10 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     public async Task<bool> EnsureAttachedAsync(
         string sessionId,
         string profile,
-        string workingDirectory,
+        SessionInfoDto session,
         CancellationToken ct = default)
     {
+        var workingDirectory = session.CurrentDirectory;
         if (!IsEnabledFor(profile) ||
             string.IsNullOrWhiteSpace(sessionId) ||
             string.IsNullOrWhiteSpace(workingDirectory) ||
@@ -81,6 +82,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 return false;
             }
 
+            var executablePath = AiCliCommandLocator.ResolveExecutablePath(profile, session);
+
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -96,6 +99,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 },
                 EnableRaisingEvents = true
             };
+            PrependPath(process.StartInfo, Path.GetDirectoryName(executablePath));
 
             if (!process.Start())
             {
@@ -143,7 +147,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                     {
                         SessionId = sessionId,
                         Provider = profile,
-                        WorkingDirectory = workingDirectory
+                        WorkingDirectory = workingDirectory,
+                        ExecutablePath = executablePath
                     }
                 },
                 ct).ConfigureAwait(false);
@@ -623,8 +628,15 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         var devDll = devDllCandidates.FirstOrDefault(File.Exists);
         if (!string.IsNullOrWhiteSpace(devDll))
         {
+            var dotnetHost = ResolveDotNetHostPath();
+            if (string.IsNullOrWhiteSpace(dotnetHost))
+            {
+                launch = default;
+                return false;
+            }
+
             launch = new HostLaunch(
-                "dotnet",
+                dotnetHost,
                 string.Equals(mode, SyntheticMode, StringComparison.Ordinal)
                     ? $"\"{devDll}\" --stdio --synthetic {profile}"
                     : $"\"{devDll}\" --stdio");
@@ -633,6 +645,40 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         launch = default;
         return false;
+    }
+
+    private static void PrependPath(ProcessStartInfo startInfo, string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var existingPath = startInfo.Environment.TryGetValue("PATH", out var currentPath)
+            ? currentPath
+            : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+
+        startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+            ? directory
+            : directory + Path.PathSeparator + existingPath;
+    }
+
+    private static string? ResolveDotNetHostPath()
+    {
+        var hostPath = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (!string.IsNullOrWhiteSpace(hostPath) && File.Exists(hostPath))
+        {
+            return hostPath;
+        }
+
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(processPath) &&
+            string.Equals(Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return processPath;
+        }
+
+        return AiCliCommandLocator.FindExecutableInPath("dotnet");
     }
 
     private HostRuntimeState GetRequiredState(string sessionId)

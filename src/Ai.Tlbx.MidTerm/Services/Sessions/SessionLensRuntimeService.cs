@@ -57,7 +57,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         if (_hostRuntime.IsEnabledFor(profile))
         {
-            if (await _hostRuntime.EnsureAttachedAsync(sessionId, profile, cwd, ct).ConfigureAwait(false))
+            if (await _hostRuntime.EnsureAttachedAsync(sessionId, profile, session, ct).ConfigureAwait(false))
             {
                 return true;
             }
@@ -77,7 +77,8 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     return true;
                 }
 
-                return await StartCodexAsync(state, ct).ConfigureAwait(false);
+                var executablePath = AiCliCommandLocator.ResolveExecutablePath(profile, session);
+                return await StartCodexAsync(state, executablePath, ct).ConfigureAwait(false);
             }
 
             if (state.Claude is not null)
@@ -364,9 +365,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         _states.Clear();
     }
 
-    private async Task<bool> StartCodexAsync(LensRuntimeState state, CancellationToken ct)
+    private async Task<bool> StartCodexAsync(LensRuntimeState state, string? executablePath, CancellationToken ct)
     {
-        var binaryPath = FindExecutableInPath("codex");
+        var binaryPath = executablePath ?? FindExecutableInPath("codex");
         if (binaryPath is null)
         {
             SetStatus(state, LensRuntimeStatus.Error, "Codex CLI was not found on PATH.");

@@ -306,6 +306,7 @@ public sealed class LensAttachRuntimeRequest
     public string SessionId { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
     public string WorkingDirectory { get; set; } = string.Empty;
+    public string? ExecutablePath { get; set; }
     public string? ResumeThreadId { get; set; }
 }
 

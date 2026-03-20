@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class SessionLensHostRuntimeServiceTests
 {
     [Fact]
@@ -281,6 +282,41 @@ public sealed class SessionLensHostRuntimeServiceTests
             events.Events,
             lensEvent => lensEvent.Type == "turn.aborted" &&
                          string.Equals(lensEvent.TurnCompleted?.StopReason, "interrupt", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SessionLensRuntimeService_CanAttachMtAgentHostCodexWithoutServicePath()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        Environment.SetEnvironmentVariable("PATH", string.Empty);
+        try
+        {
+            var pulse = new SessionLensPulseService();
+            var ingress = new SessionLensHostIngressService(pulse);
+            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, mode: "codex");
+            await using var sessionManager = new TtyHostSessionManager();
+            var profileService = new AiCliProfileService();
+            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+            var session = new SessionInfoDto
+            {
+                Id = "session-runtime-codex-no-path-1",
+                CurrentDirectory = fakeCodex.Root,
+                ForegroundName = "codex",
+                ForegroundCommandLine = $"\"{fakeCodex.ExecutablePath}\" --yolo"
+            };
+
+            var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+
+            Assert.True(attached);
+            Assert.True(runtime.IsAttached(session.Id));
+            Assert.NotNull(pulse.GetSnapshot(session.Id));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+        }
     }
 
     private static async Task<LensPulseEventListResponse> WaitForEventsAsync(

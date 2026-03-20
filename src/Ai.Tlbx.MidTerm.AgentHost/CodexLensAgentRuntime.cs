@@ -129,7 +129,9 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return Accepted(command.CommandId, command.SessionId);
         }
 
-        var binaryPath = FindExecutableInPath("codex");
+        var binaryPath = string.IsNullOrWhiteSpace(attach.ExecutablePath)
+            ? FindExecutableInPath("codex")
+            : attach.ExecutablePath;
         if (binaryPath is null)
         {
             throw new InvalidOperationException("Codex CLI was not found on PATH.");

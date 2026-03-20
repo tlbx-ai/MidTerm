@@ -15,6 +15,9 @@ internal sealed class FakeCodexPathScope : IDisposable
 
     public string FakeCodexBin { get; }
 
+    public string ExecutablePath =>
+        Path.Combine(FakeCodexBin, OperatingSystem.IsWindows() ? "codex.exe" : "codex");
+
     public static FakeCodexPathScope Create()
     {
         var root = Path.Combine(Path.GetTempPath(), "midterm-fake-codex-" + Guid.NewGuid().ToString("N"));
