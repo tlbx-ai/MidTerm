@@ -11,5 +11,8 @@ Rules:
 - "Cut a dev/prerelease" does not imply "promote to stable".
 - If the user says "patch release", "minor release", or "major release" without specifying stable vs dev, default to a dev/prerelease.
 - Only treat it as a stable release when the user explicitly says stable, promote, or otherwise clearly asks for the stable path.
+- Dev/prerelease path: use `scripts/release-dev.ps1`.
+- Stable release path: use `scripts/release.ps1`.
+- Promotion path: use `scripts/promote.ps1` only with explicit approval.
 - Never run `scripts/promote.ps1`, create or push release tags, publish release artifacts, or merge release PRs without explicit approval.
 - For urgent fixes, implement and verify the change first, then stop before release or promotion unless the user explicitly says to continue.
