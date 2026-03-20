@@ -257,14 +257,15 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserOpen(string? sessionId, string? previewName, string url)
+        void OnBrowserOpen(string? sessionId, string? previewName, string url, bool activateSession)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "open",
                 Url = url,
                 SessionId = sessionId,
-                PreviewName = previewName
+                PreviewName = previewName,
+                ActivateSession = activateSession
             };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }

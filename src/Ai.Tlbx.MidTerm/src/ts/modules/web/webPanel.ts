@@ -25,6 +25,7 @@ import {
   PREVIEW_LOAD_TOKEN_DATASET_KEY,
   shouldReloadPreviewFrame,
 } from './previewLoadToken';
+import { buildProxyUrl, stripInternalPreviewQueryParams } from './previewProxyUrl';
 import {
   getActiveDockedClient,
   getActivePreview,
@@ -80,8 +81,6 @@ const SANDBOX_BASE_FLAGS = [
 
 const log = createLogger('webPanel');
 const PREVIEW_CONTEXT_COOKIE_NAME = 'mt-preview-ctx';
-const PREVIEW_QUERY_ID_PARAM = '__mtPreviewId';
-const PREVIEW_QUERY_TOKEN_PARAM = '__mtPreviewToken';
 let urlInput: HTMLInputElement | null = null;
 let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
@@ -321,24 +320,6 @@ async function handleGo(): Promise<void> {
   await loadPreview();
 }
 
-function buildProxyUrl(
-  targetUrl: string,
-  previewClient: BrowserPreviewClientResponse,
-  frameOrigin = window.location.origin,
-): string {
-  const parsed = new URL(targetUrl);
-  const path = parsed.pathname || '/';
-  const prefix = getProxyPrefix(previewClient.routeKey);
-  const proxyUrl = new URL(path === '/' ? `${prefix}/` : `${prefix}${path}`, frameOrigin);
-  proxyUrl.search = parsed.search;
-  proxyUrl.hash = parsed.hash;
-  if (previewClient.previewId && previewClient.previewToken) {
-    proxyUrl.searchParams.set(PREVIEW_QUERY_ID_PARAM, previewClient.previewId);
-    proxyUrl.searchParams.set(PREVIEW_QUERY_TOKEN_PARAM, previewClient.previewToken);
-  }
-  return proxyUrl.toString();
-}
-
 function decodeIframeNavigationUrl(
   iframeUrl: string,
   routeKey: string,
@@ -359,6 +340,8 @@ function decodeIframeNavigationUrl(
   } else {
     return parsed.toString();
   }
+
+  stripInternalPreviewQueryParams(parsed);
 
   const baseOrigin =
     targetOrigin ||
@@ -450,9 +433,41 @@ function createPreviewIframe(frameKey: string): HTMLIFrameElement | null {
   return frame;
 }
 
+function replacePreviewIframe(frameKey: string): HTMLIFrameElement | null {
+  const existing = previewFrames.get(frameKey);
+  if (existing) {
+    existing.name = '';
+    existing.src = 'about:blank';
+    existing.remove();
+    previewFrames.delete(frameKey);
+  }
+
+  if (activeFrameKey === frameKey) {
+    activeFrameKey = null;
+  }
+
+  return createPreviewIframe(frameKey);
+}
+
 function ensurePreviewIframe(sessionId: string, previewName: string): HTMLIFrameElement | null {
   const frameKey = getPreviewFrameKey(sessionId, previewName);
   return previewFrames.get(frameKey) ?? createPreviewIframe(frameKey);
+}
+
+function shouldRemountPreviewFrame(
+  frame: HTMLIFrameElement,
+  previewClient: BrowserPreviewClientResponse,
+  targetUrl: string,
+  targetRevision: number,
+): boolean {
+  const nextLoadToken = buildPreviewLoadToken(targetUrl, targetRevision);
+  if (frame.dataset[PREVIEW_LOAD_TOKEN_DATASET_KEY] !== nextLoadToken) {
+    return true;
+  }
+
+  const currentFrameIdentity = frame.name || '';
+  const nextFrameIdentity = JSON.stringify(previewClient);
+  return currentFrameIdentity !== nextFrameIdentity;
 }
 
 function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFrameElement | null {
@@ -560,13 +575,14 @@ export async function loadPreview(): Promise<void> {
   const currentPreview = getActivePreview();
   const currentUrl = currentPreview?.url ?? $webPreviewUrl.get();
   const currentTargetRevision = currentPreview?.targetRevision ?? 0;
-  const frameKey = sessionId ? getPreviewFrameKey(sessionId, previewName) : null;
 
   if (!currentUrl || !sessionId) {
     setVisiblePreviewFrame(null);
     loadedUrl = null;
     return;
   }
+
+  const frameKey = getPreviewFrameKey(sessionId, previewName);
 
   const previewClient = await ensureDockedPreviewClient(sessionId, previewName);
   if ($activeSessionId.get() !== sessionId || getActivePreviewName() !== previewName) {
@@ -579,19 +595,31 @@ export async function loadPreview(): Promise<void> {
     return;
   }
 
-  const frame = ensurePreviewIframe(sessionId, previewName);
-  if (!frame) {
+  const initialFrame = ensurePreviewIframe(sessionId, previewName);
+  if (!initialFrame) {
     log.warn(() => `Failed to allocate dock iframe for ${sessionId}/${previewName}`);
     return;
   }
 
+  let frame: HTMLIFrameElement = initialFrame;
+
   try {
+    if (shouldRemountPreviewFrame(frame, previewClient, currentUrl, currentTargetRevision)) {
+      const replacementFrame = replacePreviewIframe(frameKey);
+      if (!replacementFrame) {
+        log.warn(() => `Failed to recreate dock iframe for ${sessionId}/${previewName}`);
+        return;
+      }
+      frame = replacementFrame;
+    }
+
     applyIframeSandbox(previewClient.origin, frame);
     setPreviewContextCookie(previewClient);
     frame.name = JSON.stringify(previewClient);
     const proxyUrl = buildProxyUrl(
       currentUrl,
       previewClient,
+      currentTargetRevision,
       previewClient.origin ?? window.location.origin,
     );
     if (shouldReloadPreviewFrame(frame, proxyUrl, currentUrl, currentTargetRevision)) {

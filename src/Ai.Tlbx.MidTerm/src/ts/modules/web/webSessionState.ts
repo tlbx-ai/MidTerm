@@ -155,7 +155,7 @@ export function upsertSessionPreview(
 ): WebPreviewState {
   const state = ensurePreviewState(preview.sessionId, preview.previewName);
   const routeKey = preview.routeKey.trim() ? preview.routeKey : null;
-  if (state.routeKey !== routeKey) {
+  if (state.routeKey !== routeKey || state.targetRevision != preview.targetRevision) {
     state.dockedClient = null;
   }
   state.routeKey = routeKey;

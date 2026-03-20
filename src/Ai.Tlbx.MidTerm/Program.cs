@@ -15,6 +15,7 @@ using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Services.Power;
+using Ai.Tlbx.MidTerm.Services.Hub;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program
@@ -333,6 +334,7 @@ public class Program
         FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
+        HubEndpoints.MapHubEndpoints(app, app.Services.GetRequiredService<HubService>());
         WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
         BrowserEndpoints.MapBrowserEndpoints(
             app,

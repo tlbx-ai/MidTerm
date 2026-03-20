@@ -17,6 +17,7 @@ using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Ai.Tlbx.MidTerm.Services.Certificates;
 using Ai.Tlbx.MidTerm.Services.Security;
+using Ai.Tlbx.MidTerm.Services.Hub;
 using Ai.Tlbx.MidTerm.Models.Auth;
 using Ai.Tlbx.MidTerm.Models.Certificates;
 using Ai.Tlbx.MidTerm.Models.Files;
@@ -676,6 +677,7 @@ public static class EndpointSetup
             settingsService,
             authService,
             shutdownService);
+        var hubMuxHandler = app.Services.GetRequiredService<HubMuxWebSocketHandler>();
 
         app.Use(async (context, next) =>
         {
@@ -732,6 +734,12 @@ public static class EndpointSetup
             if (path == "/ws/browser")
             {
                 await browserHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/hub/mux")
+            {
+                await hubMuxHandler.HandleAsync(context);
                 return;
             }
 

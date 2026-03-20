@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
 
@@ -99,5 +100,108 @@ public sealed class MidTermSettingsPublicTests
         Assert.Equal(-2, settings.LetterSpacing);
         Assert.Equal("normal", settings.FontWeight);
         Assert.Equal("900", settings.FontWeightBold);
+    }
+
+    [Fact]
+    public void FromSettings_ProjectsHubMachinesWithoutExposingSecrets()
+    {
+        var settings = new MidTermSettings
+        {
+            HubMachines =
+            [
+                new HubMachineSettings
+                {
+                    Id = "machine-a",
+                    Name = "Server",
+                    BaseUrl = "https://server:8443",
+                    Enabled = true,
+                    ApiKey = "api-secret",
+                    Password = "pw-secret",
+                    LastFingerprint = "AA:BB",
+                    PinnedFingerprint = "CC:DD"
+                }
+            ]
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        var machine = Assert.Single(publicSettings.HubMachines);
+        Assert.Equal("machine-a", machine.Id);
+        Assert.True(machine.HasApiKey);
+        Assert.True(machine.HasPassword);
+        Assert.Equal("AA:BB", machine.LastFingerprint);
+        Assert.Equal("CC:DD", machine.PinnedFingerprint);
+    }
+
+    [Fact]
+    public void ApplyTo_DoesNotReplaceExistingHubMachineSecrets()
+    {
+        var settings = new MidTermSettings
+        {
+            HubMachines =
+            [
+                new HubMachineSettings
+                {
+                    Id = "machine-a",
+                    Name = "Existing",
+                    BaseUrl = "https://server:8443",
+                    ApiKey = "api-secret",
+                    Password = "pw-secret"
+                }
+            ]
+        };
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            DefaultCols = settings.DefaultCols,
+            DefaultRows = settings.DefaultRows,
+            DefaultWorkingDirectory = settings.DefaultWorkingDirectory,
+            FontSize = settings.FontSize,
+            FontFamily = settings.FontFamily,
+            LineHeight = settings.LineHeight,
+            LetterSpacing = settings.LetterSpacing,
+            FontWeight = settings.FontWeight,
+            FontWeightBold = settings.FontWeightBold,
+            CursorStyle = settings.CursorStyle,
+            CursorBlink = settings.CursorBlink,
+            CursorInactiveStyle = settings.CursorInactiveStyle,
+            HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
+            Theme = settings.Theme,
+            TerminalColorScheme = settings.TerminalColorScheme,
+            BackgroundImageEnabled = settings.BackgroundImageEnabled,
+            BackgroundImageFit = settings.BackgroundImageFit,
+            UiTransparency = settings.UiTransparency,
+            TerminalTransparency = settings.TerminalTransparency,
+            TabTitleMode = settings.TabTitleMode,
+            MinimumContrastRatio = settings.MinimumContrastRatio,
+            SmoothScrolling = settings.SmoothScrolling,
+            ScrollbarStyle = settings.ScrollbarStyle,
+            UseWebGL = settings.UseWebGL,
+            ScrollbackLines = settings.ScrollbackLines,
+            BellStyle = settings.BellStyle,
+            CopyOnSelect = settings.CopyOnSelect,
+            RightClickPaste = settings.RightClickPaste,
+            ClipboardShortcuts = settings.ClipboardShortcuts,
+            TerminalEnterMode = settings.TerminalEnterMode,
+            ScrollbackProtection = settings.ScrollbackProtection,
+            KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
+            InputMode = settings.InputMode,
+            FileRadar = settings.FileRadar,
+            ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
+            TmuxCompatibility = settings.TmuxCompatibility,
+            ManagerBarEnabled = settings.ManagerBarEnabled,
+            ManagerBarButtons = settings.ManagerBarButtons,
+            DevMode = settings.DevMode,
+            ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
+            ShowUpdateNotification = settings.ShowUpdateNotification,
+            UpdateChannel = settings.UpdateChannel,
+            Language = settings.Language
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        var machine = Assert.Single(settings.HubMachines);
+        Assert.Equal("api-secret", machine.ApiKey);
+        Assert.Equal("pw-secret", machine.Password);
     }
 }

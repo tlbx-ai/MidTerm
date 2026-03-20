@@ -24,6 +24,7 @@ import {
   isSessionInLayout,
   undockSession,
 } from '../layout/layoutStore';
+import { getHubSession, getHubSidebarSections, isHubSessionId } from '../hub/runtime';
 import { formatRuntimeDisplay } from './processDisplay';
 import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
@@ -96,6 +97,7 @@ const SESSION_GROUP_STORAGE_KEYS = {
   agent: 'midterm.sidebar.agentSessionsCollapsed',
 } as const;
 const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
+const HUB_MACHINE_STORAGE_PREFIX = 'midterm.sidebar.hubMachineCollapsed.';
 
 export type SessionControlMode = 'human' | 'agent';
 
@@ -135,6 +137,15 @@ function buildSessionFilterHaystack(session: Session): string {
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join('\n')
     .toLowerCase();
+}
+
+function isHubMachineCollapsed(machineId: string): boolean {
+  return localStorage.getItem(`${HUB_MACHINE_STORAGE_PREFIX}${machineId}`) === 'true';
+}
+
+function toggleHubMachineCollapsed(section: HTMLElement, machineId: string): void {
+  const collapsed = section.classList.toggle('collapsed');
+  localStorage.setItem(`${HUB_MACHINE_STORAGE_PREFIX}${machineId}`, String(collapsed));
 }
 
 function loadStoredSessionFilter(): string {
@@ -751,6 +762,7 @@ function createSessionItem(
   isPending: boolean,
 ): HTMLDivElement {
   const sessionId = session.id;
+  const isRemoteSession = isHubSessionId(sessionId);
   const inLayout = isSessionInLayout(sessionId);
   const isChild = isChildSession(sessionId);
   const controlMode = getSessionControlMode(session);
@@ -883,7 +895,7 @@ function createSessionItem(
   actions.setAttribute('role', 'menu');
 
   if (!isPending && sessionId) {
-    if (shouldShowAgentControlAction(controlMode)) {
+    if (!isRemoteSession && shouldShowAgentControlAction(controlMode)) {
       const controlBtn = document.createElement('button');
       controlBtn.className = 'session-control';
       controlBtn.classList.add('active');
@@ -897,18 +909,6 @@ function createSessionItem(
       actions.appendChild(controlBtn);
     }
 
-    const pinBtn = document.createElement('button');
-    pinBtn.className = 'session-pin';
-    applyPinButtonState(pinBtn, !!session.bookmarkId);
-    pinBtn.setAttribute('role', 'menuitem');
-    pinBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      if (callbacks) {
-        callbacks.onPinToHistory(sessionId);
-      }
-    });
-
     const renameBtn = document.createElement('button');
     renameBtn.className = 'session-rename';
     setActionButtonContent(renameBtn, t('session.rename'), icon('rename'));
@@ -918,18 +918,6 @@ function createSessionItem(
       closeMobileActionMenu();
       if (callbacks) {
         callbacks.onRename(sessionId);
-      }
-    });
-
-    const injectBtn = document.createElement('button');
-    injectBtn.className = 'session-inject';
-    setActionButtonContent(injectBtn, t('session.injectGuidance'), icon('inject'));
-    injectBtn.setAttribute('role', 'menuitem');
-    injectBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      if (callbacks?.onInjectGuidance) {
-        callbacks.onInjectGuidance(sessionId);
       }
     });
 
@@ -946,20 +934,47 @@ function createSessionItem(
     });
 
     // Undock button (only shown when in layout)
-    const undockBtn = document.createElement('button');
-    undockBtn.className = 'session-undock';
-    setActionButtonContent(undockBtn, t('session.removeFromLayout'), icon('undock'));
-    undockBtn.setAttribute('role', 'menuitem');
-    undockBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      undockSession(sessionId);
-    });
+    if (!isRemoteSession) {
+      const pinBtn = document.createElement('button');
+      pinBtn.className = 'session-pin';
+      applyPinButtonState(pinBtn, !!session.bookmarkId);
+      pinBtn.setAttribute('role', 'menuitem');
+      pinBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMobileActionMenu();
+        if (callbacks) {
+          callbacks.onPinToHistory(sessionId);
+        }
+      });
 
-    actions.appendChild(pinBtn);
+      const injectBtn = document.createElement('button');
+      injectBtn.className = 'session-inject';
+      setActionButtonContent(injectBtn, t('session.injectGuidance'), icon('inject'));
+      injectBtn.setAttribute('role', 'menuitem');
+      injectBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMobileActionMenu();
+        if (callbacks?.onInjectGuidance) {
+          callbacks.onInjectGuidance(sessionId);
+        }
+      });
+
+      const undockBtn = document.createElement('button');
+      undockBtn.className = 'session-undock';
+      setActionButtonContent(undockBtn, t('session.removeFromLayout'), icon('undock'));
+      undockBtn.setAttribute('role', 'menuitem');
+      undockBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMobileActionMenu();
+        undockSession(sessionId);
+      });
+
+      actions.appendChild(pinBtn);
+      actions.appendChild(injectBtn);
+      actions.appendChild(undockBtn);
+    }
+
     actions.appendChild(renameBtn);
-    actions.appendChild(injectBtn);
-    actions.appendChild(undockBtn);
     actions.appendChild(closeBtn);
   }
 
@@ -1068,6 +1083,51 @@ function createSessionGroupSection(group: SessionGroup): HTMLDivElement {
   return section;
 }
 
+function createHubMachineSection(
+  machine: ReturnType<typeof getHubSidebarSections>[number],
+): HTMLDivElement {
+  const section = document.createElement('div');
+  section.className = 'session-group session-group-hub-machine';
+  if (isHubMachineCollapsed(machine.machine.machine.id)) {
+    section.classList.add('collapsed');
+  }
+
+  const toggle = document.createElement('button');
+  toggle.className = 'session-group-toggle';
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', section.classList.contains('collapsed') ? 'false' : 'true');
+  toggle.addEventListener('click', () => {
+    toggleHubMachineCollapsed(section, machine.machine.machine.id);
+    toggle.setAttribute(
+      'aria-expanded',
+      section.classList.contains('collapsed') ? 'false' : 'true',
+    );
+  });
+
+  const caret = document.createElement('span');
+  caret.className = 'session-group-caret';
+  caret.textContent = '▾';
+
+  const label = document.createElement('span');
+  label.className = 'session-group-label';
+  label.textContent = machine.machine.machine.name;
+
+  const count = document.createElement('span');
+  count.className = 'session-group-count';
+  count.textContent = String(machine.sessions.length);
+
+  toggle.append(caret, label, count);
+  section.appendChild(toggle);
+
+  const items = document.createElement('div');
+  items.className = 'session-group-items';
+  machine.sessions.forEach((session) => {
+    items.appendChild(createSessionItem(session, session.id === $activeSessionId.get(), false));
+  });
+  section.appendChild(items);
+  return section;
+}
+
 function applySidebarGroupingClasses(sessionList: HTMLElement): void {
   sessionList.querySelectorAll<HTMLElement>('.session-group-items').forEach((groupItems) => {
     const allItems = groupItems.querySelectorAll<HTMLElement>('.session-item');
@@ -1148,6 +1208,11 @@ export function renderSessionList(): void {
     groups.forEach((group) => {
       sessionList.appendChild(createSessionGroupSection(group));
     });
+    getHubSidebarSections().forEach((machine) => {
+      if (machine.sessions.length > 0) {
+        sessionList.appendChild(createHubMachineSection(machine));
+      }
+    });
   }
 
   applySidebarGroupingClasses(sessionList);
@@ -1161,7 +1226,8 @@ export function updateEmptyState(): void {
 
   const isSettingsOpen = $settingsOpen.get();
   const sessions = $sessionList.get();
-  if (sessions.length === 0) {
+  const hasHubSessions = getHubSidebarSections().some((machine) => machine.sessions.length > 0);
+  if (sessions.length === 0 && !hasHubSessions) {
     // Only show empty state if settings panel is not open
     if (!isSettingsOpen) {
       dom.emptyState.classList.remove('hidden');
@@ -1181,7 +1247,9 @@ export function updateMobileTitle(): void {
 
   const sessions = $sessionList.get();
   const activeSessionId = $activeSessionId.get();
-  const session = sessions.find((s) => s.id === activeSessionId);
+  const session =
+    sessions.find((s) => s.id === activeSessionId) ??
+    (activeSessionId ? getHubSession(activeSessionId) : null);
   dom.mobileTitle.textContent = session ? getSessionDisplayName(session) : 'MidTerm';
 
   if (dom.topbarActions) {
@@ -1193,7 +1261,7 @@ export function updateMobileTitle(): void {
   }
 
   // Also update the desktop collapsed title bar
-  updateTitleBar(session);
+  updateTitleBar(session ?? undefined);
 }
 
 /**

@@ -268,6 +268,45 @@ public sealed class BrowserCommandService
             connectedUiClientCount).Response;
     }
 
+    public async Task<BrowserStatusResponse> WaitForControllableAsync(
+        string? targetUrl,
+        string? sessionId = null,
+        string? previewName = null,
+        string? previewId = null,
+        Func<int>? connectedUiClientCountProvider = null,
+        TimeSpan? timeout = null,
+        TimeSpan? pollInterval = null,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(8);
+        var effectivePollInterval = pollInterval ?? TimeSpan.FromMilliseconds(200);
+        var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
+        BrowserStatusResponse? latest = null;
+
+        while (true)
+        {
+            var connectedUiClientCount = connectedUiClientCountProvider?.Invoke() ?? 0;
+            latest = GetStatus(
+                targetUrl,
+                sessionId,
+                previewName,
+                previewId,
+                connectedUiClientCount);
+
+            if (latest.Controllable)
+            {
+                return latest;
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                return latest;
+            }
+
+            await Task.Delay(effectivePollInterval, cancellationToken);
+        }
+    }
+
     private BrowserStatusSnapshot GetStatusSnapshot(
         string? targetUrl,
         string? sessionId,

@@ -32,12 +32,15 @@ const mocks = vi.hoisted(() => ({
   swapLayoutSessions: vi.fn(),
   initializeFromSession: vi.fn(),
   selectSession: vi.fn(),
+  checkVersionAndReload: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../utils', () => ({
   ReconnectController: class {
     reset(): void {}
-    schedule(): void {}
+    schedule(callback?: () => void): void {
+      callback?.();
+    }
   },
   createWsUrl: () => 'ws://midterm.test/ws/state',
   closeWebSocket: mocks.closeWebSocket,
@@ -127,6 +130,10 @@ vi.mock('../layout/layoutStore', () => ({
   dockSession: mocks.dockSession,
   isSessionInLayout: mocks.isSessionInLayout,
   swapLayoutSessions: mocks.swapLayoutSessions,
+}));
+
+vi.mock('../../utils/versionCheck', () => ({
+  checkVersionAndReload: mocks.checkVersionAndReload,
 }));
 
 class MockWebSocket {
@@ -242,6 +249,7 @@ describe('stateChannel browser-ui handling', () => {
       'default',
       'http://localhost:3000',
     );
+    expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
     expect(mocks.upsertSessionPreview).toHaveBeenCalledWith({
       sessionId: 'agent5678',
       previewName: 'default',
@@ -250,5 +258,58 @@ describe('stateChannel browser-ui handling', () => {
       active: true,
       targetRevision: 1,
     });
+  });
+
+  it('checks frontend version on state websocket reconnect', async () => {
+    const { ws } = await loadHarness();
+
+    ws.onopen?.(new Event('open'));
+    expect(mocks.checkVersionAndReload).not.toHaveBeenCalled();
+
+    ws.onclose?.(new CloseEvent('close'));
+
+    const next = MockWebSocket.instances[1];
+    if (!next) {
+      throw new Error('Reconnect WebSocket was not created');
+    }
+
+    next.onopen?.(new Event('open'));
+    expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('activates the target session when browser open explicitly requests it', async () => {
+    const { stores, ws } = await loadHarness();
+    mocks.setWebPreviewTarget.mockResolvedValue({
+      sessionId: 'agent5678',
+      previewName: 'default',
+      routeKey: 'route-1',
+      url: 'http://localhost:3000',
+      active: true,
+      targetRevision: 1,
+    });
+    mocks.selectSession.mockImplementation((sessionId: string) => {
+      stores.$activeSessionId.set(sessionId);
+    });
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'open',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        url: 'http://localhost:3000',
+        activateSession: true,
+      }),
+    } as MessageEvent<string>);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.selectSession).toHaveBeenCalledWith('agent5678', {
+      closeSettingsPanel: false,
+    });
+    expect(stores.$activeSessionId.get()).toBe('agent5678');
+    expect(mocks.openWebPreviewDock).toHaveBeenCalledTimes(1);
+    expect(mocks.syncActiveWebPreview).toHaveBeenCalledTimes(1);
   });
 });

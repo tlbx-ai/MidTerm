@@ -540,6 +540,10 @@
                   <span class="icon">&#xea0c;</span>
                   <span class="tab-label" data-i18n="settings.general">General</span>
                 </button>
+                <button class="settings-tab" data-tab="hub" role="tab" aria-selected="false">
+                  <span class="icon">&#xe925;</span>
+                  <span class="tab-label" data-i18n="settings.hub">MidTerm Hub</span>
+                </button>
                 <button class="settings-tab" data-tab="appearance" role="tab" aria-selected="false">
                   <span class="icon">&#xe90d;</span>
                   <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
@@ -895,6 +899,70 @@
                         >terminus-font.sourceforge.net</a
                       >
                     </div>
+                  </div>
+                </section>
+
+                <!-- Hub Panel -->
+                <section class="settings-panel hidden" data-panel="hub">
+                  <h2 data-i18n="settings.hub.title">MidTerm Hub</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.hub.addMachine">Add Machine</h3>
+                    <div class="setting-row">
+                      <label for="hub-machine-name" data-i18n="settings.hub.machineName"
+                        >Machine Name</label
+                      >
+                      <input id="hub-machine-name" type="text" placeholder="MacBook Pro" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="hub-machine-url" data-i18n="settings.hub.machineUrl">URL</label>
+                      <input
+                        id="hub-machine-url"
+                        type="text"
+                        placeholder="https://192.168.1.24:2000"
+                      />
+                    </div>
+                    <div class="setting-row">
+                      <label for="hub-machine-api-key" data-i18n="settings.hub.apiKey"
+                        >API Key</label
+                      >
+                      <input id="hub-machine-api-key" type="text" placeholder="mtk_..." />
+                    </div>
+                    <div class="setting-row">
+                      <label for="hub-machine-password" data-i18n="settings.hub.password"
+                        >Password</label
+                      >
+                      <input
+                        id="hub-machine-password"
+                        type="password"
+                        placeholder="Optional fallback"
+                      />
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.hub.actions">Actions</label>
+                      <div class="update-actions-inline">
+                        <button
+                          id="btn-hub-add-machine"
+                          class="btn-primary"
+                          data-i18n="settings.hub.saveMachine"
+                        >
+                          Save Machine
+                        </button>
+                        <button
+                          id="btn-hub-control-updates"
+                          class="btn-secondary"
+                          data-i18n="settings.hub.controlUpdates"
+                        >
+                          Control Updates
+                        </button>
+                      </div>
+                    </div>
+                    <p class="setting-hint" id="hub-settings-status"></p>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.hub.configuredMachines">Configured Machines</h3>
+                    <div id="hub-machine-list" class="hub-machine-list"></div>
                   </div>
                 </section>
 

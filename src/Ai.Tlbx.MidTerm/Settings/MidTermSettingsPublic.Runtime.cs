@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Models.Hub;
 
 namespace Ai.Tlbx.MidTerm.Settings;
 
@@ -62,7 +63,20 @@ public sealed partial class MidTermSettingsPublic
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
             AuthenticationEnabled = settings.AuthenticationEnabled,
-            CertificatePath = settings.CertificatePath
+            CertificatePath = settings.CertificatePath,
+            HubMachines = settings.HubMachines
+                .Select(machine => new HubMachineInfo
+                {
+                    Id = machine.Id,
+                    Name = machine.Name,
+                    BaseUrl = machine.BaseUrl,
+                    Enabled = machine.Enabled,
+                    HasApiKey = !string.IsNullOrWhiteSpace(machine.ApiKey),
+                    HasPassword = !string.IsNullOrWhiteSpace(machine.Password),
+                    LastFingerprint = machine.LastFingerprint,
+                    PinnedFingerprint = machine.PinnedFingerprint
+                })
+                .ToList()
         };
     }
 
@@ -137,11 +151,11 @@ public sealed partial class MidTermSettingsPublic
             }
         }
         settings.RunAsUser = RunAsUser;
-
         // RunAsUserSid is derived server-side from RunAsUser (Windows only)
         // AuthenticationEnabled is managed by the auth endpoint
         // CertificatePath is set via install/CLI
         // Background image metadata is managed by the background image endpoints
+        // Hub machine configuration is managed by the hub endpoints so credentials are not lost
         // These fields are read-only in the GET response and ignored on PUT.
     }
 }

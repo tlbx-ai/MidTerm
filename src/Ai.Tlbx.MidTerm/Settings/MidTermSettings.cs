@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Common.Shells;
+using Ai.Tlbx.MidTerm.Models.Hub;
 
 namespace Ai.Tlbx.MidTerm.Settings;
 
@@ -123,4 +124,7 @@ public sealed class MidTermSettings
     // Voice server password (shared secret for MidTerm.Voice authentication)
     [JsonIgnore]
     public string? VoiceServerPassword { get; set; }
+
+    // Hub configuration for monitoring and controlling remote MidTerm instances
+    public List<HubMachineSettings> HubMachines { get; set; } = [];
 }

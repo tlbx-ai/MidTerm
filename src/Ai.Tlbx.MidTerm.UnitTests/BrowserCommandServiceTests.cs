@@ -312,4 +312,46 @@ public class BrowserCommandServiceTests
         Assert.Null(status.DefaultClient);
         Assert.Contains("Multiple browser previews are connected", status.StatusMessage ?? "", StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task WaitForControllableAsync_ReturnsReadyAfterMatchingPreviewAttaches()
+    {
+        var service = new BrowserCommandService();
+
+        var waitingTask = service.WaitForControllableAsync(
+            "https://example.com/",
+            sessionId: "session-a",
+            previewName: "user1",
+            timeout: TimeSpan.FromSeconds(1),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        await Task.Delay(40);
+        Assert.True(service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { }));
+
+        var status = await waitingTask;
+
+        Assert.True(status.Connected);
+        Assert.True(status.Controllable);
+        Assert.Equal("ready", status.State);
+        Assert.Equal("preview-a", status.DefaultClient?.PreviewId);
+    }
+
+    [Fact]
+    public async Task WaitForControllableAsync_ReturnsLatestWaitingStatusOnTimeout()
+    {
+        var service = new BrowserCommandService();
+
+        var status = await service.WaitForControllableAsync(
+            "https://example.com/",
+            sessionId: "session-a",
+            previewName: "user1",
+            connectedUiClientCountProvider: () => 1,
+            timeout: TimeSpan.FromMilliseconds(40),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        Assert.False(status.Controllable);
+        Assert.Equal("waiting", status.State);
+        Assert.True(status.HasTarget);
+        Assert.True(status.HasUiClient);
+    }
 }

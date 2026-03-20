@@ -28,7 +28,7 @@ public sealed class BrowserUiBridge
         Action<string?, string?> detach,
         Action<string?, string?> dock,
         Action<string?, string?, int, int> viewport,
-        Action<string?, string?, string> open)
+        Action<string?, string?, string, bool> open)
     {
         lock (_lock)
         {
@@ -89,7 +89,12 @@ public sealed class BrowserUiBridge
         return true;
     }
 
-    public bool RequestOpen(string? sessionId, string? previewName, string url, out string error)
+    public bool RequestOpen(
+        string? sessionId,
+        string? previewName,
+        string url,
+        bool activateSession,
+        out string error)
     {
         error = "";
         if (!TryGetTargetListener(out var target, out error))
@@ -97,7 +102,7 @@ public sealed class BrowserUiBridge
             return false;
         }
 
-        target.Open(sessionId, previewName, url);
+        target.Open(sessionId, previewName, url, activateSession);
         return true;
     }
 
@@ -140,7 +145,7 @@ public sealed class BrowserUiBridge
         public required Action<string?, string?> Detach { get; init; }
         public required Action<string?, string?> Dock { get; init; }
         public required Action<string?, string?, int, int> Viewport { get; init; }
-        public required Action<string?, string?, string> Open { get; init; }
+        public required Action<string?, string?, string, bool> Open { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
     }
 }

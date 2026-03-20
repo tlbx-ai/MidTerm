@@ -56,6 +56,8 @@ import { handleStateUpdate } from './stateChannel';
 import { getSessions } from '../../api/client';
 import { applyTerminalScaling } from '../terminal/scaling';
 import { isSharedSessionRoute } from '../share';
+import { isHubSessionId } from '../hub/runtime';
+import { requestHubBufferRefresh, sendHubInput, sendHubResize } from '../hub/channel';
 import {
   muxWs,
   sessionTerminals,
@@ -112,6 +114,24 @@ interface ReplaySuppressionState {
 
 const replaySuppressedSessions = new Map<string, ReplaySuppressionState>();
 
+function forEachLocalTerminal(callback: (state: TerminalState, sessionId: string) => void): void {
+  sessionTerminals.forEach((state, sessionId) => {
+    if (isHubSessionId(sessionId)) {
+      return;
+    }
+
+    callback(state, sessionId);
+  });
+}
+
+function getLocalTerminalCount(): number {
+  let count = 0;
+  forEachLocalTerminal(() => {
+    count += 1;
+  });
+  return count;
+}
+
 function beginReplayHeatSuppression(sessionId: string, maxDurationMs = BUFFER_REPLAY_MAX_MS): void {
   const now = Date.now();
   replaySuppressedSessions.set(sessionId, {
@@ -121,7 +141,7 @@ function beginReplayHeatSuppression(sessionId: string, maxDurationMs = BUFFER_RE
 }
 
 function beginReplayHeatSuppressionForAllSessions(): void {
-  sessionTerminals.forEach((_, sessionId) => {
+  forEachLocalTerminal((_, sessionId) => {
     beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
   });
 }
@@ -165,13 +185,13 @@ function freezeTerminalDuringReconnect(state: TerminalState): void {
 }
 
 function freezeVisibleTerminalsDuringReconnect(): void {
-  sessionTerminals.forEach((state) => {
+  forEachLocalTerminal((state) => {
     freezeTerminalDuringReconnect(state);
   });
 }
 
 function thawReconnectFreeze(): void {
-  sessionTerminals.forEach((state) => {
+  forEachLocalTerminal((state) => {
     removeReconnectFreeze(state);
   });
 }
@@ -872,6 +892,16 @@ function writeToTerminal(
   // }
 }
 
+export function applyOutputFrameToTerminal(
+  sessionId: string,
+  state: TerminalState,
+  cols: number,
+  rows: number,
+  data: Uint8Array,
+): void {
+  writeToTerminal(sessionId, state, cols, rows, data, outputQueueGeneration);
+}
+
 // =============================================================================
 // WebSocket Connection
 // =============================================================================
@@ -903,7 +933,8 @@ export function connectMuxWebSocket(): void {
     }, 10000);
 
     // Detect reconnect: we've connected before AND have terminals to refresh
-    const isReconnect = $muxHasConnected.get() && sessionTerminals.size > 0;
+    const localTerminalCount = getLocalTerminalCount();
+    const isReconnect = $muxHasConnected.get() && localTerminalCount > 0;
 
     $muxWsConnected.set(true);
     $muxHasConnected.set(true);
@@ -911,13 +942,13 @@ export function connectMuxWebSocket(): void {
     // On reconnect, check if server version changed (update applied) and reload
     if (isReconnect) {
       void checkVersionAndReload();
-      log.info(() => `Reconnected - refreshing ${sessionTerminals.size} terminals`);
+      log.info(() => `Reconnected - refreshing ${localTerminalCount} terminals`);
       freezeVisibleTerminalsDuringReconnect();
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
       clearQueuedOutput();
-      sessionTerminals.forEach((state) => {
+      forEachLocalTerminal((state) => {
         if (state.opened) {
           state.terminal.clear();
           state.terminal.write('\x1b[0m');
@@ -1008,7 +1039,7 @@ export function connectMuxWebSocket(): void {
       log.info(() => 'Resync: clearing terminals for buffer refresh');
       _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
       beginReplayHeatSuppressionForAllSessions();
-      sessionTerminals.forEach((state) => {
+      forEachLocalTerminal((state) => {
         if (state.opened) {
           state.terminal.clear();
           state.terminal.write('\x1b[0m');
@@ -1104,6 +1135,11 @@ function sendFrame(frame: Uint8Array): void {
  * Buffers input when WebSocket is disconnected for replay on reconnect.
  */
 export function sendInput(sessionId: string, data: string): void {
+  if (isHubSessionId(sessionId)) {
+    sendHubInput(sessionId, data);
+    return;
+  }
+
   const state = sessionTerminals.get(sessionId);
   if (state) {
     state.lastLocalInputAtMs = performance.now();
@@ -1150,6 +1186,11 @@ function flushPendingInput(): void {
  * Send terminal resize to server.
  */
 export function sendResize(sessionId: string, cols: number, rows: number): void {
+  if (isHubSessionId(sessionId)) {
+    sendHubResize(sessionId, cols, rows);
+    return;
+  }
+
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
   const frame = new Uint8Array(MUX_HEADER_SIZE + 4);
@@ -1172,6 +1213,11 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
  * Request buffer refresh for a session via WebSocket.
  */
 export function requestBufferRefresh(sessionId: string): void {
+  if (isHubSessionId(sessionId)) {
+    requestHubBufferRefresh(sessionId);
+    return;
+  }
+
   beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
   _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
@@ -1186,6 +1232,10 @@ export function requestBufferRefresh(sessionId: string): void {
  * Send active session hint to server for priority delivery.
  */
 export function sendActiveSessionHint(sessionId: string | null): void {
+  if (sessionId && isHubSessionId(sessionId)) {
+    return;
+  }
+
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
   if (sessionId) {

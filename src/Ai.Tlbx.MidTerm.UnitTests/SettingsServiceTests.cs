@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
 
@@ -233,6 +234,41 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Equal("cert-pass", reloaded.CertificatePassword);
         Assert.Equal("voice-pass", reloaded.VoiceServerPassword);
         Assert.Equal("dev", reloaded.UpdateChannel);
+    }
+
+    [Fact]
+    public void Save_HubMachineSecretsPersistSecurely_NotInSettingsJson()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var service = new SettingsService(_tempDir);
+        var settings = service.Load();
+        settings.HubMachines =
+        [
+            new HubMachineSettings
+            {
+                Id = "machine-a",
+                Name = "Server",
+                BaseUrl = "https://server:8443",
+                ApiKey = "api-secret",
+                Password = "pw-secret",
+                PinnedFingerprint = "AA:BB"
+            }
+        ];
+
+        service.Save(settings);
+
+        var savedJson = File.ReadAllText(Path.Combine(_tempDir, "settings.json"));
+        Assert.DoesNotContain("api-secret", savedJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("pw-secret", savedJson, StringComparison.Ordinal);
+        Assert.Contains("machine-a", savedJson, StringComparison.Ordinal);
+        Assert.Contains("AA:BB", savedJson, StringComparison.Ordinal);
+
+        var reloaded = new SettingsService(_tempDir).Load();
+        var machine = Assert.Single(reloaded.HubMachines);
+        Assert.Equal("api-secret", machine.ApiKey);
+        Assert.Equal("pw-secret", machine.Password);
+        Assert.Equal("AA:BB", machine.PinnedFingerprint);
     }
 
     [Fact]

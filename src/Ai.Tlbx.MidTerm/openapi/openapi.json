@@ -3802,6 +3802,51 @@
           }
         }
       },
+      "HubMachineInfo": {
+        "required": [
+          "id",
+          "name",
+          "baseUrl",
+          "enabled",
+          "hasApiKey",
+          "hasPassword",
+          "lastFingerprint",
+          "pinnedFingerprint"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "hasApiKey": {
+            "type": "boolean"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "lastFingerprint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "pinnedFingerprint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "IFormFile": {
         "type": "string",
         "format": "binary"
@@ -4113,7 +4158,8 @@
           "runAsUser",
           "runAsUserSid",
           "authenticationEnabled",
-          "certificatePath"
+          "certificatePath",
+          "hubMachines"
         ],
         "type": "object",
         "properties": {
@@ -4301,6 +4347,12 @@
               "null",
               "string"
             ]
+          },
+          "hubMachines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HubMachineInfo"
+            }
           }
         }
       },
@@ -5872,6 +5924,12 @@
           },
           "url": {
             "type": "string"
+          },
+          "activateSession": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
