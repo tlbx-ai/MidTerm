@@ -368,6 +368,7 @@ public class Program
             app,
             sessionManager,
             muxManager,
+            sessionSupervisor,
             updateService,
             settingsService,
             authService,

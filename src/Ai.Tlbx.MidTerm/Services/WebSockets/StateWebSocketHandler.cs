@@ -25,6 +25,7 @@ namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 public sealed class StateWebSocketHandler
 {
     private readonly TtyHostSessionManager _sessionManager;
+    private readonly SessionSupervisorService _sessionSupervisor;
     private readonly UpdateService _updateService;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
@@ -36,6 +37,7 @@ public sealed class StateWebSocketHandler
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
+        SessionSupervisorService sessionSupervisor,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
@@ -46,6 +48,7 @@ public sealed class StateWebSocketHandler
         BrowserUiBridge? browserUiBridge = null)
     {
         _sessionManager = sessionManager;
+        _sessionSupervisor = sessionSupervisor;
         _updateService = updateService;
         _settingsService = settingsService;
         _authService = authService;
@@ -109,7 +112,7 @@ public sealed class StateWebSocketHandler
 
         async Task SendStateAsync()
         {
-            var sessionList = _sessionManager.GetSessionList();
+            var sessionList = GetSessionListDto();
             if (shareAccess is not null)
             {
                 sessionList.Sessions = sessionList.Sessions
@@ -122,6 +125,17 @@ public sealed class StateWebSocketHandler
                 Update = shareAccess is null ? lastUpdate : null
             };
             await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
+        }
+
+        SessionListDto GetSessionListDto()
+        {
+            var response = _sessionManager.GetSessionList();
+            foreach (var session in response.Sessions)
+            {
+                session.Supervisor = _sessionSupervisor.Describe(session);
+            }
+
+            return response;
         }
 
         async Task SendCommandResponseAsync(string id, bool success, object? data = null, string? error = null)
