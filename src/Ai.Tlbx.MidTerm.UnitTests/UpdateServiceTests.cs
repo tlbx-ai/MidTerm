@@ -365,6 +365,7 @@ public sealed class UpdateServiceTests : IDisposable
         Directory.CreateDirectory(extractedDir);
         Directory.CreateDirectory(settingsDir);
         File.WriteAllText(Path.Combine(extractedDir, "mt"), "new-mt");
+        File.WriteAllText(Path.Combine(extractedDir, "mtagenthost"), "new-agenthost");
         File.WriteAllText(
             Path.Combine(extractedDir, "version.json"),
             """
@@ -386,13 +387,16 @@ public sealed class UpdateServiceTests : IDisposable
 
         Assert.Equal(Path.Combine(settingsDir, "update-staging", "payload"), stagedDir);
         Assert.True(File.Exists(Path.Combine(stagedDir, "mt")));
+        Assert.True(File.Exists(Path.Combine(stagedDir, "mtagenthost")));
         Assert.True(File.Exists(Path.Combine(stagedDir, "version.json")));
         Assert.False(Directory.Exists(Path.GetDirectoryName(extractedDir)!));
 
         if (!OperatingSystem.IsWindows())
         {
             var mode = File.GetUnixFileMode(Path.Combine(stagedDir, "mt"));
+            var agentMode = File.GetUnixFileMode(Path.Combine(stagedDir, "mtagenthost"));
             Assert.True(mode.HasFlag(UnixFileMode.UserExecute));
+            Assert.True(agentMode.HasFlag(UnixFileMode.UserExecute));
         }
     }
 
