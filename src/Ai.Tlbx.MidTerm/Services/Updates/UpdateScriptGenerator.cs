@@ -690,7 +690,7 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var logFilePath = LogPaths.GetUpdateLogPath(false, isServiceMode, configDir);
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
-        var isWebOnly = updateType == UpdateType.WebOnly;
+        var isWebOnly = updateType != UpdateType.Full;
         var generatingVersion = typeof(UpdateScriptGenerator).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
         var plusIdx = generatingVersion.IndexOf('+');
@@ -773,6 +773,27 @@ write_result() {{
     ""logFile"": ""$LOG_FILE""
 }}
 RESULT_EOF
+}}
+
+describe_source_file() {{
+    local file_path=""$1""
+    local description=""$2""
+    local required=""${{3:-true}}""
+
+    if [[ ! -f ""$file_path"" ]]; then
+        if [[ ""$required"" == ""true"" ]]; then
+            log ""Missing required update payload file: $description at $file_path"" ""ERROR""
+            return 1
+        fi
+
+        log ""Optional update payload file not present: $description at $file_path""
+        return 0
+    fi
+
+    local file_size
+    file_size=$(stat -c%s ""$file_path"" 2>/dev/null || echo ""unknown"")
+    log ""Found staged $description at $file_path ($file_size bytes)""
+    return 0
 }}
 
 wait_for_file_writable() {{
@@ -972,6 +993,30 @@ else
     log ""No version.json found (fresh install?)"" ""WARN""
 fi
 
+log ""Update source directory: $EXTRACTED_DIR""
+if [[ ! -d ""$EXTRACTED_DIR"" ]]; then
+    log ""Update source directory is missing before shutdown: $EXTRACTED_DIR"" ""ERROR""
+    write_result false ""Update payload directory is missing before install"" ""$EXTRACTED_DIR""
+    exit 1
+fi
+
+if ! describe_source_file ""$NEW_MT"" ""mt""; then
+    write_result false ""Update payload is missing mt"" ""$NEW_MT""
+    exit 1
+fi
+
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]]; then
+    if ! describe_source_file ""$NEW_MTHOST"" ""mthost""; then
+        write_result false ""Update payload is missing mthost"" ""$NEW_MTHOST""
+        exit 1
+    fi
+fi
+
+if ! describe_source_file ""$NEW_VERSION_JSON"" ""version.json""; then
+    write_result false ""Update payload is missing version.json"" ""$NEW_VERSION_JSON""
+    exit 1
+fi
+
 # ============================================
 # PHASE 1: Stop all processes
 # ============================================
@@ -992,7 +1037,7 @@ log ""Killing mt processes...""
 kill_process_by_path ""$CURRENT_MT""
 
 # Kill mthost processes (only for full updates)
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]]; then
     log ""Killing mthost processes...""
     kill_process_by_path ""$CURRENT_MTHOST""
 fi
@@ -1011,7 +1056,7 @@ if ! wait_for_file_writable ""$CURRENT_MT""; then
     exit 1
 fi
 
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     if ! wait_for_file_writable ""$CURRENT_MTHOST""; then
         log ""mthost is still locked after $MAX_RETRIES retries"" ""ERROR""
         write_result false ""mthost is still locked. Another process may be using it.""
@@ -1033,7 +1078,7 @@ if [[ -f ""$CURRENT_MT"" ]]; then
     log ""mt backed up""
 fi
 
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     log ""Backing up mthost...""
     cp -f ""$CURRENT_MTHOST"" ""$BACKUP_DIR/mthost.bak""
     log ""mthost backed up""
@@ -1139,7 +1184,7 @@ if ! safe_copy ""$NEW_MT"" ""$CURRENT_MT"" ""mt""; then
     exit 1
 fi
 
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$NEW_MTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$NEW_MTHOST"" ]]; then
     if ! safe_copy ""$NEW_MTHOST"" ""$CURRENT_MTHOST"" ""mthost""; then
         write_result false ""Failed to install mthost""
         exit 1

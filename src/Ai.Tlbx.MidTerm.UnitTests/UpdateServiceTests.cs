@@ -356,6 +356,45 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Contains("exec \"$INSTALL_DIR/mt\" \"$@\"", script, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void StageLinuxServiceUpdatePayload_CopiesRequiredFilesIntoDurableStaging()
+    {
+        var extractedDir = Path.Combine(_tempDir, "download", "extracted");
+        var settingsDir = Path.Combine(_tempDir, "settings");
+        Directory.CreateDirectory(extractedDir);
+        Directory.CreateDirectory(settingsDir);
+        File.WriteAllText(Path.Combine(extractedDir, "mt"), "new-mt");
+        File.WriteAllText(
+            Path.Combine(extractedDir, "version.json"),
+            """
+            {
+              "web": "8.7.22-dev",
+              "pty": "8.6.20",
+              "protocol": 1
+            }
+            """);
+
+        var stagedDir = UpdateService.StageLinuxServiceUpdatePayload(
+            extractedDir,
+            settingsDir,
+            UpdateType.WebOnly,
+            deleteSourceAfter: true,
+            new UpdateArtifacts(
+                Path.Combine(settingsDir, "update.log"),
+                Path.Combine(settingsDir, "update-result.json")));
+
+        Assert.Equal(Path.Combine(settingsDir, "update-staging", "payload"), stagedDir);
+        Assert.True(File.Exists(Path.Combine(stagedDir, "mt")));
+        Assert.True(File.Exists(Path.Combine(stagedDir, "version.json")));
+        Assert.False(Directory.Exists(Path.GetDirectoryName(extractedDir)!));
+
+        if (!OperatingSystem.IsWindows())
+        {
+            var mode = File.GetUnixFileMode(Path.Combine(stagedDir, "mt"));
+            Assert.True(mode.HasFlag(UnixFileMode.UserExecute));
+        }
+    }
+
     private static GitHubRelease CreateRelease(string tagName, bool prerelease, params string[] assetNames)
     {
         return new GitHubRelease

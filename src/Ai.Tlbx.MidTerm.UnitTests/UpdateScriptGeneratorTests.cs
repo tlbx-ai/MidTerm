@@ -241,6 +241,27 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
         Assert.Contains("/logs/update.log", scriptText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GenerateUpdateScript_Linux_ValidatesStagedPayloadBeforeStoppingService()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        Assert.Contains("Update source directory: $EXTRACTED_DIR", scriptText, StringComparison.Ordinal);
+        Assert.Contains("describe_source_file \"$NEW_MT\" \"mt\"", scriptText, StringComparison.Ordinal);
+        Assert.Contains("describe_source_file \"$NEW_VERSION_JSON\" \"version.json\"", scriptText, StringComparison.Ordinal);
+    }
+
     private static string ReadScript(string path)
     {
         return File.ReadAllText(path);

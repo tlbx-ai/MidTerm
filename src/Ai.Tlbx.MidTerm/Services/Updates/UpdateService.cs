@@ -773,6 +773,29 @@ public sealed partial class UpdateService : IDisposable
         AppendUpdateLog(artifacts.LogPath, $"Downloaded update payload to {extractedDir}");
         AppendUpdateLog(artifacts.LogPath, $"Update type: {updateType}");
 
+        var runOutsideServiceCgroup =
+            OperatingSystem.IsLinux() &&
+            settingsService.IsRunningAsService;
+
+        if (runOutsideServiceCgroup)
+        {
+            try
+            {
+                extractedDir = StageLinuxServiceUpdatePayload(
+                    extractedDir,
+                    settingsService.SettingsDirectory,
+                    updateType,
+                    deleteSourceAfter,
+                    artifacts);
+                deleteSourceAfter = true;
+                AppendUpdateLog(artifacts.LogPath, $"Prepared durable Linux service update payload at {extractedDir}");
+            }
+            catch (Exception ex)
+            {
+                return FailUpdate(artifacts, "Failed to stage Linux service update payload", ex.Message);
+            }
+        }
+
         if (OperatingSystem.IsMacOS())
         {
             if (settingsService.IsRunningAsService)
@@ -825,6 +848,11 @@ public sealed partial class UpdateService : IDisposable
                 settingsService.SettingsDirectory,
                 updateType,
                 deleteSourceAfter);
+
+            if (runOutsideServiceCgroup)
+            {
+                scriptPath = StageLinuxServiceUpdateScript(scriptPath, settingsService.SettingsDirectory, artifacts);
+            }
         }
         catch (Exception ex)
         {
@@ -832,10 +860,6 @@ public sealed partial class UpdateService : IDisposable
         }
 
         AppendUpdateLog(artifacts.LogPath, $"Generated external update script at {scriptPath}");
-
-        var runOutsideServiceCgroup =
-            OperatingSystem.IsLinux() &&
-            settingsService.IsRunningAsService;
         AppendUpdateLog(
             artifacts.LogPath,
             runOutsideServiceCgroup
@@ -981,13 +1005,13 @@ public sealed partial class UpdateService : IDisposable
             RecreateDirectory(stagingDir);
             AppendUpdateLog(artifacts.LogPath, $"Staging update in {stagingDir}");
 
-            StageMacOsFile(extractedDir, stagingDir, "mt", artifacts, required: true);
+            StageUpdateFile(extractedDir, stagingDir, "mt", artifacts, required: true, makeExecutable: true);
             if (updateType != UpdateType.WebOnly)
             {
-                StageMacOsFile(extractedDir, stagingDir, "mthost", artifacts, required: true);
+                StageUpdateFile(extractedDir, stagingDir, "mthost", artifacts, required: true, makeExecutable: true);
             }
 
-            StageMacOsFile(extractedDir, stagingDir, "version.json", artifacts, required: true);
+            StageUpdateFile(extractedDir, stagingDir, "version.json", artifacts, required: true, makeExecutable: false);
 
             if (deleteSourceAfter)
             {
@@ -1264,12 +1288,66 @@ public sealed partial class UpdateService : IDisposable
         Directory.CreateDirectory(path);
     }
 
-    private static void StageMacOsFile(
+    internal static string StageLinuxServiceUpdatePayload(
+        string extractedDir,
+        string settingsDirectory,
+        UpdateType updateType,
+        bool deleteSourceAfter,
+        UpdateArtifacts artifacts)
+    {
+        AppendUpdateLog(artifacts.LogPath, "Preparing durable Linux service update staging");
+
+        var stagingRoot = Path.Combine(settingsDirectory, "update-staging");
+        var payloadDir = Path.Combine(stagingRoot, "payload");
+        RecreateDirectory(stagingRoot);
+        Directory.CreateDirectory(payloadDir);
+        AppendUpdateLog(artifacts.LogPath, $"Staging Linux service update payload in {payloadDir}");
+
+        StageUpdateFile(extractedDir, payloadDir, "mt", artifacts, required: true, makeExecutable: true);
+        if (updateType != UpdateType.WebOnly)
+        {
+            StageUpdateFile(extractedDir, payloadDir, "mthost", artifacts, required: true, makeExecutable: true);
+        }
+
+        StageUpdateFile(extractedDir, payloadDir, "version.json", artifacts, required: true, makeExecutable: false);
+
+        if (deleteSourceAfter)
+        {
+            TryDeleteExtractedPayload(extractedDir);
+            AppendUpdateLog(artifacts.LogPath, $"Deleted downloaded payload after staging: {extractedDir}");
+        }
+
+        return payloadDir;
+    }
+
+    internal static string StageLinuxServiceUpdateScript(string scriptPath, string settingsDirectory, UpdateArtifacts artifacts)
+    {
+        var stagingRoot = Path.Combine(settingsDirectory, "update-staging");
+        Directory.CreateDirectory(stagingRoot);
+
+        var stagedScriptPath = Path.Combine(stagingRoot, Path.GetFileName(scriptPath));
+        File.Copy(scriptPath, stagedScriptPath, overwrite: true);
+        ApplyUnixPermissions(stagedScriptPath, makeExecutable: true);
+        AppendUpdateLog(artifacts.LogPath, $"Staged Linux service update script at {stagedScriptPath}");
+
+        try
+        {
+            File.Delete(scriptPath);
+        }
+        catch
+        {
+        }
+
+        return stagedScriptPath;
+    }
+
+    private static void StageUpdateFile(
         string extractedDir,
         string stagingDir,
         string fileName,
         UpdateArtifacts artifacts,
-        bool required)
+        bool required,
+        bool makeExecutable)
     {
         var sourcePath = Path.Combine(extractedDir, fileName);
         if (!File.Exists(sourcePath))
@@ -1285,7 +1363,7 @@ public sealed partial class UpdateService : IDisposable
         var tempPath = Path.Combine(stagingDir, fileName + ".tmp");
         var destinationPath = Path.Combine(stagingDir, fileName);
         File.Copy(sourcePath, tempPath, overwrite: true);
-        ApplyUnixPermissions(tempPath, fileName is "mt" or "mthost");
+        ApplyUnixPermissions(tempPath, makeExecutable);
         File.Move(tempPath, destinationPath, overwrite: true);
         AppendUpdateLog(artifacts.LogPath, $"Staged {fileName}");
     }
