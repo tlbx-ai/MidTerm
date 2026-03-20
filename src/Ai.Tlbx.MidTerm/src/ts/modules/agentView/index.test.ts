@@ -49,6 +49,8 @@ describe('agentView dev errors', () => {
   beforeEach(() => {
     vi.stubGlobal('document', {
       createElement: () => ({
+        dataset: {} as DOMStringMap,
+        style: {} as CSSStyleDeclaration,
         className: '',
         textContent: '',
         append: vi.fn(),
@@ -87,18 +89,22 @@ describe('agentView dev errors', () => {
     const getElement = (selector: string) => {
       if (!elements.has(selector)) {
         elements.set(selector, {
+          dataset: {} as DOMStringMap,
           hidden: false,
           disabled: false,
           textContent: '',
           value: '',
           className: '',
-        innerHTML: '',
-        append: vi.fn(),
-        appendChild: vi.fn(),
-        replaceChildren: vi.fn(),
-        setAttribute: vi.fn(),
-        addEventListener: vi.fn(),
-        classList: {
+          innerHTML: '',
+          scrollTop: 0,
+          scrollHeight: 0,
+          clientHeight: 0,
+          append: vi.fn(),
+          appendChild: vi.fn(),
+          replaceChildren: vi.fn(),
+          setAttribute: vi.fn(),
+          addEventListener: vi.fn(),
+          classList: {
             add: vi.fn(),
             remove: vi.fn(),
             toggle: vi.fn(),
@@ -336,7 +342,211 @@ describe('agentView dev errors', () => {
     expect(transcript.map((entry) => entry.kind)).toContain('assistant');
     expect(transcript.map((entry) => entry.kind)).toContain('tool');
     expect(transcript.map((entry) => entry.kind)).toContain('request');
-    expect(transcript.find((entry) => entry.kind === 'assistant')?.body).toContain('Working on it.');
+    expect(transcript.find((entry) => entry.kind === 'assistant')?.body).toContain(
+      'Working on it.',
+    );
     expect(transcript.find((entry) => entry.kind === 'request')?.requestId).toBe('req-1');
+  });
+
+  it('hides normal state-management events and merges tool updates', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-20T10:00:00Z',
+      latestSequence: 6,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-20T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5',
+        effort: 'medium',
+        startedAt: '2026-03-20T09:59:00Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'e-state',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: null,
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-20T09:59:00Z',
+        type: 'session.state.changed',
+        raw: null,
+        sessionState: {
+          state: 'ready',
+          stateLabel: 'Ready',
+          reason: null,
+        },
+        threadState: null,
+        turnStarted: null,
+        turnCompleted: null,
+        contentDelta: null,
+        planDelta: null,
+        planCompleted: null,
+        diffUpdated: null,
+        item: null,
+        requestOpened: null,
+        requestResolved: null,
+        userInputRequested: null,
+        userInputResolved: null,
+        runtimeMessage: null,
+      },
+      {
+        sequence: 2,
+        eventId: 'e-tool-start',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'tool-1',
+        requestId: null,
+        createdAt: '2026-03-20T09:59:10Z',
+        type: 'item.started',
+        raw: null,
+        sessionState: null,
+        threadState: null,
+        turnStarted: null,
+        turnCompleted: null,
+        contentDelta: null,
+        planDelta: null,
+        planCompleted: null,
+        diffUpdated: null,
+        item: {
+          itemType: 'command',
+          status: 'in_progress',
+          title: 'Run tests completed',
+          detail: 'npm run typecheck',
+        },
+        requestOpened: null,
+        requestResolved: null,
+        userInputRequested: null,
+        userInputResolved: null,
+        runtimeMessage: null,
+      },
+      {
+        sequence: 3,
+        eventId: 'e-tool-out',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'tool-1',
+        requestId: null,
+        createdAt: '2026-03-20T09:59:11Z',
+        type: 'content.delta',
+        raw: null,
+        sessionState: null,
+        threadState: null,
+        turnStarted: null,
+        turnCompleted: null,
+        contentDelta: {
+          streamKind: 'command_output',
+          delta: 'All green',
+        },
+        planDelta: null,
+        planCompleted: null,
+        diffUpdated: null,
+        item: null,
+        requestOpened: null,
+        requestResolved: null,
+        userInputRequested: null,
+        userInputResolved: null,
+        runtimeMessage: null,
+      },
+      {
+        sequence: 4,
+        eventId: 'e-reasoning',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-20T09:59:12Z',
+        type: 'content.delta',
+        raw: null,
+        sessionState: null,
+        threadState: null,
+        turnStarted: null,
+        turnCompleted: null,
+        contentDelta: {
+          streamKind: 'reasoning_text',
+          delta: 'Thinking...',
+        },
+        planDelta: null,
+        planCompleted: null,
+        diffUpdated: null,
+        item: null,
+        requestOpened: null,
+        requestResolved: null,
+        userInputRequested: null,
+        userInputResolved: null,
+        runtimeMessage: null,
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+
+    expect(transcript).toHaveLength(1);
+    expect(transcript[0]).toMatchObject({
+      kind: 'tool',
+      title: 'Run tests',
+    });
+    expect(transcript[0]?.body).toContain('npm run typecheck');
+    expect(transcript[0]?.body).toContain('All green');
+  });
+
+  it('virtualizes older transcript rows but keeps a visible window', async () => {
+    const { computeTranscriptVirtualWindow } = await import('./index');
+
+    const entries = Array.from({ length: 120 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index} `.repeat(8),
+      meta: 'now',
+    })) as any;
+
+    const windowed = computeTranscriptVirtualWindow(entries, 1800, 900);
+
+    expect(windowed.start).toBeGreaterThan(0);
+    expect(windowed.end).toBeLessThan(entries.length);
+    expect(windowed.topSpacerPx).toBeGreaterThan(0);
+    expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 });

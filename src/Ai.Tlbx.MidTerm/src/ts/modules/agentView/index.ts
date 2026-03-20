@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { onTabActivated, onTabDeactivated, switchTab } from '../sessionTabs';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
+import { renderMarkdown } from '../../utils/markdown';
 import {
   attachSessionLens,
   getLensSnapshot,
@@ -13,23 +14,29 @@ import {
   openLensEventStream,
   type LensPulseEvent,
   type LensPulseRequestSummary,
-  type LensPulseRuntimeNotice,
   type LensPulseSnapshotResponse,
 } from '../../api/client';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionLensViewState>();
+const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
+const TRANSCRIPT_OVERSCAN_PX = 800;
+const TRANSCRIPT_VIRTUALIZE_AFTER = 80;
 
 interface SessionLensViewState {
   panel: HTMLDivElement;
   snapshot: LensPulseSnapshotResponse | null;
   events: LensPulseEvent[];
+  transcriptViewport: HTMLDivElement | null;
+  transcriptEntries: LensTranscriptEntry[];
   disconnectStream: (() => void) | null;
   streamConnected: boolean;
   refreshScheduled: number | null;
   refreshInFlight: boolean;
   interruptPending: boolean;
   requestBusyIds: Set<string>;
+  transcriptAutoScrollPinned: boolean;
+  transcriptRenderScheduled: number | null;
   activationState:
     | 'idle'
     | 'opening'
@@ -74,11 +81,19 @@ export interface LensTranscriptEntry {
   requestId?: string;
 }
 
+export interface TranscriptVirtualWindow {
+  start: number;
+  end: number;
+  topSpacerPx: number;
+  bottomSpacerPx: number;
+}
+
 export function initAgentView(): void {
   onTabActivated('agent', (sessionId, panel) => {
     ensureAgentViewSkeleton(sessionId, panel);
     const state = getOrCreateViewState(sessionId, panel);
     state.panel = panel;
+    bindTranscriptViewport(sessionId, state);
     void activateAgentView(sessionId);
   });
 
@@ -94,6 +109,9 @@ export function destroyAgentView(sessionId: string): void {
   const state = viewStates.get(sessionId);
   if (state && state.refreshScheduled !== null) {
     window.clearTimeout(state.refreshScheduled);
+  }
+  if (state && state.transcriptRenderScheduled !== null) {
+    window.cancelAnimationFrame(state.transcriptRenderScheduled);
   }
 
   viewStates.delete(sessionId);
@@ -193,12 +211,16 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     panel,
     snapshot: null,
     events: [],
+    transcriptViewport: null,
+    transcriptEntries: [],
     disconnectStream: null,
     streamConnected: false,
     refreshScheduled: null,
     refreshInFlight: false,
     interruptPending: false,
     requestBusyIds: new Set<string>(),
+    transcriptAutoScrollPinned: true,
+    transcriptRenderScheduled: null,
     activationState: 'idle',
     activationDetail: '',
     activationTrace: [],
@@ -231,50 +253,9 @@ function ensureAgentViewSkeleton(sessionId: string, panel: HTMLDivElement): void
         </div>
       </div>
       <div class="agent-view-chip-row" data-agent-field="chips"></div>
-      <div class="agent-lens-layout">
-        <section class="agent-transcript-card">
-          <div class="agent-card-header">
-            <div>
-              <div class="agent-card-label">Transcript</div>
-              <div class="agent-card-meta" data-agent-field="transcript-meta"></div>
-            </div>
-          </div>
-          <div class="agent-transcript" data-agent-field="transcript"></div>
-        </section>
-        <aside class="agent-side-rail">
-          <section class="agent-card">
-            <div class="agent-card-label">Session</div>
-            <div class="agent-summary-list" data-agent-field="summary"></div>
-          </section>
-          <section class="agent-card">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Requests</div>
-                <div class="agent-card-meta">Open approvals and structured questions.</div>
-              </div>
-            </div>
-            <div class="agent-side-list" data-agent-field="requests"></div>
-          </section>
-          <section class="agent-card">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Notices</div>
-                <div class="agent-card-meta">Warnings and runtime failures from the Lens host.</div>
-              </div>
-            </div>
-            <div class="agent-side-list" data-agent-field="notices"></div>
-          </section>
-          <section class="agent-card">
-            <div class="agent-card-header">
-              <div>
-                <div class="agent-card-label">Raw Events</div>
-                <div class="agent-card-meta">Latest canonical Lens events for debugging.</div>
-              </div>
-            </div>
-            <div class="agent-side-list" data-agent-field="events"></div>
-          </section>
-        </aside>
-      </div>
+      <section class="agent-transcript-card">
+        <div class="agent-transcript" data-agent-field="transcript"></div>
+      </section>
     </section>
   `;
 
@@ -300,6 +281,50 @@ function ensureAgentViewSkeleton(sessionId: string, panel: HTMLDivElement): void
     ?.addEventListener('click', () => {
       switchTab(sessionId, 'terminal');
     });
+}
+
+function bindTranscriptViewport(sessionId: string, state: SessionLensViewState): void {
+  const viewport = state.panel.querySelector<HTMLDivElement>('[data-agent-field="transcript"]');
+  state.transcriptViewport = viewport;
+  if (!viewport || viewport.dataset.lensScrollBound === 'true') {
+    return;
+  }
+
+  viewport.dataset.lensScrollBound = 'true';
+  viewport.addEventListener('scroll', () => {
+    const current = viewStates.get(sessionId);
+    const currentViewport = current?.transcriptViewport;
+    if (!current || !currentViewport) {
+      return;
+    }
+
+    current.transcriptAutoScrollPinned = isScrollContainerNearBottom({
+      scrollTop: currentViewport.scrollTop,
+      clientHeight: currentViewport.clientHeight,
+      scrollHeight: currentViewport.scrollHeight,
+    });
+
+    if (current.transcriptEntries.length > TRANSCRIPT_VIRTUALIZE_AFTER) {
+      scheduleTranscriptRender(sessionId);
+    }
+  });
+}
+
+function scheduleTranscriptRender(sessionId: string): void {
+  const state = viewStates.get(sessionId);
+  if (!state || state.transcriptRenderScheduled !== null) {
+    return;
+  }
+
+  state.transcriptRenderScheduled = window.requestAnimationFrame(() => {
+    const current = viewStates.get(sessionId);
+    if (!current) {
+      return;
+    }
+
+    current.transcriptRenderScheduled = null;
+    renderCurrentAgentView(sessionId);
+  });
 }
 
 function openLiveLensStream(sessionId: string, afterSequence: number): void {
@@ -436,7 +461,6 @@ function renderAgentView(
   state: SessionLensViewState,
 ): void {
   const providerLabel = prettify(snapshot.provider || 'agent');
-  const openRequests = snapshot.requests.filter((request) => request.state !== 'resolved');
   const latestNotice = snapshot.notices[0] ?? null;
 
   setText(panel, 'title', `${providerLabel} Lens`);
@@ -444,23 +468,14 @@ function renderAgentView(
     panel,
     'subtitle',
     snapshot.session.reason ??
-      `Thread ${snapshot.thread.threadId || snapshot.sessionId} • sequence ${snapshot.latestSequence}`,
-  );
-  setText(
-    panel,
-    'transcript-meta',
-    streamConnected
-      ? 'Live canonical transcript from MidTerm.'
-      : 'Transcript is reconnecting to the live event stream.',
+      (streamConnected
+        ? `Thread ${snapshot.thread.threadId || snapshot.sessionId} • live`
+        : `Thread ${snapshot.thread.threadId || snapshot.sessionId} • reconnecting`),
   );
 
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncInterruptAction(panel, snapshot, state.interruptPending);
   renderChips(panel, snapshot, latestNotice !== null, streamConnected);
-  renderSummary(panel, snapshot, openRequests.length);
-  renderRequestList(panel, snapshot.sessionId, snapshot.requests, state.requestBusyIds);
-  renderNotices(panel, snapshot.notices);
-  renderEvents(panel, events);
   renderTranscript(
     panel,
     buildLensTranscriptEntries(snapshot, events),
@@ -478,17 +493,8 @@ function renderActivationView(panel: HTMLDivElement, state: SessionLensViewState
   panel.dataset.agentTurnId = '';
   setText(panel, 'title', title);
   setText(panel, 'subtitle', subtitle);
-  setText(
-    panel,
-    'transcript-meta',
-    failed ? 'Lens never reached a stable transcript state.' : 'Boot progress stays visible here.',
-  );
   renderActivationChips(panel, state);
-  renderActivationSummary(panel, state);
   renderTranscript(panel, buildActivationTranscriptEntries(state), '', new Set<string>());
-  renderActivationRequests(panel, state);
-  renderActivationNotices(panel, state.activationTrace, state.activationError);
-  renderActivationEvents(panel, state.activationTrace);
 
   const interruptButton = panel.querySelector<HTMLButtonElement>('[data-agent-action="interrupt"]');
   if (interruptButton) {
@@ -496,115 +502,6 @@ function renderActivationView(panel: HTMLDivElement, state: SessionLensViewState
     interruptButton.disabled = false;
     interruptButton.textContent = 'Stop turn';
   }
-}
-
-function renderSummary(
-  panel: HTMLDivElement,
-  snapshot: LensPulseSnapshotResponse,
-  openRequestCount: number,
-): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="summary"]');
-  if (!container) {
-    return;
-  }
-
-  const summaryEntries = [
-    {
-      label: 'Session',
-      value: snapshot.session.stateLabel || prettify(snapshot.session.state || 'unknown'),
-      meta: snapshot.session.lastEventAt
-        ? `Last event ${formatAbsoluteTime(snapshot.session.lastEventAt)}`
-        : snapshot.session.reason || 'No session updates yet.',
-    },
-    {
-      label: 'Thread',
-      value: snapshot.thread.stateLabel || prettify(snapshot.thread.state || 'unknown'),
-      meta: snapshot.thread.threadId || 'Provider thread pending',
-    },
-    {
-      label: 'Turn',
-      value: summarizeTurnState(snapshot),
-      meta: summarizeTurnMeta(snapshot),
-    },
-    {
-      label: 'Requests',
-      value: `${openRequestCount}/${snapshot.requests.length}`,
-      meta: openRequestCount > 0 ? 'Action needed in transcript.' : 'No open requests.',
-    },
-  ];
-
-  const fragment = document.createDocumentFragment();
-  for (const entry of summaryEntries) {
-    const row = document.createElement('div');
-    row.className = 'agent-summary-item';
-
-    const label = document.createElement('div');
-    label.className = 'agent-summary-label';
-    label.textContent = entry.label;
-
-    const value = document.createElement('div');
-    value.className = 'agent-summary-value';
-    value.textContent = entry.value;
-
-    const meta = document.createElement('div');
-    meta.className = 'agent-summary-meta';
-    meta.textContent = entry.meta;
-
-    row.append(label, value, meta);
-    fragment.appendChild(row);
-  }
-
-  container.replaceChildren(fragment);
-}
-
-function renderActivationSummary(panel: HTMLDivElement, state: SessionLensViewState): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="summary"]');
-  if (!container) {
-    return;
-  }
-
-  const summaryEntries = [
-    {
-      label: 'Stage',
-      value: prettify(state.activationState),
-      meta: state.activationDetail,
-    },
-    {
-      label: 'Live Stream',
-      value: state.streamConnected ? 'Connected' : 'Connecting',
-      meta: state.streamConnected
-        ? 'SSE stream is open.'
-        : 'Waiting for first stable runtime events.',
-    },
-    {
-      label: 'Snapshot',
-      value: state.activationState === 'failed' ? 'Unavailable' : 'Pending',
-      meta: failedCopy(state),
-    },
-  ];
-
-  const fragment = document.createDocumentFragment();
-  for (const entry of summaryEntries) {
-    const row = document.createElement('div');
-    row.className = 'agent-summary-item';
-
-    const label = document.createElement('div');
-    label.className = 'agent-summary-label';
-    label.textContent = entry.label;
-
-    const value = document.createElement('div');
-    value.className = 'agent-summary-value';
-    value.textContent = entry.value;
-
-    const meta = document.createElement('div');
-    meta.className = 'agent-summary-meta';
-    meta.textContent = entry.meta;
-
-    row.append(label, value, meta);
-    fragment.appendChild(row);
-  }
-
-  container.replaceChildren(fragment);
 }
 
 function renderChips(
@@ -715,17 +612,45 @@ function renderTranscript(
     return;
   }
 
+  const state = viewStates.get(sessionId);
+  if (state) {
+    state.transcriptViewport = container as HTMLDivElement;
+    state.transcriptEntries = entries;
+  }
+
   if (entries.length === 0) {
     renderEmptyContainer(container, 'No transcript entries yet.');
     return;
   }
 
+  const virtualWindow = computeTranscriptVirtualWindow(
+    entries,
+    (container as HTMLDivElement).scrollTop,
+    (container as HTMLDivElement).clientHeight,
+  );
+  const visibleEntries = entries.slice(virtualWindow.start, virtualWindow.end);
   const fragment = document.createDocumentFragment();
-  for (const entry of entries) {
+  if (virtualWindow.topSpacerPx > 0) {
+    fragment.appendChild(createTranscriptSpacer(virtualWindow.topSpacerPx));
+  }
+  for (const entry of visibleEntries) {
     fragment.appendChild(createTranscriptEntry(entry, sessionId, busyRequestIds));
+  }
+  if (virtualWindow.bottomSpacerPx > 0) {
+    fragment.appendChild(createTranscriptSpacer(virtualWindow.bottomSpacerPx));
   }
 
   container.replaceChildren(fragment);
+
+  if (state?.transcriptAutoScrollPinned) {
+    window.requestAnimationFrame(() => {
+      const viewport = state.transcriptViewport;
+      if (!viewport) {
+        return;
+      }
+      viewport.scrollTop = viewport.scrollHeight;
+    });
+  }
 }
 
 export function buildLensTranscriptEntries(
@@ -766,21 +691,33 @@ export function buildLensTranscriptEntries(
 
     if (lensEvent.item && lensEvent.itemId) {
       const itemKind = transcriptKindFromItem(lensEvent.item.itemType);
-      const itemEntry = ensureEntry(`item:${lensEvent.itemId}`, () => ({
-        id: `item:${lensEvent.itemId}`,
+      const itemKey =
+        itemKind === 'tool'
+          ? `tool:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}`
+          : `${itemKind}:${lensEvent.itemId}`;
+      const itemEntry = ensureEntry(itemKey, () => ({
+        id: itemKey,
         order,
         kind: itemKind,
         tone: toneFromState(lensEvent.item?.status),
         label: transcriptLabel(itemKind),
-        title: lensEvent.item?.title || prettify(lensEvent.item?.itemType || 'item'),
-        body: lensEvent.item?.detail || lensEvent.item?.title || '',
+        title:
+          itemKind === 'tool'
+            ? compactToolTitle(lensEvent.item?.title || lensEvent.item?.itemType || 'tool')
+            : lensEvent.item?.title || prettify(lensEvent.item?.itemType || 'item'),
+        body: lensEvent.item?.detail || '',
         meta: `${prettify(lensEvent.item?.status || 'updated')} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
       }));
       itemEntry.kind = itemKind;
       itemEntry.tone = toneFromState(lensEvent.item.status);
       itemEntry.label = transcriptLabel(itemKind);
-      itemEntry.title = lensEvent.item.title || prettify(lensEvent.item.itemType || 'item');
-      itemEntry.body = lensEvent.item.detail || lensEvent.item.title || itemEntry.body;
+      itemEntry.title =
+        itemKind === 'tool'
+          ? compactToolTitle(lensEvent.item.title || lensEvent.item.itemType || 'tool')
+          : lensEvent.item.title || prettify(lensEvent.item.itemType || 'item');
+      if (lensEvent.item.detail && !itemEntry.body.includes(lensEvent.item.detail)) {
+        itemEntry.body = appendTranscriptChunk(itemEntry.body, lensEvent.item.detail);
+      }
       itemEntry.meta = `${prettify(lensEvent.item.status)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
       itemEntry.order = order;
     }
@@ -788,7 +725,13 @@ export function buildLensTranscriptEntries(
     if (lensEvent.contentDelta) {
       const streamKind = lensEvent.contentDelta.streamKind;
       const transcriptKind = transcriptKindFromStream(streamKind);
-      const key = `${transcriptKind}:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}:${streamKind}`;
+      if (!transcriptKind) {
+        continue;
+      }
+      const key =
+        transcriptKind === 'tool'
+          ? `tool:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}`
+          : `${transcriptKind}:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}`;
       const contentEntry = ensureEntry(key, () => ({
         id: key,
         order,
@@ -799,7 +742,7 @@ export function buildLensTranscriptEntries(
         body: '',
         meta: `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
       }));
-      contentEntry.body += lensEvent.contentDelta.delta;
+      contentEntry.body = appendTranscriptChunk(contentEntry.body, lensEvent.contentDelta.delta);
       contentEntry.meta = `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
       contentEntry.order = order;
     }
@@ -1008,6 +951,9 @@ function buildSystemEntryFromEvent(
   order: number,
 ): LensTranscriptEntry | null {
   if (lensEvent.runtimeMessage) {
+    if (lensEvent.type !== 'runtime.error' && lensEvent.type !== 'runtime.warning') {
+      return null;
+    }
     return {
       id: `runtime:${lensEvent.eventId}`,
       order,
@@ -1031,45 +977,6 @@ function buildSystemEntryFromEvent(
       label: 'Turn',
       title: lensEvent.turnCompleted.stateLabel || prettify(lensEvent.type),
       body: lensEvent.turnCompleted.errorMessage,
-      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
-    };
-  }
-
-  if (lensEvent.turnStarted || lensEvent.turnCompleted) {
-    return {
-      id: `turn:${lensEvent.eventId}`,
-      order,
-      kind: 'system',
-      tone: toneFromEvent(lensEvent.type),
-      label: 'Turn',
-      title: lensEvent.turnCompleted?.stateLabel || prettify(lensEvent.type),
-      body:
-        [
-          lensEvent.turnStarted?.model,
-          lensEvent.turnStarted?.effort,
-          lensEvent.turnCompleted?.stopReason,
-        ]
-          .filter(Boolean)
-          .join(' • ') || 'Turn lifecycle update.',
-      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
-    };
-  }
-
-  if (lensEvent.sessionState || lensEvent.threadState) {
-    return {
-      id: `state:${lensEvent.eventId}`,
-      order,
-      kind: 'system',
-      tone: toneFromEvent(lensEvent.type),
-      label: lensEvent.sessionState ? 'Session' : 'Thread',
-      title:
-        lensEvent.sessionState?.stateLabel ||
-        lensEvent.threadState?.stateLabel ||
-        prettify(lensEvent.type),
-      body:
-        lensEvent.sessionState?.reason ||
-        lensEvent.threadState?.providerThreadId ||
-        'State update.',
       meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
     };
   }
@@ -1105,148 +1012,6 @@ function buildActivationTranscriptEntries(state: SessionLensViewState): LensTran
   }));
 }
 
-function renderRequestList(
-  panel: HTMLDivElement,
-  sessionId: string,
-  requests: LensPulseRequestSummary[],
-  busyRequestIds: ReadonlySet<string>,
-): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="requests"]');
-  if (!container) {
-    return;
-  }
-
-  if (requests.length === 0) {
-    renderEmptyContainer(container, 'No request cards right now.');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const request of requests.slice(0, 8)) {
-    fragment.appendChild(
-      createRequestSideItem(sessionId, request, busyRequestIds.has(request.requestId)),
-    );
-  }
-  container.replaceChildren(fragment);
-}
-
-function renderActivationRequests(panel: HTMLDivElement, state: SessionLensViewState): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="requests"]');
-  if (!container) {
-    return;
-  }
-
-  renderEmptyContainer(
-    container,
-    state.activationState === 'failed'
-      ? 'Lens startup failed before request cards became available.'
-      : 'Request cards will appear here once the runtime is attached.',
-  );
-}
-
-function renderNotices(panel: HTMLDivElement, notices: LensPulseRuntimeNotice[]): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="notices"]');
-  if (!container) {
-    return;
-  }
-
-  if (notices.length === 0) {
-    renderEmptyContainer(container, 'No runtime notices.');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const notice of notices.slice(0, 8)) {
-    fragment.appendChild(
-      createSideItem(
-        notice.type === 'runtime.error' ? 'attention' : 'warning',
-        `${notice.type} • ${formatAbsoluteTime(notice.createdAt)}`,
-        notice.message,
-        notice.detail || 'No extra detail',
-      ),
-    );
-  }
-
-  container.replaceChildren(fragment);
-}
-
-function renderActivationNotices(
-  panel: HTMLDivElement,
-  trace: LensActivationTraceEntry[],
-  activationError: string | null,
-): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="notices"]');
-  if (!container) {
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  if (activationError) {
-    fragment.appendChild(
-      createSideItem('attention', 'startup failure', 'Lens startup failed.', activationError),
-    );
-  }
-
-  for (const entry of trace
-    .filter((item) => item.tone !== 'info')
-    .slice(-4)
-    .reverse()) {
-    fragment.appendChild(createSideItem(entry.tone, entry.meta, entry.summary, entry.detail));
-  }
-
-  if (!fragment.childNodes.length) {
-    renderEmptyContainer(container, 'No runtime notices yet.');
-    return;
-  }
-
-  container.replaceChildren(fragment);
-}
-
-function renderEvents(panel: HTMLDivElement, events: LensPulseEvent[]): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="events"]');
-  if (!container) {
-    return;
-  }
-
-  if (events.length === 0) {
-    renderEmptyContainer(container, 'No Lens events yet.');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const lensEvent of [...events].slice(-12).reverse()) {
-    fragment.appendChild(
-      createSideItem(
-        toneFromEvent(lensEvent.type),
-        `${lensEvent.type} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
-        summarizeEvent(lensEvent),
-        summarizeEventDetail(lensEvent),
-      ),
-    );
-  }
-
-  container.replaceChildren(fragment);
-}
-
-function renderActivationEvents(panel: HTMLDivElement, trace: LensActivationTraceEntry[]): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="events"]');
-  if (!container) {
-    return;
-  }
-
-  if (trace.length === 0) {
-    renderEmptyContainer(container, 'Lens startup has not emitted any boot steps yet.');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const entry of [...trace].reverse()) {
-    fragment.appendChild(createSideItem(entry.tone, entry.meta, entry.summary, entry.detail));
-  }
-
-  container.replaceChildren(fragment);
-}
-
 function createTranscriptEntry(
   entry: LensTranscriptEntry,
   sessionId: string,
@@ -1254,6 +1019,8 @@ function createTranscriptEntry(
 ): HTMLElement {
   const article = document.createElement('article');
   article.className = `agent-transcript-entry agent-transcript-${entry.kind} agent-transcript-${entry.tone}`;
+  article.dataset.kind = entry.kind;
+  article.dataset.tone = entry.tone;
 
   const header = document.createElement('div');
   header.className = 'agent-transcript-header';
@@ -1262,22 +1029,31 @@ function createTranscriptEntry(
   badge.className = `agent-transcript-badge agent-transcript-badge-${entry.kind}`;
   badge.textContent = entry.label;
 
-  const title = document.createElement('div');
-  title.className = 'agent-transcript-title';
-  title.textContent = entry.title;
-
   const meta = document.createElement('div');
   meta.className = 'agent-transcript-meta';
   meta.textContent = entry.meta;
 
-  header.append(badge, title, meta);
+  header.append(badge, meta);
   article.appendChild(header);
+
+  const titleText = normalizeTranscriptTitle(entry);
+  if (titleText) {
+    const title = document.createElement('div');
+    title.className = 'agent-transcript-title';
+    title.textContent = titleText;
+    article.appendChild(title);
+  }
 
   const body = document.createElement(
     entry.kind === 'diff' || entry.kind === 'tool' || entry.kind === 'plan' ? 'pre' : 'div',
   );
   body.className = 'agent-transcript-body';
-  body.textContent = entry.body;
+  if (entry.kind === 'assistant') {
+    body.classList.add('agent-transcript-markdown');
+    body.innerHTML = renderMarkdown(entry.body);
+  } else {
+    body.textContent = entry.body;
+  }
   article.appendChild(body);
 
   if (entry.requestId) {
@@ -1295,52 +1071,24 @@ function createTranscriptEntry(
   return article;
 }
 
-function createSideItem(
-  tone: string,
-  metaText: string,
-  summaryText: string,
-  detailText: string,
-): HTMLElement {
-  const item = document.createElement('article');
-  item.className = `agent-side-item agent-side-${tone.replace(/[^a-z0-9-]/gi, '-')}`;
-
-  const meta = document.createElement('div');
-  meta.className = 'agent-side-meta';
-  meta.textContent = metaText;
-
-  const summary = document.createElement('div');
-  summary.className = 'agent-side-summary';
-  summary.textContent = summaryText;
-
-  const detail = document.createElement('div');
-  detail.className = 'agent-side-detail';
-  detail.textContent = detailText;
-
-  item.append(meta, summary, detail);
-  return item;
+function createTranscriptSpacer(heightPx: number): HTMLElement {
+  const spacer = document.createElement('div');
+  spacer.className = 'agent-transcript-spacer';
+  spacer.style.height = `${Math.max(0, Math.round(heightPx))}px`;
+  return spacer;
 }
 
-function createRequestSideItem(
-  sessionId: string,
-  request: LensPulseRequestSummary,
-  busy: boolean,
-): HTMLElement {
-  const item = createSideItem(
-    request.state === 'resolved' ? 'positive' : 'warning',
-    `${request.kindLabel} • ${formatAbsoluteTime(request.updatedAt)}`,
-    request.detail || summarizeRequest(request) || request.kindLabel,
-    request.state === 'resolved' && request.decision
-      ? `Resolved as ${request.decision}`
-      : request.state === 'resolved'
-        ? 'Resolved'
-        : 'Open',
-  );
-
-  if (request.state !== 'resolved') {
-    item.appendChild(createRequestActionBlock(sessionId, request, busy));
+function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
+  const title = entry.title.trim();
+  if (!title) {
+    return '';
   }
 
-  return item;
+  if ((entry.kind === 'user' || entry.kind === 'assistant') && title === entry.label) {
+    return '';
+  }
+
+  return title;
 }
 
 function createRequestActionBlock(
@@ -1484,9 +1232,130 @@ function collectQuestionAnswers(
 
 function renderEmptyContainer(container: HTMLElement, text: string): void {
   const empty = document.createElement('div');
-  empty.className = 'agent-side-empty';
+  empty.className = 'agent-transcript-empty';
   empty.textContent = text;
   container.replaceChildren(empty);
+}
+
+export function isScrollContainerNearBottom(position: {
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
+}): boolean {
+  const { scrollTop, clientHeight, scrollHeight } = position;
+  if (![scrollTop, clientHeight, scrollHeight].every(Number.isFinite)) {
+    return true;
+  }
+
+  return scrollHeight - clientHeight - scrollTop <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
+}
+
+export function estimateTranscriptEntryHeight(entry: LensTranscriptEntry): number {
+  const bodyLength = entry.body.length;
+  const lineCount = Math.max(1, entry.body.split('\n').length);
+  const wrappedLines = Math.ceil(bodyLength / 90);
+  const textLines = Math.max(lineCount, wrappedLines);
+  const bodyHeight = Math.min(420, 18 * textLines);
+
+  switch (entry.kind) {
+    case 'tool':
+    case 'diff':
+    case 'plan':
+      return 84 + bodyHeight;
+    case 'request':
+      return 108 + bodyHeight;
+    case 'user':
+      return 68 + bodyHeight;
+    case 'assistant':
+      return 52 + bodyHeight;
+    case 'notice':
+      return 64 + bodyHeight;
+    default:
+      return 54 + bodyHeight;
+  }
+}
+
+export function computeTranscriptVirtualWindow(
+  entries: ReadonlyArray<LensTranscriptEntry>,
+  scrollTop: number,
+  clientHeight: number,
+): TranscriptVirtualWindow {
+  if (entries.length <= TRANSCRIPT_VIRTUALIZE_AFTER) {
+    return {
+      start: 0,
+      end: entries.length,
+      topSpacerPx: 0,
+      bottomSpacerPx: 0,
+    };
+  }
+
+  const targetTop = Math.max(0, scrollTop - TRANSCRIPT_OVERSCAN_PX);
+  const targetBottom = scrollTop + clientHeight + TRANSCRIPT_OVERSCAN_PX;
+  let cumulative = 0;
+  let start = 0;
+  let topSpacerPx = 0;
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry) {
+      continue;
+    }
+
+    const height = estimateTranscriptEntryHeight(entry);
+    if (cumulative + height >= targetTop) {
+      start = index;
+      topSpacerPx = cumulative;
+      break;
+    }
+    cumulative += height;
+  }
+
+  cumulative = topSpacerPx;
+  let end = start;
+  while (end < entries.length && cumulative < targetBottom) {
+    const entry = entries[end];
+    if (!entry) {
+      break;
+    }
+
+    cumulative += estimateTranscriptEntryHeight(entry);
+    end += 1;
+  }
+
+  const totalHeight = entries.reduce((sum, entry) => sum + estimateTranscriptEntryHeight(entry), 0);
+
+  return {
+    start,
+    end: Math.max(end, start + 1),
+    topSpacerPx,
+    bottomSpacerPx: Math.max(0, totalHeight - cumulative),
+  };
+}
+
+function appendTranscriptChunk(existing: string, delta: string): string {
+  const trimmedDelta = delta.trim();
+  if (!trimmedDelta) {
+    return existing;
+  }
+
+  const trimmedExisting = existing.trimEnd();
+  if (!trimmedExisting) {
+    return trimmedDelta;
+  }
+
+  if (trimmedExisting.includes(trimmedDelta)) {
+    return trimmedExisting;
+  }
+
+  const separator = trimmedExisting.endsWith('\n') || trimmedDelta.startsWith('\n') ? '\n' : '\n\n';
+  return `${trimmedExisting}${separator}${trimmedDelta}`;
+}
+
+function compactToolTitle(value: string): string {
+  return value
+    .replace(/\s+(?:complete|completed)\s*$/i, '')
+    .replace(/^tool[:\s-]*/i, '')
+    .trim();
 }
 
 function setText(panel: HTMLDivElement, field: string, value: string): void {
@@ -1646,24 +1515,6 @@ function describeError(error: unknown): string {
   return typeof error === 'string' ? error : JSON.stringify(error, null, 2);
 }
 
-function summarizeTurnState(snapshot: LensPulseSnapshotResponse): string {
-  if (!snapshot.currentTurn.turnId) {
-    return 'Idle';
-  }
-
-  return snapshot.currentTurn.stateLabel || prettify(snapshot.currentTurn.state || 'running');
-}
-
-function summarizeTurnMeta(snapshot: LensPulseSnapshotResponse): string {
-  if (!snapshot.currentTurn.turnId) {
-    return 'No active turn';
-  }
-
-  return [snapshot.currentTurn.turnId, snapshot.currentTurn.model, snapshot.currentTurn.effort]
-    .filter(Boolean)
-    .join(' • ');
-}
-
 function summarizeRequest(request: LensPulseRequestSummary | undefined): string {
   if (!request) {
     return '';
@@ -1680,44 +1531,6 @@ function summarizeRequest(request: LensPulseRequestSummary | undefined): string 
   }
 
   return request.detail || request.turnId || '';
-}
-
-function summarizeEvent(lensEvent: LensPulseEvent): string {
-  return (
-    lensEvent.runtimeMessage?.message ||
-    lensEvent.item?.title ||
-    lensEvent.requestOpened?.detail ||
-    lensEvent.requestResolved?.decision ||
-    lensEvent.turnCompleted?.errorMessage ||
-    lensEvent.contentDelta?.delta ||
-    lensEvent.planCompleted?.planMarkdown ||
-    lensEvent.planDelta?.delta ||
-    lensEvent.diffUpdated?.unifiedDiff ||
-    lensEvent.userInputRequested?.questions.map((question) => question.question).join(' • ') ||
-    lensEvent.userInputResolved?.answers
-      .map((answer) => `${answer.questionId}: ${answer.answers.join(', ')}`)
-      .join(' • ') ||
-    lensEvent.sessionState?.reason ||
-    lensEvent.threadState?.providerThreadId ||
-    lensEvent.turnId ||
-    'No detail'
-  ).trim();
-}
-
-function summarizeEventDetail(lensEvent: LensPulseEvent): string {
-  return (
-    lensEvent.raw?.method ||
-    lensEvent.item?.detail ||
-    lensEvent.requestOpened?.requestTypeLabel ||
-    lensEvent.sessionState?.stateLabel ||
-    lensEvent.threadState?.stateLabel ||
-    lensEvent.turnStarted?.model ||
-    lensEvent.turnCompleted?.stateLabel ||
-    lensEvent.contentDelta?.streamKind ||
-    lensEvent.requestId ||
-    lensEvent.itemId ||
-    'Lens runtime event'
-  );
 }
 
 function toneFromEvent(eventType: string): TranscriptTone {
@@ -1780,18 +1593,15 @@ function transcriptKindFromItem(itemType: string): TranscriptKind {
   return 'tool';
 }
 
-function transcriptKindFromStream(streamKind: string): TranscriptKind {
+function transcriptKindFromStream(streamKind: string): TranscriptKind | null {
   const normalized = streamKind.toLowerCase();
   if (normalized === 'assistant_text') {
     return 'assistant';
   }
-  if (normalized === 'reasoning_text' || normalized === 'reasoning_summary_text') {
-    return 'system';
-  }
   if (normalized === 'command_output' || normalized === 'file_change_output') {
     return 'tool';
   }
-  return 'system';
+  return null;
 }
 
 function transcriptLabel(kind: TranscriptKind): string {
@@ -1845,12 +1655,6 @@ function transcriptStreamTitle(streamKind: string): string {
     default:
       return prettify(streamKind);
   }
-}
-
-function failedCopy(state: SessionLensViewState): string {
-  return state.activationState === 'failed'
-    ? 'Lens could not complete its startup sequence.'
-    : 'Waiting for mtagenthost, provider attach, and the first canonical snapshot.';
 }
 
 function prettify(value: string): string {

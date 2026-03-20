@@ -8,6 +8,7 @@
 
 import { $currentSettings } from '../../stores';
 import { escapeHtml } from '../../utils';
+export { renderMarkdown } from '../../utils/markdown';
 import { buildTerminalFontStack } from '../terminal/fontConfig';
 import { getEffectiveTerminalFontSize } from '../terminal/fontSize';
 
@@ -543,47 +544,4 @@ export function highlightCode(text: string, _ext: string): string {
   escaped = escaped.replace(RE_FUNCTION_CALL, '<span class="hl-function">$1</span>');
 
   return escaped;
-}
-
-export function renderMarkdown(text: string): string {
-  let html = escapeHtml(text);
-
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match: string, _lang: string, code: string) => {
-    return `<pre><code>${code.trim()}</code></pre>`;
-  });
-
-  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
-
-  html = html.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener">$1</a>',
-  );
-
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-  html = html.replace(/^---$/gm, '<hr>');
-  html = html.replace(/^\*\*\*$/gm, '<hr>');
-
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-
-  html = html.replace(/^(?!<[hluopb]|<\/|<hr|<code|<blockquote)(.+)$/gm, '<p>$1</p>');
-
-  html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n');
-
-  html = html.replace(/<p><\/p>/g, '');
-
-  return html;
 }

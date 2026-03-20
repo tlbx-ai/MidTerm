@@ -10,3 +10,4 @@ export * from './protocol';
 export * from './reconnect';
 export * from './versionCheck';
 export * from './websocket';
+export * from './markdown';
