@@ -350,6 +350,10 @@ export function recordBytes(sessionId: string, bytes: number): void {
   ensureLoopRunning();
 }
 
+export function getSessionHeat(sessionId: string): number {
+  return sessions.get(sessionId)?.heat ?? 0;
+}
+
 /**
  * Suppress heat recording for ALL sessions for a short duration.
  * Used when switching active sessions — the server flushes background

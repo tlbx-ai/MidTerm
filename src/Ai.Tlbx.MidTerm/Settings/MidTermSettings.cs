@@ -71,7 +71,18 @@ public sealed class MidTermSettings
 
     // Middle Manager Bar - Quick-action buttons below terminal area
     public bool ManagerBarEnabled { get; set; } = true;
-    public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];
+    public List<ManagerBarButton> ManagerBarButtons { get; set; } =
+    [
+        new()
+        {
+            Id = "1",
+            Label = "commit and push pls",
+            Text = "commit and push pls",
+            ActionType = "single",
+            Prompts = ["commit and push pls"],
+            Trigger = new ManagerBarTrigger { Kind = "fireAndForget" }
+        }
+    ];
 
     // Tmux Compatibility - Injects tmux shim into spawned terminals for AI tool integration
     public bool TmuxCompatibility { get; set; } = true;

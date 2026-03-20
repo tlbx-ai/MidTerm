@@ -434,28 +434,28 @@
               >
                 <span class="mobile-actions-label" data-i18n="session.terminal">Terminal</span>
               </button>
-                <button
-                  class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
-                  id="btn-mobile-tab-files"
-                  data-i18n-title="sessionTabs.files"
-                  title="Files"
-                >
-                  <span class="mobile-actions-label" data-i18n="sessionTabs.files">Files</span>
-                </button>
-                <button
-                  class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
-                  id="btn-mobile-tab-agent"
-                  data-i18n-title="sessionTabs.agent"
-                  title="Agent"
-                  hidden
-                >
-                  <span class="mobile-actions-label" data-i18n="sessionTabs.agent">Agent</span>
-                </button>
-                <button
-                  class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
-                  id="btn-mobile-web"
-                  data-i18n-title="sessionTabs.web"
-                  title="Web Preview"
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-tab-files"
+                data-i18n-title="sessionTabs.files"
+                title="Files"
+              >
+                <span class="mobile-actions-label" data-i18n="sessionTabs.files">Files</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-tab-agent"
+                data-i18n-title="sessionTabs.agent"
+                title="Agent"
+                hidden
+              >
+                <span class="mobile-actions-label" data-i18n="sessionTabs.agent">Agent</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-web"
+                data-i18n-title="sessionTabs.web"
+                title="Web Preview"
               >
                 <span class="mobile-actions-symbol">&#x1f310;</span>
                 <span class="mobile-actions-label" data-i18n="sessionTabs.web">Web Preview</span>
@@ -825,7 +825,10 @@
                     <div class="license-item">
                       <strong>html2canvas</strong> <span class="license-version">v1.4.1</span>
                       <span class="license-type">MIT License</span>
-                      <a href="https://github.com/niklasvh/html2canvas" target="_blank" rel="noopener"
+                      <a
+                        href="https://github.com/niklasvh/html2canvas"
+                        target="_blank"
+                        rel="noopener"
                         >github.com/niklasvh/html2canvas</a
                       >
                     </div>
@@ -1565,9 +1568,7 @@
                       <input type="checkbox" id="setting-scrollback-protection" />
                     </div>
                     <div class="setting-row">
-                      <label
-                        for="setting-keep-system-awake"
-                        data-i18n="settings.behavior.keepAwake"
+                      <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
                         >Keep computer awake while sessions exist</label
                       >
                       <input type="checkbox" id="setting-keep-system-awake" />
@@ -1609,7 +1610,11 @@
                     </div>
                     <div class="setting-row hidden" id="pwa-install-row">
                       <label data-i18n="settings.behavior.installAsApp">Install as App</label>
-                      <button id="btn-install-pwa" class="btn-secondary" data-i18n="settings.behavior.install">
+                      <button
+                        id="btn-install-pwa"
+                        class="btn-secondary"
+                        data-i18n="settings.behavior.install"
+                      >
                         Install
                       </button>
                     </div>
@@ -1957,6 +1962,8 @@
           </div>
         </div>
 
+        <div id="manager-bar-queue" class="manager-bar-queue hidden" aria-live="polite"></div>
+
         <!-- Middle Manager Bar -->
         <div id="manager-bar" class="manager-bar">
           <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
@@ -2187,13 +2194,12 @@
           </div>
         </div>
 
-
-            <!-- Touch Popups (fixed positioning, rendered by JS) -->
-            <div id="touch-popup-nav" class="touch-popup" hidden></div>
-            <div id="touch-popup-fn" class="touch-popup" hidden></div>
-            <div id="touch-popup-sym" class="touch-popup" hidden></div>
-            <div id="touch-popup-ctrl" class="touch-popup" hidden></div>
-        </div>
+        <!-- Touch Popups (fixed positioning, rendered by JS) -->
+        <div id="touch-popup-nav" class="touch-popup" hidden></div>
+        <div id="touch-popup-fn" class="touch-popup" hidden></div>
+        <div id="touch-popup-sym" class="touch-popup" hidden></div>
+        <div id="touch-popup-ctrl" class="touch-popup" hidden></div>
+      </div>
     </div>
 
     <div id="paste-indicator" class="status-badge paste-indicator"></div>
@@ -2315,6 +2321,152 @@
         </div>
         <div class="modal-body file-viewer-body">
           <div class="file-viewer-loading">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="manager-action-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content manager-action-modal-content">
+        <div class="modal-header">
+          <h3 id="manager-action-modal-title" data-i18n="managerBar.modal.title">
+            Setup Middle Manager Action
+          </h3>
+          <button id="btn-close-manager-action" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body manager-action-modal-body">
+          <div class="form-group">
+            <label for="manager-action-label" data-i18n="managerBar.modal.label">Label</label>
+            <input
+              type="text"
+              id="manager-action-label"
+              data-i18n-placeholder="managerBar.modal.labelPlaceholder"
+              placeholder="Label"
+            />
+          </div>
+
+          <div class="manager-action-modal-grid">
+            <div class="form-group">
+              <label for="manager-action-type" data-i18n="managerBar.modal.type">Type</label>
+              <select id="manager-action-type">
+                <option value="single" data-i18n="managerBar.type.single">Single Command</option>
+                <option value="chain" data-i18n="managerBar.type.chain">Command Chain</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="manager-action-trigger" data-i18n="managerBar.modal.trigger"
+                >Trigger</label
+              >
+              <select id="manager-action-trigger">
+                <option value="fireAndForget" data-i18n="managerBar.trigger.fireAndForget">
+                  Fire and Forget
+                </option>
+                <option value="onCooldown" data-i18n="managerBar.trigger.onCooldown">
+                  On Cooldown
+                </option>
+                <option value="repeatCount" data-i18n="managerBar.trigger.repeatCount">
+                  Repeat n Times
+                </option>
+                <option value="repeatInterval" data-i18n="managerBar.trigger.repeatInterval">
+                  Repeat Every n Time Unit
+                </option>
+                <option value="schedule" data-i18n="managerBar.trigger.schedule">Scheduled</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group manager-action-prompts-group">
+            <div class="manager-action-section-header">
+              <label data-i18n="managerBar.modal.prompts">Prompts</label>
+              <button
+                type="button"
+                id="manager-action-add-prompt"
+                class="btn-secondary"
+                data-i18n="managerBar.modal.addPrompt"
+              >
+                Add prompt
+              </button>
+            </div>
+            <div id="manager-action-prompts"></div>
+          </div>
+
+          <div
+            id="manager-action-cooldown-hint"
+            class="manager-action-hint hidden"
+            data-i18n="managerBar.modal.cooldownHint"
+          >
+            Runs when the session heat drops below 75%.
+          </div>
+          <div
+            id="manager-action-chain-hint"
+            class="manager-action-hint hidden"
+            data-i18n="managerBar.modal.chainHint"
+          >
+            Chain follow-ups wait for cooldown automatically.
+          </div>
+
+          <div
+            id="manager-action-repeat-count-group"
+            class="form-group manager-action-trigger-group hidden"
+          >
+            <label for="manager-action-repeat-count" data-i18n="managerBar.modal.repeatCount">
+              Repeat Count
+            </label>
+            <input type="number" id="manager-action-repeat-count" min="1" value="2" />
+          </div>
+
+          <div
+            id="manager-action-repeat-interval-group"
+            class="form-group manager-action-trigger-group hidden"
+          >
+            <label data-i18n="managerBar.modal.repeatEvery">Repeat Every</label>
+            <div class="manager-action-repeat-interval-row">
+              <input type="number" id="manager-action-repeat-every-value" min="1" value="5" />
+              <select id="manager-action-repeat-every-unit">
+                <option value="seconds" data-i18n="managerBar.intervalUnit.seconds">seconds</option>
+                <option value="minutes" data-i18n="managerBar.intervalUnit.minutes">minutes</option>
+                <option value="hours" data-i18n="managerBar.intervalUnit.hours">hours</option>
+                <option value="days" data-i18n="managerBar.intervalUnit.days">days</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="manager-action-schedule-group" class="form-group hidden">
+            <div class="manager-action-section-header">
+              <label data-i18n="managerBar.modal.schedule">Schedule</label>
+              <button
+                type="button"
+                id="manager-action-add-schedule"
+                class="btn-secondary"
+                data-i18n="managerBar.modal.addSchedule"
+              >
+                Add schedule
+              </button>
+            </div>
+            <div id="manager-action-schedule-list"></div>
+          </div>
+
+          <div id="manager-action-error" class="error-message hidden"></div>
+
+          <div class="modal-footer">
+            <button
+              type="button"
+              id="btn-cancel-manager-action"
+              class="btn-secondary"
+              data-i18n="managerBar.modal.cancel"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              id="btn-save-manager-action"
+              class="btn-primary"
+              data-i18n="managerBar.modal.save"
+            >
+              Save action
+            </button>
+          </div>
         </div>
       </div>
     </div>

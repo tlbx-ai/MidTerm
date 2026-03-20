@@ -204,4 +204,37 @@ public sealed class MidTermSettingsPublicTests
         Assert.Equal("api-secret", machine.ApiKey);
         Assert.Equal("pw-secret", machine.Password);
     }
+
+    [Fact]
+    public void ManagerBarButtons_MigrateLegacyTextToPromptWorkflow()
+    {
+        var settings = new MidTermSettings
+        {
+            ManagerBarButtons =
+            [
+                new ManagerBarButton
+                {
+                    Id = "legacy",
+                    Label = "Legacy",
+                    Text = "echo hi"
+                }
+            ]
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        var button = Assert.Single(publicSettings.ManagerBarButtons);
+        Assert.Equal("single", button.ActionType);
+        Assert.Equal("fireAndForget", button.Trigger.Kind);
+        Assert.Equal(["echo hi"], button.Prompts);
+
+        settings.ManagerBarButtons.Clear();
+        publicSettings.ApplyTo(settings);
+
+        button = Assert.Single(settings.ManagerBarButtons);
+        Assert.Equal("echo hi", button.Text);
+        Assert.Equal("single", button.ActionType);
+        Assert.Equal("fireAndForget", button.Trigger.Kind);
+        Assert.Equal(["echo hi"], button.Prompts);
+    }
 }

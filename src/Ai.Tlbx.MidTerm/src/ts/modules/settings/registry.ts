@@ -400,6 +400,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     applyMode: 'server-only',
     specialWriter: 'installer / certificate generation',
   }),
+  readonlyEntry('hubMachines', {
+    storage: 'settings.json',
+    validation: 'hub machine records with secrets managed by hub endpoints',
+    applyMode: 'server-only',
+    specialWriter: 'hub endpoints',
+  }),
 ] as const;
 
 export function getSettingsRegistryControlEntries(): readonly SettingsRegistryEntry[] {

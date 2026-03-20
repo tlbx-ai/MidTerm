@@ -4500,7 +4500,10 @@
         "required": [
           "id",
           "label",
-          "text"
+          "text",
+          "actionType",
+          "prompts",
+          "trigger"
         ],
         "type": "object",
         "properties": {
@@ -4512,6 +4515,65 @@
           },
           "text": {
             "type": "string"
+          },
+          "actionType": {
+            "type": "string"
+          },
+          "prompts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/ManagerBarTrigger"
+          }
+        }
+      },
+      "ManagerBarScheduleEntry": {
+        "required": [
+          "timeOfDay",
+          "repeat"
+        ],
+        "type": "object",
+        "properties": {
+          "timeOfDay": {
+            "type": "string"
+          },
+          "repeat": {
+            "type": "string"
+          }
+        }
+      },
+      "ManagerBarTrigger": {
+        "required": [
+          "kind",
+          "repeatCount",
+          "repeatEveryValue",
+          "repeatEveryUnit",
+          "schedule"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "repeatCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "repeatEveryValue": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "repeatEveryUnit": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagerBarScheduleEntry"
+            }
           }
         }
       },

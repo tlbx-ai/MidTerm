@@ -450,7 +450,7 @@ public sealed class SettingsService
         current.FileRadar = old.FileRadar;
         current.ShowSidebarSessionFilter = old.ShowSidebarSessionFilter;
         current.ManagerBarEnabled = old.ManagerBarEnabled;
-        current.ManagerBarButtons = old.ManagerBarButtons;
+        current.ManagerBarButtons = ManagerBarButton.NormalizeList(old.ManagerBarButtons);
         current.TmuxCompatibility = old.TmuxCompatibility;
         current.DevMode = old.DevMode;
         current.ShowChangelogAfterUpdate = old.ShowChangelogAfterUpdate;

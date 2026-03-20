@@ -3899,6 +3899,22 @@ export interface components {
       id: string;
       label: string;
       text: string;
+      actionType: string;
+      prompts: string[];
+      trigger: components['schemas']['ManagerBarTrigger'];
+    };
+    ManagerBarScheduleEntry: {
+      timeOfDay: string;
+      repeat: string;
+    };
+    ManagerBarTrigger: {
+      kind: string;
+      /** Format: int32 */
+      repeatCount: number;
+      /** Format: int32 */
+      repeatEveryValue: number;
+      repeatEveryUnit: string;
+      schedule: components['schemas']['ManagerBarScheduleEntry'][];
     };
     MidTermSettingsPublic: {
       defaultShell: null | components['schemas']['ShellType'];
