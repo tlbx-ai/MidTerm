@@ -8483,6 +8483,23 @@ body.shared-session-mode .session-tab-bar {
   font-size: var(--fs-xs);
 }
 
+.manager-queue-delete {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-sm);
+}
+
+.manager-queue-delete:hover {
+  color: var(--accent-red);
+}
+
 .manager-bar-buttons {
   display: flex;
   align-items: center;

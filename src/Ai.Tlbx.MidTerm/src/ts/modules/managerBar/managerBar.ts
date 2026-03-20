@@ -162,6 +162,15 @@ export function initManagerBar(): void {
     }
   });
 
+  queueEl.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const deleteBtn = target?.closest<HTMLElement>('.manager-queue-delete');
+    const queueId = deleteBtn?.dataset.queueId;
+    if (!queueId) return;
+
+    removeQueueEntry(queueId);
+  });
+
   buttonsEl.addEventListener('click', (event) => {
     const target = event.target as HTMLElement | null;
     if (!target) return;
@@ -330,6 +339,7 @@ function renderQueue(): void {
   for (const entry of visibleQueue) {
     const item = document.createElement('div');
     item.className = 'manager-queue-item';
+    item.dataset.queueId = entry.queueId;
 
     const title = document.createElement('div');
     title.className = 'manager-queue-title';
@@ -339,8 +349,17 @@ function renderQueue(): void {
     condition.className = 'manager-queue-condition';
     condition.textContent = describeQueueCondition(entry);
 
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'manager-queue-delete';
+    deleteBtn.dataset.queueId = entry.queueId;
+    deleteBtn.title = t('managerBar.queue.dequeue');
+    deleteBtn.setAttribute('aria-label', t('managerBar.queue.dequeue'));
+    deleteBtn.innerHTML = '<span class="icon">\ue909</span>';
+
     item.appendChild(title);
     item.appendChild(condition);
+    item.appendChild(deleteBtn);
     queueEl.appendChild(item);
   }
 }
@@ -672,6 +691,15 @@ function enqueueAction(sessionId: string, action: NormalizedManagerButton): void
 
   syncQueueProcessor();
   processQueueEntries();
+  renderQueue();
+}
+
+function removeQueueEntry(queueId: string): void {
+  const index = queueEntries.findIndex((entry) => entry.queueId === queueId);
+  if (index < 0) return;
+
+  queueEntries.splice(index, 1);
+  syncQueueProcessor();
   renderQueue();
 }
 

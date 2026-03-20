@@ -482,6 +482,7 @@
   "managerBar.queue.repeatCountPrefix": "Repeats left:",
   "managerBar.queue.repeatCountSuffix": " total runs",
   "managerBar.queue.every": "Every",
+  "managerBar.queue.dequeue": "Dequeue action",
   "managerBar.modal.title": "Setup Middle Manager Action",
   "managerBar.modal.editTitle": "Edit Middle Manager Action",
   "managerBar.modal.label": "Label",
