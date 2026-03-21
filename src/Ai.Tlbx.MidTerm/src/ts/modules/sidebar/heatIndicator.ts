@@ -128,8 +128,8 @@ buildColorLUT();
 // =============================================================================
 
 interface SessionHeat {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
+  canvas: HTMLCanvasElement | null;
+  ctx: CanvasRenderingContext2D | null;
   heat: number; // 0–1 current visual heat level
   lastDrawnHeat: number; // heat value last rendered (dirty tracking)
   peakRate: number; // self-calibrating max observed bytes/sec
@@ -154,12 +154,17 @@ function lerpColor(t: number): [number, number, number] {
   return colorLUT[index] ?? [10, 14, 26];
 }
 
+function quantizeHeat(heat: number): number {
+  return heat < 0.165 ? 0 : heat < 0.495 ? 0.33 : heat < 0.83 ? 0.66 : 1.0;
+}
+
 // =============================================================================
 // Canvas drawing
 // =============================================================================
 
 function drawCanvas(s: SessionHeat): void {
   const { ctx, heat } = s;
+  if (!ctx) return;
 
   if (heat < DRAW_THRESHOLD) {
     if (s.lastDrawnHeat >= DRAW_THRESHOLD) {
@@ -264,7 +269,7 @@ function drawFrame(nowMs: number): void {
     if (!document.hidden) {
       if (reducedMotion) {
         // Quantize to 4 steps instead of smooth animation
-        const q = s.heat < 0.165 ? 0 : s.heat < 0.495 ? 0.33 : s.heat < 0.83 ? 0.66 : 1.0;
+        const q = quantizeHeat(s.heat);
         if (q !== s.lastQuantizedHeat) {
           s.lastQuantizedHeat = q;
           const saved = s.heat;
@@ -315,6 +320,33 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
   canvas.height = Math.round(CANVAS_CSS_H * dpr);
   ctx.scale(dpr, dpr);
 
+  const existing = sessions.get(sessionId);
+  if (existing) {
+    existing.canvas = canvas;
+    existing.ctx = ctx;
+    // Force a redraw onto the new canvas on the next frame or immediately below.
+    existing.lastDrawnHeat = -1;
+    existing.lastQuantizedHeat = -1;
+
+    if (!document.hidden) {
+      if (reducedMotion) {
+        const saved = existing.heat;
+        const q = quantizeHeat(existing.heat);
+        existing.heat = q;
+        drawCanvas(existing);
+        existing.heat = saved;
+        existing.lastQuantizedHeat = q;
+      } else {
+        drawCanvas(existing);
+      }
+    }
+
+    if (existing.heat >= DRAW_THRESHOLD) {
+      ensureLoopRunning();
+    }
+    return;
+  }
+
   const now = performance.now();
   sessions.set(sessionId, {
     canvas,
@@ -335,7 +367,26 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
  * Unregister and clean up a session's heat indicator.
  */
 export function unregisterHeatCanvas(sessionId: string): void {
-  sessions.delete(sessionId);
+  const s = sessions.get(sessionId);
+  if (!s) return;
+  s.canvas = null;
+  s.ctx = null;
+  s.lastDrawnHeat = -1;
+  s.lastQuantizedHeat = -1;
+}
+
+export function pruneHeatSessions(sessionIds: Iterable<string>): void {
+  const validIds = new Set(sessionIds);
+  for (const sessionId of sessions.keys()) {
+    if (!validIds.has(sessionId)) {
+      sessions.delete(sessionId);
+    }
+  }
+
+  if (sessions.size === 0 && rafId) {
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
 }
 
 /**

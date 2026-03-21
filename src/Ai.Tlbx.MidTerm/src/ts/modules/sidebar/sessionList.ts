@@ -26,7 +26,7 @@ import {
 } from '../layout/layoutStore';
 import { getHubSession, getHubSidebarSections, isHubSessionId } from '../hub/runtime';
 import { formatRuntimeDisplay } from './processDisplay';
-import { registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
+import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
 // =============================================================================
 // Helpers
@@ -1190,6 +1190,11 @@ export function renderSessionList(): void {
     isSidebarSessionFilterEnabled() ? sessionFilterValue : '',
   );
   const groups = groupSessionsByController(filteredSessions);
+  const hubSections = getHubSidebarSections();
+  pruneHeatSessions([
+    ...displaySessions.map((session) => session.id),
+    ...hubSections.flatMap((machine) => machine.sessions.map((session) => session.id)),
+  ]);
 
   closeMobileActionMenu();
   sessionList.querySelectorAll<HTMLElement>('.session-item').forEach((item) => {
@@ -1208,7 +1213,7 @@ export function renderSessionList(): void {
     groups.forEach((group) => {
       sessionList.appendChild(createSessionGroupSection(group));
     });
-    getHubSidebarSections().forEach((machine) => {
+    hubSections.forEach((machine) => {
       if (machine.sessions.length > 0) {
         sessionList.appendChild(createHubMachineSection(machine));
       }
