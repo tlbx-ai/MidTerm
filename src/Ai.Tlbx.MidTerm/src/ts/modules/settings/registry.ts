@@ -208,13 +208,13 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
   controlEntry('uiTransparency', 'setting-ui-transparency', 'int', 0, {
     editable: true,
     storage: 'settings.json',
-    validation: 'integer, clamped to 0-85',
+    validation: 'integer, clamped to 0-100',
     applyMode: 'immediate',
   }),
   controlEntry('terminalTransparency', 'setting-terminal-transparency', 'int', 0, {
     editable: true,
     storage: 'settings.json',
-    validation: 'integer, clamped to 0-85',
+    validation: 'integer, clamped to 0-100',
     applyMode: 'immediate',
   }),
   controlEntry('tabTitleMode', 'setting-tab-title', 'select', 'hostname', {

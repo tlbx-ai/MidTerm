@@ -32,14 +32,14 @@ export function getEffectiveXtermThemeForSettings(
   const theme: TerminalTheme = Object.assign({}, baseTheme);
   const transparency = Math.min(
     Math.max(settings?.terminalTransparency ?? settings?.uiTransparency ?? 0, 0),
-    85,
+    100,
   );
   const hasWallpaper =
     settings !== null &&
     settings.backgroundImageEnabled &&
     settings.backgroundImageFileName !== null;
   if (hasWallpaper || transparency > 0) {
-    const alpha = Math.max(0.15, 1 - transparency / 100);
+    const alpha = Math.max(0, 1 - transparency / 100);
     theme.background = withAlpha(theme.background, alpha);
   }
   return theme;

@@ -39,6 +39,16 @@ describe('themes', () => {
     expect(theme.background).toBe('rgba(5, 5, 10, 0.400)');
   });
 
+  it('allows the terminal transparency slider to reach a fully transparent xterm background', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalTransparency: 100,
+      }),
+    );
+
+    expect(theme.background).toBe('rgba(5, 5, 10, 0.000)');
+  });
+
   it('falls back to ui transparency when terminal transparency is absent', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({

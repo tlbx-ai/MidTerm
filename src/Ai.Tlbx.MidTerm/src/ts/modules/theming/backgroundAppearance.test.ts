@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 describe('backgroundAppearance', () => {
-  it('keeps the terminal more transparent than the surrounding UI', () => {
+  it('keeps terminal chrome tokens stable while UI transparency affects surrounding UI', () => {
     applyBackgroundAppearance(
       createSettings({
         theme: 'dark',
@@ -115,16 +115,13 @@ describe('backgroundAppearance', () => {
       }),
     );
 
-    const terminalAlpha = alphaOf(rootStyle.getPropertyValue('--bg-terminal-pane'));
     const primaryAlpha = alphaOf(rootStyle.getPropertyValue('--bg-primary'));
     const elevatedAlpha = alphaOf(rootStyle.getPropertyValue('--bg-elevated'));
     const dropdownAlpha = alphaOf(rootStyle.getPropertyValue('--bg-dropdown'));
 
-    expect(terminalAlpha).toBeCloseTo(0.4, 5);
-    expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('#05050A');
-    expect(rootStyle.getPropertyValue('--terminal-bg')).toBe('#05050A');
+    expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
+    expect(rootStyle.getPropertyValue('--terminal-bg')).toBe('');
     expect(primaryAlpha).toBeCloseTo(0.86, 5);
-    expect(primaryAlpha).toBeGreaterThan(terminalAlpha);
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
@@ -156,8 +153,19 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#FEFCF9');
-    expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('#F5F0E8');
-    expect(rootStyle.getPropertyValue('--bg-terminal-pane')).toBe('rgba(245, 240, 232, 0.450)');
+    expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
     expect(bodyClassList.contains('has-app-background')).toBe(true);
+  });
+
+  it('allows the UI transparency slider to reach a fully transparent UI shell', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        uiTransparency: 100,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 0.160)');
+    expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
   });
 });

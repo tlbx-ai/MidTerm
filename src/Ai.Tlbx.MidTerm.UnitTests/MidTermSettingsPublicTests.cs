@@ -46,6 +46,23 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void ApplyTo_AllowsTransparencySettingsUpToOneHundredPercent()
+    {
+        var settings = new MidTermSettings();
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            UiTransparency = 100,
+            TerminalTransparency = 100
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal(100, settings.UiTransparency);
+        Assert.Equal(100, settings.TerminalTransparency);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripFontRenderingSettings()
     {
         var settings = new MidTermSettings

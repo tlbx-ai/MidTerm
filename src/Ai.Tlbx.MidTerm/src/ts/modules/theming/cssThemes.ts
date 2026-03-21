@@ -13,8 +13,6 @@ export type CssThemePalette = Record<string, string>;
 const dark: CssThemePalette = {
   '--bg-terminal': '#05050A',
   '--terminal-bg': '#05050A',
-  '--bg-terminal-pane': '#05050A',
-  '--terminal-pane-bg': '#05050A',
   '--bg-primary': '#0D0E14',
   '--bg-elevated': '#161821',
   '--bg-sidebar': '#0D0E14',
@@ -124,8 +122,6 @@ const dark: CssThemePalette = {
 const light: CssThemePalette = {
   '--bg-terminal': '#F5F0E8',
   '--terminal-bg': '#F5F0E8',
-  '--bg-terminal-pane': '#F5F0E8',
-  '--terminal-pane-bg': '#F5F0E8',
   '--bg-primary': '#EAE2D8',
   '--bg-elevated': '#FEFCF9',
   '--bg-sidebar': '#E6DDD1',
@@ -235,8 +231,6 @@ const light: CssThemePalette = {
 const solarizedDark: CssThemePalette = {
   '--bg-terminal': '#002B36',
   '--terminal-bg': '#002B36',
-  '--bg-terminal-pane': '#002B36',
-  '--terminal-pane-bg': '#002B36',
   '--bg-primary': '#04313D',
   '--bg-elevated': '#073642',
   '--bg-sidebar': '#073642',
@@ -346,8 +340,6 @@ const solarizedDark: CssThemePalette = {
 const solarizedLight: CssThemePalette = {
   '--bg-terminal': '#FDF6E3',
   '--terminal-bg': '#FDF6E3',
-  '--bg-terminal-pane': '#FDF6E3',
-  '--terminal-pane-bg': '#FDF6E3',
   '--bg-primary': '#F7F0DC',
   '--bg-elevated': '#EEE8D5',
   '--bg-sidebar': '#EEE8D5',

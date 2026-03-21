@@ -122,10 +122,21 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('background: var(--bg-active-opaque, var(--bg-active));');
   });
 
-  it('scopes terminal transparency to terminal pane surfaces', () => {
-    expect(cssSource).toContain('background-color: var(--terminal-pane-bg);');
-    expect(cssSource).toContain('background: var(--bg-terminal-pane);');
+  it('keeps terminal transparency out of non-xterm chrome', () => {
+    expect(cssSource).not.toContain('--bg-terminal-pane');
+    expect(cssSource).not.toContain('--terminal-pane-bg');
     expect(cssSource).toContain('background: var(--bg-terminal);');
+  });
+
+  it('allows both transparency sliders to reach 100 percent', () => {
+    expect(html).toMatch(/id="setting-ui-transparency"[\s\S]*?max="100"/);
+    expect(html).toMatch(/id="setting-terminal-transparency"[\s\S]*?max="100"/);
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'uiTransparency')?.validation).toBe(
+      'integer, clamped to 0-100',
+    );
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalTransparency')?.validation,
+    ).toBe('integer, clamped to 0-100');
   });
 
   it('backfills the mac terminal palettes into the terminal colors select at runtime', () => {

@@ -288,6 +288,7 @@ export function getTerminalOptions(): ITerminalOptions {
     minimumContrastRatio: contrast,
     smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
     allowProposedApi: true,
+    allowTransparency: true,
     customGlyphs: true,
     rescaleOverlappingGlyphs: true,
     theme: getEffectiveXtermTheme(),

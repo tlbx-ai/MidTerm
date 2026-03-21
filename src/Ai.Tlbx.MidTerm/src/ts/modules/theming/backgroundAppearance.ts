@@ -7,9 +7,6 @@
 import type { MidTermSettingsPublic } from '../../types';
 import { getCssThemePalette } from './cssThemes';
 
-const TERMINAL_BACKGROUND_VARIABLES = ['--bg-terminal-pane', '--terminal-pane-bg'] as const;
-const TERMINAL_CHROME_VARIABLES = ['--bg-terminal', '--terminal-bg'] as const;
-
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
   { name: '--bg-elevated', boost: 0.22 },
@@ -48,14 +45,8 @@ export function getBackgroundImageUrl(revision: number): string {
 export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void {
   const root = document.documentElement;
   const palette = getCssThemePalette(settings.theme);
-  const uiTransparency = clamp(settings.uiTransparency, 0, 85);
-  const terminalTransparency = clamp(
-    settings.terminalTransparency ?? settings.uiTransparency,
-    0,
-    85,
-  );
-  const uiBaseAlpha = Math.max(0.15, 1 - uiTransparency / 100);
-  const terminalBaseAlpha = Math.max(0.15, 1 - terminalTransparency / 100);
+  const uiTransparency = clamp(settings.uiTransparency, 0, 100);
+  const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
 
   for (const variable of OPAQUE_SURFACE_VARIABLES) {
     const value = palette[variable.source];
@@ -64,26 +55,6 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     }
 
     root.style.setProperty(variable.name, value);
-  }
-
-  for (const variableName of TERMINAL_CHROME_VARIABLES) {
-    const value = palette[variableName];
-    if (!value) {
-      continue;
-    }
-
-    root.style.setProperty(variableName, value);
-  }
-
-  for (const variableName of TERMINAL_BACKGROUND_VARIABLES) {
-    const source = variableName === '--bg-terminal-pane' ? '--bg-terminal' : '--terminal-bg';
-    const value = palette[source];
-    const rgb = parseColor(value);
-    if (!rgb) {
-      continue;
-    }
-
-    root.style.setProperty(variableName, toRgba(rgb, terminalBaseAlpha));
   }
 
   for (const variable of UI_BACKGROUND_VARIABLES) {

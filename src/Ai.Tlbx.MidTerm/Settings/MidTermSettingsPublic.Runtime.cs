@@ -109,10 +109,10 @@ public sealed partial class MidTermSettingsPublic
         {
             settings.BackgroundImageFit = BackgroundImageFit;
         }
-        settings.UiTransparency = Math.Clamp(UiTransparency, 0, 85);
+        settings.UiTransparency = Math.Clamp(UiTransparency, 0, 100);
         if (TerminalTransparency.HasValue)
         {
-            settings.TerminalTransparency = Math.Clamp(TerminalTransparency.Value, 0, 85);
+            settings.TerminalTransparency = Math.Clamp(TerminalTransparency.Value, 0, 100);
         }
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
