@@ -115,6 +115,11 @@ public static class ServerSetup
             var (port, bindAddress) = ArgumentParser.Parse(args);
             return new ServerBindingInfo(port, bindAddress);
         });
+        builder.Services.AddSingleton(sp =>
+        {
+            var binding = sp.GetRequiredService<ServerBindingInfo>();
+            return MidTermInstanceIdentity.Load(settingsService.SettingsDirectory, binding.Port);
+        });
         builder.Services.AddSingleton<ShellRegistry>();
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
@@ -145,7 +150,8 @@ public static class ServerSetup
             new TtyHostSessionManager(
                 runAsUser: settings.RunAsUser,
                 isServiceMode: settingsService.IsRunningAsService,
-                sessionControlStateService: _.GetRequiredService<SessionControlStateService>()));
+                sessionControlStateService: _.GetRequiredService<SessionControlStateService>(),
+                instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();

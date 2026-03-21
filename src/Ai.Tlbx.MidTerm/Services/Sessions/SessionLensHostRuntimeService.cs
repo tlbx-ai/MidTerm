@@ -6,6 +6,7 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
@@ -21,17 +22,22 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private readonly SessionLensHostIngressService _ingress;
     private readonly SessionLensPulseService _pulse;
     private readonly SettingsService _settingsService;
+    private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly string _mode;
 
     public SessionLensHostRuntimeService(
         SessionLensHostIngressService ingress,
         SessionLensPulseService pulse,
         SettingsService settingsService,
+        MidTermInstanceIdentity? instanceIdentity = null,
         string? mode = null)
     {
         _ingress = ingress;
         _pulse = pulse;
         _settingsService = settingsService;
+        _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
+            Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
+            0);
         _mode = NormalizeMode(mode ?? Environment.GetEnvironmentVariable(HostModeEnvironmentVariable));
     }
 
@@ -108,6 +114,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             };
             PrependPath(process.StartInfo, Path.GetDirectoryName(executablePath));
             LensHostEnvironmentResolver.ApplyUserProfileEnvironment(process.StartInfo, _settingsService.Load());
+            process.StartInfo.Environment["MIDTERM_INSTANCE_ID"] = _instanceIdentity.InstanceId;
+            process.StartInfo.Environment["MIDTERM_OWNER_TOKEN"] = _instanceIdentity.OwnerToken;
 
             if (!process.Start())
             {

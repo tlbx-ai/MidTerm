@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+using System.Text;
 #if WINDOWS
 using System.Threading;
 #endif
@@ -6,31 +6,29 @@ using System.Threading;
 namespace Ai.Tlbx.MidTerm.Services;
 
 /// <summary>
-/// Ensures only one instance of mt.exe runs system-wide.
+/// Ensures only one logical MidTerm instance runs for the same instance key.
 /// Uses named mutex on Windows, file lock on Unix.
 /// </summary>
 public sealed class SingleInstanceGuard : IDisposable
 {
-#if DEBUG
-    private const string MutexName = "Global\\MidTermDev";
-    private const string PidFileName = "midterm-dev.pid";
-#else
-    private const string MutexName = "Global\\MidTerm";
-    private const string PidFileName = "midterm.pid";
-#endif
-
 #if WINDOWS
     private Mutex? _mutex;
     private bool _ownsMutex;
 #else
     private FileStream? _pidFile;
 #endif
+    private readonly string _instanceKey;
     private bool _disposed;
 
-    public static SingleInstanceGuard? TryAcquire(out string? existingInfo)
+    private SingleInstanceGuard(string instanceKey)
+    {
+        _instanceKey = SanitizeInstanceKey(instanceKey);
+    }
+
+    public static SingleInstanceGuard? TryAcquire(string instanceKey, out string? existingInfo)
     {
         existingInfo = null;
-        var guard = new SingleInstanceGuard();
+        var guard = new SingleInstanceGuard(instanceKey);
 
         if (guard.TryAcquireInternal(out existingInfo))
         {
@@ -59,7 +57,7 @@ public sealed class SingleInstanceGuard : IDisposable
 
         try
         {
-            _mutex = new Mutex(true, MutexName, out var createdNew);
+            _mutex = new Mutex(true, GetMutexName(), out var createdNew);
 
             if (createdNew)
             {
@@ -83,7 +81,7 @@ public sealed class SingleInstanceGuard : IDisposable
     {
         existingInfo = null;
 
-        var pidPath = GetPidFilePath();
+        var pidPath = GetPidFilePath(_instanceKey);
         var pidDir = Path.GetDirectoryName(pidPath);
 
         try
@@ -133,7 +131,7 @@ public sealed class SingleInstanceGuard : IDisposable
         }
     }
 
-    private static string GetPidFilePath()
+    private static string GetPidFilePath(string instanceKey)
     {
         // Running as root (service mode) - use system location
         if (Environment.GetEnvironmentVariable("USER") == "root" ||
@@ -141,14 +139,14 @@ public sealed class SingleInstanceGuard : IDisposable
         {
             if (OperatingSystem.IsMacOS())
             {
-                return "/usr/local/var/run/midterm.pid";
+                return $"/usr/local/var/run/midterm-{instanceKey}.pid";
             }
-            return "/var/run/midterm.pid";
+            return $"/var/run/midterm-{instanceKey}.pid";
         }
 
         // User mode - use home directory
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(home, ".MidTerm", "midterm.pid");
+        return Path.Combine(home, ".midterm", $"midterm-{instanceKey}.pid");
     }
 
     private static bool IsProcessRunning(int pid)
@@ -164,6 +162,31 @@ public sealed class SingleInstanceGuard : IDisposable
         }
     }
 #endif
+
+    private string GetMutexName()
+    {
+#if DEBUG
+        return $"Global\\MidTermDev-{_instanceKey}";
+#else
+        return $"Global\\MidTerm-{_instanceKey}";
+#endif
+    }
+
+    private static string SanitizeInstanceKey(string instanceKey)
+    {
+        if (string.IsNullOrWhiteSpace(instanceKey))
+        {
+            return "default";
+        }
+
+        var builder = new StringBuilder(instanceKey.Length);
+        foreach (var ch in instanceKey)
+        {
+            builder.Append(char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : '-');
+        }
+
+        return builder.ToString().Trim('-');
+    }
 
     public void Dispose()
     {

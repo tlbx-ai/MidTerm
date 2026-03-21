@@ -60,4 +60,35 @@ public class TtyHostProtocolTests
         Assert.True(response!.Success);
         Assert.Null(response.Error);
     }
+
+    [Fact]
+    public void Attach_RoundTrips_RequestAndAck()
+    {
+        var requestFrame = TtyHostProtocol.CreateAttachRequest(new TtyHostAttachRequest
+        {
+            InstanceId = "inst1234abcd5678",
+            OwnerToken = "owner-token"
+        });
+
+        Assert.True(TtyHostProtocol.TryReadHeader(requestFrame, out var requestType, out var requestPayloadLength));
+        Assert.Equal(TtyHostMessageType.Attach, requestType);
+
+        var request = TtyHostProtocol.ParseAttachRequest(
+            requestFrame.AsSpan(TtyHostProtocol.HeaderSize, requestPayloadLength));
+
+        Assert.NotNull(request);
+        Assert.Equal("inst1234abcd5678", request!.InstanceId);
+        Assert.Equal("owner-token", request.OwnerToken);
+
+        var ackFrame = TtyHostProtocol.CreateAttachAck(true, "ok");
+        Assert.True(TtyHostProtocol.TryReadHeader(ackFrame, out var ackType, out var ackPayloadLength));
+        Assert.Equal(TtyHostMessageType.AttachAck, ackType);
+
+        var ack = TtyHostProtocol.ParseAttachAck(
+            ackFrame.AsSpan(TtyHostProtocol.HeaderSize, ackPayloadLength));
+
+        Assert.NotNull(ack);
+        Assert.True(ack!.Accepted);
+        Assert.Equal("ok", ack.Message);
+    }
 }

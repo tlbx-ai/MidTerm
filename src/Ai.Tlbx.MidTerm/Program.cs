@@ -16,6 +16,7 @@ using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Services.Power;
 using Ai.Tlbx.MidTerm.Services.Hub;
+using Ai.Tlbx.MidTerm.Services.Hosting;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program
@@ -94,21 +95,22 @@ public class Program
 
         WriteEventLog("MainCore: Acquiring instance guard");
 
-        var instanceGuard = SingleInstanceGuard.TryAcquire(out var existingInfo);
+        var (port, bindAddress) = ArgumentParser.Parse(args);
+        var preflightSettings = new SettingsService();
+        var instanceIdentity = MidTermInstanceIdentity.Load(preflightSettings.SettingsDirectory, port);
+        var instanceGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.GuardName, out var existingInfo);
         if (instanceGuard is null)
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"Error: {existingInfo}");
             Console.ResetColor();
-            Console.WriteLine("Only one instance of MidTerm can run at a time.");
-            Console.WriteLine("Stop the existing instance before starting a new one.");
+            Console.WriteLine($"Another MidTerm instance is already running for port {port}.");
+            Console.WriteLine("Use a different port or stop the existing instance first.");
             Environment.Exit(1);
             return;
         }
 
         WriteEventLog("MainCore: Parsing args and creating builder");
-
-        var (port, bindAddress) = ArgumentParser.Parse(args);
         var builder = ServerSetup.CreateBuilder(args, WriteEventLogWrapper);
 
         WriteEventLog("MainCore: Building app");
@@ -119,6 +121,7 @@ public class Program
         WriteEventLog("MainCore: Resolving services");
 
         var settingsService = app.Services.GetRequiredService<SettingsService>();
+        var resolvedInstanceIdentity = app.Services.GetRequiredService<MidTermInstanceIdentity>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
         var shareGrantService = app.Services.GetRequiredService<ShareGrantService>();
@@ -145,7 +148,7 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
-        Log.Info(() => "MidTerm server starting");
+        Log.Info(() => $"MidTerm server starting (instance={resolvedInstanceIdentity.GetShortInstanceId()}, port={port})");
 
         // Validate security state and log any warnings (informational only - does not block)
         var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();

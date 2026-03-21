@@ -21,6 +21,33 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.GetInfo, []);
     }
 
+    public static byte[] CreateAttachRequest(TtyHostAttachRequest request)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(request, TtyHostJsonContext.Default.TtyHostAttachRequest);
+        return CreateFrame(TtyHostMessageType.Attach, json);
+    }
+
+    public static TtyHostAttachRequest? ParseAttachRequest(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostAttachRequest);
+    }
+
+    public static byte[] CreateAttachAck(bool accepted, string? message = null)
+    {
+        var response = new TtyHostAttachResponse
+        {
+            Accepted = accepted,
+            Message = message
+        };
+        var json = JsonSerializer.SerializeToUtf8Bytes(response, TtyHostJsonContext.Default.TtyHostAttachResponse);
+        return CreateFrame(TtyHostMessageType.AttachAck, json);
+    }
+
+    public static TtyHostAttachResponse? ParseAttachAck(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostAttachResponse);
+    }
+
     public static byte[] CreateInfoResponse(SessionInfo info)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(info, TtyHostJsonContext.Default.SessionInfo);
@@ -289,6 +316,8 @@ public enum TtyHostMessageType : byte
     Info = 0x02,
     GetBuffer = 0x03,
     Buffer = 0x04,
+    Attach = 0x05,
+    AttachAck = 0x06,
 
     Input = 0x10,
     Output = 0x11,
@@ -346,6 +375,7 @@ public sealed class SessionInfo
     public string ShellType { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? TtyHostVersion { get; set; }
+    public string? OwnerInstanceId { get; set; }
 
     public int Cols { get => Lock(() => _cols); set => Lock(() => _cols = value); }
     public int Rows { get => Lock(() => _rows); set => Lock(() => _rows = value); }
@@ -405,12 +435,26 @@ public sealed class ClipboardImageResponse
     public string? Error { get; set; }
 }
 
+public sealed class TtyHostAttachRequest
+{
+    public string InstanceId { get; set; } = string.Empty;
+    public string OwnerToken { get; set; } = string.Empty;
+}
+
+public sealed class TtyHostAttachResponse
+{
+    public bool Accepted { get; set; }
+    public string? Message { get; set; }
+}
+
 [JsonSerializable(typeof(SessionInfo))]
 [JsonSerializable(typeof(SessionAgentAttachPoint))]
 [JsonSerializable(typeof(StateChangePayload))]
 [JsonSerializable(typeof(ForegroundChangePayload))]
 [JsonSerializable(typeof(ClipboardImageRequest))]
 [JsonSerializable(typeof(ClipboardImageResponse))]
+[JsonSerializable(typeof(TtyHostAttachRequest))]
+[JsonSerializable(typeof(TtyHostAttachResponse))]
 public partial class TtyHostJsonContext : JsonSerializerContext
 {
 }

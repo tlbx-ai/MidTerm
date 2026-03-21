@@ -136,8 +136,19 @@ public static class Program
             Console.WriteLine($"[mthost] PTY created, PID={pty.Pid}");
 
             processMonitor = CreateProcessMonitor();
-            session = new TerminalSession(config.SessionId, pty, shellConfig.ShellType, config.Cols, config.Rows, config.ScrollbackBytes, processMonitor);
-            var endpoint = IpcEndpoint.GetSessionEndpoint(config.SessionId, Environment.ProcessId);
+            session = new TerminalSession(
+                config.SessionId,
+                config.MtInstanceId,
+                config.MtOwnerToken,
+                pty,
+                shellConfig.ShellType,
+                config.Cols,
+                config.Rows,
+                config.ScrollbackBytes,
+                processMonitor);
+            var endpoint = string.IsNullOrWhiteSpace(config.MtInstanceId)
+                ? IpcEndpoint.GetLegacySessionEndpoint(config.SessionId, Environment.ProcessId)
+                : IpcEndpoint.GetSessionEndpoint(config.MtInstanceId, config.SessionId, Environment.ProcessId);
             Console.WriteLine($"[mthost] Listening on: {endpoint}");
             Log.Info(() => $"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
 
@@ -247,15 +258,7 @@ public static class Program
                 connectionCount++;
                 Log.Info(() => $"Client connected (#{connectionCount})");
 
-                CancellationTokenSource clientCts;
-                lock (_clientLock)
-                {
-                    var oldCts = _currentClientCts;
-                    _currentClientCts = new CancellationTokenSource();
-                    clientCts = _currentClientCts;
-                    oldCts?.Cancel();
-                    oldCts?.Dispose();
-                }
+                var clientCts = new CancellationTokenSource();
 
                 // Create a linked CTS that combines shutdown token with this client's token
                 // This is created outside the lock and passed directly to HandleClientAsync
@@ -278,7 +281,12 @@ public static class Program
 
                 // Run HandleClientAsync synchronously (don't fire-and-forget)
                 // This ensures the linked CTS stays alive for the duration of the handler
-                var handlerTask = HandleClientAsync(session, client, clientToken, onSubscribed);
+                var handlerTask = HandleClientAsync(
+                    session,
+                    client,
+                    clientToken,
+                    onSubscribed,
+                    () => PromoteCurrentClient(clientCts));
                 lock (clientTasks)
                 {
                     clientTasks.Add(handlerTask);
@@ -318,6 +326,25 @@ public static class Program
         if (remaining.Length > 0)
         {
             await Task.WhenAll(remaining).ConfigureAwait(false);
+        }
+    }
+
+    private static void PromoteCurrentClient(CancellationTokenSource nextClientCts)
+    {
+        lock (_clientLock)
+        {
+            if (ReferenceEquals(_currentClientCts, nextClientCts))
+            {
+                return;
+            }
+
+            var oldCts = _currentClientCts;
+            _currentClientCts = nextClientCts;
+            oldCts?.Cancel();
+            if (!ReferenceEquals(oldCts, nextClientCts))
+            {
+                oldCts?.Dispose();
+            }
         }
     }
 
@@ -369,7 +396,12 @@ public static class Program
         }
     }
 
-    private static async Task HandleClientAsync(TerminalSession session, IIpcClientConnection client, CancellationToken ct, Action? onSubscribed = null)
+    private static async Task HandleClientAsync(
+        TerminalSession session,
+        IIpcClientConnection client,
+        CancellationToken ct,
+        Action? onSubscribed = null,
+        Action? onAttached = null)
     {
         var outputLock = new object();
         var handshakeComplete = false;
@@ -540,7 +572,8 @@ public static class Program
                         session.OnStateChanged += OnStateChange;
                         session.OnForegroundChanged += OnForegroundChanged;
                     }
-                }).ConfigureAwait(false);
+                },
+                onAttached).ConfigureAwait(false);
             }
             finally
             {
@@ -637,9 +670,16 @@ public static class Program
         }
     }
 
-    private static async Task ProcessMessagesAsync(TerminalSession session, Stream stream, ChannelWriter<PooledFrame> channelWriter, CancellationToken ct, Action? onHandshakeComplete = null)
+    private static async Task ProcessMessagesAsync(
+        TerminalSession session,
+        Stream stream,
+        ChannelWriter<PooledFrame> channelWriter,
+        CancellationToken ct,
+        Action? onHandshakeComplete = null,
+        Action? onAttached = null)
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
+        var attached = !session.RequiresOwnershipHandshake;
 
         while (!ct.IsCancellationRequested)
         {
@@ -709,6 +749,32 @@ public static class Program
             // Process message - wrap in try-catch for robustness
             try
             {
+                if (!attached)
+                {
+                    if (msgType != TtyHostMessageType.Attach)
+                    {
+                        Log.Warn(() => $"Rejecting client before attach: first message was {msgType}");
+                        break;
+                    }
+
+                    var attachRequest = TtyHostProtocol.ParseAttachRequest(payload);
+                    if (attachRequest is null ||
+                        !string.Equals(attachRequest.InstanceId, session.OwnerInstanceId, StringComparison.Ordinal) ||
+                        !string.Equals(attachRequest.OwnerToken, session.OwnerToken, StringComparison.Ordinal))
+                    {
+                        var reject = TtyHostProtocol.CreateAttachAck(false, "mthost ownership mismatch");
+                        EnqueueFrame(channelWriter, reject);
+                        Log.Warn(() => $"Rejected client for session {session.Id}: ownership mismatch");
+                        break;
+                    }
+
+                    attached = true;
+                    var accept = TtyHostProtocol.CreateAttachAck(true);
+                    EnqueueFrame(channelWriter, accept);
+                    onAttached?.Invoke();
+                    continue;
+                }
+
                 switch (msgType)
                 {
                     case TtyHostMessageType.GetInfo:
@@ -853,6 +919,8 @@ public static class Program
         var scrollbackBytes = TerminalSession.DefaultBufferCapacity;
         int? mtPort = null;
         string? mtToken = null;
+        string? mtInstanceId = null;
+        string? mtOwnerToken = null;
         int? paneIndex = null;
         string? tmuxBinDir = null;
 
@@ -899,6 +967,12 @@ public static class Program
                 case "--mt-token" when i + 1 < args.Length:
                     mtToken = args[++i];
                     break;
+                case "--mt-instance-id" when i + 1 < args.Length:
+                    mtInstanceId = args[++i];
+                    break;
+                case "--mt-owner-token" when i + 1 < args.Length:
+                    mtOwnerToken = args[++i];
+                    break;
                 case "--pane-index" when i + 1 < args.Length && int.TryParse(args[i + 1], out var pi):
                     paneIndex = pi;
                     i++;
@@ -914,7 +988,7 @@ public static class Program
         scrollbackBytes = Math.Clamp(scrollbackBytes, MinScrollbackBytes, MaxScrollbackBytes);
 
         return new SessionConfig(sessionId, shellType, workingDir, cols, rows, logLevel, scrollbackBytes,
-            mtPort, mtToken, paneIndex, tmuxBinDir);
+            mtPort, mtToken, mtInstanceId, mtOwnerToken, paneIndex, tmuxBinDir);
     }
 
     private static void PrintHelp()
@@ -962,7 +1036,12 @@ public static class Program
     private sealed record SessionConfig(
         string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows,
         LogSeverity LogSeverity, int ScrollbackBytes,
-        int? MtPort = null, string? MtToken = null, int? PaneIndex = null, string? TmuxBinDir = null);
+        int? MtPort = null,
+        string? MtToken = null,
+        string? MtInstanceId = null,
+        string? MtOwnerToken = null,
+        int? PaneIndex = null,
+        string? TmuxBinDir = null);
 }
 
 internal sealed class TerminalSession : IDisposable
@@ -976,6 +1055,9 @@ internal sealed class TerminalSession : IDisposable
     private readonly int _scrollbackBytes;
 
     public string Id { get; }
+    public string? OwnerInstanceId { get; }
+    public string? OwnerToken { get; }
+    public bool RequiresOwnershipHandshake => !string.IsNullOrWhiteSpace(OwnerInstanceId) && !string.IsNullOrWhiteSpace(OwnerToken);
     public ShellType ShellType { get; }
     public int Cols { get; private set; }
     public int Rows { get; private set; }
@@ -991,9 +1073,20 @@ internal sealed class TerminalSession : IDisposable
     public event Action? OnStateChanged;
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
-    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows, int scrollbackBytes, IProcessMonitor? processMonitor = null)
+    public TerminalSession(
+        string id,
+        string? ownerInstanceId,
+        string? ownerToken,
+        IPtyConnection pty,
+        ShellType shellType,
+        int cols,
+        int rows,
+        int scrollbackBytes,
+        IProcessMonitor? processMonitor = null)
     {
         Id = id;
+        OwnerInstanceId = ownerInstanceId;
+        OwnerToken = ownerToken;
         _pty = pty;
         _processMonitor = processMonitor;
         ShellType = shellType;
@@ -1174,7 +1267,8 @@ internal sealed class TerminalSession : IDisposable
             Name = Name,
             Order = Order,
             CreatedAt = CreatedAt,
-            TtyHostVersion = VersionInfo.Version
+            TtyHostVersion = VersionInfo.Version,
+            OwnerInstanceId = OwnerInstanceId
         };
 
         if (_processMonitor is not null)
