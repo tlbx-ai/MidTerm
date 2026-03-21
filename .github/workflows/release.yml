@@ -9,6 +9,7 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   GIT_CONFIG_COUNT: '2'
   GIT_CONFIG_KEY_0: 'advice.detachedHead'
   GIT_CONFIG_VALUE_0: 'false'
@@ -56,24 +57,14 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
 
-      - name: Cache node_modules
-        id: npm-cache
-        uses: actions/cache@v5
-        with:
-          path: src/Ai.Tlbx.MidTerm/node_modules
-          key: node-modules-${{ hashFiles('src/Ai.Tlbx.MidTerm/package-lock.json') }}
-
       - name: Install npm packages
-        if: steps.npm-cache.outputs.cache-hit != 'true'
         working-directory: src/Ai.Tlbx.MidTerm
-        run: npm ci --include=dev --no-audit --no-fund
+        run: npm ci --include=dev --prefer-offline --no-audit --no-fund
 
       - name: Build frontend
         shell: pwsh
@@ -113,8 +104,6 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
         uses: actions/download-artifact@v6
@@ -257,8 +246,6 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
         uses: actions/download-artifact@v6
@@ -386,8 +373,6 @@ jobs:
         if: needs.prepare.outputs.is_dev == 'true'
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - name: Verify local .NET SDK on self-hosted Windows runner
         if: needs.prepare.outputs.is_dev != 'true'
