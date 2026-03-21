@@ -581,7 +581,11 @@ export function buildLensTranscriptEntries(
         body: '',
         meta: `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
       }));
-      contentEntry.body = appendTranscriptChunk(contentEntry.body, lensEvent.contentDelta.delta);
+      contentEntry.body = appendStreamDelta(
+        transcriptKind,
+        contentEntry.body,
+        lensEvent.contentDelta.delta,
+      );
       contentEntry.meta = `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
       contentEntry.order = order;
     }
@@ -1228,6 +1232,14 @@ function appendTranscriptChunk(existing: string, delta: string): string {
 
   const separator = trimmedExisting.endsWith('\n') || trimmedDelta.startsWith('\n') ? '\n' : '\n\n';
   return `${trimmedExisting}${separator}${trimmedDelta}`;
+}
+
+function appendStreamDelta(kind: TranscriptKind, existing: string, delta: string): string {
+  if (kind === 'assistant') {
+    return `${existing}${delta}`;
+  }
+
+  return appendTranscriptChunk(existing, delta);
 }
 
 function resolveTranscriptItemBody(
