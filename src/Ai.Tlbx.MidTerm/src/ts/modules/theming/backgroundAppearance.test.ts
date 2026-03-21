@@ -115,12 +115,14 @@ describe('backgroundAppearance', () => {
       }),
     );
 
-    const terminalAlpha = alphaOf(rootStyle.getPropertyValue('--bg-terminal'));
+    const terminalAlpha = alphaOf(rootStyle.getPropertyValue('--bg-terminal-pane'));
     const primaryAlpha = alphaOf(rootStyle.getPropertyValue('--bg-primary'));
     const elevatedAlpha = alphaOf(rootStyle.getPropertyValue('--bg-elevated'));
     const dropdownAlpha = alphaOf(rootStyle.getPropertyValue('--bg-dropdown'));
 
     expect(terminalAlpha).toBeCloseTo(0.4, 5);
+    expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('#05050A');
+    expect(rootStyle.getPropertyValue('--terminal-bg')).toBe('#05050A');
     expect(primaryAlpha).toBeCloseTo(0.86, 5);
     expect(primaryAlpha).toBeGreaterThan(terminalAlpha);
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
@@ -154,6 +156,8 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#FEFCF9');
+    expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('#F5F0E8');
+    expect(rootStyle.getPropertyValue('--bg-terminal-pane')).toBe('rgba(245, 240, 232, 0.450)');
     expect(bodyClassList.contains('has-app-background')).toBe(true);
   });
 });

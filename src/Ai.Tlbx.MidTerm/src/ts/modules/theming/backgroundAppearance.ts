@@ -7,7 +7,8 @@
 import type { MidTermSettingsPublic } from '../../types';
 import { getCssThemePalette } from './cssThemes';
 
-const TERMINAL_BACKGROUND_VARIABLES = ['--bg-terminal', '--terminal-bg'] as const;
+const TERMINAL_BACKGROUND_VARIABLES = ['--bg-terminal-pane', '--terminal-pane-bg'] as const;
+const TERMINAL_CHROME_VARIABLES = ['--bg-terminal', '--terminal-bg'] as const;
 
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
@@ -65,8 +66,18 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     root.style.setProperty(variable.name, value);
   }
 
-  for (const variableName of TERMINAL_BACKGROUND_VARIABLES) {
+  for (const variableName of TERMINAL_CHROME_VARIABLES) {
     const value = palette[variableName];
+    if (!value) {
+      continue;
+    }
+
+    root.style.setProperty(variableName, value);
+  }
+
+  for (const variableName of TERMINAL_BACKGROUND_VARIABLES) {
+    const source = variableName === '--bg-terminal-pane' ? '--bg-terminal' : '--terminal-bg';
+    const value = palette[source];
     const rgb = parseColor(value);
     if (!rgb) {
       continue;

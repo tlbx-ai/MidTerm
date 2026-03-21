@@ -122,6 +122,12 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('background: var(--bg-active-opaque, var(--bg-active));');
   });
 
+  it('scopes terminal transparency to terminal pane surfaces', () => {
+    expect(cssSource).toContain('background-color: var(--terminal-pane-bg);');
+    expect(cssSource).toContain('background: var(--bg-terminal-pane);');
+    expect(cssSource).toContain('background: var(--bg-terminal);');
+  });
+
   it('backfills the mac terminal palettes into the terminal colors select at runtime', () => {
     expect(persistenceSource).toContain('syncTerminalColorSchemeOptions();');
     expect(persistenceSource).toContain("value: 'macTerminalDark'");

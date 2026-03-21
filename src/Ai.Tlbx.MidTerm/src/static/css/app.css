@@ -157,6 +157,8 @@
   /* === BACKGROUNDS (17-point luminance spread) === */
   --bg-terminal: #05050a; /* L: 1.8% - The void */
   --terminal-bg: #05050a; /* Alias for compatibility */
+  --bg-terminal-pane: #05050a; /* Terminal pane surface */
+  --terminal-pane-bg: #05050a; /* Alias for compatibility */
   --bg-primary: #0d0e14; /* L: 3.5% - Main canvas */
   --bg-elevated: #161821; /* L: 6.5% - Cards, panels */
   --bg-sidebar: #0d0e14; /* L: 3.5% - Sidebar */
@@ -1506,7 +1508,7 @@ body.has-app-background::after {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background-color: var(--terminal-bg);
+  background-color: var(--terminal-pane-bg);
 }
 
 .terminal-container {
@@ -1909,7 +1911,7 @@ body.has-app-background::after {
 /* Leaf node - contains a terminal session */
 .layout-leaf {
   position: relative;
-  background-color: var(--terminal-bg);
+  background-color: var(--terminal-pane-bg);
 }
 
 /* Terminal container inside a leaf */
@@ -6948,7 +6950,7 @@ body.shared-session-mode .session-tab-bar {
   padding-left: calc(8px + env(safe-area-inset-left, 0px));
   padding-right: calc(8px + env(safe-area-inset-right, 0px));
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-  background: var(--terminal-bg);
+  background: var(--terminal-pane-bg);
   border-top: 1px solid var(--border-color);
   margin-right: 0;
 }
@@ -8472,7 +8474,7 @@ body.shared-session-mode .session-tab-bar {
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  background: var(--terminal-bg);
+  background: var(--terminal-pane-bg);
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
   margin-right: 0;
@@ -8487,7 +8489,7 @@ body.shared-session-mode .session-tab-bar {
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 8px 4px;
-  background: var(--terminal-bg);
+  background: var(--terminal-pane-bg);
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
 }
@@ -10596,7 +10598,7 @@ body.shared-session-mode .session-tab-bar {
 /* Legacy output styles kept for backward compat */
 .commands-output {
   border-top: 1px solid var(--border-color);
-  background: var(--bg-terminal);
+  background: var(--bg-terminal-pane);
 }
 
 .commands-output-header {
