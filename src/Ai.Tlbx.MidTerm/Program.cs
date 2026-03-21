@@ -332,6 +332,7 @@ public class Program
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
         var lensPulse = app.Services.GetRequiredService<SessionLensPulseService>();
         var lensRuntime = app.Services.GetRequiredService<SessionLensRuntimeService>();
+        var codexHandoff = app.Services.GetRequiredService<SessionCodexHandoffService>();
         var agentVibe = app.Services.GetRequiredService<SessionAgentVibeService>();
         SessionApiEndpoints.MapSessionEndpoints(
             app,
@@ -344,6 +345,7 @@ public class Program
             sessionSupervisor,
             lensPulse,
             lensRuntime,
+            codexHandoff,
             agentVibe,
             aiCliProfileService,
             workerSessionRegistry);

@@ -57,6 +57,7 @@ public static partial class SessionApiEndpoints
         SessionSupervisorService sessionSupervisor,
         SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime,
+        SessionCodexHandoffService codexHandoff,
         SessionAgentVibeService agentVibe,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry)
@@ -346,8 +347,46 @@ public static partial class SessionApiEndpoints
             }
 
             var session = GetSessionDto(sessionManager, sessionSupervisor, id);
-            var attached = await lensRuntime.EnsureAttachedAsync(id, session, ct).ConfigureAwait(false);
+            string? resumeThreadId = null;
+            if (aiCliProfileService.NormalizeProfile(null, session) == AiCliProfileService.CodexProfile)
+            {
+                try
+                {
+                    resumeThreadId = await codexHandoff.PrepareForLensAsync(session, ct).ConfigureAwait(false);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(ex.Message);
+                }
+            }
+
+            var attached = await lensRuntime.EnsureAttachedAsync(id, session, resumeThreadId, ct).ConfigureAwait(false);
             return attached ? Results.Ok() : Results.BadRequest("Lens native runtime is not available for this session.");
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/detach", async (string id, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = GetSessionDto(sessionManager, sessionSupervisor, id);
+            if (aiCliProfileService.NormalizeProfile(null, session) != AiCliProfileService.CodexProfile)
+            {
+                await lensRuntime.DetachAsync(id, ct).ConfigureAwait(false);
+                return Results.Ok();
+            }
+
+            try
+            {
+                await codexHandoff.RestoreTerminalAsync(session, ct).ConfigureAwait(false);
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
         });
 
         app.MapPost("/api/sessions/{id}/lens/turns", async (string id, LensTurnRequest request, CancellationToken ct) =>
@@ -358,7 +397,7 @@ public static partial class SessionApiEndpoints
             }
 
             var session = GetSessionDto(sessionManager, sessionSupervisor, id);
-            if (!await lensRuntime.EnsureAttachedAsync(id, session, ct).ConfigureAwait(false))
+            if (!await lensRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false))
             {
                 return Results.BadRequest("Lens native runtime is not available for this session.");
             }

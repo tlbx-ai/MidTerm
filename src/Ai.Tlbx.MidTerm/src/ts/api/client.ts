@@ -226,6 +226,16 @@ export async function attachSessionLens(id: string): Promise<void> {
   }
 }
 
+export async function detachSessionLens(id: string): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/lens/detach`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    await throwHttpError(response, 'Lens detach failed.');
+  }
+}
+
 export async function sendLensTurn(
   id: string,
   request: LensTurnRequest,

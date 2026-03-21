@@ -61,6 +61,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         string sessionId,
         string profile,
         SessionInfoDto session,
+        string? resumeThreadIdOverride = null,
         CancellationToken ct = default)
     {
         var workingDirectory = session.CurrentDirectory;
@@ -161,7 +162,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                         WorkingDirectory = workingDirectory,
                         AttachPoint = attachPoint,
                         ExecutablePath = executablePath,
-                        ResumeThreadId = attachPoint?.PreferredThreadId
+                        ResumeThreadId = resumeThreadIdOverride ?? attachPoint?.PreferredThreadId
                     }
                 },
                 ct).ConfigureAwait(false);
@@ -413,6 +414,24 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         if (_states.TryRemove(sessionId, out var state))
         {
             _ = DisposeStateAsync(state);
+        }
+    }
+
+    public async Task DetachAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (!_states.TryRemove(sessionId, out var state))
+        {
+            return;
+        }
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await DisposeStateAsync(state).ConfigureAwait(false);
+        }
+        finally
+        {
+            state.Gate.Release();
         }
     }
 

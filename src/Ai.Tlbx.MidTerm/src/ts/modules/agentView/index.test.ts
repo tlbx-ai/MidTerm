@@ -4,6 +4,7 @@ const onTabActivated = vi.fn();
 const onTabDeactivated = vi.fn();
 const switchTab = vi.fn();
 const attachSessionLens = vi.fn();
+const detachSessionLens = vi.fn(() => Promise.resolve());
 const getLensSnapshot = vi.fn();
 const getLensEvents = vi.fn();
 const openLensEventStream = vi.fn(() => vi.fn());
@@ -21,6 +22,7 @@ vi.mock('../sessionTabs', () => ({
 
 vi.mock('../../api/client', () => ({
   attachSessionLens,
+  detachSessionLens,
   getLensSnapshot,
   getLensEvents,
   openLensEventStream,
@@ -67,6 +69,8 @@ describe('agentView dev errors', () => {
     onTabDeactivated.mockReset();
     switchTab.mockReset();
     attachSessionLens.mockReset();
+    detachSessionLens.mockReset();
+    detachSessionLens.mockResolvedValue(undefined);
     getLensSnapshot.mockReset();
     getLensEvents.mockReset();
     openLensEventStream.mockReset();
@@ -150,6 +154,21 @@ describe('agentView dev errors', () => {
         error: expect.any(Error),
       }),
     );
+  });
+
+  it('detaches Lens when the agent tab is deactivated', async () => {
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const deactivate = onTabDeactivated.mock.calls[0]?.[1] as
+      | ((sessionId: string) => void)
+      | undefined;
+    expect(deactivate).toBeTypeOf('function');
+
+    deactivate?.('s1');
+    await Promise.resolve();
+
+    expect(detachSessionLens).toHaveBeenCalledWith('s1');
   });
 
   it('builds transcript-first rows from canonical Lens events', async () => {

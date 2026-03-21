@@ -4,6 +4,7 @@ import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { renderMarkdown } from '../../utils/markdown';
 import {
   attachSessionLens,
+  detachSessionLens,
   getLensSnapshot,
   getLensEvents,
   approveLensRequest,
@@ -96,6 +97,9 @@ export function initAgentView(): void {
 
   onTabDeactivated('agent', (sessionId) => {
     closeLensStream(sessionId);
+    void detachSessionLens(sessionId).catch((error: unknown) => {
+      log.warn(() => `Failed to detach Lens for ${sessionId}: ${String(error)}`);
+    });
   });
 
   log.info(() => 'Agent view initialized');

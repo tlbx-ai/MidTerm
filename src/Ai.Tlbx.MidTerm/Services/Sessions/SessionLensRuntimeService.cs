@@ -41,6 +41,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     public async Task<bool> EnsureAttachedAsync(
         string sessionId,
         SessionInfoDto session,
+        string? resumeThreadIdOverride = null,
         CancellationToken ct = default)
     {
         var profile = _profileService.NormalizeProfile(null, session);
@@ -57,7 +58,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         if (_hostRuntime.IsEnabledFor(profile))
         {
-            if (await _hostRuntime.EnsureAttachedAsync(sessionId, profile, session, ct).ConfigureAwait(false))
+            if (await _hostRuntime.EnsureAttachedAsync(sessionId, profile, session, resumeThreadIdOverride, ct).ConfigureAwait(false))
             {
                 return true;
             }
@@ -112,6 +113,30 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         return _states.TryGetValue(sessionId, out var state) &&
                state.Status != LensRuntimeStatus.None;
+    }
+
+    public async Task DetachAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_hostRuntime.OwnsSession(sessionId))
+        {
+            await _hostRuntime.DetachAsync(sessionId, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (!_states.TryRemove(sessionId, out var state))
+        {
+            return;
+        }
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await DisposeStateAsync(state).ConfigureAwait(false);
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
     }
 
     public bool TryGetSnapshot(string sessionId, out LensRuntimeSnapshot snapshot)
