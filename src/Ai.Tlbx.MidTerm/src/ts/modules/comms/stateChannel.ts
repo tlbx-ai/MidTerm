@@ -333,6 +333,8 @@ export function handleStateUpdate(newSessions: Session[]): void {
       session.foregroundName,
       session.foregroundCommandLine,
       session.currentDirectory,
+      session.foregroundDisplayName,
+      session.foregroundProcessIdentity,
     );
 
     const state = sessionTerminals.get(session.id);

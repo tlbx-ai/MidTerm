@@ -70,6 +70,8 @@ export interface ForegroundChangePayload {
   Name: string;
   CommandLine: string | null;
   Cwd: string | null;
+  DisplayName?: string | null;
+  ProcessIdentity?: string | null;
 }
 
 /** Process state for a session */
@@ -78,6 +80,8 @@ export interface ProcessState {
   foregroundName: string | null;
   foregroundCommandLine: string | null;
   foregroundCwd: string | null;
+  foregroundDisplayName: string | null;
+  foregroundProcessIdentity: string | null;
 }
 
 /** Terminal state for a session */

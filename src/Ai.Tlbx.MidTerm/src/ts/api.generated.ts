@@ -4725,6 +4725,8 @@ export interface components {
       foregroundPid: null | number;
       foregroundName: null | string;
       foregroundCommandLine: null | string;
+      foregroundDisplayName: null | string;
+      foregroundProcessIdentity: null | string;
       agentAttachPoint: null | components['schemas']['SessionAgentAttachPoint'];
       /** Format: int32 */
       order: number;

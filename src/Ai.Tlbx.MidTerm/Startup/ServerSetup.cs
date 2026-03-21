@@ -138,6 +138,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<SessionTelemetryService>();
         builder.Services.AddSingleton<AiCliProfileService>();
         builder.Services.AddSingleton<AiCliCapabilityService>();
+        builder.Services.AddSingleton<SessionForegroundProcessService>();
         builder.Services.AddSingleton<SessionAgentFeedService>();
         builder.Services.AddSingleton<SessionLensPulseService>();
         builder.Services.AddSingleton<SessionLensHostIngressService>();
@@ -152,7 +153,8 @@ public static class ServerSetup
                 runAsUser: settings.RunAsUser,
                 isServiceMode: settingsService.IsRunningAsService,
                 sessionControlStateService: _.GetRequiredService<SessionControlStateService>(),
-                instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>()));
+                instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>(),
+                foregroundProcessService: _.GetRequiredService<SessionForegroundProcessService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();

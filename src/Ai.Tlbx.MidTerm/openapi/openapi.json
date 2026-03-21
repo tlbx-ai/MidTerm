@@ -6660,6 +6660,8 @@
           "foregroundPid",
           "foregroundName",
           "foregroundCommandLine",
+          "foregroundDisplayName",
+          "foregroundProcessIdentity",
           "agentAttachPoint",
           "order",
           "parentSessionId",
@@ -6736,6 +6738,18 @@
             ]
           },
           "foregroundCommandLine": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundDisplayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessIdentity": {
             "type": [
               "null",
               "string"

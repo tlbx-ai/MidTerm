@@ -16,6 +16,7 @@ public sealed class SessionCodexHandoffService
     private readonly TtyHostSessionManager _sessionManager;
     private readonly WorkerSessionRegistryService _workerRegistry;
     private readonly AiCliProfileService _profileService;
+    private readonly SessionForegroundProcessService _foregroundProcessService;
     private readonly SessionLensPulseService _lensPulse;
     private readonly SessionLensRuntimeService _lensRuntime;
     private readonly string _codexHome;
@@ -24,6 +25,7 @@ public sealed class SessionCodexHandoffService
         TtyHostSessionManager sessionManager,
         WorkerSessionRegistryService workerRegistry,
         AiCliProfileService profileService,
+        SessionForegroundProcessService foregroundProcessService,
         SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime,
         string? codexHome = null)
@@ -31,6 +33,7 @@ public sealed class SessionCodexHandoffService
         _sessionManager = sessionManager;
         _workerRegistry = workerRegistry;
         _profileService = profileService;
+        _foregroundProcessService = foregroundProcessService;
         _lensPulse = lensPulse;
         _lensRuntime = lensRuntime;
         _codexHome = string.IsNullOrWhiteSpace(codexHome)
@@ -43,7 +46,7 @@ public sealed class SessionCodexHandoffService
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        if (!IsCodexForeground(session))
+        if (!LooksLikeCodexForeground(session))
         {
             return TryGetKnownResumeThreadId(session.Id, out var knownResumeThreadId)
                 ? knownResumeThreadId
@@ -63,7 +66,7 @@ public sealed class SessionCodexHandoffService
             throw new InvalidOperationException("The terminal Codex process has no foreground pid to hand off.");
         }
 
-        KillProcess(foregroundPid);
+        KillProcessTree(foregroundPid);
         await WaitForShellAsync(session.Id, session.ShellType, ct).ConfigureAwait(false);
         return resumeThreadId;
     }
@@ -72,7 +75,7 @@ public sealed class SessionCodexHandoffService
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        if (IsCodexForeground(session))
+        if (LooksLikeCodexForeground(session))
         {
             var commandLineResumeThreadId = TryExtractResumeThreadId(session.ForegroundCommandLine);
             if (!string.IsNullOrWhiteSpace(commandLineResumeThreadId))
@@ -80,6 +83,7 @@ public sealed class SessionCodexHandoffService
                 RememberResumeThreadId(session.Id, commandLineResumeThreadId);
             }
 
+            await _lensRuntime.DetachAsync(session.Id, ct).ConfigureAwait(false);
             return;
         }
 
@@ -333,7 +337,11 @@ public sealed class SessionCodexHandoffService
                 throw new InvalidOperationException("Terminal session disappeared while restoring Codex.");
             }
 
-            if (string.Equals(NormalizeExecutableIdentity(session.ForegroundName), "codex", StringComparison.Ordinal))
+            if (_foregroundProcessService.HasIdentity(
+                    session.ForegroundName,
+                    session.ForegroundCommandLine,
+                    session.AgentAttachPoint,
+                    AiCliProfileService.CodexProfile))
             {
                 return;
             }
@@ -344,9 +352,10 @@ public sealed class SessionCodexHandoffService
         throw new InvalidOperationException("Codex did not return to the terminal after leaving Lens.");
     }
 
-    private static bool IsCodexForeground(SessionInfoDto session)
+    internal static bool LooksLikeCodexForeground(SessionInfoDto session)
     {
-        return string.Equals(NormalizeExecutableIdentity(session.ForegroundName), "codex", StringComparison.Ordinal);
+        ArgumentNullException.ThrowIfNull(session);
+        return string.Equals(session.ForegroundProcessIdentity, AiCliProfileService.CodexProfile, StringComparison.Ordinal);
     }
 
     private static bool IsShellForeground(string? foregroundName, string? shellType)
@@ -446,12 +455,12 @@ public sealed class SessionCodexHandoffService
         current.Clear();
     }
 
-    private static void KillProcess(int processId)
+    private static void KillProcessTree(int processId)
     {
         try
         {
             using var process = Process.GetProcessById(processId);
-            process.Kill();
+            process.Kill(entireProcessTree: true);
         }
         catch
         {

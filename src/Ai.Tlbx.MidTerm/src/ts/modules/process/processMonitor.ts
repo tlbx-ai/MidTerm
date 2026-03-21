@@ -37,6 +37,8 @@ export function getProcessState(sessionId: string): ProcessState {
       foregroundName: null,
       foregroundCommandLine: null,
       foregroundCwd: null,
+      foregroundDisplayName: null,
+      foregroundProcessIdentity: null,
     };
     processStates.set(sessionId, state);
   }
@@ -53,6 +55,8 @@ export function handleForegroundChange(sessionId: string, payload: ForegroundCha
   state.foregroundName = payload.Name;
   state.foregroundCommandLine = payload.CommandLine ?? null;
   state.foregroundCwd = payload.Cwd ?? null;
+  state.foregroundDisplayName = payload.DisplayName ?? null;
+  state.foregroundProcessIdentity = payload.ProcessIdentity ?? null;
 
   notifyStateChange(sessionId, state);
 
@@ -72,6 +76,8 @@ export function initializeFromSession(
   foregroundName: string | null,
   foregroundCommandLine: string | null,
   currentDirectory: string | null,
+  foregroundDisplayName: string | null | undefined,
+  foregroundProcessIdentity: string | null | undefined,
 ): void {
   if (!foregroundPid && !foregroundName && !currentDirectory) return;
 
@@ -80,13 +86,17 @@ export function initializeFromSession(
     state.foregroundPid !== foregroundPid ||
     state.foregroundName !== foregroundName ||
     state.foregroundCommandLine !== foregroundCommandLine ||
-    state.foregroundCwd !== currentDirectory;
+    state.foregroundCwd !== currentDirectory ||
+    state.foregroundDisplayName !== (foregroundDisplayName ?? null) ||
+    state.foregroundProcessIdentity !== (foregroundProcessIdentity ?? null);
 
   if (changed) {
     state.foregroundPid = foregroundPid;
     state.foregroundName = foregroundName;
     state.foregroundCommandLine = foregroundCommandLine;
     state.foregroundCwd = currentDirectory;
+    state.foregroundDisplayName = foregroundDisplayName ?? null;
+    state.foregroundProcessIdentity = foregroundProcessIdentity ?? null;
     notifyStateChange(sessionId, state);
     log.verbose(() => `Initialized from session: ${foregroundName} in ${currentDirectory}`);
   }
@@ -99,12 +109,16 @@ export function getForegroundInfo(sessionId: string): {
   name: string | null;
   commandLine: string | null;
   cwd: string | null;
+  displayName: string | null;
+  processIdentity: string | null;
 } {
   const state = processStates.get(sessionId);
   return {
     name: state?.foregroundName ?? null,
     commandLine: state?.foregroundCommandLine ?? null,
     cwd: state?.foregroundCwd ?? null,
+    displayName: state?.foregroundDisplayName ?? null,
+    processIdentity: state?.foregroundProcessIdentity ?? null,
   };
 }
 

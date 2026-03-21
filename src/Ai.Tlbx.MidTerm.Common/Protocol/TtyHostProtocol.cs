@@ -420,6 +420,8 @@ public sealed class ForegroundChangePayload
     public string Name { get; set; } = string.Empty;
     public string? CommandLine { get; set; }
     public string? Cwd { get; set; }
+    public string? DisplayName { get; set; }
+    public string? ProcessIdentity { get; set; }
     public SessionAgentAttachPoint? AgentAttachPoint { get; set; }
 }
 

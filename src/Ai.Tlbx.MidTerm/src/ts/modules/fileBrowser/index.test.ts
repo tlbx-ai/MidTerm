@@ -66,6 +66,8 @@ describe('fileBrowser', () => {
       foregroundName: null,
       foregroundCommandLine: null,
       foregroundCwd: 'Q:\\repos\\MidTerm',
+      foregroundDisplayName: null,
+      foregroundProcessIdentity: null,
     });
 
     const { initFileBrowser } = await import('./index');

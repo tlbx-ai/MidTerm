@@ -509,6 +509,8 @@ async function createSession(): Promise<void> {
     foregroundPid: null,
     foregroundName: null,
     foregroundCommandLine: null,
+    foregroundDisplayName: null,
+    foregroundProcessIdentity: null,
     shellType: 'Loading...',
     cols: cols,
     rows: rows,
@@ -866,7 +868,12 @@ async function patchPinnedHistoryLabelIfMatchingTuple(
   if (!bookmarkId) return;
 
   const fgInfo = getForegroundInfo(sessionId);
-  const currentTuple = buildProcessCwdTuple(fgInfo.name, fgInfo.commandLine, fgInfo.cwd);
+  const currentTuple = buildProcessCwdTuple(
+    fgInfo.name,
+    fgInfo.commandLine,
+    fgInfo.cwd,
+    fgInfo.processIdentity,
+  );
   if (!currentTuple) return;
 
   let entries: LaunchEntry[];
@@ -972,7 +979,12 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
   }
 
   const fgInfo = getForegroundInfo(sessionId);
-  const tupleKey = buildProcessCwdTuple(fgInfo.name, fgInfo.commandLine, fgInfo.cwd);
+  const tupleKey = buildProcessCwdTuple(
+    fgInfo.name,
+    fgInfo.commandLine,
+    fgInfo.cwd,
+    fgInfo.processIdentity,
+  );
   if (!fgInfo.name || !tupleKey) {
     log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
     return;

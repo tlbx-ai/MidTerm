@@ -25,7 +25,6 @@ import {
   undockSession,
 } from '../layout/layoutStore';
 import { getHubSession, getHubSidebarSections, isHubSessionId } from '../hub/runtime';
-import { formatRuntimeDisplay } from './processDisplay';
 import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
 // =============================================================================
@@ -131,6 +130,7 @@ function buildSessionFilterHaystack(session: Session): string {
     session.shellType,
     session.currentDirectory,
     foregroundInfo.name,
+    foregroundInfo.displayName,
     foregroundInfo.cwd,
     foregroundInfo.commandLine,
   ]
@@ -371,11 +371,12 @@ function createForegroundIndicator(
   cwd: string | null | undefined,
   commandLine: string | null | undefined,
   processName: string,
+  displayName: string | null | undefined,
 ): HTMLElement {
   const container = document.createElement('span');
   container.className = 'session-foreground';
 
-  const cmdDisplay = formatRuntimeDisplay(processName, commandLine ?? null);
+  const cmdDisplay = displayName?.trim() || commandLine || processName;
   container.title = `${commandLine ?? processName}\n${cwd ?? ''}`;
 
   if (cwd) {
@@ -403,11 +404,21 @@ function createForegroundIndicator(
  */
 function renderProcessTitle(
   titleRow: HTMLElement,
-  fgInfo: { cwd?: string | null; name?: string | null; commandLine?: string | null },
+  fgInfo: {
+    cwd?: string | null;
+    name?: string | null;
+    commandLine?: string | null;
+    displayName?: string | null;
+  },
   sessionId: string,
 ): void {
   if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
-    const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
+    const fgIndicator = createForegroundIndicator(
+      fgInfo.cwd,
+      fgInfo.commandLine,
+      fgInfo.name,
+      fgInfo.displayName,
+    );
     fgIndicator.classList.add('process-title');
     titleRow.appendChild(fgIndicator);
   } else if (fgInfo.cwd) {
@@ -474,7 +485,12 @@ function updateSessionProcessInfo(sessionId: string): void {
   processInfoEl.innerHTML = '';
 
   if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
-    const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
+    const fgIndicator = createForegroundIndicator(
+      fgInfo.cwd,
+      fgInfo.commandLine,
+      fgInfo.name,
+      fgInfo.displayName,
+    );
     processInfoEl.appendChild(fgIndicator);
   } else if (fgInfo.cwd) {
     const cwdSpan = document.createElement('span');
@@ -872,7 +888,12 @@ function createSessionItem(
   if (!displayInfo.useProcessAsTitle) {
     const fgInfo = getForegroundInfo(sessionId);
     if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
-      const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
+      const fgIndicator = createForegroundIndicator(
+        fgInfo.cwd,
+        fgInfo.commandLine,
+        fgInfo.name,
+        fgInfo.displayName,
+      );
       processInfo.appendChild(fgIndicator);
     } else if (fgInfo.cwd) {
       const cwdSpan = document.createElement('span');

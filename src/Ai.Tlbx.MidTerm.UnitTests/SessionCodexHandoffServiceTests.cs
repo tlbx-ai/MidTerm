@@ -37,6 +37,48 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     }
 
     [Fact]
+    public void LooksLikeCodexForeground_MatchesDerivedSessionIdentity()
+    {
+        var session = new SessionInfoDto
+        {
+            ForegroundProcessIdentity = "codex"
+        };
+        var looksLikeCodex = SessionCodexHandoffService.LooksLikeCodexForeground(session);
+
+        Assert.True(looksLikeCodex);
+    }
+
+    [Fact]
+    public void ForegroundProcessService_MatchesWrapperCommandLine()
+    {
+        var service = new SessionForegroundProcessService();
+        var descriptor = service.Describe(
+            processName: "node.exe",
+            commandLine: "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\repo\\node_modules\\@openai\\codex\\bin\\codex.js\" --yolo",
+            attachPoint: null);
+
+        Assert.Equal("codex --yolo", descriptor.DisplayName);
+        Assert.Equal("codex", descriptor.ProcessIdentity);
+    }
+
+    [Fact]
+    public void ForegroundProcessService_PrefersAttachPointProviderForIdentity()
+    {
+        var service = new SessionForegroundProcessService();
+        var descriptor = service.Describe(
+            processName: "node.exe",
+            commandLine: "node cli.js",
+            attachPoint: new SessionAgentAttachPoint
+            {
+                Provider = SessionAgentAttachPoint.CodexProvider,
+                TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                Endpoint = "ws://127.0.0.1:1234"
+            });
+
+        Assert.Equal("codex", descriptor.ProcessIdentity);
+    }
+
+    [Fact]
     public async Task ResolveResumeThreadIdAsync_UsesUniqueDiskMatchForSessionCwd()
     {
         var cwd = Path.Combine(_tempRoot, "repo");
@@ -110,10 +152,12 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
         var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, new SettingsService(), mode: "off");
         var sessionManager = new TtyHostSessionManager();
         var lensRuntime = new SessionLensRuntimeService(sessionManager, new AiCliProfileService(), pulse, hostRuntime);
+        var foregroundProcessService = new SessionForegroundProcessService();
         return new SessionCodexHandoffService(
             sessionManager,
             new WorkerSessionRegistryService(),
             new AiCliProfileService(),
+            foregroundProcessService,
             pulse,
             lensRuntime,
             _tempRoot);

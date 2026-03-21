@@ -28,6 +28,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly string? _minCompatibleVersion;
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly TtyHostOwnershipRegistry _ownershipRegistry;
+    private readonly SessionForegroundProcessService _foregroundProcessService;
     private string? _runAsUser;
     private bool _disposed;
     private int? _mtPort;
@@ -60,7 +61,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? runAsUser = null,
         bool isServiceMode = false,
         SessionControlStateService? sessionControlStateService = null,
-        MidTermInstanceIdentity? instanceIdentity = null)
+        MidTermInstanceIdentity? instanceIdentity = null,
+        SessionForegroundProcessService? foregroundProcessService = null)
     {
         _registry = new SessionRegistry(isServiceMode, sessionControlStateService);
         _clients = _registry.Clients;
@@ -71,6 +73,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             Path.Combine(Path.GetTempPath(), "midterm-test-instance", Guid.NewGuid().ToString("N")),
             0);
         _ownershipRegistry = new TtyHostOwnershipRegistry(_instanceIdentity.SessionRegistryPath);
+        _foregroundProcessService = foregroundProcessService ?? new SessionForegroundProcessService();
         _runAsUser = runAsUser;
     }
 
@@ -457,7 +460,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public SessionListDto GetSessionList()
     {
-        return _registry.GetSessionList();
+        var response = _registry.GetSessionList();
+        foreach (var session in response.Sessions)
+        {
+            var descriptor = _foregroundProcessService.Describe(
+                session.ForegroundName,
+                session.ForegroundCommandLine,
+                session.AgentAttachPoint);
+            session.ForegroundDisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
+            session.ForegroundProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
+        }
+
+        return response;
     }
 
     public async Task<bool> CloseSessionAsync(string sessionId, CancellationToken ct = default)
@@ -794,6 +808,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private void HandleClientForegroundChanged(string sessionId, ForegroundChangePayload payload)
     {
+        var descriptor = _foregroundProcessService.Describe(payload.Name, payload.CommandLine, payload.AgentAttachPoint);
+        payload.DisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
+        payload.ProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
+
         if (_sessionCache.TryGetValue(sessionId, out var info))
         {
             info.ForegroundPid = payload.Pid;
