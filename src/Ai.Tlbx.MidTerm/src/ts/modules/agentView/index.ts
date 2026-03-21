@@ -705,7 +705,7 @@ export function buildLensTranscriptEntries(
           itemKind === 'tool'
             ? compactToolTitle(lensEvent.item?.title || lensEvent.item?.itemType || 'tool')
             : lensEvent.item?.title || prettify(lensEvent.item?.itemType || 'item'),
-        body: lensEvent.item?.detail || '',
+        body: resolveTranscriptItemBody(itemKind, lensEvent.item?.detail, lensEvent.item?.title),
         meta: `${prettify(lensEvent.item?.status || 'updated')} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
       }));
       itemEntry.kind = itemKind;
@@ -715,8 +715,13 @@ export function buildLensTranscriptEntries(
         itemKind === 'tool'
           ? compactToolTitle(lensEvent.item.title || lensEvent.item.itemType || 'tool')
           : lensEvent.item.title || prettify(lensEvent.item.itemType || 'item');
-      if (lensEvent.item.detail && !itemEntry.body.includes(lensEvent.item.detail)) {
-        itemEntry.body = appendTranscriptChunk(itemEntry.body, lensEvent.item.detail);
+      const itemBody = resolveTranscriptItemBody(
+        itemKind,
+        lensEvent.item.detail,
+        lensEvent.item.title,
+      );
+      if (itemBody && !itemEntry.body.includes(itemBody)) {
+        itemEntry.body = appendTranscriptChunk(itemEntry.body, itemBody);
       }
       itemEntry.meta = `${prettify(lensEvent.item.status)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
       itemEntry.order = order;
@@ -819,7 +824,7 @@ export function buildLensTranscriptEntries(
   }
 
   if (
-    !entries.some((entry) => entry.kind === 'assistant') &&
+    !entries.some((entry) => entry.kind === 'assistant' && entry.body.trim()) &&
     snapshot.streams.assistantText.trim()
   ) {
     entries.push({
@@ -835,7 +840,10 @@ export function buildLensTranscriptEntries(
     fallbackOrder += 1;
   }
 
-  if (!entries.some((entry) => entry.kind === 'plan') && snapshot.streams.planText.trim()) {
+  if (
+    !entries.some((entry) => entry.kind === 'plan' && entry.body.trim()) &&
+    snapshot.streams.planText.trim()
+  ) {
     entries.push({
       id: 'fallback-plan',
       order: fallbackOrder,
@@ -849,7 +857,10 @@ export function buildLensTranscriptEntries(
     fallbackOrder += 1;
   }
 
-  if (!entries.some((entry) => entry.kind === 'diff') && snapshot.streams.unifiedDiff.trim()) {
+  if (
+    !entries.some((entry) => entry.kind === 'diff' && entry.body.trim()) &&
+    snapshot.streams.unifiedDiff.trim()
+  ) {
     entries.push({
       id: 'fallback-diff',
       order: fallbackOrder,
@@ -864,7 +875,7 @@ export function buildLensTranscriptEntries(
   }
 
   if (
-    !entries.some((entry) => entry.kind === 'tool') &&
+    !entries.some((entry) => entry.kind === 'tool' && entry.body.trim()) &&
     [snapshot.streams.commandOutput, snapshot.streams.fileChangeOutput].join('\n').trim()
   ) {
     entries.push({
@@ -1349,6 +1360,41 @@ function appendTranscriptChunk(existing: string, delta: string): string {
 
   const separator = trimmedExisting.endsWith('\n') || trimmedDelta.startsWith('\n') ? '\n' : '\n\n';
   return `${trimmedExisting}${separator}${trimmedDelta}`;
+}
+
+function resolveTranscriptItemBody(
+  kind: TranscriptKind,
+  detail: string | null | undefined,
+  title: string | null | undefined,
+): string {
+  if (kind === 'tool') {
+    return detail?.trim() || '';
+  }
+
+  const trimmedDetail = detail?.trim();
+  if (trimmedDetail) {
+    return trimmedDetail;
+  }
+
+  const trimmedTitle = title?.trim() || '';
+  if (!trimmedTitle || isGenericTranscriptPlaceholder(kind, trimmedTitle)) {
+    return '';
+  }
+
+  return trimmedTitle;
+}
+
+function isGenericTranscriptPlaceholder(kind: TranscriptKind, value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  const genericValues = new Set([
+    transcriptLabel(kind).toLowerCase(),
+    'assistant message',
+    'user message',
+    'user input',
+    'agent message',
+    'message',
+  ]);
+  return genericValues.has(normalized);
 }
 
 function compactToolTitle(value: string): string {

@@ -528,6 +528,128 @@ describe('agentView dev errors', () => {
     expect(transcript[0]?.body).toContain('All green');
   });
 
+  it('keeps user text from item title and still falls back to snapshot assistant text', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-20T10:00:00Z',
+      latestSequence: 4,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-20T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: 'gpt-5',
+        effort: 'medium',
+        startedAt: '2026-03-20T09:59:00Z',
+        completedAt: '2026-03-20T10:00:00Z',
+      },
+      streams: {
+        assistantText: 'Final answer from snapshot',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'user-title-only',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'user-1',
+        requestId: null,
+        createdAt: '2026-03-20T09:59:00Z',
+        type: 'item.completed',
+        raw: null,
+        sessionState: null,
+        threadState: null,
+        turnStarted: null,
+        turnCompleted: null,
+        contentDelta: null,
+        planDelta: null,
+        planCompleted: null,
+        diffUpdated: null,
+        item: {
+          itemType: 'user_message',
+          status: 'completed',
+          title: 'Please summarize the failing test run.',
+          detail: '',
+        },
+        requestOpened: null,
+        requestResolved: null,
+        userInputRequested: null,
+        userInputResolved: null,
+        runtimeMessage: null,
+      },
+      {
+        sequence: 2,
+        eventId: 'assistant-empty-item',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-20T09:59:20Z',
+        type: 'item.completed',
+        raw: null,
+        sessionState: null,
+        threadState: null,
+        turnStarted: null,
+        turnCompleted: null,
+        contentDelta: null,
+        planDelta: null,
+        planCompleted: null,
+        diffUpdated: null,
+        item: {
+          itemType: 'assistant_message',
+          status: 'completed',
+          title: 'Assistant',
+          detail: '',
+        },
+        requestOpened: null,
+        requestResolved: null,
+        userInputRequested: null,
+        userInputResolved: null,
+        runtimeMessage: null,
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+
+    expect(transcript.find((entry) => entry.kind === 'user')?.body).toContain(
+      'Please summarize the failing test run.',
+    );
+    expect(
+      transcript.find(
+        (entry) => entry.kind === 'assistant' && entry.body.includes('Final answer from snapshot'),
+      ),
+    ).toBeTruthy();
+  });
+
   it('virtualizes older transcript rows but keeps a visible window', async () => {
     const { computeTranscriptVirtualWindow } = await import('./index');
 
