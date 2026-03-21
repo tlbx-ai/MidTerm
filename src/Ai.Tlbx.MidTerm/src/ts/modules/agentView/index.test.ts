@@ -528,6 +528,161 @@ describe('agentView dev errors', () => {
     expect(transcript[0]?.body).toContain('All green');
   });
 
+  it('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-21T11:59:24Z',
+      latestSequence: 12,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: 'Codex turn completed.',
+        lastError: null,
+        lastEventAt: '2026-03-21T11:59:24Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-21T11:59:14Z',
+        completedAt: '2026-03-21T11:59:18Z',
+      },
+      streams: {
+        assistantText: 'HELLO_FROM_CODEX',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'e-user-start',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'user-1',
+        requestId: null,
+        createdAt: '2026-03-21T11:59:14Z',
+        type: 'item.started',
+        raw: null,
+        item: {
+          itemType: 'usermessage',
+          status: 'in_progress',
+          title: 'Tool started',
+          detail: 'Reply with exactly HELLO_FROM_CODEX',
+        },
+      },
+      {
+        sequence: 2,
+        eventId: 'e-user-done',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'user-1',
+        requestId: null,
+        createdAt: '2026-03-21T11:59:14Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'usermessage',
+          status: 'completed',
+          title: 'Tool completed',
+          detail: 'Reply with exactly HELLO_FROM_CODEX',
+        },
+      },
+      {
+        sequence: 3,
+        eventId: 'e-assistant-delta',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-21T11:59:18Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'assistant_text',
+          delta: 'HELLO_FROM_CODEX',
+        },
+      },
+      {
+        sequence: 4,
+        eventId: 'e-assistant-done',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-21T11:59:18Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'assistant_message',
+          status: 'completed',
+          title: 'Assistant message',
+          detail: 'HELLO_FROM_CODEX',
+        },
+      },
+      {
+        sequence: 5,
+        eventId: 'e-command-done',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'cmd-1',
+        requestId: null,
+        createdAt: '2026-03-21T11:59:17Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'commandexecution',
+          status: 'completed',
+          title: 'Tool completed',
+          detail: '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command pwd',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const userEntries = transcript.filter((entry) => entry.kind === 'user');
+    const assistantEntries = transcript.filter((entry) => entry.kind === 'assistant');
+    const toolEntries = transcript.filter((entry) => entry.kind === 'tool');
+
+    expect(userEntries).toHaveLength(1);
+    expect(userEntries[0]?.body).toContain('Reply with exactly HELLO_FROM_CODEX');
+    expect(userEntries[0]?.title).toBe('You');
+
+    expect(assistantEntries).toHaveLength(1);
+    expect(assistantEntries[0]?.body).toBe('HELLO_FROM_CODEX');
+
+    expect(toolEntries).toHaveLength(1);
+    expect(toolEntries[0]?.body).toContain('pwsh.exe');
+  });
+
   it('keeps user text from item title and still falls back to snapshot assistant text', async () => {
     const { buildLensTranscriptEntries } = await import('./index');
 

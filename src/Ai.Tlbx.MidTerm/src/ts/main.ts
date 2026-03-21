@@ -528,6 +528,7 @@ async function createSession(): Promise<void> {
     parentSessionId: null,
     bookmarkId: null,
     agentControlled: false,
+    agentAttachPoint: null,
   };
   setSession(tempSession);
   pendingSessions.add(tempId);

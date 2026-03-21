@@ -1645,10 +1645,52 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return GetString(item, "detail")
                ?? GetString(item, "title")
                ?? GetString(item, "text")
+               ?? ReadCodexContentText(item)
                ?? GetString(item, "command")
+               ?? ReadCodexCommandText(item)
                ?? GetString(item, "summary")
                ?? GetString(item, "kind")
                ?? string.Empty;
+    }
+
+    private static string? ReadCodexContentText(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object ||
+            !item.TryGetProperty("content", out var content) ||
+            content.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var chunks = new List<string>();
+        foreach (var part in content.EnumerateArray())
+        {
+            var text = GetString(part, "text");
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                chunks.Add(text.Trim());
+            }
+        }
+
+        return chunks.Count == 0 ? null : string.Join("\n\n", chunks);
+    }
+
+    private static string? ReadCodexCommandText(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object ||
+            !item.TryGetProperty("command", out var command))
+        {
+            return null;
+        }
+
+        if (command.ValueKind == JsonValueKind.String)
+        {
+            return command.GetString();
+        }
+
+        return GetString(command, "command")
+               ?? GetString(command, "text")
+               ?? GetString(command, "summary");
     }
 
     private static string BuildCodexPlanMarkdown(JsonElement payload)
@@ -1697,12 +1739,22 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
         return normalized switch
         {
+            "usermessage" => "user_message",
+            "user_message" => "user_message",
+            "assistantmessage" => "assistant_message",
+            "agentmessage" => "assistant_message",
             "agent_message" => "assistant_message",
-            "command_execution" => "command_execution",
-            "file_change" => "file_change",
-            "web_search" => "web_search",
-            "mcp_tool_call" => "mcp_tool_call",
             "assistant_message" => "assistant_message",
+            "commandexecution" => "command_execution",
+            "command_execution" => "command_execution",
+            "filechange" => "file_change",
+            "file_change" => "file_change",
+            "websearch" => "web_search",
+            "web_search" => "web_search",
+            "mcptoolcall" => "mcp_tool_call",
+            "mcp_tool_call" => "mcp_tool_call",
+            "dynamictoolcall" => "dynamic_tool_call",
+            "dynamic_tool_call" => "dynamic_tool_call",
             _ => normalized
         };
     }

@@ -18,11 +18,13 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
     private FakeCodexWebSocketServer(
         string endpoint,
         string loadedThreadId,
-        string assistantReply)
+        string assistantReply,
+        bool emitRichTranscriptItems)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
         AssistantReply = assistantReply;
+        EmitRichTranscriptItems = emitRichTranscriptItems;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
         _acceptLoopTask = Task.Run(AcceptLoopAsync);
@@ -34,10 +36,15 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public string AssistantReply { get; }
 
-    public static FakeCodexWebSocketServer Start(string loadedThreadId, string assistantReply)
+    public bool EmitRichTranscriptItems { get; }
+
+    public static FakeCodexWebSocketServer Start(
+        string loadedThreadId,
+        string assistantReply,
+        bool emitRichTranscriptItems = false)
     {
         var endpoint = $"ws://127.0.0.1:{GetFreePort()}/";
-        return new FakeCodexWebSocketServer(endpoint, loadedThreadId, assistantReply);
+        return new FakeCodexWebSocketServer(endpoint, loadedThreadId, assistantReply, emitRichTranscriptItems);
     }
 
     public async ValueTask DisposeAsync()
@@ -189,6 +196,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
                     case "turn/start" when id is not null:
                         var turnId = "turn-remote-1";
+                        var turnText = ReadTurnText(@params) ?? "Continue from the shared thread.";
                         await SendJsonAsync(socket, new
                         {
                             id,
@@ -213,6 +221,95 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitRichTranscriptItems)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "item/started",
+                                @params = new
+                                {
+                                    item = new
+                                    {
+                                        id = "item-user-1",
+                                        type = "userMessage",
+                                        content = new[]
+                                        {
+                                            new
+                                            {
+                                                type = "text",
+                                                text = turnText
+                                            }
+                                        }
+                                    }
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "item/completed",
+                                @params = new
+                                {
+                                    item = new
+                                    {
+                                        id = "item-user-1",
+                                        type = "userMessage",
+                                        content = new[]
+                                        {
+                                            new
+                                            {
+                                                type = "text",
+                                                text = turnText
+                                            }
+                                        }
+                                    }
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "item/started",
+                                @params = new
+                                {
+                                    item = new
+                                    {
+                                        id = "item-command-1",
+                                        type = "commandExecution",
+                                        command = "pwsh.exe -Command pwd"
+                                    }
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "item/completed",
+                                @params = new
+                                {
+                                    item = new
+                                    {
+                                        id = "item-command-1",
+                                        type = "commandExecution",
+                                        command = "pwsh.exe -Command pwd"
+                                    }
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "item/started",
+                                @params = new
+                                {
+                                    item = new
+                                    {
+                                        id = "item-agent-1",
+                                        type = "agentMessage",
+                                        content = new[]
+                                        {
+                                            new
+                                            {
+                                                type = "text",
+                                                text = AssistantReply
+                                            }
+                                        }
+                                    }
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         await SendJsonAsync(socket, new
                         {
                             method = "item/agentMessage/delta",
@@ -222,6 +319,29 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 delta = AssistantReply
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitRichTranscriptItems)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "item/completed",
+                                @params = new
+                                {
+                                    item = new
+                                    {
+                                        id = "item-agent-1",
+                                        type = "agentMessage",
+                                        content = new[]
+                                        {
+                                            new
+                                            {
+                                                type = "text",
+                                                text = AssistantReply
+                                            }
+                                        }
+                                    }
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         await SendJsonAsync(socket, new
                         {
                             method = "turn/completed",
@@ -278,6 +398,28 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                property.ValueKind == JsonValueKind.String
             ? property.GetString()
             : null;
+    }
+
+    private static string? ReadTurnText(JsonElement payload)
+    {
+        if (payload.ValueKind != JsonValueKind.Object ||
+            !payload.TryGetProperty("input", out var input) ||
+            input.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        foreach (var entry in input.EnumerateArray())
+        {
+            var text = GetString(entry, "text");
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                parts.Add(text.Trim());
+            }
+        }
+
+        return parts.Count == 0 ? null : string.Join("\n\n", parts);
     }
 
     private static async Task<string?> ReceiveMessageAsync(WebSocket socket, CancellationToken ct)

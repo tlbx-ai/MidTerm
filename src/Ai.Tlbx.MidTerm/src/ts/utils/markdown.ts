@@ -22,6 +22,20 @@ function formatMarkdownLinks(escapedText: string): string {
   });
 }
 
+function replaceStrong(text: string, delimiter: '\\*\\*' | '__'): string {
+  return text.replace(
+    new RegExp(`(^|[^\\w])${delimiter}([^\\n]+?)${delimiter}(?=$|[^\\w])`, 'gm'),
+    (_match, prefix: string, content: string) => `${prefix}<strong>${content.trim()}</strong>`,
+  );
+}
+
+function replaceEmphasis(text: string, delimiter: '\\*' | '_'): string {
+  return text.replace(
+    new RegExp(`(^|[^\\w])${delimiter}([^\\n]+?)${delimiter}(?=$|[^\\w])`, 'gm'),
+    (_match, prefix: string, content: string) => `${prefix}<em>${content.trim()}</em>`,
+  );
+}
+
 export function renderMarkdown(text: string): string {
   const codeBlocks: string[] = [];
   const normalized = text.replace(/\r\n?/g, '\n');
@@ -46,10 +60,10 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
 
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-  html = html.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+  html = replaceStrong(html, '\\*\\*');
+  html = replaceStrong(html, '__');
+  html = replaceEmphasis(html, '\\*');
+  html = replaceEmphasis(html, '_');
 
   html = formatMarkdownLinks(html);
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');

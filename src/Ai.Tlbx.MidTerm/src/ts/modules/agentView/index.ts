@@ -1,13 +1,11 @@
-import { t } from '../i18n';
 import { createLogger } from '../logging';
-import { onTabActivated, onTabDeactivated, switchTab } from '../sessionTabs';
+import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { renderMarkdown } from '../../utils/markdown';
 import {
   attachSessionLens,
   getLensSnapshot,
   getLensEvents,
-  interruptLensTurn,
   approveLensRequest,
   declineLensRequest,
   resolveLensUserInput,
@@ -33,7 +31,6 @@ interface SessionLensViewState {
   streamConnected: boolean;
   refreshScheduled: number | null;
   refreshInFlight: boolean;
-  interruptPending: boolean;
   requestBusyIds: Set<string>;
   transcriptAutoScrollPinned: boolean;
   transcriptRenderScheduled: number | null;
@@ -217,7 +214,6 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     streamConnected: false,
     refreshScheduled: null,
     refreshInFlight: false,
-    interruptPending: false,
     requestBusyIds: new Set<string>(),
     transcriptAutoScrollPinned: true,
     transcriptRenderScheduled: null,
@@ -231,7 +227,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
   return created;
 }
 
-function ensureAgentViewSkeleton(sessionId: string, panel: HTMLDivElement): void {
+function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): void {
   if (panel.dataset.agentViewReady === 'true') {
     return;
   }
@@ -240,47 +236,11 @@ function ensureAgentViewSkeleton(sessionId: string, panel: HTMLDivElement): void
   panel.classList.add('agent-view-panel');
   panel.innerHTML = `
     <section class="agent-view">
-      <div class="agent-view-hero">
-        <div class="agent-view-copy">
-          <div class="agent-view-eyebrow">${t('agentView.eyebrow')}</div>
-          <h2 class="agent-view-title" data-agent-field="title"></h2>
-          <p class="agent-view-subtitle" data-agent-field="subtitle"></p>
-        </div>
-        <div class="agent-view-actions">
-          <button type="button" class="agent-view-btn" data-agent-action="refresh">${t('agentView.refresh')}</button>
-          <button type="button" class="agent-view-btn" data-agent-action="interrupt" hidden>Stop turn</button>
-          <button type="button" class="agent-view-btn agent-view-btn-primary" data-agent-action="terminal">${t('agentView.openTerminal')}</button>
-        </div>
-      </div>
-      <div class="agent-view-chip-row" data-agent-field="chips"></div>
       <section class="agent-transcript-card">
         <div class="agent-transcript" data-agent-field="transcript"></div>
       </section>
     </section>
   `;
-
-  panel
-    .querySelector<HTMLButtonElement>('[data-agent-action="refresh"]')
-    ?.addEventListener('click', () => {
-      void refreshLensSnapshot(sessionId);
-    });
-
-  panel
-    .querySelector<HTMLButtonElement>('[data-agent-action="interrupt"]')
-    ?.addEventListener('click', () => {
-      const turnId = panel.dataset.agentTurnId;
-      if (!turnId) {
-        return;
-      }
-
-      void handleInterruptTurn(sessionId, turnId);
-    });
-
-  panel
-    .querySelector<HTMLButtonElement>('[data-agent-action="terminal"]')
-    ?.addEventListener('click', () => {
-      switchTab(sessionId, 'terminal');
-    });
 }
 
 function bindTranscriptViewport(sessionId: string, state: SessionLensViewState): void {
@@ -460,145 +420,19 @@ function renderAgentView(
   streamConnected: boolean,
   state: SessionLensViewState,
 ): void {
-  const providerLabel = prettify(snapshot.provider || 'agent');
-  const latestNotice = snapshot.notices[0] ?? null;
-
-  setText(panel, 'title', `${providerLabel} Lens`);
-  setText(
-    panel,
-    'subtitle',
-    snapshot.session.reason ??
-      (streamConnected
-        ? `Thread ${snapshot.thread.threadId || snapshot.sessionId} • live`
-        : `Thread ${snapshot.thread.threadId || snapshot.sessionId} • reconnecting`),
-  );
-
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
-  syncInterruptAction(panel, snapshot, state.interruptPending);
-  renderChips(panel, snapshot, latestNotice !== null, streamConnected);
+  const transcriptEntries = buildLensTranscriptEntries(snapshot, events);
   renderTranscript(
     panel,
-    buildLensTranscriptEntries(snapshot, events),
+    withInlineLensStatus(snapshot, transcriptEntries, streamConnected),
     snapshot.sessionId,
     state.requestBusyIds,
   );
 }
 
 function renderActivationView(panel: HTMLDivElement, state: SessionLensViewState): void {
-  const failed = state.activationState === 'failed';
-  const title = failed ? 'Lens startup failed' : 'Opening Lens';
-  const subtitle =
-    state.activationDetail || (failed ? t('agentView.loadError') : 'Connecting Lens runtime…');
-
   panel.dataset.agentTurnId = '';
-  setText(panel, 'title', title);
-  setText(panel, 'subtitle', subtitle);
-  renderActivationChips(panel, state);
   renderTranscript(panel, buildActivationTranscriptEntries(state), '', new Set<string>());
-
-  const interruptButton = panel.querySelector<HTMLButtonElement>('[data-agent-action="interrupt"]');
-  if (interruptButton) {
-    interruptButton.hidden = true;
-    interruptButton.disabled = false;
-    interruptButton.textContent = 'Stop turn';
-  }
-}
-
-function renderChips(
-  panel: HTMLDivElement,
-  snapshot: LensPulseSnapshotResponse,
-  hasRuntimeNotice: boolean,
-  streamConnected: boolean,
-): void {
-  const chips = [
-    { tone: 'profile', text: prettify(snapshot.provider || 'agent') },
-    {
-      tone: toneFromState(snapshot.session.state),
-      text: snapshot.session.stateLabel || snapshot.session.state,
-    },
-    {
-      tone: toneFromState(snapshot.thread.state),
-      text: snapshot.thread.stateLabel || snapshot.thread.state,
-    },
-  ];
-
-  if (snapshot.currentTurn.turnId) {
-    chips.push({
-      tone: toneFromState(snapshot.currentTurn.state),
-      text: snapshot.currentTurn.stateLabel || snapshot.currentTurn.state,
-    });
-  }
-
-  if (hasRuntimeNotice) {
-    chips.push({ tone: 'attention', text: 'Notice' });
-  }
-
-  chips.push({
-    tone: streamConnected ? 'positive' : 'warning',
-    text: streamConnected ? 'Live' : 'Reconnecting',
-  });
-
-  renderChipContainer(panel, chips);
-}
-
-function renderActivationChips(panel: HTMLDivElement, state: SessionLensViewState): void {
-  renderChipContainer(panel, [
-    { tone: 'profile', text: 'Lens Boot' },
-    {
-      tone:
-        state.activationState === 'failed'
-          ? 'attention'
-          : state.activationState === 'ready'
-            ? 'positive'
-            : 'warning',
-      text: prettify(state.activationState),
-    },
-    {
-      tone: state.streamConnected ? 'positive' : 'warning',
-      text: state.streamConnected ? 'Live' : 'Connecting',
-    },
-  ]);
-}
-
-function renderChipContainer(
-  panel: HTMLDivElement,
-  chips: Array<{ tone: string; text: string }>,
-): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="chips"]');
-  if (!container) {
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  for (const chip of chips) {
-    const node = document.createElement('span');
-    node.className = `agent-chip agent-chip-${chip.tone.replace(/[^a-z0-9-]/gi, '-')}`;
-    node.textContent = chip.text;
-    fragment.appendChild(node);
-  }
-
-  container.replaceChildren(fragment);
-}
-
-function syncInterruptAction(
-  panel: HTMLDivElement,
-  snapshot: LensPulseSnapshotResponse,
-  pending: boolean,
-): void {
-  const button = panel.querySelector<HTMLButtonElement>('[data-agent-action="interrupt"]');
-  if (!button) {
-    return;
-  }
-
-  const canInterrupt =
-    Boolean(snapshot.currentTurn.turnId) &&
-    !['completed', 'interrupted', 'failed', 'error'].includes(
-      (snapshot.currentTurn.state || '').toLowerCase(),
-    );
-
-  button.hidden = !canInterrupt;
-  button.disabled = pending;
-  button.textContent = pending ? 'Stopping…' : 'Stop turn';
 }
 
 function renderTranscript(
@@ -704,7 +538,7 @@ export function buildLensTranscriptEntries(
         title:
           itemKind === 'tool'
             ? compactToolTitle(lensEvent.item?.title || lensEvent.item?.itemType || 'tool')
-            : lensEvent.item?.title || prettify(lensEvent.item?.itemType || 'item'),
+            : transcriptLabel(itemKind),
         body: resolveTranscriptItemBody(itemKind, lensEvent.item?.detail, lensEvent.item?.title),
         meta: `${prettify(lensEvent.item?.status || 'updated')} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
       }));
@@ -714,7 +548,7 @@ export function buildLensTranscriptEntries(
       itemEntry.title =
         itemKind === 'tool'
           ? compactToolTitle(lensEvent.item.title || lensEvent.item.itemType || 'tool')
-          : lensEvent.item.title || prettify(lensEvent.item.itemType || 'item');
+          : transcriptLabel(itemKind);
       const itemBody = resolveTranscriptItemBody(
         itemKind,
         lensEvent.item.detail,
@@ -901,6 +735,40 @@ export function buildLensTranscriptEntries(
         entry.kind === 'notice',
     )
     .sort((left, right) => left.order - right.order);
+}
+
+function withInlineLensStatus(
+  snapshot: LensPulseSnapshotResponse,
+  entries: LensTranscriptEntry[],
+  streamConnected: boolean,
+): LensTranscriptEntry[] {
+  const hasConversation = entries.some((entry) =>
+    ['user', 'assistant', 'tool', 'request', 'plan', 'diff'].includes(entry.kind),
+  );
+  const statusBody =
+    snapshot.session.lastError?.trim() ||
+    snapshot.session.reason?.trim() ||
+    (streamConnected
+      ? 'Lens is connected to MidTerm and waiting for transcript content.'
+      : 'Lens is reconnecting to MidTerm.');
+
+  if ((!statusBody || hasConversation) && !snapshot.session.lastError) {
+    return entries;
+  }
+
+  return [
+    {
+      id: 'midterm-status',
+      order: Number.MIN_SAFE_INTEGER,
+      kind: snapshot.session.lastError ? 'notice' : 'system',
+      tone: snapshot.session.lastError ? 'attention' : streamConnected ? 'positive' : 'warning',
+      label: 'MidTerm',
+      title: streamConnected ? 'Lens connected' : 'Lens connecting',
+      body: statusBody,
+      meta: streamConnected ? 'Connected' : 'Connecting',
+    },
+    ...entries,
+  ];
 }
 
 function createRequestTranscriptEntry(
@@ -1393,6 +1261,10 @@ function isGenericTranscriptPlaceholder(kind: TranscriptKind, value: string): bo
     'user input',
     'agent message',
     'message',
+    'tool started',
+    'tool completed',
+    'started',
+    'completed',
   ]);
   return genericValues.has(normalized);
 }
@@ -1402,37 +1274,6 @@ function compactToolTitle(value: string): string {
     .replace(/\s+(?:complete|completed)\s*$/i, '')
     .replace(/^tool[:\s-]*/i, '')
     .trim();
-}
-
-function setText(panel: HTMLDivElement, field: string, value: string): void {
-  const element = panel.querySelector<HTMLElement>(`[data-agent-field="${field}"]`);
-  if (element) {
-    element.textContent = value;
-  }
-}
-
-async function handleInterruptTurn(sessionId: string, turnId: string): Promise<void> {
-  const state = viewStates.get(sessionId);
-  if (!state || state.interruptPending) {
-    return;
-  }
-
-  state.interruptPending = true;
-  renderCurrentAgentView(sessionId);
-  try {
-    await interruptLensTurn(sessionId, { turnId });
-    await refreshLensSnapshot(sessionId);
-  } catch (error) {
-    log.warn(() => `Failed to interrupt Lens turn for ${sessionId}: ${String(error)}`);
-    showDevErrorDialog({
-      title: 'Lens interrupt failed',
-      context: `Lens interrupt failed for session ${sessionId}, turn ${turnId}`,
-      error,
-    });
-  } finally {
-    state.interruptPending = false;
-    renderCurrentAgentView(sessionId);
-  }
 }
 
 async function handleApproveRequest(sessionId: string, requestId: string): Promise<void> {

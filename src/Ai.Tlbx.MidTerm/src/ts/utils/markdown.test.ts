@@ -25,4 +25,12 @@ describe('renderMarkdown', () => {
     expect(unsafe).not.toContain('<a href=');
     expect(unsafe).toContain('Oops');
   });
+
+  it('does not treat underscores inside plain tokens as emphasis', () => {
+    const html = renderMarkdown('HELLO_FROM_CODEX\n\nTOOL_DONE');
+
+    expect(html).toContain('<p>HELLO_FROM_CODEX</p>');
+    expect(html).toContain('<p>TOOL_DONE</p>');
+    expect(html).not.toContain('<em>');
+  });
 });

@@ -317,6 +317,104 @@ public sealed class MtAgentHostCodexIntegrationTests
     }
 
     [Fact]
+    public async Task MtAgentHost_NormalizesCamelCaseCodexItemsFromWebSocketRuntime()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-rich-1",
+            assistantReply: "HELLO_FROM_CODEX",
+            emitRichTranscriptItems: true);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-rich",
+                SessionId = "session-remote-rich",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-remote-rich",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-rich-1"
+                    },
+                    ResumeThreadId = "thread-remote-rich-1"
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-rich");
+            _ = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "session.ready",
+                maxEvents: 4);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-rich",
+                SessionId = "session-remote-rich",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Reply with exactly HELLO_FROM_CODEX",
+                    Attachments = []
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-rich");
+            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "turn.completed",
+                maxEvents: 14);
+
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "item.completed" &&
+                            envelope.Event.Item?.ItemType == "user_message" &&
+                            envelope.Event.Item.Detail?.Contains("Reply with exactly HELLO_FROM_CODEX", StringComparison.Ordinal) == true);
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "item.completed" &&
+                            envelope.Event.Item?.ItemType == "assistant_message" &&
+                            envelope.Event.Item.Detail?.Contains("HELLO_FROM_CODEX", StringComparison.Ordinal) == true);
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "item.completed" &&
+                            envelope.Event.Item?.ItemType == "command_execution" &&
+                            envelope.Event.Item.Detail?.Contains("pwsh.exe -Command pwd", StringComparison.Ordinal) == true);
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "content.delta" &&
+                            envelope.Event.ContentDelta?.StreamKind == "assistant_text" &&
+                            envelope.Event.ContentDelta.Delta.Contains("HELLO_FROM_CODEX", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_CanInterruptFakeCodexTurn()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
