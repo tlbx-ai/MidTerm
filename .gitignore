@@ -86,6 +86,7 @@ coverage*.info
 # Claude Code
 .claude/
 .midterm/
+.dev/
 nul
 
 # Generated wwwroot (entire folder is build output from src/static + TypeScript)

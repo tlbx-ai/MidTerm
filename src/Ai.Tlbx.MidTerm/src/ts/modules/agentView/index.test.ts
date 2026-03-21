@@ -1000,6 +1000,108 @@ describe('agentView dev errors', () => {
     ).toBeTruthy();
   });
 
+  it('hides completed-status noise in normal chat row metadata', async () => {
+    const { buildLensTranscriptEntries, formatTranscriptMeta, shouldHideStatusInMeta } =
+      await import('./index');
+
+    expect(shouldHideStatusInMeta('user', 'Completed')).toBe(true);
+    expect(shouldHideStatusInMeta('assistant', 'Assistant Text')).toBe(true);
+    expect(shouldHideStatusInMeta('request', 'Completed')).toBe(false);
+    expect(formatTranscriptMeta('user', 'Completed', '2026-03-21T15:09:20Z')).not.toContain(
+      'Completed',
+    );
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-21T15:09:22Z',
+      latestSequence: 4,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-21T15:09:22Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-21T15:09:15Z',
+        completedAt: '2026-03-21T15:09:22Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'user-completed',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'user-1',
+        requestId: null,
+        createdAt: '2026-03-21T15:09:20Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'user_message',
+          status: 'completed',
+          title: 'Tool completed',
+          detail: 'Reply with exactly HELLO_FROM_SOURCE_LENS.',
+        },
+      },
+      {
+        sequence: 2,
+        eventId: 'assistant-completed',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-21T15:09:22Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'assistant_message',
+          status: 'completed',
+          title: 'Assistant message',
+          detail: 'HELLO_FROM_SOURCE_LENS',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const userEntry = transcript.find((entry) => entry.kind === 'user');
+    const assistantEntry = transcript.find((entry) => entry.kind === 'assistant');
+
+    expect(userEntry?.meta).not.toContain('Completed');
+    expect(assistantEntry?.meta).not.toContain('Completed');
+    expect(userEntry?.meta).toMatch(/\d{2}:\d{2}/);
+    expect(assistantEntry?.meta).toMatch(/\d{2}:\d{2}/);
+  });
+
   it('virtualizes older transcript rows but keeps a visible window', async () => {
     const { computeTranscriptVirtualWindow } = await import('./index');
 

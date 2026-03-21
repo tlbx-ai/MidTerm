@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderMarkdown } from './markdown';
+import { renderMarkdown, renderMarkdownFragment } from './markdown';
 
 describe('renderMarkdown', () => {
   it('renders common assistant markdown constructs', () => {
@@ -32,5 +32,13 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<p>HELLO_FROM_CODEX</p>');
     expect(html).toContain('<p>TOOL_DONE</p>');
     expect(html).not.toContain('<em>');
+  });
+
+  it('unwraps a single paragraph for dense chat rendering', () => {
+    expect(renderMarkdownFragment('HELLO_FROM_CODEX')).toBe('HELLO_FROM_CODEX');
+    expect(renderMarkdownFragment('Paragraph with **bold** text.')).toBe(
+      'Paragraph with <strong>bold</strong> text.',
+    );
+    expect(renderMarkdownFragment('- one\n- two')).toContain('<ul>');
   });
 });

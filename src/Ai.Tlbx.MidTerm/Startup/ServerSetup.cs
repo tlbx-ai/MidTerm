@@ -192,6 +192,7 @@ public static class ServerSetup
 
     public static void ConfigureStaticFiles(WebApplication app)
     {
+        var sourceDevMode = IsSourceDevLaunchMode();
 #if DEBUG
         var wwwrootPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "wwwroot");
         IFileProvider fileProvider = Directory.Exists(wwwrootPath)
@@ -231,6 +232,45 @@ public static class ServerSetup
         });
 
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+
+        if (sourceDevMode && fileProvider is PhysicalFileProvider)
+        {
+            app.Use(async (context, next) =>
+            {
+                if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                {
+                    await next();
+                    return;
+                }
+
+                var path = context.Request.Path.Value ?? string.Empty;
+                if (!StaticAssetCacheHeaders.IsHtmlEntryPoint(path))
+                {
+                    await next();
+                    return;
+                }
+
+                var fileInfo = fileProvider.GetFileInfo(path);
+                if (!fileInfo.Exists)
+                {
+                    await next();
+                    return;
+                }
+
+                await using var stream = fileInfo.CreateReadStream();
+                using var reader = new StreamReader(stream);
+                var html = await reader.ReadToEndAsync();
+                var stampedHtml = StaticAssetCacheHeaders.StampHtmlAssetUrls(
+                    html,
+                    $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                context.Response.ContentType = "text/html; charset=utf-8";
+                context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                context.Response.Headers.Pragma = "no-cache";
+                await context.Response.WriteAsync(stampedHtml);
+            });
+        }
 
         // In release builds, serve pre-compressed .br files for text assets
         if (useCompressedFiles)
@@ -275,6 +315,14 @@ public static class ServerSetup
             }
         });
 
+    }
+
+    internal static bool IsSourceDevLaunchMode()
+    {
+        return string.Equals(
+            Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE"),
+            "source-dev",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     public static void ConfigureMiddleware(

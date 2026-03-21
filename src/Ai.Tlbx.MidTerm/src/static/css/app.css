@@ -9045,9 +9045,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-view-panel {
-  background:
-    radial-gradient(circle at top left, rgba(210, 176, 79, 0.1), transparent 34%),
-    linear-gradient(180deg, rgba(11, 14, 22, 0.96), rgba(9, 11, 18, 0.98));
+  background: linear-gradient(180deg, rgba(10, 12, 18, 0.98), rgba(8, 10, 16, 0.99));
 }
 
 .agent-view {
@@ -9055,7 +9053,7 @@ body.shared-session-mode .session-tab-bar {
   flex: 1;
   flex-direction: column;
   gap: 0;
-  padding: 10px 14px 14px;
+  padding: 8px 12px 10px;
   overflow: auto;
 }
 
@@ -9074,10 +9072,10 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-height: 0;
   overflow: auto;
-  padding: 0 4px 12px 0;
+  padding: 0 2px 12px 0;
 }
 
 .agent-card {
@@ -9120,9 +9118,9 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-entry {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   position: relative;
-  max-width: min(100%, 78ch);
+  max-width: min(100%, 74ch);
   padding: 0;
   border: 0;
   background: transparent;
@@ -9143,16 +9141,16 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-transcript-user {
   align-self: flex-end;
-  width: min(100%, 72ch);
-  padding: 10px 12px;
-  border-radius: 16px 16px 6px;
-  background: rgba(100, 145, 240, 0.12);
+  width: min(100%, 68ch);
+  padding: 8px 10px;
+  border-radius: 14px 14px 6px;
+  background: rgba(100, 145, 240, 0.14);
 }
 
 .agent-transcript-assistant {
   align-self: flex-start;
-  width: min(100%, 76ch);
-  padding: 2px 0;
+  width: min(100%, 70ch);
+  padding: 1px 0;
 }
 
 .agent-transcript-tool,
@@ -9161,9 +9159,9 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-request,
 .agent-transcript-system,
 .agent-transcript-notice {
-  width: min(100%, 76ch);
-  margin-left: 12px;
-  padding-left: 12px;
+  width: min(100%, 72ch);
+  margin-left: 0;
+  padding-left: 10px;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -9173,7 +9171,7 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-transcript-header {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -9184,6 +9182,7 @@ body.shared-session-mode .session-tab-bar {
   padding: 0;
   border-radius: 0;
   font-size: 11px;
+  line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -9216,16 +9215,19 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-transcript-title {
   color: var(--text-primary);
-  font-size: var(--fs-sm);
+  font-size: 10px;
   font-weight: 600;
   min-width: 0;
-  margin-top: 1px;
+  margin-top: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 
 .agent-transcript-meta {
   color: var(--text-muted);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: 10px;
+  letter-spacing: 0;
   text-transform: none;
   margin-left: auto;
   white-space: nowrap;
@@ -9235,8 +9237,8 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-empty {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.95rem;
-  line-height: 1.55;
+  font-size: 0.92rem;
+  line-height: 1.48;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -9270,7 +9272,7 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-markdown h2,
 .agent-transcript-markdown h3,
 .agent-transcript-markdown h4 {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
 }
 
 .agent-transcript-markdown ul,
@@ -9352,7 +9354,7 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-tool .agent-transcript-body,
 .agent-transcript-plan .agent-transcript-body,
 .agent-transcript-diff .agent-transcript-body {
-  padding: 8px 0 0;
+  padding: 4px 0 0;
   border-radius: 0;
   background: transparent;
   color: #d8dfef;

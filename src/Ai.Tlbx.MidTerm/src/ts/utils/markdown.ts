@@ -93,3 +93,13 @@ export function renderMarkdown(text: string): string {
 
   return html;
 }
+
+export function renderMarkdownFragment(text: string): string {
+  const html = renderMarkdown(text).trim();
+  const singleParagraph = html.match(/^<p>([\s\S]*)<\/p>$/);
+  if (singleParagraph) {
+    return singleParagraph[1] ?? '';
+  }
+
+  return html;
+}

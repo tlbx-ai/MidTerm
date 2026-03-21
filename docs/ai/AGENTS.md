@@ -39,6 +39,28 @@ Set the terminal title to the current overall topic you are working on.
 
 ---
 
+## Local Dev Loop First
+
+For normal MidTerm iteration, do not default to a GitHub dev release.
+
+Use this workflow first:
+- keep the hard-installed MidTerm service on `https://localhost:2000` running as the stable supervisor
+- start a separate local source instance on another port with `pwsh -NoProfile -Command '& ./scripts/dev.ps1'`
+- open that local source instance in the MidTerm dev browser and do validation there
+- keep using the installed release `mthost`
+- keep iterating the local Debug `mtagenthost`
+- only cut GitHub dev releases for release-worthy improvements that should be shared beyond the local source loop
+
+`scripts/dev.ps1` is the preferred fast path and is expected to keep the source instance isolated from the installed service.
+
+When using this loop:
+- target the local source app in the MidTerm browser, usually `https://127.0.0.1:2100`
+- validate Lens and UX changes in that local browser before considering a GitHub dev release
+- if the browser looks stale after a TS/CSS iteration, prefer `mt_preview_reset` on the local source URL over guessing
+- if a clean build/test is blocked by a lingering local source `mt.exe`, stop the local dev loop first and restart it after verification
+
+---
+
 ## ⚠️ INSTALLER / SELF-UPDATER ROBUSTNESS ⚠️
 
 **Changes to `install.sh`, `install.ps1`, or `UpdateScriptGenerator.cs` must NEVER cause user lockouts.**
@@ -280,6 +302,8 @@ git pull --no-rebase
 
 ### Dev Release Procedure (Agent Instructions)
 
+Only use this when Johannes explicitly asks for a release or when the change is substantial enough to justify a shared installable build.
+
 When the user asks to "do a dev release" (minor/major/patch), follow this exact sequence:
 
 **Step 1 — Verify branch & clean state**
@@ -418,7 +442,7 @@ This architecture exists because hardcoded versions caused update failures where
 - Aim for 0 build warnings
 - Use interfaces + DI, not static classes
 - Platform checks: `OperatingSystem.IsWindows()`, `.IsLinux()`, `.IsMacOS()`
-- **After plan executions or large implementation tasks finish**, always offer to build and publish a dev patch release
+- **After plan executions or large implementation tasks finish**, prefer the local source dev loop first; only offer a GitHub dev release when the result is release-worthy
 
 ## Code Discoverability
 

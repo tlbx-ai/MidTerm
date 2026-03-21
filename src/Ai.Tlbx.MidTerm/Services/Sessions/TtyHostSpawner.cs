@@ -20,6 +20,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 public static class TtyHostSpawner
 {
     private const string MtBinaryPathEnvironmentVariable = "MT_BINARY_PATH";
+    internal const string TtyHostPathEnvironmentVariable = "MIDTERM_TTYHOST_PATH";
     private static readonly string TtyHostPath = GetTtyHostPath();
     private static bool _integrityVerified;
     private static readonly object _verifyLock = new();
@@ -1062,7 +1063,17 @@ public static class TtyHostSpawner
 
     private static string GetTtyHostPath()
     {
-        var currentExe = Environment.ProcessPath;
+        return ResolveTtyHostPath(Environment.ProcessPath, Environment.GetEnvironmentVariable(TtyHostPathEnvironmentVariable));
+    }
+
+    internal static string ResolveTtyHostPath(string? currentExePath, string? overridePath = null)
+    {
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(overridePath.Trim()));
+        }
+
+        var currentExe = currentExePath;
         if (string.IsNullOrEmpty(currentExe))
         {
             return string.Empty;

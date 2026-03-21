@@ -1,7 +1,7 @@
 import { createLogger } from '../logging';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
-import { renderMarkdown } from '../../utils/markdown';
+import { renderMarkdownFragment } from '../../utils/markdown';
 import {
   attachSessionLens,
   detachSessionLens,
@@ -544,7 +544,11 @@ export function buildLensTranscriptEntries(
             ? compactToolTitle(lensEvent.item?.title || lensEvent.item?.itemType || 'tool')
             : transcriptLabel(itemKind),
         body: resolveTranscriptItemBody(itemKind, lensEvent.item?.detail, lensEvent.item?.title),
-        meta: `${prettify(lensEvent.item?.status || 'updated')} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+        meta: formatTranscriptMeta(
+          itemKind,
+          prettify(lensEvent.item?.status || 'updated'),
+          lensEvent.createdAt,
+        ),
       }));
       itemEntry.kind = itemKind;
       itemEntry.tone = toneFromState(lensEvent.item.status);
@@ -561,7 +565,11 @@ export function buildLensTranscriptEntries(
       if (itemBody && !itemEntry.body.includes(itemBody)) {
         itemEntry.body = appendTranscriptChunk(itemEntry.body, itemBody);
       }
-      itemEntry.meta = `${prettify(lensEvent.item.status)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      itemEntry.meta = formatTranscriptMeta(
+        itemKind,
+        prettify(lensEvent.item.status),
+        lensEvent.createdAt,
+      );
       itemEntry.order = order;
     }
 
@@ -583,14 +591,18 @@ export function buildLensTranscriptEntries(
         label: transcriptStreamLabel(streamKind),
         title: transcriptStreamTitle(streamKind),
         body: '',
-        meta: `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+        meta: formatTranscriptMeta(transcriptKind, prettify(streamKind), lensEvent.createdAt),
       }));
       contentEntry.body = appendStreamDelta(
         transcriptKind,
         contentEntry.body,
         lensEvent.contentDelta.delta,
       );
-      contentEntry.meta = `${prettify(streamKind)} • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      contentEntry.meta = formatTranscriptMeta(
+        transcriptKind,
+        prettify(streamKind),
+        lensEvent.createdAt,
+      );
       contentEntry.order = order;
     }
 
@@ -604,7 +616,7 @@ export function buildLensTranscriptEntries(
         label: 'Plan',
         title: 'Plan',
         body: '',
-        meta: `Plan • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+        meta: formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt),
       }));
       if (lensEvent.planDelta?.delta) {
         planEntry.body += lensEvent.planDelta.delta;
@@ -612,7 +624,7 @@ export function buildLensTranscriptEntries(
       if (lensEvent.planCompleted?.planMarkdown) {
         planEntry.body = lensEvent.planCompleted.planMarkdown;
       }
-      planEntry.meta = `Plan • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      planEntry.meta = formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt);
       planEntry.order = order;
     }
 
@@ -626,10 +638,10 @@ export function buildLensTranscriptEntries(
         label: 'Diff',
         title: 'Working diff',
         body: lensEvent.diffUpdated?.unifiedDiff || '',
-        meta: `Diff • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+        meta: formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt),
       }));
       diffEntry.body = lensEvent.diffUpdated.unifiedDiff;
-      diffEntry.meta = `Diff • ${formatAbsoluteTime(lensEvent.createdAt)}`;
+      diffEntry.meta = formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt);
       diffEntry.order = order;
     }
 
@@ -677,7 +689,7 @@ export function buildLensTranscriptEntries(
       label: 'Assistant',
       title: 'Assistant',
       body: snapshot.streams.assistantText,
-      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+      meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
     });
     fallbackOrder += 1;
   }
@@ -694,7 +706,7 @@ export function buildLensTranscriptEntries(
       label: 'Plan',
       title: 'Plan',
       body: snapshot.streams.planText,
-      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+      meta: formatTranscriptMeta('plan', 'Snapshot', snapshot.generatedAt),
     });
     fallbackOrder += 1;
   }
@@ -711,7 +723,7 @@ export function buildLensTranscriptEntries(
       label: 'Diff',
       title: 'Working diff',
       body: snapshot.streams.unifiedDiff,
-      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+      meta: formatTranscriptMeta('diff', 'Snapshot', snapshot.generatedAt),
     });
     fallbackOrder += 1;
   }
@@ -730,7 +742,7 @@ export function buildLensTranscriptEntries(
       body: [snapshot.streams.commandOutput, snapshot.streams.fileChangeOutput]
         .filter(Boolean)
         .join('\n\n'),
-      meta: `Snapshot • ${formatAbsoluteTime(snapshot.generatedAt)}`,
+      meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
     });
   }
 
@@ -771,9 +783,9 @@ function withInlineLensStatus(
       kind: snapshot.session.lastError ? 'notice' : 'system',
       tone: snapshot.session.lastError ? 'attention' : streamConnected ? 'positive' : 'warning',
       label: 'MidTerm',
-      title: streamConnected ? 'Lens connected' : 'Lens connecting',
+      title: '',
       body: statusBody,
-      meta: streamConnected ? 'Connected' : 'Connecting',
+      meta: streamConnected ? '' : 'Connecting',
     },
     ...entries,
   ];
@@ -802,8 +814,12 @@ function createRequestTranscriptEntry(
       lensEvent?.userInputRequested?.questions.map((question) => question.question).join('\n') ||
       'Action required.',
     meta: request
-      ? `${prettify(request.state)} • ${formatAbsoluteTime(request.updatedAt)}`
-      : `Request • ${lensEvent ? formatAbsoluteTime(lensEvent.createdAt) : ''}`.trim(),
+      ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
+      : formatTranscriptMeta(
+          'request',
+          'Request',
+          lensEvent?.createdAt || new Date().toISOString(),
+        ),
     requestId,
   };
 }
@@ -827,9 +843,9 @@ function updateRequestTranscriptEntry(
     lensEvent?.userInputRequested?.questions.map((question) => question.question).join('\n') ||
     entry.body;
   entry.meta = request
-    ? `${prettify(request.state)} • ${formatAbsoluteTime(request.updatedAt)}`
+    ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
     : lensEvent
-      ? `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`
+      ? formatTranscriptMeta('request', prettify(lensEvent.type), lensEvent.createdAt)
       : entry.meta;
 }
 
@@ -851,7 +867,11 @@ function buildSystemEntryFromEvent(
       body: [lensEvent.runtimeMessage.message, lensEvent.runtimeMessage.detail]
         .filter(Boolean)
         .join('\n\n'),
-      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+      meta: formatTranscriptMeta(
+        lensEvent.type === 'runtime.error' ? 'notice' : 'system',
+        prettify(lensEvent.type),
+        lensEvent.createdAt,
+      ),
     };
   }
 
@@ -864,7 +884,7 @@ function buildSystemEntryFromEvent(
       label: 'Turn',
       title: lensEvent.turnCompleted.stateLabel || prettify(lensEvent.type),
       body: lensEvent.turnCompleted.errorMessage,
-      meta: `${prettify(lensEvent.type)} • ${formatAbsoluteTime(lensEvent.createdAt)}`,
+      meta: formatTranscriptMeta('notice', prettify(lensEvent.type), lensEvent.createdAt),
     };
   }
 
@@ -879,10 +899,10 @@ function buildActivationTranscriptEntries(state: SessionLensViewState): LensTran
         order: 0,
         kind: 'system',
         tone: state.activationState === 'failed' ? 'attention' : 'warning',
-        label: 'Boot',
-        title: state.activationState === 'failed' ? 'Lens startup failed' : 'Opening Lens',
+        label: 'MidTerm',
+        title: '',
         body: state.activationDetail || 'Waiting for Lens boot steps…',
-        meta: prettify(state.activationState),
+        meta: state.activationState === 'failed' ? 'Failed' : 'Connecting',
       },
     ];
   }
@@ -892,8 +912,8 @@ function buildActivationTranscriptEntries(state: SessionLensViewState): LensTran
     order: index,
     kind: entry.tone === 'attention' ? 'notice' : 'system',
     tone: entry.tone,
-    label: 'Boot',
-    title: entry.summary,
+    label: 'MidTerm',
+    title: '',
     body: entry.detail,
     meta: entry.meta,
   }));
@@ -920,7 +940,10 @@ function createTranscriptEntry(
   meta.className = 'agent-transcript-meta';
   meta.textContent = entry.meta;
 
-  header.append(badge, meta);
+  header.appendChild(badge);
+  if (entry.meta.trim()) {
+    header.appendChild(meta);
+  }
   article.appendChild(header);
 
   const titleText = normalizeTranscriptTitle(entry);
@@ -937,7 +960,8 @@ function createTranscriptEntry(
   body.className = 'agent-transcript-body';
   if (entry.kind === 'assistant') {
     body.classList.add('agent-transcript-markdown');
-    body.innerHTML = renderMarkdown(entry.body);
+    body.innerHTML = renderMarkdownFragment(entry.body);
+    collapseSingleParagraphMarkdownBody(body);
   } else {
     body.textContent = entry.body;
   }
@@ -965,6 +989,19 @@ function createTranscriptSpacer(heightPx: number): HTMLElement {
   return spacer;
 }
 
+function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
+  if (container.childElementCount !== 1) {
+    return;
+  }
+
+  const first = container.firstElementChild;
+  if (!first || first.tagName !== 'P' || first.attributes.length > 0) {
+    return;
+  }
+
+  container.innerHTML = first.innerHTML;
+}
+
 function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
   const title = entry.title.trim();
   if (!title) {
@@ -976,6 +1013,46 @@ function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
   }
 
   return title;
+}
+
+export function formatTranscriptMeta(
+  kind: TranscriptKind,
+  statusLabel: string,
+  value: string,
+): string {
+  const timeText = formatAbsoluteTime(value);
+  const normalizedStatus = statusLabel.trim();
+  if (!normalizedStatus) {
+    return timeText;
+  }
+
+  if (shouldHideStatusInMeta(kind, normalizedStatus)) {
+    return timeText;
+  }
+
+  return `${normalizedStatus} • ${timeText}`;
+}
+
+export function shouldHideStatusInMeta(kind: TranscriptKind, statusLabel: string): boolean {
+  const normalizedStatus = statusLabel.trim().toLowerCase();
+  if (!normalizedStatus) {
+    return true;
+  }
+
+  if (kind === 'user' || kind === 'assistant') {
+    return (
+      normalizedStatus === 'completed' ||
+      normalizedStatus === 'updated' ||
+      normalizedStatus === 'assistant text' ||
+      normalizedStatus === 'snapshot'
+    );
+  }
+
+  if (kind === 'tool' || kind === 'plan' || kind === 'diff') {
+    return normalizedStatus === 'completed' || normalizedStatus === 'updated';
+  }
+
+  return false;
 }
 
 function createRequestActionBlock(

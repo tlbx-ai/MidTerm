@@ -49,6 +49,30 @@ public class StaticAssetCacheHeadersTests
         Assert.Equal(expected, StaticAssetCacheHeaders.IsFontAsset(path));
     }
 
+    [Theory]
+    [InlineData("/index.html", true)]
+    [InlineData("/login.html", true)]
+    [InlineData("/css/app.css", false)]
+    public void IsHtmlEntryPoint_DetectsHtmlPages(string path, bool expected)
+    {
+        Assert.Equal(expected, StaticAssetCacheHeaders.IsHtmlEntryPoint(path));
+    }
+
+    [Fact]
+    public void StampHtmlAssetUrls_ReplacesExistingAssetVersionQueries()
+    {
+        const string html = """
+            <link rel="stylesheet" href="/css/app.css?v=oldhash" />
+            <script src="/js/terminal.min.js?v=oldhash"></script>
+            """;
+
+        var stamped = StaticAssetCacheHeaders.StampHtmlAssetUrls(html, "dev-123");
+
+        Assert.Contains("/css/app.css?v=dev-123", stamped, StringComparison.Ordinal);
+        Assert.Contains("/js/terminal.min.js?v=dev-123", stamped, StringComparison.Ordinal);
+        Assert.DoesNotContain("oldhash", stamped, StringComparison.Ordinal);
+    }
+
     private sealed class TestFileInfo : IFileInfo
     {
         public TestFileInfo(long length, DateTimeOffset lastModified)
