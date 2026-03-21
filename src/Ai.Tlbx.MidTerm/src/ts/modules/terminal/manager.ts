@@ -655,9 +655,8 @@ export function setupTerminalEvents(
       return true;
     }
 
-    // Alt+V: clipboard image paste (process-aware).
-    // Native apps (Codex): sets OS clipboard + injects \x1bv.
-    // Path apps (Claude, unknown): uploads image + pastes file path.
+    // Alt+V: clipboard image paste.
+    // Clipboard injection is currently disabled, so this uses upload-plus-path paste.
     if (isNativeImagePasteShortcut(e)) {
       void handleNativeImagePaste(sessionId, {
         foregroundName: foreground.name,

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const sendLensTurn = vi.fn();
 const pasteToTerminal = vi.fn();
 const isLensActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
+const fetchMock = vi.fn();
 
 class FakeFileReader {
   public result: string | ArrayBuffer | null = null;
@@ -65,6 +66,7 @@ describe('fileDrop', () => {
     sendLensTurn.mockReset();
     pasteToTerminal.mockReset();
     isLensActiveSession.mockReset();
+    fetchMock.mockReset();
     isLensActiveSession.mockReturnValue(false);
     vi.stubGlobal('HTMLElement', class HTMLElement {});
     vi.stubGlobal('FileReader', FakeFileReader as unknown as typeof FileReader);
@@ -80,10 +82,20 @@ describe('fileDrop', () => {
     );
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({
+      fetchMock.mockImplementation(async () => ({
         ok: true,
         json: async () => ({ path: 'Q:/repo/uploads/pic.png' }),
       })),
+    );
+    vi.stubGlobal('window', { isSecureContext: true } as Window & typeof globalThis);
+    vi.stubGlobal(
+      'navigator',
+      {
+        clipboard: {
+          read: vi.fn(async () => []),
+          readText: vi.fn(async () => ''),
+        },
+      } as Navigator,
     );
   });
 
@@ -129,5 +141,39 @@ describe('fileDrop', () => {
     expect(sendLensTurn).not.toHaveBeenCalled();
     expect(pasteToTerminal).toHaveBeenNthCalledWith(1, 's1', 'plain text', false);
     expect(pasteToTerminal).toHaveBeenNthCalledWith(2, 's1', 'Q:/repo/uploads/pic.png', true);
+  });
+
+  it('uses upload-plus-path paste for clipboard images even for codex-like foreground apps', async () => {
+    const { handleClipboardPaste } = await import('./fileDrop');
+    const read = vi.fn(async () => [
+      {
+        types: ['image/png'],
+        getType: vi.fn(async () => new Blob(['png'], { type: 'image/png' })),
+      },
+    ]);
+    vi.stubGlobal(
+      'navigator',
+      {
+        clipboard: {
+          read,
+          readText: vi.fn(async () => ''),
+        },
+      } as Navigator,
+    );
+
+    const result = await handleClipboardPaste('s1', {
+      foregroundName: 'codex',
+      foregroundCommandLine: 'codex',
+    });
+
+    expect(result).toBe('image');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions/s1/upload',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+    expect(pasteToTerminal).toHaveBeenCalledWith('s1', 'Q:/repo/uploads/pic.png', true);
   });
 });

@@ -677,17 +677,6 @@ public static partial class SessionApiEndpoints
 
             var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
 
-            if (IsImageUpload(file, targetPath))
-            {
-                await TrySetClipboardImageAsync(
-                    sessionManager,
-                    clipboardService,
-                    session,
-                    id,
-                    targetPath,
-                    file.ContentType);
-            }
-
             // To make Johannes happy
             if (!File.Exists(targetPath))
             {
@@ -1242,18 +1231,6 @@ public static partial class SessionApiEndpoints
         }
 
         return sessionManager.GetTempDirectory(sessionId);
-    }
-
-    private static bool IsImageUpload(IFormFile file, string savedPath)
-    {
-        if (!string.IsNullOrWhiteSpace(file.ContentType) &&
-            file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var extension = Path.GetExtension(savedPath);
-        return !string.IsNullOrWhiteSpace(extension) && ClipboardImageExtensions.Contains(extension);
     }
 
     private static SessionListDto GetSessionListDto(
