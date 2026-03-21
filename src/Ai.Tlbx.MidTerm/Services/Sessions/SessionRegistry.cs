@@ -144,6 +144,7 @@ internal sealed class SessionRegistry
                     ForegroundPid = s.ForegroundPid,
                     ForegroundName = s.ForegroundName,
                     ForegroundCommandLine = s.ForegroundCommandLine,
+                    AgentAttachPoint = s.AgentAttachPoint,
                     Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
                     ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
                     BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,

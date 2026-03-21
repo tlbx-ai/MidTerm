@@ -455,7 +455,8 @@ public static class Program
                             Pid = info.Pid,
                             Name = info.Name,
                             CommandLine = info.CommandLine,
-                            Cwd = info.Cwd
+                            Cwd = info.Cwd,
+                            AgentAttachPoint = SessionAgentAttachPointDetector.Detect(info.Name, info.CommandLine)
                         };
                         var msg = TtyHostProtocol.CreateForegroundChange(payload);
                         EnqueueFrame(channelWriter, msg);
@@ -1185,6 +1186,7 @@ internal sealed class TerminalSession : IDisposable
                 info.ForegroundPid = foreground.Pid;
                 info.ForegroundName = foreground.Name;
                 info.ForegroundCommandLine = foreground.CommandLine;
+                info.AgentAttachPoint = SessionAgentAttachPointDetector.Detect(foreground.Name, foreground.CommandLine);
             }
         }
 

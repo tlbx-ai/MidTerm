@@ -227,6 +227,96 @@ public sealed class MtAgentHostCodexIntegrationTests
     }
 
     [Fact]
+    public async Task MtAgentHost_CanAttachToExistingCodexWebSocketRuntime()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-1",
+            assistantReply: "Remote Codex shared-runtime reply.");
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-remote",
+                SessionId = "session-remote",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-remote",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-1"
+                    },
+                    ResumeThreadId = "thread-remote-1"
+                }
+            });
+
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-remote");
+            Assert.Equal("accepted", attachResult.Status);
+
+            var attachEvents = (await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "session.ready",
+                maxEvents: 4)).ToList();
+            if (!attachEvents.Any(envelope => envelope.Event.Type == "thread.started"))
+            {
+                attachEvents.Add(await LensHostTestClient.ReadEventAsync(process.StandardOutput, pendingEvents));
+            }
+            Assert.Contains(attachEvents, envelope => envelope.Event.Type == "thread.started");
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-remote",
+                SessionId = "session-remote",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Continue from the shared thread.",
+                    Attachments = []
+                }
+            });
+
+            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-remote");
+            Assert.Equal("accepted", turnResult.Status);
+            Assert.Equal("thread-remote-1", turnResult.TurnStarted!.ThreadId);
+
+            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "turn.completed",
+                maxEvents: 8);
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "content.delta" &&
+                            envelope.Event.ContentDelta?.Delta == "Remote Codex shared-runtime reply.");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_CanInterruptFakeCodexTurn()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
@@ -360,10 +450,10 @@ public sealed class MtAgentHostCodexIntegrationTests
         var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
         var candidates = new[]
         {
-            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll"),
             Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll")
+            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
+            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "mtagenthost.dll"),
+            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
         };
 
         return candidates.First(File.Exists);

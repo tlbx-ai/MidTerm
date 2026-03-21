@@ -4668,6 +4668,14 @@ export interface components {
       heatmap: components['schemas']['SessionActivityHeatSample'][];
       bellHistory: components['schemas']['SessionBellEvent'][];
     };
+    SessionAgentAttachPoint: {
+      provider: string;
+      transportKind: string;
+      endpoint: string;
+      sharedRuntime: boolean;
+      source: string;
+      preferredThreadId: null | string;
+    };
     SessionAttentionItem: {
       session: components['schemas']['SessionInfoDto'];
       /** Format: int32 */
@@ -4717,6 +4725,7 @@ export interface components {
       foregroundPid: null | number;
       foregroundName: null | string;
       foregroundCommandLine: null | string;
+      agentAttachPoint: null | components['schemas']['SessionAgentAttachPoint'];
       /** Format: int32 */
       order: number;
       parentSessionId: null | string;

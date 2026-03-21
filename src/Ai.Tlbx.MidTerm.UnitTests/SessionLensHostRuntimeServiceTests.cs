@@ -322,6 +322,73 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
     }
 
+    [Fact]
+    public async Task SessionLensRuntimeService_CanAttachToExistingCodexWebSocketWithoutSpawningCodex()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-1",
+            assistantReply: "Remote Codex shared-runtime reply.");
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        Environment.SetEnvironmentVariable("PATH", string.Empty);
+        try
+        {
+            var pulse = new SessionLensPulseService();
+            var ingress = new SessionLensHostIngressService(pulse);
+            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+            await using var sessionManager = new TtyHostSessionManager();
+            var profileService = new AiCliProfileService();
+            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+            var session = new SessionInfoDto
+            {
+                Id = "session-runtime-codex-remote-1",
+                CurrentDirectory = AppContext.BaseDirectory,
+                ForegroundName = "codex",
+                ForegroundCommandLine = $"codex --remote {fakeServer.Endpoint} resume thread-remote-1",
+                AgentAttachPoint = new SessionAgentAttachPoint
+                {
+                    Provider = SessionAgentAttachPoint.CodexProvider,
+                    TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                    Endpoint = fakeServer.Endpoint,
+                    SharedRuntime = true,
+                    Source = "test",
+                    PreferredThreadId = "thread-remote-1"
+                }
+            };
+
+            var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+
+            Assert.True(attached);
+            Assert.True(runtime.IsAttached(session.Id));
+
+            var turn = await runtime.StartTurnAsync(
+                session.Id,
+                new LensTurnRequest
+                {
+                    Text = "Continue from the existing thread.",
+                    Attachments = []
+                });
+
+            Assert.Equal("accepted", turn.Status);
+            Assert.Equal("thread-remote-1", turn.ThreadId);
+
+            var snapshot = await WaitForSnapshotAsync(
+                pulse,
+                session.Id,
+                current => string.Equals(current.CurrentTurn.State, "completed", StringComparison.OrdinalIgnoreCase));
+            Assert.NotNull(snapshot);
+            Assert.Equal("Remote Codex shared-runtime reply.", snapshot!.Streams.AssistantText);
+
+            Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+            Assert.Equal(SessionAgentAttachPoint.CodexAppServerWebSocketTransport, runtimeSnapshot.TransportKey);
+            Assert.Equal("Codex app-server websocket", runtimeSnapshot.TransportLabel);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+        }
+    }
+
     private static async Task<LensPulseEventListResponse> WaitForEventsAsync(
         SessionLensPulseService pulse,
         string sessionId,

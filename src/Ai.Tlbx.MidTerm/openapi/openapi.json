@@ -6517,6 +6517,40 @@
           }
         }
       },
+      "SessionAgentAttachPoint": {
+        "required": [
+          "provider",
+          "transportKind",
+          "endpoint",
+          "sharedRuntime",
+          "source",
+          "preferredThreadId"
+        ],
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "transportKind": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "sharedRuntime": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "preferredThreadId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SessionAttentionItem": {
         "required": [
           "session",
@@ -6626,6 +6660,7 @@
           "foregroundPid",
           "foregroundName",
           "foregroundCommandLine",
+          "agentAttachPoint",
           "order",
           "parentSessionId",
           "bookmarkId",
@@ -6704,6 +6739,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "agentAttachPoint": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionAgentAttachPoint"
+              }
             ]
           },
           "order": {

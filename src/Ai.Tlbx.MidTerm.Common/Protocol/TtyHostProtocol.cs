@@ -337,6 +337,7 @@ public sealed class SessionInfo
     private int? _foregroundPid;
     private string? _foregroundName;
     private string? _foregroundCommandLine;
+    private SessionAgentAttachPoint? _agentAttachPoint;
     private byte _order;
 
     public string Id { get; set; } = string.Empty;
@@ -357,6 +358,7 @@ public sealed class SessionInfo
     public int? ForegroundPid { get => Lock(() => _foregroundPid); set => Lock(() => _foregroundPid = value); }
     public string? ForegroundName { get => Lock(() => _foregroundName); set => Lock(() => _foregroundName = value); }
     public string? ForegroundCommandLine { get => Lock(() => _foregroundCommandLine); set => Lock(() => _foregroundCommandLine = value); }
+    public SessionAgentAttachPoint? AgentAttachPoint { get => Lock(() => _agentAttachPoint); set => Lock(() => _agentAttachPoint = value); }
     public byte Order { get => Lock(() => _order); set => Lock(() => _order = value); }
 
     private T Lock<T>(Func<T> func)
@@ -388,6 +390,7 @@ public sealed class ForegroundChangePayload
     public string Name { get; set; } = string.Empty;
     public string? CommandLine { get; set; }
     public string? Cwd { get; set; }
+    public SessionAgentAttachPoint? AgentAttachPoint { get; set; }
 }
 
 public sealed class ClipboardImageRequest
@@ -403,6 +406,7 @@ public sealed class ClipboardImageResponse
 }
 
 [JsonSerializable(typeof(SessionInfo))]
+[JsonSerializable(typeof(SessionAgentAttachPoint))]
 [JsonSerializable(typeof(StateChangePayload))]
 [JsonSerializable(typeof(ForegroundChangePayload))]
 [JsonSerializable(typeof(ClipboardImageRequest))]

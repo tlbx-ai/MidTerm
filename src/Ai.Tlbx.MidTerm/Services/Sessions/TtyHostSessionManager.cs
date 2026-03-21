@@ -725,6 +725,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             info.ForegroundPid = payload.Pid;
             info.ForegroundName = payload.Name;
             info.ForegroundCommandLine = payload.CommandLine;
+            info.AgentAttachPoint = payload.AgentAttachPoint;
             if (!string.IsNullOrEmpty(payload.Cwd))
             {
                 info.CurrentDirectory = payload.Cwd;
@@ -832,6 +833,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             !string.IsNullOrWhiteSpace(existing.ForegroundCommandLine))
         {
             refreshed.ForegroundCommandLine = existing.ForegroundCommandLine;
+        }
+
+        if (refreshed.AgentAttachPoint is null && existing.AgentAttachPoint is not null)
+        {
+            refreshed.AgentAttachPoint = existing.AgentAttachPoint;
         }
     }
 

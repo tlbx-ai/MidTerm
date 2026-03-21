@@ -72,6 +72,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         {
             state.Profile = profile;
             state.WorkingDirectory = workingDirectory;
+            var attachPoint = SelectAttachPoint(profile, session);
 
             if (state.Process is { HasExited: false } && state.Input is not null && state.Output is not null)
             {
@@ -86,7 +87,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 return false;
             }
 
-            var executablePath = AiCliCommandLocator.ResolveExecutablePath(profile, session);
+            var executablePath = attachPoint is null
+                ? AiCliCommandLocator.ResolveExecutablePath(profile, session)
+                : null;
 
             var process = new Process
             {
@@ -117,13 +120,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             state.Input = process.StandardInput;
             state.Output = process.StandardOutput;
             state.Error = process.StandardError;
-            state.TransportKey = "mtagenthost-stdio";
-            state.TransportLabel = _mode switch
-            {
-                SyntheticMode => "mtagenthost synthetic stdio",
-                CodexMode => "mtagenthost codex stdio",
-                _ => "mtagenthost stdio"
-            };
+            state.TransportKey = attachPoint is null ? "mtagenthost-stdio" : attachPoint.TransportKind;
+            state.TransportLabel = DescribeTransportLabel(_mode, attachPoint);
             state.Status = HostRuntimeStatus.Starting;
 
             var helloLine = await ReadLineWithTimeoutAsync(process.StandardOutput, ct).ConfigureAwait(false);
@@ -153,7 +151,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                         SessionId = sessionId,
                         Provider = profile,
                         WorkingDirectory = workingDirectory,
-                        ExecutablePath = executablePath
+                        AttachPoint = attachPoint,
+                        ExecutablePath = executablePath,
+                        ResumeThreadId = attachPoint?.PreferredThreadId
                     }
                 },
                 ct).ConfigureAwait(false);
@@ -170,6 +170,18 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         {
             state.Gate.Release();
         }
+    }
+
+    private static SessionAgentAttachPoint? SelectAttachPoint(string profile, SessionInfoDto session)
+    {
+        if (session.AgentAttachPoint is null)
+        {
+            return null;
+        }
+
+        return string.Equals(session.AgentAttachPoint.Provider, profile, StringComparison.OrdinalIgnoreCase)
+            ? session.AgentAttachPoint
+            : null;
     }
 
     public async Task<bool> TrySendPromptAsync(
@@ -603,10 +615,34 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         };
     }
 
+    private static string DescribeTransportLabel(string mode, SessionAgentAttachPoint? attachPoint)
+    {
+        if (attachPoint is not null)
+        {
+            return attachPoint.TransportKind switch
+            {
+                SessionAgentAttachPoint.CodexAppServerWebSocketTransport => "Codex app-server websocket",
+                _ => attachPoint.TransportKind
+            };
+        }
+
+        return mode switch
+        {
+            SyntheticMode => "mtagenthost synthetic stdio",
+            CodexMode => "mtagenthost codex stdio",
+            _ => "mtagenthost stdio"
+        };
+    }
+
     private static bool TryResolveLaunch(string profile, string mode, out HostLaunch launch)
     {
         var executableName = OperatingSystem.IsWindows() ? "mtagenthost.exe" : "mtagenthost";
         var baseDir = AppContext.BaseDirectory;
+        if (IsTestBinaryBaseDirectory(baseDir) && TryResolveDevLaunch(profile, mode, baseDir, out launch))
+        {
+            return true;
+        }
+
         var installedExecutable = Path.Combine(baseDir, executableName);
         var installedDll = Path.ChangeExtension(installedExecutable, ".dll");
         var installedRuntimeConfig = Path.ChangeExtension(installedExecutable, ".runtimeconfig.json");
@@ -622,13 +658,18 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             return true;
         }
 
+        return TryResolveDevLaunch(profile, mode, baseDir, out launch);
+    }
+
+    private static bool TryResolveDevLaunch(string profile, string mode, string baseDir, out HostLaunch launch)
+    {
         var repoRoot = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", ".."));
         var devDllCandidates = new[]
         {
-            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll"),
             Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll")
+            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
+            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "mtagenthost.dll"),
+            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
         };
         var devDll = devDllCandidates.FirstOrDefault(File.Exists);
         if (!string.IsNullOrWhiteSpace(devDll))
@@ -650,6 +691,12 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         launch = default;
         return false;
+    }
+
+    private static bool IsTestBinaryBaseDirectory(string baseDir)
+    {
+        return baseDir.Contains("Ai.Tlbx.MidTerm.UnitTests", StringComparison.OrdinalIgnoreCase) ||
+               baseDir.Contains("Ai.Tlbx.MidTerm.Tests", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void PrependPath(ProcessStartInfo startInfo, string? directory)

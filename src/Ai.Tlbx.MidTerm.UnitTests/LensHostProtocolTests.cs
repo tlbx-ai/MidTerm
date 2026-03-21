@@ -49,6 +49,42 @@ public sealed class LensHostProtocolTests
     }
 
     [Fact]
+    public void LensHostCommandEnvelope_RoundTripsAttachPointMetadata()
+    {
+        var command = new LensHostCommandEnvelope
+        {
+            ProtocolVersion = LensHostProtocol.CurrentVersion,
+            CommandId = "cmd-attach-remote",
+            SessionId = "session-remote-1",
+            Type = "runtime.attach",
+            AttachRuntime = new LensAttachRuntimeRequest
+            {
+                SessionId = "session-remote-1",
+                Provider = "codex",
+                WorkingDirectory = "Q:/repo",
+                AttachPoint = new SessionAgentAttachPoint
+                {
+                    Provider = SessionAgentAttachPoint.CodexProvider,
+                    TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                    Endpoint = "ws://127.0.0.1:4513/",
+                    SharedRuntime = true,
+                    Source = "foreground-command-line.remote",
+                    PreferredThreadId = "thread-abc123"
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(command, LensHostJsonContext.Default.LensHostCommandEnvelope);
+        var roundTrip = JsonSerializer.Deserialize(json, LensHostJsonContext.Default.LensHostCommandEnvelope);
+
+        Assert.NotNull(roundTrip);
+        Assert.NotNull(roundTrip!.AttachRuntime);
+        Assert.NotNull(roundTrip.AttachRuntime!.AttachPoint);
+        Assert.Equal("ws://127.0.0.1:4513/", roundTrip.AttachRuntime.AttachPoint!.Endpoint);
+        Assert.Equal("thread-abc123", roundTrip.AttachRuntime.AttachPoint.PreferredThreadId);
+    }
+
+    [Fact]
     public void SyntheticLensHostFlow_ProducesCanonicalSnapshotThroughIngress()
     {
         var pulse = new SessionLensPulseService();

@@ -53,6 +53,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Sessions ---
 [JsonSerializable(typeof(SessionListDto))]
 [JsonSerializable(typeof(SessionInfoDto))]
+[JsonSerializable(typeof(SessionAgentAttachPoint))]
 [JsonSerializable(typeof(CreateSessionRequest))]
 [JsonSerializable(typeof(SessionReorderRequest))]
 [JsonSerializable(typeof(SessionInputRequest))]

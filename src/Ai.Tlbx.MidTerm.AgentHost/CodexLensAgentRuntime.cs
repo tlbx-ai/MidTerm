@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -26,6 +27,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     private readonly ConcurrentDictionary<string, PendingCodexApproval> _pendingApprovals = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingCodexUserInput> _pendingUserInputs = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _shutdown = new();
+    private ClientWebSocket? _webSocket;
     private Process? _process;
     private StreamReader? _output;
     private StreamReader? _error;
@@ -36,6 +38,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     private string? _workingDirectory;
     private string? _providerThreadId;
     private string? _activeTurnId;
+    private string? _remoteEndpoint;
     private long _sequence;
     private int _nextRequestId;
 
@@ -59,6 +62,20 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         try
         {
+            if (_webSocket is not null)
+            {
+                try
+                {
+                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "shutdown", CancellationToken.None).ConfigureAwait(false);
+                }
+                catch
+                {
+                }
+
+                _webSocket.Dispose();
+                _webSocket = null;
+            }
+
             if (_process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
@@ -124,63 +141,57 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         _sessionId = command.SessionId;
         _workingDirectory = attach.WorkingDirectory;
-        if (_process is { HasExited: false } && !string.IsNullOrWhiteSpace(_providerThreadId))
+        var attachPoint = attach.AttachPoint;
+        if (IsAttachSatisfied(attachPoint))
         {
             return Accepted(command.CommandId, command.SessionId);
         }
 
-        var binaryPath = string.IsNullOrWhiteSpace(attach.ExecutablePath)
-            ? FindExecutableInPath("codex")
-            : attach.ExecutablePath;
-        if (binaryPath is null)
-        {
-            throw new InvalidOperationException("Codex CLI was not found on PATH.");
-        }
-
         await DisposeProcessAsync().ConfigureAwait(false);
 
-        var process = new Process
+        if (attachPoint is not null)
         {
-            StartInfo = CreateProcessStartInfo(binaryPath, "app-server", attach.WorkingDirectory),
-            EnableRaisingEvents = true
-        };
+            await ConnectRemoteAsync(attachPoint, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            var binaryPath = string.IsNullOrWhiteSpace(attach.ExecutablePath)
+                ? FindExecutableInPath("codex")
+                : attach.ExecutablePath;
+            if (binaryPath is null)
+            {
+                throw new InvalidOperationException("Codex CLI was not found on PATH.");
+            }
 
-        if (!process.Start())
-        {
-            throw new InvalidOperationException("Codex app-server could not be started.");
+            StartSpawnedProcess(binaryPath, attach.WorkingDirectory);
         }
 
-        _process = process;
-        _output = process.StandardOutput;
-        _error = process.StandardError;
-        _input = process.StandardInput;
         _providerThreadId = null;
         _activeTurnId = null;
+        _remoteEndpoint = attachPoint?.Endpoint;
         _pendingApprovals.Clear();
         _pendingUserInputs.Clear();
 
-        EmitSessionState("session.started", "starting", "Starting", "Starting Codex Lens sidecar.");
+        EmitSessionState(
+            "session.started",
+            "starting",
+            "Starting",
+            attachPoint is null
+                ? "Starting Codex Lens sidecar."
+                : "Connecting Lens to the running Codex app-server.");
         _readerTask = Task.Run(() => ReadCodexLoopAsync(_shutdown.Token), CancellationToken.None);
-        _errorTask = Task.Run(() => ReadCodexErrorLoopAsync(_shutdown.Token), CancellationToken.None);
-        process.Exited += (_, _) =>
+        if (_error is not null)
         {
-            EmitRuntimeMessage(
-                "session.exited",
-                "Codex Lens sidecar exited.",
-                $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
-        };
+            _errorTask = Task.Run(() => ReadCodexErrorLoopAsync(_shutdown.Token), CancellationToken.None);
+        }
 
         await SendCodexRequestAsync("initialize", BuildCodexInitializeRequest, ct).ConfigureAwait(false);
         await WriteCodexMessageAsync(BuildCodexInitializedNotification(), ct).ConfigureAwait(false);
-        var threadResult = await SendCodexRequestAsync(
-            "thread/start",
-            id => BuildCodexThreadStartRequest(id, attach.WorkingDirectory),
-            ct).ConfigureAwait(false);
+        var (threadResult, providerThreadId, resumedExistingThread) = await OpenThreadAsync(attach, ct).ConfigureAwait(false);
 
-        var providerThreadId = GetString(threadResult, "thread", "id") ?? GetString(threadResult, "threadId");
         if (string.IsNullOrWhiteSpace(providerThreadId))
         {
-            throw new InvalidOperationException("Codex thread/start did not return a thread id.");
+            throw new InvalidOperationException("Codex thread open did not return a thread id.");
         }
 
         _providerThreadId = providerThreadId;
@@ -192,7 +203,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 {
                     State = "ready",
                     StateLabel = "Ready",
-                    Reason = "Codex Lens sidecar ready."
+                    Reason = resumedExistingThread
+                        ? "Lens attached to the running Codex thread."
+                        : attachPoint is null
+                            ? "Codex Lens sidecar ready."
+                            : "Lens connected to the running Codex app-server."
                 };
             }),
             CreateEvent("thread.started", null, null, null, "codex.app-server", "thread/start", threadResult, lensEvent =>
@@ -361,9 +376,23 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         try
         {
-            while (!ct.IsCancellationRequested && _process is { HasExited: false })
+            while (!ct.IsCancellationRequested && HasActiveTransport())
             {
-                var line = await _output!.ReadLineAsync(ct).ConfigureAwait(false);
+                string? line;
+                if (_webSocket is not null)
+                {
+                    line = await ReadWebSocketMessageAsync(_webSocket, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    if (_process is not { HasExited: false } || _output is null)
+                    {
+                        break;
+                    }
+
+                    line = await _output.ReadLineAsync(ct).ConfigureAwait(false);
+                }
+
                 if (line is null)
                 {
                     break;
@@ -844,7 +873,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
     private void EnsureAttached()
     {
-        if (_process is null || _process.HasExited || _input is null || string.IsNullOrWhiteSpace(_providerThreadId))
+        if (!HasActiveTransport() || string.IsNullOrWhiteSpace(_providerThreadId))
         {
             throw new InvalidOperationException("Codex Lens runtime is not attached.");
         }
@@ -876,13 +905,20 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     private async Task WriteCodexMessageAsync(string payload, CancellationToken ct)
     {
         EnsureAttachedOrStarting();
+        if (_webSocket is not null)
+        {
+            var bytes = Utf8NoBom.GetBytes(payload);
+            await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct).ConfigureAwait(false);
+            return;
+        }
+
         await _input!.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
         await _input.FlushAsync().ConfigureAwait(false);
     }
 
     private void EnsureAttachedOrStarting()
     {
-        if (_process is null || _process.HasExited || _input is null)
+        if (!HasActiveTransport())
         {
             throw new InvalidOperationException("Codex Lens runtime is not attached.");
         }
@@ -892,6 +928,19 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         try
         {
+            if (_webSocket is not null)
+            {
+                try
+                {
+                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "detach", CancellationToken.None).ConfigureAwait(false);
+                }
+                catch
+                {
+                }
+
+                _webSocket.Dispose();
+            }
+
             if (_process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
@@ -911,8 +960,177 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         _input = null;
         _output = null;
         _error = null;
+        _webSocket = null;
         _readerTask = null;
         _errorTask = null;
+        _remoteEndpoint = null;
+    }
+
+    private bool HasActiveTransport()
+    {
+        return _webSocket is { State: WebSocketState.Open } ||
+               (_process is { HasExited: false } && _input is not null);
+    }
+
+    private bool IsAttachSatisfied(SessionAgentAttachPoint? attachPoint)
+    {
+        if (string.IsNullOrWhiteSpace(_providerThreadId))
+        {
+            return false;
+        }
+
+        if (attachPoint is not null)
+        {
+            return _webSocket is { State: WebSocketState.Open } &&
+                   string.Equals(_remoteEndpoint, attachPoint.Endpoint, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return _process is { HasExited: false } && _input is not null;
+    }
+
+    private async Task ConnectRemoteAsync(SessionAgentAttachPoint attachPoint, CancellationToken ct)
+    {
+        if (!string.Equals(attachPoint.Provider, Provider, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Codex runtime cannot attach provider '{attachPoint.Provider}'.");
+        }
+
+        if (!string.Equals(attachPoint.TransportKind, SessionAgentAttachPoint.CodexAppServerWebSocketTransport, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Unsupported Codex attach transport '{attachPoint.TransportKind}'.");
+        }
+
+        if (!Uri.TryCreate(attachPoint.Endpoint, UriKind.Absolute, out var endpoint) ||
+            (endpoint.Scheme != Uri.UriSchemeWs && endpoint.Scheme != Uri.UriSchemeWss))
+        {
+            throw new InvalidOperationException("Codex websocket attach endpoint is invalid.");
+        }
+
+        var webSocket = new ClientWebSocket();
+        await webSocket.ConnectAsync(endpoint, ct).ConfigureAwait(false);
+        _webSocket = webSocket;
+    }
+
+    private void StartSpawnedProcess(string binaryPath, string workingDirectory)
+    {
+        var process = new Process
+        {
+            StartInfo = CreateProcessStartInfo(binaryPath, "app-server", workingDirectory),
+            EnableRaisingEvents = true
+        };
+
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Codex app-server could not be started.");
+        }
+
+        _process = process;
+        _output = process.StandardOutput;
+        _error = process.StandardError;
+        _input = process.StandardInput;
+        process.Exited += (_, _) =>
+        {
+            EmitRuntimeMessage(
+                "session.exited",
+                "Codex Lens sidecar exited.",
+                $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
+        };
+    }
+
+    private async Task<(JsonElement ThreadResult, string? ProviderThreadId, bool ResumedExistingThread)> OpenThreadAsync(
+        LensAttachRuntimeRequest attach,
+        CancellationToken ct)
+    {
+        var resumeThreadId = attach.ResumeThreadId;
+        if (string.IsNullOrWhiteSpace(resumeThreadId) && attach.AttachPoint?.SharedRuntime == true)
+        {
+            resumeThreadId = await TryResolvePreferredLoadedThreadIdAsync(ct).ConfigureAwait(false);
+        }
+
+        JsonElement threadResult;
+        bool resumedExistingThread;
+        if (!string.IsNullOrWhiteSpace(resumeThreadId))
+        {
+            threadResult = await SendCodexRequestAsync(
+                "thread/resume",
+                id => BuildCodexThreadResumeRequest(id, resumeThreadId, attach.WorkingDirectory),
+                ct).ConfigureAwait(false);
+            resumedExistingThread = true;
+        }
+        else
+        {
+            threadResult = await SendCodexRequestAsync(
+                "thread/start",
+                id => BuildCodexThreadStartRequest(id, attach.WorkingDirectory),
+                ct).ConfigureAwait(false);
+            resumedExistingThread = false;
+        }
+
+        var providerThreadId = GetString(threadResult, "thread", "id") ?? GetString(threadResult, "threadId");
+        return (threadResult, providerThreadId, resumedExistingThread);
+    }
+
+    private async Task<string?> TryResolvePreferredLoadedThreadIdAsync(CancellationToken ct)
+    {
+        var result = await SendCodexRequestAsync(
+            "thread/loaded/list",
+            BuildCodexThreadLoadedListRequest,
+            ct).ConfigureAwait(false);
+        if (!result.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var threadIds = data.EnumerateArray()
+            .Where(static element => element.ValueKind == JsonValueKind.String)
+            .Select(static element => element.GetString())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .Take(2)
+            .ToList();
+
+        if (threadIds.Count > 1)
+        {
+            EmitRuntimeMessage(
+                "runtime.warning",
+                "Multiple loaded Codex threads were found on the attached app-server.",
+                "Lens is resuming the first loaded thread because the terminal session did not expose a specific thread id.");
+        }
+
+        return threadIds.FirstOrDefault();
+    }
+
+    private static async Task<string?> ReadWebSocketMessageAsync(ClientWebSocket webSocket, CancellationToken ct)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(8192);
+        try
+        {
+            using var message = new MemoryStream();
+            while (true)
+            {
+                var result = await webSocket.ReceiveAsync(buffer, ct).ConfigureAwait(false);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    return null;
+                }
+
+                if (result.Count > 0)
+                {
+                    await message.WriteAsync(buffer.AsMemory(0, result.Count), ct).ConfigureAwait(false);
+                }
+
+                if (result.EndOfMessage)
+                {
+                    break;
+                }
+            }
+
+            return Utf8NoBom.GetString(message.GetBuffer(), 0, (int)message.Length);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     private static HostCommandOutcome Accepted(
@@ -988,6 +1206,42 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             writer.WriteString("approvalPolicy", "never");
             writer.WriteString("sandbox", "danger-full-access");
             writer.WriteBoolean("experimentalRawEvents", false);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexThreadResumeRequest(string id, string threadId, string cwd)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "thread/resume");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteString("threadId", threadId);
+            writer.WriteString("cwd", cwd);
+            writer.WriteString("approvalPolicy", "never");
+            writer.WriteString("sandbox", "danger-full-access");
+            writer.WriteBoolean("persistExtendedHistory", false);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexThreadLoadedListRequest(string id)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "thread/loaded/list");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteNumber("limit", 8);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
