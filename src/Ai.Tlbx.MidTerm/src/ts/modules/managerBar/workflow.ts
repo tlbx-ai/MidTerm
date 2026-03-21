@@ -50,6 +50,9 @@ const VALID_TRIGGER_KINDS = new Set<ManagerTriggerKind>([
 const VALID_INTERVAL_UNITS = new Set<ManagerRepeatUnit>(['seconds', 'minutes', 'hours', 'days']);
 const VALID_SCHEDULE_REPEATS = new Set<ManagerScheduleRepeat>(['daily', 'weekdays', 'weekends']);
 
+export const MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD = 0.25;
+export const MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS = 5000;
+
 export function createDefaultManagerButton(): NormalizedManagerButton {
   return {
     id: '',
@@ -110,6 +113,22 @@ export function normalizeManagerBarButton(
 
 export function isImmediateManagerAction(button: NormalizedManagerButton): boolean {
   return button.actionType === 'single' && button.trigger.kind === 'fireAndForget';
+}
+
+export function getManagerBarHeatResumeAt(triggeredAtMs: number): number {
+  return triggeredAtMs + MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS;
+}
+
+export function isManagerBarCooldownReady(
+  currentHeat: number,
+  nowMs: number,
+  ignoreHeatUntilMs: number | null,
+): boolean {
+  if (ignoreHeatUntilMs !== null && nowMs < ignoreHeatUntilMs) {
+    return false;
+  }
+
+  return currentHeat <= MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD;
 }
 
 export function intervalToMs(trigger: ManagerBarTrigger): number {

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeNextScheduleTime,
+  getManagerBarHeatResumeAt,
   intervalToMs,
+  isManagerBarCooldownReady,
   isImmediateManagerAction,
+  MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD,
+  MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS,
   normalizeManagerBarButton,
 } from './workflow';
 
@@ -49,5 +53,27 @@ describe('managerBar workflow', () => {
     );
 
     expect(next).toBe(new Date(2026, 2, 20, 9, 0, 0, 0).getTime());
+  });
+
+  it('holds cooldown measurement for five seconds after a trigger', () => {
+    const triggeredAt = 1_000;
+    const ignoreUntil = getManagerBarHeatResumeAt(triggeredAt);
+
+    expect(ignoreUntil).toBe(triggeredAt + MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS);
+    expect(
+      isManagerBarCooldownReady(
+        MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD,
+        ignoreUntil - 1,
+        ignoreUntil,
+      ),
+    ).toBe(false);
+    expect(
+      isManagerBarCooldownReady(
+        MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD,
+        ignoreUntil,
+        ignoreUntil,
+      ),
+    ).toBe(true);
+    expect(isManagerBarCooldownReady(0.26, ignoreUntil, ignoreUntil)).toBe(false);
   });
 });

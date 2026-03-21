@@ -16,8 +16,10 @@ import {
   computeNextScheduleTime,
   createDefaultManagerButton,
   formatPromptPreview,
+  getManagerBarHeatResumeAt,
   intervalToMs,
   isImmediateManagerAction,
+  isManagerBarCooldownReady,
   normalizeManagerBarButton,
   normalizeManagerBarButtons,
   type ManagerActionType,
@@ -32,7 +34,6 @@ import {
 const log = createLogger('managerBar');
 
 const COMMAND_SUBMIT_DELAY_MS = 200;
-const COOLDOWN_THRESHOLD = 0.75;
 const QUEUE_POLL_INTERVAL_MS = 500;
 
 type QueuePhase =
@@ -50,6 +51,7 @@ interface QueueEntry {
   nextPromptIndex: number;
   completedCycles: number;
   nextRunAt: number | null;
+  ignoreHeatUntilMs: number | null;
 }
 
 let barEl: HTMLElement | null = null;
@@ -728,6 +730,7 @@ function enqueueAction(sessionId: string, action: NormalizedManagerButton): void
     nextPromptIndex: 0,
     completedCycles: 0,
     nextRunAt,
+    ignoreHeatUntilMs: null,
   });
 
   syncQueueProcessor();
@@ -803,7 +806,7 @@ function isQueueEntryReady(entry: QueueEntry): boolean {
     return true;
   }
   if (entry.phase === 'pendingCooldown' || entry.phase === 'chainCooldown') {
-    return getSessionHeat(entry.sessionId) <= COOLDOWN_THRESHOLD;
+    return isManagerBarCooldownReady(getSessionHeat(entry.sessionId), now, entry.ignoreHeatUntilMs);
   }
   return entry.nextRunAt !== null && now >= entry.nextRunAt;
 }
@@ -812,6 +815,7 @@ function advanceQueueEntry(entry: QueueEntry, index: number): void {
   entry.nextPromptIndex += 1;
   if (entry.nextPromptIndex < entry.action.prompts.length) {
     entry.phase = 'chainCooldown';
+    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
     return;
   }
 
@@ -830,17 +834,20 @@ function advanceQueueEntry(entry: QueueEntry, index: number): void {
       return;
     }
     entry.phase = 'pendingCooldown';
+    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
     return;
   }
 
   if (trigger.kind === 'repeatInterval') {
     entry.phase = 'pendingInterval';
     entry.nextRunAt = Date.now() + intervalToMs(trigger);
+    entry.ignoreHeatUntilMs = null;
     return;
   }
 
   entry.phase = 'pendingSchedule';
   entry.nextRunAt = computeNextScheduleTime(trigger.schedule, Date.now());
+  entry.ignoreHeatUntilMs = null;
   if (entry.nextRunAt === null) {
     queueEntries.splice(index, 1);
   }
