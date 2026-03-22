@@ -8,6 +8,7 @@ import {
   MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD,
   MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS,
   normalizeManagerBarButton,
+  shouldManagerActionWaitForInitialCooldown,
 } from './workflow';
 
 describe('managerBar workflow', () => {
@@ -40,6 +41,39 @@ describe('managerBar workflow', () => {
     expect(button.actionType).toBe('chain');
     expect(button.prompts).toEqual(['build', 'publish']);
     expect(intervalToMs(button.trigger)).toBe(2 * 60 * 60 * 1000);
+    expect(shouldManagerActionWaitForInitialCooldown(button)).toBe(true);
+  });
+
+  it('keeps only repeat and cooldown triggers behind the initial heat gate', () => {
+    const fireAndForget = normalizeManagerBarButton({
+      id: 'fire',
+      label: 'Now',
+      prompts: ['echo now'],
+      trigger: { kind: 'fireAndForget' },
+    });
+    const onCooldown = normalizeManagerBarButton({
+      id: 'cooldown',
+      label: 'When idle',
+      prompts: ['echo later'],
+      trigger: { kind: 'onCooldown' },
+    });
+    const repeatCount = normalizeManagerBarButton({
+      id: 'repeat-count',
+      label: 'Repeat count',
+      prompts: ['echo repeat'],
+      trigger: { kind: 'repeatCount', repeatCount: 3 },
+    });
+    const schedule = normalizeManagerBarButton({
+      id: 'schedule',
+      label: 'Scheduled',
+      prompts: ['echo schedule'],
+      trigger: { kind: 'schedule', schedule: [{ timeOfDay: '09:00', repeat: 'daily' }] },
+    });
+
+    expect(shouldManagerActionWaitForInitialCooldown(fireAndForget)).toBe(false);
+    expect(shouldManagerActionWaitForInitialCooldown(onCooldown)).toBe(true);
+    expect(shouldManagerActionWaitForInitialCooldown(repeatCount)).toBe(true);
+    expect(shouldManagerActionWaitForInitialCooldown(schedule)).toBe(false);
   });
 
   it('finds the next matching schedule slot', () => {

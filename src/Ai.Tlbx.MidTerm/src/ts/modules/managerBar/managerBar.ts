@@ -22,6 +22,7 @@ import {
   isManagerBarCooldownReady,
   normalizeManagerBarButton,
   normalizeManagerBarButtons,
+  shouldManagerActionWaitForInitialCooldown,
   type ManagerActionType,
   type ManagerBarScheduleEntry,
   type ManagerButton,
@@ -748,9 +749,8 @@ function removeQueueEntry(queueId: string): void {
 }
 
 function getInitialQueuePhase(action: NormalizedManagerButton): QueuePhase {
-  const triggerKind = action.trigger.kind;
-  if (triggerKind === 'onCooldown') return 'pendingCooldown';
-  if (triggerKind === 'schedule') return 'pendingSchedule';
+  if (action.trigger.kind === 'schedule') return 'pendingSchedule';
+  if (shouldManagerActionWaitForInitialCooldown(action)) return 'pendingCooldown';
   return 'pendingImmediate';
 }
 

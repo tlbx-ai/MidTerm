@@ -115,6 +115,16 @@ export function isImmediateManagerAction(button: NormalizedManagerButton): boole
   return button.actionType === 'single' && button.trigger.kind === 'fireAndForget';
 }
 
+export function shouldManagerActionWaitForInitialCooldown(
+  button: NormalizedManagerButton,
+): boolean {
+  return (
+    button.trigger.kind === 'onCooldown' ||
+    button.trigger.kind === 'repeatCount' ||
+    button.trigger.kind === 'repeatInterval'
+  );
+}
+
 export function getManagerBarHeatResumeAt(triggeredAtMs: number): number {
   return triggeredAtMs + MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS;
 }
