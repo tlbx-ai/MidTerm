@@ -3405,12 +3405,6 @@ body.has-app-background::after {
   flex-shrink: 0;
 }
 
-.sidebar-section-label {
-  margin: 6px 12px 8px;
-  border-top: 1px solid var(--border-subtle);
-  height: 0;
-}
-
 .session-filter-bar {
   display: flex;
   align-items: center;

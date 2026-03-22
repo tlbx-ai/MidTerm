@@ -79,7 +79,7 @@ export function initVoiceSection(): void {
     return;
   }
 
-  const isCollapsed = localStorage.getItem(STORAGE_KEY) === 'true';
+  const isCollapsed = localStorage.getItem(STORAGE_KEY) !== 'false';
   if (isCollapsed) {
     section.classList.add('collapsed');
   }
