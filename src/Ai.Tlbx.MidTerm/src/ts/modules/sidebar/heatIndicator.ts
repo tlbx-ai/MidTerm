@@ -169,11 +169,7 @@ async function refreshHeatFromServer(): Promise<void> {
     }
 
     const activeIds = new Set<string>();
-    for (const session of data.sessions ?? []) {
-      if (!session?.id) {
-        continue;
-      }
-
+    for (const session of data.sessions) {
       activeIds.add(session.id);
       applyHeat(session.id, session.supervisor?.currentHeat ?? 0);
     }
