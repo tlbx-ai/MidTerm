@@ -47,6 +47,34 @@ public sealed class SessionLensPulseServiceTests
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "local-user:turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:01.5000000Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "user_message",
+                Status = "completed",
+                Title = "User message",
+                Detail = "Inspect this screenshot.",
+                Attachments =
+                [
+                    new LensAttachmentReference
+                    {
+                        Kind = "image",
+                        Path = "Q:/repo/.midterm/uploads/screenshot.png",
+                        MimeType = "image/png",
+                        DisplayName = "screenshot.png"
+                    }
+                ]
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "e4",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
             ItemId = "item-1",
             CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:02Z"),
             Type = "content.delta",
@@ -58,7 +86,7 @@ public sealed class SessionLensPulseServiceTests
         });
         service.Append(new LensPulseEvent
         {
-            EventId = "e4",
+            EventId = "e5",
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
@@ -81,7 +109,7 @@ public sealed class SessionLensPulseServiceTests
         });
         service.Append(new LensPulseEvent
         {
-            EventId = "e5",
+            EventId = "e6",
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
@@ -96,7 +124,7 @@ public sealed class SessionLensPulseServiceTests
         });
         service.Append(new LensPulseEvent
         {
-            EventId = "e6",
+            EventId = "e7",
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
@@ -111,7 +139,7 @@ public sealed class SessionLensPulseServiceTests
         });
         service.Append(new LensPulseEvent
         {
-            EventId = "e7",
+            EventId = "e8",
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
@@ -127,7 +155,7 @@ public sealed class SessionLensPulseServiceTests
         });
         service.Append(new LensPulseEvent
         {
-            EventId = "e8",
+            EventId = "e9",
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
@@ -142,7 +170,7 @@ public sealed class SessionLensPulseServiceTests
         });
         service.Append(new LensPulseEvent
         {
-            EventId = "e9",
+            EventId = "e10",
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
@@ -164,6 +192,12 @@ public sealed class SessionLensPulseServiceTests
         Assert.Equal("thinking", snapshot.Streams.ReasoningText);
         Assert.Equal("npm test", snapshot.Streams.CommandOutput);
         Assert.Equal("--- a\n+++ b", snapshot.Streams.UnifiedDiff);
+        Assert.Contains(
+            snapshot.Items,
+            item => item.ItemType == "user_message" &&
+                    item.Detail == "Inspect this screenshot." &&
+                    item.Attachments.Count == 1 &&
+                    item.Attachments[0].DisplayName == "screenshot.png");
         Assert.Equal(2, snapshot.Requests.Count);
         Assert.Contains(snapshot.Requests, request => request.Kind == "tool_user_input" && request.Questions.Count == 1);
         Assert.Contains(snapshot.Requests, request => request.Kind == "command_execution_approval" && request.Decision == "accept");
@@ -203,6 +237,86 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_ResetsStreamingBuffersWhenANewTurnStarts()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "t1-start",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "t1-delta",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:01Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "first turn"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "t1-complete",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:02Z"),
+            Type = "turn.completed",
+            TurnCompleted = new LensPulseTurnCompletedPayload
+            {
+                State = "completed",
+                StateLabel = "Completed"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "t2-start",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:03Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "t2-delta",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:04Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "second turn"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s1");
+
+        Assert.NotNull(snapshot);
+        Assert.Equal("turn-2", snapshot!.CurrentTurn.TurnId);
+        Assert.Equal("second turn", snapshot.Streams.AssistantText);
+    }
+
+    [Fact]
     public async Task Subscribe_ReplaysBacklogAndStreamsFutureEvents()
     {
         var service = new SessionLensPulseService();
@@ -235,5 +349,26 @@ public sealed class SessionLensPulseServiceTests
         Assert.True(subscription.Reader.TryRead(out var liveEvent));
         Assert.Equal("e2", liveEvent!.EventId);
         Assert.Equal(2, liveEvent.Sequence);
+    }
+
+    [Fact]
+    public void HasHistory_TracksWhetherCanonicalLensEventsExist()
+    {
+        var service = new SessionLensPulseService();
+
+        Assert.False(service.HasHistory("s1"));
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "e1",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Type = "session.started"
+        });
+
+        Assert.True(service.HasHistory("s1"));
+        Assert.False(service.HasHistory("s2"));
     }
 }

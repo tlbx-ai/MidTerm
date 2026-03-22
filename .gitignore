@@ -21,6 +21,7 @@ bld/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+.artifacts/
 *.nupkg
 *.snupkg
 

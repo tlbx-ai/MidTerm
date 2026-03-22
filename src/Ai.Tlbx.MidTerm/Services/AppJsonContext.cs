@@ -155,6 +155,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(List<LaunchEntry>))]
 [JsonSerializable(typeof(CreateHistoryRequest))]
+[JsonSerializable(typeof(CreateHistoryResponse))]
 [JsonSerializable(typeof(SetBookmarkRequest))]
 
 // --- Commands ---

@@ -374,6 +374,7 @@ public class Program
             sessionManager,
             muxManager,
             sessionSupervisor,
+            lensPulse,
             updateService,
             settingsService,
             authService,

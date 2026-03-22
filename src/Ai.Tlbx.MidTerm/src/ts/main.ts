@@ -108,6 +108,8 @@ import {
   initLayoutRenderer,
   initDockOverlay,
   handleSessionClosed,
+  dockSession,
+  getLayoutSessionIds,
   isSessionInLayout,
   isLayoutActive,
   focusLayoutSession,
@@ -123,7 +125,12 @@ import {
   reparentTerminalContainer,
   switchTab,
 } from './modules/sessionTabs';
-import { initAgentView, destroyAgentView } from './modules/agentView';
+import {
+  initAgentView,
+  destroyAgentView,
+  getLensDebugScenarioNames,
+  showLensDebugScenario,
+} from './modules/agentView';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
@@ -202,6 +209,40 @@ window.mmDebug = {
   },
   get settings() {
     return $currentSettings.get();
+  },
+  layout: {
+    dock(
+      targetSessionId: string,
+      draggedSessionId: string,
+      position: 'left' | 'right' | 'top' | 'bottom',
+    ) {
+      dockSession(targetSessionId, draggedSessionId, position);
+    },
+    focus(sessionId: string) {
+      focusLayoutSession(sessionId);
+    },
+    get sessions() {
+      return getLayoutSessionIds();
+    },
+    isSessionInLayout(sessionId: string) {
+      return isSessionInLayout(sessionId);
+    },
+    get rootVisible() {
+      return !getLayoutRoot()?.classList.contains('hidden');
+    },
+  },
+  lens: {
+    get scenarios() {
+      return [...getLensDebugScenarioNames()];
+    },
+    async showScenario(
+      sessionId: string,
+      scenario: 'mixed' | 'tables' | 'long' = 'mixed',
+    ): Promise<boolean> {
+      switchTab(sessionId, 'agent');
+      await Promise.resolve();
+      return showLensDebugScenario(sessionId, scenario);
+    },
   },
 };
 
@@ -530,6 +571,7 @@ async function createSession(): Promise<void> {
     parentSessionId: null,
     bookmarkId: null,
     agentControlled: false,
+    hasLensHistory: false,
     agentAttachPoint: null,
   };
   setSession(tempSession);

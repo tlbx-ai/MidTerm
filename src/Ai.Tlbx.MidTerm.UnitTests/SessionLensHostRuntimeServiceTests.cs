@@ -148,6 +148,11 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.NotNull(snapshot);
         Assert.Contains("images=1", snapshot!.Streams.AssistantText, StringComparison.Ordinal);
         Assert.Contains(snapshot.Requests, request => request.Kind == "command_execution_approval" && request.Decision == "accept");
+        Assert.Contains(
+            snapshot.Items,
+            item => item.ItemType == "user_message" &&
+                    item.Attachments.Count == 1 &&
+                    string.Equals(item.Attachments[0].DisplayName, "sample.png", StringComparison.Ordinal));
 
         Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
         Assert.Equal("mtagenthost-stdio", runtimeSnapshot.TransportKey);

@@ -6,9 +6,8 @@
  */
 
 import { $activeSessionId } from '../../stores';
-import { sendLensTurn } from '../../api/client';
 import type { LensAttachmentReference } from '../../api/types';
-import { createLensTurnRequest, isLensActiveSession } from '../lens/input';
+import { createLensTurnRequest, isLensActiveSession, submitLensTurn } from '../lens/input';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
 import { t } from '../i18n';
@@ -529,7 +528,7 @@ export async function handleFileDrop(files: FileList): Promise<void> {
         if (overlay) {
           overlay.setLabel(t('fileDrop.transferringToLens'));
         }
-        await sendLensTurn(activeId, createLensTurnRequest(promptText, lensAttachments));
+        await submitLensTurn(activeId, createLensTurnRequest(promptText, lensAttachments));
       }
       return;
     }

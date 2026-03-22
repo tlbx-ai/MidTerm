@@ -576,6 +576,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         var turnId = GetString(turnResult, "turn", "id");
         codex.ActiveTurnId = turnId;
+        EmitSubmittedUserTurn(state, turnId, request);
         return new LensTurnStartResponse
         {
             SessionId = state.SessionId,
@@ -1088,6 +1089,25 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         };
     }
 
+    private static List<LensAttachmentReference> CloneAttachments(
+        IReadOnlyList<LensAttachmentReference>? attachments)
+    {
+        if (attachments is null || attachments.Count == 0)
+        {
+            return [];
+        }
+
+        return attachments.Select(static attachment => new LensAttachmentReference
+        {
+            Kind = attachment.Kind,
+            Path = attachment.Path,
+            MimeType = attachment.MimeType,
+            DisplayName = string.IsNullOrWhiteSpace(attachment.DisplayName)
+                ? Path.GetFileName(attachment.Path)
+                : attachment.DisplayName
+        }).ToList();
+    }
+
     private static IReadOnlyDictionary<string, CodexQuestionAnswer> ToCodexQuestionAnswers(
         PendingCodexUserInput pending,
         IReadOnlyList<LensPulseAnsweredQuestion> answers)
@@ -1439,7 +1459,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     {
                         AppendActivity(state, "info", "tool.started", $"{PrettifyToolKind(itemType)} started.", BuildCodexItemDetail(payload));
                     }
-                    EmitPulseItem(state, "item.started", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", $"{PrettifyToolKind(itemType)} started", BuildCodexItemDetail(payload), "codex.app-server.notification", method, payload);
+                    EmitPulseItem(state, "item.started", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", $"{PrettifyToolKind(itemType)} started", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
                     break;
                 }
 
@@ -1447,7 +1467,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 case "item/commandExecution/terminalInteraction":
                 {
                     var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
-                    EmitPulseItem(state, "item.updated", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", PrettifyToolKind(itemType), BuildCodexItemDetail(payload), "codex.app-server.notification", method, payload);
+                    EmitPulseItem(state, "item.updated", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", PrettifyToolKind(itemType), BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
                     break;
                 }
 
@@ -1462,7 +1482,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                             state.AssistantText = detail;
                         }
                         AppendActivity(state, "positive", "item.completed", "Assistant message completed.", Trim(detail, 220));
-                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), "assistant_message", "completed", "Assistant message", detail, "codex.app-server.notification", method, payload);
+                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), "assistant_message", "completed", "Assistant message", detail, null, "codex.app-server.notification", method, payload);
                     }
                     else if (itemType is "plan")
                     {
@@ -1475,7 +1495,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     else if (itemType is "command_execution" or "file_change" or "web_search" or "mcp_tool_call" or "dynamic_tool_call")
                     {
                         AppendActivity(state, "positive", "tool.completed", $"{PrettifyToolKind(itemType)} completed.", BuildCodexItemDetail(payload));
-                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "completed", $"{PrettifyToolKind(itemType)} completed", BuildCodexItemDetail(payload), "codex.app-server.notification", method, payload);
+                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "completed", $"{PrettifyToolKind(itemType)} completed", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
                     }
                     break;
                 }
@@ -2198,6 +2218,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         string status,
         string? title,
         string? detail,
+        IReadOnlyList<LensAttachmentReference>? attachments,
         string rawSource,
         string rawMethod,
         JsonElement payload)
@@ -2210,9 +2231,34 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 ItemType = itemType,
                 Status = status,
                 Title = title,
-                Detail = detail
+                Detail = detail,
+                Attachments = CloneAttachments(attachments)
             };
         });
+    }
+
+    private void EmitSubmittedUserTurn(
+        LensRuntimeState state,
+        string? turnId,
+        LensTurnRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text) && request.Attachments.Count == 0)
+        {
+            return;
+        }
+
+        EmitPulseItem(
+            state,
+            "item.completed",
+            $"local-user:{turnId ?? Guid.NewGuid().ToString("N")}",
+            "user_message",
+            "completed",
+            "User message",
+            request.Text,
+            request.Attachments,
+            "midterm.lens",
+            "turn/start",
+            default);
     }
 
     private void EmitPulseRequestOpened(

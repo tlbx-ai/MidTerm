@@ -64,20 +64,20 @@
         "contentHash": "L7pataU51CVJkdfIxpH6wY1buML9zsi9ZVWYaCOLM1AMpd4wQ0StzbOb8OGZAfwCyK/oyKEYcCZrWAi4GgP3lg=="
       }
     },
-    "net10.0/linux-arm64": {
+    "net10.0/win-x64": {
       "Microsoft.DotNet.ILCompiler": {
         "type": "Direct",
         "requested": "[10.0.5, )",
         "resolved": "10.0.5",
         "contentHash": "yadTZIkStCVsG8nGwvfroSfBApPsgjQbodQyaIfp53dgayE0qhZpywixiCB6lx57JYQ+KVg1m1AFLrj54pxpZg==",
         "dependencies": {
-          "runtime.linux-arm64.Microsoft.DotNet.ILCompiler": "10.0.5"
+          "runtime.win-x64.Microsoft.DotNet.ILCompiler": "10.0.5"
         }
       },
-      "runtime.linux-arm64.Microsoft.DotNet.ILCompiler": {
+      "runtime.win-x64.Microsoft.DotNet.ILCompiler": {
         "type": "Transitive",
         "resolved": "10.0.5",
-        "contentHash": "XGLRYduMpPMuove0YVHyCMKxhlbz0rU6lXcwDAeuIwV4WbFQ3T2RZisPddVeZN3iouf4v3O5wHeaZzsagPREUg=="
+        "contentHash": "vblLkpVhSDYOmrEW0jypX7YVtLg7idU1QzUyx45ZdZ2sFUSSf3mYFCr0FW3+KZgXWpN1ve9ZPrxNywvHISF4bA=="
       },
       "System.ServiceProcess.ServiceController": {
         "type": "Transitive",

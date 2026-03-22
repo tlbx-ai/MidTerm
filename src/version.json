@@ -1,7 +1,6 @@
 {
-  "web": "8.7.52-dev",
-  "pty": "8.7.50-dev",
+  "web": "8.7.53-dev",
+  "pty": "8.7.53-dev",
   "protocol": 1,
-  "minCompatiblePty": "2.0.0",
-  "webOnly": true
+  "minCompatiblePty": "2.0.0"
 }

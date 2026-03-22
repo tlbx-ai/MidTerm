@@ -5122,7 +5122,8 @@
       "LensPulseItemPayload": {
         "required": [
           "itemType",
-          "status"
+          "status",
+          "attachments"
         ],
         "type": "object",
         "properties": {
@@ -5143,6 +5144,12 @@
               "null",
               "string"
             ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
           }
         }
       },
@@ -5154,6 +5161,7 @@
           "status",
           "title",
           "detail",
+          "attachments",
           "updatedAt"
         ],
         "type": "object",
@@ -5184,6 +5192,12 @@
               "null",
               "string"
             ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
           },
           "updatedAt": {
             "type": "string",
@@ -6667,6 +6681,7 @@
           "parentSessionId",
           "bookmarkId",
           "agentControlled",
+          "hasLensHistory",
           "supervisor"
         ],
         "type": "object",
@@ -6782,6 +6797,9 @@
             ]
           },
           "agentControlled": {
+            "type": "boolean"
+          },
+          "hasLensHistory": {
             "type": "boolean"
           },
           "supervisor": {

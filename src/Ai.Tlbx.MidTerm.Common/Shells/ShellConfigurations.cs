@@ -20,6 +20,18 @@ public interface IShellConfiguration
 /// </summary>
 public abstract class ShellConfigurationBase : IShellConfiguration
 {
+    private static readonly string[] InheritedEnvironmentVariablesToStrip =
+    [
+        "DOTNET_STARTUP_HOOKS",
+        "DOTNET_WATCH",
+        "DOTNET_WATCH_ITERATION",
+        "DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH",
+        "DOTNET_WATCH_SUPPRESS_EMOJIS",
+        "DOTNET_WATCH_RESTART_ON_RUDE_EDIT",
+        "DOTNET_MODIFIABLE_ASSEMBLIES",
+        "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES"
+    ];
+
     public abstract ShellType ShellType { get; }
     public abstract string DisplayName { get; }
     public abstract string ExecutablePath { get; }
@@ -54,6 +66,8 @@ public abstract class ShellConfigurationBase : IShellConfiguration
             }
         }
 
+        StripPoisonedInheritedEnvironment(env);
+
         env["TERM"] = "xterm-256color";
         env["COLORTERM"] = "truecolor";
         env["TERM_PROGRAM"] = "midterm";
@@ -78,6 +92,14 @@ public abstract class ShellConfigurationBase : IShellConfiguration
         env["MSYS"] = "enable_pcon";
 
         return env;
+    }
+
+    private static void StripPoisonedInheritedEnvironment(Dictionary<string, string> env)
+    {
+        foreach (var variableName in InheritedEnvironmentVariablesToStrip)
+        {
+            env.Remove(variableName);
+        }
     }
 
     private static void NormalizeTempPaths(Dictionary<string, string> env)

@@ -72,6 +72,9 @@ vi.mock('../../state', () => ({
 }));
 
 vi.mock('../../stores', () => ({
+  $isMainBrowser: {
+    get: () => false,
+  },
   $processStates: {
     get: () => ({}),
     subscribe: vi.fn(),
@@ -86,6 +89,15 @@ vi.mock('../../stores', () => ({
     ],
     subscribe: vi.fn(),
   },
+}));
+
+vi.mock('../layout/layoutStore', () => ({
+  isSessionInLayout: () => false,
+}));
+
+vi.mock('../terminal/scaling', () => ({
+  applyTerminalScalingSync: vi.fn(),
+  fitTerminalToContainer: vi.fn(),
 }));
 
 describe('tabManager', () => {
@@ -147,5 +159,48 @@ describe('tabManager', () => {
 
     expect(getActiveTab('s1')).toBe('terminal');
     expect(focusSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Lens available when canonical Lens history exists', async () => {
+    const { ensureSessionWrapper, switchTab, syncSessionTabCapabilities, getActiveTab, isTabAvailable } =
+      await import('./tabManager');
+
+    ensureSessionWrapper('s1');
+
+    syncSessionTabCapabilities('s1', {
+      id: 's1',
+      agentControlled: false,
+      hasLensHistory: true,
+      supervisor: { profile: 'shell' },
+    } as any);
+
+    expect(isTabAvailable('s1', 'agent')).toBe(true);
+    switchTab('s1', 'agent');
+
+    expect(getActiveTab('s1')).toBe('agent');
+  });
+
+  it('invokes every registered callback for tab activation and deactivation', async () => {
+    const { ensureSessionWrapper, onTabActivated, onTabDeactivated, switchTab } =
+      await import('./tabManager');
+
+    const activatedA = vi.fn();
+    const activatedB = vi.fn();
+    const deactivatedA = vi.fn();
+    const deactivatedB = vi.fn();
+
+    onTabActivated('agent', activatedA);
+    onTabActivated('agent', activatedB);
+    onTabDeactivated('agent', deactivatedA);
+    onTabDeactivated('agent', deactivatedB);
+
+    ensureSessionWrapper('s1');
+    switchTab('s1', 'agent');
+    switchTab('s1', 'terminal');
+
+    expect(activatedA).toHaveBeenCalledTimes(1);
+    expect(activatedB).toHaveBeenCalledTimes(1);
+    expect(deactivatedA).toHaveBeenCalledTimes(1);
+    expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
 });

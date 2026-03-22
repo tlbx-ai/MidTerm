@@ -26,6 +26,7 @@ public sealed class StateWebSocketHandler
 {
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionSupervisorService _sessionSupervisor;
+    private readonly SessionLensPulseService _lensPulse;
     private readonly UpdateService _updateService;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
@@ -38,6 +39,7 @@ public sealed class StateWebSocketHandler
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
+        SessionLensPulseService lensPulse,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
@@ -49,6 +51,7 @@ public sealed class StateWebSocketHandler
     {
         _sessionManager = sessionManager;
         _sessionSupervisor = sessionSupervisor;
+        _lensPulse = lensPulse;
         _updateService = updateService;
         _settingsService = settingsService;
         _authService = authService;
@@ -133,6 +136,7 @@ public sealed class StateWebSocketHandler
             foreach (var session in response.Sessions)
             {
                 session.Supervisor = _sessionSupervisor.Describe(session);
+                session.HasLensHistory = _lensPulse.HasHistory(session.Id);
             }
 
             return response;

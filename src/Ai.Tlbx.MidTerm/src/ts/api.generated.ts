@@ -4326,6 +4326,7 @@ export interface components {
       status: string;
       title?: null | string;
       detail?: null | string;
+      attachments: components['schemas']['LensAttachmentReference'][];
     };
     LensPulseItemSummary: {
       itemId: string;
@@ -4334,6 +4335,7 @@ export interface components {
       status: string;
       title: null | string;
       detail: null | string;
+      attachments: components['schemas']['LensAttachmentReference'][];
       /** Format: date-time */
       updatedAt: string;
     };
@@ -4733,6 +4735,7 @@ export interface components {
       parentSessionId: null | string;
       bookmarkId: null | string;
       agentControlled: boolean;
+      hasLensHistory: boolean;
       supervisor: null | components['schemas']['SessionSupervisorInfoDto'];
     };
     SessionInputRequest: {

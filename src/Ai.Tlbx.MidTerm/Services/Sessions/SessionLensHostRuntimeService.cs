@@ -256,8 +256,10 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 ct).ConfigureAwait(false);
 
             state.Status = HostRuntimeStatus.Running;
-            return result.TurnStarted
-                   ?? throw new InvalidOperationException("Lens host did not return turn-start metadata.");
+            var turnStarted = result.TurnStarted
+                              ?? throw new InvalidOperationException("Lens host did not return turn-start metadata.");
+            AppendSubmittedUserTurn(state, request, turnStarted);
+            return turnStarted;
         }
         finally
         {
@@ -740,6 +742,56 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
             ? directory
             : directory + Path.PathSeparator + existingPath;
+    }
+
+    private void AppendSubmittedUserTurn(
+        HostRuntimeState state,
+        LensTurnRequest request,
+        LensTurnStartResponse turnStarted)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text) && request.Attachments.Count == 0)
+        {
+            return;
+        }
+
+        _pulse.Append(new LensPulseEvent
+        {
+            EventId = $"evt-local-user-{Guid.NewGuid():N}",
+            SessionId = state.SessionId,
+            Provider = turnStarted.Provider,
+            ThreadId = turnStarted.ThreadId,
+            TurnId = turnStarted.TurnId,
+            ItemId = $"local-user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "user_message",
+                Status = "completed",
+                Title = "User message",
+                Detail = request.Text,
+                Attachments = CloneAttachments(request.Attachments)
+            }
+        });
+    }
+
+    private static List<LensAttachmentReference> CloneAttachments(
+        IReadOnlyList<LensAttachmentReference>? attachments)
+    {
+        if (attachments is null || attachments.Count == 0)
+        {
+            return [];
+        }
+
+        return attachments.Select(static attachment => new LensAttachmentReference
+        {
+            Kind = attachment.Kind,
+            Path = attachment.Path,
+            MimeType = attachment.MimeType,
+            DisplayName = string.IsNullOrWhiteSpace(attachment.DisplayName)
+                ? Path.GetFileName(attachment.Path)
+                : attachment.DisplayName
+        }).ToList();
     }
 
     private static string? ResolveDotNetHostPath()

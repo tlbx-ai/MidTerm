@@ -98,6 +98,7 @@ public sealed class LensPulseItemPayload
     public string Status { get; set; } = string.Empty;
     public string? Title { get; set; }
     public string? Detail { get; set; }
+    public List<LensAttachmentReference> Attachments { get; set; } = [];
 }
 
 public sealed class LensPulseRequestOpenedPayload
@@ -218,6 +219,7 @@ public sealed class LensPulseItemSummary
     public string Status { get; set; } = string.Empty;
     public string? Title { get; set; }
     public string? Detail { get; set; }
+    public List<LensAttachmentReference> Attachments { get; set; } = [];
     public DateTimeOffset UpdatedAt { get; set; }
 }
 

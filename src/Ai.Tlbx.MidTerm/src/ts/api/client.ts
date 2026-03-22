@@ -15,6 +15,7 @@ import type {
   MidTermSettingsUpdate,
   CreateSessionRequest,
   SessionPromptRequest,
+  SessionStateResponse,
   LensTurnRequest,
   LensTurnStartResponse,
   LensInterruptRequest,
@@ -40,13 +41,56 @@ const client = createClient<paths>({ baseUrl: '' });
 // Re-export all types from api/types.ts for backward compatibility
 export * from './types';
 
+export class LensHttpError extends Error {
+  readonly status: number;
+  readonly detail: string;
+
+  constructor(status: number, detail: string) {
+    super(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`);
+    this.name = 'LensHttpError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 async function throwHttpError(response: Response, fallback: string): Promise<never> {
-  const detail = (await response.text()).trim();
+  const detail = await response
+    .text()
+    .then((text) => text.trim())
+    .catch(() => '');
+
   if (detail) {
-    throw new Error(`HTTP ${response.status}: ${detail}`);
+    throw new LensHttpError(response.status, detail);
   }
 
-  throw new Error(`HTTP ${response.status}: ${response.statusText || fallback}`);
+  throw new LensHttpError(response.status, response.statusText || fallback);
+}
+
+function buildJsonHeaders(): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+  };
+}
+
+async function fetchLensJson<T>(path: string, fallback: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
+  if (!response.ok) {
+    await throwHttpError(response, fallback);
+  }
+
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`${fallback} Response body was empty.`);
+  }
+
+  return JSON.parse(text) as T;
+}
+
+async function fetchLensOk(path: string, fallback: string, init?: RequestInit): Promise<void> {
+  const response = await fetch(path, init);
+  if (!response.ok) {
+    await throwHttpError(response, fallback);
+  }
 }
 
 // =============================================================================
@@ -216,121 +260,108 @@ export async function sendSessionPrompt(id: string, request: SessionPromptReques
   }
 }
 
-export async function attachSessionLens(id: string): Promise<void> {
-  const { response } = await client.POST('/api/sessions/{id}/lens/attach', {
-    params: { path: { id } },
-  });
+export async function getSessionState(
+  id: string,
+  includeBuffer = true,
+): Promise<SessionStateResponse> {
+  const url = new URL(`/api/sessions/${encodeURIComponent(id)}/state`, window.location.origin);
+  url.searchParams.set('includeBuffer', includeBuffer ? 'true' : 'false');
 
+  return fetchLensJson<SessionStateResponse>(url.toString(), 'Session state fetch failed.');
+}
+
+export async function getSessionBufferTail(
+  id: string,
+  lines = 120,
+  stripAnsi = true,
+): Promise<string> {
+  const url = new URL(
+    `/api/sessions/${encodeURIComponent(id)}/buffer/tail`,
+    window.location.origin,
+  );
+  url.searchParams.set('lines', String(lines));
+  url.searchParams.set('stripAnsi', stripAnsi ? 'true' : 'false');
+
+  const response = await fetch(url.toString());
   if (!response.ok) {
-    await throwHttpError(response, 'Lens attach failed.');
+    await throwHttpError(response, 'Session buffer tail fetch failed.');
   }
+
+  return response.text();
+}
+
+export async function attachSessionLens(id: string): Promise<void> {
+  await fetchLensOk(`/api/sessions/${encodeURIComponent(id)}/lens/attach`, 'Lens attach failed.', {
+    method: 'POST',
+  });
 }
 
 export async function detachSessionLens(id: string): Promise<void> {
-  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/lens/detach`, {
+  await fetchLensOk(`/api/sessions/${encodeURIComponent(id)}/lens/detach`, 'Lens detach failed.', {
     method: 'POST',
   });
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens detach failed.');
-  }
 }
 
 export async function sendLensTurn(
   id: string,
   request: LensTurnRequest,
 ): Promise<LensTurnStartResponse> {
-  const { data, response } = await client.POST('/api/sessions/{id}/lens/turns', {
-    params: { path: { id } },
-    body: request,
-  });
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens turn failed.');
-  }
-
-  if (!data) {
-    throw new Error('Lens turn did not return a response payload.');
-  }
-
-  return data as LensTurnStartResponse;
+  return fetchLensJson<LensTurnStartResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/turns`,
+    'Lens turn failed.',
+    {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export async function getLensSnapshot(id: string): Promise<LensPulseSnapshotResponse> {
-  const { data, response } = await client.GET('/api/sessions/{id}/lens/snapshot', {
-    params: { path: { id } },
-  });
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens snapshot fetch failed.');
-  }
-
-  if (!data) {
-    throw new Error('Lens snapshot did not return a response payload.');
-  }
-
-  return data as LensPulseSnapshotResponse;
+  return fetchLensJson<LensPulseSnapshotResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/snapshot`,
+    'Lens snapshot fetch failed.',
+  );
 }
 
 export async function getLensEvents(
   id: string,
   afterSequence = 0,
 ): Promise<LensPulseEventListResponse> {
-  const { data, response } = await client.GET('/api/sessions/{id}/lens/events', {
-    params: { path: { id }, query: { afterSequence } },
-  });
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens events fetch failed.');
-  }
-
-  if (!data) {
-    throw new Error('Lens events did not return a response payload.');
-  }
-
-  return data as LensPulseEventListResponse;
+  const url = new URL(
+    `/api/sessions/${encodeURIComponent(id)}/lens/events`,
+    window.location.origin,
+  );
+  url.searchParams.set('afterSequence', String(afterSequence));
+  return fetchLensJson<LensPulseEventListResponse>(url.toString(), 'Lens events fetch failed.');
 }
 
 export async function interruptLensTurn(
   id: string,
   request: LensInterruptRequest,
 ): Promise<LensCommandAcceptedResponse> {
-  const { data, response } = await client.POST('/api/sessions/{id}/lens/interrupt', {
-    params: { path: { id } },
-    body: request,
-  });
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens interrupt failed.');
-  }
-
-  if (!data) {
-    throw new Error('Lens interrupt did not return a response payload.');
-  }
-
-  return data as LensCommandAcceptedResponse;
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/interrupt`,
+    'Lens interrupt failed.',
+    {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export async function approveLensRequest(
   id: string,
   requestId: string,
 ): Promise<LensCommandAcceptedResponse> {
-  const { data, response } = await client.POST(
-    '/api/sessions/{id}/lens/requests/{requestId}/approve',
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/requests/${encodeURIComponent(requestId)}/approve`,
+    'Lens approval failed.',
     {
-      params: { path: { id, requestId } },
+      method: 'POST',
     },
   );
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens approval failed.');
-  }
-
-  if (!data) {
-    throw new Error('Lens approval did not return a response payload.');
-  }
-
-  return data as LensCommandAcceptedResponse;
 }
 
 export async function declineLensRequest(
@@ -338,23 +369,15 @@ export async function declineLensRequest(
   requestId: string,
   request: LensRequestDecisionRequest = { decision: 'decline' },
 ): Promise<LensCommandAcceptedResponse> {
-  const { data, response } = await client.POST(
-    '/api/sessions/{id}/lens/requests/{requestId}/decline',
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/requests/${encodeURIComponent(requestId)}/decline`,
+    'Lens decline failed.',
     {
-      params: { path: { id, requestId } },
-      body: request,
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
     },
   );
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens decline failed.');
-  }
-
-  if (!data) {
-    throw new Error('Lens decline did not return a response payload.');
-  }
-
-  return data as LensCommandAcceptedResponse;
 }
 
 export async function resolveLensUserInput(
@@ -362,20 +385,15 @@ export async function resolveLensUserInput(
   requestId: string,
   request: LensUserInputAnswerRequest,
 ): Promise<LensCommandAcceptedResponse> {
-  const { data, response } = await client.POST('/api/sessions/{id}/lens/user-input/{requestId}', {
-    params: { path: { id, requestId } },
-    body: request,
-  });
-
-  if (!response.ok) {
-    await throwHttpError(response, 'Lens user-input resolution failed.');
-  }
-
-  if (!data) {
-    throw new Error('Lens user-input resolution did not return a response payload.');
-  }
-
-  return data as LensCommandAcceptedResponse;
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/user-input/${encodeURIComponent(requestId)}`,
+    'Lens user-input resolution failed.',
+    {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export interface LensEventStreamCallbacks {

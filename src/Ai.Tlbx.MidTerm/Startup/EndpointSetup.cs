@@ -662,6 +662,7 @@ public static class EndpointSetup
         TtyHostSessionManager sessionManager,
         TtyHostMuxConnectionManager muxManager,
         SessionSupervisorService sessionSupervisor,
+        SessionLensPulseService lensPulse,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
@@ -676,7 +677,7 @@ public static class EndpointSetup
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
+        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
         var browserHandler = new BrowserWebSocketHandler(

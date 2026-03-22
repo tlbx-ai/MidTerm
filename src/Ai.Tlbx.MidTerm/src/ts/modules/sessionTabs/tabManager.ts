@@ -16,10 +16,12 @@ import {
   updateCwd,
   updateGitIndicator,
 } from './tabBar';
-import { $activeSessionId, $processStates, $sessionList } from '../../stores';
+import { $activeSessionId, $isMainBrowser, $processStates, $sessionList } from '../../stores';
 import { sessionTerminals } from '../../state';
 import type { GitStatusResponse } from '../git/types';
 import type { Session } from '../../types';
+import { isSessionInLayout } from '../layout/layoutStore';
+import { applyTerminalScalingSync, fitTerminalToContainer } from '../terminal/scaling';
 
 const log = createLogger('tabManager');
 
@@ -34,9 +36,10 @@ interface SessionTabState {
 const sessionTabStates = new Map<string, SessionTabState>();
 
 const tabActivationCallbacks: Partial<
-  Record<SessionTabId, (sessionId: string, panel: HTMLDivElement) => void>
+  Record<SessionTabId, Array<(sessionId: string, panel: HTMLDivElement) => void>>
 > = {};
-const tabDeactivationCallbacks: Partial<Record<SessionTabId, (sessionId: string) => void>> = {};
+const tabDeactivationCallbacks: Partial<Record<SessionTabId, Array<(sessionId: string) => void>>> =
+  {};
 
 function isInteractiveAgentProfile(profile: string | null | undefined): boolean {
   return (
@@ -49,7 +52,9 @@ function isInteractiveAgentProfile(profile: string | null | undefined): boolean 
 
 function shouldShowAgentTab(session: Session | null | undefined): boolean {
   return (
-    session?.agentControlled === true || isInteractiveAgentProfile(session?.supervisor?.profile)
+    session?.agentControlled === true ||
+    session?.hasLensHistory === true ||
+    isInteractiveAgentProfile(session?.supervisor?.profile)
   );
 }
 
@@ -57,11 +62,11 @@ export function onTabActivated(
   tab: SessionTabId,
   callback: (sessionId: string, panel: HTMLDivElement) => void,
 ): void {
-  tabActivationCallbacks[tab] = callback;
+  (tabActivationCallbacks[tab] ??= []).push(callback);
 }
 
 export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string) => void): void {
-  tabDeactivationCallbacks[tab] = callback;
+  (tabDeactivationCallbacks[tab] ??= []).push(callback);
 }
 
 export function ensureSessionWrapper(sessionId: string): SessionTabState {
@@ -191,7 +196,7 @@ export function switchTab(
   const state = sessionTabStates.get(sessionId);
   if (!state) return;
   if (tab === 'agent') {
-    if (!state.lensAvailable) return;
+    if (!state.lensAvailable && !isTabVisible(state.tabBar, tab)) return;
   } else if (!options?.forceHidden && !isTabVisible(state.tabBar, tab)) {
     return;
   }
@@ -200,18 +205,33 @@ export function switchTab(
   if (previousTab === tab) return;
 
   state.panels[previousTab].classList.remove('active');
-  tabDeactivationCallbacks[previousTab]?.(sessionId);
+  for (const callback of tabDeactivationCallbacks[previousTab] ?? []) {
+    callback(sessionId);
+  }
 
   state.activeTab = tab;
   state.panels[tab].classList.add('active');
   setActiveTab(state.tabBar, tab);
 
-  tabActivationCallbacks[tab]?.(sessionId, state.panels[tab]);
+  for (const callback of tabActivationCallbacks[tab] ?? []) {
+    callback(sessionId, state.panels[tab]);
+  }
 
   if (tab === 'terminal') {
     const termState = sessionTerminals.get(sessionId);
     if (termState) {
       requestAnimationFrame(() => {
+        if (isSessionInLayout(sessionId)) {
+          const terminalPanel = termState.container.parentElement;
+          if (terminalPanel instanceof HTMLElement) {
+            if ($isMainBrowser.get()) {
+              fitTerminalToContainer(sessionId, terminalPanel);
+            } else {
+              applyTerminalScalingSync(termState);
+            }
+          }
+        }
+
         termState.terminal.focus();
       });
     }

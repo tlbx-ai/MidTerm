@@ -123,6 +123,19 @@ public sealed class SessionLensPulseService
         }
     }
 
+    public bool HasHistory(string sessionId)
+    {
+        if (!_logs.TryGetValue(sessionId, out var log))
+        {
+            return false;
+        }
+
+        lock (log.SyncRoot)
+        {
+            return log.Events.Count > 0;
+        }
+    }
+
     public LensPulseSnapshotResponse? GetSnapshot(string sessionId)
     {
         if (!_logs.TryGetValue(sessionId, out var log))
@@ -178,6 +191,13 @@ public sealed class SessionLensPulseService
                         break;
 
                     case "turn.started":
+                        assistant.Clear();
+                        reasoning.Clear();
+                        reasoningSummary.Clear();
+                        plan.Clear();
+                        commandOutput.Clear();
+                        fileChangeOutput.Clear();
+                        snapshot.Streams.UnifiedDiff = string.Empty;
                         snapshot.CurrentTurn = new LensPulseTurnSummary
                         {
                             TurnId = lensEvent.TurnId,
@@ -240,6 +260,7 @@ public sealed class SessionLensPulseService
                                 Status = lensEvent.Item.Status,
                                 Title = lensEvent.Item.Title,
                                 Detail = lensEvent.Item.Detail,
+                                Attachments = CloneAttachments(lensEvent.Item.Attachments),
                                 UpdatedAt = lensEvent.CreatedAt
                             };
                         }
@@ -512,7 +533,8 @@ public sealed class SessionLensPulseService
                 ItemType = source.Item.ItemType,
                 Status = source.Item.Status,
                 Title = source.Item.Title,
-                Detail = source.Item.Detail
+                Detail = source.Item.Detail,
+                Attachments = CloneAttachments(source.Item.Attachments)
             },
             RequestOpened = source.RequestOpened is null ? null : new LensPulseRequestOpenedPayload
             {
@@ -564,6 +586,25 @@ public sealed class SessionLensPulseService
             QuestionId = source.QuestionId,
             Answers = [.. source.Answers]
         };
+    }
+
+    private static List<LensAttachmentReference> CloneAttachments(
+        IReadOnlyList<LensAttachmentReference>? attachments)
+    {
+        if (attachments is null || attachments.Count == 0)
+        {
+            return [];
+        }
+
+        return attachments.Select(static attachment => new LensAttachmentReference
+        {
+            Kind = attachment.Kind,
+            Path = attachment.Path,
+            MimeType = attachment.MimeType,
+            DisplayName = string.IsNullOrWhiteSpace(attachment.DisplayName)
+                ? Path.GetFileName(attachment.Path)
+                : attachment.DisplayName
+        }).ToList();
     }
 
     private sealed class SessionLensPulseLog

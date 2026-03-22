@@ -15,8 +15,7 @@
 import { $currentSettings, $activeSessionId } from '../../stores';
 import { sendInput } from '../comms';
 import { t } from '../i18n';
-import { sendLensTurn } from '../../api/client';
-import { isLensActiveSession, createLensTurnRequest } from '../lens/input';
+import { isLensActiveSession, createLensTurnRequest, submitLensTurn } from '../lens/input';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { handleFileDrop, pasteToTerminal } from '../terminal';
 import { hideTouchController } from '../touchController';
@@ -481,7 +480,7 @@ function updateAutoSendVisibility(): void {
 
 async function submitSmartInput(sessionId: string, text: string): Promise<void> {
   if (isLensActiveSession(sessionId)) {
-    await sendLensTurn(sessionId, createLensTurnRequest(text));
+    await submitLensTurn(sessionId, createLensTurnRequest(text));
     return;
   }
 
