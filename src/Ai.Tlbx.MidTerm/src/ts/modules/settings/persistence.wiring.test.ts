@@ -126,6 +126,7 @@ describe('settings persistence wiring', () => {
     expect(cssSource).not.toContain('--bg-terminal-pane');
     expect(cssSource).not.toContain('--terminal-pane-bg');
     expect(cssSource).toContain('background: var(--bg-terminal);');
+    expect(cssSource).toContain('background: var(--bg-primary);');
   });
 
   it('allows both transparency sliders to reach 100 percent', () => {

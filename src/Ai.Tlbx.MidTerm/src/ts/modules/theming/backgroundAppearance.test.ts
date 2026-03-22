@@ -121,7 +121,7 @@ describe('backgroundAppearance', () => {
 
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
     expect(rootStyle.getPropertyValue('--terminal-bg')).toBe('');
-    expect(primaryAlpha).toBeCloseTo(0.86, 5);
+    expect(primaryAlpha).toBeCloseTo(0.812, 5);
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
@@ -165,7 +165,8 @@ describe('backgroundAppearance', () => {
       }),
     );
 
-    expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 0.160)');
+    expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 0.000)');
+    expect(rootStyle.getPropertyValue('--bg-elevated')).toBe('rgba(22, 24, 33, 0.000)');
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
   });
 });

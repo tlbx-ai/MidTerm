@@ -64,7 +64,7 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
       continue;
     }
 
-    const alpha = clamp(uiBaseAlpha + (variable.boost ?? 0), 0, 1);
+    const alpha = clamp(uiBaseAlpha * (1 + (variable.boost ?? 0)), 0, 1);
     root.style.setProperty(variable.name, toRgba(rgb, alpha));
   }
 

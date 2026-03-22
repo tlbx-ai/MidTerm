@@ -382,7 +382,7 @@ body {
 
 body {
   position: relative;
-  background: color-mix(in srgb, var(--bg-terminal) 55%, var(--bg-primary) 45%);
+  background: var(--bg-primary);
 }
 
 @media (min-width: 769px) {
