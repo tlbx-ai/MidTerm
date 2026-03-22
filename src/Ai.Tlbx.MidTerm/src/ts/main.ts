@@ -1323,6 +1323,8 @@ function syncMobileTabActionState(): void {
   const activeTab = activeSessionId ? getActiveTab(activeSessionId) : null;
   const agentVisible = activeSessionId ? isTabAvailable(activeSessionId, 'agent') : false;
   const strip = document.getElementById('mobile-tab-strip');
+  const topbar = document.getElementById('mobile-topbar');
+  const title = document.getElementById('mobile-title');
 
   const syncButton = (
     elementId: string,
@@ -1343,6 +1345,8 @@ function syncMobileTabActionState(): void {
   };
 
   strip?.toggleAttribute('hidden', !activeSessionId);
+  title?.toggleAttribute('hidden', Boolean(activeSessionId));
+  topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));
   syncButton('btn-mobile-tab-terminal', { active: activeTab === 'terminal' });
   syncButton('btn-mobile-tab-agent', { active: activeTab === 'agent', hidden: !agentVisible });
   syncButton('btn-mobile-tab-files', { active: activeTab === 'files' });

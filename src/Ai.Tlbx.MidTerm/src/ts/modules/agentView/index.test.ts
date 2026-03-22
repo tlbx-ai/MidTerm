@@ -275,6 +275,91 @@ describe('agentView dev errors', () => {
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
+  it('retries live Lens resume automatically after restoring canonical history', async () => {
+    attachSessionLens.mockRejectedValueOnce(new Error('Lens attach failed'));
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot
+      .mockRejectedValueOnce(new Error('Lens snapshot unavailable'))
+      .mockResolvedValue({
+        sessionId: 's1',
+        provider: 'codex',
+        generatedAt: '2026-03-22T01:45:00Z',
+        latestSequence: 1,
+        session: {
+          state: 'ready',
+          stateLabel: 'Ready',
+          reason: 'Codex turn completed.',
+          lastError: null,
+          lastEventAt: '2026-03-22T01:45:00Z',
+        },
+        thread: {
+          threadId: 'thread-1',
+          state: 'active',
+          stateLabel: 'Active',
+        },
+        currentTurn: {
+          turnId: 'turn-1',
+          state: 'completed',
+          stateLabel: 'Completed',
+          model: null,
+          effort: null,
+          startedAt: '2026-03-22T01:44:55Z',
+          completedAt: '2026-03-22T01:45:00Z',
+        },
+        streams: {
+          assistantText: 'Lens snapshot still exists.',
+          reasoningText: '',
+          reasoningSummaryText: '',
+          planText: '',
+          commandOutput: '',
+          fileChangeOutput: '',
+          unifiedDiff: '',
+        },
+        items: [
+          {
+            itemId: 'assistant-1',
+            turnId: 'turn-1',
+            itemType: 'assistant_message',
+            status: 'completed',
+            title: 'Assistant message',
+            detail: 'Lens snapshot still exists.',
+            attachments: [],
+            updatedAt: '2026-03-22T01:45:00Z',
+          },
+        ],
+        requests: [],
+        notices: [],
+      });
+    getLensEvents
+      .mockResolvedValueOnce({
+        sessionId: 's1',
+        latestSequence: 1,
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        sessionId: 's1',
+        latestSequence: 1,
+        events: [],
+      });
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(attachSessionLens).toHaveBeenCalledTimes(2);
+      expect(openLensEventStream).toHaveBeenCalledWith('s1', 1, expect.any(Object));
+    });
+    expect(showDevErrorDialog).not.toHaveBeenCalled();
+  });
+
   it('does not show a dev error modal for expected Lens handoff blocks', async () => {
     attachSessionLens.mockRejectedValue(
       new Error('HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.'),

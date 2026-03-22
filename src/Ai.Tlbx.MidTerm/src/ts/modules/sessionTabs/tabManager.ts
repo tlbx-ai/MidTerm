@@ -21,7 +21,11 @@ import { sessionTerminals } from '../../state';
 import type { GitStatusResponse } from '../git/types';
 import type { Session } from '../../types';
 import { isSessionInLayout } from '../layout/layoutStore';
-import { applyTerminalScalingSync, fitTerminalToContainer } from '../terminal/scaling';
+import {
+  applyTerminalScalingSync,
+  fitTerminalToContainer,
+  refreshTerminalPresentation,
+} from '../terminal/scaling';
 
 const log = createLogger('tabManager');
 
@@ -221,6 +225,8 @@ export function switchTab(
     const termState = sessionTerminals.get(sessionId);
     if (termState) {
       requestAnimationFrame(() => {
+        refreshTerminalPresentation(sessionId, termState);
+
         if (isSessionInLayout(sessionId)) {
           const terminalPanel = termState.container.parentElement;
           if (terminalPanel instanceof HTMLElement) {

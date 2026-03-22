@@ -332,6 +332,33 @@
             <span class="icon">&#xe919;</span>
           </button>
           <div class="topbar-title" id="mobile-title">MidTerm</div>
+          <nav class="mobile-tab-strip" id="mobile-tab-strip" aria-label="Session tabs" hidden>
+            <button
+              class="mobile-tab-pill"
+              id="btn-mobile-strip-terminal"
+              data-i18n-title="session.terminal"
+              title="Terminal"
+            >
+              <span data-i18n="session.terminal">Terminal</span>
+            </button>
+            <button
+              class="mobile-tab-pill"
+              id="btn-mobile-strip-agent"
+              data-i18n-title="sessionTabs.agent"
+              title="Agent"
+              hidden
+            >
+              <span data-i18n="sessionTabs.agent">Agent</span>
+            </button>
+            <button
+              class="mobile-tab-pill"
+              id="btn-mobile-strip-files"
+              data-i18n-title="sessionTabs.files"
+              title="Files"
+            >
+              <span data-i18n="sessionTabs.files">Files</span>
+            </button>
+          </nav>
           <div class="topbar-actions no-terminal" id="topbar-actions">
             <button
               class="topbar-btn topbar-menu-toggle"
@@ -490,33 +517,6 @@
             </div>
           </div>
         </header>
-        <nav class="mobile-tab-strip" id="mobile-tab-strip" aria-label="Session tabs" hidden>
-          <button
-            class="mobile-tab-pill"
-            id="btn-mobile-strip-terminal"
-            data-i18n-title="session.terminal"
-            title="Terminal"
-          >
-            <span data-i18n="session.terminal">Terminal</span>
-          </button>
-          <button
-            class="mobile-tab-pill"
-            id="btn-mobile-strip-agent"
-            data-i18n-title="sessionTabs.agent"
-            title="Agent"
-            hidden
-          >
-            <span data-i18n="sessionTabs.agent">Agent</span>
-          </button>
-          <button
-            class="mobile-tab-pill"
-            id="btn-mobile-strip-files"
-            data-i18n-title="sessionTabs.files"
-            title="Files"
-          >
-            <span data-i18n="sessionTabs.files">Files</span>
-          </button>
-        </nav>
 
         <div class="terminals-area">
           <div id="terminal-search" class="terminal-search hidden">

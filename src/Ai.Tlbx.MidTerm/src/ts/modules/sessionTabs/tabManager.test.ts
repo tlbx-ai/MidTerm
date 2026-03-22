@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const focusSpy = vi.fn();
+const refreshTerminalPresentationSpy = vi.fn();
 const terminalContainer = {
   children: [] as any[],
   appendChild(child: any) {
@@ -98,11 +99,13 @@ vi.mock('../layout/layoutStore', () => ({
 vi.mock('../terminal/scaling', () => ({
   applyTerminalScalingSync: vi.fn(),
   fitTerminalToContainer: vi.fn(),
+  refreshTerminalPresentation: refreshTerminalPresentationSpy,
 }));
 
 describe('tabManager', () => {
   beforeEach(() => {
     focusSpy.mockReset();
+    refreshTerminalPresentationSpy.mockReset();
     terminalContainer.children.length = 0;
     visibleTabs.clear();
     vi.resetModules();
@@ -135,6 +138,7 @@ describe('tabManager', () => {
     switchTab('s1', 'terminal');
 
     expect(getActiveTab('s1')).toBe('terminal');
+    expect(refreshTerminalPresentationSpy).toHaveBeenCalledWith('s1', expect.anything());
     expect(focusSpy).toHaveBeenCalledTimes(1);
   });
 

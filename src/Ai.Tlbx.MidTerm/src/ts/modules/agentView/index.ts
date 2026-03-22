@@ -299,10 +299,14 @@ async function activateAgentView(sessionId: string): Promise<void> {
     const restoredFallbackHistory = await tryLoadReadonlyLensHistory(sessionId, state);
     if (restoredFallbackHistory) {
       log.warn(() => `Lens attach failed for ${sessionId}, but canonical history was restored.`);
-      state.activationError = describeError(error);
-      state.activationIssue = classifyLensActivationIssue(error, true);
-      state.terminalFallback = null;
-      renderCurrentAgentView(sessionId);
+      appendActivationTrace(
+        state,
+        'warning',
+        'history-restored',
+        'Canonical Lens history restored.',
+        'MidTerm recovered canonical Lens history after the initial attach failed, so it is retrying the live attach automatically.',
+      );
+      await resumeLensFromHistory(sessionId, state);
       return;
     }
 
