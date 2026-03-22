@@ -18,6 +18,7 @@ const persistenceSource = readFileSync(
   'utf8',
 );
 const cssSource = readFileSync(path.join(projectRoot, 'src/static/css/app.css'), 'utf8');
+const xtermCssSource = readFileSync(path.join(projectRoot, 'src/static/css/xterm.css'), 'utf8');
 
 const NON_PERSISTED_SETTING_IDS = new Set([
   'setting-background-upload',
@@ -127,6 +128,20 @@ describe('settings persistence wiring', () => {
     expect(cssSource).not.toContain('--terminal-pane-bg');
     expect(cssSource).toContain('background: var(--bg-terminal);');
     expect(cssSource).toContain('background: var(--bg-primary);');
+    expect(cssSource).toContain('background: var(--terminal-ui-background, var(--terminal-bg));');
+    expect(xtermCssSource).toContain(
+      'background-color: var(--terminal-canvas-background, var(--bg-terminal));',
+    );
+  });
+
+  it('applies reduced UI transparency to text inputs and sidebar items', () => {
+    expect(cssSource).toContain('background: var(--text-input-background, var(--bg-input));');
+    expect(cssSource).toContain(
+      'background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));',
+    );
+    expect(cssSource).toContain(
+      'background-color: var(--sidebar-item-active-background, var(--bg-session-active));',
+    );
   });
 
   it('allows both transparency sliders to reach 100 percent', () => {

@@ -171,6 +171,11 @@
   --bg-session-active: #1c1e2a; /* Active session */
   --bg-settings: #161821; /* Same as bg-elevated */
   --bg-tertiary: #161821; /* Alias for bg-sidebar */
+  --terminal-canvas-background: var(--bg-terminal);
+  --terminal-ui-background: var(--terminal-bg);
+  --text-input-background: var(--bg-input);
+  --sidebar-item-hover-background: var(--bg-session-hover);
+  --sidebar-item-active-background: var(--bg-session-active);
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -673,11 +678,11 @@ body.has-app-background::after {
 /* Drag states */
 .session-item.dragging {
   opacity: 0.5;
-  background-color: var(--bg-session-active);
+  background-color: var(--sidebar-item-active-background, var(--bg-session-active));
 }
 
 .session-item.drag-over {
-  background-color: var(--bg-session-hover);
+  background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));
 }
 
 .session-item.drag-over-above {
@@ -695,13 +700,13 @@ body.has-app-background::after {
 
 @media (hover: hover) {
   .session-item:hover {
-    background-color: var(--bg-session-hover);
+    background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));
     transform: translateX(2px);
   }
 }
 
 .session-item.active {
-  background-color: var(--bg-session-active);
+  background-color: var(--sidebar-item-active-background, var(--bg-session-active));
   border-image: linear-gradient(
       to bottom,
       transparent 0%,
@@ -1180,7 +1185,7 @@ body.has-app-background::after {
   padding: 2px 4px;
   border: 1px solid var(--btn-secondary);
   border-radius: 3px;
-  background: var(--bg-input);
+  background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   outline: none;
   width: 100%;
@@ -1209,7 +1214,7 @@ body.has-app-background::after {
   padding: 2px 4px;
   border: 1px solid var(--btn-secondary);
   border-radius: 3px;
-  background: var(--bg-input);
+  background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   box-sizing: border-box;
   margin: 0;
@@ -1229,8 +1234,8 @@ body.has-app-background::after {
   background: linear-gradient(
     to right,
     transparent,
-    var(--bg-session-hover) 8px,
-    var(--bg-session-hover)
+    var(--sidebar-item-hover-background, var(--bg-session-hover)) 8px,
+    var(--sidebar-item-hover-background, var(--bg-session-hover))
   );
   padding-left: 12px;
   opacity: 0;
@@ -1249,8 +1254,8 @@ body.has-app-background::after {
   background: linear-gradient(
     to right,
     transparent,
-    var(--bg-session-active) 8px,
-    var(--bg-session-active)
+    var(--sidebar-item-active-background, var(--bg-session-active)) 8px,
+    var(--sidebar-item-active-background, var(--bg-session-active))
   );
 }
 
@@ -1506,7 +1511,7 @@ body.has-app-background::after {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background-color: var(--terminal-bg);
+  background-color: var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 .terminal-container {
@@ -3419,7 +3424,7 @@ body.has-app-background::after {
   padding: 8px 10px;
   border: 1px solid var(--btn-secondary);
   border-radius: var(--radius-md);
-  background: var(--bg-input);
+  background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   font-size: var(--fs-sm);
 }
@@ -3909,7 +3914,7 @@ body.has-app-background::after {
 .setting-row input[type='number'],
 .setting-row input[type='search'] {
   padding: 8px 12px;
-  background-color: var(--bg-input);
+  background-color: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   border: 1px solid var(--btn-secondary);
   border-radius: var(--radius-md);
@@ -4959,7 +4964,7 @@ body.has-app-background::after {
 .login-form input[type='password'] {
   width: 100%;
   padding: 14px 16px;
-  background-color: var(--bg-input);
+  background-color: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
@@ -5129,7 +5134,7 @@ body.has-app-background::after {
 .password-modal-content input[type='password'] {
   width: 100%;
   padding: 10px 12px;
-  background-color: var(--bg-input);
+  background-color: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   border: 1px solid var(--btn-secondary);
   border-radius: 4px;
@@ -6913,7 +6918,7 @@ body.shared-session-mode .session-tab-bar {
   resize: none;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: var(--bg-surface);
+  background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   padding: 8px 12px;
   font-family: inherit;
@@ -7051,7 +7056,7 @@ body.shared-session-mode .session-tab-bar {
   padding-left: calc(8px + env(safe-area-inset-left, 0px));
   padding-right: calc(8px + env(safe-area-inset-right, 0px));
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-  background: var(--terminal-bg);
+  background: var(--terminal-ui-background, var(--terminal-bg));
   border-top: 1px solid var(--border-color);
   margin-right: 0;
 }
@@ -8485,7 +8490,7 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-dock-url-bar input {
   flex: 1;
-  background: var(--bg-input);
+  background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -8620,7 +8625,7 @@ body.shared-session-mode .session-tab-bar {
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  background: var(--terminal-bg);
+  background: var(--terminal-ui-background, var(--terminal-bg));
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
   margin-right: 0;
@@ -8635,7 +8640,7 @@ body.shared-session-mode .session-tab-bar {
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 8px 4px;
-  background: var(--terminal-bg);
+  background: var(--terminal-ui-background, var(--terminal-bg));
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
 }
@@ -8717,7 +8722,7 @@ body.shared-session-mode .session-tab-bar {
   padding: 2px 6px;
   border: 1px solid var(--accent-blue);
   border-radius: 3px;
-  background: var(--bg-input);
+  background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   font-family: inherit;
   outline: none;
@@ -8815,7 +8820,7 @@ body.shared-session-mode .session-tab-bar {
 .manager-action-modal-body select,
 .manager-action-modal-body textarea {
   width: 100%;
-  background: var(--bg-input);
+  background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 12px;

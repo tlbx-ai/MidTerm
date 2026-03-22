@@ -118,12 +118,20 @@ describe('backgroundAppearance', () => {
     const primaryAlpha = alphaOf(rootStyle.getPropertyValue('--bg-primary'));
     const elevatedAlpha = alphaOf(rootStyle.getPropertyValue('--bg-elevated'));
     const dropdownAlpha = alphaOf(rootStyle.getPropertyValue('--bg-dropdown'));
+    const terminalCanvasAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-canvas-background'));
+    const terminalUiAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-ui-background'));
+    const textInputAlpha = alphaOf(rootStyle.getPropertyValue('--text-input-background'));
+    const sidebarHoverAlpha = alphaOf(rootStyle.getPropertyValue('--sidebar-item-hover-background'));
 
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
     expect(rootStyle.getPropertyValue('--terminal-bg')).toBe('');
     expect(primaryAlpha).toBeCloseTo(0.812, 5);
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
+    expect(terminalCanvasAlpha).toBeCloseTo(0.4, 5);
+    expect(terminalUiAlpha).toBeCloseTo(0.7, 5);
+    expect(textInputAlpha).toBeCloseTo(0.94, 5);
+    expect(sidebarHoverAlpha).toBeCloseTo(0.82, 5);
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#161821');
     expect(rootStyle.getPropertyValue('--bg-hover-opaque')).toBe('#2D3044');
@@ -167,6 +175,11 @@ describe('backgroundAppearance', () => {
 
     expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 0.000)');
     expect(rootStyle.getPropertyValue('--bg-elevated')).toBe('rgba(22, 24, 33, 0.000)');
+    expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 0.000)');
+    expect(rootStyle.getPropertyValue('--text-input-background')).toBe('rgba(36, 39, 53, 0.800)');
+    expect(rootStyle.getPropertyValue('--sidebar-item-active-background')).toBe(
+      'rgba(28, 30, 42, 0.400)',
+    );
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
   });
 });
