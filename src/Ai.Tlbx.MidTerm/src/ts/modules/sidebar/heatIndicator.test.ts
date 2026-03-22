@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-interface RafCallback {
-  (time: number): void;
-}
-
 interface FakeContext {
   scale: ReturnType<typeof vi.fn>;
   clearRect: ReturnType<typeof vi.fn>;
@@ -40,13 +36,8 @@ function createCanvasMock() {
 }
 
 describe('heatIndicator', () => {
-  let nextRafId = 1;
-  let scheduledFrame: RafCallback | null = null;
-
   beforeEach(() => {
     vi.resetModules();
-    nextRafId = 1;
-    scheduledFrame = null;
 
     vi.stubGlobal('window', {
       devicePixelRatio: 1,
@@ -54,18 +45,13 @@ describe('heatIndicator', () => {
         matches: false,
         addEventListener: vi.fn(),
       })),
+      setInterval: vi.fn(() => 1),
+      clearInterval: vi.fn(),
     });
     vi.stubGlobal('document', {
       hidden: false,
+      addEventListener: vi.fn(),
     });
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      vi.fn((cb: RafCallback) => {
-        scheduledFrame = cb;
-        return nextRafId++;
-      }),
-    );
-    vi.stubGlobal('cancelAnimationFrame', vi.fn());
   });
 
   afterEach(() => {
@@ -77,10 +63,7 @@ describe('heatIndicator', () => {
     const firstCanvas = createCanvasMock();
     module.registerHeatCanvas('session-1', firstCanvas.canvas);
 
-    module.recordBytes('session-1', 1200);
-    expect(scheduledFrame).not.toBeNull();
-    scheduledFrame?.(performance.now() + 150);
-
+    module.setSessionHeat('session-1', 0.8);
     const heatBeforeRerender = module.getSessionHeat('session-1');
     expect(heatBeforeRerender).toBeGreaterThan(0);
 
@@ -99,8 +82,7 @@ describe('heatIndicator', () => {
     const canvas = createCanvasMock();
     module.registerHeatCanvas('session-1', canvas.canvas);
 
-    module.recordBytes('session-1', 1200);
-    scheduledFrame?.(performance.now() + 150);
+    module.setSessionHeat('session-1', 0.6);
     expect(module.getSessionHeat('session-1')).toBeGreaterThan(0);
 
     module.pruneHeatSessions([]);

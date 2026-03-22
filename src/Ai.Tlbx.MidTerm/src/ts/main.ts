@@ -62,7 +62,6 @@ import {
   initSessionDrag,
   initTrafficIndicator,
   initHeatIndicator,
-  recordBytes,
   suppressAllHeat,
   renderSessionList,
   updateEmptyState,
@@ -273,7 +272,6 @@ async function init(): Promise<void> {
   await initI18n();
   initTrafficIndicator();
   setSessionBytesCallback((sessionId, bytes) => {
-    recordBytes(sessionId, bytes);
     recordMobilePiPBytes(sessionId, bytes);
   });
   setSuppressHeatCallback(suppressAllHeat);

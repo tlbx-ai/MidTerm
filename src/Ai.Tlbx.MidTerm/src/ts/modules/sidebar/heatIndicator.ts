@@ -1,94 +1,52 @@
 /**
  * Heat Indicator Module
  *
- * Renders per-session thermal activity indicators as canvas strips
- * in the sidebar. Maps byte activity to color temperature:
- * hot red (active) → ice blue (cooling) → dark blue (idle).
- *
- * Uses a single rAF loop for all sessions. Self-calibrating peak rate
- * ensures meaningful contrast even between sessions with different
- * baseline traffic levels.
- *
- * Performance: self-pausing rAF (stops when all idle), pre-computed
- * decay + color LUTs, dirty-tracking to skip redundant draws,
- * document.hidden awareness.
+ * Renders per-session thermal activity indicators as canvas strips in the
+ * sidebar. Heat is sourced from server-side session telemetry so it reflects
+ * actual mthost-produced output rather than browser-side mux replay noise.
  */
 
+import { getSessions } from '../../api/client';
 import { createLogger } from '../logging';
 
 const log = createLogger('heat');
 
-// =============================================================================
-// Config
-// =============================================================================
-
-/** Peak rate half-life in seconds (~57s, matching original 0.9998/frame at 60fps) */
-const PEAK_HALF_LIFE_SEC = 57;
-
-/** Minimum peak to avoid division by near-zero */
-const MIN_PEAK = 200; // bytes/sec
-
-/** Minimum rate (bytes/sec) to register as activity — filters focus event noise */
-const MIN_RATE = 100;
-
-/** Rate calculation interval in ms (fast for snappy heat-up, cooldown is slow via tri-exp) */
-const RATE_INTERVAL_MS = 100;
-
-/**
- * Tri-exponential cooldown curve.
- * Designed for monitoring 10+ AI agent sessions at a glance:
- *   - First third drops in 5-20s (recently went idle)
- *   - Middle third drops over 2-3 min (idle for a while)
- *   - Last third fades over ~15 min (long inactive)
- *
- * h(t) = W1·e^(-t/TAU1) + W2·e^(-t/TAU2) + W3·e^(-t/TAU3)
- */
-const DECAY_FAST_W = 0.35;
-const DECAY_FAST_TAU = 7; // seconds
-const DECAY_MID_W = 0.35;
-const DECAY_MID_TAU = 120; // seconds
-const DECAY_SLOW_W = 0.3;
-const DECAY_SLOW_TAU = 400; // seconds
-
-/** Min heat value below which we skip drawing (avoids canvas ops when idle) */
+const POLL_INTERVAL_MS = 1000;
 const DRAW_THRESHOLD = 0.01;
-
-/** CSS width of the indicator canvas in logical pixels */
 const CANVAS_CSS_W = 4;
-
-/** CSS height of the indicator canvas in logical pixels */
 const CANVAS_CSS_H = 36;
 
 // Color stops: [heat_value, r, g, b]
 const GRADIENT: [number, number, number, number][] = [
-  [0.0, 10, 14, 26], // dark navy (nearly invisible when idle)
-  [0.18, 18, 54, 102], // deep cold blue
-  [0.4, 92, 198, 255], // ice blue
-  [0.58, 170, 232, 255], // bright frost blue
-  [0.66, 220, 78, 104], // warm transition without orange
-  [0.84, 224, 44, 52], // strong red sooner so hot sessions cool visually more gradually
-  [1.0, 220, 28, 28], // hot red
+  [0.0, 10, 14, 26],
+  [0.18, 18, 54, 102],
+  [0.4, 92, 198, 255],
+  [0.58, 170, 232, 255],
+  [0.66, 220, 78, 104],
+  [0.84, 224, 44, 52],
+  [1.0, 220, 28, 28],
 ];
-
-// =============================================================================
-// Pre-computed lookup tables
-// =============================================================================
-
-const DECAY_LUT_SIZE = 1000;
-const DECAY_LUT_STEP = 0.1; // seconds per entry (covers 0–100s)
-const decayLUT = new Float32Array(DECAY_LUT_SIZE);
 
 const COLOR_LUT_SIZE = 101;
 const colorLUT: [number, number, number][] = new Array<[number, number, number]>(COLOR_LUT_SIZE);
 
-function buildDecayLUT(): void {
-  for (let i = 0; i < DECAY_LUT_SIZE; i++) {
-    const t = i * DECAY_LUT_STEP;
-    decayLUT[i] =
-      DECAY_FAST_W * Math.exp(-t / DECAY_FAST_TAU) +
-      DECAY_MID_W * Math.exp(-t / DECAY_MID_TAU) +
-      DECAY_SLOW_W * Math.exp(-t / DECAY_SLOW_TAU);
+interface SessionHeat {
+  canvas: HTMLCanvasElement | null;
+  ctx: CanvasRenderingContext2D | null;
+  heat: number;
+  lastDrawnHeat: number;
+}
+
+const sessions = new Map<string, SessionHeat>();
+let pollTimerId: number | null = null;
+let pollInFlight = false;
+
+function clampHeat(heat: number): number {
+  if (!Number.isFinite(heat)) {
+    return 0;
   }
+
+  return Math.max(0, Math.min(1, heat));
 }
 
 function lerpColorRaw(t: number): [number, number, number] {
@@ -111,6 +69,7 @@ function lerpColorRaw(t: number): [number, number, number] {
       ];
     }
   }
+
   return [10, 14, 26];
 }
 
@@ -120,47 +79,10 @@ function buildColorLUT(): void {
   }
 }
 
-buildDecayLUT();
-buildColorLUT();
-
-// =============================================================================
-// State
-// =============================================================================
-
-interface SessionHeat {
-  canvas: HTMLCanvasElement | null;
-  ctx: CanvasRenderingContext2D | null;
-  heat: number; // 0–1 current visual heat level
-  lastDrawnHeat: number; // heat value last rendered (dirty tracking)
-  peakRate: number; // self-calibrating max observed bytes/sec
-  byteAccum: number; // bytes accumulated since last rate tick
-  lastTickMs: number; // timestamp of last rate calculation
-  lastActiveMs: number; // when last rate tick detected activity
-  heatWhenInactive: number; // heat snapshot at deactivation (decay anchor)
-  ignoreUntilMs: number; // suppress bytes until this timestamp (avoids false heat on session switch)
-  lastQuantizedHeat: number; // last quantized heat level for reduced-motion mode
-}
-
-const sessions = new Map<string, SessionHeat>();
-let rafId = 0;
-let reducedMotion = false;
-
-// =============================================================================
-// Color lookup
-// =============================================================================
-
 function lerpColor(t: number): [number, number, number] {
   const index = Math.min(COLOR_LUT_SIZE - 1, Math.max(0, Math.round(t * (COLOR_LUT_SIZE - 1))));
   return colorLUT[index] ?? [10, 14, 26];
 }
-
-function quantizeHeat(heat: number): number {
-  return heat < 0.165 ? 0 : heat < 0.495 ? 0.33 : heat < 0.83 ? 0.66 : 1.0;
-}
-
-// =============================================================================
-// Canvas drawing
-// =============================================================================
 
 function drawCanvas(s: SessionHeat): void {
   const { ctx, heat } = s;
@@ -181,13 +103,10 @@ function drawCanvas(s: SessionHeat): void {
 
   const [r, g, b] = lerpColor(heat);
   const alpha = Math.min(1.0, heat * 2);
-
-  // Height scales with heat (sqrt so it stays visible longer during cooldown)
   const heightFrac = Math.sqrt(heat);
   const visibleH = Math.max(4, heightFrac * CANVAS_CSS_H);
   const offsetY = (CANVAS_CSS_H - visibleH) / 2;
 
-  // Gradient from center outward — brightest in the middle, fading to both edges
   const gradient = ctx.createLinearGradient(0, offsetY, 0, offsetY + visibleH);
   const edgeAlpha = (alpha * 0.15).toFixed(3);
   const coreAlpha = alpha.toFixed(3);
@@ -198,7 +117,6 @@ function drawCanvas(s: SessionHeat): void {
 
   ctx.fillStyle = gradient;
 
-  // Draw pill shape at calculated position
   const radius = Math.min(CANVAS_CSS_W / 2, visibleH / 2);
   ctx.beginPath();
   ctx.moveTo(radius, offsetY);
@@ -210,104 +128,70 @@ function drawCanvas(s: SessionHeat): void {
   ctx.fill();
 }
 
-// =============================================================================
-// Decay curve (LUT-backed)
-// =============================================================================
-
-function triExpDecay(seconds: number): number {
-  const index = Math.round(seconds / DECAY_LUT_STEP);
-  if (index < DECAY_LUT_SIZE) {
-    return decayLUT[Math.max(0, index)] ?? 0;
+function getOrCreateSessionHeat(sessionId: string): SessionHeat {
+  let state = sessions.get(sessionId);
+  if (!state) {
+    state = {
+      canvas: null,
+      ctx: null,
+      heat: 0,
+      lastDrawnHeat: 0,
+    };
+    sessions.set(sessionId, state);
   }
-  // Beyond LUT range (>100s): compute directly — rare, only long-idle sessions
-  return (
-    DECAY_FAST_W * Math.exp(-seconds / DECAY_FAST_TAU) +
-    DECAY_MID_W * Math.exp(-seconds / DECAY_MID_TAU) +
-    DECAY_SLOW_W * Math.exp(-seconds / DECAY_SLOW_TAU)
-  );
+
+  return state;
 }
 
-// =============================================================================
-// Animation loop
-// =============================================================================
+function applyHeat(sessionId: string, heat: number): void {
+  const state = getOrCreateSessionHeat(sessionId);
+  const nextHeat = clampHeat(heat);
+  if (Math.abs(state.heat - nextHeat) < 0.0001) {
+    return;
+  }
 
-function drawFrame(nowMs: number): void {
-  let anyActive = false;
+  state.heat = nextHeat;
+  if (!document.hidden) {
+    drawCanvas(state);
+  }
+}
 
-  for (const s of sessions.values()) {
-    // Periodically recalculate byte rate and update heat
-    const elapsed = nowMs - s.lastTickMs;
-    if (elapsed >= RATE_INTERVAL_MS) {
-      // Cap rate window to prevent dilution during rAF freezes (background tabs)
-      const rateWindow = Math.min(elapsed, 2000);
-      const rate = (s.byteAccum / rateWindow) * 1000; // bytes/sec
-      s.byteAccum = 0;
-      s.lastTickMs = nowMs;
+async function refreshHeatFromServer(): Promise<void> {
+  if (pollInFlight || sessions.size === 0) {
+    return;
+  }
 
-      // Self-calibrate: peak tracks the max rate, decays with capped elapsed to prevent collapse
-      const peakElapsedSec = Math.min(elapsed / 1000, 2);
-      const peakDecay = Math.pow(0.5, peakElapsedSec / PEAK_HALF_LIFE_SEC);
-      s.peakRate = Math.max(MIN_PEAK, Math.max(rate, s.peakRate * peakDecay));
+  pollInFlight = true;
+  try {
+    const { data, response } = await getSessions();
+    if (!response.ok || !data) {
+      return;
+    }
 
-      // Add heat proportional to current rate vs peak
-      // MIN_RATE filters out noise from focus events, shell keep-alives, and tiny prompt redraws
-      if (rate >= MIN_RATE) {
-        const normalized = Math.min(1.0, rate / s.peakRate);
-        s.heat = Math.min(1.0, s.heat + normalized * 0.8);
-        s.lastActiveMs = nowMs;
-        s.heatWhenInactive = s.heat;
+    const activeIds = new Set<string>();
+    for (const session of data.sessions ?? []) {
+      if (!session?.id) {
+        continue;
+      }
+
+      activeIds.add(session.id);
+      applyHeat(session.id, session.supervisor?.currentHeat ?? 0);
+    }
+
+    for (const sessionId of sessions.keys()) {
+      if (!activeIds.has(sessionId)) {
+        applyHeat(sessionId, 0);
       }
     }
-
-    // Tri-exponential cooldown (grace period of one rate interval before decay starts)
-    const inactiveMs = nowMs - s.lastActiveMs;
-    if (inactiveMs > RATE_INTERVAL_MS) {
-      const inactiveSec = (inactiveMs - RATE_INTERVAL_MS) / 1000;
-      s.heat = s.heatWhenInactive * triExpDecay(inactiveSec);
-    }
-
-    if (!document.hidden) {
-      if (reducedMotion) {
-        // Quantize to 4 steps instead of smooth animation
-        const q = quantizeHeat(s.heat);
-        if (q !== s.lastQuantizedHeat) {
-          s.lastQuantizedHeat = q;
-          const saved = s.heat;
-          s.heat = q;
-          drawCanvas(s);
-          s.heat = saved;
-        }
-      } else {
-        drawCanvas(s);
-      }
-    }
-
-    if (s.heat >= DRAW_THRESHOLD) {
-      anyActive = true;
-    }
-  }
-
-  if (anyActive) {
-    rafId = requestAnimationFrame(drawFrame);
-  } else {
-    rafId = 0;
+  } catch (error) {
+    log.verbose(() => `Heat refresh skipped: ${String(error)}`);
+  } finally {
+    pollInFlight = false;
   }
 }
 
-function ensureLoopRunning(): void {
-  if (!rafId && sessions.size > 0) {
-    rafId = requestAnimationFrame(drawFrame);
-  }
-}
+buildColorLUT();
 
-// =============================================================================
-// Public API
-// =============================================================================
-
-/**
- * Register a canvas element to display the heat indicator for a session.
- * Sets up the canvas buffer dimensions accounting for device pixel ratio.
- */
 export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) {
@@ -320,59 +204,23 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
   canvas.height = Math.round(CANVAS_CSS_H * dpr);
   ctx.scale(dpr, dpr);
 
-  const existing = sessions.get(sessionId);
-  if (existing) {
-    existing.canvas = canvas;
-    existing.ctx = ctx;
-    // Force a redraw onto the new canvas on the next frame or immediately below.
-    existing.lastDrawnHeat = -1;
-    existing.lastQuantizedHeat = -1;
+  const state = getOrCreateSessionHeat(sessionId);
+  state.canvas = canvas;
+  state.ctx = ctx;
+  state.lastDrawnHeat = -1;
 
-    if (!document.hidden) {
-      if (reducedMotion) {
-        const saved = existing.heat;
-        const q = quantizeHeat(existing.heat);
-        existing.heat = q;
-        drawCanvas(existing);
-        existing.heat = saved;
-        existing.lastQuantizedHeat = q;
-      } else {
-        drawCanvas(existing);
-      }
-    }
-
-    if (existing.heat >= DRAW_THRESHOLD) {
-      ensureLoopRunning();
-    }
-    return;
+  if (!document.hidden) {
+    drawCanvas(state);
   }
-
-  const now = performance.now();
-  sessions.set(sessionId, {
-    canvas,
-    ctx,
-    heat: 0,
-    lastDrawnHeat: 0,
-    peakRate: MIN_PEAK,
-    byteAccum: 0,
-    lastTickMs: now,
-    lastActiveMs: now,
-    heatWhenInactive: 0,
-    ignoreUntilMs: 0,
-    lastQuantizedHeat: 0,
-  });
 }
 
-/**
- * Unregister and clean up a session's heat indicator.
- */
 export function unregisterHeatCanvas(sessionId: string): void {
-  const s = sessions.get(sessionId);
-  if (!s) return;
-  s.canvas = null;
-  s.ctx = null;
-  s.lastDrawnHeat = -1;
-  s.lastQuantizedHeat = -1;
+  const state = sessions.get(sessionId);
+  if (!state) return;
+
+  state.canvas = null;
+  state.ctx = null;
+  state.lastDrawnHeat = -1;
 }
 
 export function pruneHeatSessions(sessionIds: Iterable<string>): void {
@@ -382,65 +230,54 @@ export function pruneHeatSessions(sessionIds: Iterable<string>): void {
       sessions.delete(sessionId);
     }
   }
-
-  if (sessions.size === 0 && rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-  }
 }
 
-/**
- * Record incoming bytes for a session. Called from the mux channel
- * whenever an output frame arrives for this session.
- */
-export function recordBytes(sessionId: string, bytes: number): void {
-  const s = sessions.get(sessionId);
-  if (!s) return;
-  if (s.ignoreUntilMs > performance.now()) return;
-  s.byteAccum += bytes;
-  ensureLoopRunning();
+export function setSessionHeat(sessionId: string, heat: number): void {
+  applyHeat(sessionId, heat);
+}
+
+export function recordBytes(_sessionId: string, _bytes: number): void {
+  // Sidebar heat is sourced from server telemetry. Byte-based browser heuristics
+  // remain available elsewhere (for example mobile PiP), but not for this strip.
 }
 
 export function getSessionHeat(sessionId: string): number {
   return sessions.get(sessionId)?.heat ?? 0;
 }
 
-/**
- * Suppress heat recording for ALL sessions for a short duration.
- * Used when switching active sessions — the server flushes background
- * buffers which would falsely heat up idle sessions.
- */
-export function suppressAllHeat(durationMs: number): void {
-  const now = performance.now();
-  const until = now + durationMs;
-  sessions.forEach((s) => {
-    s.ignoreUntilMs = until;
-    s.byteAccum = 0;
-    s.lastTickMs = now;
-  });
+export function suppressAllHeat(_durationMs: number): void {
+  // No-op: server-side heat is not driven by browser-side replay or refresh traffic.
 }
 
-/**
- * Start the shared animation loop for all heat indicators.
- */
 export function initHeatIndicator(): void {
-  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-  reducedMotion = mq.matches;
-  mq.addEventListener('change', (e) => {
-    reducedMotion = e.matches;
-  });
+  if (pollTimerId !== null) {
+    return;
+  }
 
-  if (rafId) return;
-  rafId = requestAnimationFrame(drawFrame);
+  void refreshHeatFromServer();
+  pollTimerId = window.setInterval(() => {
+    if (document.hidden) {
+      return;
+    }
+
+    void refreshHeatFromServer();
+  }, POLL_INTERVAL_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      void refreshHeatFromServer();
+      sessions.forEach((state) => {
+        drawCanvas(state);
+      });
+    }
+  });
 }
 
-/**
- * Stop the animation loop and remove all session state.
- */
 export function destroyHeatIndicator(): void {
-  if (rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
+  if (pollTimerId !== null) {
+    window.clearInterval(pollTimerId);
+    pollTimerId = null;
   }
+
   sessions.clear();
 }
