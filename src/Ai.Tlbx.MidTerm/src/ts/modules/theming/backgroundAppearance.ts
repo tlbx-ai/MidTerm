@@ -7,8 +7,6 @@
 import type { MidTermSettingsPublic } from '../../types';
 import { getCssThemePalette } from './cssThemes';
 
-const TERMINAL_BACKGROUND_VARIABLES = ['--bg-terminal', '--terminal-bg'] as const;
-
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
   { name: '--bg-elevated', boost: 0.22 },
@@ -34,6 +32,29 @@ const OPAQUE_SURFACE_VARIABLES: Array<{ name: string; source: string }> = [
   { name: '--bg-active-opaque', source: '--bg-active' },
 ];
 
+const DERIVED_BACKGROUND_VARIABLES: Array<{
+  name: string;
+  source: string;
+  mode: 'ui' | 'terminal';
+  response?: number;
+}> = [
+  { name: '--terminal-canvas-background', source: '--bg-terminal', mode: 'terminal' },
+  { name: '--terminal-ui-background', source: '--bg-terminal', mode: 'ui' },
+  { name: '--text-input-background', source: '--bg-input', mode: 'ui', response: 0.2 },
+  {
+    name: '--sidebar-item-hover-background',
+    source: '--bg-session-hover',
+    mode: 'ui',
+    response: 0.6,
+  },
+  {
+    name: '--sidebar-item-active-background',
+    source: '--bg-session-active',
+    mode: 'ui',
+    response: 0.6,
+  },
+];
+
 interface RgbColor {
   r: number;
   g: number;
@@ -47,14 +68,13 @@ export function getBackgroundImageUrl(revision: number): string {
 export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void {
   const root = document.documentElement;
   const palette = getCssThemePalette(settings.theme);
-  const uiTransparency = clamp(settings.uiTransparency, 0, 85);
+  const uiTransparency = clamp(settings.uiTransparency, 0, 100);
   const terminalTransparency = clamp(
     settings.terminalTransparency ?? settings.uiTransparency,
     0,
-    85,
+    100,
   );
-  const uiBaseAlpha = Math.max(0.15, 1 - uiTransparency / 100);
-  const terminalBaseAlpha = Math.max(0.15, 1 - terminalTransparency / 100);
+  const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
 
   for (const variable of OPAQUE_SURFACE_VARIABLES) {
     const value = palette[variable.source];
@@ -65,16 +85,6 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     root.style.setProperty(variable.name, value);
   }
 
-  for (const variableName of TERMINAL_BACKGROUND_VARIABLES) {
-    const value = palette[variableName];
-    const rgb = parseColor(value);
-    if (!rgb) {
-      continue;
-    }
-
-    root.style.setProperty(variableName, toRgba(rgb, terminalBaseAlpha));
-  }
-
   for (const variable of UI_BACKGROUND_VARIABLES) {
     const value = palette[variable.name];
     const rgb = parseColor(value);
@@ -82,8 +92,22 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
       continue;
     }
 
-    const alpha = clamp(uiBaseAlpha + (variable.boost ?? 0), 0, 1);
+    const alpha = clamp(uiBaseAlpha * (1 + (variable.boost ?? 0)), 0, 1);
     root.style.setProperty(variable.name, toRgba(rgb, alpha));
+  }
+
+  for (const variable of DERIVED_BACKGROUND_VARIABLES) {
+    const value = palette[variable.source];
+    const rgb = parseColor(value);
+    if (!rgb) {
+      continue;
+    }
+
+    const transparency = variable.mode === 'terminal' ? terminalTransparency : uiTransparency;
+    root.style.setProperty(
+      variable.name,
+      toRgba(rgb, transparencyToAlpha(transparency, variable.response ?? 1)),
+    );
   }
 
   const hasImage = Boolean(
@@ -163,6 +187,10 @@ function parseHexColor(value: string): RgbColor | null {
 
 function toRgba(color: RgbColor, alpha: number): string {
   return `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${alpha.toFixed(3)})`;
+}
+
+function transparencyToAlpha(transparency: number, response: number): number {
+  return clamp(1 - (clamp(transparency, 0, 100) / 100) * response, 0, 1);
 }
 
 function clamp(value: number, min: number, max: number): number {

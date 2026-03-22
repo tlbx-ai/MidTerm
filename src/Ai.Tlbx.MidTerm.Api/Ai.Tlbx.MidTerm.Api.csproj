@@ -13,10 +13,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <!-- Source-link Common for shared types (LogSeverity, ShellType) -->
   <ItemGroup>
-    <Compile Include="..\Ai.Tlbx.MidTerm.Common\Logging\LogSeverity.cs" LinkBase="Common\Logging" />
-    <Compile Include="..\Ai.Tlbx.MidTerm.Common\Shells\ShellType.cs" LinkBase="Common\Shells" />
+    <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
   </ItemGroup>
 
   <!-- Source-link runtime models (single source of truth for OpenAPI generation) -->
@@ -26,6 +24,8 @@
     <Compile Include="..\Ai.Tlbx.MidTerm\Settings\SettingsEnums.cs" LinkBase="Settings" />
     <Compile Include="..\Ai.Tlbx.MidTerm\Settings\MidTermSettingsPublic.cs" LinkBase="Settings" />
     <Compile Include="..\Ai.Tlbx.MidTerm\Settings\ManagerBarButton.cs" LinkBase="Settings" />
+    <Compile Include="..\Ai.Tlbx.MidTerm\Settings\ManagerBarTrigger.cs" LinkBase="Settings" />
+    <Compile Include="..\Ai.Tlbx.MidTerm\Settings\ManagerBarScheduleEntry.cs" LinkBase="Settings" />
   </ItemGroup>
 
 </Project>

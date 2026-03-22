@@ -121,6 +121,20 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task GetSessionList_PopulatesForegroundDisplayAndIdentity()
+    {
+        await using var manager = CreateManager();
+        var session = AddCachedSession(manager, "s1");
+        session.ForegroundName = "node.exe";
+        session.ForegroundCommandLine = "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\repo\\node_modules\\@openai\\codex\\bin\\codex.js\" --yolo";
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+
+        Assert.Equal("codex --yolo", dto.ForegroundDisplayName);
+        Assert.Equal("codex", dto.ForegroundProcessIdentity);
+    }
+
+    [Fact]
     public async Task SetAgentControlled_PersistsAcrossManagerRestart()
     {
         var stateDir = CreateTempDirectory();

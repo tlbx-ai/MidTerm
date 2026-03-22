@@ -28,6 +28,11 @@ const log = createLogger('webDetach');
 
 const popups = new Map<string, Window>();
 const channels = new Map<string, BroadcastChannel>();
+const POPUP_FEATURES = 'popup,width=1280,height=900,menubar=no,toolbar=no,location=no,status=no';
+
+export interface DetachPreviewOptions {
+  suppressFocus?: boolean;
+}
 
 function popupKey(sessionId: string, previewName: string): string {
   return `${sessionId}::${previewName}`;
@@ -72,7 +77,11 @@ function handleMessage(
 }
 
 /** Open a named web preview in a chromeless popup window and hide the dock panel. */
-export async function detachPreview(sessionId?: string, previewName?: string): Promise<void> {
+export async function detachPreview(
+  sessionId?: string,
+  previewName?: string,
+  options?: DetachPreviewOptions,
+): Promise<void> {
   const targetSessionId = sessionId ?? $activeSessionId.get();
   if (!targetSessionId) {
     return;
@@ -82,8 +91,26 @@ export async function detachPreview(sessionId?: string, previewName?: string): P
   const key = popupKey(targetSessionId, targetPreviewName);
   const existing = popups.get(key);
   if (existing && !existing.closed) {
-    existing.focus();
+    if (!options?.suppressFocus) {
+      existing.focus();
+    }
     return;
+  }
+
+  const popup = window.open(
+    'about:blank',
+    `midterm-web-preview-${targetSessionId}-${targetPreviewName}`,
+    POPUP_FEATURES,
+  );
+  if (!popup) {
+    return;
+  }
+
+  try {
+    popup.document.title = 'MidTerm Web Preview';
+    popup.document.body.textContent = 'Opening preview...';
+  } catch {
+    // Ignore cross-origin or popup bootstrap access failures.
   }
 
   const preview = getSessionPreview(targetSessionId, targetPreviewName);
@@ -95,6 +122,7 @@ export async function detachPreview(sessionId?: string, previewName?: string): P
 
   const previewClient = await createBrowserPreviewClient(targetSessionId, targetPreviewName);
   if (!previewClient) {
+    popup.close();
     log.warn(
       () => `Failed to create detached browser client for ${targetSessionId}/${targetPreviewName}`,
     );
@@ -122,13 +150,10 @@ export async function detachPreview(sessionId?: string, previewName?: string): P
     (isDevMode() ? '&sandbox=1' : '') +
     (url ? `&url=${encodeURIComponent(url)}` : '');
 
-  const popup = window.open(
-    popupUrl,
-    `midterm-web-preview-${targetSessionId}-${targetPreviewName}`,
-    'popup,width=1280,height=900,menubar=no,toolbar=no,location=no,status=no',
-  );
-
-  if (!popup) {
+  try {
+    popup.location.replace(popupUrl);
+  } catch {
+    popup.close();
     return;
   }
 
@@ -147,6 +172,14 @@ export async function detachPreview(sessionId?: string, previewName?: string): P
     if (dockPanel) {
       dockPanel.classList.add('hidden');
       dockPanel.style.width = '';
+    }
+  }
+
+  if (options?.suppressFocus) {
+    try {
+      window.focus();
+    } catch {
+      // Ignore focus hand-off failures from the host browser.
     }
   }
 

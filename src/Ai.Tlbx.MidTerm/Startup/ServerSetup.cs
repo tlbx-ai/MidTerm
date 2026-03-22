@@ -115,6 +115,11 @@ public static class ServerSetup
             var (port, bindAddress) = ArgumentParser.Parse(args);
             return new ServerBindingInfo(port, bindAddress);
         });
+        builder.Services.AddSingleton(sp =>
+        {
+            var binding = sp.GetRequiredService<ServerBindingInfo>();
+            return MidTermInstanceIdentity.Load(settingsService.SettingsDirectory, binding.Port);
+        });
         builder.Services.AddSingleton<ShellRegistry>();
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
@@ -132,13 +137,24 @@ public static class ServerSetup
         builder.Services.AddSingleton<SessionControlStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
         builder.Services.AddSingleton<AiCliProfileService>();
+        builder.Services.AddSingleton<AiCliCapabilityService>();
+        builder.Services.AddSingleton<SessionForegroundProcessService>();
+        builder.Services.AddSingleton<SessionAgentFeedService>();
+        builder.Services.AddSingleton<SessionLensPulseService>();
+        builder.Services.AddSingleton<SessionLensHostIngressService>();
+        builder.Services.AddSingleton<SessionLensHostRuntimeService>();
         builder.Services.AddSingleton<SessionSupervisorService>();
+        builder.Services.AddSingleton<SessionLensRuntimeService>();
+        builder.Services.AddSingleton<SessionCodexHandoffService>();
+        builder.Services.AddSingleton<SessionAgentVibeService>();
         builder.Services.AddSingleton<WorkerSessionRegistryService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
             new TtyHostSessionManager(
                 runAsUser: settings.RunAsUser,
                 isServiceMode: settingsService.IsRunningAsService,
-                sessionControlStateService: _.GetRequiredService<SessionControlStateService>()));
+                sessionControlStateService: _.GetRequiredService<SessionControlStateService>(),
+                instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>(),
+                foregroundProcessService: _.GetRequiredService<SessionForegroundProcessService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
@@ -176,6 +192,7 @@ public static class ServerSetup
 
     public static void ConfigureStaticFiles(WebApplication app)
     {
+        var sourceDevMode = IsSourceDevLaunchMode();
 #if DEBUG
         var wwwrootPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "wwwroot");
         IFileProvider fileProvider = Directory.Exists(wwwrootPath)
@@ -215,6 +232,45 @@ public static class ServerSetup
         });
 
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+
+        if (sourceDevMode && fileProvider is PhysicalFileProvider)
+        {
+            app.Use(async (context, next) =>
+            {
+                if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                {
+                    await next();
+                    return;
+                }
+
+                var path = context.Request.Path.Value ?? string.Empty;
+                if (!StaticAssetCacheHeaders.IsHtmlEntryPoint(path))
+                {
+                    await next();
+                    return;
+                }
+
+                var fileInfo = fileProvider.GetFileInfo(path);
+                if (!fileInfo.Exists)
+                {
+                    await next();
+                    return;
+                }
+
+                await using var stream = fileInfo.CreateReadStream();
+                using var reader = new StreamReader(stream);
+                var html = await reader.ReadToEndAsync();
+                var stampedHtml = StaticAssetCacheHeaders.StampHtmlAssetUrls(
+                    html,
+                    $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                context.Response.ContentType = "text/html; charset=utf-8";
+                context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                context.Response.Headers.Pragma = "no-cache";
+                await context.Response.WriteAsync(stampedHtml);
+            });
+        }
 
         // In release builds, serve pre-compressed .br files for text assets
         if (useCompressedFiles)
@@ -259,6 +315,14 @@ public static class ServerSetup
             }
         });
 
+    }
+
+    internal static bool IsSourceDevLaunchMode()
+    {
+        return string.Equals(
+            Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE"),
+            "source-dev",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     public static void ConfigureMiddleware(

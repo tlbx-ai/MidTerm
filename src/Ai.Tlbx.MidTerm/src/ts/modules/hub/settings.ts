@@ -1,5 +1,6 @@
 import { t } from '../i18n';
 import { showAlert, showConfirm } from '../../utils/dialog';
+import { escapeHtml } from '../../utils/dom';
 import {
   applyHubUpdates,
   clearHubMachinePin,
@@ -8,11 +9,32 @@ import {
   deleteHubMachine,
   pinHubMachine,
   refreshHubMachine,
+  updateHubMachine,
 } from './api';
 import { getHubMachines, refreshHubState } from './runtime';
+import type { HubMachineState, HubMachineUpsertRequest } from './types';
+
+interface HubMachineDraft {
+  machineId: string | null;
+  baseUrl: string;
+  apiKey?: string | null;
+  password?: string | null;
+}
+
+function getInput(id: string): HTMLInputElement | null {
+  return document.getElementById(id) as HTMLInputElement | null;
+}
 
 function getValue(id: string): string {
-  return (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? '';
+  return getInput(id)?.value.trim() ?? '';
+}
+
+function getMachineModal(): HTMLElement | null {
+  return document.getElementById('hub-machine-modal');
+}
+
+function getMachineById(machineId: string): HubMachineState | undefined {
+  return getHubMachines().find((machine) => machine.machine.id === machineId);
 }
 
 function setStatus(message: string): void {
@@ -22,42 +44,171 @@ function setStatus(message: string): void {
   }
 }
 
+function clearMachineModal(): void {
+  const machineIdInput = getInput('hub-machine-id');
+  const urlInput = getInput('hub-machine-url');
+  const apiKeyInput = getInput('hub-machine-api-key');
+  const passwordInput = getInput('hub-machine-password');
+
+  if (machineIdInput) machineIdInput.value = '';
+  if (urlInput) urlInput.value = '';
+  if (apiKeyInput) apiKeyInput.value = '';
+  if (passwordInput) passwordInput.value = '';
+}
+
+function setMachineModalTitle(machineId: string | null): void {
+  const title = document.getElementById('hub-machine-modal-title');
+  if (!title) {
+    return;
+  }
+
+  title.textContent = machineId ? t('settings.hub.editHost') : t('settings.hub.addHost');
+}
+
+function openMachineModal(machineId?: string): void {
+  const modal = getMachineModal();
+  if (!modal) {
+    return;
+  }
+
+  clearMachineModal();
+  const machine = machineId ? getMachineById(machineId) : undefined;
+  const machineIdInput = getInput('hub-machine-id');
+  const urlInput = getInput('hub-machine-url');
+  const apiKeyInput = getInput('hub-machine-api-key');
+  const passwordInput = getInput('hub-machine-password');
+
+  if (machine && machineIdInput && urlInput && apiKeyInput && passwordInput) {
+    machineIdInput.value = machine.machine.id;
+    urlInput.value = machine.machine.baseUrl;
+    apiKeyInput.placeholder = machine.machine.hasApiKey
+      ? t('settings.hub.apiKeyStoredPlaceholder')
+      : t('settings.hub.apiKeyPlaceholder');
+    passwordInput.placeholder = machine.machine.hasPassword
+      ? t('settings.hub.passwordStoredPlaceholder')
+      : t('settings.hub.passwordPlaceholder');
+  } else {
+    if (apiKeyInput) apiKeyInput.placeholder = t('settings.hub.apiKeyPlaceholder');
+    if (passwordInput) passwordInput.placeholder = t('settings.hub.passwordPlaceholder');
+  }
+
+  setMachineModalTitle(machine?.machine.id ?? null);
+  modal.classList.remove('hidden');
+  getInput('hub-machine-url')?.focus();
+}
+
+function closeMachineModal(): void {
+  const modal = getMachineModal();
+  if (!modal) {
+    return;
+  }
+
+  modal.classList.add('hidden');
+  clearMachineModal();
+}
+
+function buildDraft(): HubMachineDraft {
+  const machineId = getValue('hub-machine-id') || null;
+  const machine = machineId ? getMachineById(machineId) : undefined;
+  const apiKey = getValue('hub-machine-api-key');
+  const password = getValue('hub-machine-password');
+
+  const request: HubMachineDraft = {
+    machineId,
+    baseUrl: getValue('hub-machine-url'),
+  };
+
+  if (apiKey) {
+    request.apiKey = apiKey;
+  } else if (!machineId || !machine?.machine.hasApiKey) {
+    request.apiKey = null;
+  }
+
+  if (password) {
+    request.password = password;
+  } else if (!machineId || !machine?.machine.hasPassword) {
+    request.password = null;
+  }
+
+  return request;
+}
+
+function toUpsertRequest(draft: HubMachineDraft): HubMachineUpsertRequest {
+  const machine = draft.machineId ? getMachineById(draft.machineId) : undefined;
+  const request: HubMachineUpsertRequest = {
+    name: machine?.machine.name ?? '',
+    baseUrl: draft.baseUrl,
+    enabled: machine?.machine.enabled ?? true,
+  };
+
+  if (draft.apiKey !== undefined) {
+    request.apiKey = draft.apiKey;
+  }
+
+  if (draft.password !== undefined) {
+    request.password = draft.password;
+  }
+
+  return request;
+}
+
 function renderHubMachines(): void {
   const list = document.getElementById('hub-machine-list');
   if (!list) return;
 
   list.replaceChildren();
-  for (const machine of getHubMachines()) {
+  const machines = getHubMachines();
+  if (machines.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'hub-machine-empty';
+    empty.textContent = t('settings.hub.noMachinesConfigured');
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const machine of machines) {
     const article = document.createElement('article');
-    article.className = 'hub-machine-card';
+    article.className = `hub-machine-row hub-status-${machine.status}`;
     article.dataset.hubMachineId = machine.machine.id;
+
+    const updateLabel = machine.updateAvailable
+      ? (machine.latestVersion ?? t('settings.hub.updateAvailable'))
+      : t('settings.hub.noUpdate');
+    const authLabel = machine.machine.hasApiKey
+      ? t('settings.hub.authApiKey')
+      : machine.machine.hasPassword
+        ? t('settings.hub.authPassword')
+        : t('settings.hub.authOpen');
+    const trustLabel = machine.requiresTrust
+      ? t('settings.hub.trustRequired')
+      : machine.machine.pinnedFingerprint
+        ? t('settings.hub.trustPinned')
+        : t('settings.hub.trustUnpinned');
+
     article.innerHTML = `
-      <div class="hub-machine-card-header">
-        <div>
-          <h3>${machine.machine.name}</h3>
-          <div class="hub-machine-url">${machine.machine.baseUrl}</div>
+      <div class="hub-machine-main">
+        <span class="hub-machine-indicator" aria-hidden="true"></span>
+        <div class="hub-machine-identity">
+          <span class="hub-machine-name">${escapeHtml(machine.machine.name)}</span>
+          <span class="hub-machine-url">${escapeHtml(machine.machine.baseUrl)}</span>
         </div>
-        <span class="hub-machine-status hub-status-${machine.status}">${machine.status}</span>
       </div>
-      <div class="hub-machine-grid">
-        <div><label>${t('settings.hub.fingerprint')}</label><code>${machine.machine.lastFingerprint ?? '-'}</code></div>
-        <div><label>${t('settings.hub.pinnedFingerprint')}</label><code>${machine.machine.pinnedFingerprint ?? '-'}</code></div>
-        <div><label>${t('settings.hub.remoteSessions')}</label><span>${String(machine.sessions.length)}</span></div>
-        <div><label>${t('settings.hub.remoteUpdate')}</label><span>${machine.updateAvailable ? (machine.latestVersion ?? t('settings.hub.updateAvailable')) : t('settings.hub.noUpdate')}</span></div>
+      <div class="hub-machine-meta">
+        <span class="hub-machine-pill"><strong>${escapeHtml(t('settings.hub.remoteSessions'))}</strong>${escapeHtml(String(machine.sessions.length))}</span>
+        <span class="hub-machine-pill"><strong>${escapeHtml(t('settings.hub.remoteUpdate'))}</strong>${escapeHtml(updateLabel)}</span>
+        <span class="hub-machine-pill"><strong>${escapeHtml(t('settings.hub.auth'))}</strong>${escapeHtml(authLabel)}</span>
+        <span class="hub-machine-pill ${machine.requiresTrust ? 'hub-machine-pill-warning' : ''}"><strong>${escapeHtml(t('settings.hub.trust'))}</strong>${escapeHtml(trustLabel)}</span>
+        ${machine.error ? `<span class="hub-machine-pill hub-machine-pill-danger">${escapeHtml(machine.error)}</span>` : ''}
       </div>
-      <div class="hub-machine-error">${machine.error ?? ''}</div>
       <div class="hub-machine-actions">
-        <button type="button" class="btn-secondary" data-action="refresh">${t('settings.hub.refresh')}</button>
-        <button type="button" class="btn-secondary" data-action="pin">${t('settings.hub.pin')}</button>
-        <button type="button" class="btn-secondary" data-action="clear-pin">${t('settings.hub.clearPin')}</button>
-        <button type="button" class="btn-secondary" data-action="create-session">${t('settings.hub.createSession')}</button>
-        <button type="button" class="btn-danger" data-action="delete">${t('settings.hub.removeMachine')}</button>
+        <button type="button" class="btn-primary" data-action="create-session">${escapeHtml(t('settings.hub.createSession'))}</button>
+        <button type="button" class="btn-secondary" data-action="edit">${escapeHtml(t('settings.hub.edit'))}</button>
+        <button type="button" class="btn-secondary" data-action="refresh">${escapeHtml(t('settings.hub.refresh'))}</button>
+        <button type="button" class="btn-secondary" data-action="${machine.machine.pinnedFingerprint ? 'clear-pin' : 'pin'}">${escapeHtml(machine.machine.pinnedFingerprint ? t('settings.hub.clearPin') : t('settings.hub.pin'))}</button>
+        <button type="button" class="btn-danger" data-action="delete">${escapeHtml(t('settings.hub.removeMachine'))}</button>
       </div>
     `;
 
-    article
-      .querySelector<HTMLElement>('.hub-machine-error')
-      ?.classList.toggle('hidden', !machine.error);
     article.querySelectorAll<HTMLButtonElement>('button[data-action]').forEach((button) => {
       button.addEventListener('click', () => {
         void handleMachineAction(machine.machine.id, button.dataset.action ?? '');
@@ -70,6 +221,11 @@ function renderHubMachines(): void {
 
 async function handleMachineAction(machineId: string, action: string): Promise<void> {
   try {
+    if (action === 'edit') {
+      openMachineModal(machineId);
+      return;
+    }
+
     if (action === 'refresh') {
       await refreshHubMachine(machineId);
       await refreshHubState();
@@ -116,47 +272,70 @@ async function handleMachineAction(machineId: string, action: string): Promise<v
   }
 }
 
+async function saveMachineFromModal(): Promise<void> {
+  const draft = buildDraft();
+  const request = toUpsertRequest(draft);
+
+  try {
+    if (draft.machineId) {
+      await updateHubMachine(draft.machineId, request);
+    } else {
+      await createHubMachine(request);
+    }
+
+    closeMachineModal();
+    await refreshHubState();
+    setStatus(t('settings.hub.machineSaved'));
+  } catch (error) {
+    await showAlert(error instanceof Error ? error.message : String(error), {
+      title: t('settings.hub.title'),
+    });
+  }
+}
+
 export function bindHubSettings(): void {
-  const addButton = document.getElementById('btn-hub-add-machine');
+  const openButton = document.getElementById('btn-hub-open-machine-modal');
+  const saveButton = document.getElementById('btn-save-hub-machine-modal');
+  const cancelButton = document.getElementById('btn-cancel-hub-machine-modal');
+  const closeButton = document.getElementById('btn-close-hub-machine-modal');
   const updateButton = document.getElementById('btn-hub-control-updates');
-  if (!addButton || !updateButton) {
+  const modal = getMachineModal();
+
+  if (!openButton || !saveButton || !cancelButton || !closeButton || !updateButton || !modal) {
     return;
   }
 
-  addButton.addEventListener('click', () => {
-    void (async () => {
-      const name = getValue('hub-machine-name');
-      const baseUrl = getValue('hub-machine-url');
-      const apiKey = getValue('hub-machine-api-key');
-      const password = getValue('hub-machine-password');
-      try {
-        await createHubMachine({
-          name,
-          baseUrl,
-          enabled: true,
-          apiKey: apiKey || null,
-          password: password || null,
-        });
-        const nameInput = document.getElementById('hub-machine-name') as HTMLInputElement | null;
-        const urlInput = document.getElementById('hub-machine-url') as HTMLInputElement | null;
-        const apiKeyInput = document.getElementById(
-          'hub-machine-api-key',
-        ) as HTMLInputElement | null;
-        const passwordInput = document.getElementById(
-          'hub-machine-password',
-        ) as HTMLInputElement | null;
-        if (nameInput) nameInput.value = '';
-        if (urlInput) urlInput.value = '';
-        if (apiKeyInput) apiKeyInput.value = '';
-        if (passwordInput) passwordInput.value = '';
-        await refreshHubState();
-        setStatus(t('settings.hub.machineSaved'));
-      } catch (error) {
-        await showAlert(error instanceof Error ? error.message : String(error), {
-          title: t('settings.hub.title'),
-        });
-      }
-    })();
+  openButton.addEventListener('click', () => {
+    openMachineModal();
+  });
+
+  saveButton.addEventListener('click', () => {
+    void saveMachineFromModal();
+  });
+
+  cancelButton.addEventListener('click', () => {
+    closeMachineModal();
+  });
+
+  closeButton.addEventListener('click', () => {
+    closeMachineModal();
+  });
+
+  modal.querySelector('.modal-backdrop')?.addEventListener('click', () => {
+    closeMachineModal();
+  });
+
+  modal.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeMachineModal();
+      return;
+    }
+
+    if (event.key === 'Enter' && (event.target as HTMLElement | null)?.tagName === 'INPUT') {
+      event.preventDefault();
+      void saveMachineFromModal();
+    }
   });
 
   updateButton.addEventListener('click', () => {
@@ -186,5 +365,6 @@ export function bindHubSettings(): void {
 }
 
 export function renderHubSettings(): void {
+  setMachineModalTitle(getValue('hub-machine-id') || null);
   renderHubMachines();
 }

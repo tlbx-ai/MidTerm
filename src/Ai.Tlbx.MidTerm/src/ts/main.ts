@@ -62,7 +62,6 @@ import {
   initSessionDrag,
   initTrafficIndicator,
   initHeatIndicator,
-  recordBytes,
   suppressAllHeat,
   renderSessionList,
   updateEmptyState,
@@ -108,6 +107,8 @@ import {
   initLayoutRenderer,
   initDockOverlay,
   handleSessionClosed,
+  dockSession,
+  getLayoutSessionIds,
   isSessionInLayout,
   isLayoutActive,
   focusLayoutSession,
@@ -118,9 +119,17 @@ import {
   initSessionTabs,
   ensureSessionWrapper,
   destroySessionWrapper,
+  getActiveTab,
+  isTabAvailable,
   reparentTerminalContainer,
   switchTab,
 } from './modules/sessionTabs';
+import {
+  initAgentView,
+  destroyAgentView,
+  getLensDebugScenarioNames,
+  showLensDebugScenario,
+} from './modules/agentView';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
@@ -200,6 +209,40 @@ window.mmDebug = {
   get settings() {
     return $currentSettings.get();
   },
+  layout: {
+    dock(
+      targetSessionId: string,
+      draggedSessionId: string,
+      position: 'left' | 'right' | 'top' | 'bottom',
+    ) {
+      dockSession(targetSessionId, draggedSessionId, position);
+    },
+    focus(sessionId: string) {
+      focusLayoutSession(sessionId);
+    },
+    get sessions() {
+      return getLayoutSessionIds();
+    },
+    isSessionInLayout(sessionId: string) {
+      return isSessionInLayout(sessionId);
+    },
+    get rootVisible() {
+      return !getLayoutRoot()?.classList.contains('hidden');
+    },
+  },
+  lens: {
+    get scenarios() {
+      return [...getLensDebugScenarioNames()];
+    },
+    async showScenario(
+      sessionId: string,
+      scenario: 'mixed' | 'tables' | 'long' = 'mixed',
+    ): Promise<boolean> {
+      switchTab(sessionId, 'agent');
+      await Promise.resolve();
+      return showLensDebugScenario(sessionId, scenario);
+    },
+  },
 };
 
 // =============================================================================
@@ -229,7 +272,6 @@ async function init(): Promise<void> {
   await initI18n();
   initTrafficIndicator();
   setSessionBytesCallback((sessionId, bytes) => {
-    recordBytes(sessionId, bytes);
     recordMobilePiPBytes(sessionId, bytes);
   });
   setSuppressHeatCallback(suppressAllHeat);
@@ -277,6 +319,7 @@ async function init(): Promise<void> {
   bindVoiceEvents();
   await initVoiceControls();
   initChatPanel();
+  syncAppModeClasses();
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
@@ -284,6 +327,7 @@ async function init(): Promise<void> {
   initMobilePiP();
   initManagerBar();
   initSessionTabs();
+  initAgentView();
   initFileBrowser();
   initGitPanel();
   connectGitWebSocket();
@@ -296,6 +340,7 @@ async function init(): Promise<void> {
     renderSessionList();
     updateEmptyState();
     updateMobileTitle();
+    syncMobileTabActionState();
     renderHubSettings();
   });
 
@@ -343,6 +388,7 @@ async function initShared(): Promise<void> {
   initSessionTabs();
   bindSearchEvents();
   setupGlobalFocusReclaim();
+  syncAppModeClasses();
   setupResizeObserver();
   setupVisualViewport();
   setupVisibilityChangeHandler();
@@ -505,6 +551,8 @@ async function createSession(): Promise<void> {
     foregroundPid: null,
     foregroundName: null,
     foregroundCommandLine: null,
+    foregroundDisplayName: null,
+    foregroundProcessIdentity: null,
     shellType: 'Loading...',
     cols: cols,
     rows: rows,
@@ -524,6 +572,8 @@ async function createSession(): Promise<void> {
     parentSessionId: null,
     bookmarkId: null,
     agentControlled: false,
+    hasLensHistory: false,
+    agentAttachPoint: null,
   };
   setSession(tempSession);
   pendingSessions.add(tempId);
@@ -645,6 +695,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   const sessionInfo = getSession(sessionId);
   const state = createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
+  const activeTab = getActiveTab(sessionId);
 
   // Ensure session wrapper with tabs (standalone mode only)
   const tabState = ensureSessionWrapper(sessionId);
@@ -664,7 +715,9 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 
   requestAnimationFrame(() => {
     refreshTerminalPresentation(sessionId, state);
-    state.terminal.focus();
+    if (activeTab !== 'agent') {
+      state.terminal.focus();
+    }
     if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
       scrollToBottom(sessionId);
     }
@@ -708,6 +761,7 @@ function deleteSession(sessionId: string): void {
   // Remove session tab wrapper, feature panels, and dock state
   removeSessionDockState(sessionId);
   removeSmartInputSessionState(sessionId);
+  destroyAgentView(sessionId);
   destroyFileBrowser(sessionId);
   destroyGitSession(sessionId);
   destroyCommandsSession(sessionId);
@@ -857,7 +911,12 @@ async function patchPinnedHistoryLabelIfMatchingTuple(
   if (!bookmarkId) return;
 
   const fgInfo = getForegroundInfo(sessionId);
-  const currentTuple = buildProcessCwdTuple(fgInfo.name, fgInfo.commandLine, fgInfo.cwd);
+  const currentTuple = buildProcessCwdTuple(
+    fgInfo.name,
+    fgInfo.commandLine,
+    fgInfo.cwd,
+    fgInfo.processIdentity,
+  );
   if (!currentTuple) return;
 
   let entries: LaunchEntry[];
@@ -963,7 +1022,12 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
   }
 
   const fgInfo = getForegroundInfo(sessionId);
-  const tupleKey = buildProcessCwdTuple(fgInfo.name, fgInfo.commandLine, fgInfo.cwd);
+  const tupleKey = buildProcessCwdTuple(
+    fgInfo.name,
+    fgInfo.commandLine,
+    fgInfo.cwd,
+    fgInfo.processIdentity,
+  );
   if (!fgInfo.name || !tupleKey) {
     log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
     return;
@@ -1204,6 +1268,7 @@ function initPwaInstall(): void {
   window.addEventListener('appinstalled', () => {
     hideRow();
     deferredPrompt = null;
+    syncAppModeClasses();
   });
 }
 
@@ -1224,6 +1289,11 @@ function isRunningAsInstalledPwa(): boolean {
     window.matchMedia('(display-mode: window-controls-overlay)').matches ||
     standaloneNavigator.standalone === true
   );
+}
+
+function syncAppModeClasses(): void {
+  document.body.classList.toggle('installed-pwa', isRunningAsInstalledPwa());
+  document.body.classList.toggle('ios-installable-device', isIosInstallableDevice());
 }
 
 function getActiveSessionTabBar(): HTMLDivElement | null {
@@ -1247,13 +1317,54 @@ function clickActiveSessionTabBarControl(selector: string): void {
 }
 
 function syncMobileTabActionState(): void {
-  const tabBar = getActiveSessionTabBar();
-  const activeTab = tabBar?.querySelector('.session-tab.active')?.getAttribute('data-tab');
-  const terminalBtn = document.getElementById('btn-mobile-tab-terminal');
-  const filesBtn = document.getElementById('btn-mobile-tab-files');
+  const activeSessionId = $activeSessionId.get();
+  const activeTab = activeSessionId ? getActiveTab(activeSessionId) : null;
+  const agentVisible = activeSessionId ? isTabAvailable(activeSessionId, 'agent') : false;
+  const strip = document.getElementById('mobile-tab-strip');
+  const topbar = document.getElementById('mobile-topbar');
+  const title = document.getElementById('mobile-title');
 
-  terminalBtn?.classList.toggle('active', activeTab === 'terminal');
-  filesBtn?.classList.toggle('active', activeTab === 'files');
+  const syncButton = (
+    elementId: string,
+    options: {
+      active: boolean;
+      hidden?: boolean;
+    },
+  ): void => {
+    const button = document.getElementById(elementId);
+    if (!button) {
+      return;
+    }
+
+    button.classList.toggle('active', options.active);
+    if (typeof options.hidden === 'boolean') {
+      button.toggleAttribute('hidden', options.hidden);
+    }
+  };
+
+  strip?.toggleAttribute('hidden', !activeSessionId);
+  title?.toggleAttribute('hidden', Boolean(activeSessionId));
+  topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));
+  syncButton('btn-mobile-tab-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-tab-agent', { active: activeTab === 'agent', hidden: !agentVisible });
+  syncButton('btn-mobile-tab-files', { active: activeTab === 'files' });
+  syncButton('btn-mobile-strip-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-strip-agent', { active: activeTab === 'agent', hidden: !agentVisible });
+  syncButton('btn-mobile-strip-files', { active: activeTab === 'files' });
+}
+
+function activateMobileTab(tab: 'terminal' | 'agent' | 'files'): void {
+  const activeId = $activeSessionId.get();
+  if (!activeId) {
+    return;
+  }
+
+  if (tab === 'agent' && !isTabAvailable(activeId, 'agent')) {
+    return;
+  }
+
+  switchTab(activeId, tab);
+  syncMobileTabActionState();
 }
 
 function closeMobileActionsMenu(): void {
@@ -1377,18 +1488,22 @@ function bindEvents(): void {
     if (activeId) void injectGuidance(activeId);
   });
   bindClick('btn-mobile-tab-terminal', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) {
-      switchTab(activeId, 'terminal');
-      syncMobileTabActionState();
-    }
+    activateMobileTab('terminal');
+  });
+  bindClick('btn-mobile-tab-agent', () => {
+    activateMobileTab('agent');
   });
   bindClick('btn-mobile-tab-files', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) {
-      switchTab(activeId, 'files');
-      syncMobileTabActionState();
-    }
+    activateMobileTab('files');
+  });
+  bindClick('btn-mobile-strip-terminal', () => {
+    activateMobileTab('terminal');
+  });
+  bindClick('btn-mobile-strip-agent', () => {
+    activateMobileTab('agent');
+  });
+  bindClick('btn-mobile-strip-files', () => {
+    activateMobileTab('files');
   });
   bindClick('btn-mobile-web', () => {
     clickActiveSessionTabBarControl('[data-action="web"]');

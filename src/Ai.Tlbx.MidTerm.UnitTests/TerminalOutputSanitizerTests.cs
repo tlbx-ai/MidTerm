@@ -26,6 +26,16 @@ public sealed class TerminalOutputSanitizerTests
     }
 
     [Fact]
+    public void StripEscapeSequences_RemovesWholeOscPayloads()
+    {
+        var text = "\u001b]7;file://BRAIN5700/Q:/repos/MidtermJpa\u0007PS Q:\\repos\\MidtermJpa>\u001b]0;C:\\Program Files\\PowerShell\\7\\pwsh.exe\u0007codex --yolo";
+
+        var result = TerminalOutputSanitizer.StripEscapeSequences(text);
+
+        Assert.Equal("PS Q:\\repos\\MidtermJpa>codex --yolo", result);
+    }
+
+    [Fact]
     public void TailLines_ReturnsLastRequestedLines()
     {
         var result = TerminalOutputSanitizer.TailLines("a\nb\nc\nd", 2, out var totalLines, out var returnedLines);

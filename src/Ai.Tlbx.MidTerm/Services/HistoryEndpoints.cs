@@ -38,7 +38,10 @@ public static class HistoryEndpoints
                 historyService.SetStarred(id, true);
             }
 
-            return Results.Ok(new { id });
+            return Results.Json(new CreateHistoryResponse
+            {
+                Id = id
+            }, AppJsonContext.Default.CreateHistoryResponse);
         });
 
         app.MapPatch("/api/history/{id}", (string id, HistoryPatchRequest request) =>

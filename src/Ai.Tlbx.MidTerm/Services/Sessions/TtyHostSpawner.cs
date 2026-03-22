@@ -20,6 +20,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 public static class TtyHostSpawner
 {
     private const string MtBinaryPathEnvironmentVariable = "MT_BINARY_PATH";
+    internal const string TtyHostPathEnvironmentVariable = "MIDTERM_TTYHOST_PATH";
     private static readonly string TtyHostPath = GetTtyHostPath();
     private static bool _integrityVerified;
     private static readonly object _verifyLock = new();
@@ -185,6 +186,8 @@ public static class TtyHostSpawner
         string? workingDirectory,
         int cols,
         int rows,
+        string instanceId,
+        string ownerToken,
         string? runAsUser,
         out int processId,
         int? mtPort = null,
@@ -207,7 +210,7 @@ public static class TtyHostSpawner
         }
 
         var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows,
-            mtPort, mtToken, paneIndex, tmuxBinDir);
+            instanceId, ownerToken, mtPort, mtToken, paneIndex, tmuxBinDir);
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
@@ -220,9 +223,10 @@ public static class TtyHostSpawner
 
     private static string BuildArgs(
         string sessionId, string? shellType, string? workingDirectory, int cols, int rows,
+        string instanceId, string ownerToken,
         int? mtPort, string? mtToken, int? paneIndex, string? tmuxBinDir)
     {
-        var args = $"--session {sessionId} --cols {cols} --rows {rows}";
+        var args = $"--session {sessionId} --cols {cols} --rows {rows} --mt-instance-id {instanceId} --mt-owner-token {ownerToken}";
         if (!string.IsNullOrEmpty(shellType))
         {
             args += $" --shell {shellType}";
@@ -1059,7 +1063,17 @@ public static class TtyHostSpawner
 
     private static string GetTtyHostPath()
     {
-        var currentExe = Environment.ProcessPath;
+        return ResolveTtyHostPath(Environment.ProcessPath, Environment.GetEnvironmentVariable(TtyHostPathEnvironmentVariable));
+    }
+
+    internal static string ResolveTtyHostPath(string? currentExePath, string? overridePath = null)
+    {
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(overridePath.Trim()));
+        }
+
+        var currentExe = currentExePath;
         if (string.IsNullOrEmpty(currentExe))
         {
             return string.Empty;

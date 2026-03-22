@@ -21,6 +21,7 @@ export function initNetworkSection(): void {
   }
 
   const isUntrusted = !window.isSecureContext;
+  const isCollapsed = localStorage.getItem(STORAGE_KEY) !== 'false';
 
   if (isUntrusted) {
     section.classList.add('untrusted');
@@ -37,11 +38,10 @@ export function initNetworkSection(): void {
       helpText.textContent = t('network.enableClipboard');
       trustLink.parentElement?.insertBefore(helpText, trustLink.nextSibling);
     }
-  } else {
-    const isCollapsed = localStorage.getItem(STORAGE_KEY) === 'true';
-    if (isCollapsed) {
-      section.classList.add('collapsed');
-    }
+  }
+
+  if (isCollapsed) {
+    section.classList.add('collapsed');
   }
 
   toggleBtn.addEventListener('click', () => {

@@ -201,6 +201,31 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void GenerateUpdateScript_ManagesMtAgentHostAlongsideMt()
+    {
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.WebOnly,
+                deleteSourceAfter: true));
+
+        Assert.Contains("mtagenthost", scriptText, StringComparison.Ordinal);
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains("$CurrentAgentHost", scriptText, StringComparison.Ordinal);
+            Assert.Contains("$NewAgentHost", scriptText, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("CURRENT_AGENTHOST=", scriptText, StringComparison.Ordinal);
+            Assert.Contains("NEW_AGENTHOST=", scriptText, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void GenerateUpdateScript_Linux_StoresBackupsOutsideInstallDirectory()
     {
         if (OperatingSystem.IsWindows())
@@ -239,6 +264,27 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
 
         Assert.Contains("LOG_FILE='", scriptText, StringComparison.Ordinal);
         Assert.Contains("/logs/update.log", scriptText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GenerateUpdateScript_Linux_ValidatesStagedPayloadBeforeStoppingService()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        Assert.Contains("Update source directory: $EXTRACTED_DIR", scriptText, StringComparison.Ordinal);
+        Assert.Contains("describe_source_file \"$NEW_MT\" \"mt\"", scriptText, StringComparison.Ordinal);
+        Assert.Contains("describe_source_file \"$NEW_VERSION_JSON\" \"version.json\"", scriptText, StringComparison.Ordinal);
     }
 
     private static string ReadScript(string path)

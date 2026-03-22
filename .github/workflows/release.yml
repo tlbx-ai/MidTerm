@@ -9,6 +9,7 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   GIT_CONFIG_COUNT: '2'
   GIT_CONFIG_KEY_0: 'advice.detachedHead'
   GIT_CONFIG_VALUE_0: 'false'
@@ -56,24 +57,14 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
 
-      - name: Cache node_modules
-        id: npm-cache
-        uses: actions/cache@v5
-        with:
-          path: src/Ai.Tlbx.MidTerm/node_modules
-          key: node-modules-${{ hashFiles('src/Ai.Tlbx.MidTerm/package-lock.json') }}
-
       - name: Install npm packages
-        if: steps.npm-cache.outputs.cache-hit != 'true'
         working-directory: src/Ai.Tlbx.MidTerm
-        run: npm ci --include=dev --no-audit --no-fund
+        run: npm ci --include=dev --prefer-offline --no-audit --no-fund
 
       - name: Build frontend
         shell: pwsh
@@ -90,7 +81,7 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
           retention-days: 1
 
-  # ── Build macOS ARM64 for dev prereleases ──────────────────────────────────
+  # ── Build macOS ARM64 + Linux ARM64 for dev prereleases ────────────────────
   build-dev:
     needs: [prepare, frontend]
     if: needs.prepare.outputs.is_dev == 'true'
@@ -102,6 +93,9 @@ jobs:
           - os: macos-14
             rid: osx-arm64
             ext: ''
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            ext: ''
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -110,8 +104,6 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
         uses: actions/download-artifact@v6
@@ -119,10 +111,11 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost
+      - name: Build mt + mthost + mtagenthost
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -153,6 +146,7 @@ jobs:
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
           cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -168,13 +162,19 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mthost
             codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/${{ matrix.rid }}/mtagenthost
+            codesign --verify --strict staging/${{ matrix.rid }}/mtagenthost
           fi
 
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
-          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }})
+          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }} mtagenthost${{ matrix.ext }})
           if command -v sha256sum &> /dev/null; then
             sha256sum "${files[@]}" > SHA256SUMS.txt
           else
@@ -190,7 +190,7 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost
+          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost staging/${{ matrix.rid }}/mtagenthost
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
@@ -246,8 +246,6 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - name: Download frontend
         uses: actions/download-artifact@v6
@@ -255,10 +253,11 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost
+      - name: Build mt + mthost + mtagenthost
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -289,6 +288,7 @@ jobs:
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
           cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -304,13 +304,19 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mthost
             codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            codesign --force \
+              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --options runtime \
+              --timestamp \
+              staging/${{ matrix.rid }}/mtagenthost
+            codesign --verify --strict staging/${{ matrix.rid }}/mtagenthost
           fi
 
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
-          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }})
+          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }} mtagenthost${{ matrix.ext }})
           if command -v sha256sum &> /dev/null; then
             sha256sum "${files[@]}" > SHA256SUMS.txt
           else
@@ -326,7 +332,7 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost
+          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost staging/${{ matrix.rid }}/mtagenthost
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
@@ -367,8 +373,6 @@ jobs:
         if: needs.prepare.outputs.is_dev == 'true'
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: src/**/packages.lock.json
 
       - name: Verify local .NET SDK on self-hosted Windows runner
         if: needs.prepare.outputs.is_dev != 'true'
@@ -386,11 +390,12 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost
+      - name: Build mt + mthost + mtagenthost
         shell: pwsh
         run: |
           dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
           dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
       - name: Stage artifacts
         shell: pwsh
@@ -399,6 +404,7 @@ jobs:
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
           Copy-Item src/version.json staging/win-x64/
           Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
+          Copy-Item src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/win-x64/publish/mtagenthost.exe staging/win-x64/
 
       - name: Sign Windows binaries (Certum Authenticode)
         if: needs.prepare.outputs.is_dev != 'true'
@@ -408,7 +414,7 @@ jobs:
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mthost.exe')
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mthost.exe', 'staging/win-x64/mtagenthost.exe')
           $hashes = Get-ChildItem $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"

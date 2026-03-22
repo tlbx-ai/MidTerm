@@ -20,6 +20,12 @@ import {
   fitSessionToScreen,
 } from '../terminal/scaling';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
+import {
+  ensureSessionWrapper,
+  getActiveTab,
+  getSessionWrapper,
+  reparentTerminalContainer,
+} from '../sessionTabs';
 
 let layoutRoot: HTMLElement | null = null;
 let unsubscribeLayout: (() => void) | null = null;
@@ -80,6 +86,11 @@ export function renderLayout(root: LayoutNode | null): void {
     // Show the active standalone session
     const activeId = $activeSessionId.get();
     if (activeId) {
+      const activeWrapper = getSessionWrapper(activeId);
+      if (activeWrapper) {
+        activeWrapper.classList.remove('hidden');
+      }
+
       const state = sessionTerminals.get(activeId);
       if (state) {
         state.container.classList.remove('hidden');
@@ -107,8 +118,8 @@ export function renderLayout(root: LayoutNode | null): void {
     layoutRoot.appendChild(rootElement);
   }
 
-  // Move terminal containers into their layout panes
-  moveTerminalsToLayout();
+  // Move full session wrappers into their layout panes
+  moveSessionWrappersToLayout();
 
   // Fit or scale terminals depending on context
   requestAnimationFrame(() => {
@@ -167,21 +178,36 @@ function renderSplit(split: LayoutSplit): HTMLElement {
 }
 
 /**
- * Move terminal containers from terminals-area into their layout panes.
+ * Move session wrappers from terminals-area into their layout panes.
  */
-function moveTerminalsToLayout(): void {
-  if (!layoutRoot) return;
+function moveSessionWrappersToLayout(): void {
+  if (!layoutRoot || !dom.terminalsArea) return;
 
+  const layoutSessionIds = new Set<string>();
   const panes = layoutRoot.querySelectorAll('.layout-leaf');
   panes.forEach((pane) => {
     const sessionId = (pane as HTMLElement).dataset.sessionId;
     if (!sessionId) return;
+    layoutSessionIds.add(sessionId);
 
     const state = sessionTerminals.get(sessionId);
     if (state) {
-      // Move container into pane
-      pane.appendChild(state.container);
+      reparentTerminalContainer(sessionId, state.container);
       state.container.classList.remove('hidden');
+    }
+
+    ensureSessionWrapper(sessionId);
+    const wrapper = getSessionWrapper(sessionId);
+    if (!wrapper) return;
+
+    wrapper.classList.remove('hidden');
+    (pane as HTMLElement).replaceChildren(wrapper);
+  });
+
+  dom.terminalsArea.querySelectorAll<HTMLDivElement>('.session-wrapper').forEach((wrapper) => {
+    const sessionId = wrapper.dataset.sessionId ?? '';
+    if (!layoutSessionIds.has(sessionId)) {
+      wrapper.classList.add('hidden');
     }
   });
 }
@@ -194,7 +220,15 @@ function showStandaloneTerminals(): void {
   if (!area) return;
 
   // Move any terminals back to terminals-area from layout panes
-  sessionTerminals.forEach((state) => {
+  sessionTerminals.forEach((state, sessionId) => {
+    const wrapper = getSessionWrapper(sessionId);
+    if (wrapper) {
+      if (wrapper.parentElement !== area) {
+        area.appendChild(wrapper);
+      }
+      return;
+    }
+
     if (state.container.parentElement !== area) {
       area.appendChild(state.container);
     }
@@ -205,8 +239,14 @@ function showStandaloneTerminals(): void {
  * Hide standalone terminals (layout is active).
  */
 function hideStandaloneTerminals(): void {
+  dom.terminalsArea?.querySelectorAll<HTMLDivElement>('.session-wrapper').forEach((wrapper) => {
+    wrapper.classList.add('hidden');
+  });
+
   sessionTerminals.forEach((state) => {
-    state.container.classList.add('hidden');
+    if (!state.container.closest('.session-wrapper')) {
+      state.container.classList.add('hidden');
+    }
   });
 }
 
@@ -224,9 +264,14 @@ function fitTerminalsInLayout(): void {
     if (!sessionId) return;
 
     const state = sessionTerminals.get(sessionId);
-    if (state?.opened) {
+    if (state?.opened && getActiveTab(sessionId) === 'terminal') {
+      const terminalPanel = state.container.parentElement;
+      if (!(terminalPanel instanceof HTMLElement)) {
+        return;
+      }
+
       // Resize terminal to fit pane dimensions
-      fitTerminalToContainer(sessionId, paneEl);
+      fitTerminalToContainer(sessionId, terminalPanel);
     }
   });
 }
@@ -244,7 +289,7 @@ function scaleTerminalsInLayout(): void {
     if (!sessionId) return;
 
     const state = sessionTerminals.get(sessionId);
-    if (state?.opened) {
+    if (state?.opened && getActiveTab(sessionId) === 'terminal') {
       state.container.classList.remove('hidden');
       applyTerminalScalingSync(state);
     }

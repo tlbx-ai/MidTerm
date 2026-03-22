@@ -2,14 +2,14 @@
  * Session Tab Bar
  *
  * Creates and manages the session bar UI for each session.
- * Tabs: Terminal | Files
+ * Tabs: Terminal | Lens | Files
  * Right-aligned actions: WEB | Share | Git dock toggle
  */
 
 import type { GitStatusResponse } from '../git/types';
 import { t } from '../i18n';
 
-export type SessionTabId = 'terminal' | 'files';
+export type SessionTabId = 'terminal' | 'agent' | 'files';
 
 export type IdeBarActionId = 'git' | 'commands' | 'web' | 'share';
 
@@ -42,8 +42,13 @@ const GIT_BUTTON_ICON =
 function getTabLabels(): Record<SessionTabId, string> {
   return {
     terminal: t('session.terminal'),
+    agent: t('sessionTabs.agent'),
     files: t('sessionTabs.files'),
   };
+}
+
+function getVisibleTabs(): SessionTabId[] {
+  return ['terminal', 'agent', 'files'];
 }
 
 function createActionIcon(svgMarkup: string): HTMLSpanElement {
@@ -194,7 +199,6 @@ function createActionButton(
 let gitClickHandler: (() => void) | null = null;
 let webClickHandler: (() => void) | null = null;
 let shareClickHandler: ((sessionId: string) => void) | null = null;
-
 export function setCommandsClickHandler(_handler: () => void): void {
   // Commands is temporarily hidden from the IDE bar, so registration is ignored.
 }
@@ -231,14 +235,16 @@ export function createTabBar(
   });
   bar.appendChild(cwdSpan);
 
-  for (const [tabId, label] of Object.entries(getTabLabels())) {
+  const labels = getTabLabels();
+  for (const tabId of getVisibleTabs()) {
+    const label = labels[tabId];
     const btn = document.createElement('button');
     btn.className = 'session-tab';
     if (tabId === 'terminal') btn.classList.add('active');
     btn.dataset.tab = tabId;
     btn.textContent = label;
     btn.addEventListener('click', () => {
-      onTabSelect(tabId as SessionTabId);
+      onTabSelect(tabId);
     });
     bar.appendChild(btn);
   }
@@ -280,6 +286,20 @@ export function setActiveTab(bar: HTMLDivElement, tabId: SessionTabId): void {
   });
 }
 
+export function setTabVisible(bar: HTMLDivElement, tabId: SessionTabId, visible: boolean): void {
+  const btn = bar.querySelector<HTMLButtonElement>(`.session-tab[data-tab="${tabId}"]`);
+  if (!btn) {
+    return;
+  }
+
+  btn.hidden = !visible;
+}
+
+export function isTabVisible(bar: HTMLDivElement, tabId: SessionTabId): boolean {
+  const btn = bar.querySelector<HTMLButtonElement>(`.session-tab[data-tab="${tabId}"]`);
+  return btn?.hidden !== true;
+}
+
 export function setActionActive(
   bar: HTMLDivElement,
   actionId: IdeBarActionId,
@@ -287,6 +307,19 @@ export function setActionActive(
 ): void {
   const btn = bar.querySelector(`[data-action="${actionId}"]`);
   btn?.classList.toggle('sidebar-active', active);
+}
+
+export function setActionVisible(
+  bar: HTMLDivElement,
+  actionId: IdeBarActionId,
+  visible: boolean,
+): void {
+  const btn = bar.querySelector<HTMLButtonElement>(`[data-action="${actionId}"]`);
+  if (!btn) {
+    return;
+  }
+
+  btn.hidden = !visible;
 }
 
 export function updateCwd(bar: HTMLDivElement, cwd: string): void {

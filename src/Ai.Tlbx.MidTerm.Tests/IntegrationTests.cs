@@ -1,10 +1,13 @@
 using System.Net.WebSockets;
 using System.Net.Http.Json;
+using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 using Ai.Tlbx.MidTerm.Models.Auth;
@@ -15,6 +18,8 @@ using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Tests;
 
 public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
@@ -87,6 +92,48 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         Assert.NotNull(state);
         Assert.NotNull(state.Sessions);
         Assert.NotNull(state.Sessions.Sessions);
+    }
+
+    [Fact]
+    public async Task WebSocket_State_InitialPayload_IncludesSupervisorForCodexSessions()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<TtyHostSessionManager>();
+        const string sessionId = "codex-s1";
+        SeedSession(manager, new SessionInfo
+        {
+            Id = sessionId,
+            Pid = 42,
+            HostPid = 43,
+            ShellType = "Pwsh",
+            CreatedAt = DateTime.UtcNow,
+            IsRunning = true,
+            ForegroundPid = 4242,
+            ForegroundName = "node",
+            ForegroundCommandLine = @"node C:\Users\johan\AppData\Roaming\npm\node_modules\@openai\codex\bin\codex.js --yolo",
+            CurrentDirectory = @"Q:\repos\Jpa"
+        }, order: 0);
+
+        try
+        {
+            var ws = await ConnectWebSocketAsync("/ws/state");
+
+            var buffer = new byte[8192];
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var result = await ws.ReceiveAsync(buffer, cts.Token);
+
+            Assert.Equal(WebSocketMessageType.Text, result.MessageType);
+            var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(json, AppJsonContext.Default.StateUpdate);
+
+            var session = Assert.Single(state!.Sessions!.Sessions, s => s.Id == sessionId);
+            Assert.NotNull(session.Supervisor);
+            Assert.Equal("codex", session.Supervisor!.Profile);
+        }
+        finally
+        {
+            RemoveSeedSession(manager, sessionId);
+        }
     }
 
     [Fact]
@@ -223,5 +270,35 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         var socket = await wsClient.ConnectAsync(wsUri, CancellationToken.None);
         _webSockets.Add(socket);
         return socket;
+    }
+
+    private static void SeedSession(TtyHostSessionManager manager, SessionInfo session, int order)
+    {
+        var registry = GetField<object>(manager, "_registry");
+        var cache = GetProperty<ConcurrentDictionary<string, SessionInfo>>(registry, "SessionCache");
+        var orders = GetProperty<ConcurrentDictionary<string, int>>(registry, "SessionOrder");
+        cache[session.Id] = session;
+        orders[session.Id] = order;
+    }
+
+    private static void RemoveSeedSession(TtyHostSessionManager manager, string sessionId)
+    {
+        var registry = GetField<object>(manager, "_registry");
+        var cache = GetProperty<ConcurrentDictionary<string, SessionInfo>>(registry, "SessionCache");
+        var orders = GetProperty<ConcurrentDictionary<string, int>>(registry, "SessionOrder");
+        cache.TryRemove(sessionId, out _);
+        orders.TryRemove(sessionId, out _);
+    }
+
+    private static T GetField<T>(object instance, string name)
+    {
+        var field = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!;
+        return (T)field.GetValue(instance)!;
+    }
+
+    private static T GetProperty<T>(object instance, string name)
+    {
+        var property = instance.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!;
+        return (T)property.GetValue(instance)!;
     }
 }

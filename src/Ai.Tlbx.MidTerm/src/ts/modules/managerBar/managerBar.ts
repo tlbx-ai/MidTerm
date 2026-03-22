@@ -2,242 +2,684 @@
  * Manager Bar Module
  *
  * Renders customizable quick-action buttons below the terminal area.
- * Clicking a button sends its text + Enter to the active terminal.
+ * Buttons can execute immediately or queue richer workflows against the
+ * session that was active when the action was triggered.
  */
 
-import { $currentSettings, $activeSessionId } from '../../stores';
-import { sendInput } from '../comms';
+import { $activeSessionId, $currentSettings, $sessions } from '../../stores';
 import { updateSettings } from '../../api/client';
+import { sendInput } from '../comms';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
+import { getSessionHeat } from '../sidebar/heatIndicator';
+import {
+  computeNextScheduleTime,
+  createDefaultManagerButton,
+  formatPromptPreview,
+  getManagerBarHeatResumeAt,
+  intervalToMs,
+  isImmediateManagerAction,
+  isManagerBarCooldownReady,
+  normalizeManagerBarButton,
+  normalizeManagerBarButtons,
+  shouldManagerActionWaitForInitialCooldown,
+  type ManagerActionType,
+  type ManagerBarScheduleEntry,
+  type ManagerButton,
+  type ManagerRepeatUnit,
+  type ManagerScheduleRepeat,
+  type ManagerTriggerKind,
+  type NormalizedManagerButton,
+} from './workflow';
 
 const log = createLogger('managerBar');
 
-interface ManagerButton {
-  id: string;
-  label: string;
-  text: string;
+const COMMAND_SUBMIT_DELAY_MS = 200;
+const QUEUE_POLL_INTERVAL_MS = 500;
+
+type QueuePhase =
+  | 'pendingImmediate'
+  | 'pendingCooldown'
+  | 'chainCooldown'
+  | 'pendingInterval'
+  | 'pendingSchedule';
+
+interface QueueEntry {
+  queueId: string;
+  sessionId: string;
+  action: NormalizedManagerButton;
+  phase: QueuePhase;
+  nextPromptIndex: number;
+  completedCycles: number;
+  nextRunAt: number | null;
+  ignoreHeatUntilMs: number | null;
 }
 
 let barEl: HTMLElement | null = null;
+let queueEl: HTMLElement | null = null;
 let buttonsEl: HTMLElement | null = null;
 let addBtn: HTMLElement | null = null;
 let mobileDropdown: HTMLElement | null = null;
 
+let modalEl: HTMLElement | null = null;
+let modalBackdrop: HTMLElement | null = null;
+let modalCloseBtn: HTMLElement | null = null;
+let modalCancelBtn: HTMLElement | null = null;
+let modalSaveBtn: HTMLElement | null = null;
+let modalTitleEl: HTMLElement | null = null;
+let modalErrorEl: HTMLElement | null = null;
+let labelInput: HTMLInputElement | null = null;
+let typeSelect: HTMLSelectElement | null = null;
+let triggerSelect: HTMLSelectElement | null = null;
+let promptsTitleEl: HTMLElement | null = null;
+let promptsCopyEl: HTMLElement | null = null;
+let typeDescriptionEl: HTMLElement | null = null;
+let triggerDescriptionEl: HTMLElement | null = null;
+let promptsContainer: HTMLElement | null = null;
+let addPromptBtn: HTMLButtonElement | null = null;
+let repeatCountInput: HTMLInputElement | null = null;
+let repeatEveryValueInput: HTMLInputElement | null = null;
+let repeatEveryUnitSelect: HTMLSelectElement | null = null;
+let scheduleContainer: HTMLElement | null = null;
+let addScheduleBtn: HTMLButtonElement | null = null;
+let cooldownHintEl: HTMLElement | null = null;
+let chainHintEl: HTMLElement | null = null;
+let triggerDetailsEl: HTMLElement | null = null;
+let repeatCountGroupEl: HTMLElement | null = null;
+let repeatIntervalGroupEl: HTMLElement | null = null;
+let scheduleGroupEl: HTMLElement | null = null;
+
+let editingActionId: string | null = null;
+let renderedButtons: NormalizedManagerButton[] = [];
+const queueEntries: QueueEntry[] = [];
+let queueTimerId: number | null = null;
+
 export function sendCommand(sessionId: string, text: string): void {
   sendInput(sessionId, text);
-  setTimeout(() => {
+  window.setTimeout(() => {
     sendInput(sessionId, '\r');
-  }, 200);
+  }, COMMAND_SUBMIT_DELAY_MS);
 }
 
 export function initManagerBar(): void {
   barEl = document.getElementById('manager-bar');
+  queueEl = document.getElementById('manager-bar-queue');
   buttonsEl = document.getElementById('manager-bar-buttons');
   addBtn = document.getElementById('manager-bar-add');
   mobileDropdown = document.getElementById('mobile-actions-dropdown');
-  if (!barEl || !buttonsEl || !addBtn) return;
+
+  modalEl = document.getElementById('manager-action-modal');
+  modalBackdrop = modalEl?.querySelector('.modal-backdrop') ?? null;
+  modalCloseBtn = document.getElementById('btn-close-manager-action');
+  modalCancelBtn = document.getElementById('btn-cancel-manager-action');
+  modalSaveBtn = document.getElementById('btn-save-manager-action');
+  modalTitleEl = document.getElementById('manager-action-modal-title');
+  modalErrorEl = document.getElementById('manager-action-error');
+  labelInput = document.getElementById('manager-action-label') as HTMLInputElement | null;
+  typeSelect = document.getElementById('manager-action-type') as HTMLSelectElement | null;
+  triggerSelect = document.getElementById('manager-action-trigger') as HTMLSelectElement | null;
+  promptsTitleEl = document.getElementById('manager-action-prompts-title');
+  promptsCopyEl = document.getElementById('manager-action-prompts-copy');
+  typeDescriptionEl = document.getElementById('manager-action-type-description');
+  triggerDescriptionEl = document.getElementById('manager-action-trigger-description');
+  promptsContainer = document.getElementById('manager-action-prompts');
+  addPromptBtn = document.getElementById('manager-action-add-prompt') as HTMLButtonElement | null;
+  repeatCountInput = document.getElementById(
+    'manager-action-repeat-count',
+  ) as HTMLInputElement | null;
+  repeatEveryValueInput = document.getElementById(
+    'manager-action-repeat-every-value',
+  ) as HTMLInputElement | null;
+  repeatEveryUnitSelect = document.getElementById(
+    'manager-action-repeat-every-unit',
+  ) as HTMLSelectElement | null;
+  scheduleContainer = document.getElementById('manager-action-schedule-list');
+  addScheduleBtn = document.getElementById(
+    'manager-action-add-schedule',
+  ) as HTMLButtonElement | null;
+  cooldownHintEl = document.getElementById('manager-action-cooldown-hint');
+  chainHintEl = document.getElementById('manager-action-chain-hint');
+  triggerDetailsEl = document.getElementById('manager-action-trigger-details');
+  repeatCountGroupEl = document.getElementById('manager-action-repeat-count-group');
+  repeatIntervalGroupEl = document.getElementById('manager-action-repeat-interval-group');
+  scheduleGroupEl = document.getElementById('manager-action-schedule-group');
+
+  if (!barEl || !buttonsEl || !addBtn || !queueEl) return;
 
   $currentSettings.subscribe((settings) => {
     if (!settings) return;
-    renderButtons(settings.managerBarButtons);
-    if (barEl) barEl.classList.toggle('hidden', !settings.managerBarEnabled);
-    renderMobileButtons(settings.managerBarEnabled ? settings.managerBarButtons : []);
+    renderedButtons = normalizeManagerBarButtons(
+      settings.managerBarButtons as unknown as ManagerButton[],
+    );
+    renderButtons(renderedButtons);
+    barEl?.classList.toggle('hidden', !settings.managerBarEnabled);
+    renderMobileButtons(settings.managerBarEnabled ? renderedButtons : []);
+    renderQueue();
   });
 
-  buttonsEl.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement;
+  $activeSessionId.subscribe(() => {
+    renderQueue();
+  });
+
+  $sessions.subscribe((sessions) => {
+    let changed = false;
+    for (let index = queueEntries.length - 1; index >= 0; index -= 1) {
+      if (!sessions[queueEntries[index]?.sessionId ?? '']) {
+        queueEntries.splice(index, 1);
+        changed = true;
+      }
+    }
+    if (changed) {
+      syncQueueProcessor();
+      renderQueue();
+    }
+  });
+
+  queueEl.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const deleteBtn = target?.closest<HTMLElement>('.manager-queue-delete');
+    const queueId = deleteBtn?.dataset.queueId;
+    if (!queueId) return;
+
+    removeQueueEntry(queueId);
+  });
+
+  buttonsEl.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
 
     const editBtn = target.closest('.manager-btn-edit');
     if (editBtn) {
-      const btn = editBtn.closest<HTMLElement>('.manager-btn');
-      if (btn?.dataset.id) startInlineEdit(btn.dataset.id);
+      const button = editBtn.closest<HTMLElement>('.manager-btn');
+      if (button?.dataset.id) {
+        const action = renderedButtons.find((entry) => entry.id === button.dataset.id);
+        if (action) openActionModal(action);
+      }
       return;
     }
 
     const deleteBtn = target.closest('.manager-btn-delete');
     if (deleteBtn) {
-      const btn = deleteBtn.closest<HTMLElement>('.manager-btn');
-      if (btn?.dataset.id) deleteButton(btn.dataset.id);
+      const button = deleteBtn.closest<HTMLElement>('.manager-btn');
+      if (button?.dataset.id) deleteButton(button.dataset.id);
       return;
     }
 
     const labelEl = target.closest('.manager-btn-label');
     if (labelEl) {
-      const btn = labelEl.closest<HTMLElement>('.manager-btn');
-      if (btn?.dataset.id) clickButton(btn.dataset.id);
+      const button = labelEl.closest<HTMLElement>('.manager-btn');
+      if (button?.dataset.id) runButton(button.dataset.id);
     }
   });
 
-  addBtn.addEventListener('click', startInlineAdd);
+  addBtn.addEventListener('click', () => {
+    openActionModal();
+  });
 
   if (mobileDropdown) {
-    mobileDropdown.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      const mobileBtn = target.closest<HTMLElement>('.mobile-manager-item');
-      if (!mobileBtn) return;
-
-      const managerId = mobileBtn.dataset.managerId;
-      if (!managerId) return;
-
-      const settings = $currentSettings.get();
-      const buttons: ManagerButton[] = settings?.managerBarButtons ?? [];
-      const btn = buttons.find((b) => b.id === managerId);
-      if (!btn) return;
-
-      const activeId = $activeSessionId.get();
-      if (activeId) {
-        const text = btn.text.replace(/[\r\n]+$/, '');
-        sendCommand(activeId, text);
-      }
+    mobileDropdown.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      const mobileBtn = target?.closest<HTMLElement>('.mobile-manager-item');
+      if (!mobileBtn?.dataset.managerId) return;
+      runButton(mobileBtn.dataset.managerId);
     });
   }
+
+  bindModalEvents();
 }
 
-function renderButtons(buttons: ManagerButton[]): void {
+function bindModalEvents(): void {
+  modalCloseBtn?.addEventListener('click', closeActionModal);
+  modalCancelBtn?.addEventListener('click', closeActionModal);
+  modalBackdrop?.addEventListener('click', closeActionModal);
+  modalSaveBtn?.addEventListener('click', saveModalAction);
+
+  typeSelect?.addEventListener('change', () => {
+    const prompts = readPromptValues();
+    renderPromptEditors(
+      typeSelect?.value === 'chain' ? Math.max(prompts.length, 1) : 1,
+      prompts,
+      typeSelect?.value === 'chain' ? 'chain' : 'single',
+    );
+    syncModalSections();
+  });
+
+  triggerSelect?.addEventListener('change', syncModalSections);
+
+  addPromptBtn?.addEventListener('click', () => {
+    const prompts = readPromptValues();
+    prompts.push('');
+    renderPromptEditors(prompts.length, prompts, getModalActionType());
+    focusPrimaryPrompt(prompts.length - 1);
+  });
+
+  addScheduleBtn?.addEventListener('click', () => {
+    const schedule = readScheduleValues();
+    schedule.push({ timeOfDay: '09:00', repeat: 'daily' });
+    renderScheduleEditors(schedule);
+    focusNewestScheduleTime();
+  });
+
+  scheduleContainer?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const removeBtn = target?.closest<HTMLButtonElement>('.manager-action-schedule-remove');
+    if (!removeBtn) return;
+
+    const index = Number.parseInt(removeBtn.dataset.index ?? '-1', 10);
+    if (!Number.isInteger(index) || index < 0) return;
+
+    const schedule = readScheduleValues();
+    schedule.splice(index, 1);
+    renderScheduleEditors(schedule);
+  });
+
+  promptsContainer?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const removeBtn = target?.closest<HTMLButtonElement>('.manager-action-prompt-remove');
+    if (!removeBtn) return;
+
+    const index = Number.parseInt(removeBtn.dataset.index ?? '-1', 10);
+    if (!Number.isInteger(index) || index < 0) return;
+
+    const prompts = readPromptValues();
+    prompts.splice(index, 1);
+    renderPromptEditors(Math.max(prompts.length, 1), prompts, getModalActionType());
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (!modalEl || modalEl.classList.contains('hidden')) return;
+    closeActionModal();
+  });
+}
+
+function renderButtons(buttons: NormalizedManagerButton[]): void {
   if (!buttonsEl) return;
+
   buttonsEl.innerHTML = '';
-  for (const btn of buttons) {
-    const span = document.createElement('span');
-    span.className = 'manager-btn';
-    span.dataset.id = btn.id;
-    span.innerHTML =
-      `<span class="manager-btn-label">${escapeHtml(btn.label)}</span>` +
+  for (const button of buttons) {
+    const wrapper = document.createElement('span');
+    wrapper.className = 'manager-btn';
+    wrapper.dataset.id = button.id;
+    wrapper.innerHTML =
+      `<span class="manager-btn-label">${escapeHtml(button.label)}</span>` +
       `<span class="manager-btn-actions">` +
-      `<button class="manager-btn-edit" title="${t('managerBar.edit')}"><span class="icon">\ue91f</span></button>` +
-      `<button class="manager-btn-delete" title="${t('managerBar.remove')}"><span class="icon">\ue909</span></button>` +
+      `<button class="manager-btn-edit" title="${escapeHtml(t('managerBar.edit'))}" type="button"><span class="icon">\ue91f</span></button>` +
+      `<button class="manager-btn-delete" title="${escapeHtml(t('managerBar.remove'))}" type="button"><span class="icon">\ue909</span></button>` +
       `</span>`;
-    buttonsEl.appendChild(span);
+    buttonsEl.appendChild(wrapper);
   }
 }
 
-function clickButton(id: string): void {
-  const settings = $currentSettings.get();
-  const buttons: ManagerButton[] = settings?.managerBarButtons ?? [];
-  const btn = buttons.find((b) => b.id === id);
-  if (!btn) return;
+function renderMobileButtons(buttons: NormalizedManagerButton[]): void {
+  if (!mobileDropdown) return;
 
-  const activeId = $activeSessionId.get();
-  if (activeId) {
-    const text = btn.text.replace(/[\r\n]+$/, '');
-    sendCommand(activeId, text);
+  mobileDropdown
+    .querySelectorAll('.mobile-manager-item, .mobile-manager-separator')
+    .forEach((element) => {
+      element.remove();
+    });
+
+  if (buttons.length === 0) return;
+
+  const separator = document.createElement('div');
+  separator.className = 'mobile-manager-separator';
+  mobileDropdown.appendChild(separator);
+
+  for (const button of buttons) {
+    const item = document.createElement('button');
+    item.className = 'mobile-actions-item topbar-action mobile-manager-item';
+    item.dataset.managerId = button.id;
+    item.innerHTML =
+      `<span class="mobile-actions-symbol">\u25B6</span>` +
+      `<span class="mobile-actions-label">${escapeHtml(button.label)}</span>`;
+    mobileDropdown.appendChild(item);
   }
 }
 
-function startInlineEdit(id: string): void {
+function renderQueue(): void {
+  if (!queueEl) return;
+
   const settings = $currentSettings.get();
-  const existing = (settings?.managerBarButtons ?? []).find((b) => b.id === id);
-  if (!existing || !buttonsEl) return;
+  const activeSessionId = $activeSessionId.get();
+  const visibleQueue =
+    settings?.managerBarEnabled && activeSessionId
+      ? queueEntries.filter((entry) => entry.sessionId === activeSessionId)
+      : [];
 
-  const btnEl = buttonsEl.querySelector(`[data-id="${id}"]`);
-  if (!btnEl) return;
+  queueEl.innerHTML = '';
+  queueEl.classList.toggle('hidden', visibleQueue.length === 0);
+  if (visibleQueue.length === 0) return;
 
-  const labelEl = btnEl.querySelector('.manager-btn-label');
-  if (!labelEl) return;
+  for (const entry of visibleQueue) {
+    const item = document.createElement('div');
+    item.className = 'manager-queue-item';
+    item.dataset.queueId = entry.queueId;
 
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'manager-btn-input';
-  input.value = existing.label;
+    const title = document.createElement('div');
+    title.className = 'manager-queue-title';
+    title.textContent = describeQueueTitle(entry);
 
-  let committed = false;
-  function commit(): void {
-    if (committed) return;
-    committed = true;
-    const val = input.value.trim();
-    if (val) {
-      const buttons = [...(settings?.managerBarButtons ?? [])];
-      const idx = buttons.findIndex((b) => b.id === id);
-      if (idx >= 0) {
-        buttons[idx] = { id, label: val, text: val };
-        saveButtons(buttons);
-        return;
-      }
-    }
-    renderButtons(settings?.managerBarButtons ?? []);
+    const condition = document.createElement('div');
+    condition.className = 'manager-queue-condition';
+    condition.textContent = describeQueueCondition(entry);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'manager-queue-delete';
+    deleteBtn.dataset.queueId = entry.queueId;
+    deleteBtn.title = t('managerBar.queue.dequeue');
+    deleteBtn.setAttribute('aria-label', t('managerBar.queue.dequeue'));
+    deleteBtn.innerHTML = '<span class="icon">\ue909</span>';
+
+    item.appendChild(title);
+    item.appendChild(condition);
+    item.appendChild(deleteBtn);
+    queueEl.appendChild(item);
+  }
+}
+
+function describeQueueTitle(entry: QueueEntry): string {
+  const action = entry.action;
+  if (action.actionType === 'chain') {
+    const step = Math.min(action.prompts.length, entry.nextPromptIndex + 1);
+    return `${action.label} (${step}/${action.prompts.length})`;
   }
 
-  function cancel(): void {
-    if (committed) return;
-    committed = true;
-    renderButtons(settings?.managerBarButtons ?? []);
+  if (action.trigger.kind === 'repeatCount') {
+    return `${action.label} (${entry.completedCycles + 1}/${action.trigger.repeatCount})`;
   }
 
-  input.addEventListener('blur', commit);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      input.blur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancel();
-    }
+  return action.label || formatPromptPreview(action.prompts[0] ?? '');
+}
+
+function describeQueueCondition(entry: QueueEntry): string {
+  if (entry.phase === 'chainCooldown') {
+    return t('managerBar.queue.chainCooldown');
+  }
+  if (entry.phase === 'pendingCooldown') {
+    return t('managerBar.queue.cooldown');
+  }
+
+  const trigger = entry.action.trigger;
+  if (trigger.kind === 'repeatCount') {
+    const remaining = Math.max(0, trigger.repeatCount - entry.completedCycles);
+    return `${t('managerBar.queue.repeatCountPrefix')} ${remaining}${t('managerBar.queue.repeatCountSuffix')}`;
+  }
+  if (trigger.kind === 'repeatInterval') {
+    return `${t('managerBar.queue.every')} ${trigger.repeatEveryValue} ${t(
+      `managerBar.intervalUnit.${trigger.repeatEveryUnit}`,
+    )}`;
+  }
+  if (trigger.kind === 'schedule') {
+    return trigger.schedule
+      .map(
+        (schedule) => `${t(`managerBar.scheduleRepeat.${schedule.repeat}`)} ${schedule.timeOfDay}`,
+      )
+      .join(' • ');
+  }
+  if (trigger.kind === 'fireAndForget' && entry.action.actionType === 'chain') {
+    return t('managerBar.queue.chainRunning');
+  }
+  return t('managerBar.queue.cooldown');
+}
+
+function openActionModal(existing?: NormalizedManagerButton): void {
+  if (
+    !modalEl ||
+    !modalTitleEl ||
+    !labelInput ||
+    !typeSelect ||
+    !triggerSelect ||
+    !repeatCountInput ||
+    !repeatEveryValueInput ||
+    !repeatEveryUnitSelect
+  ) {
+    return;
+  }
+
+  const action = existing ?? createDefaultManagerButton();
+  editingActionId = existing?.id ?? null;
+  clearModalError();
+
+  modalTitleEl.textContent = existing
+    ? t('managerBar.modal.editTitle')
+    : t('managerBar.modal.title');
+  labelInput.value = action.label;
+  typeSelect.value = action.actionType;
+  triggerSelect.value = action.trigger.kind;
+  repeatCountInput.value = String(action.trigger.repeatCount);
+  repeatEveryValueInput.value = String(action.trigger.repeatEveryValue);
+  repeatEveryUnitSelect.value = action.trigger.repeatEveryUnit;
+
+  renderPromptEditors(
+    action.actionType === 'chain' ? Math.max(action.prompts.length, 1) : 1,
+    action.prompts,
+    action.actionType,
+  );
+  renderScheduleEditors(action.trigger.schedule);
+  syncModalSections();
+
+  modalEl.classList.remove('hidden');
+  const modalBody = modalEl.querySelector<HTMLElement>('.manager-action-modal-body');
+  if (modalBody) {
+    modalBody.scrollTop = 0;
+  }
+  focusPrimaryPrompt();
+}
+
+function closeActionModal(): void {
+  editingActionId = null;
+  modalEl?.classList.add('hidden');
+  clearModalError();
+}
+
+function saveModalAction(): void {
+  const settings = $currentSettings.get();
+  if (!settings) return;
+
+  const actionType = getModalActionType();
+  const prompts = readPromptValues();
+  if (prompts.length === 0 || prompts.every((prompt) => prompt.trim().length === 0)) {
+    showModalError(t('managerBar.modal.errorPromptRequired'));
+    return;
+  }
+
+  const triggerKind = getModalTriggerKind();
+  const schedule = readScheduleValues();
+  if (triggerKind === 'schedule' && schedule.length === 0) {
+    showModalError(t('managerBar.modal.errorScheduleRequired'));
+    return;
+  }
+
+  const action = normalizeManagerBarButton({
+    id: editingActionId ?? generateActionId(),
+    label: labelInput?.value ?? '',
+    text: prompts[0] ?? '',
+    actionType,
+    prompts,
+    trigger: {
+      kind: triggerKind,
+      repeatCount: Number.parseInt(repeatCountInput?.value ?? '1', 10),
+      repeatEveryValue: Number.parseInt(repeatEveryValueInput?.value ?? '1', 10),
+      repeatEveryUnit: (repeatEveryUnitSelect?.value ?? 'minutes') as ManagerRepeatUnit,
+      schedule,
+    },
   });
 
-  labelEl.replaceWith(input);
-  btnEl.querySelector('.manager-btn-actions')?.remove();
-  input.focus();
-  input.select();
+  const currentButtons = normalizeManagerBarButtons(
+    settings.managerBarButtons as unknown as ManagerButton[],
+  );
+  const nextButtons = [...currentButtons];
+  const index = editingActionId
+    ? nextButtons.findIndex((button) => button.id === editingActionId)
+    : -1;
+  if (index >= 0) {
+    nextButtons[index] = action;
+  } else {
+    nextButtons.push(action);
+  }
+
+  saveButtons(nextButtons);
+  closeActionModal();
 }
 
-function startInlineAdd(): void {
-  if (!buttonsEl) return;
+function renderPromptEditors(count: number, values: string[], actionType: ManagerActionType): void {
+  if (!promptsContainer || !addPromptBtn) return;
 
-  const span = document.createElement('span');
-  span.className = 'manager-btn';
+  promptsContainer.innerHTML = '';
+  addPromptBtn.classList.toggle('hidden', actionType !== 'chain');
 
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'manager-btn-input';
-  input.placeholder = t('managerBar.labelHint');
-  span.appendChild(input);
-  buttonsEl.appendChild(span);
+  const rows = Math.max(count, 1);
+  for (let index = 0; index < rows; index += 1) {
+    const row = document.createElement('div');
+    row.className = `manager-action-prompt-row manager-action-prompt-row-${actionType}`;
 
-  const settings = $currentSettings.get();
-  let committed = false;
+    const header = document.createElement('div');
+    header.className = 'manager-action-prompt-header';
 
-  function commit(): void {
-    if (committed) return;
-    committed = true;
-    const val = input.value.trim();
-    if (val) {
-      const buttons = [...(settings?.managerBarButtons ?? [])];
-      const id = String(Date.now());
-      buttons.push({ id, label: val, text: val });
-      saveButtons(buttons);
-    } else {
-      span.remove();
+    const label = document.createElement('span');
+    label.className = 'manager-action-prompt-label';
+    label.textContent =
+      actionType === 'chain'
+        ? `${t('managerBar.modal.chainPrompt')} ${index + 1}`
+        : t('managerBar.modal.singlePrompt');
+    header.appendChild(label);
+
+    if (actionType === 'chain' && rows > 1) {
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn-secondary manager-action-prompt-remove';
+      removeBtn.dataset.index = String(index);
+      removeBtn.textContent = t('managerBar.modal.removePrompt');
+      header.appendChild(removeBtn);
     }
-  }
 
-  function cancel(): void {
-    if (committed) return;
-    committed = true;
-    span.remove();
-  }
+    const textarea = document.createElement('textarea');
+    textarea.className = 'manager-action-prompt-input';
+    textarea.rows = actionType === 'chain' ? 3 : 7;
+    textarea.value = values[index] ?? '';
+    textarea.placeholder = t('managerBar.modal.promptPlaceholder');
 
-  input.addEventListener('blur', commit);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      input.blur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancel();
-    }
+    row.appendChild(header);
+    row.appendChild(textarea);
+    promptsContainer.appendChild(row);
+  }
+}
+
+function renderScheduleEditors(schedule: ManagerBarScheduleEntry[]): void {
+  const container = scheduleContainer;
+  if (!container) return;
+
+  const rows = schedule.length > 0 ? schedule : [{ timeOfDay: '09:00', repeat: 'daily' }];
+  container.innerHTML = '';
+
+  rows.forEach((entry, index) => {
+    const row = document.createElement('div');
+    row.className = 'manager-action-schedule-row';
+
+    const timeInput = document.createElement('input');
+    timeInput.type = 'time';
+    timeInput.className = 'manager-action-schedule-time';
+    timeInput.value = entry.timeOfDay;
+
+    const repeatSelect = document.createElement('select');
+    repeatSelect.className = 'manager-action-schedule-repeat';
+    repeatSelect.innerHTML = [
+      { value: 'daily', label: t('managerBar.scheduleRepeat.daily') },
+      { value: 'weekdays', label: t('managerBar.scheduleRepeat.weekdays') },
+      { value: 'weekends', label: t('managerBar.scheduleRepeat.weekends') },
+    ]
+      .map(
+        (option) =>
+          `<option value="${option.value}" ${option.value === entry.repeat ? 'selected' : ''}>${escapeHtml(option.label)}</option>`,
+      )
+      .join('');
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn-secondary manager-action-schedule-remove';
+    removeBtn.dataset.index = String(index);
+    removeBtn.textContent = t('managerBar.modal.removeSchedule');
+
+    row.appendChild(timeInput);
+    row.appendChild(repeatSelect);
+    row.appendChild(removeBtn);
+    container.appendChild(row);
   });
+}
 
-  input.focus();
+function syncModalSections(): void {
+  const actionType = getModalActionType();
+  const triggerKind = getModalTriggerKind();
+
+  if (promptsTitleEl) {
+    promptsTitleEl.textContent = t(
+      actionType === 'chain'
+        ? 'managerBar.modal.promptSectionChain'
+        : 'managerBar.modal.promptSectionSingle',
+    );
+  }
+  if (promptsCopyEl) {
+    promptsCopyEl.textContent = t(
+      actionType === 'chain'
+        ? 'managerBar.modal.promptSectionChainCopy'
+        : 'managerBar.modal.promptSectionSingleCopy',
+    );
+  }
+  if (typeDescriptionEl) {
+    typeDescriptionEl.textContent = t(
+      actionType === 'chain'
+        ? 'managerBar.modal.typeChainDescription'
+        : 'managerBar.modal.typeSingleDescription',
+    );
+  }
+  if (triggerDescriptionEl) {
+    triggerDescriptionEl.textContent = t(`managerBar.modal.triggerDescription.${triggerKind}`);
+  }
+
+  cooldownHintEl?.classList.toggle('hidden', triggerKind !== 'onCooldown');
+  chainHintEl?.classList.toggle('hidden', actionType !== 'chain');
+  triggerDetailsEl?.classList.toggle('hidden', triggerKind === 'fireAndForget');
+  repeatCountGroupEl?.classList.toggle('hidden', triggerKind !== 'repeatCount');
+  repeatIntervalGroupEl?.classList.toggle('hidden', triggerKind !== 'repeatInterval');
+  scheduleGroupEl?.classList.toggle('hidden', triggerKind !== 'schedule');
+}
+
+function readPromptValues(): string[] {
+  if (!promptsContainer) return [];
+  return [...promptsContainer.querySelectorAll<HTMLTextAreaElement>('.manager-action-prompt-input')]
+    .map((input) => input.value)
+    .filter((_prompt, index) => getModalActionType() === 'chain' || index === 0);
+}
+
+function readScheduleValues(): ManagerBarScheduleEntry[] {
+  if (!scheduleContainer) return [];
+  const rows = [...scheduleContainer.querySelectorAll<HTMLElement>('.manager-action-schedule-row')];
+  return rows
+    .map((row) => {
+      const timeInput = row.querySelector<HTMLInputElement>('.manager-action-schedule-time');
+      const repeatSelect = row.querySelector<HTMLSelectElement>('.manager-action-schedule-repeat');
+      if (!timeInput || !repeatSelect || !timeInput.value) return null;
+      return {
+        timeOfDay: timeInput.value,
+        repeat: repeatSelect.value as ManagerScheduleRepeat,
+      };
+    })
+    .filter((entry): entry is ManagerBarScheduleEntry => entry !== null);
 }
 
 function deleteButton(id: string): void {
   const settings = $currentSettings.get();
-  const buttons: ManagerButton[] = [...(settings?.managerBarButtons ?? [])];
-  const filtered = buttons.filter((b) => b.id !== id);
-  saveButtons(filtered);
+  if (!settings) return;
+
+  const nextButtons = normalizeManagerBarButtons(
+    settings.managerBarButtons as unknown as ManagerButton[],
+  ).filter((button) => button.id !== id);
+  saveButtons(nextButtons);
 }
 
-function saveButtons(buttons: ManagerButton[]): void {
+function saveButtons(buttons: NormalizedManagerButton[]): void {
   const settings = $currentSettings.get();
   if (!settings) return;
 
@@ -251,39 +693,234 @@ function saveButtons(buttons: ManagerButton[]): void {
         log.error(() => `Failed to save manager bar buttons: ${response.status}`);
       }
     })
-    .catch((e: unknown) => {
-      log.error(() => `Failed to save manager bar buttons: ${String(e)}`);
+    .catch((error: unknown) => {
+      log.error(() => `Failed to save manager bar buttons: ${String(error)}`);
     });
 }
 
-function renderMobileButtons(buttons: ManagerButton[]): void {
-  if (!mobileDropdown) return;
+function runButton(id: string): void {
+  const action = renderedButtons.find((button) => button.id === id);
+  const sessionId = $activeSessionId.get();
+  if (!action || !sessionId) return;
 
-  mobileDropdown
-    .querySelectorAll('.mobile-manager-item, .mobile-manager-separator')
-    .forEach((el) => {
-      el.remove();
-    });
+  if (isImmediateManagerAction(action)) {
+    sendCommand(sessionId, action.prompts[0] ?? '');
+    return;
+  }
 
-  if (buttons.length === 0) return;
+  enqueueAction(sessionId, action);
+}
 
-  const sep = document.createElement('div');
-  sep.className = 'mobile-manager-separator';
-  mobileDropdown.appendChild(sep);
+function enqueueAction(sessionId: string, action: NormalizedManagerButton): void {
+  const phase = getInitialQueuePhase(action);
+  const nextRunAt =
+    phase === 'pendingSchedule'
+      ? computeNextScheduleTime(action.trigger.schedule, Date.now())
+      : null;
 
-  for (const btn of buttons) {
-    const button = document.createElement('button');
-    button.className = 'mobile-actions-item topbar-action mobile-manager-item';
-    button.dataset.managerId = btn.id;
-    button.innerHTML =
-      `<span class="mobile-actions-symbol">\u25B6</span>` +
-      `<span class="mobile-actions-label">${escapeHtml(btn.label)}</span>`;
-    mobileDropdown.appendChild(button);
+  if (phase === 'pendingSchedule' && nextRunAt === null) {
+    log.warn(() => `Unable to schedule manager action ${action.id}`);
+    return;
+  }
+
+  queueEntries.push({
+    queueId: `${action.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    sessionId,
+    action,
+    phase,
+    nextPromptIndex: 0,
+    completedCycles: 0,
+    nextRunAt,
+    ignoreHeatUntilMs: null,
+  });
+
+  syncQueueProcessor();
+  processQueueEntries();
+  renderQueue();
+}
+
+function removeQueueEntry(queueId: string): void {
+  const index = queueEntries.findIndex((entry) => entry.queueId === queueId);
+  if (index < 0) return;
+
+  queueEntries.splice(index, 1);
+  syncQueueProcessor();
+  renderQueue();
+}
+
+function getInitialQueuePhase(action: NormalizedManagerButton): QueuePhase {
+  if (action.trigger.kind === 'schedule') return 'pendingSchedule';
+  if (shouldManagerActionWaitForInitialCooldown(action)) return 'pendingCooldown';
+  return 'pendingImmediate';
+}
+
+function syncQueueProcessor(): void {
+  if (queueEntries.length === 0) {
+    if (queueTimerId !== null) {
+      window.clearInterval(queueTimerId);
+      queueTimerId = null;
+    }
+    return;
+  }
+
+  if (queueTimerId === null) {
+    queueTimerId = window.setInterval(processQueueEntries, QUEUE_POLL_INTERVAL_MS);
   }
 }
 
-function escapeHtml(str: string): string {
+function processQueueEntries(): void {
+  const sessions = $sessions.get();
+  let changed = false;
+
+  for (let index = queueEntries.length - 1; index >= 0; index -= 1) {
+    const entry = queueEntries[index];
+    if (!entry || !sessions[entry.sessionId]) {
+      queueEntries.splice(index, 1);
+      changed = true;
+      continue;
+    }
+
+    if (!isQueueEntryReady(entry)) continue;
+
+    const prompt = entry.action.prompts[entry.nextPromptIndex];
+    if (!prompt) {
+      queueEntries.splice(index, 1);
+      changed = true;
+      continue;
+    }
+
+    sendCommand(entry.sessionId, prompt);
+    changed = true;
+    advanceQueueEntry(entry, index);
+  }
+
+  if (changed) {
+    renderQueue();
+  }
+  syncQueueProcessor();
+}
+
+function isQueueEntryReady(entry: QueueEntry): boolean {
+  const now = Date.now();
+  if (entry.phase === 'pendingImmediate') {
+    return true;
+  }
+  if (entry.phase === 'pendingCooldown' || entry.phase === 'chainCooldown') {
+    return isManagerBarCooldownReady(getSessionHeat(entry.sessionId), now, entry.ignoreHeatUntilMs);
+  }
+  return entry.nextRunAt !== null && now >= entry.nextRunAt;
+}
+
+function advanceQueueEntry(entry: QueueEntry, index: number): void {
+  entry.nextPromptIndex += 1;
+  if (entry.nextPromptIndex < entry.action.prompts.length) {
+    entry.phase = 'chainCooldown';
+    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
+    return;
+  }
+
+  entry.completedCycles += 1;
+  entry.nextPromptIndex = 0;
+
+  const trigger = entry.action.trigger;
+  if (trigger.kind === 'fireAndForget' || trigger.kind === 'onCooldown') {
+    queueEntries.splice(index, 1);
+    return;
+  }
+
+  if (trigger.kind === 'repeatCount') {
+    if (entry.completedCycles >= trigger.repeatCount) {
+      queueEntries.splice(index, 1);
+      return;
+    }
+    entry.phase = 'pendingCooldown';
+    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
+    return;
+  }
+
+  if (trigger.kind === 'repeatInterval') {
+    entry.phase = 'pendingInterval';
+    entry.nextRunAt = Date.now() + intervalToMs(trigger);
+    entry.ignoreHeatUntilMs = null;
+    return;
+  }
+
+  entry.phase = 'pendingSchedule';
+  entry.nextRunAt = computeNextScheduleTime(trigger.schedule, Date.now());
+  entry.ignoreHeatUntilMs = null;
+  if (entry.nextRunAt === null) {
+    queueEntries.splice(index, 1);
+  }
+}
+
+function getModalActionType(): ManagerActionType {
+  return typeSelect?.value === 'chain' ? 'chain' : 'single';
+}
+
+function getModalTriggerKind(): ManagerTriggerKind {
+  const trigger = triggerSelect?.value as ManagerTriggerKind | undefined;
+  if (
+    trigger === 'onCooldown' ||
+    trigger === 'repeatCount' ||
+    trigger === 'repeatInterval' ||
+    trigger === 'schedule'
+  ) {
+    return trigger;
+  }
+  return 'fireAndForget';
+}
+
+function showModalError(message: string): void {
+  if (!modalErrorEl) return;
+  modalErrorEl.textContent = message;
+  modalErrorEl.classList.remove('hidden');
+}
+
+function clearModalError(): void {
+  if (!modalErrorEl) return;
+  modalErrorEl.textContent = '';
+  modalErrorEl.classList.add('hidden');
+}
+
+function generateActionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `manager-action-${Date.now()}`;
+}
+
+function escapeHtml(value: string): string {
   const div = document.createElement('div');
-  div.textContent = str;
+  div.textContent = value;
   return div.innerHTML;
+}
+
+function focusPrimaryPrompt(index: number = 0): void {
+  window.requestAnimationFrame(() => {
+    const prompts = promptsContainer?.querySelectorAll<HTMLTextAreaElement>(
+      '.manager-action-prompt-input',
+    );
+    const prompt = prompts?.[index] ?? prompts?.[0];
+    if (!prompt) return;
+
+    try {
+      prompt.focus({ preventScroll: true });
+    } catch {
+      prompt.focus();
+    }
+    const cursor = prompt.value.length;
+    prompt.setSelectionRange(cursor, cursor);
+  });
+}
+
+function focusNewestScheduleTime(): void {
+  window.requestAnimationFrame(() => {
+    const times = scheduleContainer?.querySelectorAll<HTMLInputElement>(
+      '.manager-action-schedule-time',
+    );
+    const input = times?.[times.length - 1];
+    if (!input) return;
+
+    input.focus();
+  });
 }

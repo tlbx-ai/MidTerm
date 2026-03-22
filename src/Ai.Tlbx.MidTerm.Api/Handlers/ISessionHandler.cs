@@ -9,6 +9,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 namespace Ai.Tlbx.MidTerm.Api.Handlers;
 
 public interface ISessionHandler
@@ -26,10 +27,22 @@ public interface ISessionHandler
     Task<IResult> SendTextInputAsync(string id, SessionInputRequest request);
     Task<IResult> SendKeyInputAsync(string id, SessionKeyInputRequest request);
     Task<IResult> SendPromptInputAsync(string id, SessionPromptRequest request);
+    Task<IResult> AttachLensAsync(string id);
+    Task<IResult> StartLensTurnAsync(string id, LensTurnRequest request);
+    Task<IResult> InterruptLensTurnAsync(string id, LensInterruptRequest request);
+    Task<IResult> ApproveLensRequestAsync(string id, string requestId);
+    Task<IResult> ResolveLensRequestAsync(string id, string requestId, LensRequestDecisionRequest request);
+    Task<IResult> DeclineLensRequestAsync(string id, string requestId, LensRequestDecisionRequest request);
+    Task<IResult> ResolveLensUserInputAsync(string id, string requestId, LensUserInputAnswerRequest request);
+    Task<IResult> GetLensSnapshotAsync(string id);
+    Task<IResult> GetLensEventsAsync(string id, long afterSequence);
+    Task<IResult> GetLensEventStreamAsync(string id, long afterSequence);
     Task<IResult> GetBufferAsync(string id);
     Task<IResult> GetBufferTextAsync(string id, bool includeBase64);
     Task<IResult> GetBufferTailAsync(string id, int lines, bool stripAnsi);
     Task<IResult> GetActivityAsync(string id, int seconds, int bellLimit);
+    Task<IResult> GetAgentVibeAsync(string id, int tailLines, int activitySeconds, int bellLimit);
+    Task<IResult> GetAgentFeedAsync(string id, int tailLines, int activitySeconds, int bellLimit);
     Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto);
     Task<IResult> SetSessionControlAsync(string id, SetSessionControlRequest request);
     Task<IResult> UploadFileAsync(string id, IFormFile file);

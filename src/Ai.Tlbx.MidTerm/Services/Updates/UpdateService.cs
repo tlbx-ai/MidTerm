@@ -13,6 +13,7 @@ namespace Ai.Tlbx.MidTerm.Services.Updates;
 
 public sealed partial class UpdateService : IDisposable
 {
+    private const string AgentHostBinaryName = "mtagenthost";
     private const string RepoOwner = "tlbx-ai";
     private const string RepoName = "MidTerm";
     private const string DevEnvironmentName = "THELAIR";
@@ -462,10 +463,11 @@ public sealed partial class UpdateService : IDisposable
             return null;
         }
 
-        // Verify mt.exe and mthost.exe exist
+        // Verify required binaries exist
         var mtPath = Path.Combine(LocalReleasePath, "mt.exe");
         var mthostPath = Path.Combine(LocalReleasePath, "mthost.exe");
-        if (!File.Exists(mtPath) || !File.Exists(mthostPath))
+        var agentHostPath = Path.Combine(LocalReleasePath, $"{AgentHostBinaryName}.exe");
+        if (!File.Exists(mtPath) || !File.Exists(mthostPath) || !File.Exists(agentHostPath))
         {
             return null;
         }
@@ -773,27 +775,27 @@ public sealed partial class UpdateService : IDisposable
         AppendUpdateLog(artifacts.LogPath, $"Downloaded update payload to {extractedDir}");
         AppendUpdateLog(artifacts.LogPath, $"Update type: {updateType}");
 
-        if (OperatingSystem.IsLinux() &&
-            updateType == UpdateType.WebOnly &&
-            settingsService.IsRunningAsService)
+        var runOutsideServiceCgroup =
+            OperatingSystem.IsLinux() &&
+            settingsService.IsRunningAsService;
+
+        if (runOutsideServiceCgroup)
         {
-            var applied = TryApplyLinuxServiceWebOnlyUpdate(
-                extractedDir,
-                settingsService.SettingsDirectory,
-                deleteSourceAfter,
-                artifacts);
-            if (!applied.Success)
+            try
             {
-                return applied;
+                extractedDir = StageLinuxServiceUpdatePayload(
+                    extractedDir,
+                    settingsService.SettingsDirectory,
+                    updateType,
+                    deleteSourceAfter,
+                    artifacts);
+                deleteSourceAfter = true;
+                AppendUpdateLog(artifacts.LogPath, $"Prepared durable Linux service update payload at {extractedDir}");
             }
-
-            _ = Task.Run(async () =>
+            catch (Exception ex)
             {
-                await Task.Delay(1000);
-                Environment.Exit(0);
-            });
-
-            return (true, "Update installed. Service will restart shortly.");
+                return FailUpdate(artifacts, "Failed to stage Linux service update payload", ex.Message);
+            }
         }
 
         if (OperatingSystem.IsMacOS())
@@ -848,6 +850,11 @@ public sealed partial class UpdateService : IDisposable
                 settingsService.SettingsDirectory,
                 updateType,
                 deleteSourceAfter);
+
+            if (runOutsideServiceCgroup)
+            {
+                scriptPath = StageLinuxServiceUpdateScript(scriptPath, settingsService.SettingsDirectory, artifacts);
+            }
         }
         catch (Exception ex)
         {
@@ -855,6 +862,11 @@ public sealed partial class UpdateService : IDisposable
         }
 
         AppendUpdateLog(artifacts.LogPath, $"Generated external update script at {scriptPath}");
+        AppendUpdateLog(
+            artifacts.LogPath,
+            runOutsideServiceCgroup
+                ? "Launching update script via transient systemd unit to survive service shutdown"
+                : "Launching update script directly from the current process context");
 
         // Delay then execute update script
         _ = Task.Run(async () =>
@@ -862,8 +874,11 @@ public sealed partial class UpdateService : IDisposable
             try
             {
                 await Task.Delay(3000);
-                UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
-                Environment.Exit(0);
+                UpdateScriptGenerator.ExecuteUpdateScript(scriptPath, runOutsideServiceCgroup);
+                if (!runOutsideServiceCgroup)
+                {
+                    Environment.Exit(0);
+                }
             }
             catch (Exception ex)
             {
@@ -884,8 +899,10 @@ public sealed partial class UpdateService : IDisposable
     {
         string? backupDir = null;
         string? currentMtPath = null;
+        string? currentAgentHostPath = null;
         string? currentVersionJsonPath = null;
         string? backupMtPath = null;
+        string? backupAgentHostPath = null;
         string? backupVersionJsonPath = null;
         Action<string, string> writeLog = (message, level) => AppendUpdateLog(artifacts.LogPath, message, level);
 
@@ -898,12 +915,14 @@ public sealed partial class UpdateService : IDisposable
             }
 
             var newMtPath = Path.Combine(extractedDir, "mt");
+            var newAgentHostPath = Path.Combine(extractedDir, AgentHostBinaryName);
             var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
             currentMtPath = Path.Combine(installDir, "mt");
+            currentAgentHostPath = Path.Combine(installDir, AgentHostBinaryName);
             currentVersionJsonPath = Path.Combine(installDir, "version.json");
             writeLog($"Applying Linux service web-only update in-process from {extractedDir}", "INFO");
 
-            if (!File.Exists(newMtPath) || !File.Exists(newVersionJsonPath))
+            if (!File.Exists(newMtPath) || !File.Exists(newAgentHostPath) || !File.Exists(newVersionJsonPath))
             {
                 return FailUpdate(artifacts, "Downloaded update is incomplete");
             }
@@ -913,12 +932,19 @@ public sealed partial class UpdateService : IDisposable
             writeLog($"Using backup directory {backupDir}", "INFO");
 
             backupMtPath = Path.Combine(backupDir, "mt.bak");
+            backupAgentHostPath = Path.Combine(backupDir, $"{AgentHostBinaryName}.bak");
             backupVersionJsonPath = Path.Combine(backupDir, "version.json.bak");
 
             if (File.Exists(currentMtPath))
             {
                 File.Copy(currentMtPath, backupMtPath, overwrite: true);
                 writeLog("Backed up mt", "INFO");
+            }
+
+            if (File.Exists(currentAgentHostPath))
+            {
+                File.Copy(currentAgentHostPath, backupAgentHostPath, overwrite: true);
+                writeLog($"Backed up {AgentHostBinaryName}", "INFO");
             }
 
             if (File.Exists(currentVersionJsonPath))
@@ -928,6 +954,7 @@ public sealed partial class UpdateService : IDisposable
             }
 
             InstallUnixFileAtomically(newMtPath, currentMtPath, makeExecutable: true, writeLog);
+            InstallUnixFileAtomically(newAgentHostPath, currentAgentHostPath, makeExecutable: true, writeLog);
             InstallUnixFileAtomically(newVersionJsonPath, currentVersionJsonPath, makeExecutable: false, writeLog);
 
             try
@@ -967,6 +994,8 @@ public sealed partial class UpdateService : IDisposable
             TryRestoreLinuxServiceWebOnlyUpdate(
                 currentMtPath,
                 backupMtPath,
+                currentAgentHostPath,
+                backupAgentHostPath,
                 currentVersionJsonPath,
                 backupVersionJsonPath,
                 writeLog);
@@ -992,13 +1021,14 @@ public sealed partial class UpdateService : IDisposable
             RecreateDirectory(stagingDir);
             AppendUpdateLog(artifacts.LogPath, $"Staging update in {stagingDir}");
 
-            StageMacOsFile(extractedDir, stagingDir, "mt", artifacts, required: true);
+            StageUpdateFile(extractedDir, stagingDir, "mt", artifacts, required: true, makeExecutable: true);
             if (updateType != UpdateType.WebOnly)
             {
-                StageMacOsFile(extractedDir, stagingDir, "mthost", artifacts, required: true);
+                StageUpdateFile(extractedDir, stagingDir, "mthost", artifacts, required: true, makeExecutable: true);
             }
 
-            StageMacOsFile(extractedDir, stagingDir, "version.json", artifacts, required: true);
+            StageUpdateFile(extractedDir, stagingDir, AgentHostBinaryName, artifacts, required: true, makeExecutable: true);
+            StageUpdateFile(extractedDir, stagingDir, "version.json", artifacts, required: true, makeExecutable: false);
 
             if (deleteSourceAfter)
             {
@@ -1045,6 +1075,7 @@ public sealed partial class UpdateService : IDisposable
                 ReplaceUnixManagedFile(extractedDir, installDir, "mthost", makeExecutable: true, backupDir, replacedFiles, artifacts, required: true);
             }
 
+            ReplaceUnixManagedFile(extractedDir, installDir, AgentHostBinaryName, makeExecutable: true, backupDir, replacedFiles, artifacts, required: true);
             ReplaceUnixManagedFile(extractedDir, installDir, "version.json", makeExecutable: false, backupDir, replacedFiles, artifacts, required: true);
 
             if (deleteSourceAfter)
@@ -1081,6 +1112,8 @@ public sealed partial class UpdateService : IDisposable
     private static void TryRestoreLinuxServiceWebOnlyUpdate(
         string? currentMtPath,
         string? backupMtPath,
+        string? currentAgentHostPath,
+        string? backupAgentHostPath,
         string? currentVersionJsonPath,
         string? backupVersionJsonPath,
         Action<string, string>? writeLog = null)
@@ -1098,6 +1131,21 @@ public sealed partial class UpdateService : IDisposable
         {
             writeLog?.Invoke($"Failed to restore mt after update error: {restoreEx.Message}", "ERROR");
             Log.Error(() => $"Failed to restore mt after update error: {restoreEx.Message}");
+        }
+
+        try
+        {
+            if (!string.IsNullOrEmpty(currentAgentHostPath) &&
+                !string.IsNullOrEmpty(backupAgentHostPath) &&
+                File.Exists(backupAgentHostPath))
+            {
+                InstallUnixFileAtomically(backupAgentHostPath, currentAgentHostPath, makeExecutable: true, writeLog);
+            }
+        }
+        catch (Exception restoreEx)
+        {
+            writeLog?.Invoke($"Failed to restore {AgentHostBinaryName} after update error: {restoreEx.Message}", "ERROR");
+            Log.Error(() => $"Failed to restore {AgentHostBinaryName} after update error: {restoreEx.Message}");
         }
 
         try
@@ -1275,12 +1323,67 @@ public sealed partial class UpdateService : IDisposable
         Directory.CreateDirectory(path);
     }
 
-    private static void StageMacOsFile(
+    internal static string StageLinuxServiceUpdatePayload(
+        string extractedDir,
+        string settingsDirectory,
+        UpdateType updateType,
+        bool deleteSourceAfter,
+        UpdateArtifacts artifacts)
+    {
+        AppendUpdateLog(artifacts.LogPath, "Preparing durable Linux service update staging");
+
+        var stagingRoot = Path.Combine(settingsDirectory, "update-staging");
+        var payloadDir = Path.Combine(stagingRoot, "payload");
+        RecreateDirectory(stagingRoot);
+        Directory.CreateDirectory(payloadDir);
+        AppendUpdateLog(artifacts.LogPath, $"Staging Linux service update payload in {payloadDir}");
+
+        StageUpdateFile(extractedDir, payloadDir, "mt", artifacts, required: true, makeExecutable: true);
+        if (updateType != UpdateType.WebOnly)
+        {
+            StageUpdateFile(extractedDir, payloadDir, "mthost", artifacts, required: true, makeExecutable: true);
+        }
+
+        StageUpdateFile(extractedDir, payloadDir, AgentHostBinaryName, artifacts, required: true, makeExecutable: true);
+        StageUpdateFile(extractedDir, payloadDir, "version.json", artifacts, required: true, makeExecutable: false);
+
+        if (deleteSourceAfter)
+        {
+            TryDeleteExtractedPayload(extractedDir);
+            AppendUpdateLog(artifacts.LogPath, $"Deleted downloaded payload after staging: {extractedDir}");
+        }
+
+        return payloadDir;
+    }
+
+    internal static string StageLinuxServiceUpdateScript(string scriptPath, string settingsDirectory, UpdateArtifacts artifacts)
+    {
+        var stagingRoot = Path.Combine(settingsDirectory, "update-staging");
+        Directory.CreateDirectory(stagingRoot);
+
+        var stagedScriptPath = Path.Combine(stagingRoot, Path.GetFileName(scriptPath));
+        File.Copy(scriptPath, stagedScriptPath, overwrite: true);
+        ApplyUnixPermissions(stagedScriptPath, makeExecutable: true);
+        AppendUpdateLog(artifacts.LogPath, $"Staged Linux service update script at {stagedScriptPath}");
+
+        try
+        {
+            File.Delete(scriptPath);
+        }
+        catch
+        {
+        }
+
+        return stagedScriptPath;
+    }
+
+    private static void StageUpdateFile(
         string extractedDir,
         string stagingDir,
         string fileName,
         UpdateArtifacts artifacts,
-        bool required)
+        bool required,
+        bool makeExecutable)
     {
         var sourcePath = Path.Combine(extractedDir, fileName);
         if (!File.Exists(sourcePath))
@@ -1296,7 +1399,7 @@ public sealed partial class UpdateService : IDisposable
         var tempPath = Path.Combine(stagingDir, fileName + ".tmp");
         var destinationPath = Path.Combine(stagingDir, fileName);
         File.Copy(sourcePath, tempPath, overwrite: true);
-        ApplyUnixPermissions(tempPath, fileName is "mt" or "mthost");
+        ApplyUnixPermissions(tempPath, makeExecutable);
         File.Move(tempPath, destinationPath, overwrite: true);
         AppendUpdateLog(artifacts.LogPath, $"Staged {fileName}");
     }
@@ -1466,6 +1569,7 @@ rollback() {{
     log ""Rolling back staged macOS update"" ""WARN""
     [[ -f ""$BACKUP_DIR/mt.bak"" ]] && cat ""$BACKUP_DIR/mt.bak"" > ""$INSTALL_DIR/mt"" && chmod +x ""$INSTALL_DIR/mt"" || true
     [[ -f ""$BACKUP_DIR/mthost.bak"" ]] && cat ""$BACKUP_DIR/mthost.bak"" > ""$INSTALL_DIR/mthost"" && chmod +x ""$INSTALL_DIR/mthost"" || true
+    [[ -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ]] && cat ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" > ""$INSTALL_DIR/{AgentHostBinaryName}"" && chmod +x ""$INSTALL_DIR/{AgentHostBinaryName}"" || true
     [[ -f ""$BACKUP_DIR/version.json.bak"" ]] && cat ""$BACKUP_DIR/version.json.bak"" > ""$INSTALL_DIR/version.json"" || true
 }}
 
@@ -1478,10 +1582,12 @@ if [[ -d ""$STAGING"" ]] && [[ -f ""$STAGING/mt"" ]]; then
 
     [[ -f ""$INSTALL_DIR/mt"" ]] && cp -f ""$INSTALL_DIR/mt"" ""$BACKUP_DIR/mt.bak""
     [[ -f ""$INSTALL_DIR/mthost"" ]] && cp -f ""$INSTALL_DIR/mthost"" ""$BACKUP_DIR/mthost.bak""
+    [[ -f ""$INSTALL_DIR/{AgentHostBinaryName}"" ]] && cp -f ""$INSTALL_DIR/{AgentHostBinaryName}"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
     [[ -f ""$INSTALL_DIR/version.json"" ]] && cp -f ""$INSTALL_DIR/version.json"" ""$BACKUP_DIR/version.json.bak""
 
     if apply_file ""$STAGING/mt"" ""$INSTALL_DIR/mt"" ""mt"" true \
         && {{ [[ ! -f ""$STAGING/mthost"" ]] || apply_file ""$STAGING/mthost"" ""$INSTALL_DIR/mthost"" ""mthost"" true; }} \
+        && apply_file ""$STAGING/{AgentHostBinaryName}"" ""$INSTALL_DIR/{AgentHostBinaryName}"" ""{AgentHostBinaryName}"" true \
         && apply_file ""$STAGING/version.json"" ""$INSTALL_DIR/version.json"" ""version.json"" false; then
         write_result true ""Update applied""
         rm -rf ""$STAGING"" ""$BACKUP_DIR"" 2>/dev/null || true

@@ -6,9 +6,10 @@
  */
 
 import { $activeSessionId } from '../../stores';
+import type { LensAttachmentReference } from '../../api/types';
+import { createLensTurnRequest, isLensActiveSession, submitLensTurn } from '../lens/input';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
-import { resolveImagePasteMode } from './imagePasteMode';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 
@@ -423,33 +424,6 @@ async function pasteClipboardImageAsPath(
   }
 }
 
-async function sendNativeClipboardImage(
-  sessionId: string,
-  imageData: ClipboardImageData,
-): Promise<ClipboardPasteResult> {
-  const overlay = showTransferOverlay(sessionId, t('fileDrop.uploadingToTerminal'));
-  const file = buildClipboardImageFile(imageData);
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const resp = await fetch(`/api/sessions/${sessionId}/paste-clipboard-image`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (resp.ok) {
-      return 'image';
-    }
-    showDropToast(`${t('fileDrop.clipboardFailed')}: ${resp.status}`);
-  } catch {
-    // network error
-  } finally {
-    overlay.close();
-  }
-
-  return 'unavailable';
-}
-
 /**
  * Handle file drop - routes to appropriate handler based on file type:
  * - Image files: upload and paste path
@@ -461,6 +435,7 @@ export async function handleFileDrop(files: FileList): Promise<void> {
   if (!activeId || files.length === 0) return;
 
   const fileList = Array.from(files);
+  const lensActive = isLensActiveSession(activeId);
   const needsUpload = fileList.some((file) => isImageFile(file.name) || isRejectedFile(file.name));
   const needsLongTextTransfer = fileList.some(
     (file) =>
@@ -472,24 +447,48 @@ export async function handleFileDrop(files: FileList): Promise<void> {
     needsUpload || needsLongTextTransfer
       ? showTransferOverlay(
           activeId,
-          needsUpload ? t('fileDrop.uploadingToTerminal') : t('fileDrop.transferringText'),
+          needsUpload
+            ? t(lensActive ? 'fileDrop.uploadingToLens' : 'fileDrop.uploadingToTerminal')
+            : t(lensActive ? 'fileDrop.transferringTextLens' : 'fileDrop.transferringText'),
         )
       : null;
   const uploadedPaths: string[] = [];
+  const lensAttachments: LensAttachmentReference[] = [];
+  const textSnippets: string[] = [];
 
   try {
     for (const file of fileList) {
       // Image files: upload and collect path
       if (isImageFile(file.name)) {
         const path = await uploadFile(activeId, file);
-        if (path) uploadedPaths.push(path);
+        if (path) {
+          uploadedPaths.push(path);
+          if (lensActive) {
+            lensAttachments.push({
+              kind: 'image',
+              path,
+              mimeType: file.type || null,
+              displayName: file.name,
+            });
+          }
+        }
         continue;
       }
 
       // Binary/document files: upload and paste path (PDFs, archives, etc.)
       if (isRejectedFile(file.name)) {
         const path = await uploadFile(activeId, file);
-        if (path) uploadedPaths.push(path);
+        if (path) {
+          uploadedPaths.push(path);
+          if (lensActive) {
+            lensAttachments.push({
+              kind: 'file',
+              path,
+              mimeType: file.type || null,
+              displayName: file.name,
+            });
+          }
+        }
         continue;
       }
 
@@ -503,6 +502,11 @@ export async function handleFileDrop(files: FileList): Promise<void> {
       try {
         const content = await readFileAsText(file);
         const sanitized = sanitizePasteContent(content);
+        if (lensActive) {
+          textSnippets.push(`File "${file.name}":\n${sanitized}`);
+          continue;
+        }
+
         if (overlay) {
           overlay.setLabel(t('fileDrop.transferringText'));
         }
@@ -513,7 +517,22 @@ export async function handleFileDrop(files: FileList): Promise<void> {
       }
     }
 
-    // Paste collected file paths (if any)
+    if (lensActive) {
+      const promptParts: string[] = [];
+      if (textSnippets.length > 0) {
+        promptParts.push(textSnippets.join('\n\n'));
+      }
+
+      const promptText = promptParts.join('\n\n').trim();
+      if (promptText.length > 0 || lensAttachments.length > 0) {
+        if (overlay) {
+          overlay.setLabel(t('fileDrop.transferringToLens'));
+        }
+        await submitLensTurn(activeId, createLensTurnRequest(promptText, lensAttachments));
+      }
+      return;
+    }
+
     if (uploadedPaths.length > 0) {
       if (overlay) {
         overlay.setLabel(t('fileDrop.transferringToTerminal'));
@@ -572,13 +591,12 @@ export function setupFileDrop(container: HTMLElement): void {
 
 /**
  * Handle clipboard paste with automatic image strategy:
- * - native clipboard injection for known CLI agents (Codex, Gemini, etc.)
- * - path paste for apps that read file paths (Claude, unknown)
+ * - image data is uploaded and pasted as a filesystem path
  * - text paste fallback when clipboard has no image
  */
 export async function handleClipboardPaste(
   sessionId: string,
-  context: ClipboardPasteContext = {},
+  _context: ClipboardPasteContext = {},
 ): Promise<ClipboardPasteResult> {
   if (!window.isSecureContext) {
     showHttpsRequiredToast();
@@ -594,26 +612,7 @@ export async function handleClipboardPaste(
 
   const imageData = await readClipboardImageData();
   if (imageData) {
-    const mode = resolveImagePasteMode({
-      name: context.foregroundName ?? null,
-      commandLine: context.foregroundCommandLine ?? null,
-    });
-
-    if (mode === 'native') {
-      const nativeResult = await sendNativeClipboardImage(sessionId, imageData);
-      if (nativeResult === 'image') return nativeResult;
-      const pathResult = await pasteClipboardImageAsPath(sessionId, imageData);
-      if (pathResult === 'image') return pathResult;
-      return nativeResult === 'unavailable' || pathResult === 'unavailable'
-        ? 'unavailable'
-        : 'none';
-    }
-
-    const pathResult = await pasteClipboardImageAsPath(sessionId, imageData);
-    if (pathResult === 'image') return pathResult;
-    const nativeResult = await sendNativeClipboardImage(sessionId, imageData);
-    if (nativeResult === 'image') return nativeResult;
-    return pathResult === 'unavailable' || nativeResult === 'unavailable' ? 'unavailable' : 'none';
+    return pasteClipboardImageAsPath(sessionId, imageData);
   }
 
   return pasteClipboardText(sessionId);
@@ -621,13 +620,12 @@ export async function handleClipboardPaste(
 
 /**
  * Handle Alt+V clipboard image paste.
- * Process-aware: for native-clipboard apps (Codex, etc.) sets OS clipboard
- * and injects \x1bv into PTY. For path-mode apps (Claude, unknown) uploads
- * and pastes the file path instead.
+ * Clipboard injection is currently disabled, so image data always falls back
+ * to upload-plus-path paste.
  */
 export async function handleNativeImagePaste(
   sessionId: string,
-  context: ClipboardPasteContext = {},
+  _context: ClipboardPasteContext = {},
 ): Promise<ClipboardPasteResult> {
   if (!window.isSecureContext) {
     showHttpsRequiredToast();
@@ -643,15 +641,5 @@ export async function handleNativeImagePaste(
 
   const imageData = await readClipboardImageData();
   if (!imageData) return 'none';
-
-  const mode = resolveImagePasteMode({
-    name: context.foregroundName ?? null,
-    commandLine: context.foregroundCommandLine ?? null,
-  });
-
-  if (mode === 'path') {
-    return pasteClipboardImageAsPath(sessionId, imageData);
-  }
-
-  return sendNativeClipboardImage(sessionId, imageData);
+  return pasteClipboardImageAsPath(sessionId, imageData);
 }

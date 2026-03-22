@@ -99,6 +99,7 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 
 const translations: Record<string, string> = {
   'session.terminal': 'Terminal',
+  'sessionTabs.agent': 'Lens',
   'sessionTabs.files': 'Files',
   'sessionTabs.git': 'Git',
   'sessionTabs.share': 'Share',
@@ -137,7 +138,17 @@ describe('tabBar', () => {
     const { createTabBar } = await import('./tabBar');
 
     const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
-    const actions = bar.children[3];
+    const tabButtons = bar.children.filter((child) =>
+      child.className.split(/\s+/).includes('session-tab'),
+    );
+    const actions = bar.querySelector('.ide-bar-actions');
+    expect(actions).not.toBeNull();
+    if (!actions) {
+      throw new Error('Expected IDE actions container');
+    }
+
+    expect(tabButtons.map((button) => button.dataset.tab)).toEqual(['terminal', 'agent', 'files']);
+
     const buttons = actions.children;
 
     expect(buttons.map((button) => button.dataset.action)).toEqual(['web', 'share', 'git']);
@@ -157,7 +168,11 @@ describe('tabBar', () => {
     setShareClickHandler(shareClick);
 
     const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
-    const actions = bar.children[3];
+    const actions = bar.querySelector('.ide-bar-actions');
+    expect(actions).not.toBeNull();
+    if (!actions) {
+      throw new Error('Expected IDE actions container');
+    }
     const shareButton = actions.children[1];
     const gitButton = actions.children[2];
 

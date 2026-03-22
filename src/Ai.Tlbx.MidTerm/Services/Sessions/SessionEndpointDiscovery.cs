@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 internal static class SessionEndpointDiscovery
 {
-    public static List<(string sessionId, int hostPid)> GetExistingEndpoints()
+    public static List<(string sessionId, int hostPid)> GetExistingEndpoints(string instanceId)
     {
         var endpoints = new List<(string, int)>();
 
@@ -13,25 +13,27 @@ internal static class SessionEndpointDiscovery
         {
 #if WINDOWS
             var pipeDir = @"\\.\pipe\";
-            foreach (var pipePath in Directory.GetFiles(pipeDir))
+            foreach (var pipePath in Directory.GetFiles(pipeDir, $"{IpcEndpoint.Prefix}{instanceId}-*"))
             {
                 var pipeName = Path.GetFileName(pipePath);
                 var parsed = IpcEndpoint.ParseEndpoint(pipeName);
-                if (parsed.HasValue)
+                if (parsed.HasValue &&
+                    string.Equals(parsed.Value.instanceId, instanceId, StringComparison.Ordinal))
                 {
-                    endpoints.Add(parsed.Value);
+                    endpoints.Add((parsed.Value.sessionId, parsed.Value.pid));
                 }
             }
 #else
             var socketDir = IpcEndpoint.GetUnixSocketDirectory();
             if (Directory.Exists(socketDir))
             {
-                foreach (var socketPath in Directory.GetFiles(socketDir, $"{IpcEndpoint.Prefix}*.sock"))
+                foreach (var socketPath in Directory.GetFiles(socketDir, $"{IpcEndpoint.Prefix}{instanceId}-*.sock"))
                 {
                     var parsed = IpcEndpoint.ParseEndpoint(socketPath);
-                    if (parsed.HasValue)
+                    if (parsed.HasValue &&
+                        string.Equals(parsed.Value.instanceId, instanceId, StringComparison.Ordinal))
                     {
-                        endpoints.Add(parsed.Value);
+                        endpoints.Add((parsed.Value.sessionId, parsed.Value.pid));
                     }
                 }
             }
@@ -45,16 +47,55 @@ internal static class SessionEndpointDiscovery
         return endpoints;
     }
 
-    public static bool EndpointExists(string sessionId, int hostPid)
+    public static List<(string sessionId, int hostPid)> GetLegacyEndpoints()
+    {
+        var endpoints = new List<(string, int)>();
+
+        try
+        {
+#if WINDOWS
+            var pipeDir = @"\\.\pipe\";
+            foreach (var pipePath in Directory.GetFiles(pipeDir, $"{IpcEndpoint.Prefix}*"))
+            {
+                var parsed = IpcEndpoint.ParseEndpoint(Path.GetFileName(pipePath));
+                if (parsed.HasValue && string.IsNullOrEmpty(parsed.Value.instanceId))
+                {
+                    endpoints.Add((parsed.Value.sessionId, parsed.Value.pid));
+                }
+            }
+#else
+            var socketDir = IpcEndpoint.GetUnixSocketDirectory();
+            if (Directory.Exists(socketDir))
+            {
+                foreach (var socketPath in Directory.GetFiles(socketDir, $"{IpcEndpoint.Prefix}*.sock"))
+                {
+                    var parsed = IpcEndpoint.ParseEndpoint(socketPath);
+                    if (parsed.HasValue && string.IsNullOrEmpty(parsed.Value.instanceId))
+                    {
+                        endpoints.Add((parsed.Value.sessionId, parsed.Value.pid));
+                    }
+                }
+            }
+#endif
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"TtyHostSessionManager: Legacy endpoint enumeration failed: {ex.Message}");
+        }
+
+        return endpoints;
+    }
+
+    public static bool EndpointExists(string instanceId, string sessionId, int hostPid)
     {
         try
         {
 #if WINDOWS
-            var pipeName = IpcEndpoint.GetSessionEndpoint(sessionId, hostPid);
+            var pipeName = IpcEndpoint.GetSessionEndpoint(instanceId, sessionId, hostPid);
             var pipeDir = @"\\.\pipe\";
             return Directory.GetFiles(pipeDir, pipeName).Length > 0;
 #else
-            var socketPath = IpcEndpoint.GetSessionEndpoint(sessionId, hostPid);
+            var socketPath = IpcEndpoint.GetSessionEndpoint(instanceId, sessionId, hostPid);
             return File.Exists(socketPath);
 #endif
         }
@@ -64,33 +105,23 @@ internal static class SessionEndpointDiscovery
         }
     }
 
-    public static int? FindEndpointPid(string sessionId)
+    public static int? FindEndpointPid(string instanceId, string sessionId)
     {
         try
         {
 #if WINDOWS
             var pipeDir = @"\\.\pipe\";
-            var pattern = $"mthost-{sessionId}-*";
+            var pattern = $"{IpcEndpoint.Prefix}{instanceId}-{sessionId}-*";
             var matches = Directory.GetFiles(pipeDir, pattern);
             if (matches.Length == 0) return null;
 
-            var pipeName = Path.GetFileName(matches[0]);
-            var parts = pipeName.Split('-');
-            if (parts.Length >= 3 && int.TryParse(parts[2], out var pid))
-            {
-                return pid;
-            }
+            return IpcEndpoint.ParseEndpoint(Path.GetFileName(matches[0]))?.pid;
 #else
             var socketDir = IpcEndpoint.GetUnixSocketDirectory();
-            var matches = Directory.GetFiles(socketDir, $"mthost-{sessionId}-*.sock");
+            var matches = Directory.GetFiles(socketDir, $"{IpcEndpoint.Prefix}{instanceId}-{sessionId}-*.sock");
             if (matches.Length == 0) return null;
 
-            var fileName = Path.GetFileNameWithoutExtension(matches[0]);
-            var parts = fileName.Split('-');
-            if (parts.Length >= 3 && int.TryParse(parts[2], out var pid))
-            {
-                return pid;
-            }
+            return IpcEndpoint.ParseEndpoint(matches[0])?.pid;
 #endif
         }
         catch
@@ -100,13 +131,15 @@ internal static class SessionEndpointDiscovery
         return null;
     }
 
-    public static void CleanupEndpoint(string sessionId, int hostPid)
+    public static void CleanupEndpoint(string instanceId, string sessionId, int hostPid, bool legacy = false)
     {
         try
         {
 #if WINDOWS
 #else
-            var socketPath = IpcEndpoint.GetSessionEndpoint(sessionId, hostPid);
+            var socketPath = legacy
+                ? IpcEndpoint.GetLegacySessionEndpoint(sessionId, hostPid)
+                : IpcEndpoint.GetSessionEndpoint(instanceId, sessionId, hostPid);
             if (File.Exists(socketPath))
             {
                 File.Delete(socketPath);

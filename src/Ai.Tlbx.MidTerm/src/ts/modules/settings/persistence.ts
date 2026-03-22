@@ -41,6 +41,7 @@ import { syncTerminalWebglState } from '../terminal/manager';
 import { setLocale, t } from '../i18n';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
+import { setDevMode } from '../sidebar/voiceSection';
 import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 import {
   getSettingsRegistryControlEntries,
@@ -939,6 +940,7 @@ export function bindDevModeToggle(): void {
       const newDevMode = !settings.devMode;
       const updated = { ...settings, devMode: newDevMode };
       $currentSettings.set(updated);
+      setDevMode(newDevMode);
       updateSettings(updated as Parameters<typeof updateSettings>[0]).catch(() => {});
       const envRow = document.getElementById('dev-environment-row');
       const envEl = document.getElementById('dev-environment-name');

@@ -1,0 +1,74 @@
+using System.Diagnostics;
+using Ai.Tlbx.MidTerm.Settings;
+
+#if WINDOWS
+using Microsoft.Win32;
+#endif
+
+namespace Ai.Tlbx.MidTerm.Services.Sessions;
+
+internal static class LensHostEnvironmentResolver
+{
+    public static void ApplyUserProfileEnvironment(ProcessStartInfo startInfo, MidTermSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(startInfo);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            return;
+        }
+
+        var profileDirectory = ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
+        if (string.IsNullOrWhiteSpace(profileDirectory) || !Directory.Exists(profileDirectory))
+        {
+            return;
+        }
+
+        startInfo.Environment["USERPROFILE"] = profileDirectory;
+        startInfo.Environment["HOME"] = profileDirectory;
+        startInfo.Environment["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
+
+        var root = Path.GetPathRoot(profileDirectory);
+        if (!string.IsNullOrWhiteSpace(root))
+        {
+            startInfo.Environment["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            startInfo.Environment["HOMEPATH"] = profileDirectory[root.Length..];
+        }
+
+        startInfo.Environment["APPDATA"] = Path.Combine(profileDirectory, "AppData", "Roaming");
+        startInfo.Environment["LOCALAPPDATA"] = Path.Combine(profileDirectory, "AppData", "Local");
+    }
+
+    internal static string? ResolveWindowsProfileDirectory(string? userName, string? userSid)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+#if WINDOWS
+        if (!string.IsNullOrWhiteSpace(userSid))
+        {
+            const string profileListRoot = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+            using var profileKey = Registry.LocalMachine.OpenSubKey(Path.Combine(profileListRoot, userSid));
+            var profilePath = profileKey?.GetValue("ProfileImagePath") as string;
+            if (!string.IsNullOrWhiteSpace(profilePath))
+            {
+                return Environment.ExpandEnvironmentVariables(profilePath);
+            }
+        }
+#endif
+
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return null;
+        }
+
+        var currentUserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var usersRoot = Directory.GetParent(currentUserProfile)?.FullName;
+        return string.IsNullOrWhiteSpace(usersRoot)
+            ? null
+            : Path.Combine(usersRoot, userName);
+    }
+}

@@ -57,6 +57,29 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Constructor_UsesEnvironmentOverrideDirectory_WhenProvided()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var overrideDir = Path.Combine(_tempDir, "override-profile");
+        var previous = Environment.GetEnvironmentVariable(SettingsService.SettingsDirectoryEnvironmentVariable);
+        Environment.SetEnvironmentVariable(SettingsService.SettingsDirectoryEnvironmentVariable, overrideDir);
+
+        try
+        {
+            var service = new SettingsService();
+
+            Assert.False(service.IsRunningAsService);
+            Assert.Equal(Path.Combine(overrideDir, "settings.json"), service.SettingsPath);
+            Assert.Equal(overrideDir, service.SettingsDirectory);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SettingsService.SettingsDirectoryEnvironmentVariable, previous);
+        }
+    }
+
+    [Fact]
     public void Load_MissingBooleanKeys_AppliesTrueDefaults()
     {
         if (!OperatingSystem.IsWindows()) return;

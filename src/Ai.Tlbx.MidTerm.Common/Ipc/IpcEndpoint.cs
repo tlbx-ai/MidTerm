@@ -6,26 +6,43 @@ namespace Ai.Tlbx.MidTerm.Common.Ipc;
 /// Platform-specific IPC endpoint resolution.
 /// Windows: Named pipes
 /// Unix: Unix domain sockets
-/// Format: mthost-{sessionId}-{pid}
+/// Format: mthost-{instanceId}-{sessionId}-{pid}
 /// </summary>
 public static class IpcEndpoint
 {
     public const string Prefix = "mthost-";
 
     /// <summary>
-    /// Get the IPC endpoint name/path for a session.
-    /// </summary>
-    public static string GetSessionEndpoint(string sessionId, int pid)
+     /// Get the IPC endpoint name/path for a session.
+     /// </summary>
+    public static string GetSessionEndpoint(string instanceId, string sessionId, int pid)
+    {
+        var endpointName = BuildEndpointName(instanceId, sessionId, pid);
+        if (OperatingSystem.IsWindows())
+        {
+            return endpointName;
+        }
+        else
+        {
+            var socketDir = GetUnixSocketDirectory();
+            return Path.Combine(socketDir, $"{endpointName}.sock");
+        }
+    }
+
+    public static string GetLegacySessionEndpoint(string sessionId, int pid)
     {
         if (OperatingSystem.IsWindows())
         {
             return $"{Prefix}{sessionId}-{pid}";
         }
-        else
-        {
-            var socketDir = GetUnixSocketDirectory();
-            return Path.Combine(socketDir, $"{Prefix}{sessionId}-{pid}.sock");
-        }
+
+        var socketDir = GetUnixSocketDirectory();
+        return Path.Combine(socketDir, $"{Prefix}{sessionId}-{pid}.sock");
+    }
+
+    public static string BuildEndpointName(string instanceId, string sessionId, int pid)
+    {
+        return $"{Prefix}{instanceId}-{sessionId}-{pid}";
     }
 
     public static string GetUnixSocketDirectory()
@@ -63,7 +80,7 @@ public static class IpcEndpoint
     /// Parse session ID and PID from an endpoint name.
     /// Returns null if the format doesn't match.
     /// </summary>
-    public static (string sessionId, int pid)? ParseEndpoint(string endpointName)
+    public static (string? instanceId, string sessionId, int pid)? ParseEndpoint(string endpointName)
     {
         // Strip path and extension for Unix sockets
         var name = Path.GetFileNameWithoutExtension(endpointName);
@@ -78,21 +95,20 @@ public static class IpcEndpoint
         }
 
         var remainder = name[Prefix.Length..];
-        var lastDash = remainder.LastIndexOf('-');
-        if (lastDash <= 0)
+        var segments = remainder.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 2 &&
+            int.TryParse(segments[1], out var legacyPid))
+        {
+            return (null, segments[0], legacyPid);
+        }
+
+        if (segments.Length != 3 ||
+            !int.TryParse(segments[2], out var pid))
         {
             return null;
         }
 
-        var sessionId = remainder[..lastDash];
-        var pidStr = remainder[(lastDash + 1)..];
-
-        if (!int.TryParse(pidStr, out var pid))
-        {
-            return null;
-        }
-
-        return (sessionId, pid);
+        return (segments[0], segments[1], pid);
     }
 
     /// <summary>

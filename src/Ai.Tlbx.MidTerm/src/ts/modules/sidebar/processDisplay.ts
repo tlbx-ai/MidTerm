@@ -131,12 +131,16 @@ export function buildProcessCwdTuple(
   processName: string | null | undefined,
   commandLine: string | null,
   cwd: string | null | undefined,
+  processIdentity?: string | null,
 ): string | null {
   if (!processName || !cwd) return null;
-  const processIdentity = getProcessIdentity(processName, commandLine);
+  const normalizedProcessIdentity =
+    typeof processIdentity === 'string' && processIdentity.trim().length > 0
+      ? processIdentity.trim().toLowerCase()
+      : getProcessIdentity(processName, commandLine);
   const normalizedCwd = normalizeTuplePath(cwd);
-  if (!processIdentity || !normalizedCwd) return null;
-  return `${processIdentity}|${normalizedCwd}`;
+  if (!normalizedProcessIdentity || !normalizedCwd) return null;
+  return `${normalizedProcessIdentity}|${normalizedCwd}`;
 }
 
 /**

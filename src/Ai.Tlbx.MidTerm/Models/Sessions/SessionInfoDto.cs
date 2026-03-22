@@ -1,3 +1,5 @@
+using Ai.Tlbx.MidTerm.Common.Protocol;
+
 namespace Ai.Tlbx.MidTerm.Models.Sessions;
 
 /// <summary>
@@ -20,9 +22,13 @@ public sealed class SessionInfoDto
     public int? ForegroundPid { get; set; }
     public string? ForegroundName { get; set; }
     public string? ForegroundCommandLine { get; set; }
+    public string? ForegroundDisplayName { get; set; }
+    public string? ForegroundProcessIdentity { get; set; }
+    public SessionAgentAttachPoint? AgentAttachPoint { get; set; }
     public int Order { get; set; }
     public string? ParentSessionId { get; set; }
     public string? BookmarkId { get; set; }
     public bool AgentControlled { get; set; }
+    public bool HasLensHistory { get; set; }
     public SessionSupervisorInfoDto? Supervisor { get; set; }
 }

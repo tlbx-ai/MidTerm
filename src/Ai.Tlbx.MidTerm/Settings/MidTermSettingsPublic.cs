@@ -55,7 +55,18 @@ public sealed partial class MidTermSettingsPublic
     public bool ShowUpdateNotification { get; set; } = true;
     public string UpdateChannel { get; set; } = "stable";
     public LanguageSetting Language { get; set; } = LanguageSetting.Auto;
-    public List<ManagerBarButton> ManagerBarButtons { get; set; } = [new() { Id = "1", Label = "commit and push pls", Text = "commit and push pls" }];
+    public List<ManagerBarButton> ManagerBarButtons { get; set; } =
+    [
+        new()
+        {
+            Id = "1",
+            Label = "commit and push pls",
+            Text = "commit and push pls",
+            ActionType = "single",
+            Prompts = ["commit and push pls"],
+            Trigger = new ManagerBarTrigger { Kind = "fireAndForget" }
+        }
+    ];
 
     // Security
     public string? RunAsUser { get; set; }

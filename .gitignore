@@ -21,6 +21,7 @@ bld/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+.artifacts/
 *.nupkg
 *.snupkg
 
@@ -86,6 +87,7 @@ coverage*.info
 # Claude Code
 .claude/
 .midterm/
+.dev/
 nul
 
 # Generated wwwroot (entire folder is build output from src/static + TypeScript)

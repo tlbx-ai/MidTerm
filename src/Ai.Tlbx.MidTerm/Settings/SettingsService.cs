@@ -9,6 +9,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class SettingsService
 {
+    internal const string SettingsDirectoryEnvironmentVariable = "MIDTERM_SETTINGS_DIR";
     private readonly string _settingsPath;
     private readonly ISecretStorage _secretStorage;
     private MidTermSettings? _cached;
@@ -24,6 +25,15 @@ public sealed class SettingsService
 
     public SettingsService()
     {
+        var overrideDirectory = GetSettingsDirectoryOverride();
+        if (!string.IsNullOrWhiteSpace(overrideDirectory))
+        {
+            IsRunningAsService = false;
+            _settingsPath = Path.Combine(overrideDirectory, "settings.json");
+            _secretStorage = SecretStorageFactory.Create(overrideDirectory, isServiceMode: false);
+            return;
+        }
+
         IsRunningAsService = DetectServiceMode();
         _settingsPath = GetSettingsPath(IsRunningAsService);
         _secretStorage = SecretStorageFactory.Create(SettingsDirectory, IsRunningAsService);
@@ -65,6 +75,17 @@ public sealed class SettingsService
         var userDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var configDir = Path.Combine(userDir, ".midterm");
         return Path.Combine(configDir, "settings.json");
+    }
+
+    internal static string? GetSettingsDirectoryOverride()
+    {
+        var overrideDirectory = Environment.GetEnvironmentVariable(SettingsDirectoryEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(overrideDirectory))
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(Environment.ExpandEnvironmentVariables(overrideDirectory.Trim()));
     }
 
     private static bool DetectServiceMode()
@@ -450,7 +471,7 @@ public sealed class SettingsService
         current.FileRadar = old.FileRadar;
         current.ShowSidebarSessionFilter = old.ShowSidebarSessionFilter;
         current.ManagerBarEnabled = old.ManagerBarEnabled;
-        current.ManagerBarButtons = old.ManagerBarButtons;
+        current.ManagerBarButtons = ManagerBarButton.NormalizeList(old.ManagerBarButtons);
         current.TmuxCompatibility = old.TmuxCompatibility;
         current.DevMode = old.DevMode;
         current.ShowChangelogAfterUpdate = old.ShowChangelogAfterUpdate;

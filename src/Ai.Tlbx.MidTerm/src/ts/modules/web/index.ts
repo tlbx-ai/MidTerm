@@ -56,7 +56,6 @@ export function initWebPreview(): void {
   setupWebPreviewDockResize();
 
   let knownSessionIds = new Set<string>();
-
   $activeSessionId.subscribe(() => {
     void syncActiveWebPreview();
   });

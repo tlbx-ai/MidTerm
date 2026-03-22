@@ -608,6 +608,14 @@ require_extracted_binaries() {
         return 1
     fi
 
+    if [ ! -f "$temp_dir/mtagenthost" ]; then
+        log "Release archive did not contain mtagenthost" "ERROR"
+        echo -e "${RED}failed${NC}"
+        echo -e "  ${YELLOW}The downloaded release archive is incomplete: mtagenthost is missing.${NC}"
+        echo -e "  ${GRAY}This installer expects full release archives for every platform.${NC}"
+        return 1
+    fi
+
     return 0
 }
 
@@ -1494,6 +1502,18 @@ install_binary() {
         log "mthost copied and made executable"
     fi
 
+    if [ -f "$temp_dir/mtagenthost" ]; then
+        log "Copying mtagenthost to $install_dir/mtagenthost"
+        if ! copy_with_retry "$temp_dir/mtagenthost" "$install_dir/mtagenthost"; then
+            log "Failed to copy mtagenthost - file locked" "ERROR"
+            print_step "Copying mtagenthost..." "failed (locked)" "$RED"
+            rm -rf "$temp_dir"
+            exit 1
+        fi
+        chmod +x "$install_dir/mtagenthost"
+        log "mtagenthost copied and made executable"
+    fi
+
     # Copy version manifest
     if [ -f "$temp_dir/version.json" ]; then
         copy_with_retry "$temp_dir/version.json" "$install_dir/version.json" || true
@@ -1560,7 +1580,7 @@ install_as_service() {
     # The update script runs as the service user (non-root) and needs to overwrite
     # these files in-place. Without this, self-update silently fails.
     if [ -n "$INSTALLING_USER" ]; then
-        chown "$INSTALLING_USER" "$install_dir/mt" "$install_dir/mthost" 2>/dev/null || true
+        chown "$INSTALLING_USER" "$install_dir/mt" "$install_dir/mthost" "$install_dir/mtagenthost" 2>/dev/null || true
         [ -f "$install_dir/version.json" ] && chown "$INSTALLING_USER" "$install_dir/version.json" 2>/dev/null || true
     fi
 
@@ -1821,6 +1841,7 @@ rollback() {
     log "Rolling back staged macOS update" "WARN"
     [ -f "$BACKUP_DIR/mt.bak" ] && cat "$BACKUP_DIR/mt.bak" > "$INSTALL_DIR/mt" && chmod +x "$INSTALL_DIR/mt" || true
     [ -f "$BACKUP_DIR/mthost.bak" ] && cat "$BACKUP_DIR/mthost.bak" > "$INSTALL_DIR/mthost" && chmod +x "$INSTALL_DIR/mthost" || true
+    [ -f "$BACKUP_DIR/mtagenthost.bak" ] && cat "$BACKUP_DIR/mtagenthost.bak" > "$INSTALL_DIR/mtagenthost" && chmod +x "$INSTALL_DIR/mtagenthost" || true
     [ -f "$BACKUP_DIR/version.json.bak" ] && cat "$BACKUP_DIR/version.json.bak" > "$INSTALL_DIR/version.json" || true
 }
 
@@ -1833,10 +1854,12 @@ if [ -d "$STAGING" ] && [ -f "$STAGING/mt" ]; then
 
     [ -f "$INSTALL_DIR/mt" ] && cp -f "$INSTALL_DIR/mt" "$BACKUP_DIR/mt.bak"
     [ -f "$INSTALL_DIR/mthost" ] && cp -f "$INSTALL_DIR/mthost" "$BACKUP_DIR/mthost.bak"
+    [ -f "$INSTALL_DIR/mtagenthost" ] && cp -f "$INSTALL_DIR/mtagenthost" "$BACKUP_DIR/mtagenthost.bak"
     [ -f "$INSTALL_DIR/version.json" ] && cp -f "$INSTALL_DIR/version.json" "$BACKUP_DIR/version.json.bak"
 
     if apply_file "$STAGING/mt" "$INSTALL_DIR/mt" "mt" true \
         && { [ ! -f "$STAGING/mthost" ] || apply_file "$STAGING/mthost" "$INSTALL_DIR/mthost" "mthost" true; } \
+        && apply_file "$STAGING/mtagenthost" "$INSTALL_DIR/mtagenthost" "mtagenthost" true \
         && apply_file "$STAGING/version.json" "$INSTALL_DIR/version.json" "version.json" false; then
         write_result true "Update applied"
         rm -rf "$STAGING" "$BACKUP_DIR" 2>/dev/null || true
@@ -2048,9 +2071,12 @@ EOF
 stop_conflicting_midterm_processes() {
     local install_dir="$1"
     local process_pattern="^${install_dir}/mt( |$)"
+    local agenthost_pattern="^${install_dir}/mtagenthost( |$)"
     local pids
 
-    pids=$(pgrep -f "$process_pattern" 2>/dev/null || true)
+    pids=$(printf '%s\n%s\n' \
+        "$(pgrep -f "$process_pattern" 2>/dev/null || true)" \
+        "$(pgrep -f "$agenthost_pattern" 2>/dev/null || true)" | awk 'NF' | sort -u)
     if [ -z "$pids" ]; then
         return 0
     fi
@@ -2059,7 +2085,9 @@ stop_conflicting_midterm_processes() {
     kill $pids 2>/dev/null || true
     sleep 1
 
-    pids=$(pgrep -f "$process_pattern" 2>/dev/null || true)
+    pids=$(printf '%s\n%s\n' \
+        "$(pgrep -f "$process_pattern" 2>/dev/null || true)" \
+        "$(pgrep -f "$agenthost_pattern" 2>/dev/null || true)" | awk 'NF' | sort -u)
     if [ -n "$pids" ]; then
         log "Force killing remaining MidTerm processes: $(echo "$pids" | tr '\n' ' ')" "WARN"
         kill -9 $pids 2>/dev/null || true

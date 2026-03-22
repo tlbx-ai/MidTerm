@@ -9,7 +9,7 @@ public static partial class BrowserLog
     private static readonly Lock _lock = new();
     private const int MaxResultLength = 500;
 
-    [GeneratedRegex(@"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|\([AB012])")]
+    [GeneratedRegex(@"\x1B(?:\][^\x07]*(?:\x07|\x1B\\)|\[[0-?]*[ -/]*[@-~]|\([AB012]|[@-Z\\-_])")]
     private static partial Regex AnsiEscapePattern();
 
     public static void Initialize(string logDirectory)

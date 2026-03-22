@@ -46,6 +46,23 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void ApplyTo_AllowsTransparencySettingsUpToOneHundredPercent()
+    {
+        var settings = new MidTermSettings();
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            UiTransparency = 100,
+            TerminalTransparency = 100
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal(100, settings.UiTransparency);
+        Assert.Equal(100, settings.TerminalTransparency);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripFontRenderingSettings()
     {
         var settings = new MidTermSettings
@@ -203,5 +220,38 @@ public sealed class MidTermSettingsPublicTests
         var machine = Assert.Single(settings.HubMachines);
         Assert.Equal("api-secret", machine.ApiKey);
         Assert.Equal("pw-secret", machine.Password);
+    }
+
+    [Fact]
+    public void ManagerBarButtons_MigrateLegacyTextToPromptWorkflow()
+    {
+        var settings = new MidTermSettings
+        {
+            ManagerBarButtons =
+            [
+                new ManagerBarButton
+                {
+                    Id = "legacy",
+                    Label = "Legacy",
+                    Text = "echo hi"
+                }
+            ]
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        var button = Assert.Single(publicSettings.ManagerBarButtons);
+        Assert.Equal("single", button.ActionType);
+        Assert.Equal("fireAndForget", button.Trigger.Kind);
+        Assert.Equal(["echo hi"], button.Prompts);
+
+        settings.ManagerBarButtons.Clear();
+        publicSettings.ApplyTo(settings);
+
+        button = Assert.Single(settings.ManagerBarButtons);
+        Assert.Equal("echo hi", button.Text);
+        Assert.Equal("single", button.ActionType);
+        Assert.Equal("fireAndForget", button.Trigger.Kind);
+        Assert.Equal(["echo hi"], button.Prompts);
     }
 }

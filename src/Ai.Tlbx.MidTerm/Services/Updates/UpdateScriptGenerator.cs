@@ -19,6 +19,7 @@ namespace Ai.Tlbx.MidTerm.Services.Updates;
 /// </summary>
 public static class UpdateScriptGenerator
 {
+    private const string AgentHostBinaryName = "mtagenthost";
     private const string ServiceName = "MidTerm";
     private const string LaunchdLabel = "ai.tlbx.midterm";
     private const string SystemdService = "MidTerm";
@@ -54,8 +55,10 @@ public static class UpdateScriptGenerator
         var settingsDir = settingsDirectory;
         var newMtPath = Path.Combine(extractedDir, "mt.exe");
         var newMthostPath = Path.Combine(extractedDir, "mthost.exe");
+        var newAgentHostPath = Path.Combine(extractedDir, $"{AgentHostBinaryName}.exe");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost.exe");
+        var currentAgentHostPath = Path.Combine(installDir, $"{AgentHostBinaryName}.exe");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         // Log and result files go in settings directory so they're accessible after update
         var resultFilePath = Path.Combine(settingsDir, "update-result.json");
@@ -77,13 +80,15 @@ $ErrorActionPreference = 'Stop'
 
 # === Configuration ===
 # IMPORTANT: These directories are DIFFERENT - don't confuse them!
-$InstallDir = '{EscapeForPowerShell(installDir)}'           # Binaries: mt.exe, mthost.exe
+$InstallDir = '{EscapeForPowerShell(installDir)}'           # Binaries: mt.exe, mthost.exe, {AgentHostBinaryName}.exe
 $SettingsDir = '{EscapeForPowerShell(settingsDir)}'         # Settings, secrets, certs
 $CurrentMt = '{EscapeForPowerShell(currentBinaryPath)}'
 $CurrentMthost = '{EscapeForPowerShell(currentMthostPath)}'
+$CurrentAgentHost = '{EscapeForPowerShell(currentAgentHostPath)}'
 $CurrentVersionJson = '{EscapeForPowerShell(currentVersionJsonPath)}'
 $NewMt = '{EscapeForPowerShell(newMtPath)}'
 $NewMthost = '{EscapeForPowerShell(newMthostPath)}'
+$NewAgentHost = '{EscapeForPowerShell(newAgentHostPath)}'
 $NewVersionJson = '{EscapeForPowerShell(newVersionJsonPath)}'
 $ExtractedDir = '{EscapeForPowerShell(extractedDir)}'
 $LogFile = '{EscapeForPowerShell(logFilePath)}'
@@ -287,6 +292,12 @@ try {{
         }}
     }}
 
+    if (Test-Path $CurrentAgentHost) {{
+        if (-not (WaitForFileWritable $CurrentAgentHost)) {{
+            throw ""{AgentHostBinaryName}.exe is still locked after $MaxRetries retries. Another process may be using it.""
+        }}
+    }}
+
     Log 'All file handles released'
 
     # ============================================
@@ -305,6 +316,12 @@ try {{
         Log 'Backing up mthost.exe...'
         Copy-Item $CurrentMthost ""$CurrentMthost.bak"" -Force -ErrorAction Stop
         Log 'mthost.exe backed up'
+    }}
+
+    if (Test-Path $CurrentAgentHost) {{
+        Log 'Backing up {AgentHostBinaryName}.exe...'
+        Copy-Item $CurrentAgentHost ""$CurrentAgentHost.bak"" -Force -ErrorAction Stop
+        Log '{AgentHostBinaryName}.exe backed up'
     }}
 
     if (Test-Path $CurrentVersionJson) {{
@@ -422,6 +439,10 @@ try {{
         SafeCopy $NewMthost $CurrentMthost 'mthost.exe'
     }}
 
+    if (Test-Path $NewAgentHost) {{
+        SafeCopy $NewAgentHost $CurrentAgentHost '{AgentHostBinaryName}.exe'
+    }}
+
     if (Test-Path $NewVersionJson) {{
         SafeCopy $NewVersionJson $CurrentVersionJson 'version.json'
     }}
@@ -513,6 +534,7 @@ try {{
 
     Remove-Item ""$CurrentMt.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentMthost.bak"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$CurrentAgentHost.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentVersionJson.bak"" -Force -ErrorAction SilentlyContinue
 
     # Clean up credential backups (in SettingsDir, not InstallDir!)
@@ -573,6 +595,16 @@ try {{
                 Log 'mthost.exe restored'
             }} catch {{
                 Log ""Failed to restore mthost.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        if (Test-Path ""$CurrentAgentHost.bak"") {{
+            Log 'Restoring {AgentHostBinaryName}.exe from backup...'
+            try {{
+                Copy-Item ""$CurrentAgentHost.bak"" $CurrentAgentHost -Force -ErrorAction Stop
+                Log '{AgentHostBinaryName}.exe restored'
+            }} catch {{
+                Log ""Failed to restore {AgentHostBinaryName}.exe: $_"" 'ERROR'
             }}
         }}
 
@@ -683,14 +715,16 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var logDir = LogPaths.GetLogDirectory(false, isServiceMode);
         var newMtPath = Path.Combine(extractedDir, "mt");
         var newMthostPath = Path.Combine(extractedDir, "mthost");
+        var newAgentHostPath = Path.Combine(extractedDir, AgentHostBinaryName);
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost");
+        var currentAgentHostPath = Path.Combine(installDir, AgentHostBinaryName);
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         var resultFilePath = Path.Combine(configDir, "update-result.json");
         var logFilePath = LogPaths.GetUpdateLogPath(false, isServiceMode, configDir);
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
-        var isWebOnly = updateType == UpdateType.WebOnly;
+        var isWebOnly = updateType != UpdateType.Full;
         var generatingVersion = typeof(UpdateScriptGenerator).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
         var plusIdx = generatingVersion.IndexOf('+');
@@ -724,14 +758,16 @@ exec > ""{EscapeForBash(logFilePath)}"" 2>&1 < /dev/null
 
 # === Configuration ===
 # IMPORTANT: These directories are DIFFERENT - don't confuse them!
-INSTALL_DIR='{EscapeForBash(installDir)}'           # Binaries: mt, mthost
+INSTALL_DIR='{EscapeForBash(installDir)}'           # Binaries: mt, mthost, {AgentHostBinaryName}
 CONFIG_DIR='{EscapeForBash(configDir)}'             # Settings, secrets, certs
 LOG_DIR='{EscapeForBash(logDir)}'                   # Log files
 CURRENT_MT='{EscapeForBash(currentBinaryPath)}'
 CURRENT_MTHOST='{EscapeForBash(currentMthostPath)}'
+CURRENT_AGENTHOST='{EscapeForBash(currentAgentHostPath)}'
 CURRENT_VERSION_JSON='{EscapeForBash(currentVersionJsonPath)}'
 NEW_MT='{EscapeForBash(newMtPath)}'
 NEW_MTHOST='{EscapeForBash(newMthostPath)}'
+NEW_AGENTHOST='{EscapeForBash(newAgentHostPath)}'
 NEW_VERSION_JSON='{EscapeForBash(newVersionJsonPath)}'
 EXTRACTED_DIR='{EscapeForBash(extractedDir)}'
 LOG_FILE='{EscapeForBash(logFilePath)}'
@@ -773,6 +809,27 @@ write_result() {{
     ""logFile"": ""$LOG_FILE""
 }}
 RESULT_EOF
+}}
+
+describe_source_file() {{
+    local file_path=""$1""
+    local description=""$2""
+    local required=""${{3:-true}}""
+
+    if [[ ! -f ""$file_path"" ]]; then
+        if [[ ""$required"" == ""true"" ]]; then
+            log ""Missing required update payload file: $description at $file_path"" ""ERROR""
+            return 1
+        fi
+
+        log ""Optional update payload file not present: $description at $file_path""
+        return 0
+    fi
+
+    local file_size
+    file_size=$(stat -c%s ""$file_path"" 2>/dev/null || echo ""unknown"")
+    log ""Found staged $description at $file_path ($file_size bytes)""
+    return 0
 }}
 
 wait_for_file_writable() {{
@@ -897,6 +954,12 @@ cleanup() {{
             chmod +x ""$CURRENT_MTHOST"" 2>/dev/null || true
         fi
 
+        if [[ -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ]]; then
+            log ""Restoring {AgentHostBinaryName} from backup...""
+            cp -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ""$CURRENT_AGENTHOST"" 2>/dev/null || log ""Failed to restore {AgentHostBinaryName}"" ""ERROR""
+            chmod +x ""$CURRENT_AGENTHOST"" 2>/dev/null || true
+        fi
+
         if [[ -f ""$BACKUP_DIR/version.json.bak"" ]]; then
             log ""Restoring version.json from backup...""
             cp -f ""$BACKUP_DIR/version.json.bak"" ""$CURRENT_VERSION_JSON"" 2>/dev/null || log ""Failed to restore version.json"" ""ERROR""
@@ -972,6 +1035,30 @@ else
     log ""No version.json found (fresh install?)"" ""WARN""
 fi
 
+log ""Update source directory: $EXTRACTED_DIR""
+if [[ ! -d ""$EXTRACTED_DIR"" ]]; then
+    log ""Update source directory is missing before shutdown: $EXTRACTED_DIR"" ""ERROR""
+    write_result false ""Update payload directory is missing before install"" ""$EXTRACTED_DIR""
+    exit 1
+fi
+
+if ! describe_source_file ""$NEW_MT"" ""mt""; then
+    write_result false ""Update payload is missing mt"" ""$NEW_MT""
+    exit 1
+fi
+
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]]; then
+    if ! describe_source_file ""$NEW_MTHOST"" ""mthost""; then
+        write_result false ""Update payload is missing mthost"" ""$NEW_MTHOST""
+        exit 1
+    fi
+fi
+
+if ! describe_source_file ""$NEW_VERSION_JSON"" ""version.json""; then
+    write_result false ""Update payload is missing version.json"" ""$NEW_VERSION_JSON""
+    exit 1
+fi
+
 # ============================================
 # PHASE 1: Stop all processes
 # ============================================
@@ -992,7 +1079,7 @@ log ""Killing mt processes...""
 kill_process_by_path ""$CURRENT_MT""
 
 # Kill mthost processes (only for full updates)
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]]; then
     log ""Killing mthost processes...""
     kill_process_by_path ""$CURRENT_MTHOST""
 fi
@@ -1011,10 +1098,18 @@ if ! wait_for_file_writable ""$CURRENT_MT""; then
     exit 1
 fi
 
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     if ! wait_for_file_writable ""$CURRENT_MTHOST""; then
         log ""mthost is still locked after $MAX_RETRIES retries"" ""ERROR""
         write_result false ""mthost is still locked. Another process may be using it.""
+        exit 1
+    fi
+fi
+
+if [[ -f ""$CURRENT_AGENTHOST"" ]]; then
+    if ! wait_for_file_writable ""$CURRENT_AGENTHOST""; then
+        log ""{AgentHostBinaryName} is still locked after $MAX_RETRIES retries"" ""ERROR""
+        write_result false ""{AgentHostBinaryName} is still locked. Another process may be using it.""
         exit 1
     fi
 fi
@@ -1033,10 +1128,16 @@ if [[ -f ""$CURRENT_MT"" ]]; then
     log ""mt backed up""
 fi
 
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     log ""Backing up mthost...""
     cp -f ""$CURRENT_MTHOST"" ""$BACKUP_DIR/mthost.bak""
     log ""mthost backed up""
+fi
+
+if [[ -f ""$CURRENT_AGENTHOST"" ]]; then
+    log ""Backing up {AgentHostBinaryName}...""
+    cp -f ""$CURRENT_AGENTHOST"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
+    log ""{AgentHostBinaryName} backed up""
 fi
 
 if [[ -f ""$CURRENT_VERSION_JSON"" ]]; then
@@ -1139,9 +1240,16 @@ if ! safe_copy ""$NEW_MT"" ""$CURRENT_MT"" ""mt""; then
     exit 1
 fi
 
-if [[ ""$IS_WEB_ONLY"" != ""true"" ]] && [[ -f ""$NEW_MTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$NEW_MTHOST"" ]]; then
     if ! safe_copy ""$NEW_MTHOST"" ""$CURRENT_MTHOST"" ""mthost""; then
         write_result false ""Failed to install mthost""
+        exit 1
+    fi
+fi
+
+if [[ -f ""$NEW_AGENTHOST"" ]]; then
+    if ! safe_copy ""$NEW_AGENTHOST"" ""$CURRENT_AGENTHOST"" ""{AgentHostBinaryName}""; then
+        write_result false ""Failed to install {AgentHostBinaryName}""
         exit 1
     fi
 fi
@@ -1306,7 +1414,7 @@ write_result true ""Update completed successfully""
         return scriptPath;
     }
 
-    public static void ExecuteUpdateScript(string scriptPath)
+    public static void ExecuteUpdateScript(string scriptPath, bool runOutsideServiceCgroup = false)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -1327,6 +1435,58 @@ write_result true ""Update completed successfully""
         }
         else
         {
+            if (runOutsideServiceCgroup && OperatingSystem.IsLinux())
+            {
+                var unitName = $"midterm-update-{Guid.NewGuid():N}";
+                var useSudo = CanRunSudoWithoutPrompt();
+                var systemdRunPsi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = useSudo ? "/usr/bin/sudo" : "/usr/bin/systemd-run",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                if (useSudo)
+                {
+                    systemdRunPsi.ArgumentList.Add("-n");
+                    systemdRunPsi.ArgumentList.Add("/usr/bin/systemd-run");
+                }
+
+                systemdRunPsi.ArgumentList.Add("--unit");
+                systemdRunPsi.ArgumentList.Add(unitName);
+                systemdRunPsi.ArgumentList.Add("--collect");
+                systemdRunPsi.ArgumentList.Add("--no-block");
+                systemdRunPsi.ArgumentList.Add("/bin/bash");
+                systemdRunPsi.ArgumentList.Add(scriptPath);
+
+                using var process = System.Diagnostics.Process.Start(systemdRunPsi)
+                    ?? throw new InvalidOperationException("Failed to start systemd-run for the Linux service updater.");
+
+                if (!process.WaitForExit(10000))
+                {
+                    try { process.Kill(); } catch { }
+                    throw new TimeoutException("Timed out waiting for systemd-run to launch the Linux service updater.");
+                }
+
+                var stdout = process.StandardOutput.ReadToEnd().Trim();
+                var stderr = process.StandardError.ReadToEnd().Trim();
+                if (process.ExitCode != 0)
+                {
+                    var details = string.Join(" | ", new[] { stderr, stdout }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                    if (string.IsNullOrWhiteSpace(details))
+                    {
+                        details = $"exit code {process.ExitCode}";
+                    }
+
+                    throw new InvalidOperationException(
+                        "Failed to launch the Linux service updater outside the MidTerm service cgroup: " + details);
+                }
+
+                return;
+            }
+
             // Linux: setsid creates a new session so the script survives mt's exit.
             //
             // CRITICAL: Do NOT use RedirectStandard* here! It creates pipes between mt and
@@ -1347,6 +1507,47 @@ write_result true ""Update completed successfully""
             psi.ArgumentList.Add(scriptPath);
 
             System.Diagnostics.Process.Start(psi);
+        }
+    }
+
+    private static bool CanRunSudoWithoutPrompt()
+    {
+        if (!OperatingSystem.IsLinux() || !File.Exists("/usr/bin/sudo"))
+        {
+            return false;
+        }
+
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/usr/bin/sudo",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            psi.ArgumentList.Add("-n");
+            psi.ArgumentList.Add("true");
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process is null)
+            {
+                return false;
+            }
+
+            if (!process.WaitForExit(3000))
+            {
+                try { process.Kill(); } catch { }
+                return false;
+            }
+
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 

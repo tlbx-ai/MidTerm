@@ -11,6 +11,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Services.Hosting;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 /// <summary>
@@ -25,6 +26,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly SessionRegistry _registry;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
+    private readonly MidTermInstanceIdentity _instanceIdentity;
+    private readonly TtyHostOwnershipRegistry _ownershipRegistry;
+    private readonly SessionForegroundProcessService _foregroundProcessService;
     private string? _runAsUser;
     private bool _disposed;
     private int? _mtPort;
@@ -56,13 +60,20 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? minCompatibleVersion = null,
         string? runAsUser = null,
         bool isServiceMode = false,
-        SessionControlStateService? sessionControlStateService = null)
+        SessionControlStateService? sessionControlStateService = null,
+        MidTermInstanceIdentity? instanceIdentity = null,
+        SessionForegroundProcessService? foregroundProcessService = null)
     {
         _registry = new SessionRegistry(isServiceMode, sessionControlStateService);
         _clients = _registry.Clients;
         _sessionCache = _registry.SessionCache;
         _expectedTtyHostVersion = expectedVersion ?? TtyHostSpawner.GetTtyHostVersion();
         _minCompatibleVersion = minCompatibleVersion ?? GetMinCompatibleVersionFromManifest();
+        _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
+            Path.Combine(Path.GetTempPath(), "midterm-test-instance", Guid.NewGuid().ToString("N")),
+            0);
+        _ownershipRegistry = new TtyHostOwnershipRegistry(_instanceIdentity.SessionRegistryPath);
+        _foregroundProcessService = foregroundProcessService ?? new SessionForegroundProcessService();
         _runAsUser = runAsUser;
     }
 
@@ -98,43 +109,53 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     /// </summary>
     public async Task DiscoverExistingSessionsAsync(CancellationToken ct = default)
     {
-        Log.Info(() => "TtyHostSessionManager: Discovering existing sessions...");
-
-        var existingEndpoints = SessionEndpointDiscovery.GetExistingEndpoints();
-        Log.Info(() => $"TtyHostSessionManager: Found {existingEndpoints.Count} IPC endpoints");
+        Log.Info(() => $"TtyHostSessionManager: Discovering existing sessions for instance {_instanceIdentity.GetShortInstanceId()}...");
 
         var discoveredOrders = new List<int>();
+        var ownedRecords = _ownershipRegistry.GetSessions();
+
+        foreach (var ownedRecord in ownedRecords)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (_registry.Clients.ContainsKey(ownedRecord.SessionId)) continue;
+
+            var result = await TryConnectToSessionAsync(
+                ownedRecord.SessionId,
+                ownedRecord.HostPid,
+                ownedRecord.IsLegacyEndpoint,
+                allowLegacyOwnerless: ownedRecord.IsLegacyEndpoint,
+                ct).ConfigureAwait(false);
+
+            HandleDiscoveryResult(ownedRecord.SessionId, ownedRecord.HostPid, ownedRecord.IsLegacyEndpoint, result, discoveredOrders);
+        }
+
+        var existingEndpoints = SessionEndpointDiscovery.GetExistingEndpoints(_instanceIdentity.InstanceId);
+        Log.Info(() => $"TtyHostSessionManager: Found {existingEndpoints.Count} owned IPC endpoints");
 
         foreach (var (sessionId, hostPid) in existingEndpoints)
         {
             if (ct.IsCancellationRequested) break;
             if (_registry.Clients.ContainsKey(sessionId)) continue;
 
-            var result = await TryConnectToSessionAsync(sessionId, hostPid, ct).ConfigureAwait(false);
+            var result = await TryConnectToSessionAsync(sessionId, hostPid, isLegacyEndpoint: false, allowLegacyOwnerless: false, ct).ConfigureAwait(false);
+            HandleDiscoveryResult(sessionId, hostPid, legacyEndpoint: false, result, discoveredOrders);
+        }
 
-            switch (result)
+        if (ownedRecords.Count == 0 && _instanceIdentity.CanImportLegacySessions())
+        {
+            var legacyEndpoints = SessionEndpointDiscovery.GetLegacyEndpoints();
+            Log.Info(() => $"TtyHostSessionManager: Importing {legacyEndpoints.Count} legacy IPC endpoints");
+
+            foreach (var (sessionId, hostPid) in legacyEndpoints)
             {
-                case DiscoveryResult.Connected connected:
-                    discoveredOrders.Add(connected.Order);
-                    break;
+                if (ct.IsCancellationRequested) break;
+                if (_registry.Clients.ContainsKey(sessionId)) continue;
 
-                case DiscoveryResult.Incompatible incompatible:
-                    Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} incompatible (v{incompatible.Version}), killing PID {hostPid}");
-                    KillProcess(hostPid);
-                    SessionEndpointDiscovery.CleanupEndpoint(sessionId, hostPid);
-                    break;
-
-                case DiscoveryResult.Unresponsive:
-                    Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} unresponsive, killing PID {hostPid}");
-                    KillProcess(hostPid);
-                    SessionEndpointDiscovery.CleanupEndpoint(sessionId, hostPid);
-                    break;
-
-                case DiscoveryResult.NoProcess:
-                    Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} has stale endpoint (PID {hostPid} not running)");
-                    SessionEndpointDiscovery.CleanupEndpoint(sessionId, hostPid);
-                    break;
+                var result = await TryConnectToSessionAsync(sessionId, hostPid, isLegacyEndpoint: true, allowLegacyOwnerless: true, ct).ConfigureAwait(false);
+                HandleDiscoveryResult(sessionId, hostPid, legacyEndpoint: true, result, discoveredOrders);
             }
+
+            _instanceIdentity.MarkLegacySessionsImported();
         }
 
         // Set _nextOrder to max discovered + 1 to avoid collisions
@@ -143,9 +164,49 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         Log.Info(() => $"TtyHostSessionManager: Discovered {_registry.ClientCount} active sessions, nextOrder={_registry.NextOrder}");
     }
 
-    private async Task<DiscoveryResult> TryConnectToSessionAsync(string sessionId, int hostPid, CancellationToken ct)
+    private void HandleDiscoveryResult(
+        string sessionId,
+        int hostPid,
+        bool legacyEndpoint,
+        DiscoveryResult result,
+        List<int> discoveredOrders)
     {
-        var client = new TtyHostClient(sessionId, hostPid);
+        switch (result)
+        {
+            case DiscoveryResult.Connected connected:
+                discoveredOrders.Add(connected.Order);
+                break;
+
+            case DiscoveryResult.Incompatible incompatible:
+                Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} incompatible (v{incompatible.Version}), killing PID {hostPid}");
+                KillProcess(hostPid);
+                SessionEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid, legacyEndpoint);
+                _ownershipRegistry.Remove(sessionId);
+                break;
+
+            case DiscoveryResult.Unresponsive:
+                Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} unresponsive, killing PID {hostPid}");
+                KillProcess(hostPid);
+                SessionEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid, legacyEndpoint);
+                _ownershipRegistry.Remove(sessionId);
+                break;
+
+            case DiscoveryResult.NoProcess:
+                Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} has stale endpoint (PID {hostPid} not running)");
+                SessionEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid, legacyEndpoint);
+                _ownershipRegistry.Remove(sessionId);
+                break;
+        }
+    }
+
+    private async Task<DiscoveryResult> TryConnectToSessionAsync(
+        string sessionId,
+        int hostPid,
+        bool isLegacyEndpoint,
+        bool allowLegacyOwnerless,
+        CancellationToken ct)
+    {
+        var client = new TtyHostClient(sessionId, hostPid, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, useLegacyEndpoint: isLegacyEndpoint);
 
         try
         {
@@ -163,6 +224,19 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 return new DiscoveryResult.Unresponsive();
             }
 
+            if (!string.IsNullOrWhiteSpace(info.OwnerInstanceId) &&
+                !string.Equals(info.OwnerInstanceId, _instanceIdentity.InstanceId, StringComparison.Ordinal))
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+                return new DiscoveryResult.Unresponsive();
+            }
+
+            if (string.IsNullOrWhiteSpace(info.OwnerInstanceId) && !allowLegacyOwnerless)
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+                return new DiscoveryResult.Unresponsive();
+            }
+
             // Check version compatibility
             if (!IsVersionCompatible(info.TtyHostVersion))
             {
@@ -175,6 +249,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             client.StartReadLoop();
             _registry.Clients[sessionId] = client;
             _registry.SessionCache[sessionId] = info;
+            _ownershipRegistry.Upsert(sessionId, hostPid, isLegacyEndpoint || string.IsNullOrWhiteSpace(info.OwnerInstanceId));
 
             // Use order from mthost if available, otherwise use discovery sequence
             var order = info.Order;
@@ -227,7 +302,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var paneIndex = _registry.ReserveNextOrder();
         var mtToken = _generateToken?.Invoke();
 
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _runAsUser, out var hostPid,
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, out var hostPid,
                 _mtPort, mtToken, paneIndex, _tmuxBinDir))
         {
             return null;
@@ -241,13 +316,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         for (var wait = 50; wait < 500; wait *= 2)
         {
             // First try exact PID (direct spawn without sudo)
-            if (SessionEndpointDiscovery.EndpointExists(sessionId, hostPid))
+            if (SessionEndpointDiscovery.EndpointExists(_instanceIdentity.InstanceId, sessionId, hostPid))
             {
                 actualPid = hostPid;
                 break;
             }
             // Then scan for any matching socket (sudo spawn case)
-            actualPid = SessionEndpointDiscovery.FindEndpointPid(sessionId);
+            actualPid = SessionEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId);
             if (actualPid is not null) break;
             await Task.Delay(wait, ct).ConfigureAwait(false);
         }
@@ -256,7 +331,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var connectPid = actualPid ?? hostPid;
 
         // Connect to the new session using sessionId + actual PID for endpoint
-        var client = new TtyHostClient(sessionId, connectPid);
+        var client = new TtyHostClient(sessionId, connectPid, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken);
         var connected = false;
 
         for (var attempt = 0; attempt < 10 && !connected; attempt++)
@@ -295,6 +370,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _registry.Clients[sessionId] = client;
         _registry.SessionCache[sessionId] = info;
         _registry.SessionOrder[sessionId] = paneIndex;
+        _ownershipRegistry.Upsert(sessionId, connectPid, isLegacyEndpoint: false);
 
         await client.SetOrderAsync((byte)(paneIndex % 256), ct).ConfigureAwait(false);
 
@@ -384,7 +460,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public SessionListDto GetSessionList()
     {
-        return _registry.GetSessionList();
+        var response = _registry.GetSessionList();
+        foreach (var session in response.Sessions)
+        {
+            var descriptor = _foregroundProcessService.Describe(
+                session.ForegroundName,
+                session.ForegroundCommandLine,
+                session.AgentAttachPoint);
+            session.ForegroundDisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
+            session.ForegroundProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
+        }
+
+        return response;
     }
 
     public async Task<bool> CloseSessionAsync(string sessionId, CancellationToken ct = default)
@@ -395,6 +482,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         _registry.RemoveSessionState(sessionId);
+        _ownershipRegistry.Remove(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
@@ -720,11 +808,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private void HandleClientForegroundChanged(string sessionId, ForegroundChangePayload payload)
     {
+        var descriptor = _foregroundProcessService.Describe(payload.Name, payload.CommandLine, payload.AgentAttachPoint);
+        payload.DisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
+        payload.ProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
+
         if (_sessionCache.TryGetValue(sessionId, out var info))
         {
             info.ForegroundPid = payload.Pid;
             info.ForegroundName = payload.Name;
             info.ForegroundCommandLine = payload.CommandLine;
+            info.AgentAttachPoint = payload.AgentAttachPoint;
             if (!string.IsNullOrEmpty(payload.Cwd))
             {
                 info.CurrentDirectory = payload.Cwd;
@@ -781,6 +874,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                         await removed.DisposeAsync().ConfigureAwait(false);
                     }
                     _sessionCache.TryRemove(sessionId, out _);
+                    _ownershipRegistry.Remove(sessionId);
                 }
             }
 
@@ -832,6 +926,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             !string.IsNullOrWhiteSpace(existing.ForegroundCommandLine))
         {
             refreshed.ForegroundCommandLine = existing.ForegroundCommandLine;
+        }
+
+        if (refreshed.AgentAttachPoint is null && existing.AgentAttachPoint is not null)
+        {
+            refreshed.AgentAttachPoint = existing.AgentAttachPoint;
         }
     }
 

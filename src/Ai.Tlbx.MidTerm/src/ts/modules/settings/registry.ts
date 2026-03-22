@@ -208,13 +208,13 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
   controlEntry('uiTransparency', 'setting-ui-transparency', 'int', 0, {
     editable: true,
     storage: 'settings.json',
-    validation: 'integer, clamped to 0-85',
+    validation: 'integer, clamped to 0-100',
     applyMode: 'immediate',
   }),
   controlEntry('terminalTransparency', 'setting-terminal-transparency', 'int', 0, {
     editable: true,
     storage: 'settings.json',
-    validation: 'integer, clamped to 0-85',
+    validation: 'integer, clamped to 0-100',
     applyMode: 'immediate',
   }),
   controlEntry('tabTitleMode', 'setting-tab-title', 'select', 'hostname', {
@@ -399,6 +399,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'installer / certificate setup managed path',
     applyMode: 'server-only',
     specialWriter: 'installer / certificate generation',
+  }),
+  readonlyEntry('hubMachines', {
+    storage: 'settings.json',
+    validation: 'hub machine records with secrets managed by hub endpoints',
+    applyMode: 'server-only',
+    specialWriter: 'hub endpoints',
   }),
 ] as const;
 

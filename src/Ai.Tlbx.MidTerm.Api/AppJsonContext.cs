@@ -112,6 +112,9 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(PathsResponse))]
 [JsonSerializable(typeof(ManagerBarButton))]
 [JsonSerializable(typeof(List<ManagerBarButton>))]
+[JsonSerializable(typeof(ManagerBarTrigger))]
+[JsonSerializable(typeof(ManagerBarScheduleEntry))]
+[JsonSerializable(typeof(List<ManagerBarScheduleEntry>))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

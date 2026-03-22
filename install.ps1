@@ -92,6 +92,7 @@ $RepoOwner = "tlbx-ai"
 $RepoName = "MidTerm"
 $WebBinaryName = "mt.exe"
 $TtyHostBinaryName = "mthost.exe"
+$AgentHostBinaryName = "mtagenthost.exe"
 $LegacyHostBinaryName = "mt-host.exe"
 $AssetPattern = "mt-win-x64.zip"
 # Certificate subject CN - must match CertificateGenerator.CertificateSubject in C#
@@ -942,14 +943,14 @@ function Install-MidTerm
             Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
 
             # Kill any remaining processes
-            Get-Process -Name "mt-host", "mthost", "mt" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
             # Wait for processes to fully exit (file handles released)
             $maxWait = 10
             $waited = 0
             while ($waited -lt $maxWait)
             {
-                $procs = Get-Process -Name "mt-host", "mthost", "mt" -ErrorAction SilentlyContinue
+                $procs = Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue
                 if (-not $procs) { break }
                 Start-Sleep -Milliseconds 500
                 $waited++
@@ -1004,11 +1005,18 @@ function Install-MidTerm
     # Copy binaries
     $sourceWebBinary = Join-Path $tempExtract $WebBinaryName
     $sourceConHostBinary = Join-Path $tempExtract $TtyHostBinaryName
+    $sourceAgentHostBinary = Join-Path $tempExtract $AgentHostBinaryName
     $destWebBinary = Join-Path $installDir $WebBinaryName
     $destConHostBinary = Join-Path $installDir $TtyHostBinaryName
+    $destAgentHostBinary = Join-Path $installDir $AgentHostBinaryName
 
     Write-Host "Installing binaries to $installDir..." -ForegroundColor Gray
     Write-Log "Installing binaries to $installDir"
+
+    if (-not (Test-Path $sourceWebBinary) -or -not (Test-Path $sourceConHostBinary) -or -not (Test-Path $sourceAgentHostBinary))
+    {
+        throw "Downloaded release archive is incomplete. Expected $WebBinaryName, $TtyHostBinaryName, and $AgentHostBinaryName."
+    }
 
     # Retry logic for file copy (handles may take time to release)
     $maxRetries = 15
@@ -1067,6 +1075,35 @@ function Install-MidTerm
         {
             Write-Host "  Failed to copy $TtyHostBinaryName after $maxRetries attempts - file is locked" -ForegroundColor Red
             throw "Failed to install $TtyHostBinaryName - file locked"
+        }
+    }
+
+    # Copy mtagenthost.exe with retry
+    if (Test-Path $sourceAgentHostBinary)
+    {
+        $copied = $false
+        for ($i = 0; $i -lt $maxRetries; $i++)
+        {
+            try
+            {
+                Copy-Item $sourceAgentHostBinary $destAgentHostBinary -Force -ErrorAction Stop
+                Write-Host "  Installed: $destAgentHostBinary" -ForegroundColor Gray
+                $copied = $true
+                break
+            }
+            catch
+            {
+                if ($i -eq 0)
+                {
+                    Write-Host "  Waiting for $AgentHostBinaryName to be released..." -ForegroundColor Yellow
+                }
+                Start-Sleep -Milliseconds $retryDelay
+            }
+        }
+        if (-not $copied)
+        {
+            Write-Host "  Failed to copy $AgentHostBinaryName after $maxRetries attempts - file is locked" -ForegroundColor Red
+            throw "Failed to install $AgentHostBinaryName - file locked"
         }
     }
 
@@ -1308,13 +1345,13 @@ function Install-AsService
     {
         Write-Host "Removing existing service..." -ForegroundColor Gray
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-        Get-Process -Name "mt-host", "mthost", "mt" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
         # Wait for processes to exit
         $maxWait = 10
         for ($i = 0; $i -lt $maxWait; $i++)
         {
-            $procs = Get-Process -Name "mt-host", "mthost", "mt" -ErrorAction SilentlyContinue
+            $procs = Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue
             if (-not $procs) { break }
             Start-Sleep -Milliseconds 500
         }

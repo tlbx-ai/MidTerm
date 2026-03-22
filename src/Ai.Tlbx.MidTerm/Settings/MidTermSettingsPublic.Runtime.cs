@@ -54,7 +54,7 @@ public sealed partial class MidTermSettingsPublic
             ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
             TmuxCompatibility = settings.TmuxCompatibility,
             ManagerBarEnabled = settings.ManagerBarEnabled,
-            ManagerBarButtons = settings.ManagerBarButtons,
+            ManagerBarButtons = ManagerBarButton.NormalizeList(settings.ManagerBarButtons),
             DevMode = settings.DevMode,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             ShowUpdateNotification = settings.ShowUpdateNotification,
@@ -109,10 +109,10 @@ public sealed partial class MidTermSettingsPublic
         {
             settings.BackgroundImageFit = BackgroundImageFit;
         }
-        settings.UiTransparency = Math.Clamp(UiTransparency, 0, 85);
+        settings.UiTransparency = Math.Clamp(UiTransparency, 0, 100);
         if (TerminalTransparency.HasValue)
         {
-            settings.TerminalTransparency = Math.Clamp(TerminalTransparency.Value, 0, 85);
+            settings.TerminalTransparency = Math.Clamp(TerminalTransparency.Value, 0, 100);
         }
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
@@ -133,7 +133,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ShowSidebarSessionFilter = ShowSidebarSessionFilter;
         settings.TmuxCompatibility = TmuxCompatibility;
         settings.ManagerBarEnabled = ManagerBarEnabled;
-        settings.ManagerBarButtons = ManagerBarButtons;
+        settings.ManagerBarButtons = ManagerBarButton.NormalizeList(ManagerBarButtons);
         settings.DevMode = DevMode;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
         settings.ShowUpdateNotification = ShowUpdateNotification;

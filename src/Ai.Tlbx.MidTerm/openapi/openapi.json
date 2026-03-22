@@ -621,6 +621,389 @@
         }
       }
     },
+    "/api/sessions/{id}/lens/attach": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/turns": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LensTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensTurnStartResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/interrupt": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LensInterruptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensCommandAcceptedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/requests/{requestId}/approve": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensCommandAcceptedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/requests/{requestId}/resolve": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LensRequestDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensCommandAcceptedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/requests/{requestId}/decline": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LensRequestDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensCommandAcceptedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/user-input/{requestId}": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LensUserInputAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensCommandAcceptedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/snapshot": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensPulseSnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/events": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "afterSequence",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LensPulseEventListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/lens/events/stream": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "afterSequence",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/buffer": {
       "get": {
         "tags": [
@@ -774,6 +1157,118 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SessionActivityResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/agent": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tailLines",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 80
+            }
+          },
+          {
+            "name": "activitySeconds",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 90
+            }
+          },
+          {
+            "name": "bellLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionVibeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/agent/feed": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tailLines",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 80
+            }
+          },
+          {
+            "name": "activitySeconds",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 90
+            }
+          },
+          {
+            "name": "bellLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionFeedResponse"
                 }
               }
             }
@@ -2662,6 +3157,302 @@
   },
   "components": {
     "schemas": {
+      "AgentSessionFeedResponse": {
+        "required": [
+          "sessionId",
+          "source",
+          "generatedAt",
+          "activities"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "activities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeActivity"
+            }
+          }
+        }
+      },
+      "AgentSessionVibeActivity": {
+        "required": [
+          "id",
+          "tone",
+          "kind",
+          "summary",
+          "detail",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentSessionVibeCapability": {
+        "required": [
+          "key",
+          "label",
+          "status",
+          "statusLabel",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeChip": {
+        "required": [
+          "text",
+          "tone"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeHeader": {
+        "required": [
+          "title",
+          "subtitle",
+          "provider",
+          "providerLabel",
+          "state",
+          "stateLabel",
+          "needsAttention",
+          "attentionReason",
+          "transportSummary",
+          "chips"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providerLabel": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "boolean"
+          },
+          "attentionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "transportSummary": {
+            "type": "string"
+          },
+          "chips": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeChip"
+            }
+          }
+        }
+      },
+      "AgentSessionVibeLane": {
+        "required": [
+          "mode",
+          "tone",
+          "label",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeOverview": {
+        "required": [
+          "stateValue",
+          "stateMeta",
+          "activityValue",
+          "activityMeta",
+          "lastOutputValue",
+          "lastOutputMeta",
+          "bellsValue",
+          "bellsMeta"
+        ],
+        "type": "object",
+        "properties": {
+          "stateValue": {
+            "type": "string"
+          },
+          "stateMeta": {
+            "type": "string"
+          },
+          "activityValue": {
+            "type": "string"
+          },
+          "activityMeta": {
+            "type": "string"
+          },
+          "lastOutputValue": {
+            "type": "string"
+          },
+          "lastOutputMeta": {
+            "type": "string"
+          },
+          "bellsValue": {
+            "type": "string"
+          },
+          "bellsMeta": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionVibeResponse": {
+        "required": [
+          "sessionId",
+          "source",
+          "generatedAt",
+          "header",
+          "lane",
+          "capabilities",
+          "overview",
+          "activities",
+          "heatmap",
+          "terminal"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "header": {
+            "$ref": "#/components/schemas/AgentSessionVibeHeader"
+          },
+          "lane": {
+            "$ref": "#/components/schemas/AgentSessionVibeLane"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeCapability"
+            }
+          },
+          "overview": {
+            "$ref": "#/components/schemas/AgentSessionVibeOverview"
+          },
+          "activities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionVibeActivity"
+            }
+          },
+          "heatmap": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionActivityHeatSample"
+            }
+          },
+          "terminal": {
+            "$ref": "#/components/schemas/AgentSessionVibeTerminal"
+          }
+        }
+      },
+      "AgentSessionVibeTerminal": {
+        "required": [
+          "tailLineCount",
+          "tailText",
+          "emptyMessage"
+        ],
+        "type": "object",
+        "properties": {
+          "tailLineCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tailText": {
+            "type": "string"
+          },
+          "emptyMessage": {
+            "type": "string"
+          }
+        }
+      },
       "ApiKeyInfoResponse": {
         "required": [
           "id",
@@ -3944,6 +4735,1098 @@
           }
         }
       },
+      "LensAttachmentReference": {
+        "required": [
+          "kind",
+          "path",
+          "mimeType",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensCommandAcceptedResponse": {
+        "required": [
+          "sessionId",
+          "status",
+          "requestId",
+          "turnId"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensInterruptRequest": {
+        "type": "object",
+        "properties": {
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseAnsweredQuestion": {
+        "required": [
+          "questionId",
+          "answers"
+        ],
+        "type": "object",
+        "properties": {
+          "questionId": {
+            "type": "string"
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "LensPulseContentDeltaPayload": {
+        "required": [
+          "streamKind",
+          "delta"
+        ],
+        "type": "object",
+        "properties": {
+          "streamKind": {
+            "type": "string"
+          },
+          "delta": {
+            "type": "string"
+          }
+        }
+      },
+      "LensPulseDiffUpdatedPayload": {
+        "required": [
+          "unifiedDiff"
+        ],
+        "type": "object",
+        "properties": {
+          "unifiedDiff": {
+            "type": "string"
+          }
+        }
+      },
+      "LensPulseEvent": {
+        "required": [
+          "sequence",
+          "eventId",
+          "sessionId",
+          "provider",
+          "threadId",
+          "turnId",
+          "itemId",
+          "requestId",
+          "createdAt",
+          "type",
+          "raw",
+          "sessionState",
+          "threadState",
+          "turnStarted",
+          "turnCompleted",
+          "contentDelta",
+          "planDelta",
+          "planCompleted",
+          "diffUpdated",
+          "item",
+          "requestOpened",
+          "requestResolved",
+          "userInputRequested",
+          "userInputResolved",
+          "runtimeMessage"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "requestId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "raw": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseEventRaw"
+              }
+            ]
+          },
+          "sessionState": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseSessionStatePayload"
+              }
+            ]
+          },
+          "threadState": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseThreadStatePayload"
+              }
+            ]
+          },
+          "turnStarted": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseTurnStartedPayload"
+              }
+            ]
+          },
+          "turnCompleted": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseTurnCompletedPayload"
+              }
+            ]
+          },
+          "contentDelta": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseContentDeltaPayload"
+              }
+            ]
+          },
+          "planDelta": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulsePlanDeltaPayload"
+              }
+            ]
+          },
+          "planCompleted": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulsePlanCompletedPayload"
+              }
+            ]
+          },
+          "diffUpdated": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseDiffUpdatedPayload"
+              }
+            ]
+          },
+          "item": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseItemPayload"
+              }
+            ]
+          },
+          "requestOpened": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseRequestOpenedPayload"
+              }
+            ]
+          },
+          "requestResolved": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseRequestResolvedPayload"
+              }
+            ]
+          },
+          "userInputRequested": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseUserInputRequestedPayload"
+              }
+            ]
+          },
+          "userInputResolved": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseUserInputResolvedPayload"
+              }
+            ]
+          },
+          "runtimeMessage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensPulseRuntimeMessagePayload"
+              }
+            ]
+          }
+        }
+      },
+      "LensPulseEventListResponse": {
+        "required": [
+          "sessionId",
+          "latestSequence",
+          "events"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "latestSequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseEvent"
+            }
+          }
+        }
+      },
+      "LensPulseEventRaw": {
+        "required": [
+          "source",
+          "method",
+          "payloadJson"
+        ],
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "method": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "payloadJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseItemPayload": {
+        "required": [
+          "itemType",
+          "status",
+          "attachments"
+        ],
+        "type": "object",
+        "properties": {
+          "itemType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
+          }
+        }
+      },
+      "LensPulseItemSummary": {
+        "required": [
+          "itemId",
+          "turnId",
+          "itemType",
+          "status",
+          "title",
+          "detail",
+          "attachments",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LensPulsePlanCompletedPayload": {
+        "required": [
+          "planMarkdown"
+        ],
+        "type": "object",
+        "properties": {
+          "planMarkdown": {
+            "type": "string"
+          }
+        }
+      },
+      "LensPulsePlanDeltaPayload": {
+        "required": [
+          "delta"
+        ],
+        "type": "object",
+        "properties": {
+          "delta": {
+            "type": "string"
+          }
+        }
+      },
+      "LensPulseQuestion": {
+        "required": [
+          "id",
+          "header",
+          "question",
+          "multiSelect",
+          "options"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "header": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "multiSelect": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseQuestionOption"
+            }
+          }
+        }
+      },
+      "LensPulseQuestionOption": {
+        "required": [
+          "label",
+          "description"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "LensPulseRequestOpenedPayload": {
+        "required": [
+          "requestType",
+          "requestTypeLabel"
+        ],
+        "type": "object",
+        "properties": {
+          "requestType": {
+            "type": "string"
+          },
+          "requestTypeLabel": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseRequestResolvedPayload": {
+        "required": [
+          "requestType"
+        ],
+        "type": "object",
+        "properties": {
+          "requestType": {
+            "type": "string"
+          },
+          "decision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseRequestSummary": {
+        "required": [
+          "requestId",
+          "turnId",
+          "kind",
+          "kindLabel",
+          "state",
+          "detail",
+          "decision",
+          "questions",
+          "answers",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "kindLabel": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseQuestion"
+            }
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseAnsweredQuestion"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LensPulseRuntimeMessagePayload": {
+        "required": [
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseRuntimeNotice": {
+        "required": [
+          "eventId",
+          "type",
+          "message",
+          "detail",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LensPulseSessionStatePayload": {
+        "required": [
+          "state",
+          "stateLabel"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseSessionSummary": {
+        "required": [
+          "state",
+          "stateLabel",
+          "reason",
+          "lastError",
+          "lastEventAt"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastEventAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "LensPulseSnapshotResponse": {
+        "required": [
+          "sessionId",
+          "provider",
+          "generatedAt",
+          "latestSequence",
+          "session",
+          "thread",
+          "currentTurn",
+          "streams",
+          "items",
+          "requests",
+          "notices"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latestSequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "session": {
+            "$ref": "#/components/schemas/LensPulseSessionSummary"
+          },
+          "thread": {
+            "$ref": "#/components/schemas/LensPulseThreadSummary"
+          },
+          "currentTurn": {
+            "$ref": "#/components/schemas/LensPulseTurnSummary"
+          },
+          "streams": {
+            "$ref": "#/components/schemas/LensPulseStreamsSummary"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseItemSummary"
+            }
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseRequestSummary"
+            }
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseRuntimeNotice"
+            }
+          }
+        }
+      },
+      "LensPulseStreamsSummary": {
+        "required": [
+          "assistantText",
+          "reasoningText",
+          "reasoningSummaryText",
+          "planText",
+          "commandOutput",
+          "fileChangeOutput",
+          "unifiedDiff"
+        ],
+        "type": "object",
+        "properties": {
+          "assistantText": {
+            "type": "string"
+          },
+          "reasoningText": {
+            "type": "string"
+          },
+          "reasoningSummaryText": {
+            "type": "string"
+          },
+          "planText": {
+            "type": "string"
+          },
+          "commandOutput": {
+            "type": "string"
+          },
+          "fileChangeOutput": {
+            "type": "string"
+          },
+          "unifiedDiff": {
+            "type": "string"
+          }
+        }
+      },
+      "LensPulseThreadStatePayload": {
+        "required": [
+          "state",
+          "stateLabel"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "providerThreadId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseThreadSummary": {
+        "required": [
+          "threadId",
+          "state",
+          "stateLabel"
+        ],
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          }
+        }
+      },
+      "LensPulseTurnCompletedPayload": {
+        "required": [
+          "state",
+          "stateLabel"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "stopReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errorMessage": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseTurnStartedPayload": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effort": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensPulseTurnSummary": {
+        "required": [
+          "turnId",
+          "state",
+          "stateLabel",
+          "model",
+          "effort",
+          "startedAt",
+          "completedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effort": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "startedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "LensPulseUserInputRequestedPayload": {
+        "required": [
+          "questions"
+        ],
+        "type": "object",
+        "properties": {
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseQuestion"
+            }
+          }
+        }
+      },
+      "LensPulseUserInputResolvedPayload": {
+        "required": [
+          "answers"
+        ],
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseAnsweredQuestion"
+            }
+          }
+        }
+      },
+      "LensRequestDecisionRequest": {
+        "required": [
+          "decision"
+        ],
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string"
+          }
+        }
+      },
+      "LensTurnRequest": {
+        "required": [
+          "attachments"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effort": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
+          }
+        }
+      },
+      "LensTurnStartResponse": {
+        "required": [
+          "sessionId",
+          "provider",
+          "threadId",
+          "turnId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "LensUserInputAnswerRequest": {
+        "required": [
+          "answers"
+        ],
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseAnsweredQuestion"
+            }
+          }
+        }
+      },
       "LocalUpdateInfo": {
         "required": [
           "available",
@@ -4092,7 +5975,10 @@
         "required": [
           "id",
           "label",
-          "text"
+          "text",
+          "actionType",
+          "prompts",
+          "trigger"
         ],
         "type": "object",
         "properties": {
@@ -4104,6 +5990,65 @@
           },
           "text": {
             "type": "string"
+          },
+          "actionType": {
+            "type": "string"
+          },
+          "prompts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/ManagerBarTrigger"
+          }
+        }
+      },
+      "ManagerBarScheduleEntry": {
+        "required": [
+          "timeOfDay",
+          "repeat"
+        ],
+        "type": "object",
+        "properties": {
+          "timeOfDay": {
+            "type": "string"
+          },
+          "repeat": {
+            "type": "string"
+          }
+        }
+      },
+      "ManagerBarTrigger": {
+        "required": [
+          "kind",
+          "repeatCount",
+          "repeatEveryValue",
+          "repeatEveryUnit",
+          "schedule"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "repeatCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "repeatEveryValue": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "repeatEveryUnit": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagerBarScheduleEntry"
+            }
           }
         }
       },
@@ -4586,6 +6531,40 @@
           }
         }
       },
+      "SessionAgentAttachPoint": {
+        "required": [
+          "provider",
+          "transportKind",
+          "endpoint",
+          "sharedRuntime",
+          "source",
+          "preferredThreadId"
+        ],
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "transportKind": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "sharedRuntime": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "preferredThreadId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SessionAttentionItem": {
         "required": [
           "session",
@@ -4695,10 +6674,14 @@
           "foregroundPid",
           "foregroundName",
           "foregroundCommandLine",
+          "foregroundDisplayName",
+          "foregroundProcessIdentity",
+          "agentAttachPoint",
           "order",
           "parentSessionId",
           "bookmarkId",
           "agentControlled",
+          "hasLensHistory",
           "supervisor"
         ],
         "type": "object",
@@ -4775,6 +6758,28 @@
               "string"
             ]
           },
+          "foregroundDisplayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessIdentity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "agentAttachPoint": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionAgentAttachPoint"
+              }
+            ]
+          },
           "order": {
             "type": "integer",
             "format": "int32"
@@ -4792,6 +6797,9 @@
             ]
           },
           "agentControlled": {
+            "type": "boolean"
+          },
+          "hasLensHistory": {
             "type": "boolean"
           },
           "supervisor": {

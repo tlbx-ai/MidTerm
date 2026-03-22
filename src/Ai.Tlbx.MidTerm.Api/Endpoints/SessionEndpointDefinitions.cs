@@ -12,6 +12,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 namespace Ai.Tlbx.MidTerm.Api.Endpoints;
 
 public static class SessionEndpointDefinitions
@@ -71,6 +72,46 @@ public static class SessionEndpointDefinitions
             await handler.SendPromptInputAsync(id, request))
             .Produces(StatusCodes.Status200OK);
 
+        app.MapPost("/api/sessions/{id}/lens/attach", async (string id, ISessionHandler handler) =>
+            await handler.AttachLensAsync(id))
+            .Produces(StatusCodes.Status200OK);
+
+        app.MapPost("/api/sessions/{id}/lens/turns", async (string id, LensTurnRequest request, ISessionHandler handler) =>
+            await handler.StartLensTurnAsync(id, request))
+            .Produces<LensTurnStartResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/sessions/{id}/lens/interrupt", async (string id, LensInterruptRequest request, ISessionHandler handler) =>
+            await handler.InterruptLensTurnAsync(id, request))
+            .Produces<LensCommandAcceptedResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/sessions/{id}/lens/requests/{requestId}/approve", async (string id, string requestId, ISessionHandler handler) =>
+            await handler.ApproveLensRequestAsync(id, requestId))
+            .Produces<LensCommandAcceptedResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/sessions/{id}/lens/requests/{requestId}/resolve", async (string id, string requestId, LensRequestDecisionRequest request, ISessionHandler handler) =>
+            await handler.ResolveLensRequestAsync(id, requestId, request))
+            .Produces<LensCommandAcceptedResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/sessions/{id}/lens/requests/{requestId}/decline", async (string id, string requestId, LensRequestDecisionRequest request, ISessionHandler handler) =>
+            await handler.DeclineLensRequestAsync(id, requestId, request))
+            .Produces<LensCommandAcceptedResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/sessions/{id}/lens/user-input/{requestId}", async (string id, string requestId, LensUserInputAnswerRequest request, ISessionHandler handler) =>
+            await handler.ResolveLensUserInputAsync(id, requestId, request))
+            .Produces<LensCommandAcceptedResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/sessions/{id}/lens/snapshot", async (string id, ISessionHandler handler) =>
+            await handler.GetLensSnapshotAsync(id))
+            .Produces<LensPulseSnapshotResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/sessions/{id}/lens/events", async (string id, ISessionHandler handler, long afterSequence = 0) =>
+            await handler.GetLensEventsAsync(id, afterSequence))
+            .Produces<LensPulseEventListResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/sessions/{id}/lens/events/stream", async (string id, ISessionHandler handler, long afterSequence = 0) =>
+            await handler.GetLensEventStreamAsync(id, afterSequence))
+            .Produces<string>(StatusCodes.Status200OK, "text/event-stream");
+
         app.MapGet("/api/sessions/{id}/buffer", async (string id, ISessionHandler handler) =>
             await handler.GetBufferAsync(id))
             .Produces<byte[]>(StatusCodes.Status200OK, "application/octet-stream");
@@ -86,6 +127,14 @@ public static class SessionEndpointDefinitions
         app.MapGet("/api/sessions/{id}/activity", async (string id, ISessionHandler handler, int seconds = 120, int bellLimit = 25) =>
             await handler.GetActivityAsync(id, seconds, bellLimit))
             .Produces<SessionActivityResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/sessions/{id}/agent", async (string id, ISessionHandler handler, int tailLines = 80, int activitySeconds = 90, int bellLimit = 8) =>
+            await handler.GetAgentVibeAsync(id, tailLines, activitySeconds, bellLimit))
+            .Produces<AgentSessionVibeResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/sessions/{id}/agent/feed", async (string id, ISessionHandler handler, int tailLines = 80, int activitySeconds = 90, int bellLimit = 8) =>
+            await handler.GetAgentFeedAsync(id, tailLines, activitySeconds, bellLimit))
+            .Produces<AgentSessionFeedResponse>(StatusCodes.Status200OK, "application/json");
 
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, ISessionHandler handler, bool auto = false) =>
             await handler.RenameSessionAsync(id, request, auto))

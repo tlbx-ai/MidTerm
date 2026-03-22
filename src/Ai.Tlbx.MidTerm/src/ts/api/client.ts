@@ -14,6 +14,17 @@ import type {
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
   CreateSessionRequest,
+  SessionPromptRequest,
+  SessionStateResponse,
+  LensTurnRequest,
+  LensTurnStartResponse,
+  LensInterruptRequest,
+  LensCommandAcceptedResponse,
+  LensRequestDecisionRequest,
+  LensUserInputAnswerRequest,
+  LensPulseSnapshotResponse,
+  LensPulseEventListResponse,
+  LensPulseEvent,
   CreateHistoryRequest,
   HistoryPatchRequest,
   CreateShareLinkRequest,
@@ -21,12 +32,66 @@ import type {
   ClaimShareRequest,
   ClaimShareResponse,
   ShareBootstrapResponse,
+  AgentSessionFeedResponse,
+  AgentSessionVibeResponse,
 } from './types';
 
 const client = createClient<paths>({ baseUrl: '' });
 
 // Re-export all types from api/types.ts for backward compatibility
 export * from './types';
+
+export class LensHttpError extends Error {
+  readonly status: number;
+  readonly detail: string;
+
+  constructor(status: number, detail: string) {
+    super(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`);
+    this.name = 'LensHttpError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+async function throwHttpError(response: Response, fallback: string): Promise<never> {
+  const detail = await response
+    .text()
+    .then((text) => text.trim())
+    .catch(() => '');
+
+  if (detail) {
+    throw new LensHttpError(response.status, detail);
+  }
+
+  throw new LensHttpError(response.status, response.statusText || fallback);
+}
+
+function buildJsonHeaders(): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+  };
+}
+
+async function fetchLensJson<T>(path: string, fallback: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
+  if (!response.ok) {
+    await throwHttpError(response, fallback);
+  }
+
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`${fallback} Response body was empty.`);
+  }
+
+  return JSON.parse(text) as T;
+}
+
+async function fetchLensOk(path: string, fallback: string, init?: RequestInit): Promise<void> {
+  const response = await fetch(path, init);
+  if (!response.ok) {
+    await throwHttpError(response, fallback);
+  }
+}
 
 // =============================================================================
 // API Functions
@@ -147,6 +212,224 @@ export async function setSessionControl(id: string, agentControlled: boolean): P
   if (!response.ok) {
     throw new Error(await response.text());
   }
+}
+
+export async function getSessionAgentVibe(
+  id: string,
+  tailLines: number,
+  activitySeconds: number,
+  bellLimit: number,
+): Promise<AgentSessionVibeResponse> {
+  const { data } = await client.GET('/api/sessions/{id}/agent', {
+    params: {
+      path: { id },
+      query: { tailLines, activitySeconds, bellLimit },
+    },
+  });
+
+  return data as AgentSessionVibeResponse;
+}
+
+export async function getSessionAgentFeed(
+  id: string,
+  tailLines: number,
+  activitySeconds: number,
+  bellLimit: number,
+): Promise<AgentSessionFeedResponse> {
+  const { data } = await client.GET('/api/sessions/{id}/agent/feed', {
+    params: {
+      path: { id },
+      query: { tailLines, activitySeconds, bellLimit },
+    },
+  });
+
+  return data as AgentSessionFeedResponse;
+}
+
+export async function sendSessionPrompt(id: string, request: SessionPromptRequest): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/input/prompt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
+export async function getSessionState(
+  id: string,
+  includeBuffer = true,
+): Promise<SessionStateResponse> {
+  const url = new URL(`/api/sessions/${encodeURIComponent(id)}/state`, window.location.origin);
+  url.searchParams.set('includeBuffer', includeBuffer ? 'true' : 'false');
+
+  return fetchLensJson<SessionStateResponse>(url.toString(), 'Session state fetch failed.');
+}
+
+export async function getSessionBufferTail(
+  id: string,
+  lines = 120,
+  stripAnsi = true,
+): Promise<string> {
+  const url = new URL(
+    `/api/sessions/${encodeURIComponent(id)}/buffer/tail`,
+    window.location.origin,
+  );
+  url.searchParams.set('lines', String(lines));
+  url.searchParams.set('stripAnsi', stripAnsi ? 'true' : 'false');
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    await throwHttpError(response, 'Session buffer tail fetch failed.');
+  }
+
+  return response.text();
+}
+
+export async function attachSessionLens(id: string): Promise<void> {
+  await fetchLensOk(`/api/sessions/${encodeURIComponent(id)}/lens/attach`, 'Lens attach failed.', {
+    method: 'POST',
+  });
+}
+
+export async function detachSessionLens(id: string): Promise<void> {
+  await fetchLensOk(`/api/sessions/${encodeURIComponent(id)}/lens/detach`, 'Lens detach failed.', {
+    method: 'POST',
+  });
+}
+
+export async function sendLensTurn(
+  id: string,
+  request: LensTurnRequest,
+): Promise<LensTurnStartResponse> {
+  return fetchLensJson<LensTurnStartResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/turns`,
+    'Lens turn failed.',
+    {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export async function getLensSnapshot(id: string): Promise<LensPulseSnapshotResponse> {
+  return fetchLensJson<LensPulseSnapshotResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/snapshot`,
+    'Lens snapshot fetch failed.',
+  );
+}
+
+export async function getLensEvents(
+  id: string,
+  afterSequence = 0,
+): Promise<LensPulseEventListResponse> {
+  const url = new URL(
+    `/api/sessions/${encodeURIComponent(id)}/lens/events`,
+    window.location.origin,
+  );
+  url.searchParams.set('afterSequence', String(afterSequence));
+  return fetchLensJson<LensPulseEventListResponse>(url.toString(), 'Lens events fetch failed.');
+}
+
+export async function interruptLensTurn(
+  id: string,
+  request: LensInterruptRequest,
+): Promise<LensCommandAcceptedResponse> {
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/interrupt`,
+    'Lens interrupt failed.',
+    {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export async function approveLensRequest(
+  id: string,
+  requestId: string,
+): Promise<LensCommandAcceptedResponse> {
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/requests/${encodeURIComponent(requestId)}/approve`,
+    'Lens approval failed.',
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function declineLensRequest(
+  id: string,
+  requestId: string,
+  request: LensRequestDecisionRequest = { decision: 'decline' },
+): Promise<LensCommandAcceptedResponse> {
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/requests/${encodeURIComponent(requestId)}/decline`,
+    'Lens decline failed.',
+    {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export async function resolveLensUserInput(
+  id: string,
+  requestId: string,
+  request: LensUserInputAnswerRequest,
+): Promise<LensCommandAcceptedResponse> {
+  return fetchLensJson<LensCommandAcceptedResponse>(
+    `/api/sessions/${encodeURIComponent(id)}/lens/user-input/${encodeURIComponent(requestId)}`,
+    'Lens user-input resolution failed.',
+    {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export interface LensEventStreamCallbacks {
+  onEvent(event: LensPulseEvent): void;
+  onOpen?(): void;
+  onError?(error: Event): void;
+}
+
+export function openLensEventStream(
+  id: string,
+  afterSequence: number,
+  callbacks: LensEventStreamCallbacks,
+): () => void {
+  const url = new URL(
+    `/api/sessions/${encodeURIComponent(id)}/lens/events/stream`,
+    window.location.origin,
+  );
+  url.searchParams.set('afterSequence', String(afterSequence));
+
+  const source = new EventSource(url.toString());
+  source.addEventListener('lens', (event: MessageEvent<string>) => {
+    const payload = JSON.parse(event.data) as LensPulseEvent;
+    callbacks.onEvent(payload);
+  });
+
+  source.onopen = () => {
+    callbacks.onOpen?.();
+  };
+
+  source.onerror = (event) => {
+    callbacks.onError?.(event);
+  };
+
+  return () => {
+    source.close();
+  };
 }
 
 // --- Settings ---

@@ -66,13 +66,16 @@ public sealed class UpdateVerificationTests : IDisposable
     public void VerifyUpdate_MatchingChecksums_NoSignature_ReturnsTrue()
     {
         var filePath = Path.Combine(_tempDir, "mt.exe");
+        var agentHostPath = Path.Combine(_tempDir, "mtagenthost.exe");
         File.WriteAllText(filePath, "hello update");
+        File.WriteAllText(agentHostPath, "agent host update");
 
         var manifest = new VersionManifest
         {
             Checksums = new Dictionary<string, string>
             {
-                ["mt.exe"] = ComputeHash(filePath)
+                ["mt.exe"] = ComputeHash(filePath),
+                ["mtagenthost.exe"] = ComputeHash(agentHostPath)
             }
         };
 

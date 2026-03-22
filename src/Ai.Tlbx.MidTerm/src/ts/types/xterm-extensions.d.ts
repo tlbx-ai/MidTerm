@@ -29,6 +29,24 @@ declare global {
       readonly terminals: Map<string, TerminalState>;
       readonly activeId: string | null;
       readonly settings: MidTermSettingsPublic | null;
+      readonly layout: {
+        dock: (
+          targetSessionId: string,
+          draggedSessionId: string,
+          position: 'left' | 'right' | 'top' | 'bottom',
+        ) => void;
+        focus: (sessionId: string) => void;
+        readonly sessions: string[];
+        isSessionInLayout: (sessionId: string) => boolean;
+        readonly rootVisible: boolean;
+      };
+      readonly lens: {
+        readonly scenarios: readonly ('mixed' | 'tables' | 'long')[];
+        showScenario: (
+          sessionId: string,
+          scenario?: 'mixed' | 'tables' | 'long',
+        ) => Promise<boolean>;
+      };
     };
 
     // Voice audio functions from webAudioAccess.js

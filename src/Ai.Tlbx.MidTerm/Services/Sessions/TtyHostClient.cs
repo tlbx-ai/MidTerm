@@ -30,6 +30,9 @@ public sealed class TtyHostClient : IAsyncDisposable
     private readonly string _sessionId;
     private readonly int _hostPid;
     private readonly string _endpoint;
+    private readonly string? _instanceId;
+    private readonly string? _ownerToken;
+    private readonly bool _useLegacyEndpoint;
     private readonly object _streamLock = new();
     private readonly object _responseLock = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -85,11 +88,16 @@ public sealed class TtyHostClient : IAsyncDisposable
     public event Action<string>? OnReconnected;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
 
-    public TtyHostClient(string sessionId, int hostPid)
+    public TtyHostClient(string sessionId, int hostPid, string? instanceId = null, string? ownerToken = null, bool useLegacyEndpoint = false)
     {
         _sessionId = sessionId;
         _hostPid = hostPid;
-        _endpoint = IpcEndpoint.GetSessionEndpoint(sessionId, hostPid);
+        _instanceId = instanceId;
+        _ownerToken = ownerToken;
+        _useLegacyEndpoint = useLegacyEndpoint || string.IsNullOrWhiteSpace(instanceId) || string.IsNullOrWhiteSpace(ownerToken);
+        _endpoint = _useLegacyEndpoint
+            ? IpcEndpoint.GetLegacySessionEndpoint(sessionId, hostPid)
+            : IpcEndpoint.GetSessionEndpoint(instanceId!, sessionId, hostPid);
     }
 
     public async Task<bool> ConnectAsync(int timeoutMs = 5000, CancellationToken ct = default)
@@ -124,6 +132,12 @@ public sealed class TtyHostClient : IAsyncDisposable
                 _networkStream = new NetworkStream(_socket, ownsSocket: false);
                 _stream = _networkStream;
 #endif
+                if (!await PerformAttachHandshakeAsync(ct).ConfigureAwait(false))
+                {
+                    DisconnectCurrentStream();
+                    return false;
+                }
+
                 _reconnectAttempts = 0;
                 return true;
             }
@@ -446,6 +460,54 @@ public sealed class TtyHostClient : IAsyncDisposable
         await stream.WriteAsync(data, ct).ConfigureAwait(false);
     }
 
+    private async Task<bool> PerformAttachHandshakeAsync(CancellationToken ct)
+    {
+        if (_useLegacyEndpoint)
+        {
+            return true;
+        }
+
+        var request = TtyHostProtocol.CreateAttachRequest(new TtyHostAttachRequest
+        {
+            InstanceId = _instanceId!,
+            OwnerToken = _ownerToken!
+        });
+
+        if (_readTask is not null)
+        {
+            var response = await SendRequestAsync(request, TtyHostMessageType.AttachAck, ct).ConfigureAwait(false);
+            var parsed = response is null ? null : TtyHostProtocol.ParseAttachAck(response);
+            return parsed?.Accepted == true;
+        }
+
+        await WriteWithLockAsync(request, ct).ConfigureAwait(false);
+        var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
+        if (directResponse is null || directResponse.Value.type != TtyHostMessageType.AttachAck)
+        {
+            return false;
+        }
+
+        var attach = TtyHostProtocol.ParseAttachAck(directResponse.Value.payload.Span);
+        return attach?.Accepted == true;
+    }
+
+    private void DisconnectCurrentStream()
+    {
+        lock (_streamLock)
+        {
+#if WINDOWS
+            _pipe?.Dispose();
+            _pipe = null;
+#else
+            _networkStream?.Dispose();
+            _networkStream = null;
+            _socket?.Dispose();
+            _socket = null;
+#endif
+            _stream = null;
+        }
+    }
+
     private async Task ReadLoopWithReconnectAsync(CancellationToken ct)
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
@@ -631,6 +693,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.SetClipboardImageAck:
             case TtyHostMessageType.CloseAck:
             case TtyHostMessageType.Info:
+            case TtyHostMessageType.AttachAck:
             case TtyHostMessageType.Pong:
                 lock (_responseLock)
                 {
@@ -773,6 +836,11 @@ public sealed class TtyHostClient : IAsyncDisposable
                 _networkStream = new NetworkStream(_socket, ownsSocket: false);
                 _stream = _networkStream;
 #endif
+                if (!await PerformAttachHandshakeAsync(ct).ConfigureAwait(false))
+                {
+                    DisconnectCurrentStream();
+                    continue;
+                }
 
                 var info = await GetInfoAsync(ct).ConfigureAwait(false);
                 if (info is not null)

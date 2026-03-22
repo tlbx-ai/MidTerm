@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Common.Shells;
@@ -52,7 +53,12 @@ public static partial class SessionApiEndpoints
         UpdateService updateService,
         WebPreviewService webPreviewService,
         SessionTelemetryService sessionTelemetry,
+        SessionAgentFeedService agentFeed,
         SessionSupervisorService sessionSupervisor,
+        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
+        SessionCodexHandoffService codexHandoff,
+        SessionAgentVibeService agentVibe,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry)
     {
@@ -60,7 +66,7 @@ public static partial class SessionApiEndpoints
         {
             var response = new StateUpdate
             {
-                Sessions = GetSessionListDto(sessionManager, sessionSupervisor),
+                Sessions = GetSessionListDto(sessionManager, sessionSupervisor, lensPulse),
                 Update = updateService.LatestUpdate
             };
             return Results.Json(response, AppJsonContext.Default.StateUpdate);
@@ -68,12 +74,12 @@ public static partial class SessionApiEndpoints
 
         app.MapGet("/api/sessions", () =>
         {
-            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor), AppJsonContext.Default.SessionListDto);
+            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, lensPulse), AppJsonContext.Default.SessionListDto);
         });
 
         app.MapGet("/api/sessions/attention", (bool agentOnly = true) =>
         {
-            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor).Sessions, agentOnly);
+            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor, lensPulse).Sessions, agentOnly);
             return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
@@ -96,7 +102,7 @@ public static partial class SessionApiEndpoints
                 return Results.Problem("Failed to create session");
             }
 
-            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
@@ -121,7 +127,7 @@ public static partial class SessionApiEndpoints
                 await sessionManager.SetSessionNameAsync(sessionId, request.Name, isManual: true, ct);
             }
 
-            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, workerSession);
             var launchCommand = string.IsNullOrWhiteSpace(request.LaunchCommand)
                 ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
@@ -156,9 +162,15 @@ public static partial class SessionApiEndpoints
                 slashCommands,
                 request.LaunchDelayMs,
                 request.SlashCommandDelayMs);
+            agentFeed.NoteWorkerBootstrap(
+                sessionId,
+                resolvedProfile,
+                launchCommand,
+                slashCommands,
+                guidanceInjected);
             foreach (var slashCommand in slashCommands)
             {
-                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
                 if (!TryBuildPromptExecutionPlan(
                         new SessionPromptRequest
                         {
@@ -180,7 +192,7 @@ public static partial class SessionApiEndpoints
 
             return Results.Json(new WorkerBootstrapResponse
             {
-                Session = GetSessionDto(sessionManager, sessionSupervisor, sessionId),
+                Session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId),
                 Profile = resolvedProfile,
                 LaunchCommand = launchCommand,
                 SlashCommands = slashCommands,
@@ -204,6 +216,7 @@ public static partial class SessionApiEndpoints
         app.MapDelete("/api/sessions/{id}", async (string id) =>
         {
             workerSessionRegistry.Forget(id);
+            agentFeed.Forget(id);
             await sessionManager.CloseSessionAsync(id);
             return Results.Ok();
         });
@@ -232,7 +245,7 @@ public static partial class SessionApiEndpoints
 
             var response = new SessionStateResponse
             {
-                Session = GetSessionDto(sessionManager, sessionSupervisor, id),
+                Session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id),
                 Previews = webPreviewService.ListPreviewSessions(id).Previews
                     .ToArray()
             };
@@ -282,6 +295,7 @@ public static partial class SessionApiEndpoints
             }
 
             await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            agentFeed.NoteKeyInput(id, request);
             return Results.Ok();
         });
 
@@ -296,11 +310,20 @@ public static partial class SessionApiEndpoints
                 sessionManager,
                 sessionTelemetry,
                 sessionSupervisor,
+                lensPulse,
                 aiCliProfileService,
                 workerSessionRegistry,
                 id,
                 request,
                 ct);
+
+            if (await lensRuntime.TrySendPromptAsync(id, request, ct).ConfigureAwait(false))
+            {
+                var promptProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
+                agentFeed.NotePrompt(id, promptProfile, request);
+                return Results.Ok();
+            }
+
             if (!TryBuildPromptExecutionPlan(
                     request,
                     session,
@@ -312,7 +335,255 @@ public static partial class SessionApiEndpoints
             }
 
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
+            var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
+            agentFeed.NotePrompt(id, resolvedProfile, request);
             return Results.Ok();
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/attach", async (string id, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id);
+            string? resumeThreadId = null;
+            if (aiCliProfileService.NormalizeProfile(null, session) == AiCliProfileService.CodexProfile)
+            {
+                try
+                {
+                    resumeThreadId = await codexHandoff.PrepareForLensAsync(session, ct).ConfigureAwait(false);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(ex.Message);
+                }
+            }
+
+            var attached = await lensRuntime.EnsureAttachedAsync(id, session, resumeThreadId, ct).ConfigureAwait(false);
+            return attached ? Results.Ok() : Results.BadRequest("Lens native runtime is not available for this session.");
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/detach", async (string id, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id);
+            if (aiCliProfileService.NormalizeProfile(null, session) != AiCliProfileService.CodexProfile)
+            {
+                await lensRuntime.DetachAsync(id, ct).ConfigureAwait(false);
+                return Results.Ok();
+            }
+
+            try
+            {
+                await codexHandoff.RestoreTerminalAsync(session, ct).ConfigureAwait(false);
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/turns", async (string id, LensTurnRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id);
+            if (!await lensRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false))
+            {
+                return Results.BadRequest("Lens native runtime is not available for this session.");
+            }
+
+            try
+            {
+                var response = await lensRuntime.StartTurnAsync(id, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.LensTurnStartResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/interrupt", async (string id, LensInterruptRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                var response = await lensRuntime.InterruptTurnAsync(id, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.LensCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/requests/{requestId}/approve", async (string id, string requestId, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                var response = await lensRuntime.ResolveRequestAsync(id, requestId, new LensRequestDecisionRequest
+                {
+                    Decision = "accept"
+                }, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.LensCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/requests/{requestId}/resolve", async (string id, string requestId, LensRequestDecisionRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                var response = await lensRuntime.ResolveRequestAsync(id, requestId, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.LensCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/requests/{requestId}/decline", async (string id, string requestId, LensRequestDecisionRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            request.Decision = string.IsNullOrWhiteSpace(request.Decision) ? "decline" : request.Decision;
+            try
+            {
+                var response = await lensRuntime.ResolveRequestAsync(id, requestId, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.LensCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/sessions/{id}/lens/user-input/{requestId}", async (string id, string requestId, LensUserInputAnswerRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                var response = await lensRuntime.ResolveUserInputAsync(id, requestId, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.LensCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        app.MapGet("/api/sessions/{id}/lens/snapshot", (string id) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var snapshot = lensPulse.GetSnapshot(id);
+            return snapshot is null
+                ? Results.NotFound()
+                : Results.Json(snapshot, AppJsonContext.Default.LensPulseSnapshotResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/lens/events", (string id, long afterSequence = 0) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var events = lensPulse.GetEvents(id, afterSequence);
+            return Results.Json(events, AppJsonContext.Default.LensPulseEventListResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/lens/events/stream", async (string id, HttpContext httpContext, long afterSequence = 0) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            if (httpContext.Request.Headers.TryGetValue("Last-Event-ID", out var lastEventIdValues) &&
+                long.TryParse(lastEventIdValues.ToString(), out var lastEventId) &&
+                lastEventId > afterSequence)
+            {
+                afterSequence = lastEventId;
+            }
+
+            httpContext.Response.StatusCode = StatusCodes.Status200OK;
+            httpContext.Response.ContentType = "text/event-stream";
+            httpContext.Response.Headers["Cache-Control"] = "no-cache";
+            httpContext.Response.Headers["X-Accel-Buffering"] = "no";
+            await httpContext.Response.StartAsync(httpContext.RequestAborted).ConfigureAwait(false);
+
+            using var keepAliveTimer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+            using var subscription = lensPulse.Subscribe(id, afterSequence, httpContext.RequestAborted);
+            var reader = subscription.Reader;
+
+            while (!httpContext.RequestAborted.IsCancellationRequested)
+            {
+                while (reader.TryRead(out var lensEvent))
+                {
+                    await WriteLensStreamEventAsync(httpContext, lensEvent, httpContext.RequestAborted).ConfigureAwait(false);
+                }
+
+                var readTask = reader.WaitToReadAsync(httpContext.RequestAborted).AsTask();
+                var keepAliveTask = keepAliveTimer.WaitForNextTickAsync(httpContext.RequestAborted).AsTask();
+                var completedTask = await Task.WhenAny(readTask, keepAliveTask).ConfigureAwait(false);
+                if (completedTask == keepAliveTask)
+                {
+                    if (!await keepAliveTask.ConfigureAwait(false))
+                    {
+                        break;
+                    }
+
+                    await httpContext.Response.WriteAsync(": keep-alive\n\n", httpContext.RequestAborted).ConfigureAwait(false);
+                    await httpContext.Response.Body.FlushAsync(httpContext.RequestAborted).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (!await readTask.ConfigureAwait(false))
+                {
+                    break;
+                }
+            }
         });
 
         app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false) =>
@@ -373,6 +644,36 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionActivityResponse);
         });
 
+        app.MapGet("/api/sessions/{id}/agent", async (
+            string id,
+            int tailLines = 80,
+            int activitySeconds = 90,
+            int bellLimit = 8,
+            CancellationToken ct = default) =>
+        {
+            var response = await agentVibe.BuildVibeAsync(id, tailLines, activitySeconds, bellLimit, ct);
+            return response is null
+                ? Results.NotFound()
+                : Results.Json(response, AppJsonContext.Default.AgentSessionVibeResponse);
+        });
+
+        app.MapGet("/api/sessions/{id}/agent/feed", async (
+            string id,
+            int tailLines = 80,
+            int activitySeconds = 90,
+            int bellLimit = 8,
+            CancellationToken ct = default) =>
+        {
+            var vibe = await agentVibe.BuildVibeAsync(id, tailLines, activitySeconds, bellLimit, ct);
+            if (vibe is null)
+            {
+                return Results.NotFound();
+            }
+
+            var feed = agentFeed.GetFeed(id, vibe.Activities, vibe.GeneratedAt);
+            return Results.Json(feed, AppJsonContext.Default.AgentSessionFeedResponse);
+        });
+
         app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>
         {
             if (!await sessionManager.SetSessionNameAsync(id, request.Name, isManual: !auto))
@@ -398,7 +699,7 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, id), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
@@ -415,17 +716,6 @@ public static partial class SessionApiEndpoints
             }
 
             var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
-
-            if (IsImageUpload(file, targetPath))
-            {
-                await TrySetClipboardImageAsync(
-                    sessionManager,
-                    clipboardService,
-                    session,
-                    id,
-                    targetPath,
-                    file.ContentType);
-            }
 
             // To make Johannes happy
             if (!File.Exists(targetPath))
@@ -497,6 +787,18 @@ public static partial class SessionApiEndpoints
                 AgentsMdUpdated = agentsUpdated,
             }, AppJsonContext.Default.InjectGuidanceResponse);
         });
+    }
+
+    private static async Task WriteLensStreamEventAsync(
+        HttpContext httpContext,
+        LensPulseEvent lensEvent,
+        CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Serialize(lensEvent, AppJsonContext.Default.LensPulseEvent);
+        await httpContext.Response.WriteAsync($"id: {lensEvent.Sequence}\n", cancellationToken).ConfigureAwait(false);
+        await httpContext.Response.WriteAsync("event: lens\n", cancellationToken).ConfigureAwait(false);
+        await httpContext.Response.WriteAsync($"data: {payload}\n\n", cancellationToken).ConfigureAwait(false);
+        await httpContext.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static bool TryGetInputBytes(
@@ -772,13 +1074,14 @@ public static partial class SessionApiEndpoints
         TtyHostSessionManager sessionManager,
         SessionTelemetryService sessionTelemetry,
         SessionSupervisorService sessionSupervisor,
+        SessionLensPulseService lensPulse,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry,
         string sessionId,
         SessionPromptRequest request,
         CancellationToken ct)
     {
-        var session = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+        var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
         if (session.Supervisor?.State != SessionSupervisorService.ShellState)
         {
             return session;
@@ -803,7 +1106,7 @@ public static partial class SessionApiEndpoints
 
         foreach (var slashCommand in resumePlan.SlashCommands)
         {
-            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
             if (!TryBuildPromptExecutionPlan(
                     new SessionPromptRequest
                     {
@@ -823,7 +1126,7 @@ public static partial class SessionApiEndpoints
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, sessionId, slashPlan, ct);
         }
 
-        return GetSessionDto(sessionManager, sessionSupervisor, sessionId);
+        return GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
     }
 
     internal static bool TryBuildWorkerAutoResumePlan(
@@ -971,26 +1274,16 @@ public static partial class SessionApiEndpoints
         return sessionManager.GetTempDirectory(sessionId);
     }
 
-    private static bool IsImageUpload(IFormFile file, string savedPath)
-    {
-        if (!string.IsNullOrWhiteSpace(file.ContentType) &&
-            file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var extension = Path.GetExtension(savedPath);
-        return !string.IsNullOrWhiteSpace(extension) && ClipboardImageExtensions.Contains(extension);
-    }
-
     private static SessionListDto GetSessionListDto(
         TtyHostSessionManager sessionManager,
-        SessionSupervisorService sessionSupervisor)
+        SessionSupervisorService sessionSupervisor,
+        SessionLensPulseService lensPulse)
     {
         var response = sessionManager.GetSessionList();
         foreach (var session in response.Sessions)
         {
             session.Supervisor = sessionSupervisor.Describe(session);
+            session.HasLensHistory = lensPulse.HasHistory(session.Id);
         }
 
         return response;
@@ -999,9 +1292,10 @@ public static partial class SessionApiEndpoints
     private static SessionInfoDto GetSessionDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
+        SessionLensPulseService lensPulse,
         string sessionId)
     {
-        return GetSessionListDto(sessionManager, sessionSupervisor).Sessions.First(s => s.Id == sessionId);
+        return GetSessionListDto(sessionManager, sessionSupervisor, lensPulse).Sessions.First(s => s.Id == sessionId);
     }
 
     internal sealed record SessionPromptExecutionPlan(

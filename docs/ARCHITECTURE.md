@@ -38,6 +38,7 @@ mthost / mthost.exe (one per session)
 
 - HTTP endpoints, authentication, and static file serving
 - the terminal session registry and lifecycle
+- the per-instance ownership identity used to claim and reconnect only its own sidecars
 - mux fanout for terminal output and client input
 - settings persistence and settings WebSocket sync
 - updates, logs, diagnostics, certificate lifecycle, and share-link services
@@ -54,6 +55,19 @@ Each terminal session runs in its own `mthost` process. That gives MidTerm:
 - platform-specific PTY handling without pulling terminal lifecycle into the web host
 - the ability to restart or replace the web server separately from terminal hosts in web-only update flows
 
+### Instance Ownership Model
+
+MidTerm now treats the connection between `mt` and `mthost` as an explicit ownership contract instead of a best-effort local reconnect.
+
+- every running `mt` instance loads a stable install-scope secret from the settings directory
+- the live instance identity is derived from that stable scope plus the configured port
+- `mthost` is launched with that instance identity and owner token
+- IPC endpoints are namespaced by instance identity, so side-by-side MidTerm instances on different ports do not enumerate each other's PTY hosts
+- after connecting, `mt` must still complete an attach handshake; `mthost` rejects foreign instances even if they somehow reach the endpoint
+- only a successfully attached owner is allowed to replace the current `mt` connection during reconnect
+
+This is what allows multiple MidTerm installations or ports to run side by side while still keeping reconnect fast and deterministic.
+
 ### Static Assets
 
 Production assets are precompressed and embedded into the server assembly. MidTerm serves its frontend from memory instead of relying on a mutable on-disk web root.
@@ -67,7 +81,7 @@ The browser shell includes:
 - sidebar modules for sessions, history, update notices, network/share, and voice controls
 - terminal modules for creation, sizing, search, paste/drop handling, scaling, and mobile PiP
 - layout modules for split panes and dock overlays
-- session wrappers that add Files tabs plus web, commands, share, and git actions per session
+- session wrappers that add Files tabs plus web, commands, share, git, and experimental Lens surfaces per session
 - feature panels for files, git, commands, and web preview
 - manager bar, smart input, chat, touch controller, PWA, and diagnostics modules
 
@@ -83,6 +97,8 @@ That split keeps high-frequency terminal paths imperative while still allowing t
 ### Session Lifecycle
 
 Session creation, deletion, reordering, naming, bookmarking, sharing, and resize requests go through the server APIs and state WebSocket updates. The frontend renders the session list from live state instead of polling.
+
+`mt` also persists an instance-owned session registry for PTY hosts. That registry is used on restart to reconnect directly to known `mthost` processes instead of adopting arbitrary local endpoints.
 
 ### Mux Channel
 
@@ -121,6 +137,15 @@ The model is:
 4. Users explicitly claim a new size with a manual fit action when they want one.
 
 This is what makes multi-device usage predictable instead of having one client constantly break another client's layout.
+
+### Host Reconnect and Updates
+
+MidTerm's PTY reconnect path is now split into two cases:
+
+- **owned reconnect**: `mt` reconnects to namespaced `mthost` endpoints belonging to its current instance identity
+- **legacy import**: after upgrading from older single-instance builds, `mt` can do a one-time import of pre-ownership `mthost` endpoints and then records them in its owned session registry
+
+The legacy path exists so a full `mt` + `mthost` upgrade can keep already-running PTY hosts alive while the web server restarts. Once those legacy hosts exit, all newly spawned hosts use the owned endpoint namespace plus attach handshake.
 
 ### Terminal UX Layer
 
@@ -165,10 +190,20 @@ The manager bar is a user-defined quick-action bar below the terminal area. Butt
 MidTerm has a second input model in addition to direct terminal focus:
 
 - Smart Input can replace or complement terminal typing
-- voice capture and chat hooks connect to MidTerm.Voice
+- when Lens is active, the same Smart Input infrastructure relocates into the conversation composer lane instead of staying as separate terminal chrome
+- voice capture and chat hooks connect to MidTerm.Voice, with the Smart Input mic affordance currently kept behind dev mode and the voice credential path while that workflow is still experimental
 - the touch controller provides terminal-friendly virtual keys
 - the mobile action menu exposes common terminal operations
 - document Picture-in-Picture can show a miniature live terminal when the app backgrounds on supported mobile browsers
+
+### Agent Conversation Surface
+
+Lens is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
+
+- the canonical turn, request, and stream state still belongs to the backend Lens runtime
+- the frontend Lens panel reconstructs that state into a chat-style transcript without taking ownership away from Terminal
+- when live attach is unavailable, Lens can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
+- Lens is currently dev-gated in the session tabs while the UX is still being refined
 
 ## 5. Web Preview and Browser Automation
 
@@ -202,6 +237,8 @@ HTTP and HTML handling are separate from WebSocket relay. HTTP responses may be 
 ### Browser Bridge
 
 MidTerm also exposes browser-control APIs and CLI helpers for the current preview client. That bridge is preview-scoped, not global, so browser actions target the intended session and preview.
+
+The same design principle now applies to native sidecars: `mtagenthost` processes are launched with the current MidTerm instance identity so auxiliary session runtimes stay aligned with the owning `mt` instance.
 
 Available operations include:
 

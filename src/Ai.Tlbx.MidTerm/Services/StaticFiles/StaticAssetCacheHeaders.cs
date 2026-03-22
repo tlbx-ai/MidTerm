@@ -1,11 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.FileProviders;
 
 namespace Ai.Tlbx.MidTerm.Services.StaticFiles;
 
 internal static class StaticAssetCacheHeaders
 {
+    private static readonly Regex AssetVersionQueryRegex =
+        new(@"\?v=[^""'\s>]+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     public static string CreateETag(string requestPath, IFileInfo fileInfo)
     {
         var normalizedPath = requestPath.Replace('\\', '/').Trim();
@@ -31,6 +35,21 @@ internal static class StaticAssetCacheHeaders
         return IsEntryPointAsset(requestPath)
             ? "public, max-age=0, must-revalidate"
             : "public, max-age=86400";
+    }
+
+    public static bool IsHtmlEntryPoint(string requestPath)
+    {
+        return requestPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string StampHtmlAssetUrls(string html, string assetVersion)
+    {
+        if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(assetVersion))
+        {
+            return html;
+        }
+
+        return AssetVersionQueryRegex.Replace(html, $"?v={assetVersion}");
     }
 
     private static bool IsEntryPointAsset(string requestPath)

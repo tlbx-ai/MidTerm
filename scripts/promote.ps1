@@ -236,7 +236,8 @@ $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $versionJson.web = $stableVersion
 $versionJson.pty = $versionJson.pty -replace '-dev(\.\d+)?$', ''
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
-node "$PSScriptRoot\sync-npx-launcher-version.mjs" $stableVersion
+$syncNpxLauncherScript = Join-Path $PSScriptRoot "sync-npx-launcher-version.mjs"
+node $syncNpxLauncherScript $stableVersion
 if ($LASTEXITCODE -ne 0) { throw "Failed to sync npx launcher version" }
 
 # Commit, tag, and push
