@@ -2123,6 +2123,50 @@ describe('agentView dev errors', () => {
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 
+  it('disables transcript virtualization on compact mobile widths', async () => {
+    const { computeTranscriptVirtualWindow } = await import('./index');
+
+    const entries = Array.from({ length: 120 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index} `.repeat(12),
+      meta: 'now',
+    })) as any;
+
+    const windowed = computeTranscriptVirtualWindow(entries, 1800, 900, 375);
+
+    expect(windowed).toEqual({
+      start: 0,
+      end: entries.length,
+      topSpacerPx: 0,
+      bottomSpacerPx: 0,
+    });
+  });
+
+  it('estimates taller transcript rows for narrow viewports', async () => {
+    const { estimateTranscriptEntryHeight } = await import('./index');
+
+    const entry = {
+      id: 'assistant-1',
+      order: 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: 'A long assistant message '.repeat(20),
+      meta: 'now',
+    } as any;
+
+    const desktopEstimate = estimateTranscriptEntryHeight(entry, 960);
+    const mobileEstimate = estimateTranscriptEntryHeight(entry, 420);
+
+    expect(mobileEstimate).toBeGreaterThan(desktopEstimate);
+  });
+
   it('marks the newest assistant row as live while the current turn is still running', async () => {
     const { withLiveAssistantState } = await import('./index');
 

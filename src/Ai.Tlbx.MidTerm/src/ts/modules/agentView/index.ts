@@ -143,6 +143,12 @@ export interface TranscriptVirtualWindow {
   bottomSpacerPx: number;
 }
 
+interface TranscriptViewportMetrics {
+  scrollTop: number;
+  clientHeight: number;
+  clientWidth: number;
+}
+
 export function initAgentView(): void {
   bindLensTurnLifecycle();
   onTabActivated('agent', (sessionId, panel) => {
@@ -947,10 +953,13 @@ function renderTranscript(
     return;
   }
 
+  const viewport = container as HTMLDivElement;
+  const metrics = readTranscriptViewportMetrics(viewport);
   const virtualWindow = computeTranscriptVirtualWindow(
     entries,
-    (container as HTMLDivElement).scrollTop,
-    (container as HTMLDivElement).clientHeight,
+    metrics.scrollTop,
+    metrics.clientHeight,
+    metrics.clientWidth,
   );
   const visibleEntries = entries.slice(virtualWindow.start, virtualWindow.end);
   const fragment = document.createDocumentFragment();
@@ -974,13 +983,19 @@ function renderTranscript(
       }
 
       const previousScrollTop = viewport.scrollTop;
-      const focusCandidates = Array.from(viewport.getElementsByClassName('agent-transcript-entry'))
-        .filter((node): node is HTMLElement => node instanceof HTMLElement)
-        .filter((node) => node.dataset.pending === 'true' || node.dataset.live === 'true');
-      const viewportChildren = Array.from(viewport.children).filter(
-        (node): node is HTMLElement =>
-          node instanceof HTMLElement && node.classList.contains('agent-transcript-entry'),
-      );
+      const focusCandidates =
+        typeof viewport.getElementsByClassName === 'function'
+          ? Array.from(viewport.getElementsByClassName('agent-transcript-entry'))
+              .filter((node): node is HTMLElement => node instanceof HTMLElement)
+              .filter((node) => node.dataset.pending === 'true' || node.dataset.live === 'true')
+          : [];
+      const viewportChildren =
+        typeof viewport.children !== 'undefined'
+          ? Array.from(viewport.children).filter(
+              (node): node is HTMLElement =>
+                node instanceof HTMLElement && node.classList.contains('agent-transcript-entry'),
+            )
+          : [];
       const focusTarget =
         focusCandidates[focusCandidates.length - 1] ??
         viewportChildren[viewportChildren.length - 1] ??
@@ -1003,6 +1018,14 @@ function renderTranscript(
       }
     });
   }
+}
+
+function readTranscriptViewportMetrics(container: HTMLDivElement): TranscriptViewportMetrics {
+  return {
+    scrollTop: container.scrollTop,
+    clientHeight: container.clientHeight,
+    clientWidth: container.clientWidth,
+  };
 }
 
 export function buildLensTranscriptEntries(
@@ -2065,11 +2088,33 @@ export function isScrollContainerNearBottom(position: {
   return scrollHeight - clientHeight - scrollTop <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
 }
 
-export function estimateTranscriptEntryHeight(entry: LensTranscriptEntry): number {
-  const bodyLength = entry.body.length;
-  const lineCount = Math.max(1, entry.body.split('\n').length);
-  const wrappedLines = Math.ceil(bodyLength / 90);
-  const textLines = Math.max(lineCount, wrappedLines);
+export function estimateTranscriptEntryHeight(
+  entry: LensTranscriptEntry,
+  viewportWidth = 960,
+): number {
+  const effectiveWidth = Math.max(220, Math.min(viewportWidth, 960));
+  const horizontalChrome =
+    entry.kind === 'user'
+      ? 72
+      : entry.kind === 'tool' ||
+          entry.kind === 'plan' ||
+          entry.kind === 'diff' ||
+          entry.kind === 'request' ||
+          entry.kind === 'system' ||
+          entry.kind === 'notice'
+        ? 56
+        : 28;
+  const contentWidth = Math.max(140, effectiveWidth - horizontalChrome);
+  const avgCharWidthPx =
+    entry.kind === 'tool' || entry.kind === 'plan' || entry.kind === 'diff' ? 7.4 : 8.1;
+  const charsPerLine = Math.max(18, Math.floor(contentWidth / avgCharWidthPx));
+  const wrappedLines = entry.body
+    .split('\n')
+    .reduce(
+      (sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / charsPerLine)),
+      0,
+    );
+  const textLines = Math.max(1, wrappedLines);
   const bodyHeight = Math.min(420, 18 * textLines);
 
   switch (entry.kind) {
@@ -2094,8 +2139,9 @@ export function computeTranscriptVirtualWindow(
   entries: ReadonlyArray<LensTranscriptEntry>,
   scrollTop: number,
   clientHeight: number,
+  clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
 ): TranscriptVirtualWindow {
-  if (entries.length <= TRANSCRIPT_VIRTUALIZE_AFTER) {
+  if (entries.length <= TRANSCRIPT_VIRTUALIZE_AFTER || clientWidth <= 720) {
     return {
       start: 0,
       end: entries.length,
@@ -2116,7 +2162,7 @@ export function computeTranscriptVirtualWindow(
       continue;
     }
 
-    const height = estimateTranscriptEntryHeight(entry);
+    const height = estimateTranscriptEntryHeight(entry, clientWidth);
     if (cumulative + height >= targetTop) {
       start = index;
       topSpacerPx = cumulative;
@@ -2133,11 +2179,14 @@ export function computeTranscriptVirtualWindow(
       break;
     }
 
-    cumulative += estimateTranscriptEntryHeight(entry);
+    cumulative += estimateTranscriptEntryHeight(entry, clientWidth);
     end += 1;
   }
 
-  const totalHeight = entries.reduce((sum, entry) => sum + estimateTranscriptEntryHeight(entry), 0);
+  const totalHeight = entries.reduce(
+    (sum, entry) => sum + estimateTranscriptEntryHeight(entry, clientWidth),
+    0,
+  );
 
   return {
     start,

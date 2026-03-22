@@ -2251,6 +2251,10 @@ body.has-app-background::after {
   display: none;
 }
 
+.mobile-tab-strip {
+  display: none;
+}
+
 /* Sidebar overlay - hidden on desktop */
 .sidebar-overlay {
   display: none;
@@ -2281,6 +2285,10 @@ body.has-app-background::after {
     width: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+  }
+
+  body.installed-pwa:not(.ios-installable-device) .terminal-page {
+    --mobile-safe-top: 0px;
   }
 
   .main-content,
@@ -2391,6 +2399,55 @@ body.has-app-background::after {
     gap: 6px;
     flex-shrink: 0;
     min-height: 44px;
+  }
+
+  .mobile-tab-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    padding-left: calc(8px + env(safe-area-inset-left, 0));
+    padding-right: calc(8px + env(safe-area-inset-right, 0));
+    border-bottom: 1px solid var(--border-color);
+    background:
+      linear-gradient(180deg, rgba(15, 18, 27, 0.98), rgba(12, 15, 24, 0.94)), var(--bg-sidebar);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-tab-pill {
+    min-width: 0;
+    min-height: 36px;
+    padding: 8px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition:
+      background-color 0.15s,
+      border-color 0.15s,
+      color 0.15s;
+  }
+
+  .mobile-tab-pill.active {
+    background: rgba(123, 162, 247, 0.18);
+    border-color: rgba(123, 162, 247, 0.42);
+    color: var(--text-primary);
+  }
+
+  .mobile-tab-pill:active {
+    background: rgba(123, 162, 247, 0.24);
+    color: var(--text-primary);
   }
 
   /* Topbar buttons - minimum 44px touch target */
@@ -7389,6 +7446,26 @@ body.shared-session-mode .session-tab-bar {
     max-height: min(52vh, 320px);
   }
 
+  body.keyboard-visible .smart-input-docked {
+    max-height: min(38vh, 220px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 6px;
+    padding-left: calc(6px + env(safe-area-inset-left, 0px));
+    padding-right: calc(6px + env(safe-area-inset-right, 0px));
+    padding-bottom: 4px;
+  }
+
+  body.keyboard-visible .smart-input-row {
+    align-items: center;
+    gap: 4px;
+  }
+
+  body.keyboard-visible .touch-controller.embedded {
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+
   body.keyboard-visible .touch-controller {
     display: flex !important;
     padding: 4px 6px;
@@ -7411,6 +7488,22 @@ body.shared-session-mode .session-tab-bar {
     min-height: 34px;
     padding: 5px 6px;
     font-size: var(--fs-sm);
+  }
+
+  body.keyboard-visible .touch-controller.embedded .touch-key {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 4px 5px;
+    font-size: var(--fs-xs);
+  }
+
+  body.keyboard-visible .touch-controller.embedded .touch-bar-main {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  body.keyboard-visible .touch-controller.embedded .touch-group {
+    flex-wrap: wrap;
   }
 
   body.keyboard-visible .manager-bar {
@@ -9099,8 +9192,9 @@ body.shared-session-mode .session-tab-bar {
   flex: 1;
   flex-direction: column;
   gap: 0;
+  min-height: 0;
   padding: 8px 12px 10px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .agent-transcript-card {
@@ -9117,10 +9211,13 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-transcript {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 0 2px 28px 0;
   scroll-padding-bottom: 22px;
 }
@@ -9857,8 +9954,8 @@ body.shared-session-mode .session-tab-bar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 40px;
+  padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
@@ -9944,6 +10041,10 @@ body.shared-session-mode .session-tab-bar {
   flex-wrap: wrap;
 }
 
+.agent-request-button-row .agent-view-btn {
+  flex: 1 1 150px;
+}
+
 @media (max-width: 900px) {
   .agent-view {
     padding: 8px 10px 10px;
@@ -9953,6 +10054,11 @@ body.shared-session-mode .session-tab-bar {
 @media (max-width: 720px) {
   .agent-view {
     padding: 8px 10px 10px;
+  }
+
+  .agent-transcript {
+    gap: 10px;
+    padding-right: 0;
   }
 
   .agent-transcript-user,
@@ -9967,6 +10073,29 @@ body.shared-session-mode .session-tab-bar {
   .agent-transcript-system,
   .agent-transcript-notice {
     margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+    width: 100%;
+  }
+
+  .agent-transcript-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 4px;
+  }
+
+  .agent-transcript-title {
+    font-size: 0.95rem;
+  }
+
+  .agent-transcript-meta {
+    width: 100%;
+    margin-left: 0;
+    white-space: normal;
+  }
+
+  .agent-view-btn {
+    width: 100%;
   }
 }
 
@@ -9994,6 +10123,19 @@ body.shared-session-mode .session-tab-bar {
 
 /* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
 @media (max-width: 768px) {
+  .mobile-tab-strip {
+    gap: 6px;
+    padding: 6px;
+    padding-left: calc(6px + env(safe-area-inset-left, 0));
+    padding-right: calc(6px + env(safe-area-inset-right, 0));
+  }
+
+  .mobile-tab-pill {
+    min-height: 34px;
+    padding: 7px 12px;
+    font-size: var(--fs-xs);
+  }
+
   .session-tab-bar {
     display: none !important;
   }

@@ -321,6 +321,7 @@ async function init(): Promise<void> {
   bindVoiceEvents();
   await initVoiceControls();
   initChatPanel();
+  syncAppModeClasses();
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
@@ -341,6 +342,7 @@ async function init(): Promise<void> {
     renderSessionList();
     updateEmptyState();
     updateMobileTitle();
+    syncMobileTabActionState();
     renderHubSettings();
   });
 
@@ -388,6 +390,7 @@ async function initShared(): Promise<void> {
   initSessionTabs();
   bindSearchEvents();
   setupGlobalFocusReclaim();
+  syncAppModeClasses();
   setupResizeObserver();
   setupVisualViewport();
   setupVisibilityChangeHandler();
@@ -1267,6 +1270,7 @@ function initPwaInstall(): void {
   window.addEventListener('appinstalled', () => {
     hideRow();
     deferredPrompt = null;
+    syncAppModeClasses();
   });
 }
 
@@ -1287,6 +1291,11 @@ function isRunningAsInstalledPwa(): boolean {
     window.matchMedia('(display-mode: window-controls-overlay)').matches ||
     standaloneNavigator.standalone === true
   );
+}
+
+function syncAppModeClasses(): void {
+  document.body.classList.toggle('installed-pwa', isRunningAsInstalledPwa());
+  document.body.classList.toggle('ios-installable-device', isIosInstallableDevice());
 }
 
 function getActiveSessionTabBar(): HTMLDivElement | null {
@@ -1312,15 +1321,48 @@ function clickActiveSessionTabBarControl(selector: string): void {
 function syncMobileTabActionState(): void {
   const activeSessionId = $activeSessionId.get();
   const activeTab = activeSessionId ? getActiveTab(activeSessionId) : null;
-  const terminalBtn = document.getElementById('btn-mobile-tab-terminal');
-  const agentBtn = document.getElementById('btn-mobile-tab-agent');
-  const filesBtn = document.getElementById('btn-mobile-tab-files');
   const agentVisible = activeSessionId ? isTabAvailable(activeSessionId, 'agent') : false;
+  const strip = document.getElementById('mobile-tab-strip');
 
-  terminalBtn?.classList.toggle('active', activeTab === 'terminal');
-  agentBtn?.toggleAttribute('hidden', !agentVisible);
-  agentBtn?.classList.toggle('active', activeTab === 'agent');
-  filesBtn?.classList.toggle('active', activeTab === 'files');
+  const syncButton = (
+    elementId: string,
+    options: {
+      active: boolean;
+      hidden?: boolean;
+    },
+  ): void => {
+    const button = document.getElementById(elementId);
+    if (!button) {
+      return;
+    }
+
+    button.classList.toggle('active', options.active);
+    if (typeof options.hidden === 'boolean') {
+      button.toggleAttribute('hidden', options.hidden);
+    }
+  };
+
+  strip?.toggleAttribute('hidden', !activeSessionId);
+  syncButton('btn-mobile-tab-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-tab-agent', { active: activeTab === 'agent', hidden: !agentVisible });
+  syncButton('btn-mobile-tab-files', { active: activeTab === 'files' });
+  syncButton('btn-mobile-strip-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-strip-agent', { active: activeTab === 'agent', hidden: !agentVisible });
+  syncButton('btn-mobile-strip-files', { active: activeTab === 'files' });
+}
+
+function activateMobileTab(tab: 'terminal' | 'agent' | 'files'): void {
+  const activeId = $activeSessionId.get();
+  if (!activeId) {
+    return;
+  }
+
+  if (tab === 'agent' && !isTabAvailable(activeId, 'agent')) {
+    return;
+  }
+
+  switchTab(activeId, tab);
+  syncMobileTabActionState();
 }
 
 function closeMobileActionsMenu(): void {
@@ -1444,25 +1486,22 @@ function bindEvents(): void {
     if (activeId) void injectGuidance(activeId);
   });
   bindClick('btn-mobile-tab-terminal', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) {
-      switchTab(activeId, 'terminal');
-      syncMobileTabActionState();
-    }
+    activateMobileTab('terminal');
   });
   bindClick('btn-mobile-tab-agent', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId && isTabAvailable(activeId, 'agent')) {
-      switchTab(activeId, 'agent');
-      syncMobileTabActionState();
-    }
+    activateMobileTab('agent');
   });
   bindClick('btn-mobile-tab-files', () => {
-    const activeId = $activeSessionId.get();
-    if (activeId) {
-      switchTab(activeId, 'files');
-      syncMobileTabActionState();
-    }
+    activateMobileTab('files');
+  });
+  bindClick('btn-mobile-strip-terminal', () => {
+    activateMobileTab('terminal');
+  });
+  bindClick('btn-mobile-strip-agent', () => {
+    activateMobileTab('agent');
+  });
+  bindClick('btn-mobile-strip-files', () => {
+    activateMobileTab('files');
   });
   bindClick('btn-mobile-web', () => {
     clickActiveSessionTabBarControl('[data-action="web"]');
