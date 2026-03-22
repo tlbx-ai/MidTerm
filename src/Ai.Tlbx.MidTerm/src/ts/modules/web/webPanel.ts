@@ -487,7 +487,10 @@ function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFram
 function setVisiblePreviewFrame(frameKey: string | null): void {
   activeFrameKey = frameKey;
   for (const [key, frame] of previewFrames) {
-    frame.classList.toggle('hidden', key !== frameKey);
+    const isActive = key === frameKey;
+    frame.classList.toggle('hidden', !isActive);
+    frame.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    frame.tabIndex = isActive ? 0 : -1;
   }
 }
 

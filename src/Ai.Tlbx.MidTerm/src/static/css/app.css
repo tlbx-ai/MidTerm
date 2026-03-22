@@ -8404,10 +8404,19 @@ body.shared-session-mode .session-tab-bar {
   height: 100%;
   border: none;
   background: var(--bg-elevated);
+  z-index: 0;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 120ms ease;
 }
 
 .web-preview-iframe.hidden {
-  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.web-preview-iframe:not(.hidden) {
+  z-index: 1;
 }
 
 .web-preview-dock-body.viewport-constrained .web-preview-iframe {

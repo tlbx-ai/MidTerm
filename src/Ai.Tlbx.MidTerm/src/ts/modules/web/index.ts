@@ -29,6 +29,7 @@ import {
   isDetachedOpenForSession,
 } from './webDetach';
 import { listWebPreviewSessions } from './webApi';
+import { autoDetachPreviewOnSessionSwitch } from './webAutoDetach';
 import {
   getSessionPreview,
   getSessionSelectedPreviewName,
@@ -56,8 +57,12 @@ export function initWebPreview(): void {
   setupWebPreviewDockResize();
 
   let knownSessionIds = new Set<string>();
+  let previousSessionId = $activeSessionId.get();
 
-  $activeSessionId.subscribe(() => {
+  $activeSessionId.subscribe((sessionId) => {
+    const lastSessionId = previousSessionId;
+    previousSessionId = sessionId;
+    void autoDetachPreviewOnSessionSwitch(lastSessionId, sessionId);
     void syncActiveWebPreview();
   });
 
