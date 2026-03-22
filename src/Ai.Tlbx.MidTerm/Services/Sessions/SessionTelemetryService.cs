@@ -118,19 +118,10 @@ public sealed class SessionTelemetryService
                 }
             }
 
-            var maxBytes = 0;
-            for (var second = startSecond; second <= nowSecond; second++)
-            {
-                if (bytesBySecond.TryGetValue(second, out var bytes) && bytes > maxBytes)
-                {
-                    maxBytes = bytes;
-                }
-            }
-
             for (var second = startSecond; second <= nowSecond; second++)
             {
                 var bytes = bytesBySecond.TryGetValue(second, out var value) ? value : 0;
-                var heat = maxBytes > 0 ? Math.Round(bytes / (double)maxBytes, 4) : 0;
+                var heat = CalculateHeat(bytes);
 
                 response.Heatmap.Add(new SessionActivityHeatSample
                 {
@@ -176,18 +167,12 @@ public sealed class SessionTelemetryService
             TrimBuckets(state, nowSecond);
             TrimBells(state);
 
-            var maxBytes = 0;
             var currentBytes = 0;
             foreach (var bucket in state.Buckets)
             {
                 if (bucket.UnixSecond < startSecond)
                 {
                     continue;
-                }
-
-                if (bucket.Bytes > maxBytes)
-                {
-                    maxBytes = bucket.Bytes;
                 }
 
                 if (bucket.UnixSecond == nowSecond)
@@ -205,7 +190,7 @@ public sealed class SessionTelemetryService
                 LastOutputAt = state.LastOutputAt,
                 LastBellAt = state.LastBellAt,
                 CurrentBytesPerSecond = currentBytes,
-                CurrentHeat = maxBytes > 0 ? Math.Round(currentBytes / (double)maxBytes, 4) : 0
+                CurrentHeat = CalculateHeat(currentBytes)
             };
         }
     }
@@ -241,6 +226,13 @@ public sealed class SessionTelemetryService
         {
             state.BellRecords.RemoveAt(0);
         }
+    }
+
+    private static double CalculateHeat(int bytes)
+    {
+        // Heat should reflect fresh terminal activity, not how the current partial
+        // second compares to an older peak bucket in the same window.
+        return bytes > 0 ? 1 : 0;
     }
 
     private static void AppendEmptyHeatmap(SessionActivityResponse response, long startSecond, long nowSecond)
