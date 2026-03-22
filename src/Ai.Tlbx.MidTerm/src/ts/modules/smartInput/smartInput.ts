@@ -12,11 +12,12 @@
  * Touch keys: the touch controller bar is embedded as a collapsible second row.
  */
 
-import { $currentSettings, $activeSessionId } from '../../stores';
+import { $currentSettings, $activeSessionId, $voiceServerPassword } from '../../stores';
 import { sendInput } from '../comms';
 import { t } from '../i18n';
 import { isLensActiveSession, createLensTurnRequest, submitLensTurn } from '../lens/input';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
+import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop, pasteToTerminal } from '../terminal';
 import { hideTouchController } from '../touchController';
 import { startTranscription, stopTranscription } from './transcription';
@@ -74,6 +75,14 @@ export function initSmartInput(): void {
     syncSmartInputVisibility();
   });
 
+  $voiceServerPassword.subscribe(() => {
+    syncVoiceInputAvailability();
+  });
+
+  onDevModeChanged(() => {
+    syncVoiceInputAvailability();
+  });
+
   onTabActivated('agent', (sessionId) => {
     if ($activeSessionId.get() === sessionId) {
       syncSmartInputVisibility(true);
@@ -89,6 +98,7 @@ export function initSmartInput(): void {
   document.addEventListener('keydown', (e) => {
     if (e.code !== 'ControlRight') return;
     if (!hasSmartInput()) return;
+    if (!canUseSmartInputVoice()) return;
     if (isRecording) return;
     e.preventDefault();
     beginRecording();
@@ -146,6 +156,7 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
 
 function showDockedBar(focusTextarea: boolean = false): void {
   if (!dockedBar) createDockedDOM();
+  relocateDockedBar();
   dockedBar?.classList.add('visible');
   activeTextarea = dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
   activeMicBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
@@ -153,6 +164,7 @@ function showDockedBar(focusTextarea: boolean = false): void {
     applyDraftToTextarea(activeTextarea, $activeSessionId.get());
     resizeTextarea(activeTextarea);
   }
+  syncVoiceInputAvailability();
   embedTouchController(dockedBar);
   if (focusTextarea) {
     activeTextarea?.focus({ preventScroll: true });
@@ -206,6 +218,7 @@ function createInputElements(): {
   micBtn.innerHTML =
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
   micBtn.title = 'Push to talk (Right Ctrl)';
+  micBtn.hidden = !canUseSmartInputVoice();
 
   const autoSendBtn = document.createElement('button');
   autoSendBtn.className = 'smart-input-autosend-btn';
@@ -348,14 +361,45 @@ function createDockedDOM(): void {
 
   const { inputRow } = createInputElements();
   dockedBar.appendChild(inputRow);
+  relocateDockedBar();
+  updateAutoSendVisibility();
+  syncVoiceInputAvailability();
+}
 
+function relocateDockedBar(): void {
+  if (!dockedBar) return;
+
+  const lensComposerHost = findActiveLensComposerHost();
+  if (lensComposerHost) {
+    lensComposerHost.appendChild(dockedBar);
+    dockedBar.classList.add('smart-input-lens-docked');
+    return;
+  }
+
+  dockedBar.classList.remove('smart-input-lens-docked');
   const managerBar = document.getElementById('manager-bar');
   if (managerBar?.parentElement) {
     managerBar.parentElement.insertBefore(dockedBar, managerBar.nextSibling);
-  } else {
-    document.querySelector('.main-content')?.appendChild(dockedBar);
+    return;
   }
-  updateAutoSendVisibility();
+
+  document.querySelector('.main-content')?.appendChild(dockedBar);
+}
+
+function findActiveLensComposerHost(): HTMLElement | null {
+  const activeSessionId = $activeSessionId.get();
+  if (!activeSessionId || !isLensActiveSession(activeSessionId)) {
+    return null;
+  }
+
+  const activePanel = document.querySelector<HTMLElement>(
+    `.session-wrapper[data-session-id="${CSS.escape(activeSessionId)}"] .agent-composer-host`,
+  );
+  if (activePanel) {
+    return activePanel;
+  }
+
+  return document.querySelector<HTMLElement>('.session-wrapper.active .agent-composer-host');
 }
 
 function sendText(ta: HTMLTextAreaElement): void {
@@ -434,6 +478,7 @@ function resizeTextarea(textarea: HTMLTextAreaElement): void {
 }
 
 function beginRecording(): void {
+  if (!canUseSmartInputVoice()) return;
   if (isRecording) return;
   isRecording = true;
   activeMicBtn?.classList.add('recording');
@@ -469,6 +514,23 @@ function endRecording(): void {
   isRecording = false;
   activeMicBtn?.classList.remove('recording');
   void stopTranscription();
+}
+
+function canUseSmartInputVoice(): boolean {
+  return isDevMode() && Boolean($voiceServerPassword.get());
+}
+
+function syncVoiceInputAvailability(): void {
+  const micBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
+  if (!micBtn) {
+    return;
+  }
+
+  const enabled = canUseSmartInputVoice();
+  micBtn.hidden = !enabled;
+  if (!enabled && isRecording) {
+    endRecording();
+  }
 }
 
 function updateAutoSendVisibility(): void {

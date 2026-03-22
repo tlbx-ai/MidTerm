@@ -47,6 +47,8 @@ interface SessionLensViewState {
   refreshScheduled: number | null;
   refreshInFlight: boolean;
   requestBusyIds: Set<string>;
+  requestDraftAnswersById: Record<string, Record<string, string[]>>;
+  requestQuestionIndexById: Record<string, number>;
   transcriptAutoScrollPinned: boolean;
   transcriptRenderScheduled: number | null;
   terminalFallback: SessionStateResponse | null;
@@ -147,6 +149,13 @@ interface TranscriptViewportMetrics {
   scrollTop: number;
   clientHeight: number;
   clientWidth: number;
+}
+
+interface ArtifactClusterInfo {
+  position: 'single' | 'start' | 'middle' | 'end';
+  label: string | null;
+  count: number;
+  onlyTools: boolean;
 }
 
 export function initAgentView(): void {
@@ -427,6 +436,8 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     refreshScheduled: null,
     refreshInFlight: false,
     requestBusyIds: new Set<string>(),
+    requestDraftAnswersById: {},
+    requestQuestionIndexById: {},
     transcriptAutoScrollPinned: true,
     transcriptRenderScheduled: null,
     terminalFallback: null,
@@ -653,9 +664,16 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
   panel.classList.add('agent-view-panel');
   panel.innerHTML = `
     <section class="agent-view">
-      <section class="agent-transcript-card">
-        <div class="agent-transcript" data-agent-field="transcript"></div>
-      </section>
+      <div class="agent-chat-shell">
+        <section class="agent-transcript-card">
+          <div class="agent-transcript" data-agent-field="transcript"></div>
+          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>Jump to live</button>
+        </section>
+        <section class="agent-composer-shell">
+          <div class="agent-composer-interruption" data-agent-field="composer-interruption" hidden></div>
+          <div class="agent-composer-host" data-agent-field="composer-host"></div>
+        </section>
+      </div>
     </section>
   `;
 }
@@ -680,11 +698,22 @@ function bindTranscriptViewport(sessionId: string, state: SessionLensViewState):
       clientHeight: currentViewport.clientHeight,
       scrollHeight: currentViewport.scrollHeight,
     });
+    renderScrollToBottomControl(current.panel, current);
 
     if (current.transcriptEntries.length > TRANSCRIPT_VIRTUALIZE_AFTER) {
       scheduleTranscriptRender(sessionId);
     }
   });
+
+  const scrollButton = state.panel.querySelector<HTMLButtonElement>(
+    '[data-agent-field="scroll-to-bottom"]',
+  );
+  if (scrollButton && scrollButton.dataset.lensScrollBound !== 'true') {
+    scrollButton.dataset.lensScrollBound = 'true';
+    scrollButton.addEventListener('click', () => {
+      scrollTranscriptToBottom(sessionId, 'smooth');
+    });
+  }
 }
 
 function scheduleTranscriptRender(sessionId: string): void {
@@ -840,21 +869,20 @@ function renderAgentView(
   state: SessionLensViewState,
 ): void {
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
+  syncRequestInteractionState(state, snapshot.requests);
   const transcriptEntries = buildLensTranscriptEntries(snapshot, events);
   const optimistic = applyOptimisticLensTurns(snapshot, transcriptEntries, state.optimisticTurns);
   state.optimisticTurns = optimistic.optimisticTurns;
+  const renderedEntries = withActivationIssueNotice(
+    withLiveAssistantState(snapshot, withInlineLensStatus(snapshot, optimistic.entries, streamConnected)),
+    state.activationIssue,
+  );
   renderTranscript(
     panel,
-    withActivationIssueNotice(
-      withLiveAssistantState(
-        snapshot,
-        withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
-      ),
-      state.activationIssue,
-    ),
+    renderedEntries,
     snapshot.sessionId,
-    state.requestBusyIds,
   );
+  renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
 }
 
 function bindLensTurnLifecycle(): void {
@@ -927,11 +955,11 @@ function renderActivationView(
   state: SessionLensViewState,
 ): void {
   panel.dataset.agentTurnId = '';
+  renderComposerInterruption(panel, sessionId, [], state);
   renderTranscript(
     panel,
     withActivationIssueNotice(buildActivationTranscriptEntries(state), state.activationIssue),
     sessionId,
-    new Set<string>(),
   );
 }
 
@@ -939,7 +967,6 @@ function renderTranscript(
   panel: HTMLDivElement,
   entries: LensTranscriptEntry[],
   sessionId: string,
-  busyRequestIds: ReadonlySet<string>,
 ): void {
   const container = panel.querySelector<HTMLElement>('[data-agent-field="transcript"]');
   if (!container) {
@@ -950,6 +977,7 @@ function renderTranscript(
   if (state) {
     state.transcriptViewport = container as HTMLDivElement;
     state.transcriptEntries = entries;
+    renderScrollToBottomControl(panel, state);
   }
 
   if (entries.length === 0) {
@@ -970,8 +998,11 @@ function renderTranscript(
   if (virtualWindow.topSpacerPx > 0) {
     fragment.appendChild(createTranscriptSpacer(virtualWindow.topSpacerPx));
   }
-  for (const entry of visibleEntries) {
-    fragment.appendChild(createTranscriptEntry(entry, sessionId, busyRequestIds));
+  for (const [visibleIndex, entry] of visibleEntries.entries()) {
+    const absoluteIndex = virtualWindow.start + visibleIndex;
+    fragment.appendChild(
+      createTranscriptEntry(entry, sessionId, resolveArtifactCluster(entries, absoluteIndex)),
+    );
   }
   if (virtualWindow.bottomSpacerPx > 0) {
     fragment.appendChild(createTranscriptSpacer(virtualWindow.bottomSpacerPx));
@@ -1020,8 +1051,161 @@ function renderTranscript(
       ) {
         scheduleTranscriptRender(sessionId);
       }
+
+      const current = viewStates.get(sessionId);
+      if (current) {
+        current.transcriptAutoScrollPinned = true;
+        renderScrollToBottomControl(panel, current);
+      }
     });
   }
+}
+
+function renderScrollToBottomControl(
+  panel: HTMLDivElement,
+  state: SessionLensViewState,
+): void {
+  const button = panel.querySelector<HTMLButtonElement>('[data-agent-field="scroll-to-bottom"]');
+  if (!button) {
+    return;
+  }
+
+  const shouldShow =
+    !state.transcriptAutoScrollPinned &&
+    state.transcriptEntries.length > 0 &&
+    state.activationState !== 'failed';
+  button.hidden = !shouldShow;
+}
+
+function scrollTranscriptToBottom(
+  sessionId: string,
+  behavior: ScrollBehavior = 'auto',
+): void {
+  const state = viewStates.get(sessionId);
+  const viewport = state?.transcriptViewport;
+  if (!state || !viewport) {
+    return;
+  }
+
+  state.transcriptAutoScrollPinned = true;
+  viewport.scrollTo({
+    top: viewport.scrollHeight,
+    behavior,
+  });
+  renderScrollToBottomControl(state.panel, state);
+}
+
+function renderComposerInterruption(
+  panel: HTMLDivElement,
+  sessionId: string,
+  requests: readonly LensPulseRequestSummary[],
+  state: SessionLensViewState,
+): void {
+  const host = panel.querySelector<HTMLElement>('[data-agent-field="composer-interruption"]');
+  if (!host) {
+    return;
+  }
+
+  const activeRequest = findActiveComposerRequest(requests);
+  if (!activeRequest) {
+    host.hidden = true;
+    host.replaceChildren();
+    return;
+  }
+
+  host.hidden = false;
+  host.replaceChildren(
+    createRequestActionBlock(
+      sessionId,
+      activeRequest,
+      busyRequestIdsForRender(activeRequest, state.requestBusyIds),
+      state,
+    ),
+  );
+}
+
+function busyRequestIdsForRender(
+  request: LensPulseRequestSummary,
+  busyRequestIds: ReadonlySet<string>,
+): boolean {
+  return busyRequestIds.has(request.requestId);
+}
+
+function findActiveComposerRequest(
+  requests: readonly LensPulseRequestSummary[],
+): LensPulseRequestSummary | null {
+  const openRequests = requests.filter((request) => request.state === 'open');
+  if (openRequests.length === 0) {
+    return null;
+  }
+
+  return openRequests
+    .slice()
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null;
+}
+
+function syncRequestInteractionState(
+  state: SessionLensViewState,
+  requests: readonly LensPulseRequestSummary[],
+): void {
+  const activeRequestIds = new Set(
+    requests.filter((request) => request.state === 'open').map((request) => request.requestId),
+  );
+
+  for (const requestId of Object.keys(state.requestDraftAnswersById)) {
+    if (!activeRequestIds.has(requestId)) {
+      delete state.requestDraftAnswersById[requestId];
+    }
+  }
+
+  for (const requestId of Object.keys(state.requestQuestionIndexById)) {
+    if (!activeRequestIds.has(requestId)) {
+      delete state.requestQuestionIndexById[requestId];
+    }
+  }
+
+  for (const request of requests) {
+    if (request.state !== 'open') {
+      continue;
+    }
+
+    ensureRequestDraftAnswers(state, request);
+    const questionCount = Math.max(request.questions.length - 1, 0);
+    const currentIndex = state.requestQuestionIndexById[request.requestId] ?? 0;
+    state.requestQuestionIndexById[request.requestId] = Math.max(0, Math.min(currentIndex, questionCount));
+  }
+}
+
+function ensureRequestDraftAnswers(
+  state: SessionLensViewState,
+  request: LensPulseRequestSummary,
+): Record<string, string[]> {
+  const existing = state.requestDraftAnswersById[request.requestId];
+  if (existing) {
+    for (const question of request.questions) {
+      if (!existing[question.id]) {
+        existing[question.id] = resolveInitialQuestionAnswers(request, question.id);
+      }
+    }
+
+    return existing;
+  }
+
+  const nextDraft: Record<string, string[]> = {};
+  for (const question of request.questions) {
+    nextDraft[question.id] = resolveInitialQuestionAnswers(request, question.id);
+  }
+
+  state.requestDraftAnswersById[request.requestId] = nextDraft;
+  return nextDraft;
+}
+
+function resolveInitialQuestionAnswers(
+  request: LensPulseRequestSummary,
+  questionId: string,
+): string[] {
+  const answered = request.answers.find((answer) => answer.questionId === questionId);
+  return answered?.answers.slice() ?? [];
 }
 
 function readTranscriptViewportMetrics(container: HTMLDivElement): TranscriptViewportMetrics {
@@ -1691,12 +1875,16 @@ function shouldCompactActivationTrace(issue: LensActivationIssue | null): boolea
 function createTranscriptEntry(
   entry: LensTranscriptEntry,
   sessionId: string,
-  busyRequestIds: ReadonlySet<string>,
+  artifactCluster: ArtifactClusterInfo | null = null,
 ): HTMLElement {
   const article = document.createElement('article');
   article.className = `agent-transcript-entry agent-transcript-${entry.kind} agent-transcript-${entry.tone}`;
   article.dataset.kind = entry.kind;
   article.dataset.tone = entry.tone;
+  if (artifactCluster) {
+    article.dataset.artifactPosition = artifactCluster.position;
+    article.classList.add('agent-transcript-artifact');
+  }
   if (entry.pending) {
     article.dataset.pending = 'true';
     article.classList.add('agent-transcript-pending');
@@ -1704,6 +1892,14 @@ function createTranscriptEntry(
   if (entry.live) {
     article.dataset.live = 'true';
     article.classList.add('agent-transcript-live');
+  }
+  if (entry.kind === 'assistant' && isAssistantPlaceholderEntry(entry)) {
+    article.dataset.placeholder = 'true';
+    article.classList.add('agent-transcript-assistant-placeholder');
+  }
+
+  if (artifactCluster?.label) {
+    article.appendChild(createArtifactClusterLabel(artifactCluster));
   }
 
   const header = document.createElement('div');
@@ -1723,6 +1919,10 @@ function createTranscriptEntry(
   }
   article.appendChild(header);
 
+  if (entry.kind === 'assistant' && entry.live) {
+    article.appendChild(createAssistantLiveIndicator(entry));
+  }
+
   const titleText = normalizeTranscriptTitle(entry);
   if (titleText) {
     const title = document.createElement('div');
@@ -1731,7 +1931,7 @@ function createTranscriptEntry(
     article.appendChild(title);
   }
 
-  if (entry.body.trim()) {
+  if (shouldRenderTranscriptBody(entry)) {
     const body = document.createElement(
       entry.kind === 'diff' || entry.kind === 'tool' || entry.kind === 'plan' ? 'pre' : 'div',
     );
@@ -1761,19 +1961,37 @@ function createTranscriptEntry(
     article.appendChild(createTranscriptActionBlock(sessionId, entry.actions));
   }
 
-  if (entry.requestId) {
-    const state = viewStates.get(sessionId);
-    const request = state?.snapshot?.requests.find(
-      (candidate) => candidate.requestId === entry.requestId,
-    );
-    if (request) {
-      article.appendChild(
-        createRequestActionBlock(sessionId, request, busyRequestIds.has(request.requestId)),
-      );
-    }
-  }
-
   return article;
+}
+
+function createArtifactClusterLabel(cluster: ArtifactClusterInfo): HTMLElement {
+  const label = document.createElement('div');
+  label.className = 'agent-transcript-artifact-cluster-label';
+  label.textContent = `${cluster.label}${cluster.count > 1 ? ` (${cluster.count})` : ''}`;
+  return label;
+}
+
+function createAssistantLiveIndicator(entry: LensTranscriptEntry): HTMLElement {
+  const indicator = document.createElement('div');
+  indicator.className = 'agent-transcript-live-indicator';
+
+  const dots = document.createElement('span');
+  dots.className = 'agent-transcript-live-dots';
+  dots.setAttribute('aria-hidden', 'true');
+  for (let index = 0; index < 3; index += 1) {
+    const dot = document.createElement('span');
+    dot.className = 'agent-transcript-live-dot';
+    dot.style.animationDelay = `${index * 180}ms`;
+    dots.appendChild(dot);
+  }
+  indicator.appendChild(dots);
+
+  const label = document.createElement('span');
+  label.className = 'agent-transcript-live-label';
+  label.textContent = entry.pending ? 'Preparing response' : 'Streaming response';
+  indicator.appendChild(label);
+
+  return indicator;
 }
 
 function createTranscriptActionBlock(
@@ -1819,6 +2037,76 @@ function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
   }
 
   container.innerHTML = first.innerHTML;
+}
+
+function shouldRenderTranscriptBody(entry: LensTranscriptEntry): boolean {
+  if (!entry.body.trim()) {
+    return false;
+  }
+
+  if (entry.kind === 'assistant' && isAssistantPlaceholderEntry(entry)) {
+    return false;
+  }
+
+  return true;
+}
+
+function resolveArtifactCluster(
+  entries: readonly LensTranscriptEntry[],
+  index: number,
+): ArtifactClusterInfo | null {
+  const entry = entries[index];
+  if (!entry || !isArtifactEntry(entry.kind)) {
+    return null;
+  }
+
+  let start = index;
+  while (start > 0 && isArtifactEntry(entries[start - 1]?.kind)) {
+    start -= 1;
+  }
+
+  let end = index;
+  while (end + 1 < entries.length && isArtifactEntry(entries[end + 1]?.kind)) {
+    end += 1;
+  }
+
+  const count = end - start + 1;
+  const position =
+    count === 1
+      ? 'single'
+      : index === start
+        ? 'start'
+        : index === end
+          ? 'end'
+          : 'middle';
+  const clusterEntries = entries.slice(start, end + 1);
+  const onlyTools = clusterEntries.every((candidate) => candidate && candidate.kind === 'tool');
+  const label =
+    position === 'start' && (count > 1 || !onlyTools)
+      ? onlyTools
+        ? 'Tool calls'
+        : 'Work log'
+      : null;
+
+  return {
+    position,
+    label,
+    count,
+    onlyTools,
+  };
+}
+
+function isArtifactEntry(kind: TranscriptKind | undefined): boolean {
+  return kind === 'tool' || kind === 'plan' || kind === 'diff';
+}
+
+function isAssistantPlaceholderEntry(entry: LensTranscriptEntry): boolean {
+  if (entry.kind !== 'assistant') {
+    return false;
+  }
+
+  const normalized = entry.body.trim().toLowerCase();
+  return normalized === 'starting…' || normalized === 'starting...' || normalized === 'thinking…' || normalized === 'thinking...';
 }
 
 function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
@@ -1937,32 +2225,80 @@ function createRequestActionBlock(
   sessionId: string,
   request: LensPulseRequestSummary,
   busy: boolean,
+  state: SessionLensViewState,
 ): HTMLElement {
   const actions = document.createElement('div');
-  actions.className = 'agent-request-actions';
+  const isUserInputRequest = request.kind === 'tool_user_input' && request.questions.length > 0;
+  actions.className = `agent-request-actions agent-request-actions-composer ${isUserInputRequest ? 'agent-request-actions-user-input' : 'agent-request-actions-approval'}`;
 
-  if (request.kind === 'tool_user_input' && request.questions.length > 0) {
+  const panel = document.createElement('section');
+  panel.className = `agent-request-panel ${isUserInputRequest ? 'agent-request-panel-user-input' : 'agent-request-panel-approval'}`;
+  const activeQuestionIndex = resolveActiveRequestQuestionIndex(state, request);
+  panel.appendChild(createRequestPanelHeader(request, activeQuestionIndex));
+
+  if (isUserInputRequest) {
+    const draftAnswers = ensureRequestDraftAnswers(state, request);
+    const activeQuestion = request.questions[activeQuestionIndex];
+    if (!activeQuestion) {
+      actions.appendChild(panel);
+      return actions;
+    }
+
     const form = document.createElement('form');
     form.className = 'agent-request-form';
 
-    for (const question of request.questions) {
-      form.appendChild(createQuestionField(question));
+    form.appendChild(
+      createQuestionField(
+        sessionId,
+        request,
+        activeQuestion,
+        activeQuestionIndex,
+        request.questions.length,
+        draftAnswers,
+      ),
+    );
+
+    const controls = document.createElement('div');
+    controls.className = 'agent-request-button-row';
+
+    if (activeQuestionIndex > 0) {
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'agent-view-btn';
+      back.disabled = busy;
+      back.textContent = 'Back';
+      back.addEventListener('click', () => {
+        setActiveRequestQuestionIndex(sessionId, request.requestId, activeQuestionIndex - 1);
+      });
+      controls.appendChild(back);
     }
 
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'agent-view-btn agent-view-btn-primary';
-    submit.disabled = busy;
-    submit.textContent = busy ? 'Sending…' : 'Send answer';
-    form.appendChild(submit);
+    submit.disabled = busy || !hasDraftAnswerForQuestion(draftAnswers, activeQuestion);
+    submit.textContent =
+      activeQuestionIndex < request.questions.length - 1
+        ? 'Continue'
+        : busy
+          ? 'Sending…'
+          : 'Send answer';
+    controls.appendChild(submit);
+    form.appendChild(controls);
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      const answers = collectQuestionAnswers(form, request);
+      if (activeQuestionIndex < request.questions.length - 1) {
+        setActiveRequestQuestionIndex(sessionId, request.requestId, activeQuestionIndex + 1);
+        return;
+      }
+
+      const answers = collectQuestionAnswers(state, request);
       void handleResolveUserInput(sessionId, request.requestId, answers);
     });
 
-    actions.appendChild(form);
+    panel.appendChild(form);
+    actions.appendChild(panel);
     return actions;
   }
 
@@ -1973,7 +2309,7 @@ function createRequestActionBlock(
   approve.type = 'button';
   approve.className = 'agent-view-btn agent-view-btn-primary';
   approve.disabled = busy;
-  approve.textContent = busy ? 'Working…' : 'Approve';
+  approve.textContent = busy ? 'Working…' : 'Approve once';
   approve.addEventListener('click', () => {
     void handleApproveRequest(sessionId, request.requestId);
   });
@@ -1988,58 +2324,123 @@ function createRequestActionBlock(
   });
 
   buttonRow.append(approve, decline);
-  actions.appendChild(buttonRow);
+  panel.appendChild(buttonRow);
+  actions.appendChild(panel);
   return actions;
 }
 
-function createQuestionField(question: LensPulseRequestSummary['questions'][number]): HTMLElement {
-  const wrapper = document.createElement('label');
+function createRequestPanelHeader(
+  request: LensPulseRequestSummary,
+  activeQuestionIndex = 0,
+): HTMLElement {
+  const header = document.createElement('div');
+  header.className = 'agent-request-panel-header';
+
+  const topRow = document.createElement('div');
+  topRow.className = 'agent-request-panel-topline';
+
+  const eyebrow = document.createElement('span');
+  eyebrow.className = 'agent-request-eyebrow';
+  eyebrow.textContent =
+    request.kind === 'tool_user_input' ? 'Pending user input' : 'Pending approval';
+  topRow.appendChild(eyebrow);
+
+  const summary = document.createElement('span');
+  summary.className = 'agent-request-summary';
+  summary.textContent = summarizeRequestInterruption(request);
+  topRow.appendChild(summary);
+
+  if (request.kind === 'tool_user_input' && request.questions.length > 1) {
+    const progress = document.createElement('span');
+    progress.className = 'agent-request-progress';
+    progress.textContent = `${activeQuestionIndex + 1}/${request.questions.length}`;
+    topRow.appendChild(progress);
+  }
+
+  header.appendChild(topRow);
+
+  if (request.detail?.trim()) {
+    const detail = document.createElement('p');
+    detail.className = 'agent-request-detail';
+    detail.textContent = request.detail;
+    header.appendChild(detail);
+  }
+
+  return header;
+}
+
+function summarizeRequestInterruption(request: LensPulseRequestSummary): string {
+  if (request.kind === 'tool_user_input') {
+    return request.questions.length === 1
+      ? 'The agent needs one answer to continue.'
+      : `The agent needs ${request.questions.length} answers to continue.`;
+  }
+
+  const label = request.kindLabel.trim() || 'Approval';
+  return `${label} required before the turn can continue.`;
+}
+
+function createQuestionField(
+  sessionId: string,
+  request: LensPulseRequestSummary,
+  question: LensPulseRequestSummary['questions'][number],
+  index: number,
+  totalQuestions: number,
+  draftAnswers: Record<string, string[]>,
+): HTMLElement {
+  const wrapper = document.createElement('section');
   wrapper.className = 'agent-request-field';
 
-  const title = document.createElement('span');
+  const header = document.createElement('div');
+  header.className = 'agent-request-field-header';
+
+  if (totalQuestions > 1) {
+    const indexBadge = document.createElement('span');
+    indexBadge.className = 'agent-request-field-index';
+    indexBadge.textContent = `${index + 1}/${totalQuestions}`;
+    header.appendChild(indexBadge);
+  }
+
+  if (question.header && question.header.trim()) {
+    const fieldHeader = document.createElement('span');
+    fieldHeader.className = 'agent-request-field-label';
+    fieldHeader.textContent = question.header;
+    header.appendChild(fieldHeader);
+  }
+
+  if (header.childElementCount > 0) {
+    wrapper.appendChild(header);
+  }
+
+  const title = document.createElement('p');
   title.className = 'agent-request-question';
-  title.textContent = question.header
-    ? `${question.header}: ${question.question}`
-    : question.question;
+  title.textContent = question.question;
   wrapper.appendChild(title);
 
+  const draftValue = draftAnswers[question.id] ?? [];
   if (question.options.length > 0 && question.multiSelect) {
-    const options = document.createElement('div');
-    options.className = 'agent-request-choice-list';
-    for (const option of question.options) {
-      const optionLabel = document.createElement('label');
-      optionLabel.className = 'agent-request-choice';
-      const input = document.createElement('input');
-      input.type = 'checkbox';
-      input.name = question.id;
-      input.value = option.label;
-      optionLabel.appendChild(input);
-      optionLabel.append(` ${option.label}`);
-      options.appendChild(optionLabel);
-    }
-
+    const options = createQuestionChoiceList(
+      sessionId,
+      request,
+      question,
+      'checkbox',
+      draftValue,
+      false,
+    );
     wrapper.appendChild(options);
     return wrapper;
   }
 
   if (question.options.length > 0) {
-    const select = document.createElement('select');
-    select.name = question.id;
-    select.className = 'agent-request-input';
-
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = 'Select…';
-    select.appendChild(placeholder);
-
-    for (const option of question.options) {
-      const optionElement = document.createElement('option');
-      optionElement.value = option.label;
-      optionElement.textContent = option.label;
-      select.appendChild(optionElement);
-    }
-
-    wrapper.appendChild(select);
+    const options = createQuestionChoiceList(
+      sessionId,
+      request,
+      question,
+      'radio',
+      draftValue,
+      index < totalQuestions - 1,
+    );
+    wrapper.appendChild(options);
     return wrapper;
   }
 
@@ -2048,28 +2449,143 @@ function createQuestionField(question: LensPulseRequestSummary['questions'][numb
   input.name = question.id;
   input.className = 'agent-request-input';
   input.placeholder = 'Type answer';
+  input.value = draftValue[0] || '';
+  input.addEventListener('input', () => {
+    updateRequestDraftAnswers(sessionId, request.requestId, question.id, [input.value.trim()]);
+  });
   wrapper.appendChild(input);
   return wrapper;
 }
 
-function collectQuestionAnswers(
-  form: HTMLFormElement,
+function createQuestionChoiceList(
+  sessionId: string,
   request: LensPulseRequestSummary,
-): Array<{ questionId: string; answers: string[] }> {
-  return request.questions.map((question) => {
-    if (question.options.length > 0 && question.multiSelect) {
-      const answers = Array.from(
-        form.querySelectorAll<HTMLInputElement>(`input[name="${CSS.escape(question.id)}"]:checked`),
-      ).map((input) => input.value);
-      return { questionId: question.id, answers };
+  question: LensPulseRequestSummary['questions'][number],
+  inputType: 'checkbox' | 'radio',
+  selectedAnswers: readonly string[],
+  autoAdvance: boolean,
+): HTMLElement {
+  const options = document.createElement('div');
+  options.className = 'agent-request-choice-list';
+
+  for (const [index, option] of question.options.entries()) {
+    const optionLabel = document.createElement('label');
+    optionLabel.className = 'agent-request-choice';
+
+    const input = document.createElement('input');
+    input.type = inputType;
+    input.name = question.id;
+    input.value = option.label;
+    input.className = 'agent-request-choice-input';
+    input.checked = selectedAnswers.includes(option.label);
+    input.addEventListener('change', () => {
+      if (inputType === 'radio') {
+        updateRequestDraftAnswers(sessionId, request.requestId, question.id, [option.label], false);
+        if (autoAdvance) {
+          const currentIndex = viewStates.get(sessionId)?.requestQuestionIndexById[request.requestId] ?? 0;
+          setActiveRequestQuestionIndex(sessionId, request.requestId, currentIndex + 1);
+          return;
+        }
+
+        renderCurrentAgentView(sessionId);
+        return;
+      }
+
+      const nextAnswers = Array.from(
+        options.querySelectorAll<HTMLInputElement>(`input[name="${CSS.escape(question.id)}"]:checked`),
+      ).map((candidate) => candidate.value);
+      updateRequestDraftAnswers(sessionId, request.requestId, question.id, nextAnswers);
+    });
+    optionLabel.appendChild(input);
+
+    if (index < 9) {
+      const shortcut = document.createElement('span');
+      shortcut.className = 'agent-request-choice-shortcut';
+      shortcut.textContent = String(index + 1);
+      optionLabel.appendChild(shortcut);
     }
 
-    const field = form.querySelector<HTMLInputElement | HTMLSelectElement>(
-      `[name="${CSS.escape(question.id)}"]`,
-    );
-    const value = field?.value.trim() ?? '';
-    return { questionId: question.id, answers: value ? [value] : [] };
-  });
+    const copy = document.createElement('span');
+    copy.className = 'agent-request-choice-copy';
+
+    const title = document.createElement('span');
+    title.className = 'agent-request-choice-title';
+    title.textContent = option.label;
+    copy.appendChild(title);
+
+    if (option.description && option.description !== option.label) {
+      const description = document.createElement('span');
+      description.className = 'agent-request-choice-description';
+      description.textContent = option.description;
+      copy.appendChild(description);
+    }
+
+    optionLabel.appendChild(copy);
+    options.appendChild(optionLabel);
+  }
+
+  return options;
+}
+
+function collectQuestionAnswers(
+  state: SessionLensViewState,
+  request: LensPulseRequestSummary,
+): Array<{ questionId: string; answers: string[] }> {
+  const draftAnswers = ensureRequestDraftAnswers(state, request);
+  return request.questions.map((question) => ({
+    questionId: question.id,
+    answers: (draftAnswers[question.id] ?? []).filter(Boolean),
+  }));
+}
+
+function resolveActiveRequestQuestionIndex(
+  state: SessionLensViewState,
+  request: LensPulseRequestSummary,
+): number {
+  const maxIndex = Math.max(0, request.questions.length - 1);
+  const currentIndex = state.requestQuestionIndexById[request.requestId] ?? 0;
+  return Math.max(0, Math.min(currentIndex, maxIndex));
+}
+
+function setActiveRequestQuestionIndex(
+  sessionId: string,
+  requestId: string,
+  nextIndex: number,
+): void {
+  const state = viewStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  state.requestQuestionIndexById[requestId] = Math.max(0, nextIndex);
+  renderCurrentAgentView(sessionId);
+}
+
+function updateRequestDraftAnswers(
+  sessionId: string,
+  requestId: string,
+  questionId: string,
+  answers: string[],
+  rerender = true,
+): void {
+  const state = viewStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  const requestDrafts = state.requestDraftAnswersById[requestId] ?? {};
+  requestDrafts[questionId] = answers.filter((answer) => answer.trim().length > 0);
+  state.requestDraftAnswersById[requestId] = requestDrafts;
+  if (rerender) {
+    renderCurrentAgentView(sessionId);
+  }
+}
+
+function hasDraftAnswerForQuestion(
+  draftAnswers: Record<string, string[]>,
+  question: LensPulseRequestSummary['questions'][number],
+): boolean {
+  return (draftAnswers[question.id] ?? []).some((answer) => answer.trim().length > 0);
 }
 
 function renderEmptyContainer(container: HTMLElement, text: string): void {

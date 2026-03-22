@@ -26,6 +26,7 @@ import {
   fitTerminalToContainer,
   refreshTerminalPresentation,
 } from '../terminal/scaling';
+import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 
 const log = createLogger('tabManager');
 
@@ -55,6 +56,10 @@ function isInteractiveAgentProfile(profile: string | null | undefined): boolean 
 }
 
 function shouldShowAgentTab(session: Session | null | undefined): boolean {
+  if (!isDevMode()) {
+    return false;
+  }
+
   return (
     session?.agentControlled === true ||
     session?.hasLensHistory === true ||
@@ -284,6 +289,13 @@ export function updateGitIndicatorForSession(
 }
 
 export function initSessionTabs(): void {
+  onDevModeChanged(() => {
+    const sessions = $sessionList.get();
+    for (const session of sessions) {
+      syncSessionTabCapabilities(session.id, session);
+    }
+  });
+
   $processStates.subscribe((states) => {
     for (const [sessionId, processState] of Object.entries(states)) {
       if (processState.foregroundCwd) {

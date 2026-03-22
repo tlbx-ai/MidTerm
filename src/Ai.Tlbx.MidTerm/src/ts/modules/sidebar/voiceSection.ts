@@ -13,6 +13,7 @@ const STORAGE_KEY = 'midterm.voiceSectionCollapsed';
 let voiceSectionVisible = false;
 let devModeEnabled = false;
 let voiceChatEnabled = false;
+const devModeListeners = new Set<(enabled: boolean) => void>();
 
 /**
  * Enable/disable the voice chat feature (controls DOM visibility)
@@ -50,6 +51,9 @@ export function setDevMode(enabled: boolean): void {
   if (syncBtn) {
     syncBtn.classList.toggle('hidden', !enabled);
   }
+  for (const listener of devModeListeners) {
+    listener(enabled);
+  }
   log.info(() => `DevMode=${enabled}`);
 }
 
@@ -58,6 +62,13 @@ export function setDevMode(enabled: boolean): void {
  */
 export function isDevMode(): boolean {
   return devModeEnabled;
+}
+
+export function onDevModeChanged(listener: (enabled: boolean) => void): () => void {
+  devModeListeners.add(listener);
+  return () => {
+    devModeListeners.delete(listener);
+  };
 }
 
 /**
