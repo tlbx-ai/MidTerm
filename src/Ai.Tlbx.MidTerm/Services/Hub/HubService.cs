@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Models.Certificates;
 using Ai.Tlbx.MidTerm.Settings;
@@ -48,11 +49,6 @@ public sealed class HubService
     public HubMachineInfo UpsertMachine(string? id, HubMachineUpsertRequest request)
     {
         var normalizedUrl = NormalizeBaseUrl(request.BaseUrl);
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new ArgumentException("Machine name is required.");
-        }
-
         if (string.IsNullOrWhiteSpace(normalizedUrl))
         {
             throw new ArgumentException("Machine URL is required.");
@@ -75,7 +71,10 @@ public sealed class HubService
                 machines.Add(machine);
             }
 
-            machine.Name = request.Name.Trim();
+            machine.Name = ResolveStoredMachineName(
+                request.Name,
+                normalizedUrl,
+                machine.Name);
             machine.BaseUrl = normalizedUrl;
             machine.Enabled = request.Enabled;
             if (request.ApiKey is not null)
@@ -183,6 +182,13 @@ public sealed class HubService
         try
         {
             await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: false, ct);
+            var discoveredName = await PersistDiscoveredMachineNameAsync(
+                machine,
+                remote.Bootstrap?.Hostname);
+            if (!string.IsNullOrWhiteSpace(discoveredName))
+            {
+                state.Machine.Name = discoveredName;
+            }
 
             var sessionsResponse = await remote.Client.GetFromJsonAsync(
                 "/api/sessions",
@@ -346,7 +352,7 @@ public sealed class HubService
 
         await using var preflight = await CreateRemoteContextAsync(machine, requireTrusted, ct);
         capturedFingerprint = preflight.CapturedFingerprint;
-        if (!string.IsNullOrWhiteSpace(machine.ApiKey))
+        if (preflight.AuthMode == RemoteAuthMode.ApiKey && !string.IsNullOrWhiteSpace(machine.ApiKey))
         {
             socket.Options.SetRequestHeader("Authorization", $"Bearer {machine.ApiKey.Trim()}");
         }
@@ -384,13 +390,13 @@ public sealed class HubService
     private static List<HubMachineSettings> NormalizeMachines(IEnumerable<HubMachineSettings> machines)
     {
         return machines
-            .Where(machine => !string.IsNullOrWhiteSpace(machine.Name) && !string.IsNullOrWhiteSpace(machine.BaseUrl))
+            .Where(machine => !string.IsNullOrWhiteSpace(machine.BaseUrl))
             .GroupBy(machine => machine.Id, StringComparer.Ordinal)
             .Select(group =>
             {
                 var machine = CloneMachine(group.First());
-                machine.Name = machine.Name.Trim();
                 machine.BaseUrl = NormalizeBaseUrl(machine.BaseUrl);
+                machine.Name = ResolveStoredMachineName(machine.Name, machine.BaseUrl);
                 machine.ApiKey = NormalizeOptionalSecret(machine.ApiKey);
                 machine.Password = NormalizeOptionalSecret(machine.Password);
                 machine.LastFingerprint = NormalizeFingerprint(machine.LastFingerprint);
@@ -425,6 +431,36 @@ public sealed class HubService
         }
 
         return trimmed;
+    }
+
+    private static string ResolveStoredMachineName(
+        string? requestedName,
+        string baseUrl,
+        string? existingName = null)
+    {
+        var trimmedRequested = requestedName?.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmedRequested))
+        {
+            return trimmedRequested;
+        }
+
+        var trimmedExisting = existingName?.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmedExisting))
+        {
+            return trimmedExisting;
+        }
+
+        return GetBaseUrlHost(baseUrl);
+    }
+
+    private static string GetBaseUrlHost(string? baseUrl)
+    {
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return uri.Host;
+        }
+
+        return string.Empty;
     }
 
     private static string? NormalizeFingerprint(string? fingerprint)
@@ -516,6 +552,46 @@ public sealed class HubService
         await Task.CompletedTask;
     }
 
+    private async Task<string?> PersistDiscoveredMachineNameAsync(
+        HubMachineSettings machine,
+        string? discoveredName)
+    {
+        var normalizedDiscoveredName = discoveredName?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedDiscoveredName))
+        {
+            return null;
+        }
+
+        var fallbackName = GetBaseUrlHost(machine.BaseUrl);
+        lock (_lock)
+        {
+            var settings = _settingsService.Load();
+            var stored = settings.HubMachines.FirstOrDefault(entry => string.Equals(entry.Id, machine.Id, StringComparison.Ordinal));
+            if (stored is null)
+            {
+                return normalizedDiscoveredName;
+            }
+
+            var currentName = stored.Name?.Trim();
+            var shouldOverwrite = string.IsNullOrWhiteSpace(currentName) ||
+                string.Equals(currentName, fallbackName, StringComparison.OrdinalIgnoreCase);
+
+            if (!shouldOverwrite)
+            {
+                return currentName;
+            }
+
+            if (string.Equals(currentName, normalizedDiscoveredName, StringComparison.Ordinal))
+            {
+                return currentName;
+            }
+
+            stored.Name = normalizedDiscoveredName;
+            _settingsService.Save(settings);
+            return normalizedDiscoveredName;
+        }
+    }
+
     private async Task<RemoteContext> CreateRemoteContextAsync(
         HubMachineSettings machine,
         bool requireTrusted,
@@ -543,41 +619,59 @@ public sealed class HubService
             Timeout = TimeSpan.FromSeconds(10)
         };
 
+        var authMode = RemoteAuthMode.None;
+        BootstrapResponse? bootstrap = null;
+
         if (!string.IsNullOrWhiteSpace(machine.ApiKey))
         {
             client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", machine.ApiKey.Trim());
+
+            var apiKeyProbe = await TryGetBootstrapAsync(client, ct);
+            if (apiKeyProbe.Success)
+            {
+                authMode = RemoteAuthMode.ApiKey;
+                bootstrap = apiKeyProbe.Bootstrap;
+            }
+            else
+            {
+                client.DefaultRequestHeaders.Authorization = null;
+                if (!apiKeyProbe.IsUnauthorized)
+                {
+                    client.Dispose();
+                    handler.Dispose();
+                    throw new InvalidOperationException(apiKeyProbe.ErrorMessage);
+                }
+            }
         }
-        else if (!string.IsNullOrWhiteSpace(machine.Password))
+
+        if (bootstrap is null && !string.IsNullOrWhiteSpace(machine.Password))
         {
-            var buffer = new ArrayBufferWriter<byte>();
-            using (var writer = new Utf8JsonWriter(buffer))
+            await LoginWithPasswordAsync(client, machine, ct);
+            var passwordProbe = await TryGetBootstrapAsync(client, ct);
+            if (!passwordProbe.Success)
             {
-                writer.WriteStartObject();
-                writer.WriteString("password", machine.Password);
-                writer.WriteEndObject();
+                client.Dispose();
+                handler.Dispose();
+                throw new InvalidOperationException(passwordProbe.ErrorMessage);
             }
 
-            var loginContent = new ByteArrayContent(buffer.WrittenSpan.ToArray());
-            loginContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
-            {
-                CharSet = Encoding.UTF8.WebName
-            };
-            var loginResponse = await client.PostAsync(
-                "/api/auth/login",
-                loginContent,
-                ct);
-            if (!loginResponse.IsSuccessStatusCode)
-            {
-                var message = await loginResponse.Content.ReadAsStringAsync(ct);
-                throw new InvalidOperationException(string.IsNullOrWhiteSpace(message)
-                    ? $"Hub login failed for \"{machine.Name}\"."
-                    : message);
-            }
+            authMode = RemoteAuthMode.Password;
+            bootstrap = passwordProbe.Bootstrap;
         }
 
-        var certProbe = await client.GetAsync("/api/health", ct);
-        await EnsureSuccessAsync(certProbe, ct);
+        if (bootstrap is null)
+        {
+            var anonymousProbe = await TryGetBootstrapAsync(client, ct);
+            if (!anonymousProbe.Success)
+            {
+                client.Dispose();
+                handler.Dispose();
+                throw new InvalidOperationException(anonymousProbe.ErrorMessage);
+            }
+
+            bootstrap = anonymousProbe.Bootstrap;
+        }
 
         if (requireTrusted && HasPinnedMismatch(machine.PinnedFingerprint, capturedFingerprint))
         {
@@ -593,7 +687,77 @@ public sealed class HubService
             handler,
             NormalizeFingerprint(capturedFingerprint),
             HasPinnedMismatch(machine.PinnedFingerprint, capturedFingerprint),
-            cookieHeader);
+            cookieHeader,
+            authMode,
+            bootstrap);
+    }
+
+    private static async Task LoginWithPasswordAsync(
+        HttpClient client,
+        HubMachineSettings machine,
+        CancellationToken ct)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("password", machine.Password);
+            writer.WriteEndObject();
+        }
+
+        var loginContent = new ByteArrayContent(buffer.WrittenSpan.ToArray());
+        loginContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
+        {
+            CharSet = Encoding.UTF8.WebName
+        };
+        var loginResponse = await client.PostAsync(
+            "/api/auth/login",
+            loginContent,
+            ct);
+        if (!loginResponse.IsSuccessStatusCode)
+        {
+            var message = await loginResponse.Content.ReadAsStringAsync(ct);
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(message)
+                ? $"Hub login failed for \"{machine.Name}\"."
+                : message);
+        }
+    }
+
+    private static async Task<BootstrapProbeResult> TryGetBootstrapAsync(
+        HttpClient client,
+        CancellationToken ct)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.GetAsync("/api/bootstrap", ct);
+        }
+        catch (Exception ex)
+        {
+            return BootstrapProbeResult.Failure(ex.Message);
+        }
+
+        if (response.IsSuccessStatusCode)
+        {
+            var bootstrap = await response.Content.ReadFromJsonAsync(
+                AppJsonContext.Default.BootstrapResponse,
+                ct);
+            return bootstrap is null
+                ? BootstrapProbeResult.Failure("Remote bootstrap response was empty.")
+                : BootstrapProbeResult.WithSuccess(bootstrap);
+        }
+
+        var message = await response.Content.ReadAsStringAsync(ct);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            return BootstrapProbeResult.WithUnauthorized(string.IsNullOrWhiteSpace(message)
+                ? $"Authentication failed ({(int)response.StatusCode})."
+                : message);
+        }
+
+        return BootstrapProbeResult.Failure(string.IsNullOrWhiteSpace(message)
+            ? $"Remote bootstrap failed ({(int)response.StatusCode})."
+            : message);
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct)
@@ -616,13 +780,17 @@ public sealed class HubService
             HttpClientHandler handler,
             string? capturedFingerprint,
             bool hasPinnedFingerprintMismatch,
-            string cookieHeader)
+            string cookieHeader,
+            RemoteAuthMode authMode,
+            BootstrapResponse? bootstrap)
         {
             Client = client;
             Handler = handler;
             CapturedFingerprint = capturedFingerprint;
             HasPinnedFingerprintMismatch = hasPinnedFingerprintMismatch;
             CookieHeader = cookieHeader;
+            AuthMode = authMode;
+            Bootstrap = bootstrap;
         }
 
         public HttpClient Client { get; }
@@ -630,6 +798,8 @@ public sealed class HubService
         public string? CapturedFingerprint { get; }
         public bool HasPinnedFingerprintMismatch { get; }
         public string CookieHeader { get; }
+        public RemoteAuthMode AuthMode { get; }
+        public BootstrapResponse? Bootstrap { get; }
 
         public ValueTask DisposeAsync()
         {
@@ -637,5 +807,28 @@ public sealed class HubService
             Handler.Dispose();
             return ValueTask.CompletedTask;
         }
+    }
+
+    private enum RemoteAuthMode
+    {
+        None,
+        ApiKey,
+        Password
+    }
+
+    private readonly record struct BootstrapProbeResult(
+        bool Success,
+        bool IsUnauthorized,
+        string ErrorMessage,
+        BootstrapResponse? Bootstrap)
+    {
+        public static BootstrapProbeResult WithSuccess(BootstrapResponse bootstrap) =>
+            new(true, false, string.Empty, bootstrap);
+
+        public static BootstrapProbeResult WithUnauthorized(string errorMessage) =>
+            new(false, true, errorMessage, null);
+
+        public static BootstrapProbeResult Failure(string errorMessage) =>
+            new(false, false, errorMessage, null);
     }
 }

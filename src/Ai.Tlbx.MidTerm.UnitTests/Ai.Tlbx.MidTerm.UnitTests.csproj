@@ -24,4 +24,8 @@
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.FakeCodex\Ai.Tlbx.MidTerm.FakeCodex.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>
