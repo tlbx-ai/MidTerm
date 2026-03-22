@@ -236,7 +236,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 ### 5. Session Bar, Files, Git, Commands
 
 - `F203` Each session gets its own wrapper and tab bar.
-- `F204` The session bar exposes Terminal and Files tabs.
+- `F204` The session bar exposes Terminal and Files tabs, and can surface an experimental Lens tab for supported agent sessions while Lens remains dev-gated.
 - `F205` The session bar shows the foreground cwd.
 - `F206` Clicking the cwd copies it to the clipboard.
 - `F207` The session bar includes a web preview action.
@@ -301,8 +301,8 @@ This is the canonical feature sweep for the current codebase. The coverage order
 
 ### 7. Smart Input, Voice, Touch, Mobile
 
-- `F263` Smart Input can fully replace direct terminal keyboard focus.
-- `F264` Smart Input can coexist with direct terminal keyboard focus in both mode.
+- `F263` Smart Input can fully replace direct terminal keyboard focus, and Lens reuses that same docked infrastructure as its in-conversation composer lane.
+- `F264` Smart Input can coexist with direct terminal keyboard focus in both mode, but Lens keeps a single composer path so conversation turns do not split across two inputs.
 - `F265` Smart Input keeps a per-session draft buffer.
 - `F266` Switching active sessions preserves and restores Smart Input drafts.
 - `F267` Smart Input auto-grows its textarea up to five lines.
@@ -311,8 +311,8 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F270` Smart Input includes an explicit Send button.
 - `F271` Smart Input supports an auto-send toggle for transcribed input.
 - `F272` Auto-send preference persists in `localStorage`.
-- `F273` Right Ctrl acts as push-to-talk.
-- `F274` The mic button supports hold-to-record with pointer events.
+- `F273` Right Ctrl acts as push-to-talk when the experimental Smart Input voice path is available.
+- `F274` The mic button supports hold-to-record with pointer events, but only appears when dev mode and the voice credential path expose that workflow.
 - `F275` Smart Input can attach multiple files.
 - `F276` Smart Input can capture touch-device photos via camera input.
 - `F277` Smart Input can capture desktop images from a webcam overlay.

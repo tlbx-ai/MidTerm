@@ -67,6 +67,10 @@ function shouldShowAgentTab(session: Session | null | undefined): boolean {
   );
 }
 
+/**
+ * Lets feature modules attach tab-specific behavior without coupling those
+ * modules to session-wrapper creation order or tab-bar DOM internals.
+ */
 export function onTabActivated(
   tab: SessionTabId,
   callback: (sessionId: string, panel: HTMLDivElement) => void,
@@ -74,10 +78,18 @@ export function onTabActivated(
   (tabActivationCallbacks[tab] ??= []).push(callback);
 }
 
+/**
+ * Lets modules release tab-scoped resources as soon as a surface loses focus,
+ * which matters for streams like Lens that should not keep running invisibly.
+ */
 export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string) => void): void {
   (tabDeactivationCallbacks[tab] ??= []).push(callback);
 }
 
+/**
+ * Builds the stable per-session shell that all non-terminal surfaces hang off,
+ * preserving the terminal instance while MidTerm layers IDE-style panels around it.
+ */
 export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
   if (existing) return existing;
@@ -146,6 +158,10 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   return state;
 }
 
+/**
+ * Removes session-tab chrome when a session disappears without making other
+ * modules guess which wrapper nodes are still safe to use.
+ */
 export function destroySessionWrapper(sessionId: string): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) return;
@@ -154,18 +170,34 @@ export function destroySessionWrapper(sessionId: string): void {
   sessionTabStates.delete(sessionId);
 }
 
+/**
+ * Exposes the wrapper host so feature modules can mount session-local surfaces
+ * without duplicating wrapper lookup logic.
+ */
 export function getSessionWrapper(sessionId: string): HTMLDivElement | null {
   return sessionTabStates.get(sessionId)?.wrapper ?? null;
 }
 
+/**
+ * Gives feature modules the correct per-session mount point for their panel so
+ * tab-local UI can remain outside the tab manager's internal state.
+ */
 export function getTabPanel(sessionId: string, tab: SessionTabId): HTMLDivElement | null {
   return sessionTabStates.get(sessionId)?.panels[tab] ?? null;
 }
 
+/**
+ * Exposes active-tab state to cooperating modules that need to adapt behavior
+ * based on whether the user is in Terminal, Files, or an experimental surface.
+ */
 export function getActiveTab(sessionId: string): SessionTabId {
   return sessionTabStates.get(sessionId)?.activeTab ?? 'terminal';
 }
 
+/**
+ * Centralizes capability checks so modules do not accidentally surface tabs the
+ * current session or release channel is not supposed to expose.
+ */
 export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
   const state = sessionTabStates.get(sessionId);
   if (!state) {
@@ -179,6 +211,10 @@ export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
   return isTabVisible(state.tabBar, tab);
 }
 
+/**
+ * Reconciles live session capabilities with visible tab chrome, including
+ * keeping the experimental Lens tab hidden outside dev mode for now.
+ */
 export function syncSessionTabCapabilities(
   sessionId: string,
   session: Session | null | undefined,
@@ -197,6 +233,10 @@ export function syncSessionTabCapabilities(
   }
 }
 
+/**
+ * Switches visible workflow surfaces while preserving the underlying terminal
+ * container, which is the key reason MidTerm can feel IDE-like without forking sessions.
+ */
 export function switchTab(
   sessionId: string,
   tab: SessionTabId,
@@ -251,18 +291,30 @@ export function switchTab(
   log.verbose(() => `Tab switched: ${sessionId} -> ${tab}`);
 }
 
+/**
+ * Moves the existing terminal DOM back under the session wrapper instead of
+ * recreating it, so reconnects and tab switches do not disrupt terminal state.
+ */
 export function reparentTerminalContainer(sessionId: string, container: HTMLDivElement): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) return;
   state.panels.terminal.appendChild(container);
 }
 
+/**
+ * Keeps session-tab chrome anchored in the user's real working context, which
+ * matters when MidTerm is used as a multi-session workspace rather than one shell.
+ */
 export function updateSessionCwd(sessionId: string, cwd: string): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) return;
   updateCwd(state.tabBar, cwd);
 }
 
+/**
+ * Provides a measured tab-bar height so surrounding layout can reserve the
+ * right amount of space instead of relying on duplicated CSS constants.
+ */
 export function getTabBarHeight(): number {
   for (const state of sessionTabStates.values()) {
     if (state.wrapper.offsetParent !== null) {
@@ -272,6 +324,10 @@ export function getTabBarHeight(): number {
   return 0;
 }
 
+/**
+ * Keeps global action chrome visually scoped to the active session, which
+ * avoids implying that hidden session panels are currently receiving actions.
+ */
 export function setActionButtonActive(actionId: IdeBarActionId, active: boolean): void {
   const activeSessionId = $activeSessionId.get();
   for (const [sessionId, state] of sessionTabStates.entries()) {
@@ -279,6 +335,10 @@ export function setActionButtonActive(actionId: IdeBarActionId, active: boolean)
   }
 }
 
+/**
+ * Updates lightweight git state in the tab bar so repo context stays visible
+ * even when the heavier Git panel is closed.
+ */
 export function updateGitIndicatorForSession(
   sessionId: string,
   status: GitStatusResponse | null,
@@ -288,6 +348,10 @@ export function updateGitIndicatorForSession(
   updateGitIndicator(state.tabBar, status);
 }
 
+/**
+ * Binds session-tab state to live process, session, and dev-mode changes so
+ * experimental surfaces appear and disappear without forcing a full reload.
+ */
 export function initSessionTabs(): void {
   onDevModeChanged(() => {
     const sessions = $sessionList.get();

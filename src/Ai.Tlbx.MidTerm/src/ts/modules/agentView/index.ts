@@ -158,6 +158,11 @@ interface ArtifactClusterInfo {
   onlyTools: boolean;
 }
 
+/**
+ * Wires Lens into the session-tab shell so supported agent sessions can open a
+ * conversation-first surface without changing MidTerm's terminal-owned runtime
+ * model underneath.
+ */
 export function initAgentView(): void {
   bindLensTurnLifecycle();
   onTabActivated('agent', (sessionId, panel) => {
@@ -175,6 +180,10 @@ export function initAgentView(): void {
   log.info(() => 'Agent view initialized');
 }
 
+/**
+ * Tears down per-session Lens state when a session closes or loses the Lens
+ * surface so stale streams, timers, and attach state do not leak across turns.
+ */
 export function destroyAgentView(sessionId: string): void {
   closeLensStream(sessionId);
   void detachSessionLens(sessionId).catch((error: unknown) => {
@@ -191,10 +200,18 @@ export function destroyAgentView(sessionId: string): void {
   viewStates.delete(sessionId);
 }
 
+/**
+ * Exposes deterministic transcript fixtures so Lens UI work can be iterated
+ * and regression-tested without depending on a live agent runtime.
+ */
 export function getLensDebugScenarioNames(): readonly LensDebugScenarioName[] {
   return LENS_DEBUG_SCENARIO_NAMES;
 }
 
+/**
+ * Loads a representative Lens transcript into an existing session panel to
+ * speed up conversation UX and CSS tuning while Lens remains dev-facing.
+ */
 export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): boolean {
   const state = viewStates.get(sessionId);
   if (!state) {
@@ -1216,6 +1233,10 @@ function readTranscriptViewportMetrics(container: HTMLDivElement): TranscriptVie
   };
 }
 
+/**
+ * Normalizes the backend-owned Lens snapshot plus event stream into a stable
+ * conversation transcript so the frontend can stay a thin presentation layer.
+ */
 export function buildLensTranscriptEntries(
   snapshot: LensPulseSnapshotResponse,
   events: LensPulseEvent[],
@@ -1554,6 +1575,10 @@ export function buildLensTranscriptEntries(
     .sort((left, right) => left.order - right.order);
 }
 
+/**
+ * Keeps the conversation responsive while the canonical Lens snapshot catches
+ * up, so submitted turns feel immediate even though authority stays server-side.
+ */
 export function applyOptimisticLensTurns(
   snapshot: LensPulseSnapshotResponse,
   entries: readonly LensTranscriptEntry[],
@@ -1669,6 +1694,10 @@ function withInlineLensStatus(
   ];
 }
 
+/**
+ * Promotes the trailing assistant entry into a streaming state when the current
+ * turn is still running, which restores the "live response" feel users expect.
+ */
 export function withLiveAssistantState(
   snapshot: LensPulseSnapshotResponse,
   entries: LensTranscriptEntry[],
@@ -1691,6 +1720,10 @@ export function withLiveAssistantState(
   return entries;
 }
 
+/**
+ * Surfaces attach and handoff failures inside the conversation lane so users
+ * understand why Lens fell back instead of hunting through separate chrome.
+ */
 export function withActivationIssueNotice(
   entries: LensTranscriptEntry[],
   issue: LensActivationIssue | null,
@@ -1815,6 +1848,10 @@ function buildSystemEntryFromEvent(
   return null;
 }
 
+/**
+ * Renders Lens attach and recovery progress as transcript entries so the user
+ * sees handoff progress in the same place they expect the conversation to live.
+ */
 export function buildActivationTranscriptEntries(
   state: SessionLensViewState,
 ): LensTranscriptEntry[] {
@@ -2180,6 +2217,10 @@ function createTranscriptAttachmentBlock(
   return container;
 }
 
+/**
+ * Keeps timestamps and status concise so the transcript reads like a chat
+ * surface instead of an event log, while still preserving debugging context.
+ */
 export function formatTranscriptMeta(
   kind: TranscriptKind,
   statusLabel: string,
@@ -2198,6 +2239,10 @@ export function formatTranscriptMeta(
   return `${normalizedStatus} • ${timeText}`;
 }
 
+/**
+ * Drops low-signal status copy once the visual hierarchy already explains the
+ * role of a row, which is important for the quieter t3-style conversation UX.
+ */
 export function shouldHideStatusInMeta(kind: TranscriptKind, statusLabel: string): boolean {
   const normalizedStatus = statusLabel.trim().toLowerCase();
   if (!normalizedStatus) {
@@ -2597,6 +2642,10 @@ function renderEmptyContainer(container: HTMLElement, text: string): void {
   container.replaceChildren(empty);
 }
 
+/**
+ * Protects the user's reading position during streaming turns so Lens only
+ * auto-pins when they are effectively already following the live edge.
+ */
 export function isScrollContainerNearBottom(position: {
   scrollTop: number;
   clientHeight: number;
@@ -2610,6 +2659,10 @@ export function isScrollContainerNearBottom(position: {
   return scrollHeight - clientHeight - scrollTop <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
 }
 
+/**
+ * Uses a fast height heuristic for transcript virtualization so long agent
+ * runs stay smooth without paying full layout cost on every render.
+ */
 export function estimateTranscriptEntryHeight(
   entry: LensTranscriptEntry,
   viewportWidth = 960,
@@ -2657,6 +2710,11 @@ export function estimateTranscriptEntryHeight(
   }
 }
 
+/**
+ * Virtualizes long desktop transcripts while deliberately staying simpler on
+ * mobile, where dense but predictable scrolling mattered more than big-history
+ * optimization in the recent Lens UX pass.
+ */
 export function computeTranscriptVirtualWindow(
   entries: ReadonlyArray<LensTranscriptEntry>,
   scrollTop: number,
@@ -3071,6 +3129,10 @@ function appendActivationTrace(
   ].slice(-12);
 }
 
+/**
+ * Maps low-level Lens attach failures onto user-actionable guidance so the UI
+ * can explain when Terminal still owns the live lane and how to recover.
+ */
 export function classifyLensActivationIssue(
   error: unknown,
   hasReadonlyHistory: boolean,
@@ -3195,6 +3257,10 @@ async function tryLoadTerminalSnapshotFallback(
   }
 }
 
+/**
+ * Preserves useful context when live Lens attach fails by turning the current
+ * terminal buffer into a read-only conversation artifact instead of a dead end.
+ */
 export function buildTerminalFallbackEntry(
   state: SessionStateResponse | null,
 ): LensTranscriptEntry | null {
@@ -3230,6 +3296,10 @@ function resolveTerminalFallbackTitle(state: SessionStateResponse | null): strin
   );
 }
 
+/**
+ * Trims noisy terminal history into a compact fallback snapshot so Lens can
+ * show enough context to recover without drowning the conversation surface.
+ */
 export function summarizeTerminalFallbackBuffer(value: string | null | undefined): string {
   const normalized = (value || '').replace(/\r\n/g, '\n').trimEnd();
   if (!normalized.trim()) {

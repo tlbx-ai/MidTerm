@@ -81,7 +81,7 @@ The browser shell includes:
 - sidebar modules for sessions, history, update notices, network/share, and voice controls
 - terminal modules for creation, sizing, search, paste/drop handling, scaling, and mobile PiP
 - layout modules for split panes and dock overlays
-- session wrappers that add Files tabs plus web, commands, share, and git actions per session
+- session wrappers that add Files tabs plus web, commands, share, git, and experimental Lens surfaces per session
 - feature panels for files, git, commands, and web preview
 - manager bar, smart input, chat, touch controller, PWA, and diagnostics modules
 
@@ -190,10 +190,20 @@ The manager bar is a user-defined quick-action bar below the terminal area. Butt
 MidTerm has a second input model in addition to direct terminal focus:
 
 - Smart Input can replace or complement terminal typing
-- voice capture and chat hooks connect to MidTerm.Voice
+- when Lens is active, the same Smart Input infrastructure relocates into the conversation composer lane instead of staying as separate terminal chrome
+- voice capture and chat hooks connect to MidTerm.Voice, with the Smart Input mic affordance currently kept behind dev mode and the voice credential path while that workflow is still experimental
 - the touch controller provides terminal-friendly virtual keys
 - the mobile action menu exposes common terminal operations
 - document Picture-in-Picture can show a miniature live terminal when the app backgrounds on supported mobile browsers
+
+### Agent Conversation Surface
+
+Lens is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
+
+- the canonical turn, request, and stream state still belongs to the backend Lens runtime
+- the frontend Lens panel reconstructs that state into a chat-style transcript without taking ownership away from Terminal
+- when live attach is unavailable, Lens can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
+- Lens is currently dev-gated in the session tabs while the UX is still being refined
 
 ## 5. Web Preview and Browser Automation
 

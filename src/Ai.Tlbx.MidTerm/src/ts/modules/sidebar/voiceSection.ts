@@ -16,7 +16,8 @@ let voiceChatEnabled = false;
 const devModeListeners = new Set<(enabled: boolean) => void>();
 
 /**
- * Enable/disable the voice chat feature (controls DOM visibility)
+ * Mirrors backend voice capability into the footer so experimental voice UI is
+ * only exposed when the runtime can actually service it.
  */
 export function setVoiceChatEnabled(enabled: boolean): void {
   voiceChatEnabled = enabled;
@@ -27,15 +28,14 @@ export function setVoiceChatEnabled(enabled: boolean): void {
   log.info(() => `VoiceChat feature: ${enabled ? 'enabled' : 'disabled'}`);
 }
 
-/**
- * Check if voice chat feature is enabled
- */
+/** Exposes the shared voice-capability flag to modules that gate voice UX. */
 export function isVoiceChatEnabled(): boolean {
   return voiceChatEnabled;
 }
 
 /**
- * Show/hide the voice section based on voice server availability
+ * Tracks whether the voice backend is currently reachable so the UI can tell
+ * "feature disabled" apart from "feature enabled but service missing".
  */
 export function setVoiceSectionVisible(visible: boolean): void {
   voiceSectionVisible = visible;
@@ -43,7 +43,8 @@ export function setVoiceSectionVisible(visible: boolean): void {
 }
 
 /**
- * Set dev mode - shows the sync button for diagnostics
+ * Propagates dev mode immediately because several Lens and voice affordances
+ * are intentionally hidden from normal users until the UX settles.
  */
 export function setDevMode(enabled: boolean): void {
   devModeEnabled = enabled;
@@ -57,13 +58,15 @@ export function setDevMode(enabled: boolean): void {
   log.info(() => `DevMode=${enabled}`);
 }
 
-/**
- * Check if dev mode is enabled
- */
+/** Shared source of truth for dev-only frontend affordances. */
 export function isDevMode(): boolean {
   return devModeEnabled;
 }
 
+/**
+ * Lets experimental surfaces react to the hidden dev-mode toggle without
+ * waiting for a reload, which keeps gating behavior predictable while iterating.
+ */
 export function onDevModeChanged(listener: (enabled: boolean) => void): () => void {
   devModeListeners.add(listener);
   return () => {
@@ -71,15 +74,14 @@ export function onDevModeChanged(listener: (enabled: boolean) => void): () => vo
   };
 }
 
-/**
- * Get current voice section visibility
- */
+/** Exposes live voice-section visibility to modules that coordinate footer UX. */
 export function isVoiceSectionVisible(): boolean {
   return voiceSectionVisible;
 }
 
 /**
- * Initialize the voice section collapse/expand behavior
+ * Persists the voice footer's collapsed state because this part of the sidebar
+ * carries operational tools that users often want minimized between sessions.
  */
 export function initVoiceSection(): void {
   const section = document.getElementById('voice-section');
@@ -104,9 +106,7 @@ export function initVoiceSection(): void {
   log.info(() => `Voice section initialized (collapsed=${isCollapsed})`);
 }
 
-/**
- * Update the voice status text
- */
+/** Keeps the footer status line aligned with the current voice lifecycle step. */
 export function setVoiceStatus(status: string): void {
   const statusEl = document.getElementById('voice-status');
   if (statusEl) {
@@ -114,9 +114,7 @@ export function setVoiceStatus(status: string): void {
   }
 }
 
-/**
- * Set toggle button recording state
- */
+/** Reflects recording state in the footer so the voice toggle never lies about capture. */
 export function setToggleRecording(recording: boolean): void {
   const toggleBtn = document.getElementById('btn-voice-toggle');
   if (toggleBtn) {

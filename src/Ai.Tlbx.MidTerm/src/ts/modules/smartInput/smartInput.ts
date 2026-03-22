@@ -35,6 +35,10 @@ const MAX_TEXTAREA_LINES = 5;
 const SMART_INPUT_SUBMIT_DELAY_MS = 200;
 const sessionDrafts = new Map<string, string>();
 
+/**
+ * Treats Lens as a conversation-first composer surface even when the global
+ * input mode is not Smart Input, so agent turns always use the docked composer.
+ */
 export function isSmartInputMode(): boolean {
   if (isLensActiveSession($activeSessionId.get())) {
     return true;
@@ -44,6 +48,10 @@ export function isSmartInputMode(): boolean {
   return mode === 'smartinput';
 }
 
+/**
+ * Prevents Lens sessions from falling into dual-focus input semantics because
+ * the conversation lane needs one clear place to type and submit.
+ */
 export function isBothMode(): boolean {
   if (isLensActiveSession($activeSessionId.get())) {
     return false;
@@ -61,6 +69,10 @@ function hasSmartInput(): boolean {
   return mode === 'smartinput' || mode === 'both';
 }
 
+/**
+ * Keeps the docked composer aligned with session changes, Lens activation, and
+ * dev-only voice affordances so Smart Input can serve both terminal and Lens flows.
+ */
 export function initSmartInput(): void {
   $activeSessionId.subscribe((sessionId) => {
     persistDraftForSession(lastSessionId);
@@ -112,10 +124,18 @@ export function initSmartInput(): void {
   });
 }
 
+/**
+ * Exposes the docked composer for flows that explicitly want text captured in
+ * Smart Input rather than by sending keystrokes straight to the terminal.
+ */
 export function showSmartInput(): void {
   showDockedBar(true);
 }
 
+/**
+ * Hides the docked composer and releases embedded controls so the terminal can
+ * return to being the only visible input surface when that is the active mode.
+ */
 export function hideSmartInput(): void {
   if (dockedBar?.classList.contains('visible')) {
     releaseTouchController();
@@ -456,6 +476,10 @@ function syncDraftForActiveSession(): void {
   }
 }
 
+/**
+ * Clears per-session drafts once a session is gone so text does not leak into a
+ * future session that reuses the same UI slot.
+ */
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
   if ($activeSessionId.get() === sessionId) {
