@@ -24,6 +24,21 @@ public sealed class SessionTelemetryServiceTests
     }
 
     [Fact]
+    public void RecordOutput_SetsCurrentHeatToFullForAnyFreshOutput()
+    {
+        var service = new SessionTelemetryService();
+
+        service.RecordOutput("sess1234", "."u8.ToArray());
+
+        var snapshot = service.GetSnapshot("sess1234");
+        var activity = service.GetActivity("sess1234", 30, 10);
+
+        Assert.Equal(1, snapshot.CurrentHeat);
+        Assert.Equal(1, activity.CurrentHeat);
+        Assert.Contains(activity.Heatmap, sample => sample.Bytes > 0 && sample.Heat == 1);
+    }
+
+    [Fact]
     public void ClearSession_RemovesStoredActivity()
     {
         var service = new SessionTelemetryService();
