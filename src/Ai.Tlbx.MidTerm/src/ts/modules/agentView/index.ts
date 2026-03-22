@@ -874,14 +874,13 @@ function renderAgentView(
   const optimistic = applyOptimisticLensTurns(snapshot, transcriptEntries, state.optimisticTurns);
   state.optimisticTurns = optimistic.optimisticTurns;
   const renderedEntries = withActivationIssueNotice(
-    withLiveAssistantState(snapshot, withInlineLensStatus(snapshot, optimistic.entries, streamConnected)),
+    withLiveAssistantState(
+      snapshot,
+      withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
+    ),
     state.activationIssue,
   );
-  renderTranscript(
-    panel,
-    renderedEntries,
-    snapshot.sessionId,
-  );
+  renderTranscript(panel, renderedEntries, snapshot.sessionId);
   renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
 }
 
@@ -1061,10 +1060,7 @@ function renderTranscript(
   }
 }
 
-function renderScrollToBottomControl(
-  panel: HTMLDivElement,
-  state: SessionLensViewState,
-): void {
+function renderScrollToBottomControl(panel: HTMLDivElement, state: SessionLensViewState): void {
   const button = panel.querySelector<HTMLButtonElement>('[data-agent-field="scroll-to-bottom"]');
   if (!button) {
     return;
@@ -1077,10 +1073,7 @@ function renderScrollToBottomControl(
   button.hidden = !shouldShow;
 }
 
-function scrollTranscriptToBottom(
-  sessionId: string,
-  behavior: ScrollBehavior = 'auto',
-): void {
+function scrollTranscriptToBottom(sessionId: string, behavior: ScrollBehavior = 'auto'): void {
   const state = viewStates.get(sessionId);
   const viewport = state?.transcriptViewport;
   if (!state || !viewport) {
@@ -1139,9 +1132,13 @@ function findActiveComposerRequest(
     return null;
   }
 
-  return openRequests
-    .slice()
-    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null;
+  return (
+    openRequests
+      .slice()
+      .sort(
+        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+      )[0] ?? null
+  );
 }
 
 function syncRequestInteractionState(
@@ -1154,13 +1151,13 @@ function syncRequestInteractionState(
 
   for (const requestId of Object.keys(state.requestDraftAnswersById)) {
     if (!activeRequestIds.has(requestId)) {
-      delete state.requestDraftAnswersById[requestId];
+      Reflect.deleteProperty(state.requestDraftAnswersById, requestId);
     }
   }
 
   for (const requestId of Object.keys(state.requestQuestionIndexById)) {
     if (!activeRequestIds.has(requestId)) {
-      delete state.requestQuestionIndexById[requestId];
+      Reflect.deleteProperty(state.requestQuestionIndexById, requestId);
     }
   }
 
@@ -1172,7 +1169,10 @@ function syncRequestInteractionState(
     ensureRequestDraftAnswers(state, request);
     const questionCount = Math.max(request.questions.length - 1, 0);
     const currentIndex = state.requestQuestionIndexById[request.requestId] ?? 0;
-    state.requestQuestionIndexById[request.requestId] = Math.max(0, Math.min(currentIndex, questionCount));
+    state.requestQuestionIndexById[request.requestId] = Math.max(
+      0,
+      Math.min(currentIndex, questionCount),
+    );
   }
 }
 
@@ -2072,15 +2072,9 @@ function resolveArtifactCluster(
 
   const count = end - start + 1;
   const position =
-    count === 1
-      ? 'single'
-      : index === start
-        ? 'start'
-        : index === end
-          ? 'end'
-          : 'middle';
+    count === 1 ? 'single' : index === start ? 'start' : index === end ? 'end' : 'middle';
   const clusterEntries = entries.slice(start, end + 1);
-  const onlyTools = clusterEntries.every((candidate) => candidate && candidate.kind === 'tool');
+  const onlyTools = clusterEntries.every((candidate) => candidate.kind === 'tool');
   const label =
     position === 'start' && (count > 1 || !onlyTools)
       ? onlyTools
@@ -2106,7 +2100,12 @@ function isAssistantPlaceholderEntry(entry: LensTranscriptEntry): boolean {
   }
 
   const normalized = entry.body.trim().toLowerCase();
-  return normalized === 'starting…' || normalized === 'starting...' || normalized === 'thinking…' || normalized === 'thinking...';
+  return (
+    normalized === 'starting…' ||
+    normalized === 'starting...' ||
+    normalized === 'thinking…' ||
+    normalized === 'thinking...'
+  );
 }
 
 function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
@@ -2482,7 +2481,8 @@ function createQuestionChoiceList(
       if (inputType === 'radio') {
         updateRequestDraftAnswers(sessionId, request.requestId, question.id, [option.label], false);
         if (autoAdvance) {
-          const currentIndex = viewStates.get(sessionId)?.requestQuestionIndexById[request.requestId] ?? 0;
+          const currentIndex =
+            viewStates.get(sessionId)?.requestQuestionIndexById[request.requestId] ?? 0;
           setActiveRequestQuestionIndex(sessionId, request.requestId, currentIndex + 1);
           return;
         }
@@ -2492,7 +2492,9 @@ function createQuestionChoiceList(
       }
 
       const nextAnswers = Array.from(
-        options.querySelectorAll<HTMLInputElement>(`input[name="${CSS.escape(question.id)}"]:checked`),
+        options.querySelectorAll<HTMLInputElement>(
+          `input[name="${CSS.escape(question.id)}"]:checked`,
+        ),
       ).map((candidate) => candidate.value);
       updateRequestDraftAnswers(sessionId, request.requestId, question.id, nextAnswers);
     });
