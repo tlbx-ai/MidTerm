@@ -506,42 +506,198 @@ const UNIVERSAL_KEYWORDS = [
 
 const RE_KEYWORDS = new RegExp(`\\b(${UNIVERSAL_KEYWORDS.join('|')})\\b`, 'g');
 
-const RE_COMMENT_SLASH = /(\/\/.*$)/gm;
-const RE_COMMENT_HASH = /(#(?![[(]).*$)/gm;
-const RE_COMMENT_DASHDASH = /(--.*$)/gm;
-const RE_STRING_DOUBLE = /(&quot;[^&]*&quot;)/g;
-const RE_STRING_SINGLE = /(&#39;[^&]*&#39;)/g;
-const RE_STRING_TEMPLATE = /(`[^`]*`)/g;
 const RE_NUMBER = /\b(0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\d[\d_]*\.?[\d_]*(?:[eE][+-]?\d+)?)\b/g;
 const RE_TYPE = /\b([A-Z][a-z]+[A-Za-z0-9]*)\b(?!\s*\()/g;
-const RE_FUNCTION_CALL = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/g;
+const RE_FUNCTION_CALL = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b(?=\s*\()/g;
 
-export function highlightCode(text: string, _ext: string): string {
-  let escaped = escapeHtml(text);
+interface HighlightSegment {
+  kind: 'code' | 'comment' | 'string';
+  text: string;
+}
 
-  RE_COMMENT_SLASH.lastIndex = 0;
-  RE_COMMENT_HASH.lastIndex = 0;
-  RE_COMMENT_DASHDASH.lastIndex = 0;
-  RE_STRING_DOUBLE.lastIndex = 0;
-  RE_STRING_SINGLE.lastIndex = 0;
-  RE_STRING_TEMPLATE.lastIndex = 0;
+interface InlineHighlightSegment {
+  kind: 'plain' | 'html';
+  text: string;
+}
+
+function pushHighlightSegment(
+  segments: HighlightSegment[],
+  kind: HighlightSegment['kind'],
+  text: string,
+): void {
+  if (text.length === 0) {
+    return;
+  }
+
+  const last = segments[segments.length - 1];
+  if (last?.kind === kind) {
+    last.text += text;
+    return;
+  }
+
+  segments.push({ kind, text });
+}
+
+function consumeQuotedString(text: string, start: number): number {
+  const quote = text[start];
+  let index = start + 1;
+
+  while (index < text.length) {
+    const current = text[index];
+    if (current === '\\') {
+      index += index + 1 < text.length ? 2 : 1;
+      continue;
+    }
+
+    if (current === quote) {
+      return index + 1;
+    }
+
+    if (quote !== '`' && (current === '\r' || current === '\n')) {
+      return index;
+    }
+
+    index += 1;
+  }
+
+  return text.length;
+}
+
+function consumeLineComment(text: string, start: number): number {
+  let index = start;
+  while (index < text.length && text[index] !== '\n') {
+    index += 1;
+  }
+  return index;
+}
+
+function tokenizeHighlightSegments(text: string): HighlightSegment[] {
+  const segments: HighlightSegment[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const current = text[cursor];
+    const next = text[cursor + 1] ?? '';
+
+    if (current === '"' || current === "'" || current === '`') {
+      const end = consumeQuotedString(text, cursor);
+      pushHighlightSegment(segments, 'string', text.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    if (current === '/' && next === '/') {
+      const end = consumeLineComment(text, cursor);
+      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    if (current === '#' && next !== '[' && next !== '(') {
+      const end = consumeLineComment(text, cursor);
+      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    if (current === '-' && next === '-') {
+      const end = consumeLineComment(text, cursor);
+      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    let end = cursor + 1;
+    while (end < text.length) {
+      const segmentCurrent = text[end];
+      const segmentNext = text[end + 1] ?? '';
+      if (
+        segmentCurrent === '"' ||
+        segmentCurrent === "'" ||
+        segmentCurrent === '`' ||
+        (segmentCurrent === '/' && segmentNext === '/') ||
+        (segmentCurrent === '#' && segmentNext !== '[' && segmentNext !== '(') ||
+        (segmentCurrent === '-' && segmentNext === '-')
+      ) {
+        break;
+      }
+      end += 1;
+    }
+
+    pushHighlightSegment(segments, 'code', text.slice(cursor, end));
+    cursor = end;
+  }
+
+  return segments;
+}
+
+function wrapMatches(
+  segments: InlineHighlightSegment[],
+  pattern: RegExp,
+  className: string,
+): InlineHighlightSegment[] {
+  const nextSegments: InlineHighlightSegment[] = [];
+
+  for (const segment of segments) {
+    if (segment.kind === 'html' || segment.text.length === 0) {
+      nextSegments.push(segment);
+      continue;
+    }
+
+    pattern.lastIndex = 0;
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(segment.text)) !== null) {
+      const start = match.index;
+      const value = match[0];
+
+      if (start > cursor) {
+        nextSegments.push({ kind: 'plain', text: segment.text.slice(cursor, start) });
+      }
+
+      nextSegments.push({
+        kind: 'html',
+        text: `<span class="${className}">${value}</span>`,
+      });
+      cursor = start + value.length;
+    }
+
+    if (cursor < segment.text.length) {
+      nextSegments.push({ kind: 'plain', text: segment.text.slice(cursor) });
+    }
+  }
+
+  return nextSegments;
+}
+
+function highlightCodeSegment(text: string): string {
+  let segments: InlineHighlightSegment[] = [{ kind: 'plain', text: escapeHtml(text) }];
+
   RE_NUMBER.lastIndex = 0;
   RE_KEYWORDS.lastIndex = 0;
   RE_TYPE.lastIndex = 0;
   RE_FUNCTION_CALL.lastIndex = 0;
 
-  escaped = escaped.replace(RE_COMMENT_SLASH, '<span class="hl-comment">$1</span>');
-  escaped = escaped.replace(RE_COMMENT_HASH, '<span class="hl-comment">$1</span>');
-  escaped = escaped.replace(RE_COMMENT_DASHDASH, '<span class="hl-comment">$1</span>');
+  segments = wrapMatches(segments, RE_NUMBER, 'hl-number');
+  segments = wrapMatches(segments, RE_KEYWORDS, 'hl-keyword');
+  segments = wrapMatches(segments, RE_TYPE, 'hl-type');
+  segments = wrapMatches(segments, RE_FUNCTION_CALL, 'hl-function');
 
-  escaped = escaped.replace(RE_STRING_DOUBLE, '<span class="hl-string">$1</span>');
-  escaped = escaped.replace(RE_STRING_SINGLE, '<span class="hl-string">$1</span>');
-  escaped = escaped.replace(RE_STRING_TEMPLATE, '<span class="hl-string">$1</span>');
+  return segments.map((segment) => segment.text).join('');
+}
 
-  escaped = escaped.replace(RE_NUMBER, '<span class="hl-number">$1</span>');
-  escaped = escaped.replace(RE_KEYWORDS, '<span class="hl-keyword">$1</span>');
-  escaped = escaped.replace(RE_TYPE, '<span class="hl-type">$1</span>');
-  escaped = escaped.replace(RE_FUNCTION_CALL, '<span class="hl-function">$1</span>');
-
-  return escaped;
+export function highlightCode(text: string, _ext: string): string {
+  return tokenizeHighlightSegments(text)
+    .map((segment) => {
+      const escaped = escapeHtml(segment.text);
+      if (segment.kind === 'comment') {
+        return `<span class="hl-comment">${escaped}</span>`;
+      }
+      if (segment.kind === 'string') {
+        return `<span class="hl-string">${escaped}</span>`;
+      }
+      return highlightCodeSegment(segment.text);
+    })
+    .join('');
 }
