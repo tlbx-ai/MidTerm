@@ -321,8 +321,10 @@ public static class MidtermDirectory
         - mt_text is shorter than mt_query SEL --text — use it for page text
         - mt_open is the CLI command that opens/docks the preview and now fails loudly if the preview never becomes controllable
         - mt_status reports `state: ready`, `state: waiting`, or `state: ambiguous` so you can tell whether the browser bridge is actually usable
+        - Every C# change in the local source loop restarts the source `mt`; wait for the source URL to answer again before trusting browser results from that iteration
         - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
+        - When one MidTerm instance is previewing another, the outer MidTerm browser tab owns `/ws/state`; the nested preview target alone cannot satisfy browser-control commands
         - mt_tail strips ANSI escape sequences and compresses noisy blank-line runs so supervisor sessions can read clean terminal output
         - mt_prompt uses MidTerm's server-side prompt API so text plus submit happen atomically instead of as two client-side calls
         - mt_prompt is state-aware: bootstrapped workers auto-resume from shell, and shell vs idle prompt vs busy turn should be decided by MidTerm, not guessed ad hoc by the supervisor
@@ -336,6 +338,7 @@ public static class MidtermDirectory
         - mt_submit is more reliable than mt_click on submit buttons (uses JS form.requestSubmit)
         - Chain commands: mt_fill "#a" "x" && mt_fill "#b" "y" && mt_submit
         - If mt_status still shows `state: waiting` after mt_open, treat that as a MidTerm browser-attachment bug and inspect mt_proxylog plus mt_log error
+        - If mt_status shows `ui clients: 0`, the owning MidTerm browser tab is gone; reopen the outer MidTerm UI before debugging the preview target itself
         - Browser command failures now print the server error body instead of silently returning nothing
         - If mt_status reports multiple clients, MidTerm prefers the focused/visible preview client first, then falls back to the main browser's newest preview connection
         - If mt_open returns "No MidTerm browser UI is connected", there is no live browser tab attached to /ws/state

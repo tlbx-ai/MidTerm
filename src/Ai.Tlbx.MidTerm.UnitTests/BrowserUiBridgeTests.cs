@@ -16,6 +16,7 @@ public sealed class BrowserUiBridgeTests
 
         Assert.False(ok);
         Assert.Contains("No MidTerm browser UI is connected", error, StringComparison.Ordinal);
+        Assert.Contains("/ws/state", error, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -197,6 +197,13 @@ public sealed class SessionCodexHandoffService
             return session.AgentAttachPoint.PreferredThreadId!;
         }
 
+        var lensSnapshotThreadId = _lensPulse.GetSnapshot(session.Id)?.Thread.ThreadId;
+        if (!string.IsNullOrWhiteSpace(lensSnapshotThreadId))
+        {
+            RememberResumeThreadId(session.Id, lensSnapshotThreadId);
+            return lensSnapshotThreadId;
+        }
+
         var commandLineResumeThreadId = TryExtractResumeThreadId(session.ForegroundCommandLine);
         if (!string.IsNullOrWhiteSpace(commandLineResumeThreadId))
         {
@@ -247,12 +254,15 @@ public sealed class SessionCodexHandoffService
                 continue;
             }
 
-            if (candidate.Timestamp.UtcDateTime < createdAtUtc.AddMinutes(-2))
+            var activityTimestamp = candidate.Timestamp > file.LastWriteTimeUtc
+                ? candidate.Timestamp
+                : new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
+            if (activityTimestamp.UtcDateTime < createdAtUtc.AddMinutes(-2))
             {
                 continue;
             }
 
-            candidates.Add((candidate.SessionId, candidate.Timestamp));
+            candidates.Add((candidate.SessionId, activityTimestamp));
             if (candidates.Count >= 3)
             {
                 break;
@@ -358,15 +368,18 @@ public sealed class SessionCodexHandoffService
         return string.Equals(session.ForegroundProcessIdentity, AiCliProfileService.CodexProfile, StringComparison.Ordinal);
     }
 
-    private static bool IsShellForeground(string? foregroundName, string? shellType)
+    internal static bool IsShellForeground(string? foregroundName, string? shellType)
     {
         var shell = NormalizeExecutableIdentity(shellType);
         if (string.IsNullOrWhiteSpace(shell))
         {
-            return string.IsNullOrWhiteSpace(foregroundName);
+            return string.IsNullOrWhiteSpace(foregroundName) ||
+                   string.Equals(NormalizeExecutableIdentity(foregroundName), "shell", StringComparison.Ordinal);
         }
 
-        return string.Equals(NormalizeExecutableIdentity(foregroundName), shell, StringComparison.Ordinal);
+        var normalizedForegroundName = NormalizeExecutableIdentity(foregroundName);
+        return string.Equals(normalizedForegroundName, shell, StringComparison.Ordinal) ||
+               string.Equals(normalizedForegroundName, "shell", StringComparison.Ordinal);
     }
 
     private static string NormalizeExecutableIdentity(string? value)

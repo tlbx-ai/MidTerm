@@ -31,17 +31,17 @@ public static class MtcliScriptWriter
         _MK="mm-session={{token}}"
         _MC() {
           if [ -n "${MT_API_KEY:-}" ]; then
-            curl -sfk -H "Authorization: Bearer $MT_API_KEY" "$@" 2>/dev/null
+            curl --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
           else
-            curl -sfk -b "$_MK" "$@" 2>/dev/null
+            curl --fail-with-body -sSk -b "$_MK" "$@"
           fi
         }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
         _MBR() {
           if [ -n "${MT_API_KEY:-}" ]; then
-            curl -sk -H "Authorization: Bearer $MT_API_KEY" "$@" 2>/dev/null
+            curl --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
           else
-            curl -sk -b "$_MK" "$@" 2>/dev/null
+            curl --fail-with-body -sSk -b "$_MK" "$@"
           fi
         }
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
@@ -444,17 +444,17 @@ public static class MtcliScriptWriter
 
         function script:_MC {
             if ($env:MT_API_KEY) {
-                & curl.exe -sfk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>$null
+                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args
             } else {
-                & curl.exe -sfk -b $script:_MK @args 2>$null
+                & curl.exe --fail-with-body -sSk -b $script:_MK @args
             }
         }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
         function script:_MBR {
             if ($env:MT_API_KEY) {
-                & curl.exe -sk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>$null
+                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args
             } else {
-                & curl.exe -sk -b $script:_MK @args 2>$null
+                & curl.exe --fail-with-body -sSk -b $script:_MK @args
             }
         }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }

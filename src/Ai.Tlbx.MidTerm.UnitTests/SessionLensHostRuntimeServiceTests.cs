@@ -161,6 +161,58 @@ public sealed class SessionLensHostRuntimeServiceTests
     }
 
     [Fact]
+    public async Task SessionLensRuntimeService_KeepsExistingCodexLensAttachAfterTerminalReturnsToShell()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var pulse = new SessionLensPulseService();
+        var ingress = new SessionLensHostIngressService(pulse);
+        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var sessionManager = new TtyHostSessionManager();
+        var profileService = new AiCliProfileService();
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+        var sessionId = "session-runtime-codex-shell-return-1";
+        var codexSession = new SessionInfoDto
+        {
+            Id = sessionId,
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "codex"
+        };
+
+        var attached = await runtime.EnsureAttachedAsync(sessionId, codexSession);
+        Assert.True(attached);
+        Assert.True(runtime.IsAttached(sessionId));
+
+        var shellSession = new SessionInfoDto
+        {
+            Id = sessionId,
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "shell",
+            ForegroundProcessIdentity = "shell"
+        };
+
+        var reusedAttach = await runtime.EnsureAttachedAsync(sessionId, shellSession);
+        Assert.True(reusedAttach);
+
+        var turn = await runtime.StartTurnAsync(
+            sessionId,
+            new LensTurnRequest
+            {
+                Text = "Confirm the reused attach still accepts turns.",
+                Attachments = []
+            });
+
+        Assert.Equal("accepted", turn.Status);
+
+        var snapshot = await WaitForSnapshotAsync(
+            pulse,
+            sessionId,
+            current => string.Equals(current.CurrentTurn.State, "completed", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(snapshot);
+        Assert.Contains("reused attach", snapshot!.Streams.AssistantText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SessionLensRuntimeService_CanResolveMtAgentHostCodexUserInput()
     {
         using var fakeCodex = FakeCodexPathScope.Create();

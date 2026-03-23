@@ -11,6 +11,7 @@ describe('createWsUrl', () => {
     vi.stubGlobal('location', {
       protocol: 'https:',
       host: 'midterm.example',
+      pathname: '/',
     });
 
     vi.stubGlobal('sessionStorage', {
@@ -42,5 +43,20 @@ describe('createWsUrl', () => {
     expect(parsed.searchParams.get('existing')).toBe('1');
     expect(parsed.searchParams.get('tabId')).toBe('tab-123');
     expect(createWsUrl('/ws/state').includes('tabId=tab-123')).toBe(true);
+  });
+
+  it('routes websocket paths through the active web preview proxy prefix', () => {
+    vi.stubGlobal('location', {
+      protocol: 'https:',
+      host: 'midterm.example',
+      pathname: '/webpreview/route-123/',
+    });
+
+    const parsed = new URL(createWsUrl('/ws/state'));
+
+    expect(parsed.protocol).toBe('wss:');
+    expect(parsed.host).toBe('midterm.example');
+    expect(parsed.pathname).toBe('/webpreview/route-123/ws/state');
+    expect(parsed.searchParams.get('tabId')).toBe('tab-123');
   });
 });

@@ -49,6 +49,14 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     }
 
     [Fact]
+    public void IsShellForeground_AcceptsGenericShellIdentity()
+    {
+        var isShell = SessionCodexHandoffService.IsShellForeground("shell", "Pwsh");
+
+        Assert.True(isShell);
+    }
+
+    [Fact]
     public void ForegroundProcessService_MatchesWrapperCommandLine()
     {
         var service = new SessionForegroundProcessService();
@@ -106,6 +114,84 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolveResumeThreadIdAsync_UsesCanonicalLensSnapshotThreadId()
+    {
+        var cwd = Path.Combine(_tempRoot, "repo-snapshot");
+        Directory.CreateDirectory(cwd);
+        var service = CreateService(out var pulse);
+        pulse.Append(new LensPulseEvent
+        {
+            EventId = "evt-session-started",
+            SessionId = "s-snapshot",
+            Provider = "codex",
+            CreatedAt = new DateTimeOffset(2026, 3, 23, 21, 6, 51, TimeSpan.Zero),
+            Type = "session.started",
+            SessionState = new LensPulseSessionStatePayload
+            {
+                State = "starting",
+                StateLabel = "Starting",
+                Reason = "Lens runtime attached."
+            }
+        });
+        pulse.Append(new LensPulseEvent
+        {
+            EventId = "evt-thread-started",
+            SessionId = "s-snapshot",
+            Provider = "codex",
+            CreatedAt = new DateTimeOffset(2026, 3, 23, 21, 6, 52, TimeSpan.Zero),
+            Type = "thread.started",
+            ThreadState = new LensPulseThreadStatePayload
+            {
+                State = "active",
+                StateLabel = "Active",
+                ProviderThreadId = "thread-from-snapshot"
+            }
+        });
+
+        var session = new SessionInfoDto
+        {
+            Id = "s-snapshot",
+            CurrentDirectory = cwd,
+            CreatedAt = new DateTime(2026, 3, 23, 21, 5, 0, DateTimeKind.Utc)
+        };
+
+        var resumeThreadId = await service.ResolveResumeThreadIdAsync(session, CancellationToken.None);
+
+        Assert.Equal("thread-from-snapshot", resumeThreadId);
+        Assert.True(service.TryGetKnownResumeThreadId("s-snapshot", out var rememberedThreadId));
+        Assert.Equal("thread-from-snapshot", rememberedThreadId);
+    }
+
+    [Fact]
+    public async Task ResolveResumeThreadIdAsync_UsesRecentFileActivityWhenSessionMetaTimestampIsOld()
+    {
+        var cwd = Path.Combine(_tempRoot, "repo-active");
+        Directory.CreateDirectory(cwd);
+        var activeFile = WriteSessionMeta(
+            sessionId: "thread-active",
+            cwd,
+            timestamp: new DateTimeOffset(2026, 3, 22, 23, 35, 40, TimeSpan.Zero));
+        File.SetLastWriteTimeUtc(activeFile, new DateTime(2026, 3, 23, 21, 49, 4, DateTimeKind.Utc));
+        var staleFile = WriteSessionMeta(
+            sessionId: "thread-stale",
+            cwd,
+            timestamp: new DateTimeOffset(2026, 3, 23, 21, 6, 51, TimeSpan.Zero));
+        File.SetLastWriteTimeUtc(staleFile, new DateTime(2026, 3, 23, 21, 40, 32, DateTimeKind.Utc));
+
+        var service = CreateService();
+        var session = new SessionInfoDto
+        {
+            Id = "s-active",
+            CurrentDirectory = cwd,
+            CreatedAt = new DateTime(2026, 3, 23, 21, 48, 41, DateTimeKind.Utc)
+        };
+
+        var resumeThreadId = await service.ResolveResumeThreadIdAsync(session, CancellationToken.None);
+
+        Assert.Equal("thread-active", resumeThreadId);
+    }
+
+    [Fact]
     public async Task ResolveResumeThreadIdAsync_RejectsAmbiguousDiskMatches()
     {
         var cwd = Path.Combine(_tempRoot, "repo-ambiguous");
@@ -145,9 +231,9 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
         }
     }
 
-    private SessionCodexHandoffService CreateService()
+    private SessionCodexHandoffService CreateService(out SessionLensPulseService pulse)
     {
-        var pulse = new SessionLensPulseService();
+        pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
         var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, new SettingsService(), mode: "off");
         var sessionManager = new TtyHostSessionManager();
@@ -163,7 +249,12 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
             _tempRoot);
     }
 
-    private void WriteSessionMeta(string sessionId, string cwd, DateTimeOffset timestamp)
+    private SessionCodexHandoffService CreateService()
+    {
+        return CreateService(out _);
+    }
+
+    private string WriteSessionMeta(string sessionId, string cwd, DateTimeOffset timestamp)
     {
         Directory.CreateDirectory(cwd);
         var datePath = Path.Combine(_tempRoot, "sessions", timestamp.ToString("yyyy", null), timestamp.ToString("MM", null), timestamp.ToString("dd", null));
@@ -181,5 +272,6 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
             }
         });
         File.WriteAllText(filePath, payload, Encoding.UTF8);
+        return filePath;
     }
 }

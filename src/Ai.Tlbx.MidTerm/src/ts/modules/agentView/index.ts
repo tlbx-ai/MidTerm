@@ -1105,7 +1105,15 @@ function handleLensTurnAccepted(event: Event): void {
         }
       : turn,
   );
+  state.activationIssue = null;
+  state.activationError = null;
+
+  if (!state.streamConnected) {
+    openLiveLensStream(detail.sessionId, state.snapshot?.latestSequence ?? 0);
+  }
+
   renderCurrentAgentView(detail.sessionId);
+  void refreshLensSnapshot(detail.sessionId);
 }
 
 function handleLensTurnFailed(event: Event): void {

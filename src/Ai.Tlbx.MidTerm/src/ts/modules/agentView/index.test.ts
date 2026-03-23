@@ -405,6 +405,142 @@ describe('agentView dev errors', () => {
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
+  it('refreshes Lens history and reconnects the stream after an accepted turn from read-only history', async () => {
+    attachSessionLens.mockRejectedValue(
+      new Error('HTTP 400: MidTerm could not determine the Codex resume id for this session.'),
+    );
+    getLensSnapshot
+      .mockResolvedValueOnce({
+        sessionId: 's1',
+        provider: 'codex',
+        generatedAt: '2026-03-23T21:40:01Z',
+        latestSequence: 36,
+        session: {
+          state: 'ready',
+          stateLabel: 'Ready',
+          reason: 'Codex turn completed.',
+          lastError: null,
+          lastEventAt: '2026-03-23T21:40:01Z',
+        },
+        thread: {
+          threadId: 'thread-1',
+          state: 'active',
+          stateLabel: 'Active',
+        },
+        currentTurn: {
+          turnId: 'turn-1',
+          state: 'completed',
+          stateLabel: 'Completed',
+          model: null,
+          effort: null,
+          startedAt: '2026-03-23T21:39:55Z',
+          completedAt: '2026-03-23T21:40:01Z',
+        },
+        streams: {
+          assistantText: '`C:\\Users\\johan`',
+          reasoningText: '',
+          reasoningSummaryText: '',
+          planText: '',
+          commandOutput: '',
+          fileChangeOutput: '',
+          unifiedDiff: '',
+        },
+        items: [],
+        requests: [],
+        notices: [],
+      })
+      .mockResolvedValueOnce({
+        sessionId: 's1',
+        provider: 'codex',
+        generatedAt: '2026-03-23T21:40:32Z',
+        latestSequence: 75,
+        session: {
+          state: 'ready',
+          stateLabel: 'Ready',
+          reason: 'Codex turn completed.',
+          lastError: null,
+          lastEventAt: '2026-03-23T21:40:32Z',
+        },
+        thread: {
+          threadId: 'thread-1',
+          state: 'active',
+          stateLabel: 'Active',
+        },
+        currentTurn: {
+          turnId: 'turn-2',
+          state: 'completed',
+          stateLabel: 'Completed',
+          model: null,
+          effort: null,
+          startedAt: '2026-03-23T21:40:24Z',
+          completedAt: '2026-03-23T21:40:32Z',
+        },
+        streams: {
+          assistantText: 'Checking the current shell working directory directly.',
+          reasoningText: '',
+          reasoningSummaryText: '',
+          planText: '',
+          commandOutput: 'C:\\Users\\johan',
+          fileChangeOutput: '',
+          unifiedDiff: '',
+        },
+        items: [],
+        requests: [],
+        notices: [],
+      });
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 36,
+      events: [],
+    });
+
+    const { initAgentView } = await import('./index');
+    const { LENS_TURN_ACCEPTED_EVENT } = await import('../lens/input');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const acceptedListener = (window.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([name]) => name === LENS_TURN_ACCEPTED_EVENT,
+    )?.[1] as ((event: Event) => void) | undefined;
+    expect(acceptedListener).toBeTypeOf('function');
+
+    acceptedListener?.({
+      detail: {
+        optimisticId: 'opt-1',
+        sessionId: 's1',
+        request: {
+          text: 'what working dir are we in now?',
+          attachments: [],
+        },
+        response: {
+          sessionId: 's1',
+          status: 'accepted',
+          provider: 'codex',
+          threadId: 'thread-1',
+          turnId: 'turn-2',
+          requestId: null,
+          model: null,
+          effort: null,
+        },
+      },
+    } as Event);
+
+    await vi.waitFor(() => {
+      expect(getLensSnapshot).toHaveBeenCalledTimes(2);
+      expect(openLensEventStream).toHaveBeenCalledWith('s1', 36, expect.any(Object));
+    });
+  });
+
   it('does not show a dev error modal for expected Lens handoff blocks', async () => {
     attachSessionLens.mockRejectedValue(
       new Error('HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.'),

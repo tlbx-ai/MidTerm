@@ -298,6 +298,23 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
+    public void GetStatusText_WithoutUiClient_ExplainsThatTheOwningMidTermTabIsMissing()
+    {
+        var service = new BrowserCommandService();
+
+        var status = service.GetStatusText(
+            "https://127.0.0.1:2100/",
+            sessionId: "session-a",
+            previewName: "default",
+            connectedUiClientCount: 0);
+
+        Assert.Contains("state: waiting", status, StringComparison.Ordinal);
+        Assert.Contains("ui clients: 0", status, StringComparison.Ordinal);
+        Assert.Contains("/ws/state", status, StringComparison.Ordinal);
+        Assert.Contains("Reopen the owning MidTerm browser tab", status, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GetStatus_WithMultipleBrowsersAndNoScope_IsAmbiguous()
     {
         var service = new BrowserCommandService();
