@@ -12,11 +12,14 @@ import { createLogger } from '../logging';
 const log = createLogger('heat');
 
 const POLL_INTERVAL_MS = 1000;
-const DRAW_THRESHOLD = 0.01;
+const DRAW_THRESHOLD = 0.003;
 const CANVAS_CSS_W = 4;
 const CANVAS_CSS_H = 36;
 const RISE_TIME_CONSTANT_MS = 90;
-const FALL_TIME_CONSTANT_MS = 220;
+// Decay targets:
+// - 1.0 -> ~0.25 in 30s so idle sessions still keep a visible hierarchy
+// - effectively gone after roughly 2 minutes
+const FALL_TIME_CONSTANT_MS = 30_000 / Math.log(4);
 const ANIMATION_SNAP_THRESHOLD = 0.002;
 
 // Color stops: [heat_value, r, g, b]

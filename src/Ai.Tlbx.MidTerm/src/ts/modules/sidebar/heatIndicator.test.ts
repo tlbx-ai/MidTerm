@@ -48,6 +48,17 @@ describe('heatIndicator', () => {
     }
   }
 
+  function advanceAnimationFrames(durationMs: number, stepMs: number = 64): void {
+    let frameTime = stepMs;
+    const endTime = durationMs + stepMs;
+    while (rafQueue.length > 0 && frameTime <= endTime) {
+      const callbacks = [...rafQueue];
+      rafQueue = [];
+      callbacks.forEach((callback) => callback(frameTime));
+      frameTime += stepMs;
+    }
+  }
+
   beforeEach(() => {
     vi.resetModules();
     rafQueue = [];
@@ -123,5 +134,23 @@ describe('heatIndicator', () => {
 
     expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(1, 2);
     expect(canvas.ctx.fill.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('decays slowly enough to preserve a visible session hierarchy', async () => {
+    const module = await import('./heatIndicator');
+    const canvas = createCanvasMock();
+    module.registerHeatCanvas('session-1', canvas.canvas);
+
+    module.setSessionHeat('session-1', 1);
+    flushAnimationFrames();
+    expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(1, 2);
+
+    module.setSessionHeat('session-1', 0);
+    advanceAnimationFrames(30_000);
+    expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(0.25, 1);
+
+    advanceAnimationFrames(90_000);
+    expect(module.getDisplayedSessionHeat('session-1')).toBeLessThan(0.01);
+    expect(module.getDisplayedSessionHeat('session-1')).toBeGreaterThan(0);
   });
 });
