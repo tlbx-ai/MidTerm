@@ -41,10 +41,10 @@ declare global {
         readonly rootVisible: boolean;
       };
       readonly lens: {
-        readonly scenarios: readonly ('mixed' | 'tables' | 'long')[];
+        readonly scenarios: readonly ('mixed' | 'tables' | 'long' | 'workflow')[];
         showScenario: (
           sessionId: string,
-          scenario?: 'mixed' | 'tables' | 'long',
+          scenario?: 'mixed' | 'tables' | 'long' | 'workflow',
         ) => Promise<boolean>;
       };
     };

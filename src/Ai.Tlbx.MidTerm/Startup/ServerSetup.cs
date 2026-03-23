@@ -194,7 +194,10 @@ public static class ServerSetup
     {
         var sourceDevMode = IsSourceDevLaunchMode();
 #if DEBUG
-        var wwwrootPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "wwwroot");
+        var configuredSourceWebRoot = Environment.GetEnvironmentVariable("MIDTERM_SOURCE_WWWROOT");
+        var wwwrootPath = !string.IsNullOrWhiteSpace(configuredSourceWebRoot)
+            ? configuredSourceWebRoot
+            : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "wwwroot");
         IFileProvider fileProvider = Directory.Exists(wwwrootPath)
             ? new PhysicalFileProvider(Path.GetFullPath(wwwrootPath))
             : new EmbeddedWebRootFileProvider(Assembly.GetExecutingAssembly(), "Ai.Tlbx.MidTerm");

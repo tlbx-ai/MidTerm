@@ -1,5 +1,12 @@
 import { createLogger } from '../logging';
-import { onTabActivated, onTabDeactivated, switchTab } from '../sessionTabs';
+import {
+  ensureSessionWrapper,
+  getTabPanel,
+  onTabActivated,
+  onTabDeactivated,
+  setSessionLensAvailability,
+  switchTab,
+} from '../sessionTabs';
 import {
   LENS_TURN_ACCEPTED_EVENT,
   LENS_TURN_FAILED_EVENT,
@@ -34,12 +41,15 @@ const viewStates = new Map<string, SessionLensViewState>();
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const TRANSCRIPT_OVERSCAN_PX = 800;
 const TRANSCRIPT_VIRTUALIZE_AFTER = 80;
+const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
 let lensTurnLifecycleBound = false;
 
 interface SessionLensViewState {
   panel: HTMLDivElement;
   snapshot: LensPulseSnapshotResponse | null;
   events: LensPulseEvent[];
+  debugScenarioActive: boolean;
+  activationRunId: number;
   transcriptViewport: HTMLDivElement | null;
   transcriptEntries: LensTranscriptEntry[];
   disconnectStream: (() => void) | null;
@@ -88,6 +98,7 @@ interface LensActivationTraceEntry {
 type TranscriptKind =
   | 'user'
   | 'assistant'
+  | 'reasoning'
   | 'tool'
   | 'request'
   | 'plan'
@@ -96,9 +107,14 @@ type TranscriptKind =
   | 'notice';
 type TranscriptTone = 'info' | 'positive' | 'warning' | 'attention';
 type LensTranscriptActionId = 'open-terminal' | 'retry-lens';
-export type LensDebugScenarioName = 'mixed' | 'tables' | 'long';
+export type LensDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
 
-const LENS_DEBUG_SCENARIO_NAMES: readonly LensDebugScenarioName[] = ['mixed', 'tables', 'long'];
+const LENS_DEBUG_SCENARIO_NAMES: readonly LensDebugScenarioName[] = [
+  'mixed',
+  'tables',
+  'long',
+  'workflow',
+];
 
 interface LensTranscriptAction {
   id: LensTranscriptActionId;
@@ -213,10 +229,17 @@ export function getLensDebugScenarioNames(): readonly LensDebugScenarioName[] {
  * speed up conversation UX and CSS tuning while Lens remains dev-facing.
  */
 export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): boolean {
-  const state = viewStates.get(sessionId);
-  if (!state) {
+  ensureSessionWrapper(sessionId);
+  setSessionLensAvailability(sessionId, true);
+  const panel = getTabPanel(sessionId, 'agent');
+  if (!panel) {
     return false;
   }
+
+  ensureAgentViewSkeleton(sessionId, panel);
+  const state = getOrCreateViewState(sessionId, panel);
+  state.panel = panel;
+  bindTranscriptViewport(sessionId, state);
 
   const debugScenario = buildLensDebugScenario(
     sessionId,
@@ -225,6 +248,8 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   );
   state.snapshot = debugScenario.snapshot;
   state.events = debugScenario.events;
+  state.debugScenarioActive = true;
+  state.activationRunId += 1;
   state.streamConnected = true;
   state.refreshInFlight = false;
   state.activationState = 'ready';
@@ -237,6 +262,7 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   state.requestBusyIds.clear();
   state.transcriptAutoScrollPinned = true;
   renderCurrentAgentView(sessionId);
+  switchTab(sessionId, 'agent');
   return true;
 }
 
@@ -246,9 +272,17 @@ async function activateAgentView(sessionId: string): Promise<void> {
     return;
   }
 
+  if (state.debugScenarioActive) {
+    renderCurrentAgentView(sessionId);
+    return;
+  }
+
+  state.activationRunId += 1;
+  const activationRunId = state.activationRunId;
+
   const hasExistingTranscript = state.snapshot !== null || state.events.length > 0;
   if (hasExistingTranscript) {
-    await resumeLensFromHistory(sessionId, state);
+    await resumeLensFromHistory(sessionId, state, activationRunId);
     return;
   }
 
@@ -277,15 +311,21 @@ async function activateAgentView(sessionId: string): Promise<void> {
   );
   renderCurrentAgentView(sessionId);
 
-  const restoredReadonlyHistory = await tryLoadReadonlyLensHistory(sessionId, state);
+  const restoredReadonlyHistory = await tryLoadReadonlyLensHistory(
+    sessionId,
+    state,
+    activationRunId,
+  );
+  ensureLensActivationIsCurrent(state, activationRunId);
   if (restoredReadonlyHistory) {
     renderCurrentAgentView(sessionId);
-    await resumeLensFromHistory(sessionId, state);
+    await resumeLensFromHistory(sessionId, state, activationRunId);
     return;
   }
 
   try {
     await attachSessionLens(sessionId);
+    ensureLensActivationIsCurrent(state, activationRunId);
     setActivationState(
       state,
       'waiting-snapshot',
@@ -295,7 +335,8 @@ async function activateAgentView(sessionId: string): Promise<void> {
     );
     renderCurrentAgentView(sessionId);
 
-    const snapshot = await waitForInitialLensSnapshot(sessionId, state);
+    const snapshot = await waitForInitialLensSnapshot(sessionId, state, activationRunId);
+    ensureLensActivationIsCurrent(state, activationRunId);
 
     setActivationState(
       state,
@@ -307,6 +348,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
     renderCurrentAgentView(sessionId);
 
     const eventFeed = await getLensEvents(sessionId);
+    ensureLensActivationIsCurrent(state, activationRunId);
     state.snapshot = snapshot;
     state.events = eventFeed.events.slice(-200);
     state.streamConnected = false;
@@ -321,8 +363,17 @@ async function activateAgentView(sessionId: string): Promise<void> {
     renderCurrentAgentView(sessionId);
     openLiveLensStream(sessionId, snapshot.latestSequence);
   } catch (error) {
+    if (isStaleLensActivationError(error)) {
+      return;
+    }
+
     log.warn(() => `Failed to activate Lens for ${sessionId}: ${String(error)}`);
-    const restoredFallbackHistory = await tryLoadReadonlyLensHistory(sessionId, state);
+    const restoredFallbackHistory = await tryLoadReadonlyLensHistory(
+      sessionId,
+      state,
+      activationRunId,
+    );
+    ensureLensActivationIsCurrent(state, activationRunId);
     if (restoredFallbackHistory) {
       log.warn(() => `Lens attach failed for ${sessionId}, but canonical history was restored.`);
       appendActivationTrace(
@@ -332,7 +383,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
         'Canonical Lens history restored.',
         'MidTerm recovered canonical Lens history after the initial attach failed, so it is retrying the live attach automatically.',
       );
-      await resumeLensFromHistory(sessionId, state);
+      await resumeLensFromHistory(sessionId, state, activationRunId);
       return;
     }
 
@@ -361,21 +412,30 @@ async function activateAgentView(sessionId: string): Promise<void> {
 async function resumeLensFromHistory(
   sessionId: string,
   state: SessionLensViewState,
+  activationRunId: number,
 ): Promise<void> {
+  ensureLensActivationIsCurrent(state, activationRunId);
   state.streamConnected = false;
   renderCurrentAgentView(sessionId);
 
   try {
     await attachSessionLens(sessionId);
+    ensureLensActivationIsCurrent(state, activationRunId);
     const afterSequence =
       state.events.length > 0 ? (state.events[state.events.length - 1]?.sequence ?? 0) : 0;
     const eventFeed = await getLensEvents(sessionId, afterSequence);
+    ensureLensActivationIsCurrent(state, activationRunId);
     if (eventFeed.events.length > 0) {
       state.events = [...state.events, ...eventFeed.events].slice(-200);
     }
     await refreshLensSnapshot(sessionId);
+    ensureLensActivationIsCurrent(state, activationRunId);
     openLiveLensStream(sessionId, state.snapshot?.latestSequence ?? eventFeed.latestSequence);
   } catch (error) {
+    if (isStaleLensActivationError(error)) {
+      return;
+    }
+
     log.warn(() => `Failed to resume Lens for ${sessionId}: ${String(error)}`);
     state.activationError = describeError(error);
     state.activationIssue = classifyLensActivationIssue(error, true);
@@ -387,16 +447,22 @@ async function resumeLensFromHistory(
 async function tryLoadReadonlyLensHistory(
   sessionId: string,
   state: SessionLensViewState,
+  activationRunId: number,
 ): Promise<boolean> {
   try {
     const snapshot = await getLensSnapshot(sessionId);
+    ensureLensActivationIsCurrent(state, activationRunId);
     const hasSnapshotHistory = hasRenderableLensHistory(snapshot);
     let events: LensPulseEvent[] = [];
 
     try {
       const eventFeed = await getLensEvents(sessionId);
+      ensureLensActivationIsCurrent(state, activationRunId);
       events = eventFeed.events.slice(-200);
     } catch (error) {
+      if (isStaleLensActivationError(error)) {
+        return false;
+      }
       log.warn(() => `Failed to load Lens events fallback for ${sessionId}: ${String(error)}`);
     }
 
@@ -446,6 +512,8 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     panel,
     snapshot: null,
     events: [],
+    debugScenarioActive: false,
+    activationRunId: 0,
     transcriptViewport: null,
     transcriptEntries: [],
     disconnectStream: null,
@@ -563,6 +631,59 @@ function buildLensDebugScenario(
       );
     });
     assistantText = '';
+  } else if (scenario === 'workflow') {
+    items = [
+      createItem(
+        'user-debug-workflow',
+        'user_message',
+        'Audit the workspace, ask for the release mode, then patch the report and summarize the diff.',
+        at(-150000),
+      ),
+    ];
+    requests = [
+      {
+        requestId: 'request-debug-workflow',
+        turnId: 'turn-debug',
+        kind: 'tool_user_input',
+        kindLabel: 'Question',
+        state: 'open',
+        decision: null,
+        detail: 'The agent is blocked until the operator chooses the release posture.',
+        questions: [
+          {
+            id: 'mode',
+            question: 'Choose SAFE or FAST before I continue.',
+            header: 'Release mode',
+            multiSelect: false,
+            options: [
+              {
+                label: 'SAFE',
+                description: 'Validate carefully and preserve the current shape.',
+              },
+              {
+                label: 'FAST',
+                description: 'Move quickly and accept a rougher pass.',
+              },
+            ],
+          },
+        ],
+        answers: [],
+        updatedAt: at(-12000),
+      },
+    ];
+    assistantText = [
+      'Plan:',
+      '1. Inspect the workspace state.',
+      '2. Wait for the release mode.',
+      '3. Apply the requested patch and summarize the diff.',
+      '',
+      '| file | status | owner |',
+      '| :--- | :--- | :--- |',
+      '| report.md | pending | Codex |',
+      '| inventory.csv | reviewed | Operator |',
+    ].join('\n');
+    currentTurnState = 'running';
+    currentTurnStateLabel = 'Running';
   } else {
     items = [
       createItem(
@@ -657,12 +778,25 @@ function buildLensDebugScenario(
       },
       streams: {
         assistantText,
-        reasoningText: '',
-        reasoningSummaryText: '',
-        planText: '',
-        commandOutput: '',
-        fileChangeOutput: '',
-        unifiedDiff: '',
+        reasoningText:
+          scenario === 'workflow'
+            ? 'Need the operator choice before touching the file so the patch posture is explicit.'
+            : '',
+        reasoningSummaryText:
+          scenario === 'workflow'
+            ? 'Waiting on SAFE/FAST, then update report.md and show the working diff.'
+            : '',
+        planText:
+          scenario === 'workflow'
+            ? '1. Read the workspace.\n2. Ask for SAFE or FAST.\n3. Patch and summarize the diff.'
+            : '',
+        commandOutput: scenario === 'workflow' ? 'status: TODO\nowner: codex' : '',
+        fileChangeOutput:
+          scenario === 'workflow' ? 'Success. Updated the following files:\nM report.md' : '',
+        unifiedDiff:
+          scenario === 'workflow'
+            ? 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE'
+            : '',
       },
       items,
       requests,
@@ -888,7 +1022,15 @@ function renderAgentView(
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncRequestInteractionState(state, snapshot.requests);
   const transcriptEntries = buildLensTranscriptEntries(snapshot, events);
-  const optimistic = applyOptimisticLensTurns(snapshot, transcriptEntries, state.optimisticTurns);
+  const visibleTranscriptEntries = suppressActiveComposerRequestEntries(
+    transcriptEntries,
+    snapshot.requests,
+  );
+  const optimistic = applyOptimisticLensTurns(
+    snapshot,
+    visibleTranscriptEntries,
+    state.optimisticTurns,
+  );
   state.optimisticTurns = optimistic.optimisticTurns;
   const renderedEntries = withActivationIssueNotice(
     withLiveAssistantState(
@@ -899,6 +1041,20 @@ function renderAgentView(
   );
   renderTranscript(panel, renderedEntries, snapshot.sessionId);
   renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
+}
+
+export function suppressActiveComposerRequestEntries(
+  entries: readonly LensTranscriptEntry[],
+  requests: readonly LensPulseRequestSummary[],
+): LensTranscriptEntry[] {
+  const activeRequest = findActiveComposerRequest(requests);
+  if (!activeRequest || activeRequest.state !== 'open') {
+    return [...entries];
+  }
+
+  return entries.filter(
+    (entry) => entry.kind !== 'request' || entry.requestId !== activeRequest.requestId,
+  );
 }
 
 function bindLensTurnLifecycle(): void {
@@ -949,7 +1105,15 @@ function handleLensTurnAccepted(event: Event): void {
         }
       : turn,
   );
+  state.activationIssue = null;
+  state.activationError = null;
+
+  if (!state.streamConnected) {
+    openLiveLensStream(detail.sessionId, state.snapshot?.latestSequence ?? 0);
+  }
+
   renderCurrentAgentView(detail.sessionId);
+  void refreshLensSnapshot(detail.sessionId);
 }
 
 function handleLensTurnFailed(event: Event): void {
@@ -1335,7 +1499,7 @@ export function buildLensTranscriptEntries(
       if (!transcriptKind) {
         continue;
       }
-      const key = resolveTranscriptEntryKey(transcriptKind, lensEvent);
+      const key = resolveTranscriptEntryKey(transcriptKind, lensEvent, streamKind);
       const contentEntry = ensureEntry(key, () => ({
         id: key,
         order,
@@ -1420,16 +1584,6 @@ export function buildLensTranscriptEntries(
   }
 
   let fallbackOrder = snapshot.latestSequence + 1;
-  for (const request of snapshot.requests) {
-    const key = `request:${request.requestId}`;
-    const entry = ensureEntry(key, () =>
-      createRequestTranscriptEntry(request.requestId, request, null, fallbackOrder),
-    );
-    updateRequestTranscriptEntry(entry, request, null);
-    entry.order = Math.max(entry.order, fallbackOrder);
-    fallbackOrder += 1;
-  }
-
   const sortedSnapshotItems = [...snapshot.items].sort(
     (left, right) => new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime(),
   );
@@ -1512,6 +1666,40 @@ export function buildLensTranscriptEntries(
   }
 
   if (
+    !entries.some((entry) => entry.kind === 'reasoning' && entry.title === 'Reasoning') &&
+    snapshot.streams.reasoningText.trim()
+  ) {
+    entries.push({
+      id: 'fallback-reasoning',
+      order: fallbackOrder,
+      kind: 'reasoning',
+      tone: 'info',
+      label: 'Reasoning',
+      title: 'Reasoning',
+      body: snapshot.streams.reasoningText,
+      meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
+    });
+    fallbackOrder += 1;
+  }
+
+  if (
+    !entries.some((entry) => entry.kind === 'reasoning' && entry.title === 'Reasoning summary') &&
+    snapshot.streams.reasoningSummaryText.trim()
+  ) {
+    entries.push({
+      id: 'fallback-reasoning-summary',
+      order: fallbackOrder,
+      kind: 'reasoning',
+      tone: 'info',
+      label: 'Reasoning',
+      title: 'Reasoning summary',
+      body: snapshot.streams.reasoningSummaryText,
+      meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
+    });
+    fallbackOrder += 1;
+  }
+
+  if (
     !entries.some((entry) => entry.kind === 'plan' && entry.body.trim()) &&
     snapshot.streams.planText.trim()
   ) {
@@ -1546,21 +1734,46 @@ export function buildLensTranscriptEntries(
   }
 
   if (
-    !entries.some((entry) => entry.kind === 'tool' && entry.body.trim()) &&
-    [snapshot.streams.commandOutput, snapshot.streams.fileChangeOutput].join('\n').trim()
+    !entries.some((entry) => entry.kind === 'tool' && entry.title === 'Command output') &&
+    snapshot.streams.commandOutput.trim()
   ) {
     entries.push({
-      id: 'fallback-tool-output',
+      id: 'fallback-command-output',
       order: fallbackOrder,
       kind: 'tool',
       tone: 'warning',
       label: 'Tool',
-      title: 'Tool output',
-      body: [snapshot.streams.commandOutput, snapshot.streams.fileChangeOutput]
-        .filter(Boolean)
-        .join('\n\n'),
+      title: 'Command output',
+      body: snapshot.streams.commandOutput,
       meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
     });
+    fallbackOrder += 1;
+  }
+
+  if (
+    !entries.some((entry) => entry.kind === 'tool' && entry.title === 'File change output') &&
+    snapshot.streams.fileChangeOutput.trim()
+  ) {
+    entries.push({
+      id: 'fallback-file-change-output',
+      order: fallbackOrder,
+      kind: 'tool',
+      tone: 'warning',
+      label: 'Tool',
+      title: 'File change output',
+      body: snapshot.streams.fileChangeOutput,
+      meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
+    });
+  }
+
+  for (const request of snapshot.requests) {
+    const key = `request:${request.requestId}`;
+    const entry = ensureEntry(key, () =>
+      createRequestTranscriptEntry(request.requestId, request, null, fallbackOrder),
+    );
+    updateRequestTranscriptEntry(entry, request, null);
+    entry.order = Math.max(entry.order, fallbackOrder);
+    fallbackOrder += 1;
   }
 
   return entries
@@ -1765,11 +1978,7 @@ function createRequestTranscriptEntry(
       lensEvent?.requestOpened?.requestTypeLabel ||
       lensEvent?.type ||
       'Request',
-    body:
-      request?.detail ||
-      lensEvent?.requestOpened?.detail ||
-      lensEvent?.userInputRequested?.questions.map((question) => question.question).join('\n') ||
-      'Action required.',
+    body: formatRequestTranscriptBody(request, lensEvent) || 'Action required.',
     meta: request
       ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
       : formatTranscriptMeta(
@@ -1794,11 +2003,7 @@ function updateRequestTranscriptEntry(
     lensEvent?.requestOpened?.requestTypeLabel ||
     lensEvent?.type ||
     entry.title;
-  entry.body =
-    summarizeRequest(request) ||
-    lensEvent?.requestOpened?.detail ||
-    lensEvent?.userInputRequested?.questions.map((question) => question.question).join('\n') ||
-    entry.body;
+  entry.body = formatRequestTranscriptBody(request, lensEvent) || entry.body;
   entry.meta = request
     ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
     : lensEvent
@@ -1970,7 +2175,12 @@ function createTranscriptEntry(
 
   if (shouldRenderTranscriptBody(entry)) {
     const body = document.createElement(
-      entry.kind === 'diff' || entry.kind === 'tool' || entry.kind === 'plan' ? 'pre' : 'div',
+      entry.kind === 'diff' ||
+        entry.kind === 'tool' ||
+        entry.kind === 'reasoning' ||
+        entry.kind === 'plan'
+        ? 'pre'
+        : 'div',
     );
     body.className = 'agent-transcript-body';
     if (entry.kind === 'assistant') {
@@ -2128,7 +2338,7 @@ function resolveArtifactCluster(
 }
 
 function isArtifactEntry(kind: TranscriptKind | undefined): boolean {
-  return kind === 'tool' || kind === 'plan' || kind === 'diff';
+  return kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff';
 }
 
 function isAssistantPlaceholderEntry(entry: LensTranscriptEntry): boolean {
@@ -2258,7 +2468,7 @@ export function shouldHideStatusInMeta(kind: TranscriptKind, statusLabel: string
     );
   }
 
-  if (kind === 'tool' || kind === 'plan' || kind === 'diff') {
+  if (kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff') {
     return normalizedStatus === 'completed' || normalizedStatus === 'updated';
   }
 
@@ -2415,6 +2625,13 @@ function createRequestPanelHeader(
 
 function summarizeRequestInterruption(request: LensPulseRequestSummary): string {
   if (request.kind === 'tool_user_input') {
+    const activeQuestion = request.questions[0];
+    if (request.questions.length === 1 && activeQuestion?.options.length) {
+      return activeQuestion.multiSelect
+        ? `Select one or more of ${activeQuestion.options.length} options to continue.`
+        : `Select 1 of ${activeQuestion.options.length} options to continue.`;
+    }
+
     return request.questions.length === 1
       ? 'The agent needs one answer to continue.'
       : `The agent needs ${request.questions.length} answers to continue.`;
@@ -2672,6 +2889,7 @@ export function estimateTranscriptEntryHeight(
     entry.kind === 'user'
       ? 72
       : entry.kind === 'tool' ||
+          entry.kind === 'reasoning' ||
           entry.kind === 'plan' ||
           entry.kind === 'diff' ||
           entry.kind === 'request' ||
@@ -2681,7 +2899,12 @@ export function estimateTranscriptEntryHeight(
         : 28;
   const contentWidth = Math.max(140, effectiveWidth - horizontalChrome);
   const avgCharWidthPx =
-    entry.kind === 'tool' || entry.kind === 'plan' || entry.kind === 'diff' ? 7.4 : 8.1;
+    entry.kind === 'tool' ||
+    entry.kind === 'reasoning' ||
+    entry.kind === 'plan' ||
+    entry.kind === 'diff'
+      ? 7.4
+      : 8.1;
   const charsPerLine = Math.max(18, Math.floor(contentWidth / avgCharWidthPx));
   const wrappedLines = entry.body
     .split('\n')
@@ -2694,6 +2917,7 @@ export function estimateTranscriptEntryHeight(
 
   switch (entry.kind) {
     case 'tool':
+    case 'reasoning':
     case 'diff':
     case 'plan':
       return 84 + bodyHeight;
@@ -2846,9 +3070,13 @@ function attachmentIdentity(attachment: LensAttachmentReference): string {
   ].join('|');
 }
 
-function resolveTranscriptEntryKey(kind: TranscriptKind, lensEvent: LensPulseEvent): string {
-  if (kind === 'tool') {
-    return `tool:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}`;
+function resolveTranscriptEntryKey(
+  kind: TranscriptKind,
+  lensEvent: LensPulseEvent,
+  discriminator: string | null = null,
+): string {
+  if (kind === 'tool' || kind === 'reasoning') {
+    return `${kind}:${discriminator || 'default'}:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}`;
   }
 
   if (kind === 'user' || kind === 'assistant') {
@@ -3064,11 +3292,14 @@ async function runRequestAction(
 async function waitForInitialLensSnapshot(
   sessionId: string,
   state: SessionLensViewState,
+  activationRunId: number,
 ): Promise<LensPulseSnapshotResponse> {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 12; attempt += 1) {
+    ensureLensActivationIsCurrent(state, activationRunId);
     try {
       const snapshot = await getLensSnapshot(sessionId);
+      ensureLensActivationIsCurrent(state, activationRunId);
       if (attempt > 1) {
         appendActivationTrace(
           state,
@@ -3080,6 +3311,9 @@ async function waitForInitialLensSnapshot(
       }
       return snapshot;
     } catch (error) {
+      if (isStaleLensActivationError(error)) {
+        throw error;
+      }
       lastError = error;
       appendActivationTrace(
         state,
@@ -3353,7 +3587,8 @@ async function retryLensActivation(sessionId: string): Promise<void> {
 
   try {
     if (state.snapshot || state.events.length > 0) {
-      await resumeLensFromHistory(sessionId, state);
+      state.activationRunId += 1;
+      await resumeLensFromHistory(sessionId, state, state.activationRunId);
     } else {
       await activateAgentView(sessionId);
     }
@@ -3366,22 +3601,83 @@ async function retryLensActivation(sessionId: string): Promise<void> {
   }
 }
 
-function summarizeRequest(request: LensPulseRequestSummary | undefined): string {
-  if (!request) {
+function ensureLensActivationIsCurrent(state: SessionLensViewState, activationRunId: number): void {
+  if (state.debugScenarioActive || state.activationRunId !== activationRunId) {
+    throw new Error(STALE_LENS_ACTIVATION);
+  }
+}
+
+function isStaleLensActivationError(error: unknown): boolean {
+  return error instanceof Error && error.message === STALE_LENS_ACTIVATION;
+}
+
+function formatRequestTranscriptBody(
+  request: LensPulseRequestSummary | undefined,
+  lensEvent: LensPulseEvent | null,
+): string {
+  if (request) {
+    return formatRequestSummaryBody(request);
+  }
+
+  const eventSections = [
+    lensEvent?.requestOpened?.detail?.trim() || '',
+    formatRequestQuestions(lensEvent?.userInputRequested?.questions),
+  ].filter(Boolean);
+  return eventSections.join('\n\n');
+}
+
+function formatRequestSummaryBody(request: LensPulseRequestSummary): string {
+  const sections = [
+    request.detail?.trim() || '',
+    formatRequestQuestions(request.questions),
+    formatRequestAnswers(request.answers),
+  ].filter(Boolean);
+  return sections.join('\n\n');
+}
+
+function formatRequestQuestions(
+  questions:
+    | ReadonlyArray<LensPulseRequestSummary['questions'][number]>
+    | NonNullable<LensPulseEvent['userInputRequested']>['questions']
+    | null
+    | undefined,
+): string {
+  if (!questions || questions.length === 0) {
     return '';
   }
 
-  if (request.questions.length > 0) {
-    return request.questions.map((question) => question.question).join('\n');
+  return questions
+    .map((question, index) => {
+      const headingParts = [
+        questions.length > 1 ? `Question ${index + 1}` : 'Question',
+        question.header.trim(),
+      ].filter(Boolean);
+      const optionLines =
+        question.options.length > 0
+          ? question.options.map((option, optionIndex) => {
+              const description =
+                option.description && option.description !== option.label
+                  ? ` - ${option.description}`
+                  : '';
+              return `[${optionIndex + 1}] ${option.label}${description}`;
+            })
+          : [];
+      return [headingParts.join(' - '), question.question, ...optionLines].join('\n');
+    })
+    .join('\n\n');
+}
+
+function formatRequestAnswers(
+  answers: readonly LensPulseRequestSummary['answers'][number][] | null | undefined,
+): string {
+  if (!answers || answers.length === 0) {
+    return '';
   }
 
-  if (request.answers.length > 0) {
-    return request.answers
-      .map((answer) => `${answer.questionId}: ${answer.answers.join(', ')}`)
-      .join('\n');
-  }
-
-  return request.detail || request.turnId || '';
+  return [
+    'Selected answers',
+    ...answers.map((answer) => `${answer.questionId}: ${answer.answers.join(', ')}`),
+  ].join('\n');
 }
 
 function toneFromEvent(eventType: string): TranscriptTone {
@@ -3449,7 +3745,15 @@ function transcriptKindFromStream(streamKind: string): TranscriptKind | null {
   if (normalized === 'assistant_text') {
     return 'assistant';
   }
-  if (normalized === 'command_output' || normalized === 'file_change_output') {
+  if (normalized === 'reasoning_text' || normalized === 'reasoning_summary_text') {
+    return 'reasoning';
+  }
+  if (
+    normalized === 'command_output' ||
+    normalized === 'file_change_output' ||
+    normalized.endsWith('_output') ||
+    normalized.endsWith('_result')
+  ) {
     return 'tool';
   }
   return null;
@@ -3490,6 +3794,8 @@ function transcriptLabel(kind: TranscriptKind): string {
       return 'You';
     case 'assistant':
       return 'Assistant';
+    case 'reasoning':
+      return 'Reasoning';
     case 'tool':
       return 'Tool';
     case 'request':

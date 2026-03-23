@@ -44,6 +44,11 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         string? resumeThreadIdOverride = null,
         CancellationToken ct = default)
     {
+        if (IsAttached(sessionId))
+        {
+            return true;
+        }
+
         var profile = _profileService.NormalizeProfile(null, session);
         if (profile is not AiCliProfileService.CodexProfile and not AiCliProfileService.ClaudeProfile)
         {
@@ -59,6 +64,11 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         if (_hostRuntime.IsEnabledFor(profile))
         {
             if (await _hostRuntime.EnsureAttachedAsync(sessionId, profile, session, resumeThreadIdOverride, ct).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            if (IsAttached(sessionId))
             {
                 return true;
             }

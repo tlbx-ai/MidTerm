@@ -240,9 +240,19 @@ public sealed class BrowserCommandService
             lines.Add($"reason: {status.StatusMessage}");
         }
 
+        if (!status.HasUiClient)
+        {
+            lines.Add("hint: No MidTerm browser UI is attached to /ws/state. Reopen the owning MidTerm browser tab before blaming the preview target.");
+        }
+
         if (status.State == "waiting" && status.HasTarget)
         {
             lines.Add("hint: The preview target is set, but no controllable browser has attached yet. Open the preview panel in MidTerm or wait for it to finish docking.");
+        }
+
+        if (status.State == "waiting" && !status.HasTarget)
+        {
+            lines.Add("hint: No preview target is configured yet. Use mt_open <url> first, then wait for the preview to become controllable.");
         }
 
         if (status.State == "ambiguous")
@@ -492,7 +502,7 @@ public sealed class BrowserCommandService
 
         if (hasTarget)
         {
-            return $"Target is configured, but no browser preview is connected yet. {reason}";
+            return $"Target is configured, but no MidTerm browser UI is currently attached to /ws/state. {reason}";
         }
 
         if (hasUiClient)

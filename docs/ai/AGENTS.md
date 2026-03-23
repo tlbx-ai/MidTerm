@@ -56,6 +56,9 @@ Use this workflow first:
 When using this loop:
 - target the local source app in the MidTerm browser, usually `https://127.0.0.1:2100`
 - validate Lens and UX changes in that local browser before considering a GitHub dev release
+- every C# change is a restart boundary for the local source `mt`: wait for `https://127.0.0.1:2100/api/sessions` to respond again before trusting any browser result
+- a restarted source app can leave the dev preview/browser bridge stale even when the target URL still looks right; re-check `mt_status` after C# changes instead of assuming the existing preview is still controllable
+- when using one MidTerm instance to test another MidTerm instance, remember the stable outer MidTerm tab owns the `/ws/state` browser bridge; the nested preview target alone is not enough
 - if the browser looks stale after a TS/CSS iteration, prefer `mt_preview_reset` on the local source URL over guessing
 - if a clean build/test is blocked by a lingering local source `mt.exe`, stop the local dev loop first and restart it after verification
 

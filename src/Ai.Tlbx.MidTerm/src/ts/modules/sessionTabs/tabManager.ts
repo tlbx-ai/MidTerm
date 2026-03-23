@@ -36,6 +36,7 @@ interface SessionTabState {
   panels: Record<SessionTabId, HTMLDivElement>;
   activeTab: SessionTabId;
   lensAvailable: boolean;
+  lensForcedVisible: boolean;
 }
 
 const sessionTabStates = new Map<string, SessionTabState>();
@@ -136,6 +137,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     panels,
     activeTab: 'terminal',
     lensAvailable: false,
+    lensForcedVisible: false,
   };
 
   sessionTabStates.set(sessionId, state);
@@ -224,13 +226,28 @@ export function syncSessionTabCapabilities(
     return;
   }
 
-  const showAgentTab = shouldShowAgentTab(session);
+  const showAgentTab = state.lensForcedVisible || shouldShowAgentTab(session);
   state.lensAvailable = showAgentTab;
   setTabVisible(state.tabBar, 'agent', showAgentTab);
 
   if (!showAgentTab && state.activeTab === 'agent') {
     switchTab(sessionId, 'terminal');
   }
+}
+
+/**
+ * Lets Lens-driven flows expose the tab as soon as real conversation content
+ * exists, even before session-list metadata has caught up.
+ */
+export function setSessionLensAvailability(sessionId: string, available: boolean): void {
+  const state = sessionTabStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  state.lensForcedVisible = available;
+  const session = $sessionList.get().find((entry) => entry.id === sessionId) ?? null;
+  syncSessionTabCapabilities(sessionId, session);
 }
 
 /**

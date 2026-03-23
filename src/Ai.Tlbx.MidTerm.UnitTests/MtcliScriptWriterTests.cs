@@ -27,7 +27,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("Current version:", powershell, StringComparison.Ordinal);
         Assert.Contains("_MBR", shell, StringComparison.Ordinal);
         Assert.Contains("_MJR", shell, StringComparison.Ordinal);
-        Assert.Contains("curl -sk -b", shell, StringComparison.Ordinal);
+        Assert.Contains("curl --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
         Assert.Contains("function script:_MBR", powershell, StringComparison.Ordinal);
         Assert.Contains("function script:_MJR", powershell, StringComparison.Ordinal);
     }
@@ -44,14 +44,14 @@ public sealed class MtcliScriptWriterTests : IDisposable
 
         Assert.Contains("set MT_API_KEY", shell, StringComparison.Ordinal);
         Assert.Contains("Authorization: Bearer $MT_API_KEY", shell, StringComparison.Ordinal);
-        Assert.Contains("curl -sfk -H", shell, StringComparison.Ordinal);
-        Assert.Contains("curl -sk -H", shell, StringComparison.Ordinal);
+        Assert.Contains("curl --fail-with-body -sSk -H", shell, StringComparison.Ordinal);
+        Assert.Contains("curl --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
 
         Assert.Contains("set MT_API_KEY", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_API_KEY", powershell, StringComparison.Ordinal);
         Assert.Contains("Authorization: Bearer $($env:MT_API_KEY)", powershell, StringComparison.Ordinal);
-        Assert.Contains("& curl.exe -sfk -H", powershell, StringComparison.Ordinal);
-        Assert.Contains("& curl.exe -sk -H", powershell, StringComparison.Ordinal);
+        Assert.Contains("& curl.exe --fail-with-body -sSk -H", powershell, StringComparison.Ordinal);
+        Assert.Contains("& curl.exe --fail-with-body -sSk -b", powershell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -189,6 +189,9 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_open` both sets the target", agents, StringComparison.Ordinal);
         Assert.Contains("mt_open is the CLI command that opens/docks the preview", agents, StringComparison.Ordinal);
         Assert.Contains("state: ready", agents, StringComparison.Ordinal);
+        Assert.Contains("Every C# change in the local source loop restarts the source `mt`", agents, StringComparison.Ordinal);
+        Assert.Contains("the outer MidTerm browser tab owns `/ws/state`", agents, StringComparison.Ordinal);
+        Assert.Contains("ui clients: 0", agents, StringComparison.Ordinal);
         Assert.Contains("mt_session prints the current MidTerm terminal session ID", agents, StringComparison.Ordinal);
         Assert.Contains("mt_preview user1", agents, StringComparison.Ordinal);
         Assert.Contains("mt_tail", agents, StringComparison.Ordinal);

@@ -112,7 +112,7 @@ public sealed class BrowserUiBridge
         {
             if (_listeners.Count == 0)
             {
-                error = "No MidTerm browser UI is connected. Open MidTerm in a browser tab first.";
+                error = "No MidTerm browser UI is connected. Open the owning MidTerm browser tab first; the preview target alone cannot drive /ws/state.";
                 target = null!;
                 return false;
             }
