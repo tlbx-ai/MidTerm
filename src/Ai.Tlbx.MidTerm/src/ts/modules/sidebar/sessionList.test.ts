@@ -214,4 +214,54 @@ describe('sessionList grouping', () => {
     expect(filterInput.value).toBe('');
     expect(localStorageMock.removeItem).toHaveBeenCalledWith('midterm.sidebar.sessionFilter');
   });
+
+  it('keeps only the requested sidebar item active after rerender normalization', async () => {
+    const { syncSessionItemActiveStates } = await import('./sessionList');
+
+    const createItem = (sessionId: string, active: boolean) => {
+      const classes = new Set(active ? ['session-item', 'active'] : ['session-item']);
+      const attributes = new Map<string, string>([['aria-current', active ? 'true' : 'false']]);
+
+      return {
+        dataset: { sessionId },
+        classList: {
+          add: (name: string) => classes.add(name),
+          remove: (name: string) => classes.delete(name),
+          contains: (name: string) => classes.has(name),
+        },
+        setAttribute: (name: string, value: string) => attributes.set(name, value),
+        getAttribute: (name: string) => attributes.get(name) ?? null,
+      };
+    };
+
+    const items = [
+      createItem('session-a', true),
+      createItem('session-b', true),
+      createItem('session-c', false),
+    ];
+
+    const root = {
+      querySelectorAll: (selector: string) =>
+        selector === '.session-item.active'
+          ? items.filter((item) => item.classList.contains('active'))
+          : [],
+      querySelector: (selector: string) => {
+        const match = selector.match(/data-session-id="([^"]+)"/);
+        if (!match) {
+          return null;
+        }
+
+        return items.find((item) => item.dataset.sessionId === match[1]) ?? null;
+      },
+    };
+
+    const activeItem = syncSessionItemActiveStates(root as any, 'session-c');
+
+    expect(activeItem?.dataset.sessionId).toBe('session-c');
+    expect(items.filter((item) => item.classList.contains('active')).map((item) => item.dataset.sessionId)).toEqual([
+      'session-c',
+    ]);
+    expect(items[0]?.getAttribute('aria-current')).toBe('false');
+    expect(items[2]?.getAttribute('aria-current')).toBe('true');
+  });
 });

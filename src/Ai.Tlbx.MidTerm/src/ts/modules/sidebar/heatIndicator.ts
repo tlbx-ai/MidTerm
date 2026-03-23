@@ -15,6 +15,9 @@ const POLL_INTERVAL_MS = 1000;
 const DRAW_THRESHOLD = 0.01;
 const CANVAS_CSS_W = 4;
 const CANVAS_CSS_H = 36;
+const RISE_TIME_CONSTANT_MS = 90;
+const FALL_TIME_CONSTANT_MS = 220;
+const ANIMATION_SNAP_THRESHOLD = 0.002;
 
 // Color stops: [heat_value, r, g, b]
 const GRADIENT: [number, number, number, number][] = [
@@ -34,12 +37,15 @@ interface SessionHeat {
   canvas: HTMLCanvasElement | null;
   ctx: CanvasRenderingContext2D | null;
   heat: number;
+  displayHeat: number;
   lastDrawnHeat: number;
 }
 
 const sessions = new Map<string, SessionHeat>();
 let pollTimerId: number | null = null;
 let pollInFlight = false;
+let animationFrameId: number | null = null;
+let lastAnimationFrameAt = 0;
 
 function clampHeat(heat: number): number {
   if (!Number.isFinite(heat)) {
@@ -85,7 +91,7 @@ function lerpColor(t: number): [number, number, number] {
 }
 
 function drawCanvas(s: SessionHeat): void {
-  const { ctx, heat } = s;
+  const { ctx, displayHeat: heat } = s;
   if (!ctx) return;
 
   if (heat < DRAW_THRESHOLD) {
@@ -135,12 +141,54 @@ function getOrCreateSessionHeat(sessionId: string): SessionHeat {
       canvas: null,
       ctx: null,
       heat: 0,
+      displayHeat: 0,
       lastDrawnHeat: 0,
     };
     sessions.set(sessionId, state);
   }
 
   return state;
+}
+
+function scheduleAnimation(): void {
+  if (document.hidden || animationFrameId !== null) {
+    return;
+  }
+
+  animationFrameId = window.requestAnimationFrame(stepAnimation);
+}
+
+function stepAnimation(timestamp: number): void {
+  animationFrameId = null;
+
+  const deltaMs =
+    lastAnimationFrameAt > 0 ? Math.min(64, Math.max(1, timestamp - lastAnimationFrameAt)) : 16;
+  lastAnimationFrameAt = timestamp;
+
+  let needsAnotherFrame = false;
+  for (const state of sessions.values()) {
+    const delta = state.heat - state.displayHeat;
+    if (Math.abs(delta) <= ANIMATION_SNAP_THRESHOLD) {
+      if (Math.abs(state.displayHeat - state.heat) > 0.0001) {
+        state.displayHeat = state.heat;
+        drawCanvas(state);
+      }
+      continue;
+    }
+
+    const timeConstantMs = delta > 0 ? RISE_TIME_CONSTANT_MS : FALL_TIME_CONSTANT_MS;
+    const blend = 1 - Math.exp(-deltaMs / timeConstantMs);
+    state.displayHeat = clampHeat(state.displayHeat + delta * blend);
+    drawCanvas(state);
+    needsAnotherFrame = true;
+  }
+
+  if (needsAnotherFrame) {
+    animationFrameId = window.requestAnimationFrame(stepAnimation);
+    return;
+  }
+
+  lastAnimationFrameAt = 0;
 }
 
 function applyHeat(sessionId: string, heat: number): void {
@@ -151,9 +199,19 @@ function applyHeat(sessionId: string, heat: number): void {
   }
 
   state.heat = nextHeat;
-  if (!document.hidden) {
-    drawCanvas(state);
+  if (document.hidden || !state.ctx) {
+    state.displayHeat = nextHeat;
+    state.lastDrawnHeat = -1;
+    return;
   }
+
+  if (Math.abs(state.displayHeat - nextHeat) <= ANIMATION_SNAP_THRESHOLD) {
+    state.displayHeat = nextHeat;
+    drawCanvas(state);
+    return;
+  }
+
+  scheduleAnimation();
 }
 
 async function refreshHeatFromServer(): Promise<void> {
@@ -207,6 +265,9 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
 
   if (!document.hidden) {
     drawCanvas(state);
+    if (Math.abs(state.displayHeat - state.heat) > ANIMATION_SNAP_THRESHOLD) {
+      scheduleAnimation();
+    }
   }
 }
 
@@ -239,6 +300,10 @@ export function recordBytes(_sessionId: string, _bytes: number): void {
 
 export function getSessionHeat(sessionId: string): number {
   return sessions.get(sessionId)?.heat ?? 0;
+}
+
+export function getDisplayedSessionHeat(sessionId: string): number {
+  return sessions.get(sessionId)?.displayHeat ?? 0;
 }
 
 export function suppressAllHeat(_durationMs: number): void {
@@ -274,6 +339,13 @@ export function destroyHeatIndicator(): void {
     window.clearInterval(pollTimerId);
     pollTimerId = null;
   }
+
+  if (animationFrameId !== null) {
+    window.cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+
+  lastAnimationFrameAt = 0;
 
   sessions.clear();
 }

@@ -15,6 +15,7 @@ import {
   updateMobileTitle,
   getSessionDisplayInfo,
   applyPinButtonState,
+  syncSessionItemActiveStates,
 } from './sessionList';
 import { unregisterHeatCanvas } from './heatIndicator';
 
@@ -36,8 +37,6 @@ let previousLayoutSignature = '';
 /** Whether the updater has been initialized */
 let initialized = false;
 
-/** Previously active sidebar item so we can update active state surgically */
-let previousActiveItem: HTMLElement | null = null;
 let unsubscribeSessions: (() => void) | null = null;
 let unsubscribeActiveSession: (() => void) | null = null;
 let unsubscribeLayout: (() => void) | null = null;
@@ -165,20 +164,21 @@ function updateSessionItemContent(sessionId: string, session: Session): void {
  * Update active state on all session items without re-rendering
  */
 function updateActiveStates(activeId: string | null): void {
-  previousActiveItem?.classList.remove('active');
-
-  if (!activeId) return;
-
   const sessionList = document.getElementById('session-list');
-  if (!sessionList) return;
+  if (!sessionList) {
+    return;
+  }
 
-  const activeItem = sessionList.querySelector<HTMLElement>(
-    `.session-item[data-session-id="${activeId}"]`,
-  );
-  if (!activeItem) return;
+  if (!activeId) {
+    syncSessionItemActiveStates(sessionList, null);
+    return;
+  }
 
-  activeItem.classList.add('active');
-  previousActiveItem = activeItem;
+  const activeItem = syncSessionItemActiveStates(sessionList, activeId);
+  if (!activeItem) {
+    return;
+  }
+
   activeItem.scrollIntoView({
     behavior: 'auto',
     block: 'nearest',
@@ -260,7 +260,6 @@ export function initializeSidebarUpdater(): void {
   previousSessions = { ...initialSessions };
   previousSessionIds = new Set(Object.keys(initialSessions));
   previousLayoutSignature = getLayoutSignature($layout.get().root);
-  previousActiveItem = document.querySelector<HTMLElement>('.session-item.active');
 
   // Subscribe to session changes
   unsubscribeSessions = $sessions.subscribe((sessions) => {
@@ -305,6 +304,5 @@ export function cleanupSidebarUpdater(): void {
   unsubscribeLayout = null;
   unsubscribeSettings?.();
   unsubscribeSettings = null;
-  previousActiveItem = null;
   initialized = false;
 }
