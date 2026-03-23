@@ -769,6 +769,31 @@ function createSessionFilterEmptyState(): HTMLDivElement {
   return emptyState;
 }
 
+export function syncSessionItemActiveStates(
+  root: ParentNode,
+  activeId: string | null,
+): HTMLElement | null {
+  root.querySelectorAll<HTMLElement>('.session-item.active').forEach((item) => {
+    item.classList.remove('active');
+    item.setAttribute('aria-current', 'false');
+  });
+
+  if (!activeId) {
+    return null;
+  }
+
+  const activeItem = root.querySelector<HTMLElement>(
+    `.session-item[data-session-id="${activeId}"]`,
+  );
+  if (!activeItem) {
+    return null;
+  }
+
+  activeItem.classList.add('active');
+  activeItem.setAttribute('aria-current', 'true');
+  return activeItem;
+}
+
 /**
  * Create a session item DOM element
  */
@@ -798,10 +823,20 @@ function createSessionItem(
   if (isChild) {
     item.dataset.parentId = session.parentSessionId ?? '';
   }
+  item.setAttribute('aria-current', isActive ? 'true' : 'false');
   item.draggable = !isPending && !isChild && !isSessionFilterActive();
 
   if (!isPending) {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'button, a, input, select, textarea, [role="menu"], [role="menuitem"], .session-actions',
+        )
+      ) {
+        return;
+      }
+
       closeMobileActionMenu();
       if (callbacks && sessionId) {
         callbacks.onSelect(sessionId);
@@ -1242,6 +1277,7 @@ export function renderSessionList(): void {
   }
 
   applySidebarGroupingClasses(sessionList);
+  syncSessionItemActiveStates(sessionList, $activeSessionId.get());
 }
 
 /**
