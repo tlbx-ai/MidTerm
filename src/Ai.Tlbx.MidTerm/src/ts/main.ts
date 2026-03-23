@@ -122,6 +122,7 @@ import {
   getActiveTab,
   isTabAvailable,
   reparentTerminalContainer,
+  setSessionLensAvailability,
   switchTab,
 } from './modules/sessionTabs';
 import {
@@ -236,8 +237,9 @@ window.mmDebug = {
     },
     async showScenario(
       sessionId: string,
-      scenario: 'mixed' | 'tables' | 'long' = 'mixed',
+      scenario: 'mixed' | 'tables' | 'long' | 'workflow' = 'mixed',
     ): Promise<boolean> {
+      setSessionLensAvailability(sessionId, true);
       switchTab(sessionId, 'agent');
       await Promise.resolve();
       return showLensDebugScenario(sessionId, scenario);

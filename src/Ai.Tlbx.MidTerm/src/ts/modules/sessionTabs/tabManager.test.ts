@@ -191,6 +191,28 @@ describe('tabManager', () => {
     expect(getActiveTab('s1')).toBe('agent');
   });
 
+  it('lets Lens force the agent tab visible before session metadata catches up', async () => {
+    const {
+      ensureSessionWrapper,
+      switchTab,
+      getActiveTab,
+      isTabAvailable,
+      setSessionLensAvailability,
+    } = await import('./tabManager');
+
+    ensureSessionWrapper('s1');
+
+    setSessionLensAvailability('s1', true);
+
+    expect(isTabAvailable('s1', 'agent')).toBe(true);
+    switchTab('s1', 'agent');
+    expect(getActiveTab('s1')).toBe('agent');
+
+    setSessionLensAvailability('s1', false);
+
+    expect(isTabAvailable('s1', 'agent')).toBe(true);
+  });
+
   it('invokes every registered callback for tab activation and deactivation', async () => {
     const { ensureSessionWrapper, onTabActivated, onTabDeactivated, switchTab } =
       await import('./tabManager');

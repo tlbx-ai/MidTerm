@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const onTabActivated = vi.fn();
 const onTabDeactivated = vi.fn();
 const switchTab = vi.fn();
+const ensureSessionWrapper = vi.fn();
+const getTabPanel = vi.fn();
+const setSessionLensAvailability = vi.fn();
 const getSessionState = vi.fn();
 const getSessionBufferTail = vi.fn();
 const attachSessionLens = vi.fn();
@@ -17,8 +20,11 @@ const resolveLensUserInput = vi.fn();
 const showDevErrorDialog = vi.fn();
 
 vi.mock('../sessionTabs', () => ({
+  ensureSessionWrapper,
+  getTabPanel,
   onTabActivated,
   onTabDeactivated,
+  setSessionLensAvailability,
   switchTab,
 }));
 
@@ -93,6 +99,9 @@ describe('agentView dev errors', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(() => true),
+      location: {
+        origin: 'https://midterm.test',
+      },
       requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
         callback(0);
         return 1;
@@ -101,6 +110,9 @@ describe('agentView dev errors', () => {
     onTabActivated.mockReset();
     onTabDeactivated.mockReset();
     switchTab.mockReset();
+    ensureSessionWrapper.mockReset();
+    getTabPanel.mockReset();
+    setSessionLensAvailability.mockReset();
     getSessionState.mockReset();
     getSessionState.mockResolvedValue(null);
     getSessionBufferTail.mockReset();
@@ -196,6 +208,39 @@ describe('agentView dev errors', () => {
         error: expect.any(Error),
       }),
     );
+  });
+
+  it('can mount and render a debug scenario without requiring a pre-activated Lens tab', async () => {
+    const panel = createPanel();
+    getTabPanel.mockReturnValue(panel);
+
+    const { showLensDebugScenario } = await import('./index');
+
+    expect(showLensDebugScenario('s1', 'workflow')).toBe(true);
+    expect(ensureSessionWrapper).toHaveBeenCalledWith('s1');
+    expect(setSessionLensAvailability).toHaveBeenCalledWith('s1', true);
+    expect(switchTab).toHaveBeenCalledWith('s1', 'agent');
+    expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
+  });
+
+  it('keeps debug scenarios isolated from the live Lens attach path', async () => {
+    const panel = createPanel();
+    getTabPanel.mockReturnValue(panel);
+
+    const { initAgentView, showLensDebugScenario } = await import('./index');
+    initAgentView();
+
+    expect(showLensDebugScenario('s1', 'workflow')).toBe(true);
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+
+    await activate?.('s1', panel);
+
+    expect(attachSessionLens).not.toHaveBeenCalled();
+    expect(getLensEvents).not.toHaveBeenCalled();
+    expect(getLensSnapshot).not.toHaveBeenCalled();
   });
 
   it('restores canonical Lens history when attach fails but a snapshot already exists', async () => {
@@ -399,6 +444,101 @@ describe('agentView dev errors', () => {
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
+  it('renders the composer interruption UI for open user-input requests', async () => {
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot.mockResolvedValue({
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T11:00:00Z',
+      latestSequence: 1,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: 'Waiting for user input.',
+        lastError: null,
+        lastEventAt: '2026-03-23T11:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'paused',
+        stateLabel: 'Paused',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T10:59:45Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: 'Choose a mode before I continue.',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [
+        {
+          requestId: 'req-1',
+          turnId: 'turn-1',
+          kind: 'tool_user_input',
+          kindLabel: 'Question',
+          state: 'open',
+          detail: 'Please choose a mode.',
+          decision: null,
+          questions: [
+            {
+              id: 'mode',
+              header: 'Mode',
+              question: 'Choose SAFE or FAST before I continue.',
+              options: [
+                { label: 'SAFE', description: 'Proceed carefully.' },
+                { label: 'FAST', description: 'Move quickly.' },
+              ],
+            },
+          ],
+          answers: [],
+          updatedAt: '2026-03-23T11:00:00Z',
+        },
+      ],
+      notices: [],
+    });
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensSnapshot).toHaveBeenCalledWith('s1');
+      expect(getLensEvents).toHaveBeenCalledWith('s1');
+    });
+
+    const interruptionHost = panel.querySelector(
+      '[data-agent-field="composer-interruption"]',
+    ) as any;
+    expect(interruptionHost.hidden).toBe(false);
+    expect(interruptionHost.replaceChildren).toHaveBeenCalled();
+    const interruptionPanel = interruptionHost.replaceChildren.mock.calls.at(-1)?.[0];
+    expect(interruptionPanel?.className).toContain('agent-request-actions-user-input');
+  });
+
   it('keeps Lens attached when the agent tab is deactivated', async () => {
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -536,7 +676,8 @@ describe('agentView dev errors', () => {
           tone: 'info',
           meta: 'Opening • 03:16',
           summary: 'Lens pane opened.',
-          detail: 'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
+          detail:
+            'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
         },
         {
           tone: 'info',
@@ -588,7 +729,8 @@ describe('agentView dev errors', () => {
       } as any,
       activationState: 'failed',
       activationDetail: 'Lens startup failed.',
-      activationError: 'HTTP 400: MidTerm could not determine the Codex resume id for this session.',
+      activationError:
+        'HTTP 400: MidTerm could not determine the Codex resume id for this session.',
       activationActionBusy: false,
       activationIssue: {
         kind: 'missing-resume-id',
@@ -603,7 +745,8 @@ describe('agentView dev errors', () => {
           tone: 'info',
           meta: 'Opening • 03:16',
           summary: 'Lens pane opened.',
-          detail: 'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
+          detail:
+            'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
         },
       ],
     });
@@ -1051,8 +1194,15 @@ describe('agentView dev errors', () => {
     const transcript = buildLensTranscriptEntries(snapshot, []);
     const marked = withLiveAssistantState(snapshot, transcript);
 
-    expect(marked.some((entry) => entry.kind === 'user' && entry.body.includes('Describe the logo'))).toBe(true);
-    expect(marked.some((entry) => entry.kind === 'assistant' && entry.body.includes('Streaming answer in progress.'))).toBe(true);
+    expect(
+      marked.some((entry) => entry.kind === 'user' && entry.body.includes('Describe the logo')),
+    ).toBe(true);
+    expect(
+      marked.some(
+        (entry) =>
+          entry.kind === 'assistant' && entry.body.includes('Streaming answer in progress.'),
+      ),
+    ).toBe(true);
     expect(marked.some((entry) => entry.kind === 'assistant' && entry.live)).toBe(true);
   });
 
@@ -1227,13 +1377,900 @@ describe('agentView dev errors', () => {
 
     const transcript = buildLensTranscriptEntries(snapshot, events);
 
-    expect(transcript).toHaveLength(1);
+    expect(transcript).toHaveLength(3);
     expect(transcript[0]).toMatchObject({
       kind: 'tool',
       title: 'Run tests',
     });
     expect(transcript[0]?.body).toContain('npm run typecheck');
-    expect(transcript[0]?.body).toContain('All green');
+    expect(transcript[1]).toMatchObject({
+      kind: 'tool',
+      title: 'Command output',
+    });
+    expect(transcript[1]?.body).toContain('All green');
+    expect(transcript[2]).toMatchObject({
+      kind: 'reasoning',
+      title: 'Reasoning',
+    });
+    expect(transcript[2]?.body).toContain('Thinking...');
+  });
+
+  it('surfaces generic tool result streams instead of dropping them', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T10:00:00Z',
+      latestSequence: 2,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-23T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T09:59:58Z',
+        completedAt: '2026-03-23T10:00:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'e-tool-result',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'tool-1',
+        requestId: null,
+        createdAt: '2026-03-23T09:59:59Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'tool_result',
+          delta: 'exit_code: 0',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+
+    expect(transcript).toHaveLength(1);
+    expect(transcript[0]).toMatchObject({
+      kind: 'tool',
+      title: 'Tool Result',
+    });
+    expect(transcript[0]?.body).toContain('exit_code: 0');
+  });
+
+  it('keeps distinct tool and reasoning stream kinds in separate transcript rows', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T10:00:00Z',
+      latestSequence: 4,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-23T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T09:59:58Z',
+        completedAt: '2026-03-23T10:00:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'e-command-output',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-23T09:59:59Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'command_output',
+          delta: 'npm test',
+        },
+      },
+      {
+        sequence: 2,
+        eventId: 'e-file-change-output',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-23T09:59:59Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'file_change_output',
+          delta: 'M report.md',
+        },
+      },
+      {
+        sequence: 3,
+        eventId: 'e-reasoning',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-23T09:59:59Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'reasoning_text',
+          delta: 'Need approval first.',
+        },
+      },
+      {
+        sequence: 4,
+        eventId: 'e-reasoning-summary',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-23T09:59:59Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'reasoning_summary_text',
+          delta: 'Waiting for SAFE/FAST.',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+
+    expect(transcript).toHaveLength(4);
+    expect(transcript[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
+    expect(transcript[0]?.body).toContain('npm test');
+    expect(transcript[1]).toMatchObject({ kind: 'tool', title: 'File change output' });
+    expect(transcript[1]?.body).toContain('M report.md');
+    expect(transcript[2]).toMatchObject({ kind: 'reasoning', title: 'Reasoning' });
+    expect(transcript[2]?.body).toContain('Need approval first.');
+    expect(transcript[3]).toMatchObject({ kind: 'reasoning', title: 'Reasoning summary' });
+    expect(transcript[3]?.body).toContain('Waiting for SAFE/FAST.');
+  });
+
+  it('renders plan delta and plan completed events as a visible plan row', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T10:00:00Z',
+      latestSequence: 2,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-23T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T09:59:55Z',
+        completedAt: '2026-03-23T10:00:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'e-plan-delta',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-23T09:59:56Z',
+        type: 'plan.delta',
+        raw: null,
+        planDelta: {
+          delta: '1. Inspect the workspace.\n',
+        },
+      },
+      {
+        sequence: 2,
+        eventId: 'e-plan-done',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-23T09:59:57Z',
+        type: 'plan.completed',
+        raw: null,
+        planCompleted: {
+          planMarkdown: '1. Inspect the workspace.\n2. Apply the change.',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+
+    expect(transcript).toHaveLength(1);
+    expect(transcript[0]).toMatchObject({
+      kind: 'plan',
+      title: 'Plan',
+    });
+    expect(transcript[0]?.body).toContain('2. Apply the change.');
+  });
+
+  it('uses snapshot reasoning streams when event history is incomplete', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T10:00:00Z',
+      latestSequence: 0,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-23T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T09:59:50Z',
+        completedAt: '2026-03-23T10:00:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: 'Need to inspect the modified files first.',
+        reasoningSummaryText: 'Summary: verify output, then update docs.',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, []);
+
+    expect(transcript).toHaveLength(2);
+    expect(transcript[0]).toMatchObject({
+      kind: 'reasoning',
+      title: 'Reasoning',
+    });
+    expect(transcript[0]?.body).toContain('inspect the modified files');
+    expect(transcript[1]).toMatchObject({
+      kind: 'reasoning',
+      title: 'Reasoning summary',
+    });
+    expect(transcript[1]?.body).toContain('verify output');
+  });
+
+  it('keeps snapshot command output and file change output as separate tool rows', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T10:00:00Z',
+      latestSequence: 0,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-23T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T09:59:50Z',
+        completedAt: '2026-03-23T10:00:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: 'status: TODO\nowner: codex',
+        fileChangeOutput: 'Success. Updated the following files:\nM report.md',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, []);
+
+    expect(transcript).toHaveLength(2);
+    expect(transcript[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
+    expect(transcript[0]?.body).toContain('status: TODO');
+    expect(transcript[1]).toMatchObject({ kind: 'tool', title: 'File change output' });
+    expect(transcript[1]?.body).toContain('Updated the following files');
+  });
+
+  it('places fallback request rows after existing snapshot conversation content', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T10:00:00Z',
+      latestSequence: 0,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-23T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T09:59:50Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [
+        {
+          itemId: 'user-1',
+          turnId: 'turn-1',
+          itemType: 'user_message',
+          status: 'completed',
+          title: 'User message',
+          detail: 'Ask for SAFE or FAST before editing files.',
+          attachments: [],
+          updatedAt: '2026-03-23T09:59:52Z',
+        },
+      ],
+      requests: [
+        {
+          requestId: 'req-1',
+          turnId: 'turn-1',
+          kind: 'tool_user_input',
+          kindLabel: 'Question',
+          state: 'open',
+          detail: 'The agent needs an operator choice.',
+          decision: null,
+          questions: [
+            {
+              id: 'mode',
+              header: 'Mode',
+              question: 'Choose SAFE or FAST.',
+              options: [
+                { label: 'SAFE', description: 'Validate carefully.' },
+                { label: 'FAST', description: 'Move quickly.' },
+              ],
+            },
+          ],
+          answers: [],
+          updatedAt: '2026-03-23T09:59:58Z',
+        },
+      ],
+      notices: [],
+    } as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, []);
+
+    expect(transcript).toHaveLength(2);
+    expect(transcript[0]).toMatchObject({ kind: 'user' });
+    expect(transcript[1]).toMatchObject({ kind: 'request' });
+  });
+
+  it('suppresses the active open composer request from transcript rendering', async () => {
+    const { suppressActiveComposerRequestEntries } = await import('./index');
+
+    const entries = [
+      {
+        id: 'user-1',
+        order: 1,
+        kind: 'user',
+        tone: 'info',
+        label: 'You',
+        title: '',
+        body: 'Do the careful path.',
+        meta: '11:59:50',
+      },
+      {
+        id: 'request:req-1',
+        order: 2,
+        kind: 'request',
+        tone: 'warning',
+        label: 'Request',
+        title: 'Question',
+        body: 'Choose SAFE or FAST.',
+        meta: '11:59:58',
+        requestId: 'req-1',
+      },
+      {
+        id: 'diff-1',
+        order: 3,
+        kind: 'diff',
+        tone: 'warning',
+        label: 'Diff',
+        title: 'Working diff',
+        body: '+status: DONE',
+        meta: '12:00:00',
+      },
+    ] as any;
+
+    const requests = [
+      {
+        requestId: 'req-1',
+        state: 'open',
+        kind: 'tool_user_input',
+        updatedAt: '2026-03-23T11:59:58Z',
+      },
+    ] as any;
+
+    const visible = suppressActiveComposerRequestEntries(entries, requests);
+
+    expect(visible).toHaveLength(2);
+    expect(visible.some((entry) => entry.kind === 'request')).toBe(false);
+    expect(visible[0]?.kind).toBe('user');
+    expect(visible[1]?.kind).toBe('diff');
+  });
+
+  it('renders question requests from user-input events into transcript rows', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-23T10:00:00Z',
+      latestSequence: 1,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-23T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'paused',
+        stateLabel: 'Paused',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-23T09:59:50Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'e-user-input',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: 'req-1',
+        createdAt: '2026-03-23T09:59:58Z',
+        type: 'user-input.requested',
+        raw: null,
+        userInputRequested: {
+          questions: [
+            {
+              id: 'mode',
+              header: 'Mode',
+              question: 'Choose SAFE or FAST before I continue.',
+              options: [
+                { label: 'SAFE', description: 'Proceed cautiously.' },
+                { label: 'FAST', description: 'Optimize for speed.' },
+              ],
+            },
+          ],
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+
+    expect(transcript).toHaveLength(1);
+    expect(transcript[0]).toMatchObject({
+      kind: 'request',
+      requestId: 'req-1',
+    });
+    expect(transcript[0]?.body).toContain('Choose SAFE or FAST before I continue.');
+    expect(transcript[0]?.body).toContain('[1] SAFE');
+    expect(transcript[0]?.body).toContain('[2] FAST');
+  });
+
+  it('exposes the workflow Lens debug scenario for browser-side UX validation', async () => {
+    const { getLensDebugScenarioNames } = await import('./index');
+
+    expect(getLensDebugScenarioNames()).toContain('workflow');
+  });
+
+  it('renders a rich real-Codex event mix into visible transcript rows', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-22T23:59:24Z',
+      latestSequence: 12,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: 'Codex turn completed.',
+        lastError: null,
+        lastEventAt: '2026-03-22T23:59:24Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-03-22T23:58:54Z',
+        completedAt: '2026-03-22T23:59:24Z',
+      },
+      streams: {
+        assistantText:
+          'Plan:\n1. Review the workspace.\n2. Summarize the inventory.\n\n| name | count | owner |\n| --- | ---: | --- |\n| alpha | 3 | Ada |',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: 'status: TODO',
+        fileChangeOutput: 'Success. Updated the following files:\nM report.md',
+        unifiedDiff: 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'e-user-start',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'user-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:58:54Z',
+        type: 'item.started',
+        raw: null,
+        item: {
+          itemType: 'user_message',
+          status: 'in_progress',
+          title: 'You',
+          detail: 'Inspect the repo and update report.md.',
+        },
+      },
+      {
+        sequence: 2,
+        eventId: 'e-user-done',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'user-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:58:54Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'user_message',
+          status: 'completed',
+          title: 'You',
+          detail: 'Inspect the repo and update report.md.',
+        },
+      },
+      {
+        sequence: 3,
+        eventId: 'e-command-start',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'cmd-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:58:57Z',
+        type: 'item.started',
+        raw: null,
+        item: {
+          itemType: 'command_execution',
+          status: 'in_progress',
+          title: 'Command started',
+          detail: 'Get-Content report.md',
+        },
+      },
+      {
+        sequence: 4,
+        eventId: 'e-command-out',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'cmd-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:58:58Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'command_output',
+          delta: 'status: TODO',
+        },
+      },
+      {
+        sequence: 5,
+        eventId: 'e-command-done',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'cmd-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:58:59Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'command_execution',
+          status: 'completed',
+          title: 'Command completed',
+          detail: 'Get-Content report.md',
+        },
+      },
+      {
+        sequence: 6,
+        eventId: 'e-file-start',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'file-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:59:04Z',
+        type: 'item.started',
+        raw: null,
+        item: {
+          itemType: 'file_change',
+          status: 'in_progress',
+          title: 'File change started',
+          detail: 'report.md',
+        },
+      },
+      {
+        sequence: 7,
+        eventId: 'e-file-out',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'file-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:59:05Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'file_change_output',
+          delta: 'Success. Updated the following files:\nM report.md',
+        },
+      },
+      {
+        sequence: 8,
+        eventId: 'e-file-done',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'file-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:59:06Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'file_change',
+          status: 'completed',
+          title: 'File change completed',
+          detail: 'report.md',
+        },
+      },
+      {
+        sequence: 9,
+        eventId: 'e-diff',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: null,
+        requestId: null,
+        createdAt: '2026-03-22T23:59:07Z',
+        type: 'diff.updated',
+        raw: null,
+        diffUpdated: {
+          unifiedDiff: 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE',
+        },
+      },
+      {
+        sequence: 10,
+        eventId: 'e-assistant-final',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-22T23:59:20Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'assistant_text',
+          delta:
+            'Plan:\n1. Review the workspace.\n2. Summarize the inventory.\n\n| name | count | owner |\n| --- | ---: | --- |\n| alpha | 3 | Ada |',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const userEntry = transcript.find((entry) => entry.kind === 'user');
+    const commandCallEntry = transcript.find(
+      (entry) => entry.kind === 'tool' && entry.body.includes('Get-Content report.md'),
+    );
+    const commandOutputEntry = transcript.find(
+      (entry) => entry.kind === 'tool' && entry.title === 'Command output',
+    );
+    const fileChangeEntry = transcript.find(
+      (entry) =>
+        entry.kind === 'tool' && entry.body.includes('Success. Updated the following files'),
+    );
+    const diffEntry = transcript.find((entry) => entry.kind === 'diff');
+    const assistantEntry = transcript.find((entry) => entry.kind === 'assistant');
+
+    expect(userEntry?.body).toContain('update report.md');
+    expect(commandCallEntry?.body).toContain('Get-Content report.md');
+    expect(commandOutputEntry?.body).toContain('status: TODO');
+    expect(fileChangeEntry?.body).toContain('report.md');
+    expect(diffEntry?.body).toContain('+status: DONE');
+    expect(assistantEntry?.body).toContain('| alpha | 3 | Ada |');
   });
 
   it('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {

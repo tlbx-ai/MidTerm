@@ -32,6 +32,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $WebProjectDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm"
 $WebProjectFile = Join-Path $WebProjectDir "Ai.Tlbx.MidTerm.csproj"
+$WebRootDir = Join-Path $WebProjectDir "wwwroot"
 $AgentHostProjectFile = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj"
 $DefaultSettingsDir = Join-Path $RepoRoot ".dev\midterm-local"
 $SettingsDir = if ([string]::IsNullOrWhiteSpace($SettingsDir)) { $DefaultSettingsDir } else { $SettingsDir }
@@ -278,6 +279,7 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     $psi.Environment["MIDTERM_SETTINGS_DIR"] = $SettingsDir
     $psi.Environment["MIDTERM_TTYHOST_PATH"] = $resolvedTtyHostPath
     $psi.Environment["MIDTERM_LAUNCH_MODE"] = "source-dev"
+    $psi.Environment["MIDTERM_SOURCE_WWWROOT"] = $WebRootDir
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $psi

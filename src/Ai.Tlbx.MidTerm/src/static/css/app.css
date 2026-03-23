@@ -9491,7 +9491,11 @@ body.shared-session-mode .session-tab-bar {
   border-bottom-right-radius: 6px;
   border: 1px solid color-mix(in srgb, var(--accent-blue) 28%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 18%, transparent), color-mix(in srgb, var(--accent-blue) 8%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent-blue) 18%, transparent),
+      color-mix(in srgb, var(--accent-blue) 8%, transparent)
+    ),
     color-mix(in srgb, var(--bg-secondary) 88%, transparent);
 }
 
@@ -9527,15 +9531,18 @@ body.shared-session-mode .session-tab-bar {
   background: linear-gradient(180deg, rgba(130, 196, 255, 0.06), rgba(130, 196, 255, 0));
 }
 
-.agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending) .agent-transcript-body {
+.agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending)
+  .agent-transcript-body {
   color: #f4f8ff;
 }
 
-.agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending) .agent-transcript-meta {
+.agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending)
+  .agent-transcript-meta {
   color: rgba(164, 213, 255, 0.86);
 }
 
 .agent-transcript-tool,
+.agent-transcript-reasoning,
 .agent-transcript-plan,
 .agent-transcript-diff,
 .agent-transcript-request,
@@ -9554,6 +9561,13 @@ body.shared-session-mode .session-tab-bar {
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 3%, transparent),
     0 10px 20px rgba(0, 0, 0, 0.08);
+}
+
+.agent-transcript-reasoning {
+  border-color: color-mix(in srgb, var(--accent-blue) 26%, var(--border-color));
+  background:
+    linear-gradient(180deg, rgba(92, 150, 230, 0.1), rgba(92, 150, 230, 0.04)),
+    color-mix(in srgb, var(--bg-secondary) 54%, transparent);
 }
 
 .agent-transcript-artifact[data-artifact-position='start'] {
@@ -9640,9 +9654,19 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-muted);
 }
 
+.agent-transcript-badge-reasoning,
+.agent-transcript-badge-plan,
+.agent-transcript-badge-diff {
+  color: color-mix(in srgb, var(--accent-blue) 72%, white 18%);
+}
+
 .agent-transcript-badge-plan,
 .agent-transcript-badge-diff {
   display: none;
+}
+
+.agent-transcript-badge-reasoning {
+  display: inline-flex;
 }
 
 .agent-transcript-title {
@@ -9656,6 +9680,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-transcript-tool .agent-transcript-title,
+.agent-transcript-reasoning .agent-transcript-title,
 .agent-transcript-plan .agent-transcript-title,
 .agent-transcript-diff .agent-transcript-title {
   color: color-mix(in srgb, var(--text-secondary) 86%, transparent);
@@ -9685,7 +9710,7 @@ body.shared-session-mode .session-tab-bar {
   margin-left: 0;
   font-size: 10px;
   color: color-mix(in srgb, var(--text-muted) 88%, transparent);
- }
+}
 
 .agent-transcript-body,
 .agent-transcript-empty {
@@ -9936,8 +9961,14 @@ body.shared-session-mode .session-tab-bar {
   display: none;
 }
 
-.agent-transcript-markdown table[data-table-density='dense'] th[data-col-kind='notes'] .agent-markdown-th-short,
-.agent-transcript-markdown table[data-table-density='dense'] th[data-col-kind='key'] .agent-markdown-th-short {
+.agent-transcript-markdown
+  table[data-table-density='dense']
+  th[data-col-kind='notes']
+  .agent-markdown-th-short,
+.agent-transcript-markdown
+  table[data-table-density='dense']
+  th[data-col-kind='key']
+  .agent-markdown-th-short {
   letter-spacing: 0.02em;
   text-transform: none;
 }
@@ -10194,6 +10225,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-transcript-tool .agent-transcript-body,
+.agent-transcript-reasoning .agent-transcript-body,
 .agent-transcript-plan .agent-transcript-body,
 .agent-transcript-diff .agent-transcript-body {
   padding: 2px 0 0;
@@ -10233,7 +10265,11 @@ body.shared-session-mode .session-tab-bar {
   border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
   border-radius: 18px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 84%, transparent), color-mix(in srgb, var(--bg-secondary) 72%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-secondary) 84%, transparent),
+      color-mix(in srgb, var(--bg-secondary) 72%, transparent)
+    ),
     var(--terminal-ui-background, var(--terminal-bg));
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
 }
@@ -10353,7 +10389,11 @@ body.shared-session-mode .session-tab-bar {
   border: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
   border-radius: 18px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 90%, transparent), color-mix(in srgb, var(--bg-primary) 94%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-secondary) 90%, transparent),
+      color-mix(in srgb, var(--bg-primary) 94%, transparent)
+    ),
     var(--terminal-ui-background, var(--terminal-bg));
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
 }
@@ -10640,6 +10680,7 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .agent-transcript-tool,
+  .agent-transcript-reasoning,
   .agent-transcript-plan,
   .agent-transcript-diff,
   .agent-transcript-request,
