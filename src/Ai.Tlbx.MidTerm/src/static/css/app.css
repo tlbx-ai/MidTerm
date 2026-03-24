@@ -9907,7 +9907,7 @@ body.shared-session-mode .session-tab-bar {
   min-width: 0;
   min-height: 0;
   flex: 1;
-  padding: 0 12px;
+  padding: 0;
   background: transparent;
   border: 0;
   box-shadow: none;
@@ -9929,8 +9929,8 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-composer-shell {
   flex: 0 0 auto;
-  padding: 0 12px 12px;
-  border-top: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  padding: 0;
+  border-top: 0;
   background:
     linear-gradient(180deg, rgba(6, 8, 13, 0), rgba(6, 8, 13, 0.48) 26%, rgba(6, 8, 13, 0.88)),
     var(--terminal-ui-background, var(--terminal-bg));
@@ -11142,7 +11142,7 @@ body.shared-session-mode .session-tab-bar {
 
 @media (max-width: 900px) {
   .agent-transcript-card {
-    padding: 0 8px;
+    padding: 0;
   }
 
   .agent-transcript {
@@ -11151,13 +11151,13 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .agent-composer-shell {
-    padding: 0 8px 8px;
+    padding: 0;
   }
 }
 
 @media (max-width: 720px) {
   .agent-transcript-card {
-    padding: 0 6px;
+    padding: 0;
   }
 
   .agent-transcript {
