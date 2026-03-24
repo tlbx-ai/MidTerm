@@ -223,9 +223,21 @@ public class Program
         var browserUiBridge = app.Services.GetRequiredService<BrowserUiBridge>();
         BrowserScriptWriter.WriteScript(port);
 
+        static void SyncMidtermDirectoryForCwd(string? cwd)
+        {
+            MidtermDirectory.TryEnsureForCwd(cwd);
+        }
+
+        sessionManager.OnSessionCreated += (sessionId, _) =>
+        {
+            var cwd = sessionManager.GetSession(sessionId)?.CurrentDirectory;
+            SyncMidtermDirectoryForCwd(cwd);
+        };
+
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
             agentFeed.NoteForeground(sessionId, payload);
+            SyncMidtermDirectoryForCwd(payload.Cwd);
             var session = sessionManager.GetSession(sessionId);
             if (session is not null && !string.IsNullOrEmpty(payload.Name) && !string.IsNullOrEmpty(payload.Cwd))
             {
@@ -243,6 +255,7 @@ public class Program
 
         sessionManager.OnCwdChanged += (sessionId, cwd) =>
         {
+            SyncMidtermDirectoryForCwd(cwd);
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 

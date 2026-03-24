@@ -81,7 +81,7 @@ export interface SessionListCallbacks {
   onRename: (sessionId: string) => void;
   onToggleAgentControl: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
-  onInjectGuidance?: (sessionId: string) => void;
+  onEnableMidtermFeatures?: (sessionId: string) => void;
   onCloseSidebar: () => void;
 }
 
@@ -1003,15 +1003,15 @@ function createSessionItem(
         }
       });
 
-      const injectBtn = document.createElement('button');
-      injectBtn.className = 'session-inject';
-      setActionButtonContent(injectBtn, t('session.injectGuidance'), icon('inject'));
-      injectBtn.setAttribute('role', 'menuitem');
-      injectBtn.addEventListener('click', (e) => {
+      const enableFeaturesBtn = document.createElement('button');
+      enableFeaturesBtn.className = 'session-inject';
+      setActionButtonContent(enableFeaturesBtn, t('session.injectGuidance'), icon('inject'));
+      enableFeaturesBtn.setAttribute('role', 'menuitem');
+      enableFeaturesBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         closeMobileActionMenu();
-        if (callbacks?.onInjectGuidance) {
-          callbacks.onInjectGuidance(sessionId);
+        if (callbacks?.onEnableMidtermFeatures) {
+          callbacks.onEnableMidtermFeatures(sessionId);
         }
       });
 
@@ -1026,7 +1026,7 @@ function createSessionItem(
       });
 
       actions.appendChild(pinBtn);
-      actions.appendChild(injectBtn);
+      actions.appendChild(enableFeaturesBtn);
       actions.appendChild(undockBtn);
     }
 
