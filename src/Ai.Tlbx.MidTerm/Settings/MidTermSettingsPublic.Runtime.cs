@@ -9,15 +9,32 @@ public sealed partial class MidTermSettingsPublic
     [
         "100", "200", "300", "400", "500", "600", "700", "800", "900", "normal", "bold"
     ];
+    private static readonly HashSet<string> BuiltInTerminalColorSchemeNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "auto",
+        "dark",
+        "light",
+        "macTerminalDark",
+        "macTerminalLight",
+        "solarizedDark",
+        "solarizedLight",
+        "matrix"
+    };
 
     public static MidTermSettingsPublic FromSettings(MidTermSettings settings)
     {
+        var terminalColorSchemes = NormalizeTerminalColorSchemes(settings.TerminalColorSchemes);
+        var terminalColorScheme = NormalizeTerminalColorSchemeName(settings.TerminalColorScheme);
         return new MidTermSettingsPublic
         {
             DefaultShell = settings.DefaultShell,
             DefaultCols = settings.DefaultCols,
             DefaultRows = settings.DefaultRows,
             DefaultWorkingDirectory = settings.DefaultWorkingDirectory,
+            CodexYoloDefault = settings.CodexYoloDefault,
+            CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
+            ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
+            ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             LineHeight = settings.LineHeight,
@@ -29,7 +46,10 @@ public sealed partial class MidTermSettingsPublic
             CursorInactiveStyle = settings.CursorInactiveStyle,
             HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
             Theme = settings.Theme,
-            TerminalColorScheme = settings.TerminalColorScheme,
+            TerminalColorScheme = IsKnownTerminalColorScheme(terminalColorScheme, terminalColorSchemes)
+                ? terminalColorScheme
+                : "auto",
+            TerminalColorSchemes = terminalColorSchemes,
             BackgroundImageEnabled = settings.BackgroundImageEnabled,
             BackgroundImageFileName = settings.BackgroundImageFileName,
             BackgroundImageRevision = settings.BackgroundImageRevision,
@@ -86,6 +106,10 @@ public sealed partial class MidTermSettingsPublic
         settings.DefaultCols = DefaultCols;
         settings.DefaultRows = DefaultRows;
         settings.DefaultWorkingDirectory = DefaultWorkingDirectory;
+        settings.CodexYoloDefault = CodexYoloDefault;
+        settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
+        settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;
+        settings.ClaudeEnvironmentVariables = ClaudeEnvironmentVariables ?? string.Empty;
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.LineHeight = Math.Clamp(LineHeight, 0.8, 3.0);
@@ -103,7 +127,12 @@ public sealed partial class MidTermSettingsPublic
         settings.CursorInactiveStyle = CursorInactiveStyle;
         settings.HideCursorOnInputBursts = HideCursorOnInputBursts;
         settings.Theme = Theme;
-        settings.TerminalColorScheme = TerminalColorScheme;
+        var terminalColorSchemes = NormalizeTerminalColorSchemes(TerminalColorSchemes);
+        settings.TerminalColorSchemes = terminalColorSchemes;
+        var terminalColorScheme = NormalizeTerminalColorSchemeName(TerminalColorScheme);
+        settings.TerminalColorScheme = IsKnownTerminalColorScheme(terminalColorScheme, terminalColorSchemes)
+            ? terminalColorScheme
+            : "auto";
         settings.BackgroundImageEnabled = BackgroundImageEnabled;
         if (BackgroundImageFit is "cover" or "contain")
         {
@@ -157,5 +186,53 @@ public sealed partial class MidTermSettingsPublic
         // Background image metadata is managed by the background image endpoints
         // Hub machine configuration is managed by the hub endpoints so credentials are not lost
         // These fields are read-only in the GET response and ignored on PUT.
+    }
+
+    private static string NormalizeTerminalColorSchemeName(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "auto" : value.Trim();
+    }
+
+    private static bool IsKnownTerminalColorScheme(
+        string value,
+        IReadOnlyCollection<TerminalColorSchemeDefinition> customSchemes)
+    {
+        if (BuiltInTerminalColorSchemeNames.Contains(value))
+        {
+            return true;
+        }
+
+        return customSchemes.Any(
+            scheme => string.Equals(scheme.Name, value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<TerminalColorSchemeDefinition> NormalizeTerminalColorSchemes(
+        IEnumerable<TerminalColorSchemeDefinition>? terminalColorSchemes)
+    {
+        var normalized = new List<TerminalColorSchemeDefinition>();
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var scheme in terminalColorSchemes ?? [])
+        {
+            var entry = TerminalColorSchemeDefinition.Normalize(scheme);
+            if (entry is null)
+            {
+                continue;
+            }
+
+            if (BuiltInTerminalColorSchemeNames.Contains(entry.Name))
+            {
+                continue;
+            }
+
+            if (!seenNames.Add(entry.Name))
+            {
+                continue;
+            }
+
+            normalized.Add(entry);
+        }
+
+        return normalized;
     }
 }

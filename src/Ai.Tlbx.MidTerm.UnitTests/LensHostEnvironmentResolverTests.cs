@@ -38,4 +38,34 @@ public sealed class LensHostEnvironmentResolverTests
         Assert.NotNull(profileDirectory);
         Assert.EndsWith(Path.Combine("Users", "johan"), profileDirectory!, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void ApplyUserProfileEnvironment_PrependsCommonUserCliPaths()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var currentProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var userName = Path.GetFileName(currentProfile.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var startInfo = new ProcessStartInfo();
+        startInfo.Environment["PATH"] = @"C:\Windows\System32";
+
+        var settings = new MidTermSettings
+        {
+            RunAsUser = userName
+        };
+
+        LensHostEnvironmentResolver.ApplyUserProfileEnvironment(startInfo, settings);
+
+        Assert.StartsWith(
+            Path.Combine(currentProfile, "AppData", "Local", "Programs", "nodejs") + Path.PathSeparator,
+            startInfo.Environment["PATH"],
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            Path.PathSeparator + Path.Combine(currentProfile, "AppData", "Roaming", "npm") + Path.PathSeparator,
+            startInfo.Environment["PATH"],
+            StringComparison.OrdinalIgnoreCase);
+    }
 }

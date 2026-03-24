@@ -312,4 +312,24 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.openWebPreviewDock).toHaveBeenCalledTimes(1);
     expect(mocks.syncActiveWebPreview).toHaveBeenCalledTimes(1);
   });
+
+  it('skips proactive terminal creation for lens-only sessions', async () => {
+    await loadHarness();
+
+    const stateChannel = await import('./stateChannel');
+    stateChannel.handleStateUpdate([
+      {
+        id: 'lens-1',
+        cols: 120,
+        rows: 30,
+        lensOnly: true,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+    ]);
+
+    expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
+  });
 });

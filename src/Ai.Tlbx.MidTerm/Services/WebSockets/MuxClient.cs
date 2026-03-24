@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Channels;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
@@ -87,7 +88,12 @@ public sealed class MuxClient : IAsyncDisposable
     public string Id { get; }
     public WebSocket WebSocket { get; }
 
-    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, SharedOutputBuffer Buffer);
+    private readonly record struct OutputItem(
+        string SessionId,
+        ulong SequenceEndExclusive,
+        int Cols,
+        int Rows,
+        SharedOutputBuffer Buffer);
 
     /// <summary>
     /// Pooled contiguous buffer for session output. Uses ArrayPool to avoid GC pressure.
@@ -101,6 +107,7 @@ public sealed class MuxClient : IAsyncDisposable
         public int TotalBytes => _position;
         public int LastCols { get; set; }
         public int LastRows { get; set; }
+        public ulong LastSequenceEndExclusive { get; set; }
         public long LastFlushTicks { get; set; } = Stopwatch.GetTimestamp();
         public long QueuedAtTicks { get; set; }
         public int DroppedBytes { get; set; }
@@ -181,7 +188,7 @@ public sealed class MuxClient : IAsyncDisposable
     /// Queue raw terminal output for buffered delivery.
     /// Copies data into a pooled buffer owned by this client.
     /// </summary>
-    internal void QueueOutput(string sessionId, int cols, int rows, SharedOutputBuffer buffer)
+    internal void QueueOutput(string sessionId, ulong sequenceEndExclusive, int cols, int rows, SharedOutputBuffer buffer)
     {
         if (_cts.IsCancellationRequested)
         {
@@ -199,7 +206,7 @@ public sealed class MuxClient : IAsyncDisposable
             return;
         }
 
-        if (!_inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, buffer)))
+        if (!_inputChannel.Writer.TryWrite(new OutputItem(sessionId, sequenceEndExclusive, cols, rows, buffer)))
         {
             _droppedSessions.Enqueue(sessionId);
             Log.Verbose(() => $"[MuxClient] {Id}: Input queue full, dropped frame for {sessionId}");
@@ -333,6 +340,7 @@ public sealed class MuxClient : IAsyncDisposable
             buffer.Write(item.Buffer.Span);
             buffer.LastCols = item.Cols;
             buffer.LastRows = item.Rows;
+            buffer.LastSequenceEndExclusive = item.SequenceEndExclusive;
         }
         finally
         {
@@ -384,7 +392,7 @@ public sealed class MuxClient : IAsyncDisposable
         // If data was dropped, notify client before sending (so client can request resync)
         if (buffer.DroppedBytes > 0)
         {
-            var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes);
+            var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes, TerminalReplayReason.MuxOverflow);
             await SendFrameAsync(lossFrame).ConfigureAwait(false);
             Log.Warn(() => $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes (buffer overflow)");
             buffer.DroppedBytes = 0;
@@ -402,9 +410,9 @@ public sealed class MuxClient : IAsyncDisposable
         var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
         try
         {
-            var frameLength = useCompression
-                ? MuxProtocol.WriteCompressedOutputFrameInto(sessionId, buffer.LastCols, buffer.LastRows, data, frameBuffer)
-                : MuxProtocol.WriteOutputFrameInto(sessionId, buffer.LastCols, buffer.LastRows, data, frameBuffer);
+        var frameLength = useCompression
+                ? MuxProtocol.WriteCompressedOutputFrameInto(sessionId, buffer.LastSequenceEndExclusive, buffer.LastCols, buffer.LastRows, data, frameBuffer)
+                : MuxProtocol.WriteOutputFrameInto(sessionId, buffer.LastSequenceEndExclusive, buffer.LastCols, buffer.LastRows, data, frameBuffer);
 
             // Send first, reset after - prevents data loss on send failure
             await SendFrameAsync(frameBuffer, frameLength).ConfigureAwait(false);

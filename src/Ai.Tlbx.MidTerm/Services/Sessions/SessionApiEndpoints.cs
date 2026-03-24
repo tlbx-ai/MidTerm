@@ -122,6 +122,17 @@ public static partial class SessionApiEndpoints
                 sessionManager.SetAgentControlled(sessionId, true);
             }
 
+            var requestedProfile = aiCliProfileService.NormalizeProfile(request.Profile);
+            if (requestedProfile != AiCliProfileService.UnknownProfile)
+            {
+                sessionManager.SetProfileHint(sessionId, requestedProfile);
+            }
+
+            if (request.LensOnly)
+            {
+                sessionManager.SetLensOnly(sessionId, true);
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Name))
             {
                 await sessionManager.SetSessionNameAsync(sessionId, request.Name, isManual: true, ct);
@@ -129,9 +140,11 @@ public static partial class SessionApiEndpoints
 
             var workerSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, workerSession);
-            var launchCommand = string.IsNullOrWhiteSpace(request.LaunchCommand)
-                ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
-                : request.LaunchCommand.Trim();
+            var launchCommand = request.LensOnly
+                ? null
+                : string.IsNullOrWhiteSpace(request.LaunchCommand)
+                    ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
+                    : request.LaunchCommand.Trim();
 
             var guidanceInjected = false;
             string? midtermDir = null;
@@ -153,7 +166,9 @@ public static partial class SessionApiEndpoints
                 }
             }
 
-            var slashCommands = aiCliProfileService.NormalizeSlashCommands(resolvedProfile, request.SlashCommands);
+            var slashCommands = request.LensOnly
+                ? []
+                : aiCliProfileService.NormalizeSlashCommands(resolvedProfile, request.SlashCommands);
             workerSessionRegistry.Register(
                 sessionId,
                 resolvedProfile,
@@ -242,22 +257,24 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
+            await sessionManager.GetSessionFreshAsync(id).ConfigureAwait(false);
+
             var response = new SessionStateResponse
             {
                 Session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id),
-                Previews = webPreviewService.ListPreviewSessions(id).Previews
-                    .ToArray()
+                Previews = webPreviewService.ListPreviewSessions(id).Previews.ToArray(),
+                TerminalTransport = BuildTerminalTransportDiagnostics(sessionManager, id)
             };
 
             if (includeBuffer)
             {
-                var buffer = await sessionManager.GetBufferAsync(id);
-                if (buffer is not null)
+                var snapshot = await sessionManager.GetBufferAsync(id);
+                if (snapshot is not null)
                 {
-                    response.BufferByteLength = buffer.Length;
-                    response.BufferText = Encoding.UTF8.GetString(buffer);
+                    response.BufferByteLength = snapshot.Data.Length;
+                    response.BufferText = Encoding.UTF8.GetString(snapshot.Data);
                     response.BufferBase64 = includeBufferBase64
-                        ? Convert.ToBase64String(buffer)
+                        ? Convert.ToBase64String(snapshot.Data)
                         : null;
                 }
             }
@@ -592,8 +609,8 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            var buffer = await sessionManager.GetBufferAsync(id);
-            if (buffer is null)
+            var snapshot = await sessionManager.GetBufferAsync(id);
+            if (snapshot is null)
             {
                 return Results.NotFound();
             }
@@ -601,9 +618,9 @@ public static partial class SessionApiEndpoints
             var response = new SessionBufferTextResponse
             {
                 SessionId = id,
-                ByteLength = buffer.Length,
-                Text = Encoding.UTF8.GetString(buffer),
-                Base64 = includeBase64 ? Convert.ToBase64String(buffer) : null
+                ByteLength = snapshot.Data.Length,
+                Text = Encoding.UTF8.GetString(snapshot.Data),
+                Base64 = includeBase64 ? Convert.ToBase64String(snapshot.Data) : null
             };
 
             return Results.Json(response, AppJsonContext.Default.SessionBufferTextResponse);
@@ -616,13 +633,13 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            var buffer = await sessionManager.GetBufferAsync(id);
-            if (buffer is null)
+            var snapshot = await sessionManager.GetBufferAsync(id);
+            if (snapshot is null)
             {
                 return Results.NotFound();
             }
 
-            var text = TerminalOutputSanitizer.Decode(buffer);
+            var text = TerminalOutputSanitizer.Decode(snapshot.Data);
             if (stripAnsi)
             {
                 text = TerminalOutputSanitizer.StripEscapeSequences(text);
@@ -1142,6 +1159,11 @@ public static partial class SessionApiEndpoints
             return false;
         }
 
+        if (session.LensOnly)
+        {
+            return false;
+        }
+
         var hasRegistry = workerSessionRegistry.TryGet(sessionId, out var registration);
         var profile = aiCliProfileService.NormalizeProfile(
             request.Profile ?? (hasRegistry ? registration!.Profile : null),
@@ -1285,6 +1307,32 @@ public static partial class SessionApiEndpoints
         }
 
         return response;
+    }
+
+    private static TerminalTransportDiagnosticsDto BuildTerminalTransportDiagnostics(
+        TtyHostSessionManager sessionManager,
+        string sessionId)
+    {
+        var session = sessionManager.GetSession(sessionId);
+        var transport = session?.Transport;
+        var runtime = sessionManager.GetTransportRuntimeSnapshot(sessionId);
+
+        return new TerminalTransportDiagnosticsDto
+        {
+            SourceSeq = ((transport?.SourceSeq ?? 0UL) > 0 ? transport!.SourceSeq : runtime.SourceSeq).ToString(),
+            MuxReceivedSeq = runtime.MuxReceivedSeq.ToString(),
+            MthostIpcQueuedSeq = (transport?.IpcQueuedSeq ?? 0UL).ToString(),
+            MthostIpcFlushedSeq = (transport?.IpcFlushedSeq ?? 0UL).ToString(),
+            IpcBacklogFrames = transport?.IpcBacklogFrames ?? 0,
+            IpcBacklogBytes = transport?.IpcBacklogBytes ?? 0,
+            OldestBacklogAgeMs = transport?.OldestBacklogAgeMs ?? 0,
+            ScrollbackBytes = transport?.ScrollbackBytes ?? 0,
+            LastReplayBytes = Math.Max(transport?.LastReplayBytes ?? 0, runtime.LastReplayBytes),
+            LastReplayReason = (runtime.LastReplayReason ?? transport?.LastReplayReason)?.ToString(),
+            ReconnectCount = runtime.ReconnectCount,
+            DataLossCount = Math.Max(transport?.DataLossCount ?? 0, runtime.DataLossCount),
+            LastDataLossReason = (runtime.LastDataLossReason ?? transport?.LastDataLossReason)?.ToString()
+        };
     }
 
     private static SessionInfoDto GetSessionDto(

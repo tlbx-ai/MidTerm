@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 
@@ -17,7 +18,7 @@ public static class MuxProtocol
     private static readonly ConcurrentDictionary<ulong, string> _sessionIdCache = new();
 
     public const int HeaderSize = 9; // 1 byte type + 8 bytes sessionId
-    public const int OutputHeaderSize = 13; // HeaderSize + 4 bytes (cols + rows)
+    public const int OutputHeaderSize = 21; // HeaderSize + seq(8) + dims(4)
     public const int MaxFrameSize = 64 * 1024;
 
     // Protocol versioning
@@ -46,15 +47,16 @@ public static class MuxProtocol
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
     public const int CompressionThreshold = 8192; // Only compress payloads > 8KB (buffer replays)
-    public const int CompressedOutputHeaderSize = 17; // HeaderSize + dims(4) + uncompressedLen(4)
+    public const int CompressedOutputHeaderSize = 25; // HeaderSize + seq(8) + dims(4) + uncompressedLen(4)
 
-    public static byte[] CreateOutputFrame(string sessionId, int cols, int rows, ReadOnlySpan<byte> data)
+    public static byte[] CreateOutputFrame(string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data)
     {
         var frame = new byte[OutputHeaderSize + data.Length];
         frame[0] = TypeTerminalOutput;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
-        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(9, 2), (ushort)cols);
-        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(11, 2), (ushort)rows);
+        BinaryPrimitives.WriteUInt64LittleEndian(frame.AsSpan(9, 8), sequenceEndExclusive);
+        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(17, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(19, 2), (ushort)rows);
         data.CopyTo(frame.AsSpan(OutputHeaderSize));
         return frame;
     }
@@ -63,7 +65,7 @@ public static class MuxProtocol
     /// Creates a GZip-compressed output frame.
     /// Format: [type:1][sessionId:8][cols:2][rows:2][uncompressedLen:4][gzip-data...]
     /// </summary>
-    public static byte[] CreateCompressedOutputFrame(string sessionId, int cols, int rows, ReadOnlySpan<byte> data)
+    public static byte[] CreateCompressedOutputFrame(string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data)
     {
         using var ms = new MemoryStream();
 
@@ -74,6 +76,11 @@ public static class MuxProtocol
         Span<byte> sessionIdBytes = stackalloc byte[8];
         WriteSessionId(sessionIdBytes, sessionId);
         ms.Write(sessionIdBytes);
+
+        // Sequence end (8 bytes)
+        Span<byte> sequenceBytes = stackalloc byte[8];
+        BinaryPrimitives.WriteUInt64LittleEndian(sequenceBytes, sequenceEndExclusive);
+        ms.Write(sequenceBytes);
 
         // Cols and rows (4 bytes)
         Span<byte> dimBytes = stackalloc byte[4];
@@ -100,7 +107,7 @@ public static class MuxProtocol
     /// Callback receives the frame data; buffer is returned to pool after callback.
     /// </summary>
     public static void WriteCompressedOutputFrame(
-        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data,
         Action<ReadOnlyMemory<byte>> callback)
     {
         var maxSize = CompressedOutputHeaderSize + data.Length + 100;
@@ -109,9 +116,10 @@ public static class MuxProtocol
         {
             buffer[0] = TypeCompressedOutput;
             WriteSessionId(buffer.AsSpan(1, 8), sessionId);
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(9, 2), (ushort)cols);
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(11, 2), (ushort)rows);
-            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(13, 4), data.Length);
+            BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(9, 8), sequenceEndExclusive);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(17, 2), (ushort)cols);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(19, 2), (ushort)rows);
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(21, 4), data.Length);
 
             using var ms = new MemoryStream(buffer, CompressedOutputHeaderSize,
                 buffer.Length - CompressedOutputHeaderSize);
@@ -133,7 +141,7 @@ public static class MuxProtocol
     /// Callback receives the frame data; buffer is returned to pool after callback.
     /// </summary>
     public static void WriteOutputFrame(
-        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data,
         Action<ReadOnlyMemory<byte>> callback)
     {
         var frameSize = OutputHeaderSize + data.Length;
@@ -142,8 +150,9 @@ public static class MuxProtocol
         {
             buffer[0] = TypeTerminalOutput;
             WriteSessionId(buffer.AsSpan(1, 8), sessionId);
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(9, 2), (ushort)cols);
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(11, 2), (ushort)rows);
+            BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(9, 8), sequenceEndExclusive);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(17, 2), (ushort)cols);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(19, 2), (ushort)rows);
             data.CopyTo(buffer.AsSpan(OutputHeaderSize));
 
             callback(new ReadOnlyMemory<byte>(buffer, 0, frameSize));
@@ -160,14 +169,15 @@ public static class MuxProtocol
     /// Buffer must be at least CompressedOutputHeaderSize + data.Length + 100 bytes.
     /// </summary>
     public static int WriteCompressedOutputFrameInto(
-        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data,
         byte[] destination)
     {
         destination[0] = TypeCompressedOutput;
         WriteSessionId(destination.AsSpan(1, 8), sessionId);
-        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(9, 2), (ushort)cols);
-        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(11, 2), (ushort)rows);
-        BinaryPrimitives.WriteInt32LittleEndian(destination.AsSpan(13, 4), data.Length);
+        BinaryPrimitives.WriteUInt64LittleEndian(destination.AsSpan(9, 8), sequenceEndExclusive);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(17, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(19, 2), (ushort)rows);
+        BinaryPrimitives.WriteInt32LittleEndian(destination.AsSpan(21, 4), data.Length);
 
         using var ms = new MemoryStream(destination, CompressedOutputHeaderSize,
             destination.Length - CompressedOutputHeaderSize);
@@ -185,13 +195,14 @@ public static class MuxProtocol
     /// Buffer must be at least OutputHeaderSize + data.Length bytes.
     /// </summary>
     public static int WriteOutputFrameInto(
-        string sessionId, int cols, int rows, ReadOnlySpan<byte> data,
+        string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data,
         byte[] destination)
     {
         destination[0] = TypeTerminalOutput;
         WriteSessionId(destination.AsSpan(1, 8), sessionId);
-        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(9, 2), (ushort)cols);
-        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(11, 2), (ushort)rows);
+        BinaryPrimitives.WriteUInt64LittleEndian(destination.AsSpan(9, 8), sequenceEndExclusive);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(17, 2), (ushort)cols);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(19, 2), (ushort)rows);
         data.CopyTo(destination.AsSpan(OutputHeaderSize));
         return OutputHeaderSize + data.Length;
     }
@@ -251,14 +262,24 @@ public static class MuxProtocol
     /// Parses dimensions from an output frame payload.
     /// Output frame payload starts with [cols:2][rows:2][data].
     /// </summary>
+    public static ulong ParseOutputSequenceEnd(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < 8)
+        {
+            return 0;
+        }
+
+        return BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]);
+    }
+
     public static (int cols, int rows) ParseOutputDimensions(ReadOnlySpan<byte> payload)
     {
-        if (payload.Length < 4)
+        if (payload.Length < 12)
         {
             return (0, 0);
         }
-        var cols = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(0, 2));
-        var rows = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(2, 2));
+        var cols = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(8, 2));
+        var rows = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(10, 2));
         return (cols, rows);
     }
 
@@ -267,7 +288,7 @@ public static class MuxProtocol
     /// </summary>
     public static ReadOnlySpan<byte> GetOutputData(ReadOnlySpan<byte> payload)
     {
-        return payload.Length >= 4 ? payload.Slice(4) : payload;
+        return payload.Length >= 12 ? payload.Slice(12) : payload;
     }
 
     public static (int cols, int rows) ParseResizePayload(ReadOnlySpan<byte> payload)
@@ -307,13 +328,25 @@ public static class MuxProtocol
     /// Format: [type:1][sessionId:8][droppedBytes:4]
     /// Client should request buffer refresh when receiving this.
     /// </summary>
-    public static byte[] CreateDataLossFrame(string sessionId, int droppedBytes)
+    public static byte[] CreateDataLossFrame(string sessionId, int droppedBytes, TerminalReplayReason reason)
     {
-        var frame = new byte[HeaderSize + 4];
+        var frame = new byte[HeaderSize + 5];
         frame[0] = TypeDataLoss;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
-        BinaryPrimitives.WriteInt32LittleEndian(frame.AsSpan(HeaderSize, 4), droppedBytes);
+        frame[HeaderSize] = (byte)reason;
+        BinaryPrimitives.WriteInt32LittleEndian(frame.AsSpan(HeaderSize + 1, 4), droppedBytes);
         return frame;
+    }
+
+    public static (TerminalReplayReason reason, int droppedBytes) ParseDataLossPayload(ReadOnlySpan<byte> payload)
+    {
+        var reason = payload.Length > 0
+            ? (TerminalReplayReason)payload[0]
+            : TerminalReplayReason.Manual;
+        var droppedBytes = payload.Length >= 5
+            ? BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(1, 4))
+            : 0;
+        return (reason, droppedBytes);
     }
 
     public static byte[] CreateSyncCompleteFrame()

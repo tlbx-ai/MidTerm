@@ -73,7 +73,7 @@ import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
 import { toggleSettings, closeSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
-import { fetchBootstrap } from './modules/bootstrap';
+import { fetchBootstrap, getBootstrapData } from './modules/bootstrap';
 import {
   applyUpdate,
   checkForUpdates,
@@ -93,6 +93,11 @@ import {
   refreshHistory,
   type LaunchEntry,
 } from './modules/history';
+import {
+  isLensHistoryEntry,
+  normalizeHistoryLensProfile,
+  resolveSessionHistoryMode,
+} from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
 import { buildProcessCwdTuple, buildReplayCommand } from './modules/sidebar/processDisplay';
@@ -131,6 +136,7 @@ import {
   getLensDebugScenarioNames,
   showLensDebugScenario,
 } from './modules/agentView';
+import { openSessionLauncher, type SessionLauncherSelection } from './modules/sessionLauncher';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
@@ -189,12 +195,14 @@ import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
 import {
   createSession as apiCreateSession,
+  bootstrapWorker,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
   patchHistoryEntry,
   setSessionBookmark,
   setSessionControl as apiSetSessionControl,
 } from './api/client';
+import type { ShellType } from './api/types';
 
 // Create logger for main module
 const log = createLogger('main');
@@ -514,16 +522,14 @@ function setupVisibilityChangeHandler(): void {
 // Session Management
 // =============================================================================
 
-async function createSession(): Promise<void> {
+async function resolveNewSessionDimensions(): Promise<{ cols: number; rows: number }> {
   const settings = $currentSettings.get();
   let cols = settings?.defaultCols ?? 120;
   let rows = settings?.defaultRows ?? 30;
 
-  // Generate tempId early so we can use it for logging
-  const tempId = 'pending-' + crypto.randomUUID();
-
   if (dom.terminalsArea) {
     const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
+    const logId = 'launcher-' + crypto.randomUUID().slice(0, 8);
     const dims = await calculateOptimalDimensions(
       dom.terminalsArea,
       fontSize,
@@ -532,7 +538,7 @@ async function createSession(): Promise<void> {
       settings?.letterSpacing ?? 0,
       settings?.fontWeight ?? 'normal',
       settings?.fontWeightBold ?? 'bold',
-      tempId,
+      logId,
     );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
@@ -540,7 +546,11 @@ async function createSession(): Promise<void> {
     }
   }
 
-  // Optimistic UI: add temporary session with spinner
+  return { cols, rows };
+}
+
+function createPendingSession(cols: number, rows: number): string {
+  const tempId = 'pending-' + crypto.randomUUID();
   const tempSession: Session = {
     id: tempId,
     pid: 0,
@@ -556,8 +566,8 @@ async function createSession(): Promise<void> {
     foregroundDisplayName: null,
     foregroundProcessIdentity: null,
     shellType: 'Loading...',
-    cols: cols,
-    rows: rows,
+    cols,
+    rows,
     manuallyNamed: false,
     supervisor: {
       state: 'unknown',
@@ -574,36 +584,125 @@ async function createSession(): Promise<void> {
     parentSessionId: null,
     bookmarkId: null,
     agentControlled: false,
+    lensOnly: false,
+    profileHint: null,
     hasLensHistory: false,
     agentAttachPoint: null,
   };
+
   setSession(tempSession);
   pendingSessions.add(tempId);
-  // Subscription handles renderSessionList via store change
+  return tempId;
+}
+
+function clearPendingSession(tempId: string): void {
+  pendingSessions.delete(tempId);
+  removeSession(tempId);
+}
+
+function resolveLauncherShell(): ShellType | null {
+  const settings = $currentSettings.get();
+  if (settings?.defaultShell) {
+    return settings.defaultShell;
+  }
+
+  const platform = getBootstrapData()?.platform.toLowerCase();
+  if (platform === 'windows') {
+    return 'Pwsh';
+  }
+
+  if (platform === 'macos') {
+    return 'Zsh';
+  }
+
+  return 'Bash';
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isLensOnlySession(session: Session | null | undefined): boolean {
+  return session?.lensOnly === true;
+}
+
+async function createSession(): Promise<void> {
+  let selection: SessionLauncherSelection | null;
+  try {
+    selection = await openSessionLauncher();
+  } catch (error) {
+    void showAlert(getErrorMessage(error), {
+      title: t('sessionLauncher.loadFailed'),
+    });
+    return;
+  }
+
+  if (!selection) {
+    return;
+  }
+
+  const { cols, rows } = await resolveNewSessionDimensions();
+  const tempId = createPendingSession(cols, rows);
+  const shell = resolveLauncherShell();
   closeSidebar();
 
-  apiCreateSession({
+  if (selection.provider === 'terminal') {
+    apiCreateSession({
+      cols,
+      rows,
+      shell,
+      workingDirectory: selection.workingDirectory,
+    })
+      .then(({ data }) => {
+        clearPendingSession(tempId);
+        if (!data) {
+          return;
+        }
+
+        setSession(data);
+        newlyCreatedSessions.add(data.id);
+        selectSession(data.id);
+      })
+      .catch((e: unknown) => {
+        clearPendingSession(tempId);
+        log.error(() => `Failed to create session: ${String(e)}`);
+        void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+      });
+    return;
+  }
+
+  bootstrapWorker({
     cols,
     rows,
-    shell: settings?.defaultShell ?? null,
-    workingDirectory: settings?.defaultWorkingDirectory || null,
+    shell,
+    workingDirectory: selection.workingDirectory,
+    agentControlled: false,
+    injectGuidance: true,
+    profile: selection.provider,
+    lensOnly: true,
+    launchDelayMs: 0,
+    slashCommands: [],
+    slashCommandDelayMs: 350,
   })
     .then(({ data }) => {
-      // Remove temporary session
-      pendingSessions.delete(tempId);
-      removeSession(tempId);
+      clearPendingSession(tempId);
+      const session = data?.session;
+      if (!session) {
+        return;
+      }
 
-      if (!data) return;
-      setSession(data);
-      newlyCreatedSessions.add(data.id);
-      selectSession(data.id);
+      setSession(session);
+      newlyCreatedSessions.add(session.id);
+      setSessionLensAvailability(session.id, true);
+      selectSession(session.id);
+      requestAnimationFrame(() => {
+        switchTab(session.id, 'agent');
+      });
     })
     .catch((e: unknown) => {
-      // Remove temporary session on error
-      pendingSessions.delete(tempId);
-      removeSession(tempId);
-      // Subscription handles renderSessionList and updateEmptyState via store change
-      log.error(() => `Failed to create session: ${String(e)}`);
+      clearPendingSession(tempId);
+      log.error(() => `Failed to create worker session: ${String(e)}`);
+      void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
     });
 }
 
@@ -673,7 +772,9 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     focusLayoutSession(sessionId);
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
-    createTerminalForSession(sessionId, sessionInfo);
+    if (!isLensOnlySession(sessionInfo)) {
+      createTerminalForSession(sessionId, sessionInfo);
+    }
     // Re-show layout (may have been hidden for standalone viewing)
     getLayoutRoot()?.classList.remove('hidden');
     sessionTerminals.forEach((s, id) => {
@@ -695,13 +796,16 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   sendActiveSessionHint(sessionId);
 
   const sessionInfo = getSession(sessionId);
-  const state = createTerminalForSession(sessionId, sessionInfo);
+  const lensOnly = isLensOnlySession(sessionInfo);
+  const state = lensOnly ? null : createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
   const activeTab = getActiveTab(sessionId);
 
   // Ensure session wrapper with tabs (standalone mode only)
   const tabState = ensureSessionWrapper(sessionId);
-  reparentTerminalContainer(sessionId, state.container);
+  if (state) {
+    reparentTerminalContainer(sessionId, state.container);
+  }
   if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
     dom.terminalsArea.appendChild(tabState.wrapper);
   }
@@ -710,18 +814,26 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     (w as HTMLElement).classList.toggle('hidden', w.getAttribute('data-session-id') !== sessionId);
   });
 
-  state.container.classList.remove('hidden');
+  if (state) {
+    state.container.classList.remove('hidden');
+  }
   if (isLayoutActive()) {
     getLayoutRoot()?.classList.add('hidden');
   }
 
+  if (lensOnly && activeTab === 'terminal') {
+    switchTab(sessionId, 'agent');
+  }
+
   requestAnimationFrame(() => {
-    refreshTerminalPresentation(sessionId, state);
-    if (activeTab !== 'agent') {
-      state.terminal.focus();
-    }
-    if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
-      scrollToBottom(sessionId);
+    if (state) {
+      refreshTerminalPresentation(sessionId, state);
+      if (activeTab !== 'agent') {
+        state.terminal.focus();
+      }
+      if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
+        scrollToBottom(sessionId);
+      }
     }
 
     if (isNewlyCreated) {
@@ -906,6 +1018,11 @@ async function patchPinnedHistoryLabelIfMatchingTuple(
   const bookmarkId = currentSession?.bookmarkId;
   if (!bookmarkId) return;
 
+  if (currentSession.lensOnly) {
+    patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
+    return;
+  }
+
   const fgInfo = getForegroundInfo(sessionId);
   const currentTuple = buildProcessCwdTuple(
     fgInfo.name,
@@ -1017,30 +1134,56 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
     return;
   }
 
+  const historyMode = resolveSessionHistoryMode(session);
   const fgInfo = getForegroundInfo(sessionId);
-  const tupleKey = buildProcessCwdTuple(
-    fgInfo.name,
-    fgInfo.commandLine,
-    fgInfo.cwd,
-    fgInfo.processIdentity,
-  );
-  if (!fgInfo.name || !tupleKey) {
-    log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
-    return;
-  }
-
   const trimmedName = (session.name || '').trim();
   const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
   const previousBookmarkId = session.bookmarkId ?? null;
+  let executable: string;
+  let commandLine: string | null;
+  let workingDirectory: string;
+  let dedupeKey: string | null;
+
+  if (historyMode.launchMode === 'lens' && historyMode.profile) {
+    workingDirectory = fgInfo.cwd ?? session.currentDirectory ?? '';
+    if (!workingDirectory) {
+      log.info(
+        () => `pinSessionToHistory: missing working directory for lens session ${sessionId}`,
+      );
+      return;
+    }
+
+    executable = historyMode.profile;
+    commandLine = null;
+    dedupeKey = buildLensHistoryDedupeKey(historyMode.profile, workingDirectory);
+  } else {
+    const tupleKey = buildProcessCwdTuple(
+      fgInfo.name,
+      fgInfo.commandLine,
+      fgInfo.cwd,
+      fgInfo.processIdentity,
+    );
+    if (!fgInfo.name || !tupleKey) {
+      log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
+      return;
+    }
+
+    executable = fgInfo.name;
+    commandLine = fgInfo.commandLine;
+    workingDirectory = fgInfo.cwd ?? '';
+    dedupeKey = tupleKey;
+  }
 
   const id = await createHistoryEntry({
     shellType: session.shellType,
-    executable: fgInfo.name,
-    commandLine: fgInfo.commandLine,
-    workingDirectory: fgInfo.cwd ?? '',
+    executable,
+    commandLine,
+    workingDirectory,
     isStarred: true,
     label,
-    dedupeKey: tupleKey,
+    dedupeKey,
+    launchMode: historyMode.launchMode,
+    profile: historyMode.profile,
   });
 
   if (id) {
@@ -1089,6 +1232,62 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
   closeSidebar();
 
+  const attachBookmarkToSession = (sessionId: string): void => {
+    const applyBookmark = (): void => {
+      const session = getSession(sessionId);
+      if (!session) {
+        setTimeout(applyBookmark, 100);
+        return;
+      }
+      setSession({ ...session, bookmarkId: entry.id });
+      if (entry.id) {
+        setSessionBookmark(sessionId, entry.id).catch(() => {});
+      }
+      if (entry.label) {
+        renameSession(sessionId, entry.label);
+      }
+    };
+    applyBookmark();
+  };
+
+  if (isLensHistoryEntry(entry)) {
+    const profile = normalizeHistoryLensProfile(entry.profile);
+    if (profile) {
+      bootstrapWorker({
+        cols,
+        rows,
+        shell: resolveLauncherShell(),
+        workingDirectory: entry.workingDirectory || null,
+        agentControlled: false,
+        injectGuidance: true,
+        profile,
+        lensOnly: true,
+        launchDelayMs: 0,
+        slashCommands: [],
+        slashCommandDelayMs: 350,
+      })
+        .then(({ data }) => {
+          const session = data?.session;
+          if (!session) {
+            return;
+          }
+
+          setSession(session);
+          newlyCreatedSessions.add(session.id);
+          setSessionLensAvailability(session.id, true);
+          selectSession(session.id);
+          requestAnimationFrame(() => {
+            switchTab(session.id, 'agent');
+          });
+          attachBookmarkToSession(session.id);
+        })
+        .catch((e: unknown) => {
+          log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
+        });
+      return;
+    }
+  }
+
   apiCreateSession({
     cols,
     rows,
@@ -1100,23 +1299,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
-
-      // Link session to bookmark and apply label (deferred until session is in store)
-      const applyBookmark = (): void => {
-        const session = getSession(data.id);
-        if (!session) {
-          setTimeout(applyBookmark, 100);
-          return;
-        }
-        setSession({ ...session, bookmarkId: entry.id });
-        if (entry.id) {
-          setSessionBookmark(data.id, entry.id).catch(() => {});
-        }
-        if (entry.label) {
-          renameSession(data.id, entry.label);
-        }
-      };
-      applyBookmark();
+      attachBookmarkToSession(data.id);
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
@@ -1128,6 +1311,15 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
     .catch((e: unknown) => {
       log.error(() => `Failed to spawn from history: ${String(e)}`);
     });
+}
+
+function buildLensHistoryDedupeKey(profile: 'codex' | 'claude', workingDirectory: string): string {
+  const normalizedPath = workingDirectory
+    .replace(/\\/g, '/')
+    .trim()
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  return `lens|${profile}|${normalizedPath}`;
 }
 
 // =============================================================================
@@ -1341,10 +1533,16 @@ function syncMobileTabActionState(): void {
   strip?.toggleAttribute('hidden', !activeSessionId);
   title?.toggleAttribute('hidden', Boolean(activeSessionId));
   topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));
-  syncButton('btn-mobile-tab-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-tab-terminal', {
+    active: activeTab === 'terminal',
+    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
+  });
   syncButton('btn-mobile-tab-agent', { active: activeTab === 'agent', hidden: !agentVisible });
   syncButton('btn-mobile-tab-files', { active: activeTab === 'files' });
-  syncButton('btn-mobile-strip-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-strip-terminal', {
+    active: activeTab === 'terminal',
+    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
+  });
   syncButton('btn-mobile-strip-agent', { active: activeTab === 'agent', hidden: !agentVisible });
   syncButton('btn-mobile-strip-files', { active: activeTab === 'files' });
 }

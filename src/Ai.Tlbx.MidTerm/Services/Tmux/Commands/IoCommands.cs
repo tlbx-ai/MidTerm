@@ -215,13 +215,13 @@ public sealed partial class IoCommands
             return TmuxResult.Fail("can't find pane\n");
         }
 
-        var buffer = await _sessionManager.GetBufferAsync(sessionId, ct).ConfigureAwait(false);
-        if (buffer is null)
+        var snapshot = await _sessionManager.GetBufferAsync(sessionId, ct: ct).ConfigureAwait(false);
+        if (snapshot is null)
         {
             return TmuxResult.Fail("can't get buffer\n");
         }
 
-        var text = Encoding.UTF8.GetString(buffer);
+        var text = Encoding.UTF8.GetString(snapshot.Data);
 
         var startStr = cmd.GetFlag("-S");
         var endStr = cmd.GetFlag("-E");

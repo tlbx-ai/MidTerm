@@ -46,7 +46,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         return (_mode, profile) switch
         {
             (SyntheticMode, AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile) => true,
-            (CodexMode, AiCliProfileService.CodexProfile) => true,
+            (CodexMode, AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile) => true,
             _ => false
         };
     }
@@ -114,7 +114,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 EnableRaisingEvents = true
             };
             PrependPath(process.StartInfo, Path.GetDirectoryName(executablePath));
-            LensHostEnvironmentResolver.ApplyUserProfileEnvironment(process.StartInfo, _settingsService.Load());
+            var settings = _settingsService.Load();
+            LensHostEnvironmentResolver.ApplyUserProfileEnvironment(process.StartInfo, settings);
+            ApplyProviderSettings(process.StartInfo, settings);
             process.StartInfo.Environment["MIDTERM_INSTANCE_ID"] = _instanceIdentity.InstanceId;
             process.StartInfo.Environment["MIDTERM_OWNER_TOKEN"] = _instanceIdentity.OwnerToken;
 
@@ -130,7 +132,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             state.Output = process.StandardOutput;
             state.Error = process.StandardError;
             state.TransportKey = attachPoint is null ? "mtagenthost-stdio" : attachPoint.TransportKind;
-            state.TransportLabel = DescribeTransportLabel(_mode, attachPoint);
+            state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
             state.Status = HostRuntimeStatus.Starting;
 
             var helloLine = await ReadLineWithTimeoutAsync(process.StandardOutput, ct).ConfigureAwait(false);
@@ -644,7 +646,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         };
     }
 
-    private static string DescribeTransportLabel(string mode, SessionAgentAttachPoint? attachPoint)
+    private static string DescribeTransportLabel(string mode, string profile, SessionAgentAttachPoint? attachPoint)
     {
         if (attachPoint is not null)
         {
@@ -658,9 +660,17 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         return mode switch
         {
             SyntheticMode => "mtagenthost synthetic stdio",
-            CodexMode => "mtagenthost codex stdio",
+            CodexMode => $"mtagenthost {profile} stdio",
             _ => "mtagenthost stdio"
         };
+    }
+
+    private static void ApplyProviderSettings(ProcessStartInfo startInfo, MidTermSettings settings)
+    {
+        startInfo.Environment["MIDTERM_LENS_CODEX_ENVIRONMENT_VARIABLES"] = settings.CodexEnvironmentVariables ?? string.Empty;
+        startInfo.Environment["MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
+        startInfo.Environment["MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =
+            settings.ClaudeDangerouslySkipPermissionsDefault ? "true" : "false";
     }
 
     private static bool TryResolveLaunch(string profile, string mode, out HostLaunch launch)

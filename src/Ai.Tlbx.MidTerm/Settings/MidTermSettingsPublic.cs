@@ -10,6 +10,10 @@ public sealed partial class MidTermSettingsPublic
     public int DefaultCols { get; set; } = 120;
     public int DefaultRows { get; set; } = 30;
     public string DefaultWorkingDirectory { get; set; } = "";
+    public bool CodexYoloDefault { get; set; } = false;
+    public string CodexEnvironmentVariables { get; set; } = "";
+    public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
+    public string ClaudeEnvironmentVariables { get; set; } = "";
 
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
@@ -23,7 +27,8 @@ public sealed partial class MidTermSettingsPublic
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
     public bool HideCursorOnInputBursts { get; set; } = false;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
-    public TerminalColorSchemeSetting TerminalColorScheme { get; set; } = TerminalColorSchemeSetting.Auto;
+    public string TerminalColorScheme { get; set; } = "auto";
+    public List<TerminalColorSchemeDefinition> TerminalColorSchemes { get; set; } = [];
     public bool BackgroundImageEnabled { get; set; } = false;
     public string? BackgroundImageFileName { get; set; }
     public long BackgroundImageRevision { get; set; } = 0;

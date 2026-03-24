@@ -11,7 +11,6 @@ const terminalContainer = {
 } as HTMLDivElement;
 
 const visibleTabs = new Map<string, Set<string>>();
-let devModeEnabled = true;
 
 function createMockElement(): HTMLDivElement {
   return {
@@ -103,14 +102,8 @@ vi.mock('../terminal/scaling', () => ({
   refreshTerminalPresentation: refreshTerminalPresentationSpy,
 }));
 
-vi.mock('../sidebar/voiceSection', () => ({
-  isDevMode: () => devModeEnabled,
-  onDevModeChanged: vi.fn(),
-}));
-
 describe('tabManager', () => {
   beforeEach(() => {
-    devModeEnabled = true;
     focusSpy.mockReset();
     refreshTerminalPresentationSpy.mockReset();
     terminalContainer.children.length = 0;
@@ -191,6 +184,24 @@ describe('tabManager', () => {
     expect(getActiveTab('s1')).toBe('agent');
   });
 
+  it('hides the terminal tab and pivots lens-only sessions into the agent view', async () => {
+    const { ensureSessionWrapper, syncSessionTabCapabilities, getActiveTab, isTabAvailable } =
+      await import('./tabManager');
+
+    ensureSessionWrapper('s1');
+
+    syncSessionTabCapabilities('s1', {
+      id: 's1',
+      agentControlled: true,
+      lensOnly: true,
+      supervisor: { profile: 'codex' },
+    } as any);
+
+    expect(isTabAvailable('s1', 'terminal')).toBe(false);
+    expect(isTabAvailable('s1', 'agent')).toBe(true);
+    expect(getActiveTab('s1')).toBe('agent');
+  });
+
   it('lets Lens force the agent tab visible before session metadata catches up', async () => {
     const {
       ensureSessionWrapper,
@@ -237,14 +248,13 @@ describe('tabManager', () => {
     expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
 
-  it('hides Lens when dev mode is disabled', async () => {
+  it('keeps Lens available for agent sessions without any dev-mode gate', async () => {
     const { ensureSessionWrapper, isTabAvailable, switchTab, getActiveTab } = await import('./tabManager');
 
-    devModeEnabled = false;
     ensureSessionWrapper('s1');
 
-    expect(isTabAvailable('s1', 'agent')).toBe(false);
+    expect(isTabAvailable('s1', 'agent')).toBe(true);
     switchTab('s1', 'agent');
-    expect(getActiveTab('s1')).toBe('terminal');
+    expect(getActiveTab('s1')).toBe('agent');
   });
 });

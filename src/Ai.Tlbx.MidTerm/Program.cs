@@ -259,7 +259,7 @@ public class Program
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
-        sessionManager.OnOutput += (sessionId, _, _, data) =>
+        sessionManager.OnOutput += (sessionId, _, _, _, data) =>
         {
             sessionTelemetry.RecordOutput(sessionId, data.Span);
         };
@@ -368,7 +368,7 @@ public class Program
         }
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
-        FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService);
+        FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         HubEndpoints.MapHubEndpoints(app, app.Services.GetRequiredService<HubService>());

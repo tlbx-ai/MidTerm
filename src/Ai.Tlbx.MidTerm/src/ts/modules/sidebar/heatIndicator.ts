@@ -17,10 +17,11 @@ const CANVAS_CSS_W = 4;
 const CANVAS_CSS_H = 36;
 const RISE_TIME_CONSTANT_MS = 90;
 const BACKGROUND_SYNC_THRESHOLD_MS = 250;
+const FALL_SLOWDOWN_FACTOR = 1.4;
 // Decay targets:
-// - 1.0 -> ~0.25 in 30s so idle sessions still keep a visible hierarchy
-// - effectively gone after roughly 2 minutes
-const FALL_TIME_CONSTANT_MS = 30_000 / Math.log(4);
+// - 1.0 -> ~0.25 in 42s so idle sessions still keep a visible hierarchy
+// - effectively gone after roughly 3 minutes
+const FALL_TIME_CONSTANT_MS = (30_000 * FALL_SLOWDOWN_FACTOR) / Math.log(4);
 const ANIMATION_SNAP_THRESHOLD = 0.002;
 
 // Color stops: [heat_value, r, g, b]
@@ -45,6 +46,7 @@ interface SessionHeat {
   displayHeat: number;
   lastDrawnHeat: number;
   lastActivityAtMs: number | null;
+  lastServerActivityAtMs: number | null;
   lastDisplayUpdateAtMs: number;
 }
 
@@ -218,6 +220,7 @@ function getOrCreateSessionHeat(sessionId: string): SessionHeat {
       displayHeat: 0,
       lastDrawnHeat: 0,
       lastActivityAtMs: null,
+      lastServerActivityAtMs: null,
       lastDisplayUpdateAtMs: getNowMs(),
     };
     sessions.set(sessionId, state);
@@ -259,20 +262,41 @@ function applyHeat(
   const nextHeat = clampHeat(heat);
   const nowMs = getNowMs();
   const parsedActivityAtMs = parseActivityTimestampMs(lastActivityAt);
-  const nextActivityAtMs = parsedActivityAtMs ?? (nextHeat > 0 ? nowMs : state.lastActivityAtMs);
-  const nextActivityHeat = nextHeat > 0 ? nextHeat : state.activityHeat;
+  const candidateActivityAtMs =
+    parsedActivityAtMs === null ? null : Math.min(parsedActivityAtMs, nowMs);
+  let effectiveHeat = nextHeat;
+  let nextActivityAtMs = state.lastActivityAtMs;
+  let nextActivityHeat = state.activityHeat;
+  let nextServerActivityAtMs = state.lastServerActivityAtMs;
+
+  if (nextHeat > 0) {
+    const resolvedActivityAtMs = candidateActivityAtMs ?? nowMs;
+    const isFreshActivity =
+      nextServerActivityAtMs === null || resolvedActivityAtMs >= nextServerActivityAtMs;
+
+    if (isFreshActivity) {
+      nextActivityAtMs = resolvedActivityAtMs;
+      nextActivityHeat = nextHeat;
+      nextServerActivityAtMs = resolvedActivityAtMs;
+    } else {
+      // Ignore stale/cached hot snapshots so reloads and resumes cannot re-arm heat.
+      effectiveHeat = 0;
+    }
+  }
 
   if (
-    Math.abs(state.heat - nextHeat) < 0.0001 &&
+    Math.abs(state.heat - effectiveHeat) < 0.0001 &&
     state.lastActivityAtMs === nextActivityAtMs &&
+    state.lastServerActivityAtMs === nextServerActivityAtMs &&
     Math.abs(state.activityHeat - nextActivityHeat) < 0.0001
   ) {
     return;
   }
 
-  state.heat = nextHeat;
+  state.heat = effectiveHeat;
   state.activityHeat = nextActivityHeat;
   state.lastActivityAtMs = nextActivityAtMs;
+  state.lastServerActivityAtMs = nextServerActivityAtMs;
 
   syncDisplayHeat(state, nowMs, document.hidden || !state.ctx);
 
@@ -388,6 +412,23 @@ export function suppressAllHeat(_durationMs: number): void {
   // No-op: server-side heat is not driven by browser-side replay or refresh traffic.
 }
 
+function resumeHeatRendering(): void {
+  if (document.hidden) {
+    return;
+  }
+
+  const nowMs = getNowMs();
+  sessions.forEach((state) => {
+    syncDisplayHeat(state, nowMs, true);
+  });
+
+  void refreshHeatFromServer();
+  sessions.forEach((state) => {
+    drawCanvas(state);
+  });
+  scheduleAnimation();
+}
+
 export function initHeatIndicator(): void {
   if (pollTimerId !== null) {
     return;
@@ -412,11 +453,14 @@ export function initHeatIndicator(): void {
       return;
     }
 
-    void refreshHeatFromServer();
-    sessions.forEach((state) => {
-      drawCanvas(state);
-    });
-    scheduleAnimation();
+    resumeHeatRendering();
+  });
+
+  window.addEventListener('focus', () => {
+    resumeHeatRendering();
+  });
+  window.addEventListener('pageshow', () => {
+    resumeHeatRendering();
   });
 }
 

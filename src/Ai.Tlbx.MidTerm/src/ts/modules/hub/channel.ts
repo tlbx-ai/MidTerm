@@ -59,12 +59,26 @@ async function handleOutputFrame(data: Uint8Array): Promise<void> {
   const payload = data.subarray(MUX_HEADER_SIZE);
   if (type === MUX_TYPE_COMPRESSED_OUTPUT) {
     const frame = await parseCompressedOutputFrame(payload);
-    applyOutputFrameToTerminal(activeCompositeId, state, frame.cols, frame.rows, frame.data);
+    applyOutputFrameToTerminal(
+      activeCompositeId,
+      state,
+      frame.sequenceEnd,
+      frame.cols,
+      frame.rows,
+      frame.data,
+    );
     return;
   }
 
   const frame = parseOutputFrame(payload);
-  applyOutputFrameToTerminal(activeCompositeId, state, frame.cols, frame.rows, frame.data);
+  applyOutputFrameToTerminal(
+    activeCompositeId,
+    state,
+    frame.sequenceEnd,
+    frame.cols,
+    frame.rows,
+    frame.data,
+  );
 }
 
 export function detachHubChannel(sessionId?: string): void {

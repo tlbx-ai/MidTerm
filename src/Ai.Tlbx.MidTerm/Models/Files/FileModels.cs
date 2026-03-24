@@ -102,3 +102,22 @@ public sealed class FileSaveResponse
     public bool Success { get; set; }
     public long Size { get; set; }
 }
+
+public sealed class LauncherPathResponse
+{
+    public string Path { get; set; } = string.Empty;
+}
+
+public sealed class LauncherDirectoryEntry
+{
+    public string Name { get; set; } = string.Empty;
+    public string FullPath { get; set; } = string.Empty;
+    public bool IsRoot { get; set; }
+}
+
+public sealed class LauncherDirectoryListResponse
+{
+    public string Path { get; set; } = string.Empty;
+    public string? ParentPath { get; set; }
+    public LauncherDirectoryEntry[] Entries { get; set; } = [];
+}

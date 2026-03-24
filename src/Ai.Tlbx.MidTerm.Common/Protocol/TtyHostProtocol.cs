@@ -90,17 +90,18 @@ public static class TtyHostProtocol
     /// Creates an output message using a pooled buffer. Zero allocations.
     /// Callback receives the frame; buffer is returned to pool after callback.
     /// </summary>
-    public static void WriteOutputMessage(int cols, int rows, ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> callback)
+    public static void WriteOutputMessage(ulong sequenceStart, int cols, int rows, ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> callback)
     {
-        var frameSize = HeaderSize + 4 + data.Length;
+        var frameSize = HeaderSize + 12 + data.Length;
         var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
         try
         {
             buffer[0] = (byte)TtyHostMessageType.Output;
-            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(1, 4), 4 + data.Length);
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(HeaderSize, 2), (ushort)cols);
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(HeaderSize + 2, 2), (ushort)rows);
-            data.CopyTo(buffer.AsSpan(HeaderSize + 4));
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(1, 4), 12 + data.Length);
+            BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(HeaderSize, 8), sequenceStart);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(HeaderSize + 8, 2), (ushort)cols);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(HeaderSize + 10, 2), (ushort)rows);
+            data.CopyTo(buffer.AsSpan(HeaderSize + 12));
             callback(buffer.AsSpan(0, frameSize));
         }
         finally
@@ -109,20 +110,30 @@ public static class TtyHostProtocol
         }
     }
 
+    public static ulong ParseOutputSequenceStart(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < 8)
+        {
+            return 0;
+        }
+
+        return BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]);
+    }
+
     public static (int cols, int rows) ParseOutputDimensions(ReadOnlySpan<byte> payload)
     {
-        if (payload.Length < 4)
+        if (payload.Length < 12)
         {
             return (0, 0);
         }
-        var cols = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(0, 2));
-        var rows = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(2, 2));
+        var cols = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(8, 2));
+        var rows = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(10, 2));
         return (cols, rows);
     }
 
     public static ReadOnlySpan<byte> GetOutputData(ReadOnlySpan<byte> payload)
     {
-        return payload.Length >= 4 ? payload.Slice(4) : payload;
+        return payload.Length >= 12 ? payload.Slice(12) : payload;
     }
 
     public static byte[] CreateResizeMessage(int cols, int rows)
@@ -145,30 +156,65 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.StateChange, json);
     }
 
-    public static byte[] CreateGetBuffer()
+    public static byte[] CreateGetBuffer(int? maxBytes = null, TerminalReplayReason reason = TerminalReplayReason.Manual)
     {
-        return CreateFrame(TtyHostMessageType.GetBuffer, []);
+        var payload = new TtyHostGetBufferRequest
+        {
+            MaxBytes = maxBytes,
+            Reason = reason
+        };
+        var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.TtyHostGetBufferRequest);
+        return CreateFrame(TtyHostMessageType.GetBuffer, json);
+    }
+
+    public static TtyHostGetBufferRequest? ParseGetBuffer(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length == 0)
+        {
+            return new TtyHostGetBufferRequest();
+        }
+
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostGetBufferRequest);
     }
 
     /// <summary>
     /// Creates a buffer response using a pooled buffer. Zero allocations.
     /// Callback receives the frame; buffer is returned to pool after callback.
     /// </summary>
-    public static void WriteBufferResponse(ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> callback)
+    public static void WriteBufferResponse(ulong sequenceStart, ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> callback)
     {
-        var frameSize = HeaderSize + data.Length;
+        var frameSize = HeaderSize + 8 + data.Length;
         var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
         try
         {
             buffer[0] = (byte)TtyHostMessageType.Buffer;
-            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(1, 4), data.Length);
-            data.CopyTo(buffer.AsSpan(HeaderSize));
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(1, 4), 8 + data.Length);
+            BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(HeaderSize, 8), sequenceStart);
+            data.CopyTo(buffer.AsSpan(HeaderSize + 8));
             callback(buffer.AsSpan(0, frameSize));
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public static TtyHostBufferSnapshot ParseBuffer(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < 8)
+        {
+            return new TtyHostBufferSnapshot
+            {
+                SequenceStart = 0,
+                Data = payload.ToArray()
+            };
+        }
+
+        return new TtyHostBufferSnapshot
+        {
+            SequenceStart = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]),
+            Data = payload[8..].ToArray()
+        };
     }
 
     public static byte[] CreateClose()
@@ -291,6 +337,17 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.Pong, payload.ToArray());
     }
 
+    public static byte[] CreateDataLoss(TtyHostDataLossPayload payload)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.TtyHostDataLossPayload);
+        return CreateFrame(TtyHostMessageType.DataLoss, json);
+    }
+
+    public static TtyHostDataLossPayload? ParseDataLoss(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostDataLossPayload);
+    }
+
     public static byte[] CreateSetOrder(byte order)
     {
         return CreateFrame(TtyHostMessageType.SetOrder, [order]);
@@ -344,7 +401,10 @@ public enum TtyHostMessageType : byte
 
     // Latency measurement
     Ping = 0x60,
-    Pong = 0x61
+    Pong = 0x61,
+
+    // Transport recovery
+    DataLoss = 0x62
 }
 
 /// <summary>
@@ -368,6 +428,7 @@ public sealed class SessionInfo
     private string? _foregroundCommandLine;
     private SessionAgentAttachPoint? _agentAttachPoint;
     private byte _order;
+    private TtyHostTransportInfo? _transport;
 
     public string Id { get; set; } = string.Empty;
     public int Pid { get; set; }
@@ -390,6 +451,7 @@ public sealed class SessionInfo
     public string? ForegroundCommandLine { get => Lock(() => _foregroundCommandLine); set => Lock(() => _foregroundCommandLine = value); }
     public SessionAgentAttachPoint? AgentAttachPoint { get => Lock(() => _agentAttachPoint); set => Lock(() => _agentAttachPoint = value); }
     public byte Order { get => Lock(() => _order); set => Lock(() => _order = value); }
+    public TtyHostTransportInfo? Transport { get => Lock(() => _transport); set => Lock(() => _transport = value); }
 
     private T Lock<T>(Func<T> func)
     {
@@ -449,6 +511,51 @@ public sealed class TtyHostAttachResponse
     public string? Message { get; set; }
 }
 
+public sealed class TtyHostGetBufferRequest
+{
+    public int? MaxBytes { get; set; }
+    public TerminalReplayReason Reason { get; set; } = TerminalReplayReason.Manual;
+}
+
+public sealed class TtyHostBufferSnapshot
+{
+    public ulong SequenceStart { get; set; }
+    public byte[] Data { get; set; } = [];
+}
+
+public sealed class TtyHostDataLossPayload
+{
+    public TerminalReplayReason Reason { get; set; } = TerminalReplayReason.Manual;
+    public int DroppedBytes { get; set; }
+}
+
+public sealed class TtyHostTransportInfo
+{
+    public ulong SourceSeq { get; set; }
+    public ulong IpcQueuedSeq { get; set; }
+    public ulong IpcFlushedSeq { get; set; }
+    public int IpcBacklogFrames { get; set; }
+    public long IpcBacklogBytes { get; set; }
+    public long OldestBacklogAgeMs { get; set; }
+    public int ScrollbackBytes { get; set; }
+    public int LastReplayBytes { get; set; }
+    public TerminalReplayReason? LastReplayReason { get; set; }
+    public int DataLossCount { get; set; }
+    public TerminalReplayReason? LastDataLossReason { get; set; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<TerminalReplayReason>))]
+public enum TerminalReplayReason
+{
+    Manual = 0,
+    MthostIpcOverflow = 1,
+    MuxOverflow = 2,
+    BrowserPendingOverflow = 3,
+    IpcTimeoutReconnect = 4,
+    BufferRefreshTailReplay = 5,
+    ReconnectTailReplay = 6
+}
+
 [JsonSerializable(typeof(SessionInfo))]
 [JsonSerializable(typeof(SessionAgentAttachPoint))]
 [JsonSerializable(typeof(StateChangePayload))]
@@ -457,6 +564,9 @@ public sealed class TtyHostAttachResponse
 [JsonSerializable(typeof(ClipboardImageResponse))]
 [JsonSerializable(typeof(TtyHostAttachRequest))]
 [JsonSerializable(typeof(TtyHostAttachResponse))]
+[JsonSerializable(typeof(TtyHostGetBufferRequest))]
+[JsonSerializable(typeof(TtyHostDataLossPayload))]
+[JsonSerializable(typeof(TtyHostTransportInfo))]
 public partial class TtyHostJsonContext : JsonSerializerContext
 {
 }

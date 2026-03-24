@@ -93,6 +93,60 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripCustomTerminalColorSchemes()
+    {
+        var settings = new MidTermSettings
+        {
+            TerminalColorScheme = "Ocean Copy",
+            TerminalColorSchemes =
+            [
+                new TerminalColorSchemeDefinition
+                {
+                    Name = "Ocean Copy",
+                    Background = "#101820",
+                    Foreground = "#F2F7FF",
+                    Cursor = "#F2F7FF",
+                    CursorAccent = "#101820",
+                    SelectionBackground = "#2A4C66",
+                    ScrollbarSliderBackground = "rgba(242, 247, 255, 0.2)",
+                    ScrollbarSliderHoverBackground = "rgba(242, 247, 255, 0.35)",
+                    ScrollbarSliderActiveBackground = "rgba(242, 247, 255, 0.5)",
+                    Black = "#18242E",
+                    Red = "#FF6B6B",
+                    Green = "#7EE787",
+                    Yellow = "#F9E27D",
+                    Blue = "#66B3FF",
+                    Magenta = "#D2A8FF",
+                    Cyan = "#7DE3FF",
+                    White = "#D8E7F5",
+                    BrightBlack = "#5A7288",
+                    BrightRed = "#FF8E8E",
+                    BrightGreen = "#9CF0A4",
+                    BrightYellow = "#FFEEA8",
+                    BrightBlue = "#90CCFF",
+                    BrightMagenta = "#E2C0FF",
+                    BrightCyan = "#A1EEFF",
+                    BrightWhite = "#F2F7FF"
+                }
+            ]
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal("Ocean Copy", publicSettings.TerminalColorScheme);
+        Assert.Single(publicSettings.TerminalColorSchemes);
+
+        settings.TerminalColorScheme = "auto";
+        settings.TerminalColorSchemes.Clear();
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("Ocean Copy", settings.TerminalColorScheme);
+        var customScheme = Assert.Single(settings.TerminalColorSchemes);
+        Assert.Equal("#66B3FF", customScheme.Blue);
+        Assert.Equal("#A1EEFF", customScheme.BrightCyan);
+    }
+
+    [Fact]
     public void ApplyTo_ClampsAndValidatesFontRenderingSettings()
     {
         var settings = new MidTermSettings
@@ -185,6 +239,7 @@ public sealed class MidTermSettingsPublicTests
             HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
             Theme = settings.Theme,
             TerminalColorScheme = settings.TerminalColorScheme,
+            TerminalColorSchemes = settings.TerminalColorSchemes,
             BackgroundImageEnabled = settings.BackgroundImageEnabled,
             BackgroundImageFit = settings.BackgroundImageFit,
             UiTransparency = settings.UiTransparency,

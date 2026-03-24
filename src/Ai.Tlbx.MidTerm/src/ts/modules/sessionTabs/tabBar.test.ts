@@ -98,6 +98,7 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 }
 
 const translations: Record<string, string> = {
+  'common.beta': 'Beta',
   'session.terminal': 'Terminal',
   'sessionTabs.agent': 'Lens',
   'sessionTabs.files': 'Files',
@@ -148,6 +149,7 @@ describe('tabBar', () => {
     }
 
     expect(tabButtons.map((button) => button.dataset.tab)).toEqual(['terminal', 'agent', 'files']);
+    expect(tabButtons[1]?.querySelector('.feature-beta-badge')?.textContent).toBe('Beta');
 
     const buttons = actions.children;
 

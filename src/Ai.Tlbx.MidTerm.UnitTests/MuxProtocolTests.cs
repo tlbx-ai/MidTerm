@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Xunit;
@@ -15,13 +16,15 @@ public class MuxProtocolTests
         var cols = 120;
         var rows = 40;
         var data = Encoding.UTF8.GetBytes("Hello, World!");
+        const ulong sequenceEnd = 4096;
 
-        var frame = MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data);
+        var frame = MuxProtocol.CreateOutputFrame(sessionId, sequenceEnd, cols, rows, data);
 
         Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var parsedSessionId, out var payload));
         Assert.Equal(MuxProtocol.TypeTerminalOutput, type);
         Assert.Equal(sessionId, parsedSessionId);
 
+        Assert.Equal(sequenceEnd, MuxProtocol.ParseOutputSequenceEnd(payload));
         var (parsedCols, parsedRows) = MuxProtocol.ParseOutputDimensions(payload);
         Assert.Equal(cols, parsedCols);
         Assert.Equal(rows, parsedRows);
@@ -37,18 +40,21 @@ public class MuxProtocolTests
         var cols = 80;
         var rows = 24;
         var originalData = Encoding.UTF8.GetBytes(new string('A', 10000));
+        const ulong sequenceEnd = 8192;
 
-        var frame = MuxProtocol.CreateCompressedOutputFrame(sessionId, cols, rows, originalData);
+        var frame = MuxProtocol.CreateCompressedOutputFrame(sessionId, sequenceEnd, cols, rows, originalData);
 
         Assert.Equal(MuxProtocol.TypeCompressedOutput, frame[0]);
         Assert.Equal(sessionId, Encoding.ASCII.GetString(frame, 1, 8));
 
-        var parsedCols = BitConverter.ToUInt16(frame, 9);
-        var parsedRows = BitConverter.ToUInt16(frame, 11);
+        var parsedSequence = BitConverter.ToUInt64(frame, 9);
+        var parsedCols = BitConverter.ToUInt16(frame, 17);
+        var parsedRows = BitConverter.ToUInt16(frame, 19);
+        Assert.Equal(sequenceEnd, parsedSequence);
         Assert.Equal(cols, parsedCols);
         Assert.Equal(rows, parsedRows);
 
-        var uncompressedLen = BitConverter.ToInt32(frame, 13);
+        var uncompressedLen = BitConverter.ToInt32(frame, 21);
         Assert.Equal(originalData.Length, uncompressedLen);
 
         using var compressedStream = new MemoryStream(frame, MuxProtocol.CompressedOutputHeaderSize, frame.Length - MuxProtocol.CompressedOutputHeaderSize);
@@ -173,7 +179,7 @@ public class MuxProtocolTests
         var shortId = "abc";
         var data = Encoding.UTF8.GetBytes("test");
 
-        var frame = MuxProtocol.CreateOutputFrame(shortId, 80, 24, data);
+        var frame = MuxProtocol.CreateOutputFrame(shortId, 1, 80, 24, data);
 
         var result = MuxProtocol.TryParseFrame(frame, out _, out var parsedId, out _);
         Assert.True(result);
@@ -187,11 +193,25 @@ public class MuxProtocolTests
         var longId = "abcdefghijklmnop";
         var data = Encoding.UTF8.GetBytes("test");
 
-        var frame = MuxProtocol.CreateOutputFrame(longId, 80, 24, data);
+        var frame = MuxProtocol.CreateOutputFrame(longId, 1, 80, 24, data);
 
         var result = MuxProtocol.TryParseFrame(frame, out _, out var parsedId, out _);
         Assert.True(result);
         Assert.Equal("abcdefgh", parsedId);
+    }
+
+    [Fact]
+    public void CreateDataLossFrame_RoundTrips_ReasonAndDroppedBytes()
+    {
+        var frame = MuxProtocol.CreateDataLossFrame("session1", 1234, TerminalReplayReason.MuxOverflow);
+
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
+        Assert.Equal(MuxProtocol.TypeDataLoss, type);
+        Assert.Equal("session1", sessionId);
+
+        var (reason, droppedBytes) = MuxProtocol.ParseDataLossPayload(payload);
+        Assert.Equal(TerminalReplayReason.MuxOverflow, reason);
+        Assert.Equal(1234, droppedBytes);
     }
 
 }

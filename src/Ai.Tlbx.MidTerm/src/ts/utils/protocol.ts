@@ -11,6 +11,7 @@ const log = createLogger('mux');
 
 /** Parsed output frame from server */
 export interface OutputFrame {
+  sequenceEnd: bigint;
   cols: number;
   rows: number;
   data: Uint8Array;
@@ -19,37 +20,41 @@ export interface OutputFrame {
 
 /**
  * Parse output frame from binary payload.
- * Frame format: [cols:2][rows:2][data]
+ * Frame format: [sequenceEnd:8][cols:2][rows:2][data]
  */
 export function parseOutputFrame(payload: Uint8Array): OutputFrame {
-  const cols = (payload[0] ?? 0) | ((payload[1] ?? 0) << 8);
-  const rows = (payload[2] ?? 0) | ((payload[3] ?? 0) << 8);
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const sequenceEnd = payload.length >= 8 ? view.getBigUint64(0, true) : 0n;
+  const cols = (payload[8] ?? 0) | ((payload[9] ?? 0) << 8);
+  const rows = (payload[10] ?? 0) | ((payload[11] ?? 0) << 8);
   // The mux layer already takes ownership of the WebSocket payload before it
   // reaches this parser, so we can return a view here instead of another copy.
-  const data = payload.subarray(4);
+  const data = payload.subarray(12);
   const valid = cols > 0 && cols <= MAX_FRAME_DIMENSION && rows > 0 && rows <= MAX_FRAME_DIMENSION;
 
-  return { cols, rows, data, valid };
+  return { sequenceEnd, cols, rows, data, valid };
 }
 
 /**
  * Parse compressed output frame and decompress.
- * Frame format: [cols:2][rows:2][uncompressedLen:4][gzip-data...]
+ * Frame format: [sequenceEnd:8][cols:2][rows:2][uncompressedLen:4][gzip-data...]
  */
 export async function parseCompressedOutputFrame(payload: Uint8Array): Promise<OutputFrame> {
-  const cols = (payload[0] ?? 0) | ((payload[1] ?? 0) << 8);
-  const rows = (payload[2] ?? 0) | ((payload[3] ?? 0) << 8);
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const sequenceEnd = payload.length >= 8 ? view.getBigUint64(0, true) : 0n;
+  const cols = (payload[8] ?? 0) | ((payload[9] ?? 0) << 8);
+  const rows = (payload[10] ?? 0) | ((payload[11] ?? 0) << 8);
   const valid = cols > 0 && cols <= MAX_FRAME_DIMENSION && rows > 0 && rows <= MAX_FRAME_DIMENSION;
 
-  // Skip uncompressedLen (bytes 4-7) - we don't need it, DecompressionStream handles sizing
-  const compressedData = payload.subarray(8);
+  // Skip uncompressedLen (bytes 12-15) - we don't need it, DecompressionStream handles sizing
+  const compressedData = payload.subarray(16);
 
   try {
     const data = await decompressGzip(compressedData);
-    return { cols, rows, data, valid };
+    return { sequenceEnd, cols, rows, data, valid };
   } catch (e) {
     log.error(() => `Decompression failed: ${String(e)}`);
-    return { cols, rows, data: new Uint8Array(0), valid: false };
+    return { sequenceEnd, cols, rows, data: new Uint8Array(0), valid: false };
   }
 }
 

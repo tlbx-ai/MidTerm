@@ -10,5 +10,6 @@ public sealed class SessionStateResponse
     public string BufferEncoding { get; set; } = "utf-8";
     public string? BufferText { get; set; }
     public string? BufferBase64 { get; set; }
+    public TerminalTransportDiagnosticsDto? TerminalTransport { get; set; }
     public SessionSupervisorInfoDto? Supervisor => Session.Supervisor;
 }

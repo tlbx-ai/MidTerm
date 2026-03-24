@@ -4122,7 +4122,8 @@
           "shellType",
           "executable",
           "workingDirectory",
-          "isStarred"
+          "isStarred",
+          "launchMode"
         ],
         "type": "object",
         "properties": {
@@ -4151,6 +4152,15 @@
             "type": "boolean"
           },
           "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "launchMode": {
+            "type": "string"
+          },
+          "profile": {
             "type": [
               "null",
               "string"
@@ -4694,7 +4704,9 @@
           "isStarred",
           "label",
           "lastUsed",
-          "order"
+          "order",
+          "launchMode",
+          "profile"
         ],
         "type": "object",
         "properties": {
@@ -4732,6 +4744,15 @@
           "order": {
             "type": "integer",
             "format": "int32"
+          },
+          "launchMode": {
+            "type": "string"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -6058,6 +6079,10 @@
           "defaultCols",
           "defaultRows",
           "defaultWorkingDirectory",
+          "codexYoloDefault",
+          "codexEnvironmentVariables",
+          "claudeDangerouslySkipPermissionsDefault",
+          "claudeEnvironmentVariables",
           "fontSize",
           "fontFamily",
           "lineHeight",
@@ -6070,6 +6095,7 @@
           "hideCursorOnInputBursts",
           "theme",
           "terminalColorScheme",
+          "terminalColorSchemes",
           "backgroundImageEnabled",
           "backgroundImageFileName",
           "backgroundImageRevision",
@@ -6129,6 +6155,18 @@
           "defaultWorkingDirectory": {
             "type": "string"
           },
+          "codexYoloDefault": {
+            "type": "boolean"
+          },
+          "codexEnvironmentVariables": {
+            "type": "string"
+          },
+          "claudeDangerouslySkipPermissionsDefault": {
+            "type": "boolean"
+          },
+          "claudeEnvironmentVariables": {
+            "type": "string"
+          },
           "fontSize": {
             "type": "integer",
             "format": "int32"
@@ -6166,7 +6204,13 @@
             "$ref": "#/components/schemas/ThemeSetting"
           },
           "terminalColorScheme": {
-            "$ref": "#/components/schemas/TerminalColorSchemeSetting"
+            "type": "string"
+          },
+          "terminalColorSchemes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TerminalColorSchemeDefinition"
+            }
           },
           "backgroundImageEnabled": {
             "type": "boolean"
@@ -6681,6 +6725,8 @@
           "parentSessionId",
           "bookmarkId",
           "agentControlled",
+          "lensOnly",
+          "profileHint",
           "hasLensHistory",
           "supervisor"
         ],
@@ -6798,6 +6844,15 @@
           },
           "agentControlled": {
             "type": "boolean"
+          },
+          "lensOnly": {
+            "type": "boolean"
+          },
+          "profileHint": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "hasLensHistory": {
             "type": "boolean"
@@ -6966,6 +7021,7 @@
           "bufferEncoding",
           "bufferText",
           "bufferBase64",
+          "terminalTransport",
           "supervisor"
         ],
         "type": "object",
@@ -6996,6 +7052,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "terminalTransport": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TerminalTransportDiagnosticsDto"
+              }
             ]
           },
           "supervisor": {
@@ -7341,23 +7407,190 @@
           "foregroundProcess"
         ]
       },
-      "TerminalColorSchemeSetting": {
-        "enum": [
-          "auto",
-          "dark",
-          "light",
-          "macTerminalDark",
-          "macTerminalLight",
-          "solarizedDark",
-          "solarizedLight",
-          "matrix"
-        ]
+      "TerminalColorSchemeDefinition": {
+        "required": [
+          "name",
+          "background",
+          "foreground",
+          "cursor",
+          "cursorAccent",
+          "selectionBackground",
+          "scrollbarSliderBackground",
+          "scrollbarSliderHoverBackground",
+          "scrollbarSliderActiveBackground",
+          "black",
+          "red",
+          "green",
+          "yellow",
+          "blue",
+          "magenta",
+          "cyan",
+          "white",
+          "brightBlack",
+          "brightRed",
+          "brightGreen",
+          "brightYellow",
+          "brightBlue",
+          "brightMagenta",
+          "brightCyan",
+          "brightWhite"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "background": {
+            "type": "string"
+          },
+          "foreground": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "cursorAccent": {
+            "type": "string"
+          },
+          "selectionBackground": {
+            "type": "string"
+          },
+          "scrollbarSliderBackground": {
+            "type": "string"
+          },
+          "scrollbarSliderHoverBackground": {
+            "type": "string"
+          },
+          "scrollbarSliderActiveBackground": {
+            "type": "string"
+          },
+          "black": {
+            "type": "string"
+          },
+          "red": {
+            "type": "string"
+          },
+          "green": {
+            "type": "string"
+          },
+          "yellow": {
+            "type": "string"
+          },
+          "blue": {
+            "type": "string"
+          },
+          "magenta": {
+            "type": "string"
+          },
+          "cyan": {
+            "type": "string"
+          },
+          "white": {
+            "type": "string"
+          },
+          "brightBlack": {
+            "type": "string"
+          },
+          "brightRed": {
+            "type": "string"
+          },
+          "brightGreen": {
+            "type": "string"
+          },
+          "brightYellow": {
+            "type": "string"
+          },
+          "brightBlue": {
+            "type": "string"
+          },
+          "brightMagenta": {
+            "type": "string"
+          },
+          "brightCyan": {
+            "type": "string"
+          },
+          "brightWhite": {
+            "type": "string"
+          }
+        }
       },
       "TerminalEnterModeSetting": {
         "enum": [
           "default",
           "shiftEnterLineFeed"
         ]
+      },
+      "TerminalTransportDiagnosticsDto": {
+        "required": [
+          "sourceSeq",
+          "muxReceivedSeq",
+          "mthostIpcQueuedSeq",
+          "mthostIpcFlushedSeq",
+          "ipcBacklogFrames",
+          "ipcBacklogBytes",
+          "oldestBacklogAgeMs",
+          "scrollbackBytes",
+          "lastReplayBytes",
+          "lastReplayReason",
+          "reconnectCount",
+          "dataLossCount",
+          "lastDataLossReason"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceSeq": {
+            "type": "string"
+          },
+          "muxReceivedSeq": {
+            "type": "string"
+          },
+          "mthostIpcQueuedSeq": {
+            "type": "string"
+          },
+          "mthostIpcFlushedSeq": {
+            "type": "string"
+          },
+          "ipcBacklogFrames": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ipcBacklogBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "oldestBacklogAgeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scrollbackBytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastReplayBytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastReplayReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reconnectCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dataLossCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastDataLossReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "ThemeSetting": {
         "enum": [
@@ -7988,6 +8221,7 @@
           "rows",
           "agentControlled",
           "injectGuidance",
+          "lensOnly",
           "launchDelayMs",
           "slashCommands",
           "slashCommandDelayMs"
@@ -8031,6 +8265,9 @@
               "null",
               "string"
             ]
+          },
+          "lensOnly": {
+            "type": "boolean"
           },
           "launchCommand": {
             "type": [

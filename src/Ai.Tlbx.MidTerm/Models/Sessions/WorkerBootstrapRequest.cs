@@ -10,6 +10,7 @@ public sealed class WorkerBootstrapRequest
     public bool AgentControlled { get; set; } = true;
     public bool InjectGuidance { get; set; } = true;
     public string? Profile { get; set; }
+    public bool LensOnly { get; set; }
     public string? LaunchCommand { get; set; }
     public int LaunchDelayMs { get; set; } = 1200;
     public List<string> SlashCommands { get; set; } = [];

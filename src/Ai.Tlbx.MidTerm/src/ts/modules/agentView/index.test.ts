@@ -2741,6 +2741,213 @@ describe('agentView dev errors', () => {
     expect(assistantEntries[0]?.body).toBe('HELLO_FROM_CODEX');
   });
 
+  it('keeps separate assistant updates from the same turn in distinct rows when item ids differ', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-24T19:00:00Z',
+      latestSequence: 2,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-24T19:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-24T18:59:50Z',
+        completedAt: '2026-03-24T19:00:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'assistant-1',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-item-1',
+        requestId: null,
+        createdAt: '2026-03-24T18:59:55Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'assistant_message',
+          status: 'completed',
+          title: 'Assistant message',
+          detail: 'Ich pruefe kurz die lokale MidTerm-Anweisung.',
+        },
+      },
+      {
+        sequence: 2,
+        eventId: 'assistant-2',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-item-2',
+        requestId: null,
+        createdAt: '2026-03-24T18:59:57Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'assistant_message',
+          status: 'completed',
+          title: 'Assistant message',
+          detail: 'Die DMI-Kennung ist leer, daher pruefe ich jetzt direkt das ARM-Board-Modell.',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const assistantEntries = transcript.filter((entry) => entry.kind === 'assistant');
+
+    expect(assistantEntries).toHaveLength(2);
+    expect(assistantEntries[0]?.body).toBe('Ich pruefe kurz die lokale MidTerm-Anweisung.');
+    expect(assistantEntries[1]?.body).toBe(
+      'Die DMI-Kennung ist leer, daher pruefe ich jetzt direkt das ARM-Board-Modell.',
+    );
+  });
+
+  it('keeps the first-seen order for a live assistant row instead of moving it on completion', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-24T19:10:00Z',
+      latestSequence: 3,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-24T19:10:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-24T19:09:50Z',
+        completedAt: '2026-03-24T19:10:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const events = [
+      {
+        sequence: 1,
+        eventId: 'assistant-delta',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-24T19:09:55Z',
+        type: 'content.delta',
+        raw: null,
+        contentDelta: {
+          streamKind: 'assistant_text',
+          delta: 'Working',
+        },
+      },
+      {
+        sequence: 2,
+        eventId: 'tool-completed',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'tool-1',
+        requestId: null,
+        createdAt: '2026-03-24T19:09:56Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'command_execution',
+          status: 'completed',
+          title: 'Command completed',
+          detail: 'git status',
+        },
+      },
+      {
+        sequence: 3,
+        eventId: 'assistant-completed',
+        sessionId: 's1',
+        provider: 'codex',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'assistant-1',
+        requestId: null,
+        createdAt: '2026-03-24T19:09:59Z',
+        type: 'item.completed',
+        raw: null,
+        item: {
+          itemType: 'assistant_message',
+          status: 'completed',
+          title: 'Assistant message',
+          detail: 'Working response.',
+        },
+      },
+    ] as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, events);
+
+    expect(transcript[0]).toMatchObject({
+      kind: 'assistant',
+      body: 'Working response.',
+    });
+    expect(transcript[1]).toMatchObject({
+      kind: 'tool',
+      title: 'git status',
+    });
+  });
+
   it('prefers the final Codex assistant message when it supersedes streamed chunks', async () => {
     const { buildLensTranscriptEntries } = await import('./index');
 

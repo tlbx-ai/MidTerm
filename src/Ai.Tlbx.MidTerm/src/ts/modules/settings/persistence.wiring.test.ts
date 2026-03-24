@@ -86,6 +86,7 @@ describe('settings persistence wiring', () => {
     expect(specialWriters.get('managerBarButtons')).toContain('managerBar');
     expect(specialWriters.get('showChangelogAfterUpdate')).toContain('changelog');
     expect(specialWriters.get('devMode')).toContain('version-click');
+    expect(specialWriters.get('terminalColorSchemes')).toContain('terminal color scheme editor');
   });
 
   it('previews and saves font size on input', () => {
@@ -95,7 +96,7 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain(
       "const lineHeightInput = document.getElementById('setting-line-height')",
     );
-    expect(persistenceSource).toContain("const letterSpacingInput = document.getElementById(");
+    expect(persistenceSource).toContain('const letterSpacingInput = document.getElementById(');
     expect(persistenceSource).toContain("'setting-letter-spacing'");
     expect(persistenceSource).toContain('bindTerminalFontPreview(');
   });
@@ -155,11 +156,19 @@ describe('settings persistence wiring', () => {
     ).toBe('integer, clamped to 0-100');
   });
 
-  it('backfills the mac terminal palettes into the terminal colors select at runtime', () => {
-    expect(persistenceSource).toContain('syncTerminalColorSchemeOptions();');
-    expect(persistenceSource).toContain("value: 'macTerminalDark'");
-    expect(persistenceSource).toContain("value: 'macTerminalLight'");
-    expect(persistenceSource).toContain("option.value === 'solarizedDark'");
-    expect(persistenceSource).toContain("document.createElement('option')");
+  it('renders a dedicated custom terminal scheme editor', () => {
+    expect(html).toContain('id="terminal-color-scheme-editor"');
+    expect(html).toContain('id="terminal-color-scheme-editor-name"');
+    expect(html).toContain('id="terminal-color-scheme-editor-source"');
+    expect(html).toContain('id="terminal-color-scheme-save"');
+    expect(cssSource).toContain('.terminal-color-scheme-editor');
+  });
+
+  it('rebuilds the terminal color scheme select with custom entries at runtime', () => {
+    expect(persistenceSource).toContain('syncTerminalColorSchemeOptions(settings);');
+    expect(persistenceSource).toContain('appendTranslatedOption(');
+    expect(persistenceSource).toContain("group.label = 'Custom Schemes'");
+    expect(persistenceSource).toContain('terminalColorSchemes.length');
+    expect(persistenceSource).toContain("document.getElementById('terminal-color-scheme-save')");
   });
 });

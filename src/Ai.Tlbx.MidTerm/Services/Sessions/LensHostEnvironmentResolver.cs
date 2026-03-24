@@ -36,8 +36,16 @@ internal static class LensHostEnvironmentResolver
             startInfo.Environment["HOMEPATH"] = profileDirectory[root.Length..];
         }
 
-        startInfo.Environment["APPDATA"] = Path.Combine(profileDirectory, "AppData", "Roaming");
-        startInfo.Environment["LOCALAPPDATA"] = Path.Combine(profileDirectory, "AppData", "Local");
+        var appDataDirectory = Path.Combine(profileDirectory, "AppData", "Roaming");
+        var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
+        startInfo.Environment["APPDATA"] = appDataDirectory;
+        startInfo.Environment["LOCALAPPDATA"] = localAppDataDirectory;
+
+        // Lens runtimes often rely on per-user npm shims like %APPDATA%\npm\codex.cmd.
+        // Service environments do not always inherit those PATH entries, so add the
+        // common user-local bin locations explicitly for standalone Lens sessions.
+        PrependPath(startInfo, Path.Combine(appDataDirectory, "npm"));
+        PrependPath(startInfo, Path.Combine(localAppDataDirectory, "Programs", "nodejs"));
     }
 
     internal static string? ResolveWindowsProfileDirectory(string? userName, string? userSid)
@@ -70,5 +78,28 @@ internal static class LensHostEnvironmentResolver
         return string.IsNullOrWhiteSpace(usersRoot)
             ? null
             : Path.Combine(usersRoot, userName);
+    }
+
+    private static void PrependPath(ProcessStartInfo startInfo, string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return;
+        }
+
+        var existingPath = startInfo.Environment.TryGetValue("PATH", out var currentPath)
+            ? currentPath ?? string.Empty
+            : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+
+        var parts = existingPath
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Contains(directory, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+            ? directory
+            : directory + Path.PathSeparator + existingPath;
     }
 }

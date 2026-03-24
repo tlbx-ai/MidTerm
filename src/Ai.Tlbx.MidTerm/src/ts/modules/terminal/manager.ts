@@ -6,7 +6,7 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { getEffectiveXtermTheme } from '../theming/themes';
+import { getEffectiveXtermTheme, syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
 import {
   sessionTerminals,
   pendingOutputFrames,
@@ -74,6 +74,7 @@ import {
 } from './fontConfig';
 import { getForegroundInfo } from '../process';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
+import { shouldUseWebglRenderer } from './webglSupport';
 
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -381,6 +382,7 @@ export function createTerminalForSession(
     }
 
     state.opened = true;
+    syncEffectiveXtermThemeDomOverrides($currentSettings.get());
 
     // Intercept xterm's internal textarea focus when Smart Input is active
     const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
@@ -401,7 +403,7 @@ export function createTerminalForSession(
 
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
-    syncTerminalWebglState(sessionId, state, $currentSettings.get()?.useWebGL !== false);
+    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer($currentSettings.get()));
 
     // Load Web-Links addon for clickable URLs
     try {

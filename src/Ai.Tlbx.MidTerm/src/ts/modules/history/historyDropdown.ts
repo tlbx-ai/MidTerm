@@ -16,6 +16,7 @@ import { icon } from '../../constants';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
+import { getHistoryModeDisplayText } from './launchMode';
 
 const log = createLogger('history-dropdown');
 
@@ -217,6 +218,11 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
     labelSpan.textContent = entry.label;
     infoDiv.appendChild(labelSpan);
   }
+
+  const modeSpan = document.createElement('span');
+  modeSpan.className = 'history-item-mode';
+  modeSpan.textContent = getHistoryModeDisplayText(entry);
+  infoDiv.appendChild(modeSpan);
 
   const fgIndicator = createForegroundIndicator(
     entry.workingDirectory,

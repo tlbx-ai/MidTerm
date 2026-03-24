@@ -11,6 +11,8 @@ namespace Ai.Tlbx.MidTerm.Settings;
 [JsonSerializable(typeof(ManagerBarTrigger))]
 [JsonSerializable(typeof(ManagerBarScheduleEntry))]
 [JsonSerializable(typeof(List<ManagerBarScheduleEntry>))]
+[JsonSerializable(typeof(TerminalColorSchemeDefinition))]
+[JsonSerializable(typeof(List<TerminalColorSchemeDefinition>))]
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]

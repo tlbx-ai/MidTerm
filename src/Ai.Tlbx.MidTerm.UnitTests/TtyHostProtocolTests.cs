@@ -1,3 +1,4 @@
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Xunit;
 
@@ -90,5 +91,67 @@ public class TtyHostProtocolTests
         Assert.NotNull(ack);
         Assert.True(ack!.Accepted);
         Assert.Equal("ok", ack.Message);
+    }
+
+    [Fact]
+    public void OutputFrame_RoundTrips_SequenceAndPayload()
+    {
+        var payload = Encoding.UTF8.GetBytes("hello");
+        byte[]? frame = null;
+
+        TtyHostProtocol.WriteOutputMessage(123UL, 90, 31, payload, span => frame = span.ToArray());
+
+        Assert.NotNull(frame);
+        Assert.True(TtyHostProtocol.TryReadHeader(frame!, out var type, out var payloadLength));
+        Assert.Equal(TtyHostMessageType.Output, type);
+
+        var parsedPayload = frame!.AsSpan(TtyHostProtocol.HeaderSize, payloadLength);
+        Assert.Equal(123UL, TtyHostProtocol.ParseOutputSequenceStart(parsedPayload));
+        Assert.Equal((90, 31), TtyHostProtocol.ParseOutputDimensions(parsedPayload));
+        Assert.Equal(payload, TtyHostProtocol.GetOutputData(parsedPayload).ToArray());
+    }
+
+    [Fact]
+    public void GetBuffer_RoundTrips_TailRequestAndSnapshot()
+    {
+        var requestFrame = TtyHostProtocol.CreateGetBuffer(4096, TerminalReplayReason.BufferRefreshTailReplay);
+
+        Assert.True(TtyHostProtocol.TryReadHeader(requestFrame, out var requestType, out var requestPayloadLength));
+        Assert.Equal(TtyHostMessageType.GetBuffer, requestType);
+
+        var request = TtyHostProtocol.ParseGetBuffer(requestFrame.AsSpan(TtyHostProtocol.HeaderSize, requestPayloadLength));
+        Assert.NotNull(request);
+        Assert.Equal(4096, request!.MaxBytes);
+        Assert.Equal(TerminalReplayReason.BufferRefreshTailReplay, request.Reason);
+
+        byte[]? bufferFrame = null;
+        var snapshotData = Encoding.UTF8.GetBytes("tail");
+        TtyHostProtocol.WriteBufferResponse(222UL, snapshotData, span => bufferFrame = span.ToArray());
+
+        Assert.NotNull(bufferFrame);
+        Assert.True(TtyHostProtocol.TryReadHeader(bufferFrame!, out var bufferType, out var bufferPayloadLength));
+        Assert.Equal(TtyHostMessageType.Buffer, bufferType);
+
+        var snapshot = TtyHostProtocol.ParseBuffer(bufferFrame!.AsSpan(TtyHostProtocol.HeaderSize, bufferPayloadLength));
+        Assert.Equal(222UL, snapshot.SequenceStart);
+        Assert.Equal(snapshotData, snapshot.Data);
+    }
+
+    [Fact]
+    public void DataLoss_RoundTrips_ReasonAndDroppedBytes()
+    {
+        var frame = TtyHostProtocol.CreateDataLoss(new TtyHostDataLossPayload
+        {
+            Reason = TerminalReplayReason.MthostIpcOverflow,
+            DroppedBytes = 8192
+        });
+
+        Assert.True(TtyHostProtocol.TryReadHeader(frame, out var type, out var payloadLength));
+        Assert.Equal(TtyHostMessageType.DataLoss, type);
+
+        var payload = TtyHostProtocol.ParseDataLoss(frame.AsSpan(TtyHostProtocol.HeaderSize, payloadLength));
+        Assert.NotNull(payload);
+        Assert.Equal(TerminalReplayReason.MthostIpcOverflow, payload!.Reason);
+        Assert.Equal(8192, payload.DroppedBytes);
     }
 }

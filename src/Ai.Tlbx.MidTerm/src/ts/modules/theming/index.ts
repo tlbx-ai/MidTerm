@@ -6,3 +6,4 @@
 
 export * from './themes';
 export { applyCssTheme } from './cssThemes';
+export * from './terminalColorSchemes';

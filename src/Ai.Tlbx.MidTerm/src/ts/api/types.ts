@@ -31,9 +31,16 @@ export type BootstrapResponse = Schemas['BootstrapResponse'];
 export type BootstrapLoginResponse = Schemas['BootstrapLoginResponse'];
 
 // Sessions
-export type SessionInfoDto = Schemas['SessionInfoDto'];
+export type SessionInfoDto = Schemas['SessionInfoDto'] & {
+  lensOnly?: boolean;
+  profileHint?: string | null;
+};
 export type SessionListDto = Schemas['SessionListDto'];
 export type CreateSessionRequest = Schemas['CreateSessionRequest'];
+export type WorkerBootstrapRequest = Schemas['WorkerBootstrapRequest'] & {
+  lensOnly?: boolean;
+};
+export type WorkerBootstrapResponse = Schemas['WorkerBootstrapResponse'];
 export type RenameSessionRequest = Schemas['RenameSessionRequest'];
 export type ResizeRequest = Schemas['ResizeRequest'];
 export type ResizeResponse = Schemas['ResizeResponse'];
@@ -87,6 +94,7 @@ export type LensUserInputAnswerRequest = Schemas['LensUserInputAnswerRequest'];
 
 // Settings
 export type MidTermSettingsPublic = Schemas['MidTermSettingsPublic'];
+export type TerminalColorSchemeDefinition = Schemas['TerminalColorSchemeDefinition'];
 export type MidTermSettingsUpdate = Omit<
   MidTermSettingsPublic,
   | 'authenticationEnabled'
@@ -168,7 +176,7 @@ export type BellStyleSetting = Schemas['BellStyleSetting'];
 export type ClipboardShortcutsSetting = Schemas['ClipboardShortcutsSetting'];
 export type TabTitleModeSetting = Schemas['TabTitleModeSetting'];
 export type ScrollbarStyleSetting = Schemas['ScrollbarStyleSetting'];
-export type TerminalColorSchemeSetting = Schemas['TerminalColorSchemeSetting'];
+export type TerminalColorSchemeSetting = MidTermSettingsPublic['terminalColorScheme'];
 export type LanguageSetting = Schemas['LanguageSetting'];
 
 // =============================================================================

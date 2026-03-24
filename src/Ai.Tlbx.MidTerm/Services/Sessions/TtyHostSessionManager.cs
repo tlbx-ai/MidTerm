@@ -29,6 +29,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly TtyHostOwnershipRegistry _ownershipRegistry;
     private readonly SessionForegroundProcessService _foregroundProcessService;
+    private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new();
     private string? _runAsUser;
     private bool _disposed;
     private int? _mtPort;
@@ -48,7 +49,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         set => _registry.SetNextOrder(value);
     }
 
-    public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
+    public event Action<string, ulong, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnSessionClosed;
     public event Action<string, int>? OnSessionCreated;
@@ -249,6 +250,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             client.StartReadLoop();
             _registry.Clients[sessionId] = client;
             _registry.SessionCache[sessionId] = info;
+            _transportState.TryAdd(sessionId, new TerminalTransportRuntimeState());
             _ownershipRegistry.Upsert(sessionId, hostPid, isLegacyEndpoint || string.IsNullOrWhiteSpace(info.OwnerInstanceId));
 
             // Use order from mthost if available, otherwise use discovery sequence
@@ -369,6 +371,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         client.StartReadLoop();
         _registry.Clients[sessionId] = client;
         _registry.SessionCache[sessionId] = info;
+        _transportState[sessionId] = new TerminalTransportRuntimeState();
         _registry.SessionOrder[sessionId] = paneIndex;
         _ownershipRegistry.Upsert(sessionId, connectPid, isLegacyEndpoint: false);
 
@@ -483,6 +486,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         _registry.RemoveSessionState(sessionId);
         _ownershipRegistry.Remove(sessionId);
+        _transportState.TryRemove(sessionId, out _);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
@@ -531,14 +535,38 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return await client.PingAsync(pingData, ct).ConfigureAwait(false);
     }
 
-    public async Task<byte[]?> GetBufferAsync(string sessionId, CancellationToken ct = default)
+    public async Task<TtyHostBufferSnapshot?> GetBufferAsync(
+        string sessionId,
+        int? maxBytes = null,
+        TerminalReplayReason reason = TerminalReplayReason.Manual,
+        CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
         {
             return null;
         }
 
-        return await client.GetBufferAsync(ct).ConfigureAwait(false);
+        var snapshot = await client.GetBufferAsync(maxBytes, reason, ct).ConfigureAwait(false);
+        if (snapshot is not null)
+        {
+            var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
+            state.SourceSeq = snapshot.SequenceStart + (ulong)snapshot.Data.Length;
+            state.MuxReceivedSeq = state.SourceSeq;
+            state.LastReplayBytes = snapshot.Data.Length;
+            state.LastReplayReason = reason;
+        }
+
+        return snapshot;
+    }
+
+    public TerminalTransportRuntimeSnapshot GetTransportRuntimeSnapshot(string sessionId)
+    {
+        if (!_transportState.TryGetValue(sessionId, out var state))
+        {
+            return new TerminalTransportRuntimeSnapshot();
+        }
+
+        return state.ToSnapshot();
     }
 
     public async Task<bool> SetSessionNameAsync(string sessionId, string? name, bool isManual = true, CancellationToken ct = default)
@@ -584,6 +612,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public bool SetAgentControlled(string sessionId, bool agentControlled)
     {
         return _registry.SetAgentControlled(sessionId, agentControlled);
+    }
+
+    public bool SetLensOnly(string sessionId, bool lensOnly)
+    {
+        return _registry.SetLensOnly(sessionId, lensOnly);
+    }
+
+    public bool SetProfileHint(string sessionId, string? profile)
+    {
+        return _registry.SetProfileHint(sessionId, profile);
     }
 
     public int ClearBookmarksByHistoryId(string bookmarkId)
@@ -644,12 +682,30 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         client.OnOutput += HandleClientOutput;
         client.OnForegroundChanged += HandleClientForegroundChanged;
         client.OnStateChanged += id => _ = HandleClientStateChangedAsync(id);
+        client.OnReconnected += HandleClientReconnected;
+        client.OnDataLoss += HandleClientDataLoss;
     }
 
-    private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
+    private void HandleClientOutput(string sessionId, ulong sequenceStart, int cols, int rows, ReadOnlyMemory<byte> data)
     {
-        OnOutput?.Invoke(sessionId, cols, rows, data);
+        var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
+        state.SourceSeq = sequenceStart + (ulong)data.Length;
+        state.MuxReceivedSeq = state.SourceSeq;
+        OnOutput?.Invoke(sessionId, sequenceStart, cols, rows, data);
         ScanForOscSequences(sessionId, data.Span);
+    }
+
+    private void HandleClientReconnected(string sessionId)
+    {
+        var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
+        state.ReconnectCount++;
+    }
+
+    private void HandleClientDataLoss(string sessionId, TtyHostDataLossPayload payload)
+    {
+        var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
+        state.DataLossCount++;
+        state.LastDataLossReason = payload.Reason;
     }
 
     /// <summary>
@@ -874,6 +930,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                         await removed.DisposeAsync().ConfigureAwait(false);
                     }
                     _sessionCache.TryRemove(sessionId, out _);
+                    _transportState.TryRemove(sessionId, out _);
                     _ownershipRegistry.Remove(sessionId);
                 }
             }
@@ -964,6 +1021,42 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         catch
         {
             // Process may have already exited
+        }
+    }
+
+    public sealed class TerminalTransportRuntimeSnapshot
+    {
+        public ulong SourceSeq { get; init; }
+        public ulong MuxReceivedSeq { get; init; }
+        public int ReconnectCount { get; init; }
+        public int DataLossCount { get; init; }
+        public TerminalReplayReason? LastDataLossReason { get; init; }
+        public int LastReplayBytes { get; init; }
+        public TerminalReplayReason? LastReplayReason { get; init; }
+    }
+
+    private sealed class TerminalTransportRuntimeState
+    {
+        public ulong SourceSeq;
+        public ulong MuxReceivedSeq;
+        public int ReconnectCount;
+        public int DataLossCount;
+        public TerminalReplayReason? LastDataLossReason;
+        public int LastReplayBytes;
+        public TerminalReplayReason? LastReplayReason;
+
+        public TerminalTransportRuntimeSnapshot ToSnapshot()
+        {
+            return new TerminalTransportRuntimeSnapshot
+            {
+                SourceSeq = SourceSeq,
+                MuxReceivedSeq = MuxReceivedSeq,
+                ReconnectCount = ReconnectCount,
+                DataLossCount = DataLossCount,
+                LastDataLossReason = LastDataLossReason,
+                LastReplayBytes = LastReplayBytes,
+                LastReplayReason = LastReplayReason
+            };
         }
     }
 }

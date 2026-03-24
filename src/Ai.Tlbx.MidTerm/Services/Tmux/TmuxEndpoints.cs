@@ -90,13 +90,13 @@ public static class TmuxEndpoints
                 return Results.NotFound();
             }
 
-            var buffer = await sessionManager.GetBufferAsync(id);
-            if (buffer is null)
+            var snapshot = await sessionManager.GetBufferAsync(id);
+            if (snapshot is null)
             {
                 return Results.NotFound();
             }
 
-            return Results.Bytes(buffer, contentType: "application/octet-stream");
+            return Results.Bytes(snapshot.Data, contentType: "application/octet-stream");
         });
     }
 }

@@ -111,7 +111,7 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         {
             HostKind = "mtagenthost",
             HostVersion = "dev",
-            Providers = _syntheticProvider is null ? ["codex"] : [_syntheticProvider],
+            Providers = _syntheticProvider is null ? ["codex", "claude"] : [_syntheticProvider],
             Capabilities =
             [
                 "attach",
@@ -140,6 +140,7 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         _runtime = provider switch
         {
             "codex" when _syntheticProvider is null => new CodexLensAgentRuntime(EmitAsyncEvent),
+            "claude" when _syntheticProvider is null => new ClaudeLensAgentRuntime(EmitAsyncEvent),
             "codex" => new SyntheticLensAgentRuntime(provider, EmitAsyncEvent),
             "claude" when _syntheticProvider is not null => new SyntheticLensAgentRuntime(provider, EmitAsyncEvent),
             _ => throw new InvalidOperationException($"mtagenthost does not support provider '{provider ?? "(null)"}'.")

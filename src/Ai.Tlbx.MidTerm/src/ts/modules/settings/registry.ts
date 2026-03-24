@@ -11,6 +11,7 @@ export type SettingApplyMode = 'immediate' | 'lazy' | 'new-session' | 'server-on
 export type SettingSaveStrategy = 'control' | 'preserve' | 'readonly';
 export type SettingControlType =
   | 'text'
+  | 'textarea'
   | 'nullable-string'
   | 'int'
   | 'float'
@@ -103,6 +104,36 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'string path, empty allowed',
     applyMode: 'new-session',
   }),
+  controlEntry('codexYoloDefault', 'setting-codex-yolo-default', 'checkbox', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'new-session',
+  }),
+  controlEntry('codexEnvironmentVariables', 'setting-codex-env', 'textarea', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'newline-delimited KEY=VALUE env vars',
+    applyMode: 'new-session',
+  }),
+  controlEntry(
+    'claudeDangerouslySkipPermissionsDefault',
+    'setting-claude-dangerously-skip-permissions-default',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'new-session',
+    },
+  ),
+  controlEntry('claudeEnvironmentVariables', 'setting-claude-env', 'textarea', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'newline-delimited KEY=VALUE env vars',
+    applyMode: 'new-session',
+  }),
   controlEntry('fontSize', 'setting-font-size', 'int', 14, {
     editable: true,
     storage: 'settings.json',
@@ -180,6 +211,13 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     storage: 'settings.json',
     validation: 'known terminal color scheme',
     applyMode: 'immediate',
+  }),
+  preserveEntry('terminalColorSchemes', [], {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'array of custom terminal color scheme definitions',
+    applyMode: 'immediate',
+    specialWriter: 'terminal color scheme editor',
   }),
   controlEntry('backgroundImageEnabled', 'setting-background-image-enabled', 'checkbox', false, {
     editable: true,

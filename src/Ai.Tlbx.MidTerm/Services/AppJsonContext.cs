@@ -132,6 +132,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LensPulseRuntimeNotice))]
 [JsonSerializable(typeof(List<LensPulseRuntimeNotice>))]
 [JsonSerializable(typeof(SessionBufferTextResponse))]
+[JsonSerializable(typeof(TerminalTransportDiagnosticsDto))]
 [JsonSerializable(typeof(SessionStateResponse))]
 
 // --- Files ---
@@ -148,6 +149,10 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(FileTreeEntry[]))]
 [JsonSerializable(typeof(FileSaveRequest))]
 [JsonSerializable(typeof(FileSaveResponse))]
+[JsonSerializable(typeof(LauncherPathResponse))]
+[JsonSerializable(typeof(LauncherDirectoryEntry))]
+[JsonSerializable(typeof(LauncherDirectoryEntry[]))]
+[JsonSerializable(typeof(LauncherDirectoryListResponse))]
 
 // --- History ---
 [JsonSerializable(typeof(HistoryPatchRequest))]
@@ -185,6 +190,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Settings ---
 [JsonSerializable(typeof(MidTermSettings))]
 [JsonSerializable(typeof(MidTermSettingsPublic))]
+[JsonSerializable(typeof(TerminalColorSchemeDefinition))]
+[JsonSerializable(typeof(List<TerminalColorSchemeDefinition>))]
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]

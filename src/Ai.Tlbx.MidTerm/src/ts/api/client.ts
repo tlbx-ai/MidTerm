@@ -14,6 +14,7 @@ import type {
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
   CreateSessionRequest,
+  WorkerBootstrapRequest,
   SessionPromptRequest,
   SessionStateResponse,
   LensTurnRequest,
@@ -164,11 +165,17 @@ export async function getBootstrapLogin() {
 // --- Sessions ---
 
 export async function getSessions() {
-  return client.GET('/api/sessions');
+  return client.GET('/api/sessions', { cache: 'no-store' });
 }
 
 export async function createSession(request?: CreateSessionRequest) {
   return client.POST('/api/sessions', {
+    body: request,
+  });
+}
+
+export async function bootstrapWorker(request: WorkerBootstrapRequest) {
+  return client.POST('/api/workers/bootstrap', {
     body: request,
   });
 }

@@ -980,7 +980,9 @@
                         <h3 id="hub-machine-modal-title" data-i18n="settings.hub.addHost">
                           Add Host
                         </h3>
-                        <button id="btn-close-hub-machine-modal" class="modal-close">&times;</button>
+                        <button id="btn-close-hub-machine-modal" class="modal-close">
+                          &times;
+                        </button>
                       </div>
                       <div class="modal-body hub-machine-modal-body">
                         <input id="hub-machine-id" type="hidden" />
@@ -1132,6 +1134,87 @@
                         </option>
                       </select>
                     </div>
+                    <details id="terminal-color-scheme-editor" class="terminal-color-scheme-editor">
+                      <summary class="terminal-color-scheme-editor-summary">
+                        <div class="terminal-color-scheme-editor-summary-copy">
+                          <span class="terminal-color-scheme-editor-summary-title">
+                            Custom Scheme Editor
+                          </span>
+                          <span class="terminal-color-scheme-editor-summary-text">
+                            Optional: build a named palette from a preset or from scratch.
+                          </span>
+                        </div>
+                        <span class="terminal-color-scheme-editor-summary-icon" aria-hidden="true">
+                          ▾
+                        </span>
+                      </summary>
+                      <div class="terminal-color-scheme-editor-panel">
+                        <p class="terminal-color-scheme-editor-copy">
+                          Load a preset, rename it, then tune the palette without touching the
+                          built-ins.
+                        </p>
+                        <div class="terminal-color-scheme-editor-toolbar">
+                          <div class="terminal-color-scheme-editor-toolbar-field">
+                            <label for="terminal-color-scheme-editor-source">Populate From</label>
+                            <div class="terminal-color-scheme-editor-source-row">
+                              <select id="terminal-color-scheme-editor-source"></select>
+                              <button
+                                type="button"
+                                id="terminal-color-scheme-load"
+                                class="settings-action-btn"
+                              >
+                                Load Into Editor
+                              </button>
+                              <button
+                                type="button"
+                                id="terminal-color-scheme-reset"
+                                class="settings-action-btn"
+                              >
+                                New Blank
+                              </button>
+                            </div>
+                          </div>
+                          <div class="terminal-color-scheme-editor-toolbar-field">
+                            <label for="terminal-color-scheme-editor-name"
+                              >Custom Scheme Name</label
+                            >
+                            <input
+                              type="text"
+                              id="terminal-color-scheme-editor-name"
+                              maxlength="64"
+                              placeholder="Midnight Copy"
+                              spellcheck="false"
+                            />
+                          </div>
+                        </div>
+                        <div
+                          id="terminal-color-scheme-editor-status"
+                          class="terminal-color-scheme-editor-status"
+                        >
+                          Enter a custom scheme name before saving.
+                        </div>
+                        <div
+                          id="terminal-color-scheme-editor-fields"
+                          class="terminal-color-scheme-editor-fields"
+                        ></div>
+                        <div class="terminal-color-scheme-editor-actions">
+                          <button
+                            type="button"
+                            id="terminal-color-scheme-save"
+                            class="settings-action-btn"
+                          >
+                            Save Custom Scheme
+                          </button>
+                          <button
+                            type="button"
+                            id="terminal-color-scheme-delete"
+                            class="settings-action-btn"
+                          >
+                            Delete Custom Scheme
+                          </button>
+                        </div>
+                      </div>
+                    </details>
                     <div class="setting-row">
                       <label for="setting-font-size" data-i18n="settings.appearance.fontSize"
                         >Font Size</label
@@ -1502,6 +1585,55 @@
                           <span class="icon">&#xe90f;</span>
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.behavior.agentDefaults">Agent Defaults</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-codex-yolo-default"
+                        data-i18n="settings.behavior.codexYoloDefault"
+                        >Enable Codex --yolo by default</label
+                      >
+                      <input type="checkbox" id="setting-codex-yolo-default" />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-codex-env" data-i18n="settings.behavior.codexEnv"
+                        >Codex Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-codex-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.behavior.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-claude-dangerously-skip-permissions-default"
+                        data-i18n="settings.behavior.claudeDangerouslySkipPermissionsDefault"
+                        >Enable Claude --dangerously-skip-permissions by default</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-claude-dangerously-skip-permissions-default"
+                      />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-claude-env" data-i18n="settings.behavior.claudeEnv"
+                        >Claude Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-claude-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.behavior.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
                     </div>
                   </div>
 
@@ -1954,6 +2086,59 @@
                         >Show git debug overlay</label
                       >
                       <input type="checkbox" id="diag-git-overlay-toggle" />
+                    </div>
+                  </div>
+
+                  <!-- Terminal Transport -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.diagnostics.terminalTransport">Terminal Transport</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.sourceSeq">Source Seq</label>
+                      <code class="path-value" id="diag-source-seq">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.muxReceivedSeq">Mux Received Seq</label>
+                      <code class="path-value" id="diag-mux-received-seq">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.browserReceivedSeq"
+                        >Browser Received Seq</label
+                      >
+                      <code class="path-value" id="diag-browser-received-seq">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.browserRenderedSeq"
+                        >Browser Rendered Seq</label
+                      >
+                      <code class="path-value" id="diag-browser-rendered-seq">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.mthostIpcQueuedSeq"
+                        >MTHost IPC Queued Seq</label
+                      >
+                      <code class="path-value" id="diag-mthost-ipc-queued-seq">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.mthostIpcFlushedSeq"
+                        >MTHost IPC Flushed Seq</label
+                      >
+                      <code class="path-value" id="diag-mthost-ipc-flushed-seq">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.ipcBacklog">IPC Backlog</label>
+                      <code class="path-value" id="diag-ipc-backlog">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.lastReplay">Last Replay</label>
+                      <code class="path-value" id="diag-last-replay">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.reconnects">Reconnects</label>
+                      <code class="path-value" id="diag-reconnect-count">-</code>
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.dataLoss">Data Loss</label>
+                      <code class="path-value" id="diag-data-loss">-</code>
                     </div>
                   </div>
 
@@ -2447,7 +2632,8 @@
               class="manager-action-context-note hidden"
               data-i18n="managerBar.modal.cooldownHint"
             >
-              Runs when the session heat drops below 25%. After each trigger, heat is ignored for 5 seconds.
+              Runs when the session heat drops below 25%. After each trigger, heat is ignored for 5
+              seconds.
             </div>
 
             <div
