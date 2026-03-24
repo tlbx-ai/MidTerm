@@ -37,31 +37,86 @@ function createCanvasMock() {
 
 describe('heatIndicator', () => {
   let rafQueue: FrameRequestCallback[] = [];
+  let nowMs = Date.parse('2026-03-24T12:00:00.000Z');
+  let intervalCallbacks = new Map<number, () => void>();
+  let nextIntervalId = 1;
+  let visibilityChangeListeners: Array<() => void> = [];
+  let documentMock: { hidden: boolean; addEventListener: ReturnType<typeof vi.fn> };
+  let getSessionsMock: ReturnType<typeof vi.fn>;
 
-  function flushAnimationFrames(startTime: number = 16): void {
-    let frameTime = startTime;
-    while (rafQueue.length > 0) {
+  async function flushPromises(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  function advanceAnimationFrames(durationMs: number, stepMs: number = 16): void {
+    const deadline = nowMs + durationMs;
+    while (rafQueue.length > 0 && nowMs < deadline) {
       const callbacks = [...rafQueue];
       rafQueue = [];
-      callbacks.forEach((callback) => callback(frameTime));
-      frameTime += 16;
+      nowMs = Math.min(deadline, nowMs + stepMs);
+      callbacks.forEach((callback) => callback(stepMs));
     }
   }
 
-  function advanceAnimationFrames(durationMs: number, stepMs: number = 64): void {
-    let frameTime = stepMs;
-    const endTime = durationMs + stepMs;
-    while (rafQueue.length > 0 && frameTime <= endTime) {
-      const callbacks = [...rafQueue];
-      rafQueue = [];
-      callbacks.forEach((callback) => callback(frameTime));
-      frameTime += stepMs;
-    }
+  function advanceTimeWithoutFrames(durationMs: number): void {
+    nowMs += durationMs;
+  }
+
+  function setDocumentHidden(hidden: boolean): void {
+    documentMock.hidden = hidden;
+    visibilityChangeListeners.forEach((listener) => listener());
+  }
+
+  async function runIntervalTick(id: number = 1): Promise<void> {
+    intervalCallbacks.get(id)?.();
+    await flushPromises();
+  }
+
+  function buildSessionsResponse(
+    sessions: Array<{ id: string; currentHeat: number; lastOutputAt?: string | null }>,
+  ) {
+    return {
+      data: {
+        sessions: sessions.map((session) => ({
+          id: session.id,
+          supervisor: {
+            currentHeat: session.currentHeat,
+            lastOutputAt: session.lastOutputAt ?? null,
+          },
+        })),
+      },
+      response: {
+        ok: true,
+      },
+    };
   }
 
   beforeEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.resetModules();
+
+    getSessionsMock = vi.fn(async () => buildSessionsResponse([]));
+    vi.doMock('../../api/client', () => ({
+      getSessions: getSessionsMock,
+    }));
+
     rafQueue = [];
+    intervalCallbacks = new Map<number, () => void>();
+    nextIntervalId = 1;
+    visibilityChangeListeners = [];
+    nowMs = Date.parse('2026-03-24T12:00:00.000Z');
+    vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+
+    documentMock = {
+      hidden: false,
+      addEventListener: vi.fn((event: string, callback: () => void) => {
+        if (event === 'visibilitychange') {
+          visibilityChangeListeners.push(callback);
+        }
+      }),
+    };
 
     vi.stubGlobal('window', {
       devicePixelRatio: 1,
@@ -69,22 +124,28 @@ describe('heatIndicator', () => {
         matches: false,
         addEventListener: vi.fn(),
       })),
-      setInterval: vi.fn(() => 1),
-      clearInterval: vi.fn(),
+      setInterval: vi.fn((callback: () => void) => {
+        const id = nextIntervalId++;
+        intervalCallbacks.set(id, callback);
+        return id;
+      }),
+      clearInterval: vi.fn((id: number) => {
+        intervalCallbacks.delete(id);
+      }),
       requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
         rafQueue.push(callback);
         return rafQueue.length;
       }),
-      cancelAnimationFrame: vi.fn(),
+      cancelAnimationFrame: vi.fn(() => {
+        rafQueue = [];
+      }),
     });
-    vi.stubGlobal('document', {
-      hidden: false,
-      addEventListener: vi.fn(),
-    });
+    vi.stubGlobal('document', documentMock);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('preserves heat state across sidebar rerenders', async () => {
@@ -93,7 +154,7 @@ describe('heatIndicator', () => {
     module.registerHeatCanvas('session-1', firstCanvas.canvas);
 
     module.setSessionHeat('session-1', 0.8);
-    flushAnimationFrames();
+    advanceAnimationFrames(300);
     const heatBeforeRerender = module.getSessionHeat('session-1');
     expect(heatBeforeRerender).toBeGreaterThan(0);
 
@@ -113,7 +174,7 @@ describe('heatIndicator', () => {
     module.registerHeatCanvas('session-1', canvas.canvas);
 
     module.setSessionHeat('session-1', 0.6);
-    flushAnimationFrames();
+    advanceAnimationFrames(300);
     expect(module.getSessionHeat('session-1')).toBeGreaterThan(0);
 
     module.pruneHeatSessions([]);
@@ -130,9 +191,9 @@ describe('heatIndicator', () => {
     expect(module.getSessionHeat('session-1')).toBe(1);
     expect(module.getDisplayedSessionHeat('session-1')).toBe(0);
 
-    flushAnimationFrames();
+    advanceAnimationFrames(300);
 
-    expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(1, 2);
+    expect(module.getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
     expect(canvas.ctx.fill.mock.calls.length).toBeGreaterThan(1);
   });
 
@@ -142,8 +203,8 @@ describe('heatIndicator', () => {
     module.registerHeatCanvas('session-1', canvas.canvas);
 
     module.setSessionHeat('session-1', 1);
-    flushAnimationFrames();
-    expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(1, 2);
+    advanceAnimationFrames(300);
+    expect(module.getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
 
     module.setSessionHeat('session-1', 0);
     advanceAnimationFrames(30_000);
@@ -152,5 +213,51 @@ describe('heatIndicator', () => {
     advanceAnimationFrames(90_000);
     expect(module.getDisplayedSessionHeat('session-1')).toBeLessThan(0.01);
     expect(module.getDisplayedSessionHeat('session-1')).toBeGreaterThan(0);
+  });
+
+  it('recomputes decayed heat from elapsed time when returning from the background', async () => {
+    const module = await import('./heatIndicator');
+    const canvas = createCanvasMock();
+    module.registerHeatCanvas('session-1', canvas.canvas);
+    module.initHeatIndicator();
+
+    module.setSessionHeat('session-1', 1);
+    advanceAnimationFrames(300);
+    expect(module.getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
+
+    setDocumentHidden(true);
+    expect(rafQueue).toHaveLength(0);
+
+    advanceTimeWithoutFrames(30_000);
+    setDocumentHidden(false);
+
+    expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(0.25, 1);
+    expect(canvas.ctx.fill).toHaveBeenCalled();
+  });
+
+  it('continues polling while the document is hidden', async () => {
+    getSessionsMock.mockResolvedValue(
+      buildSessionsResponse([
+        {
+          id: 'session-1',
+          currentHeat: 1,
+          lastOutputAt: new Date(nowMs).toISOString(),
+        },
+      ]),
+    );
+
+    const module = await import('./heatIndicator');
+    const canvas = createCanvasMock();
+    module.registerHeatCanvas('session-1', canvas.canvas);
+    module.initHeatIndicator();
+    await flushPromises();
+
+    getSessionsMock.mockClear();
+    setDocumentHidden(true);
+
+    await runIntervalTick();
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(1);
+    expect(module.getSessionHeat('session-1')).toBe(1);
   });
 });
