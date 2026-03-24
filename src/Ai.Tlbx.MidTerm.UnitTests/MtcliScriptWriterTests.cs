@@ -204,6 +204,28 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
         Assert.Contains("mt_preview_reset", agents, StringComparison.Ordinal);
         Assert.Contains("atomically", agents, StringComparison.Ordinal);
+        Assert.Contains("recreates and refreshes it automatically", agents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ensure_DoesNotCreateRootAgentDocs()
+    {
+        Directory.CreateDirectory(_tempDir);
+
+        MidtermDirectory.Ensure(_tempDir);
+
+        Assert.False(File.Exists(Path.Combine(_tempDir, "AGENTS.md")));
+        Assert.False(File.Exists(Path.Combine(_tempDir, "CLAUDE.md")));
+    }
+
+    [Fact]
+    public void TryEnsureForCwd_ReturnsNullWhenDirectoryIsMissing()
+    {
+        var missingPath = Path.Combine(_tempDir, "missing");
+
+        var result = MidtermDirectory.TryEnsureForCwd(missingPath);
+
+        Assert.Null(result);
     }
 
     public void Dispose()

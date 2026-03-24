@@ -140,9 +140,8 @@ public static partial class SessionApiEndpoints
                 !string.IsNullOrWhiteSpace(targetDirectory) &&
                 Directory.Exists(targetDirectory))
             {
-                midtermDir = MidtermDirectory.Ensure(targetDirectory);
-                MidtermDirectory.AppendRootPointer(targetDirectory);
-                guidanceInjected = true;
+                midtermDir = MidtermDirectory.TryEnsureForCwd(targetDirectory);
+                guidanceInjected = midtermDir is not null;
             }
 
             if (!string.IsNullOrWhiteSpace(launchCommand))
@@ -776,15 +775,14 @@ public static partial class SessionApiEndpoints
             }
 
             var midtermDir = MidtermDirectory.Ensure(cwd);
-            var (claudeUpdated, agentsUpdated) = MidtermDirectory.AppendRootPointer(cwd);
 
             return Results.Json(new InjectGuidanceResponse
             {
                 MidtermDir = midtermDir,
                 MtcliShellPath = Path.Combine(midtermDir, "mtcli.sh"),
                 MtcliPowerShellPath = Path.Combine(midtermDir, "mtcli.ps1"),
-                ClaudeMdUpdated = claudeUpdated,
-                AgentsMdUpdated = agentsUpdated,
+                ClaudeMdUpdated = false,
+                AgentsMdUpdated = false,
             }, AppJsonContext.Default.InjectGuidanceResponse);
         });
     }

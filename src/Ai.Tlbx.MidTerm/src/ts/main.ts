@@ -432,8 +432,8 @@ function registerCallbacks(): void {
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
     },
-    onInjectGuidance: (sessionId: string) => {
-      void injectGuidance(sessionId);
+    onEnableMidtermFeatures: (sessionId: string) => {
+      void enableMidtermFeatures(sessionId);
     },
     onCloseSidebar: closeSidebar,
   });
@@ -793,22 +793,16 @@ function deleteSession(sessionId: string): void {
   });
 }
 
-async function injectGuidance(sessionId: string): Promise<void> {
+async function enableMidtermFeatures(sessionId: string): Promise<void> {
   if (isHubSessionId(sessionId)) {
     return;
   }
 
   try {
-    const res = await fetch(`/api/sessions/${sessionId}/inject-guidance`, { method: 'POST' });
-    if (!res.ok) {
-      log.warn(() => `Inject guidance failed: ${res.status}`);
-      return;
-    }
-
     const fg = getForegroundInfo(sessionId);
     await pasteToTerminal(sessionId, t(getInjectGuidancePromptKey(fg.name)));
   } catch (e: unknown) {
-    log.error(() => `Failed to inject guidance for ${sessionId}: ${String(e)}`);
+    log.error(() => `Failed to enable MidTerm features for ${sessionId}: ${String(e)}`);
   }
 }
 
@@ -1487,7 +1481,7 @@ function bindEvents(): void {
   });
   bindClick('btn-inject-mobile', () => {
     const activeId = $activeSessionId.get();
-    if (activeId) void injectGuidance(activeId);
+    if (activeId) void enableMidtermFeatures(activeId);
   });
   bindClick('btn-mobile-tab-terminal', () => {
     activateMobileTab('terminal');

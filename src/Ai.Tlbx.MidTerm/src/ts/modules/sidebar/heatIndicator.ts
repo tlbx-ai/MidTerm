@@ -16,6 +16,7 @@ const DRAW_THRESHOLD = 0.003;
 const CANVAS_CSS_W = 4;
 const CANVAS_CSS_H = 36;
 const RISE_TIME_CONSTANT_MS = 90;
+const BACKGROUND_SYNC_THRESHOLD_MS = 250;
 // Decay targets:
 // - 1.0 -> ~0.25 in 30s so idle sessions still keep a visible hierarchy
 // - effectively gone after roughly 2 minutes
@@ -40,15 +41,17 @@ interface SessionHeat {
   canvas: HTMLCanvasElement | null;
   ctx: CanvasRenderingContext2D | null;
   heat: number;
+  activityHeat: number;
   displayHeat: number;
   lastDrawnHeat: number;
+  lastActivityAtMs: number | null;
+  lastDisplayUpdateAtMs: number;
 }
 
 const sessions = new Map<string, SessionHeat>();
 let pollTimerId: number | null = null;
 let pollInFlight = false;
 let animationFrameId: number | null = null;
-let lastAnimationFrameAt = 0;
 
 function clampHeat(heat: number): number {
   if (!Number.isFinite(heat)) {
@@ -91,6 +94,73 @@ function buildColorLUT(): void {
 function lerpColor(t: number): [number, number, number] {
   const index = Math.min(COLOR_LUT_SIZE - 1, Math.max(0, Math.round(t * (COLOR_LUT_SIZE - 1))));
   return colorLUT[index] ?? [10, 14, 26];
+}
+
+function getNowMs(): number {
+  return Date.now();
+}
+
+function parseActivityTimestampMs(
+  timestamp: string | number | Date | null | undefined,
+): number | null {
+  if (timestamp instanceof Date) {
+    const dateMs = timestamp.getTime();
+    return Number.isFinite(dateMs) ? dateMs : null;
+  }
+
+  if (typeof timestamp === 'number') {
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  if (typeof timestamp === 'string' && timestamp.trim().length > 0) {
+    const parsedMs = Date.parse(timestamp);
+    return Number.isFinite(parsedMs) ? parsedMs : null;
+  }
+
+  return null;
+}
+
+function getTargetHeatAt(state: SessionHeat, nowMs: number): number {
+  if (state.lastActivityAtMs === null) {
+    return state.heat;
+  }
+
+  const elapsedMs = Math.max(0, nowMs - state.lastActivityAtMs);
+  return clampHeat(state.activityHeat * Math.exp(-elapsedMs / FALL_TIME_CONSTANT_MS));
+}
+
+function syncDisplayHeat(state: SessionHeat, nowMs: number, snapToTarget: boolean = false): void {
+  const previousUpdateAtMs = state.lastDisplayUpdateAtMs || nowMs;
+  const elapsedMs = Math.max(0, nowMs - previousUpdateAtMs);
+  const targetHeat = getTargetHeatAt(state, nowMs);
+
+  if (
+    snapToTarget ||
+    elapsedMs >= BACKGROUND_SYNC_THRESHOLD_MS ||
+    targetHeat <= state.displayHeat
+  ) {
+    state.displayHeat = targetHeat;
+  } else {
+    const blend = 1 - Math.exp(-elapsedMs / RISE_TIME_CONSTANT_MS);
+    state.displayHeat = clampHeat(state.displayHeat + (targetHeat - state.displayHeat) * blend);
+    if (Math.abs(state.displayHeat - targetHeat) <= ANIMATION_SNAP_THRESHOLD) {
+      state.displayHeat = targetHeat;
+    }
+  }
+
+  state.lastDisplayUpdateAtMs = nowMs;
+}
+
+function shouldAnimateState(state: SessionHeat, nowMs: number): boolean {
+  if (!state.ctx) {
+    return false;
+  }
+
+  const targetHeat = getTargetHeatAt(state, nowMs);
+  return (
+    targetHeat >= DRAW_THRESHOLD ||
+    Math.abs(state.displayHeat - targetHeat) > ANIMATION_SNAP_THRESHOLD
+  );
 }
 
 function drawCanvas(s: SessionHeat): void {
@@ -144,8 +214,11 @@ function getOrCreateSessionHeat(sessionId: string): SessionHeat {
       canvas: null,
       ctx: null,
       heat: 0,
+      activityHeat: 0,
       displayHeat: 0,
       lastDrawnHeat: 0,
+      lastActivityAtMs: null,
+      lastDisplayUpdateAtMs: getNowMs(),
     };
     sessions.set(sessionId, state);
   }
@@ -161,60 +234,57 @@ function scheduleAnimation(): void {
   animationFrameId = window.requestAnimationFrame(stepAnimation);
 }
 
-function stepAnimation(timestamp: number): void {
+function stepAnimation(_timestamp: number): void {
   animationFrameId = null;
-
-  const deltaMs =
-    lastAnimationFrameAt > 0 ? Math.min(64, Math.max(1, timestamp - lastAnimationFrameAt)) : 16;
-  lastAnimationFrameAt = timestamp;
+  const nowMs = getNowMs();
 
   let needsAnotherFrame = false;
   for (const state of sessions.values()) {
-    const delta = state.heat - state.displayHeat;
-    if (Math.abs(delta) <= ANIMATION_SNAP_THRESHOLD) {
-      if (Math.abs(state.displayHeat - state.heat) > 0.0001) {
-        state.displayHeat = state.heat;
-        drawCanvas(state);
-      }
-      continue;
-    }
-
-    const timeConstantMs = delta > 0 ? RISE_TIME_CONSTANT_MS : FALL_TIME_CONSTANT_MS;
-    const blend = 1 - Math.exp(-deltaMs / timeConstantMs);
-    state.displayHeat = clampHeat(state.displayHeat + delta * blend);
+    syncDisplayHeat(state, nowMs);
     drawCanvas(state);
-    needsAnotherFrame = true;
+    needsAnotherFrame = shouldAnimateState(state, nowMs) || needsAnotherFrame;
   }
 
   if (needsAnotherFrame) {
     animationFrameId = window.requestAnimationFrame(stepAnimation);
-    return;
   }
-
-  lastAnimationFrameAt = 0;
 }
 
-function applyHeat(sessionId: string, heat: number): void {
+function applyHeat(
+  sessionId: string,
+  heat: number,
+  lastActivityAt?: string | number | Date | null,
+): void {
   const state = getOrCreateSessionHeat(sessionId);
   const nextHeat = clampHeat(heat);
-  if (Math.abs(state.heat - nextHeat) < 0.0001) {
+  const nowMs = getNowMs();
+  const parsedActivityAtMs = parseActivityTimestampMs(lastActivityAt);
+  const nextActivityAtMs = parsedActivityAtMs ?? (nextHeat > 0 ? nowMs : state.lastActivityAtMs);
+  const nextActivityHeat = nextHeat > 0 ? nextHeat : state.activityHeat;
+
+  if (
+    Math.abs(state.heat - nextHeat) < 0.0001 &&
+    state.lastActivityAtMs === nextActivityAtMs &&
+    Math.abs(state.activityHeat - nextActivityHeat) < 0.0001
+  ) {
     return;
   }
 
   state.heat = nextHeat;
-  if (document.hidden || !state.ctx) {
-    state.displayHeat = nextHeat;
+  state.activityHeat = nextActivityHeat;
+  state.lastActivityAtMs = nextActivityAtMs;
+
+  syncDisplayHeat(state, nowMs, document.hidden || !state.ctx);
+
+  if (!state.ctx) {
     state.lastDrawnHeat = -1;
     return;
   }
 
-  if (Math.abs(state.displayHeat - nextHeat) <= ANIMATION_SNAP_THRESHOLD) {
-    state.displayHeat = nextHeat;
-    drawCanvas(state);
-    return;
+  drawCanvas(state);
+  if (shouldAnimateState(state, nowMs)) {
+    scheduleAnimation();
   }
-
-  scheduleAnimation();
 }
 
 async function refreshHeatFromServer(): Promise<void> {
@@ -232,7 +302,11 @@ async function refreshHeatFromServer(): Promise<void> {
     const activeIds = new Set<string>();
     for (const session of data.sessions) {
       activeIds.add(session.id);
-      applyHeat(session.id, session.supervisor?.currentHeat ?? 0);
+      applyHeat(
+        session.id,
+        session.supervisor?.currentHeat ?? 0,
+        session.supervisor?.lastOutputAt ?? null,
+      );
     }
 
     for (const sessionId of sessions.keys()) {
@@ -265,10 +339,11 @@ export function registerHeatCanvas(sessionId: string, canvas: HTMLCanvasElement)
   state.canvas = canvas;
   state.ctx = ctx;
   state.lastDrawnHeat = -1;
+  syncDisplayHeat(state, getNowMs(), document.hidden);
 
   if (!document.hidden) {
     drawCanvas(state);
-    if (Math.abs(state.displayHeat - state.heat) > ANIMATION_SNAP_THRESHOLD) {
+    if (shouldAnimateState(state, getNowMs())) {
       scheduleAnimation();
     }
   }
@@ -320,20 +395,28 @@ export function initHeatIndicator(): void {
 
   void refreshHeatFromServer();
   pollTimerId = window.setInterval(() => {
-    if (document.hidden) {
-      return;
-    }
-
     void refreshHeatFromServer();
   }, POLL_INTERVAL_MS);
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      void refreshHeatFromServer();
-      sessions.forEach((state) => {
-        drawCanvas(state);
-      });
+    const nowMs = getNowMs();
+    sessions.forEach((state) => {
+      syncDisplayHeat(state, nowMs, true);
+    });
+
+    if (document.hidden) {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      return;
     }
+
+    void refreshHeatFromServer();
+    sessions.forEach((state) => {
+      drawCanvas(state);
+    });
+    scheduleAnimation();
   });
 }
 
@@ -347,8 +430,6 @@ export function destroyHeatIndicator(): void {
     window.cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
-
-  lastAnimationFrameAt = 0;
 
   sessions.clear();
 }

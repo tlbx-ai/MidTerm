@@ -436,9 +436,9 @@
   "session.markAgentControlled": "Mark as agent controlled",
   "session.markHumanControlled": "Return to human control",
   "session.close": "Close session",
-  "session.injectGuidance": "Tell AI about MidTerm",
-  "session.injectGuidancePrompt.default": "You are running inside MidTerm, a web terminal multiplexer. MidTerm created .midterm/ in this working directory. This terminal can use MidTerm browser-control and split-pane helpers. Read .midterm/AGENTS.md now. MidTerm CLI helpers are available in .midterm/mtcli.sh and .midterm/mtcli.ps1.",
-  "session.injectGuidancePrompt.claude": "You are running inside MidTerm, a web terminal multiplexer. MidTerm created .midterm/ in this working directory. This terminal can use MidTerm browser-control, split-pane, and DOM-inspection helpers. Read .midterm/CLAUDE.md now. MidTerm CLI helpers are available in .midterm/mtcli.sh and .midterm/mtcli.ps1.",
+  "session.injectGuidance": "Enable MidTerm Features",
+  "session.injectGuidancePrompt.default": "You are running inside MidTerm, a web terminal multiplexer. MidTerm keeps .midterm/ fresh in this working directory. This terminal can use MidTerm browser-control and split-pane helpers. Read .midterm/AGENTS.md now. MidTerm CLI helpers are available in .midterm/mtcli.sh and .midterm/mtcli.ps1.",
+  "session.injectGuidancePrompt.claude": "You are running inside MidTerm, a web terminal multiplexer. MidTerm keeps .midterm/ fresh in this working directory. This terminal can use MidTerm browser-control, split-pane, and DOM-inspection helpers. Read .midterm/CLAUDE.md now. MidTerm CLI helpers are available in .midterm/mtcli.sh and .midterm/mtcli.ps1.",
   "session.removeFromLayout": "Remove from split layout",
   "session.actions": "Actions",
 
