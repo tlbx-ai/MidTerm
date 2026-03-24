@@ -221,6 +221,88 @@ public static class TtyHostSpawner
 #pragma warning restore CA1416
     }
 
+    internal static bool TryStartRedirectedProcess(
+        string fileName,
+        IReadOnlyList<string> args,
+        string workingDirectory,
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        IReadOnlyList<string>? pathPrependEntries,
+        string? runAsUser,
+        out RedirectedProcessHandle? launchedProcess,
+        out string? failure)
+    {
+        launchedProcess = null;
+        failure = null;
+
+#pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
+#if WINDOWS
+        if (IsRunningAsSystem())
+        {
+            return TryStartRedirectedProcessAsUserWindows(
+                fileName,
+                args,
+                workingDirectory,
+                environmentOverrides,
+                pathPrependEntries,
+                runAsUser,
+                out launchedProcess,
+                out failure);
+        }
+#else
+        if (geteuid() == 0 && !string.IsNullOrWhiteSpace(runAsUser))
+        {
+            if (!UserValidationService.IsValidUsernameFormat(runAsUser))
+            {
+                failure = $"Rejected invalid username format: {runAsUser}";
+                return false;
+            }
+
+            var sudoStartInfo = CreateRedirectedProcessStartInfo("sudo", workingDirectory, environmentOverrides, pathPrependEntries);
+            var preservedEnvironmentVariables = new List<string>();
+            if (pathPrependEntries is { Count: > 0 })
+            {
+                preservedEnvironmentVariables.Add("PATH");
+            }
+
+            if (environmentOverrides is not null)
+            {
+                foreach (var key in environmentOverrides.Keys.Where(static key => !string.IsNullOrWhiteSpace(key)))
+                {
+                    if (!preservedEnvironmentVariables.Contains(key, StringComparer.Ordinal))
+                    {
+                        preservedEnvironmentVariables.Add(key);
+                    }
+                }
+            }
+
+            if (preservedEnvironmentVariables.Count > 0)
+            {
+                sudoStartInfo.ArgumentList.Add($"--preserve-env={string.Join(',', preservedEnvironmentVariables)}");
+            }
+
+            sudoStartInfo.ArgumentList.Add("-H");
+            sudoStartInfo.ArgumentList.Add("-u");
+            sudoStartInfo.ArgumentList.Add(runAsUser);
+            sudoStartInfo.ArgumentList.Add(fileName);
+            foreach (var arg in args)
+            {
+                sudoStartInfo.ArgumentList.Add(arg);
+            }
+
+            return TryStartRedirectedProcessDirect(sudoStartInfo, out launchedProcess, out failure);
+        }
+#endif
+#pragma warning restore CA1416
+
+        var directStartInfo = CreateRedirectedProcessStartInfo(fileName, workingDirectory, environmentOverrides, pathPrependEntries);
+        foreach (var arg in args)
+        {
+            directStartInfo.ArgumentList.Add(arg);
+        }
+
+        return TryStartRedirectedProcessDirect(directStartInfo, out launchedProcess, out failure);
+    }
+
     private static string BuildArgs(
         string sessionId, string? shellType, string? workingDirectory, int cols, int rows,
         string instanceId, string ownerToken,
@@ -252,6 +334,148 @@ public static class TtyHostSpawner
             args += $" --tmux-bin-dir \"{tmuxBinDir}\"";
         }
         return args;
+    }
+
+    private static ProcessStartInfo CreateRedirectedProcessStartInfo(
+        string fileName,
+        string workingDirectory,
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        IReadOnlyList<string>? pathPrependEntries)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        ApplyEnvironmentOverrides(startInfo.Environment, environmentOverrides);
+        ApplyPathPrependEntries(startInfo.Environment, pathPrependEntries);
+        return startInfo;
+    }
+
+    private static bool TryStartRedirectedProcessDirect(
+        ProcessStartInfo startInfo,
+        out RedirectedProcessHandle? launchedProcess,
+        out string? failure)
+    {
+        launchedProcess = null;
+        failure = null;
+
+        try
+        {
+            var process = new Process
+            {
+                StartInfo = startInfo,
+                EnableRaisingEvents = true
+            };
+
+            if (!process.Start())
+            {
+                failure = "Process.Start returned false.";
+                process.Dispose();
+                return false;
+            }
+
+            launchedProcess = new RedirectedProcessHandle(
+                process,
+                process.StandardInput,
+                process.StandardOutput,
+                process.StandardError);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            failure = ex.Message;
+            return false;
+        }
+    }
+
+    private static void ApplyEnvironmentOverrides(
+        IDictionary<string, string?> environment,
+        IReadOnlyDictionary<string, string?>? environmentOverrides)
+    {
+        if (environmentOverrides is null)
+        {
+            return;
+        }
+
+        foreach (var (key, value) in environmentOverrides)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            if (value is null)
+            {
+                environment.Remove(key);
+            }
+            else
+            {
+                environment[key] = value;
+            }
+        }
+    }
+
+    private static void ApplyPathPrependEntries(
+        IDictionary<string, string?> environment,
+        IReadOnlyList<string>? pathPrependEntries)
+    {
+        if (pathPrependEntries is not { Count: > 0 })
+        {
+            return;
+        }
+
+        var existingPath = environment.TryGetValue("PATH", out var currentPath)
+            ? currentPath ?? string.Empty
+            : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+
+        foreach (var directory in pathPrependEntries)
+        {
+            PrependPath(environment, directory, existingPath);
+            existingPath = environment.TryGetValue("PATH", out currentPath)
+                ? currentPath ?? string.Empty
+                : string.Empty;
+        }
+    }
+
+    private static void PrependPath(
+        IDictionary<string, string?> environment,
+        string? directory,
+        string existingPath)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var parts = existingPath
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Contains(directory, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+            ? directory
+            : directory + Path.PathSeparator + existingPath;
+    }
+
+    internal sealed class RedirectedProcessHandle(
+        Process process,
+        StreamWriter input,
+        StreamReader output,
+        StreamReader error)
+    {
+        public Process Process { get; } = process;
+        public StreamWriter Input { get; } = input;
+        public StreamReader Output { get; } = output;
+        public StreamReader Error { get; } = error;
     }
 
 #if !WINDOWS
@@ -911,6 +1135,231 @@ public static class TtyHostSpawner
             if (stderrRead != IntPtr.Zero) CloseHandle(stderrRead);
             if (stderrWrite != IntPtr.Zero) CloseHandle(stderrWrite);
         }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool TryStartRedirectedProcessAsUserWindows(
+        string fileName,
+        IReadOnlyList<string> args,
+        string workingDirectory,
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        IReadOnlyList<string>? pathPrependEntries,
+        string? runAsUser,
+        out RedirectedProcessHandle? launchedProcess,
+        out string? failure)
+    {
+        launchedProcess = null;
+        failure = null;
+
+        if (!TryGetUserToken(runAsUser, out var userToken, out _))
+        {
+            failure = "Failed to get user token for impersonation";
+            return false;
+        }
+
+        IntPtr stdinRead = IntPtr.Zero;
+        IntPtr stdinWrite = IntPtr.Zero;
+        IntPtr stdoutRead = IntPtr.Zero;
+        IntPtr stdoutWrite = IntPtr.Zero;
+        IntPtr stderrRead = IntPtr.Zero;
+        IntPtr stderrWrite = IntPtr.Zero;
+
+        try
+        {
+            var sa = new SECURITY_ATTRIBUTES
+            {
+                bInheritHandle = true
+            };
+            sa.nLength = Marshal.SizeOf(sa);
+
+            if (!CreatePipe(out stdinRead, out stdinWrite, ref sa, 0))
+            {
+                failure = $"CreatePipe stdin failed: {Marshal.GetLastWin32Error()}";
+                return false;
+            }
+
+            if (!CreatePipe(out stdoutRead, out stdoutWrite, ref sa, 0))
+            {
+                failure = $"CreatePipe stdout failed: {Marshal.GetLastWin32Error()}";
+                return false;
+            }
+
+            if (!CreatePipe(out stderrRead, out stderrWrite, ref sa, 0))
+            {
+                failure = $"CreatePipe stderr failed: {Marshal.GetLastWin32Error()}";
+                return false;
+            }
+
+            SetHandleInformation(stdinWrite, HANDLE_FLAG_INHERIT, 0);
+            SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0);
+            SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0);
+
+            if (!CreateEnvironmentBlock(out var baseEnvironmentBlock, userToken, false))
+            {
+                failure = $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}";
+                return false;
+            }
+
+            try
+            {
+                var mergedEnvironmentBlock = BuildWindowsEnvironmentBlock(
+                    baseEnvironmentBlock,
+                    environmentOverrides,
+                    pathPrependEntries);
+
+                try
+                {
+                    var commandLine = BuildCommandLine(fileName, args);
+                    var si = new STARTUPINFO();
+                    si.cb = Marshal.SizeOf<STARTUPINFO>();
+                    si.lpDesktop = Marshal.StringToHGlobalUni("winsta0\\default");
+                    si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+                    si.wShowWindow = SW_HIDE;
+                    si.hStdInput = stdinRead;
+                    si.hStdOutput = stdoutWrite;
+                    si.hStdError = stderrWrite;
+
+                    try
+                    {
+                        var success = CreateProcessAsUser(
+                            userToken,
+                            null,
+                            commandLine,
+                            IntPtr.Zero,
+                            IntPtr.Zero,
+                            true,
+                            CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+                            mergedEnvironmentBlock,
+                            workingDirectory,
+                            ref si,
+                            out var pi);
+
+                        if (!success)
+                        {
+                            failure = $"CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}";
+                            return false;
+                        }
+
+                        CloseHandle(pi.hThread);
+                        CloseHandle(stdinRead); stdinRead = IntPtr.Zero;
+                        CloseHandle(stdoutWrite); stdoutWrite = IntPtr.Zero;
+                        CloseHandle(stderrWrite); stderrWrite = IntPtr.Zero;
+
+                        var process = Process.GetProcessById(pi.dwProcessId);
+                        process.EnableRaisingEvents = true;
+                        CloseHandle(pi.hProcess);
+
+                        var stdinSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stdinWrite, ownsHandle: true);
+                        var stdoutSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stdoutRead, ownsHandle: true);
+                        var stderrSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stderrRead, ownsHandle: true);
+                        stdinWrite = IntPtr.Zero;
+                        stdoutRead = IntPtr.Zero;
+                        stderrRead = IntPtr.Zero;
+
+                        var inputStream = new FileStream(stdinSafe, FileAccess.Write);
+                        var outputStream = new FileStream(stdoutSafe, FileAccess.Read);
+                        var errorStream = new FileStream(stderrSafe, FileAccess.Read);
+
+                        launchedProcess = new RedirectedProcessHandle(
+                            process,
+                            new StreamWriter(inputStream, new UTF8Encoding(false)) { AutoFlush = true },
+                            new StreamReader(outputStream, Encoding.UTF8),
+                            new StreamReader(errorStream, Encoding.UTF8));
+                        return true;
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(si.lpDesktop);
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(mergedEnvironmentBlock);
+                }
+            }
+            finally
+            {
+                DestroyEnvironmentBlock(baseEnvironmentBlock);
+            }
+        }
+        finally
+        {
+            CloseHandle(userToken);
+            if (stdinRead != IntPtr.Zero) CloseHandle(stdinRead);
+            if (stdinWrite != IntPtr.Zero) CloseHandle(stdinWrite);
+            if (stdoutRead != IntPtr.Zero) CloseHandle(stdoutRead);
+            if (stdoutWrite != IntPtr.Zero) CloseHandle(stdoutWrite);
+            if (stderrRead != IntPtr.Zero) CloseHandle(stderrRead);
+            if (stderrWrite != IntPtr.Zero) CloseHandle(stderrWrite);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static IntPtr BuildWindowsEnvironmentBlock(
+        IntPtr baseEnvironmentBlock,
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        IReadOnlyList<string>? pathPrependEntries)
+    {
+        var environment = ReadWindowsEnvironmentBlock(baseEnvironmentBlock);
+        ApplyEnvironmentOverrides(environment, environmentOverrides);
+        ApplyPathPrependEntries(environment, pathPrependEntries);
+
+        var entries = environment
+            .Where(static pair => !string.IsNullOrWhiteSpace(pair.Key))
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static pair => $"{pair.Key}={pair.Value ?? string.Empty}");
+
+        var payload = string.Join('\0', entries) + "\0\0";
+        return Marshal.StringToHGlobalUni(payload);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static Dictionary<string, string?> ReadWindowsEnvironmentBlock(IntPtr environmentBlock)
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var current = environmentBlock;
+
+        while (true)
+        {
+            var entry = Marshal.PtrToStringUni(current);
+            if (string.IsNullOrEmpty(entry))
+            {
+                break;
+            }
+
+            if (TrySplitEnvironmentEntry(entry, out var key, out var value))
+            {
+                environment[key] = value;
+            }
+
+            current += (entry.Length + 1) * sizeof(char);
+        }
+
+        return environment;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool TrySplitEnvironmentEntry(string entry, out string key, out string value)
+    {
+        key = string.Empty;
+        value = string.Empty;
+
+        if (string.IsNullOrEmpty(entry))
+        {
+            return false;
+        }
+
+        var separatorIndex = entry[0] == '='
+            ? entry.IndexOf('=', 1)
+            : entry.IndexOf('=');
+        if (separatorIndex <= 0)
+        {
+            return false;
+        }
+
+        key = entry[..separatorIndex];
+        value = entry[(separatorIndex + 1)..];
+        return true;
     }
 
     [SupportedOSPlatform("windows")]

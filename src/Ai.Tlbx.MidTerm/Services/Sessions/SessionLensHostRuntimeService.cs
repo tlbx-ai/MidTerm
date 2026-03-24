@@ -97,40 +97,36 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             var executablePath = attachPoint is null
                 ? AiCliCommandLocator.ResolveExecutablePath(profile, session)
                 : null;
-
-            var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = launch.FileName,
-                    Arguments = launch.Arguments,
-                    WorkingDirectory = workingDirectory,
-                    UseShellExecute = false,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                },
-                EnableRaisingEvents = true
-            };
-            PrependPath(process.StartInfo, Path.GetDirectoryName(executablePath));
             var settings = _settingsService.Load();
-            LensHostEnvironmentResolver.ApplyUserProfileEnvironment(process.StartInfo, settings);
-            ApplyProviderSettings(process.StartInfo, settings);
-            process.StartInfo.Environment["MIDTERM_INSTANCE_ID"] = _instanceIdentity.InstanceId;
-            process.StartInfo.Environment["MIDTERM_OWNER_TOKEN"] = _instanceIdentity.OwnerToken;
+            BuildLaunchEnvironment(
+                settings,
+                executablePath,
+                _instanceIdentity,
+                out var environmentOverrides,
+                out var pathPrependEntries);
 
-            if (!process.Start())
+            if (!TtyHostSpawner.TryStartRedirectedProcess(
+                    launch.FileName,
+                    launch.Arguments,
+                    workingDirectory,
+                    environmentOverrides,
+                    pathPrependEntries,
+                    settings.RunAsUser,
+                    out var launchedProcess,
+                    out var launchFailure))
             {
                 state.Status = HostRuntimeStatus.Error;
-                state.LastError = "mtagenthost process failed to start.";
+                state.LastError = string.IsNullOrWhiteSpace(launchFailure)
+                    ? "mtagenthost process failed to start."
+                    : launchFailure;
                 return false;
             }
 
+            var process = launchedProcess!.Process;
             state.Process = process;
-            state.Input = process.StandardInput;
-            state.Output = process.StandardOutput;
-            state.Error = process.StandardError;
+            state.Input = launchedProcess.Input;
+            state.Output = launchedProcess.Output;
+            state.Error = launchedProcess.Error;
             state.TransportKey = attachPoint is null ? "mtagenthost-stdio" : attachPoint.TransportKind;
             state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
             state.Status = HostRuntimeStatus.Starting;
@@ -665,11 +661,57 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         };
     }
 
-    private static void ApplyProviderSettings(ProcessStartInfo startInfo, MidTermSettings settings)
+    private static void BuildLaunchEnvironment(
+        MidTermSettings settings,
+        string? executablePath,
+        MidTermInstanceIdentity instanceIdentity,
+        out Dictionary<string, string?> environmentOverrides,
+        out List<string> pathPrependEntries)
     {
-        startInfo.Environment["MIDTERM_LENS_CODEX_ENVIRONMENT_VARIABLES"] = settings.CodexEnvironmentVariables ?? string.Empty;
-        startInfo.Environment["MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
-        startInfo.Environment["MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =
+        environmentOverrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        pathPrependEntries = [];
+
+        var executableDirectory = Path.GetDirectoryName(executablePath);
+        if (!string.IsNullOrWhiteSpace(executableDirectory))
+        {
+            pathPrependEntries.Add(executableDirectory);
+        }
+
+        if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
+            if (!string.IsNullOrWhiteSpace(profileDirectory) && Directory.Exists(profileDirectory))
+            {
+                environmentOverrides["USERPROFILE"] = profileDirectory;
+                environmentOverrides["HOME"] = profileDirectory;
+                environmentOverrides["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
+
+                var root = Path.GetPathRoot(profileDirectory);
+                if (!string.IsNullOrWhiteSpace(root))
+                {
+                    environmentOverrides["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    environmentOverrides["HOMEPATH"] = profileDirectory[root.Length..];
+                }
+
+                var appDataDirectory = Path.Combine(profileDirectory, "AppData", "Roaming");
+                var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
+                environmentOverrides["APPDATA"] = appDataDirectory;
+                environmentOverrides["LOCALAPPDATA"] = localAppDataDirectory;
+                pathPrependEntries.Add(Path.Combine(appDataDirectory, "npm"));
+                pathPrependEntries.Add(Path.Combine(localAppDataDirectory, "Programs", "nodejs"));
+            }
+        }
+
+        ApplyProviderSettings(environmentOverrides, settings);
+        environmentOverrides["MIDTERM_INSTANCE_ID"] = instanceIdentity.InstanceId;
+        environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
+    }
+
+    private static void ApplyProviderSettings(IDictionary<string, string?> environment, MidTermSettings settings)
+    {
+        environment["MIDTERM_LENS_CODEX_ENVIRONMENT_VARIABLES"] = settings.CodexEnvironmentVariables ?? string.Empty;
+        environment["MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
+        environment["MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =
             settings.ClaudeDangerouslySkipPermissionsDefault ? "true" : "false";
     }
 
@@ -692,8 +734,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             launch = new HostLaunch(
                 installedExecutable,
                 string.Equals(mode, SyntheticMode, StringComparison.Ordinal)
-                    ? $"--stdio --synthetic {profile}"
-                    : "--stdio");
+                    ? ["--stdio", "--synthetic", profile]
+                    : ["--stdio"]);
             return true;
         }
 
@@ -723,8 +765,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             launch = new HostLaunch(
                 dotnetHost,
                 string.Equals(mode, SyntheticMode, StringComparison.Ordinal)
-                    ? $"\"{devDll}\" --stdio --synthetic {profile}"
-                    : $"\"{devDll}\" --stdio");
+                    ? [devDll, "--stdio", "--synthetic", profile]
+                    : [devDll, "--stdio"]);
             return true;
         }
 
@@ -736,22 +778,6 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     {
         return baseDir.Contains("Ai.Tlbx.MidTerm.UnitTests", StringComparison.OrdinalIgnoreCase) ||
                baseDir.Contains("Ai.Tlbx.MidTerm.Tests", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static void PrependPath(ProcessStartInfo startInfo, string? directory)
-    {
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-        {
-            return;
-        }
-
-        var existingPath = startInfo.Environment.TryGetValue("PATH", out var currentPath)
-            ? currentPath
-            : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-
-        startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
-            ? directory
-            : directory + Path.PathSeparator + existingPath;
     }
 
     private void AppendSubmittedUserTurn(
@@ -898,7 +924,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         public Task? ErrorTask { get; set; }
     }
 
-    private readonly record struct HostLaunch(string FileName, string Arguments);
+    private readonly record struct HostLaunch(string FileName, IReadOnlyList<string> Arguments);
 
     private enum HostRuntimeStatus
     {
