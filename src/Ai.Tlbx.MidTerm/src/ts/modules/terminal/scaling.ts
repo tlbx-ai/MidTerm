@@ -107,6 +107,79 @@ function getXtermCellDimensions(
   return { cellWidth: dims.width, cellHeight: dims.height };
 }
 
+function measureTerminalCellDimensions(
+  state: Pick<TerminalState, 'terminal' | 'container'>,
+): { cellWidth: number; cellHeight: number } | null {
+  const xtermDims = getXtermCellDimensions(state.terminal);
+  if (xtermDims) {
+    return xtermDims;
+  }
+
+  const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
+  const terminalCols = state.terminal.cols;
+  const terminalRows = state.terminal.rows;
+  if (!screen || terminalCols <= 0 || terminalRows <= 0) {
+    return null;
+  }
+
+  const cellWidth = screen.offsetWidth / terminalCols;
+  const cellHeight = screen.offsetHeight / terminalRows;
+  if (cellWidth < 1 || cellHeight < 1) {
+    return null;
+  }
+
+  return { cellWidth, cellHeight };
+}
+
+function calculateOptimalDimensionsForViewport(
+  state: Pick<TerminalState, 'terminal' | 'container'>,
+  container: HTMLElement,
+  isLayoutPane: boolean,
+): { cols: number; rows: number } | null {
+  const cellDims = measureTerminalCellDimensions(state);
+  if (!cellDims) {
+    return null;
+  }
+
+  const rect = container.getBoundingClientRect();
+  const tabBarH = isLayoutPane ? 0 : getTabBarHeight();
+  const dockWidth = isLayoutPane ? 0 : getDockPanelWidth();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
+  const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
+
+  if (availWidth <= 0 || availHeight <= 0) {
+    return null;
+  }
+
+  let cols = Math.floor(availWidth / cellDims.cellWidth);
+  let rows = Math.floor(availHeight / cellDims.cellHeight);
+  cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
+  rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
+  return { cols, rows };
+}
+
+export function getTerminalViewportMismatch(
+  state: Pick<TerminalState, 'terminal' | 'container'>,
+): { optimalCols: number; optimalRows: number; isTooLarge: boolean; isTooSmall: boolean } | null {
+  const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
+  const viewportContainer = layoutPane ?? dom.terminalsArea;
+  if (!viewportContainer) {
+    return null;
+  }
+
+  const optimal = calculateOptimalDimensionsForViewport(state, viewportContainer, !!layoutPane);
+  if (!optimal) {
+    return null;
+  }
+
+  return {
+    optimalCols: optimal.cols,
+    optimalRows: optimal.rows,
+    isTooLarge: state.terminal.cols > optimal.cols || state.terminal.rows > optimal.rows,
+    isTooSmall: state.terminal.cols < optimal.cols || state.terminal.rows < optimal.rows,
+  };
+}
+
 function logResizeDiagnostics(
   operation: 'create' | 'manual-resize',
   sessionId: string,
@@ -426,19 +499,9 @@ export function fitSessionToScreen(sessionId: string): void {
 
   // Get cell dimensions — prefer xterm.js internal render dimensions
   // to avoid circular measurements when terminal overflows container
-  const xtermCellDims = getXtermCellDimensions(state.terminal);
-  let cellWidth: number | null = xtermCellDims?.cellWidth ?? null;
-  let cellHeight: number | null = xtermCellDims?.cellHeight ?? null;
-
-  if (!cellWidth || !cellHeight) {
-    const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
-    const terminalCols = state.terminal.cols;
-    const terminalRows = state.terminal.rows;
-    if (screen && terminalCols > 0 && terminalRows > 0) {
-      cellWidth = screen.offsetWidth / terminalCols;
-      cellHeight = screen.offsetHeight / terminalRows;
-    }
-  }
+  const measuredCellDims = measureTerminalCellDimensions(state);
+  const cellWidth = measuredCellDims?.cellWidth ?? null;
+  const cellHeight = measuredCellDims?.cellHeight ?? null;
 
   if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
     // Fallback to FitAddon if measurements aren't valid
@@ -519,19 +582,9 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
   if (!state || !state.opened) return;
 
   // Get cell dimensions — prefer xterm.js internal render dimensions
-  const xtermCellDims = getXtermCellDimensions(state.terminal);
-  let cellWidth: number | null = xtermCellDims?.cellWidth ?? null;
-  let cellHeight: number | null = xtermCellDims?.cellHeight ?? null;
-
-  if (!cellWidth || !cellHeight) {
-    const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
-    const terminalCols = state.terminal.cols;
-    const terminalRows = state.terminal.rows;
-    if (screen && terminalCols > 0 && terminalRows > 0) {
-      cellWidth = screen.offsetWidth / terminalCols;
-      cellHeight = screen.offsetHeight / terminalRows;
-    }
-  }
+  const measuredCellDims = measureTerminalCellDimensions(state);
+  const cellWidth = measuredCellDims?.cellWidth ?? null;
+  const cellHeight = measuredCellDims?.cellHeight ?? null;
 
   if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
     // Fallback to fitAddon if measurements aren't valid
@@ -589,6 +642,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   const xterm = container.querySelector<HTMLElement>('.xterm');
   if (!xterm) return;
 
+  const viewportMismatch = getTerminalViewportMismatch(state);
+  const hasOptimalSizeMismatch = !!viewportMismatch?.isTooLarge || !!viewportMismatch?.isTooSmall;
+
   const availWidth = container.clientWidth - TERMINAL_PADDING;
   const availHeight = container.clientHeight - TERMINAL_PADDING;
   const termWidth = xterm.offsetWidth;
@@ -602,7 +658,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   let scale = Math.min(scaleX, scaleY, 1);
 
   // Treat small differences as perfect fit (3% tolerance for rendering variance)
-  if (scale > SCALE_TOLERANCE) {
+  if (!hasOptimalSizeMismatch && scale > SCALE_TOLERANCE) {
     scale = 1;
   }
 
@@ -663,7 +719,13 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       if (overlay) {
         overlay.remove();
       }
-      scheduleMainBrowserResize();
+      if (hasOptimalSizeMismatch) {
+        scheduleMainBrowserResize();
+      }
+      return;
+    }
+
+    if (!hasOptimalSizeMismatch) {
       return;
     }
 
@@ -687,14 +749,17 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       ? `${t('terminal.scaledTo')} ${pct}%`
       : `${t('terminal.scaledContent')} (${pct}%) - ${t('terminal.makeReferenceScaleBrowser')}`;
     setOverlayCopy(el, `${overlayLabel}${diagHtml}`);
-  } else if (termWidth < availWidth - 2 || termHeight < availHeight - 2) {
+  } else if (
+    viewportMismatch?.isTooSmall ||
+    termWidth < availWidth - 2 ||
+    termHeight < availHeight - 2
+  ) {
     // Fits but undersized — no transform, flexbox centers it
     xterm.style.transform = '';
     xterm.style.transformOrigin = '';
     container.classList.remove('scaled');
 
-    const usage = Math.max(termWidth / availWidth, termHeight / availHeight);
-    if (usage < 0.7) {
+    if (viewportMismatch?.isTooSmall) {
       if ($isMainBrowser.get()) {
         if (overlay) {
           overlay.remove();
@@ -877,30 +942,10 @@ function periodicResizeCheck(): void {
     const termRows = state.terminal.rows;
     if (termCols <= 0 || termRows <= 0) return;
 
-    const xtermDims = getXtermCellDimensions(state.terminal);
-    let cellWidth: number;
-    let cellHeight: number;
-    if (xtermDims) {
-      cellWidth = xtermDims.cellWidth;
-      cellHeight = xtermDims.cellHeight;
-    } else {
-      const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
-      if (!screen) return;
-      cellWidth = screen.offsetWidth / termCols;
-      cellHeight = screen.offsetHeight / termRows;
-      if (cellWidth < 1 || cellHeight < 1) return;
-    }
-
-    const rect = container.getBoundingClientRect();
-    const tabBarH = layoutPane ? 0 : getTabBarHeight();
-    const dockWidth = layoutPane ? 0 : getDockPanelWidth();
-    const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
-    const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
-
-    let optimalCols = Math.floor(availWidth / cellWidth);
-    let optimalRows = Math.floor(availHeight / cellHeight);
-    optimalCols = Math.max(MIN_TERMINAL_COLS, Math.min(optimalCols, MAX_TERMINAL_COLS));
-    optimalRows = Math.max(MIN_TERMINAL_ROWS, Math.min(optimalRows, MAX_TERMINAL_ROWS));
+    const optimal = calculateOptimalDimensionsForViewport(state, container, !!layoutPane);
+    if (!optimal) return;
+    const optimalCols = optimal.cols;
+    const optimalRows = optimal.rows;
 
     if (termCols !== optimalCols || termRows !== optimalRows) {
       const session = sessions[sessionId];
