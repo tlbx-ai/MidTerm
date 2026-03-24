@@ -671,7 +671,7 @@ async function createSession(): Promise<void> {
     rows,
     shell,
     workingDirectory: selection.workingDirectory,
-    agentControlled: true,
+    agentControlled: false,
     injectGuidance: true,
     profile: selection.provider,
     lensOnly: true,
