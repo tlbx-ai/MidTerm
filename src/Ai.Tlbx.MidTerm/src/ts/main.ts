@@ -132,7 +132,6 @@ import {
   showLensDebugScenario,
 } from './modules/agentView';
 import { openSessionLauncher, type SessionLauncherSelection } from './modules/sessionLauncher';
-import { buildAgentLaunchCommand } from './modules/sessionLauncher/agentLaunch';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
@@ -580,6 +579,8 @@ function createPendingSession(cols: number, rows: number): string {
     parentSessionId: null,
     bookmarkId: null,
     agentControlled: false,
+    lensOnly: false,
+    profileHint: null,
     hasLensHistory: false,
     agentAttachPoint: null,
   };
@@ -614,6 +615,10 @@ function resolveLauncherShell(): ShellType | null {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isLensOnlySession(session: Session | null | undefined): boolean {
+  return session?.lensOnly === true;
 }
 
 async function createSession(): Promise<void> {
@@ -661,24 +666,6 @@ async function createSession(): Promise<void> {
     return;
   }
 
-  const settings = $currentSettings.get();
-  if (!settings) {
-    clearPendingSession(tempId);
-    void showAlert(t('sessionLauncher.settingsUnavailable'), {
-      title: t('sessionLauncher.createFailed'),
-    });
-    return;
-  }
-
-  let launchCommand: string;
-  try {
-    launchCommand = buildAgentLaunchCommand(selection.provider, shell, settings);
-  } catch (error) {
-    clearPendingSession(tempId);
-    void showAlert(getErrorMessage(error), { title: t('sessionLauncher.createFailed') });
-    return;
-  }
-
   bootstrapWorker({
     cols,
     rows,
@@ -687,8 +674,8 @@ async function createSession(): Promise<void> {
     agentControlled: true,
     injectGuidance: true,
     profile: selection.provider,
-    launchCommand,
-    launchDelayMs: 1200,
+    lensOnly: true,
+    launchDelayMs: 0,
     slashCommands: [],
     slashCommandDelayMs: 350,
   })
@@ -780,7 +767,9 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     focusLayoutSession(sessionId);
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
-    createTerminalForSession(sessionId, sessionInfo);
+    if (!isLensOnlySession(sessionInfo)) {
+      createTerminalForSession(sessionId, sessionInfo);
+    }
     // Re-show layout (may have been hidden for standalone viewing)
     getLayoutRoot()?.classList.remove('hidden');
     sessionTerminals.forEach((s, id) => {
@@ -802,13 +791,16 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   sendActiveSessionHint(sessionId);
 
   const sessionInfo = getSession(sessionId);
-  const state = createTerminalForSession(sessionId, sessionInfo);
+  const lensOnly = isLensOnlySession(sessionInfo);
+  const state = lensOnly ? null : createTerminalForSession(sessionId, sessionInfo);
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
   const activeTab = getActiveTab(sessionId);
 
   // Ensure session wrapper with tabs (standalone mode only)
   const tabState = ensureSessionWrapper(sessionId);
-  reparentTerminalContainer(sessionId, state.container);
+  if (state) {
+    reparentTerminalContainer(sessionId, state.container);
+  }
   if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
     dom.terminalsArea.appendChild(tabState.wrapper);
   }
@@ -817,18 +809,26 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     (w as HTMLElement).classList.toggle('hidden', w.getAttribute('data-session-id') !== sessionId);
   });
 
-  state.container.classList.remove('hidden');
+  if (state) {
+    state.container.classList.remove('hidden');
+  }
   if (isLayoutActive()) {
     getLayoutRoot()?.classList.add('hidden');
   }
 
+  if (lensOnly && activeTab === 'terminal') {
+    switchTab(sessionId, 'agent');
+  }
+
   requestAnimationFrame(() => {
-    refreshTerminalPresentation(sessionId, state);
-    if (activeTab !== 'agent') {
-      state.terminal.focus();
-    }
-    if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
-      scrollToBottom(sessionId);
+    if (state) {
+      refreshTerminalPresentation(sessionId, state);
+      if (activeTab !== 'agent') {
+        state.terminal.focus();
+      }
+      if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
+        scrollToBottom(sessionId);
+      }
     }
 
     if (isNewlyCreated) {
@@ -1448,10 +1448,16 @@ function syncMobileTabActionState(): void {
   strip?.toggleAttribute('hidden', !activeSessionId);
   title?.toggleAttribute('hidden', Boolean(activeSessionId));
   topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));
-  syncButton('btn-mobile-tab-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-tab-terminal', {
+    active: activeTab === 'terminal',
+    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
+  });
   syncButton('btn-mobile-tab-agent', { active: activeTab === 'agent', hidden: !agentVisible });
   syncButton('btn-mobile-tab-files', { active: activeTab === 'files' });
-  syncButton('btn-mobile-strip-terminal', { active: activeTab === 'terminal' });
+  syncButton('btn-mobile-strip-terminal', {
+    active: activeTab === 'terminal',
+    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
+  });
   syncButton('btn-mobile-strip-agent', { active: activeTab === 'agent', hidden: !agentVisible });
   syncButton('btn-mobile-strip-files', { active: activeTab === 'files' });
 }

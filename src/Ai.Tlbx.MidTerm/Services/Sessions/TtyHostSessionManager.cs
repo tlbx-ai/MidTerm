@@ -614,6 +614,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetAgentControlled(sessionId, agentControlled);
     }
 
+    public bool SetLensOnly(string sessionId, bool lensOnly)
+    {
+        return _registry.SetLensOnly(sessionId, lensOnly);
+    }
+
+    public bool SetProfileHint(string sessionId, string? profile)
+    {
+        return _registry.SetProfileHint(sessionId, profile);
+    }
+
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
         return _registry.ClearBookmarksByHistoryId(bookmarkId);

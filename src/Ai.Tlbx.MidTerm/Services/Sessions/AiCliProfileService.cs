@@ -18,6 +18,12 @@ public sealed class AiCliProfileService
             return UnknownProfile;
         }
 
+        var hintedProfile = NormalizeProfile(session.ProfileHint);
+        if (hintedProfile != UnknownProfile)
+        {
+            return hintedProfile;
+        }
+
         var shellIdentity = NormalizeExecutableIdentity(session.ShellType);
         var foregroundIdentity = NormalizeExecutableIdentity(session.ForegroundName);
         if (!string.IsNullOrEmpty(shellIdentity) && shellIdentity == foregroundIdentity)

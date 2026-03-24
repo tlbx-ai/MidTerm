@@ -219,6 +219,12 @@ function showStandaloneTerminals(): void {
   const area = dom.terminalsArea;
   if (!area) return;
 
+  area.querySelectorAll<HTMLDivElement>('.session-wrapper').forEach((wrapper) => {
+    if (wrapper.parentElement !== area) {
+      area.appendChild(wrapper);
+    }
+  });
+
   // Move any terminals back to terminals-area from layout panes
   sessionTerminals.forEach((state, sessionId) => {
     const wrapper = getSessionWrapper(sessionId);

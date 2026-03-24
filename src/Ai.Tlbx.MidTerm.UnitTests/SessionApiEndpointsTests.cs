@@ -254,6 +254,50 @@ public sealed class SessionApiEndpointsTests
     }
 
     [Fact]
+    public void TryBuildWorkerAutoResumePlan_DoesNothingWhenSessionIsLensOnly()
+    {
+        var session = new SessionInfoDto
+        {
+            Id = "s4",
+            ShellType = "Pwsh",
+            ForegroundName = "pwsh",
+            LensOnly = true,
+            ProfileHint = AiCliProfileService.CodexProfile,
+            Supervisor = new SessionSupervisorInfoDto
+            {
+                State = SessionSupervisorService.ShellState
+            }
+        };
+
+        var ok = SessionApiEndpoints.TryBuildWorkerAutoResumePlan(
+            "s4",
+            new SessionPromptRequest
+            {
+                Text = "continue work"
+            },
+            session,
+            new AiCliProfileService(),
+            new WorkerSessionRegistryService(),
+            out var plan);
+
+        Assert.False(ok);
+        Assert.Equal(string.Empty, plan.LaunchCommand);
+    }
+
+    [Fact]
+    public void DetectProfile_UsesProfileHintBeforeShellFallback()
+    {
+        var profile = new AiCliProfileService().DetectProfile(new SessionInfoDto
+        {
+            ShellType = "Pwsh",
+            ForegroundName = "pwsh",
+            ProfileHint = AiCliProfileService.ClaudeProfile
+        });
+
+        Assert.Equal(AiCliProfileService.ClaudeProfile, profile);
+    }
+
+    [Fact]
     public void GetPreferredClipboardProcessId_PrefersHostPid()
     {
         var session = new SessionInfo

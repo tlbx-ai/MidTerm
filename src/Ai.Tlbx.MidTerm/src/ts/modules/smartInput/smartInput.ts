@@ -98,6 +98,7 @@ export function initSmartInput(): void {
   onTabActivated('agent', (sessionId) => {
     if ($activeSessionId.get() === sessionId) {
       syncSmartInputVisibility(true);
+      scheduleLensComposerMount(sessionId, true);
     }
   });
 
@@ -188,6 +189,11 @@ function showDockedBar(focusTextarea: boolean = false): void {
   embedTouchController(dockedBar);
   if (focusTextarea) {
     activeTextarea?.focus({ preventScroll: true });
+  }
+
+  const activeSessionId = $activeSessionId.get();
+  if (activeSessionId && isLensActiveSession(activeSessionId) && !findActiveLensComposerHost()) {
+    scheduleLensComposerMount(activeSessionId, focusTextarea);
   }
 }
 
@@ -404,6 +410,32 @@ function relocateDockedBar(): void {
   }
 
   document.querySelector('.main-content')?.appendChild(dockedBar);
+}
+
+function scheduleLensComposerMount(sessionId: string, focusTextarea: boolean): void {
+  window.requestAnimationFrame(() => {
+    if ($activeSessionId.get() !== sessionId || !isLensActiveSession(sessionId)) {
+      return;
+    }
+
+    if (!dockedBar) {
+      createDockedDOM();
+    }
+
+    relocateDockedBar();
+    dockedBar?.classList.add('visible');
+    activeTextarea = dockedBar?.querySelector(
+      '.smart-input-textarea',
+    ) as HTMLTextAreaElement | null;
+    activeMicBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
+    if (activeTextarea) {
+      applyDraftToTextarea(activeTextarea, sessionId);
+      resizeTextarea(activeTextarea);
+      if (focusTextarea) {
+        activeTextarea.focus({ preventScroll: true });
+      }
+    }
+  });
 }
 
 function findActiveLensComposerHost(): HTMLElement | null {

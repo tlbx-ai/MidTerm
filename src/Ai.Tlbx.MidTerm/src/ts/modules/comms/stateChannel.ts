@@ -350,6 +350,8 @@ export function handleStateUpdate(newSessions: Session[]): void {
     } else if (state) {
       state.serverCols = session.cols;
       state.serverRows = session.rows;
+    } else if (session.lensOnly) {
+      return;
     } else {
       // Create terminal proactively - it will be hidden and ready for data
       createTerminalForSession(session.id, session);

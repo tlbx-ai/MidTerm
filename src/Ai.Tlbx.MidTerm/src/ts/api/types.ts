@@ -31,10 +31,15 @@ export type BootstrapResponse = Schemas['BootstrapResponse'];
 export type BootstrapLoginResponse = Schemas['BootstrapLoginResponse'];
 
 // Sessions
-export type SessionInfoDto = Schemas['SessionInfoDto'];
+export type SessionInfoDto = Schemas['SessionInfoDto'] & {
+  lensOnly?: boolean;
+  profileHint?: string | null;
+};
 export type SessionListDto = Schemas['SessionListDto'];
 export type CreateSessionRequest = Schemas['CreateSessionRequest'];
-export type WorkerBootstrapRequest = Schemas['WorkerBootstrapRequest'];
+export type WorkerBootstrapRequest = Schemas['WorkerBootstrapRequest'] & {
+  lensOnly?: boolean;
+};
 export type WorkerBootstrapResponse = Schemas['WorkerBootstrapResponse'];
 export type RenameSessionRequest = Schemas['RenameSessionRequest'];
 export type ResizeRequest = Schemas['ResizeRequest'];

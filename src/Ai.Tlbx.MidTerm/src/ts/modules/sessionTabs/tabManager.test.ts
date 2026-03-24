@@ -191,6 +191,24 @@ describe('tabManager', () => {
     expect(getActiveTab('s1')).toBe('agent');
   });
 
+  it('hides the terminal tab and pivots lens-only sessions into the agent view', async () => {
+    const { ensureSessionWrapper, syncSessionTabCapabilities, getActiveTab, isTabAvailable } =
+      await import('./tabManager');
+
+    ensureSessionWrapper('s1');
+
+    syncSessionTabCapabilities('s1', {
+      id: 's1',
+      agentControlled: true,
+      lensOnly: true,
+      supervisor: { profile: 'codex' },
+    } as any);
+
+    expect(isTabAvailable('s1', 'terminal')).toBe(false);
+    expect(isTabAvailable('s1', 'agent')).toBe(true);
+    expect(getActiveTab('s1')).toBe('agent');
+  });
+
   it('lets Lens force the agent tab visible before session metadata catches up', async () => {
     const {
       ensureSessionWrapper,

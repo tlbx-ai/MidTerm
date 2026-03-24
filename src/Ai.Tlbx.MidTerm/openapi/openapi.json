@@ -6704,6 +6704,8 @@
           "parentSessionId",
           "bookmarkId",
           "agentControlled",
+          "lensOnly",
+          "profileHint",
           "hasLensHistory",
           "supervisor"
         ],
@@ -6821,6 +6823,15 @@
           },
           "agentControlled": {
             "type": "boolean"
+          },
+          "lensOnly": {
+            "type": "boolean"
+          },
+          "profileHint": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "hasLensHistory": {
             "type": "boolean"
@@ -8189,6 +8200,7 @@
           "rows",
           "agentControlled",
           "injectGuidance",
+          "lensOnly",
           "launchDelayMs",
           "slashCommands",
           "slashCommandDelayMs"
@@ -8232,6 +8244,9 @@
               "null",
               "string"
             ]
+          },
+          "lensOnly": {
+            "type": "boolean"
           },
           "launchCommand": {
             "type": [

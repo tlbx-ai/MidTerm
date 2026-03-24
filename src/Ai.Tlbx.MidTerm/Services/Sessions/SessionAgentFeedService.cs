@@ -39,7 +39,9 @@ public sealed class SessionAgentFeedService
                 state,
                 "info",
                 "bootstrap",
-                $"{PrettifyProfile(profile)} worker started in MidTerm.",
+                string.IsNullOrWhiteSpace(launchCommand)
+                    ? $"{PrettifyProfile(profile)} Lens session started in MidTerm."
+                    : $"{PrettifyProfile(profile)} worker started in MidTerm.",
                 string.IsNullOrWhiteSpace(launchCommand)
                     ? BuildBootstrapDetail(slashCommands, guidanceInjected)
                     : $"Launch command `{launchCommand.Trim()}` queued. {BuildBootstrapDetail(slashCommands, guidanceInjected)}");

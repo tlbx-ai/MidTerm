@@ -37,6 +37,10 @@ internal sealed class SessionRegistry
 
     public ConcurrentDictionary<string, byte> AgentControlledSessions { get; } = new();
 
+    public ConcurrentDictionary<string, byte> LensOnlySessions { get; } = new();
+
+    public ConcurrentDictionary<string, string> ProfileHints { get; } = new();
+
     public int ClientCount => Clients.Count;
 
     public int SessionCount => SessionCache.Count;
@@ -148,7 +152,9 @@ internal sealed class SessionRegistry
                     Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
                     ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
                     BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
-                    AgentControlled = IsAgentControlled(s.Id)
+                    AgentControlled = IsAgentControlled(s.Id),
+                    LensOnly = IsLensOnly(s.Id),
+                    ProfileHint = ProfileHints.TryGetValue(s.Id, out var profileHint) ? profileHint : null
                 })
                 .OrderBy(s => s.Order)
                 .ToList()
@@ -165,6 +171,8 @@ internal sealed class SessionRegistry
         TmuxParentSessions.TryRemove(sessionId, out _);
         BookmarkLinks.TryRemove(sessionId, out _);
         AgentControlledSessions.TryRemove(sessionId, out _);
+        LensOnlySessions.TryRemove(sessionId, out _);
+        ProfileHints.TryRemove(sessionId, out _);
         _sessionControlStateService?.RemoveSession(sessionId);
 
         foreach (var kvp in TmuxParentSessions.ToArray())
@@ -209,6 +217,51 @@ internal sealed class SessionRegistry
             }
 
             _sessionControlStateService?.SetAgentControlled(relatedSessionId, agentControlled);
+        }
+
+        NotifyStateChange();
+        return true;
+    }
+
+    public bool SetLensOnly(string sessionId, bool lensOnly)
+    {
+        if (!SessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        if (lensOnly)
+        {
+            LensOnlySessions[sessionId] = 0;
+        }
+        else
+        {
+            LensOnlySessions.TryRemove(sessionId, out _);
+        }
+
+        NotifyStateChange();
+        return true;
+    }
+
+    public bool IsLensOnly(string sessionId)
+    {
+        return LensOnlySessions.ContainsKey(sessionId);
+    }
+
+    public bool SetProfileHint(string sessionId, string? profile)
+    {
+        if (!SessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            ProfileHints.TryRemove(sessionId, out _);
+        }
+        else
+        {
+            ProfileHints[sessionId] = profile.Trim();
         }
 
         NotifyStateChange();

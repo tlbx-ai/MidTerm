@@ -4740,6 +4740,8 @@ export interface components {
       parentSessionId: null | string;
       bookmarkId: null | string;
       agentControlled: boolean;
+      lensOnly: boolean;
+      profileHint: null | string;
       hasLensHistory: boolean;
       supervisor: null | components['schemas']['SessionSupervisorInfoDto'];
     };
@@ -5088,6 +5090,7 @@ export interface components {
       agentControlled: boolean;
       injectGuidance: boolean;
       profile?: null | string;
+      lensOnly: boolean;
       launchCommand?: null | string;
       /** Format: int32 */
       launchDelayMs: number;

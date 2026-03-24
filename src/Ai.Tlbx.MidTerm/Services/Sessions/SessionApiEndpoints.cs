@@ -122,6 +122,17 @@ public static partial class SessionApiEndpoints
                 sessionManager.SetAgentControlled(sessionId, true);
             }
 
+            var requestedProfile = aiCliProfileService.NormalizeProfile(request.Profile);
+            if (requestedProfile != AiCliProfileService.UnknownProfile)
+            {
+                sessionManager.SetProfileHint(sessionId, requestedProfile);
+            }
+
+            if (request.LensOnly)
+            {
+                sessionManager.SetLensOnly(sessionId, true);
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Name))
             {
                 await sessionManager.SetSessionNameAsync(sessionId, request.Name, isManual: true, ct);
@@ -129,9 +140,11 @@ public static partial class SessionApiEndpoints
 
             var workerSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, workerSession);
-            var launchCommand = string.IsNullOrWhiteSpace(request.LaunchCommand)
-                ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
-                : request.LaunchCommand.Trim();
+            var launchCommand = request.LensOnly
+                ? null
+                : string.IsNullOrWhiteSpace(request.LaunchCommand)
+                    ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
+                    : request.LaunchCommand.Trim();
 
             var guidanceInjected = false;
             string? midtermDir = null;
@@ -153,7 +166,9 @@ public static partial class SessionApiEndpoints
                 }
             }
 
-            var slashCommands = aiCliProfileService.NormalizeSlashCommands(resolvedProfile, request.SlashCommands);
+            var slashCommands = request.LensOnly
+                ? []
+                : aiCliProfileService.NormalizeSlashCommands(resolvedProfile, request.SlashCommands);
             workerSessionRegistry.Register(
                 sessionId,
                 resolvedProfile,
@@ -1140,6 +1155,11 @@ public static partial class SessionApiEndpoints
         plan = new WorkerAutoResumePlan(string.Empty, AiCliProfileService.UnknownProfile, [], 0, 0);
 
         if (session.Supervisor?.State != SessionSupervisorService.ShellState)
+        {
+            return false;
+        }
+
+        if (session.LensOnly)
         {
             return false;
         }

@@ -64,6 +64,10 @@ function shouldShowAgentTab(session: Session | null | undefined): boolean {
   );
 }
 
+function shouldShowTerminalTab(session: Session | null | undefined): boolean {
+  return session?.lensOnly !== true;
+}
+
 /**
  * Lets feature modules attach tab-specific behavior without coupling those
  * modules to session-wrapper creation order or tab-bar DOM internals.
@@ -223,8 +227,15 @@ export function syncSessionTabCapabilities(
   }
 
   const showAgentTab = state.lensForcedVisible || shouldShowAgentTab(session);
+  const showTerminalTab = shouldShowTerminalTab(session);
   state.lensAvailable = showAgentTab;
+  setTabVisible(state.tabBar, 'terminal', showTerminalTab);
   setTabVisible(state.tabBar, 'agent', showAgentTab);
+
+  if (!showTerminalTab && state.activeTab === 'terminal') {
+    switchTab(sessionId, showAgentTab ? 'agent' : 'files');
+    return;
+  }
 
   if (!showAgentTab && state.activeTab === 'agent') {
     switchTab(sessionId, 'terminal');
