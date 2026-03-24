@@ -56,6 +56,7 @@ import {
   normalizeScrollbarStyle,
 } from '../terminal/scrollbarStyle';
 import { syncTerminalWebglState } from '../terminal/manager';
+import { shouldUseWebglRenderer } from '../terminal/webglSupport';
 import { setLocale, t } from '../i18n';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
@@ -454,7 +455,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
     state.terminal.options.scrollback = settings.scrollbackLines;
-    syncTerminalWebglState(sessionId, state, settings.useWebGL);
+    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
 
     applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
 

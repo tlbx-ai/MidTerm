@@ -74,6 +74,7 @@ import {
 } from './fontConfig';
 import { getForegroundInfo } from '../process';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
+import { shouldUseWebglRenderer } from './webglSupport';
 
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -402,7 +403,7 @@ export function createTerminalForSession(
 
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
-    syncTerminalWebglState(sessionId, state, $currentSettings.get()?.useWebGL !== false);
+    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer($currentSettings.get()));
 
     // Load Web-Links addon for clickable URLs
     try {
