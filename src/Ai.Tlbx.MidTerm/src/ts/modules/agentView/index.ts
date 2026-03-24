@@ -152,6 +152,8 @@ export interface LensTranscriptEntry {
   actions?: LensTranscriptAction[];
   live?: boolean;
   pending?: boolean;
+  sourceItemId?: string | null;
+  sourceTurnId?: string | null;
 }
 
 export interface TranscriptVirtualWindow {
@@ -1419,9 +1421,6 @@ export function buildLensTranscriptEntries(
   ): LensTranscriptEntry => {
     const existing = byKey.get(key);
     if (existing) {
-      if (typeof orderOverride === 'number') {
-        existing.order = Math.max(existing.order, orderOverride);
-      }
       return existing;
     }
 
@@ -1461,6 +1460,8 @@ export function buildLensTranscriptEntries(
           lensEvent.createdAt,
         ),
         attachments: cloneTranscriptAttachments(lensEvent.item?.attachments),
+        sourceItemId: lensEvent.itemId,
+        sourceTurnId: lensEvent.turnId,
       }));
       itemEntry.kind = itemKind;
       itemEntry.tone = toneFromState(lensEvent.item.status);
@@ -1490,7 +1491,8 @@ export function buildLensTranscriptEntries(
         prettify(lensEvent.item.status),
         lensEvent.createdAt,
       );
-      itemEntry.order = order;
+      itemEntry.sourceItemId = lensEvent.itemId;
+      itemEntry.sourceTurnId = lensEvent.turnId;
     }
 
     if (lensEvent.contentDelta) {
@@ -1509,6 +1511,8 @@ export function buildLensTranscriptEntries(
         title: transcriptStreamTitle(streamKind),
         body: '',
         meta: formatTranscriptMeta(transcriptKind, prettify(streamKind), lensEvent.createdAt),
+        sourceItemId: lensEvent.itemId,
+        sourceTurnId: lensEvent.turnId,
       }));
       contentEntry.body = appendStreamDelta(
         transcriptKind,
@@ -1520,7 +1524,8 @@ export function buildLensTranscriptEntries(
         prettify(streamKind),
         lensEvent.createdAt,
       );
-      contentEntry.order = order;
+      contentEntry.sourceItemId = lensEvent.itemId;
+      contentEntry.sourceTurnId = lensEvent.turnId;
     }
 
     if (lensEvent.planDelta || lensEvent.planCompleted) {
@@ -1534,6 +1539,7 @@ export function buildLensTranscriptEntries(
         title: 'Plan',
         body: '',
         meta: formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt),
+        sourceTurnId: lensEvent.turnId,
       }));
       if (lensEvent.planDelta?.delta) {
         planEntry.body += lensEvent.planDelta.delta;
@@ -1542,7 +1548,7 @@ export function buildLensTranscriptEntries(
         planEntry.body = lensEvent.planCompleted.planMarkdown;
       }
       planEntry.meta = formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt);
-      planEntry.order = order;
+      planEntry.sourceTurnId = lensEvent.turnId;
     }
 
     if (lensEvent.diffUpdated) {
@@ -1556,10 +1562,11 @@ export function buildLensTranscriptEntries(
         title: 'Working diff',
         body: lensEvent.diffUpdated?.unifiedDiff || '',
         meta: formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt),
+        sourceTurnId: lensEvent.turnId,
       }));
       diffEntry.body = lensEvent.diffUpdated.unifiedDiff;
       diffEntry.meta = formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt);
-      diffEntry.order = order;
+      diffEntry.sourceTurnId = lensEvent.turnId;
     }
 
     if (
@@ -1574,7 +1581,6 @@ export function buildLensTranscriptEntries(
         createRequestTranscriptEntry(requestId, summary, lensEvent, order),
       );
       updateRequestTranscriptEntry(requestEntry, summary, lensEvent);
-      requestEntry.order = order;
     }
 
     const eventEntry = buildSystemEntryFromEvent(lensEvent, order);
@@ -1603,6 +1609,8 @@ export function buildLensTranscriptEntries(
       body: resolveTranscriptItemBody(itemKind, item.detail, item.title),
       meta: formatTranscriptMeta(itemKind, prettify(item.status), item.updatedAt),
       attachments: cloneTranscriptAttachments(item.attachments),
+      sourceItemId: item.itemId,
+      sourceTurnId: item.turnId,
     }));
     snapshotEntry.tone = toneFromState(item.status);
     snapshotEntry.label = transcriptLabel(itemKind);
@@ -1620,13 +1628,12 @@ export function buildLensTranscriptEntries(
       item.attachments,
     );
     snapshotEntry.meta = formatTranscriptMeta(itemKind, prettify(item.status), item.updatedAt);
-    snapshotEntry.order = Math.max(snapshotEntry.order, fallbackOrder);
+    snapshotEntry.sourceItemId = item.itemId;
+    snapshotEntry.sourceTurnId = item.turnId;
     fallbackOrder += 1;
   }
 
-  const currentTurnAssistantKey = snapshot.currentTurn.turnId
-    ? `assistant:${snapshot.currentTurn.turnId}`
-    : null;
+  const currentTurnAssistantKey = resolveCurrentTurnAssistantEntryKey(snapshot, entries);
   if (snapshot.streams.assistantText.trim()) {
     if (currentTurnAssistantKey) {
       const currentAssistantEntry = ensureEntry(currentTurnAssistantKey, () => ({
@@ -1638,6 +1645,7 @@ export function buildLensTranscriptEntries(
         title: 'Assistant',
         body: snapshot.streams.assistantText,
         meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
+        sourceTurnId: snapshot.currentTurn.turnId,
       }));
       currentAssistantEntry.body = mergeProgressiveMessage(
         currentAssistantEntry.body,
@@ -1648,7 +1656,7 @@ export function buildLensTranscriptEntries(
         'Snapshot',
         snapshot.generatedAt,
       );
-      currentAssistantEntry.order = Math.max(currentAssistantEntry.order, fallbackOrder);
+      currentAssistantEntry.sourceTurnId = snapshot.currentTurn.turnId;
       fallbackOrder += 1;
     } else if (!entries.some((entry) => entry.kind === 'assistant' && entry.body.trim())) {
       entries.push({
@@ -1660,6 +1668,7 @@ export function buildLensTranscriptEntries(
         title: 'Assistant',
         body: snapshot.streams.assistantText,
         meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
+        sourceTurnId: snapshot.currentTurn.turnId,
       });
       fallbackOrder += 1;
     }
@@ -2161,10 +2170,6 @@ function createTranscriptEntry(
   }
   article.appendChild(header);
 
-  if (entry.kind === 'assistant' && entry.live) {
-    article.appendChild(createAssistantLiveIndicator(entry));
-  }
-
   const titleText = normalizeTranscriptTitle(entry);
   if (titleText) {
     const title = document.createElement('div');
@@ -2218,29 +2223,6 @@ function createArtifactClusterLabel(cluster: ArtifactClusterInfo): HTMLElement {
   return label;
 }
 
-function createAssistantLiveIndicator(entry: LensTranscriptEntry): HTMLElement {
-  const indicator = document.createElement('div');
-  indicator.className = 'agent-transcript-live-indicator';
-
-  const dots = document.createElement('span');
-  dots.className = 'agent-transcript-live-dots';
-  dots.setAttribute('aria-hidden', 'true');
-  for (let index = 0; index < 3; index += 1) {
-    const dot = document.createElement('span');
-    dot.className = 'agent-transcript-live-dot';
-    dot.style.animationDelay = `${index * 180}ms`;
-    dots.appendChild(dot);
-  }
-  indicator.appendChild(dots);
-
-  const label = document.createElement('span');
-  label.className = 'agent-transcript-live-label';
-  label.textContent = entry.pending ? 'Preparing response' : 'Streaming response';
-  indicator.appendChild(label);
-
-  return indicator;
-}
-
 function createTranscriptActionBlock(
   sessionId: string,
   actions: readonly LensTranscriptAction[],
@@ -2292,6 +2274,15 @@ function shouldRenderTranscriptBody(entry: LensTranscriptEntry): boolean {
   }
 
   if (entry.kind === 'assistant' && isAssistantPlaceholderEntry(entry)) {
+    return false;
+  }
+
+  if (
+    entry.kind === 'tool' &&
+    !entry.body.includes('\n') &&
+    normalizeComparableTranscriptText(entry.body) ===
+      normalizeComparableTranscriptText(normalizeTranscriptTitle(entry))
+  ) {
     return false;
   }
 
@@ -3001,12 +2992,12 @@ export function computeTranscriptVirtualWindow(
 }
 
 function appendTranscriptChunk(existing: string, delta: string): string {
-  const trimmedDelta = delta.trim();
+  const trimmedDelta = normalizeTranscriptText(delta).trim();
   if (!trimmedDelta) {
     return existing;
   }
 
-  const trimmedExisting = existing.trimEnd();
+  const trimmedExisting = normalizeTranscriptText(existing).trimEnd();
   if (!trimmedExisting) {
     return trimmedDelta;
   }
@@ -3020,7 +3011,7 @@ function appendTranscriptChunk(existing: string, delta: string): string {
 }
 
 function mergeTranscriptBody(kind: TranscriptKind, existing: string, incoming: string): string {
-  const trimmedIncoming = incoming.trim();
+  const trimmedIncoming = normalizeTranscriptText(incoming).trim();
   if (!trimmedIncoming) {
     return existing;
   }
@@ -3075,15 +3066,20 @@ function resolveTranscriptEntryKey(
   lensEvent: LensPulseEvent,
   discriminator: string | null = null,
 ): string {
+  const itemIdentity = lensEvent.itemId || lensEvent.turnId || lensEvent.sequence;
   if (kind === 'tool' || kind === 'reasoning') {
-    return `${kind}:${discriminator || 'default'}:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}`;
+    return `${kind}:${discriminator || 'default'}:${itemIdentity}`;
   }
 
-  if (kind === 'user' || kind === 'assistant') {
+  if (kind === 'assistant') {
+    return `${kind}:${itemIdentity}`;
+  }
+
+  if (kind === 'user') {
     return `${kind}:${lensEvent.turnId || lensEvent.itemId || lensEvent.sequence}`;
   }
 
-  return `${kind}:${lensEvent.itemId || lensEvent.turnId || lensEvent.sequence}`;
+  return `${kind}:${itemIdentity}`;
 }
 
 function resolveSnapshotItemEntryKey(
@@ -3098,7 +3094,11 @@ function resolveSnapshotItemEntryKey(
     return `tool:${item.itemId || item.turnId || fallbackOrder}`;
   }
 
-  if (kind === 'user' || kind === 'assistant') {
+  if (kind === 'assistant') {
+    return `${kind}:${item.itemId || item.turnId || fallbackOrder}`;
+  }
+
+  if (kind === 'user') {
     return `${kind}:${item.turnId || item.itemId || fallbackOrder}`;
   }
 
@@ -3106,29 +3106,31 @@ function resolveSnapshotItemEntryKey(
 }
 
 function mergeProgressiveMessage(existing: string, incoming: string): string {
-  const trimmedExisting = existing.trim();
+  const normalizedExisting = normalizeTranscriptText(existing);
+  const normalizedIncoming = normalizeTranscriptText(incoming);
+  const trimmedExisting = normalizedExisting.trim();
   if (!trimmedExisting) {
-    return incoming;
+    return normalizedIncoming;
   }
 
-  if (trimmedExisting === incoming) {
+  if (trimmedExisting === normalizedIncoming) {
     return trimmedExisting;
   }
 
-  if (incoming.includes(trimmedExisting)) {
-    return incoming;
+  if (normalizedIncoming.includes(trimmedExisting)) {
+    return normalizedIncoming;
   }
 
-  if (trimmedExisting.includes(incoming)) {
+  if (trimmedExisting.includes(normalizedIncoming)) {
     return trimmedExisting;
   }
 
-  const overlapLength = findMessageOverlap(trimmedExisting, incoming);
+  const overlapLength = findMessageOverlap(trimmedExisting, normalizedIncoming);
   if (overlapLength > 0) {
-    return `${trimmedExisting}${incoming.slice(overlapLength)}`;
+    return `${trimmedExisting}${normalizedIncoming.slice(overlapLength)}`;
   }
 
-  return appendTranscriptChunk(trimmedExisting, incoming);
+  return appendTranscriptChunk(trimmedExisting, normalizedIncoming);
 }
 
 function findMessageOverlap(left: string, right: string): number {
@@ -3144,10 +3146,48 @@ function findMessageOverlap(left: string, right: string): number {
 
 function appendStreamDelta(kind: TranscriptKind, existing: string, delta: string): string {
   if (kind === 'assistant') {
-    return `${existing}${delta}`;
+    return `${normalizeTranscriptText(existing)}${normalizeTranscriptText(delta)}`;
   }
 
   return appendTranscriptChunk(existing, delta);
+}
+
+function normalizeTranscriptText(value: string | null | undefined): string {
+  return (value || '').replace(/\r\n?/g, '\n');
+}
+
+function normalizeComparableTranscriptText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function resolveCurrentTurnAssistantEntryKey(
+  snapshot: LensPulseSnapshotResponse,
+  entries: readonly LensTranscriptEntry[],
+): string | null {
+  const turnId = snapshot.currentTurn.turnId;
+  if (!turnId) {
+    return null;
+  }
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.kind === 'assistant' && entry.sourceTurnId === turnId) {
+      return entry.id;
+    }
+  }
+
+  for (let index = snapshot.items.length - 1; index >= 0; index -= 1) {
+    const item = snapshot.items[index];
+    if (!item) {
+      continue;
+    }
+
+    if (transcriptKindFromItem(item.itemType) === 'assistant' && item.turnId === turnId) {
+      return resolveSnapshotItemEntryKey('assistant', item, snapshot.latestSequence + 1);
+    }
+  }
+
+  return `assistant:${turnId}`;
 }
 
 function resolveTranscriptItemBody(
@@ -3156,10 +3196,10 @@ function resolveTranscriptItemBody(
   title: string | null | undefined,
 ): string {
   if (kind === 'tool') {
-    return detail?.trim() || '';
+    return normalizeTranscriptText(detail || '').trim();
   }
 
-  const trimmedDetail = detail?.trim();
+  const trimmedDetail = normalizeTranscriptText(detail || '').trim();
   if (trimmedDetail) {
     return trimmedDetail;
   }
