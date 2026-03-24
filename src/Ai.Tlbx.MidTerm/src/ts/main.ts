@@ -73,7 +73,7 @@ import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
 import { toggleSettings, closeSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
-import { fetchBootstrap } from './modules/bootstrap';
+import { fetchBootstrap, getBootstrapData } from './modules/bootstrap';
 import {
   applyUpdate,
   checkForUpdates,
@@ -131,6 +131,8 @@ import {
   getLensDebugScenarioNames,
   showLensDebugScenario,
 } from './modules/agentView';
+import { openSessionLauncher, type SessionLauncherSelection } from './modules/sessionLauncher';
+import { buildAgentLaunchCommand } from './modules/sessionLauncher/agentLaunch';
 import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
@@ -189,12 +191,14 @@ import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
 import {
   createSession as apiCreateSession,
+  bootstrapWorker,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
   patchHistoryEntry,
   setSessionBookmark,
   setSessionControl as apiSetSessionControl,
 } from './api/client';
+import type { ShellType } from './api/types';
 
 // Create logger for main module
 const log = createLogger('main');
@@ -514,16 +518,14 @@ function setupVisibilityChangeHandler(): void {
 // Session Management
 // =============================================================================
 
-async function createSession(): Promise<void> {
+async function resolveNewSessionDimensions(): Promise<{ cols: number; rows: number }> {
   const settings = $currentSettings.get();
   let cols = settings?.defaultCols ?? 120;
   let rows = settings?.defaultRows ?? 30;
 
-  // Generate tempId early so we can use it for logging
-  const tempId = 'pending-' + crypto.randomUUID();
-
   if (dom.terminalsArea) {
     const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
+    const logId = 'launcher-' + crypto.randomUUID().slice(0, 8);
     const dims = await calculateOptimalDimensions(
       dom.terminalsArea,
       fontSize,
@@ -532,7 +534,7 @@ async function createSession(): Promise<void> {
       settings?.letterSpacing ?? 0,
       settings?.fontWeight ?? 'normal',
       settings?.fontWeightBold ?? 'bold',
-      tempId,
+      logId,
     );
     if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
       cols = dims.cols;
@@ -540,7 +542,11 @@ async function createSession(): Promise<void> {
     }
   }
 
-  // Optimistic UI: add temporary session with spinner
+  return { cols, rows };
+}
+
+function createPendingSession(cols: number, rows: number): string {
+  const tempId = 'pending-' + crypto.randomUUID();
   const tempSession: Session = {
     id: tempId,
     pid: 0,
@@ -556,8 +562,8 @@ async function createSession(): Promise<void> {
     foregroundDisplayName: null,
     foregroundProcessIdentity: null,
     shellType: 'Loading...',
-    cols: cols,
-    rows: rows,
+    cols,
+    rows,
     manuallyNamed: false,
     supervisor: {
       state: 'unknown',
@@ -577,33 +583,134 @@ async function createSession(): Promise<void> {
     hasLensHistory: false,
     agentAttachPoint: null,
   };
+
   setSession(tempSession);
   pendingSessions.add(tempId);
-  // Subscription handles renderSessionList via store change
+  return tempId;
+}
+
+function clearPendingSession(tempId: string): void {
+  pendingSessions.delete(tempId);
+  removeSession(tempId);
+}
+
+function resolveLauncherShell(): ShellType | null {
+  const settings = $currentSettings.get();
+  if (settings?.defaultShell) {
+    return settings.defaultShell;
+  }
+
+  const platform = getBootstrapData()?.platform.toLowerCase();
+  if (platform === 'windows') {
+    return 'Pwsh';
+  }
+
+  if (platform === 'macos') {
+    return 'Zsh';
+  }
+
+  return 'Bash';
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function createSession(): Promise<void> {
+  let selection: SessionLauncherSelection | null;
+  try {
+    selection = await openSessionLauncher();
+  } catch (error) {
+    void showAlert(getErrorMessage(error), {
+      title: t('sessionLauncher.loadFailed'),
+    });
+    return;
+  }
+
+  if (!selection) {
+    return;
+  }
+
+  const { cols, rows } = await resolveNewSessionDimensions();
+  const tempId = createPendingSession(cols, rows);
+  const shell = resolveLauncherShell();
   closeSidebar();
 
-  apiCreateSession({
+  if (selection.provider === 'terminal') {
+    apiCreateSession({
+      cols,
+      rows,
+      shell,
+      workingDirectory: selection.workingDirectory,
+    })
+      .then(({ data }) => {
+        clearPendingSession(tempId);
+        if (!data) {
+          return;
+        }
+
+        setSession(data);
+        newlyCreatedSessions.add(data.id);
+        selectSession(data.id);
+      })
+      .catch((e: unknown) => {
+        clearPendingSession(tempId);
+        log.error(() => `Failed to create session: ${String(e)}`);
+        void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+      });
+    return;
+  }
+
+  const settings = $currentSettings.get();
+  if (!settings) {
+    clearPendingSession(tempId);
+    void showAlert(t('sessionLauncher.settingsUnavailable'), {
+      title: t('sessionLauncher.createFailed'),
+    });
+    return;
+  }
+
+  let launchCommand: string;
+  try {
+    launchCommand = buildAgentLaunchCommand(selection.provider, shell, settings);
+  } catch (error) {
+    clearPendingSession(tempId);
+    void showAlert(getErrorMessage(error), { title: t('sessionLauncher.createFailed') });
+    return;
+  }
+
+  bootstrapWorker({
     cols,
     rows,
-    shell: settings?.defaultShell ?? null,
-    workingDirectory: settings?.defaultWorkingDirectory || null,
+    shell,
+    workingDirectory: selection.workingDirectory,
+    agentControlled: true,
+    injectGuidance: true,
+    profile: selection.provider,
+    launchCommand,
+    launchDelayMs: 1200,
+    slashCommands: [],
+    slashCommandDelayMs: 350,
   })
     .then(({ data }) => {
-      // Remove temporary session
-      pendingSessions.delete(tempId);
-      removeSession(tempId);
+      clearPendingSession(tempId);
+      const session = data?.session;
+      if (!session) {
+        return;
+      }
 
-      if (!data) return;
-      setSession(data);
-      newlyCreatedSessions.add(data.id);
-      selectSession(data.id);
+      setSession(session);
+      newlyCreatedSessions.add(session.id);
+      setSessionLensAvailability(session.id, true);
+      selectSession(session.id);
+      requestAnimationFrame(() => {
+        switchTab(session.id, 'agent');
+      });
     })
     .catch((e: unknown) => {
-      // Remove temporary session on error
-      pendingSessions.delete(tempId);
-      removeSession(tempId);
-      // Subscription handles renderSessionList and updateEmptyState via store change
-      log.error(() => `Failed to create session: ${String(e)}`);
+      clearPendingSession(tempId);
+      log.error(() => `Failed to create worker session: ${String(e)}`);
+      void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
     });
 }
 

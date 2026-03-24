@@ -1,5 +1,5 @@
 {
-  "sidebar.newTerminal": "新建终端",
+  "sidebar.newTerminal": "新建会话",
   "sidebar.settings": "设置",
   "sidebar.loadBookmarked": "书签",
   "sidebar.terminals": "终端",
@@ -63,8 +63,8 @@
   "terminal.searchFound": "找到",
   "terminal.searchNoMatches": "无匹配项",
   "terminal.noTerminals": "没有打开的终端",
-  "terminal.createTerminal": "创建终端",
-  "terminal.createHint": "按 <kbd>Alt</kbd>+<kbd>T</kbd> 创建新终端",
+  "terminal.createTerminal": "创建会话",
+  "terminal.createHint": "按 <kbd>Alt</kbd>+<kbd>T</kbd> 新建会话",
   "settings.general": "常规",
   "settings.appearance": "外观",
   "settings.behavior": "行为",

@@ -11,6 +11,7 @@ export type SettingApplyMode = 'immediate' | 'lazy' | 'new-session' | 'server-on
 export type SettingSaveStrategy = 'control' | 'preserve' | 'readonly';
 export type SettingControlType =
   | 'text'
+  | 'textarea'
   | 'nullable-string'
   | 'int'
   | 'float'
@@ -101,6 +102,36 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     editable: true,
     storage: 'settings.json',
     validation: 'string path, empty allowed',
+    applyMode: 'new-session',
+  }),
+  controlEntry('codexYoloDefault', 'setting-codex-yolo-default', 'checkbox', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'new-session',
+  }),
+  controlEntry('codexEnvironmentVariables', 'setting-codex-env', 'textarea', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'newline-delimited KEY=VALUE env vars',
+    applyMode: 'new-session',
+  }),
+  controlEntry(
+    'claudeDangerouslySkipPermissionsDefault',
+    'setting-claude-dangerously-skip-permissions-default',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'new-session',
+    },
+  ),
+  controlEntry('claudeEnvironmentVariables', 'setting-claude-env', 'textarea', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'newline-delimited KEY=VALUE env vars',
     applyMode: 'new-session',
   }),
   controlEntry('fontSize', 'setting-font-size', 'int', 14, {

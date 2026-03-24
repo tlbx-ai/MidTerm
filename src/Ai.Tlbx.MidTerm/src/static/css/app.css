@@ -5603,6 +5603,276 @@ body.has-app-background::after {
   width: min(520px, 92vw);
 }
 
+.setting-row-stack {
+  align-items: flex-start;
+}
+
+.settings-textarea {
+  width: min(520px, 100%);
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.settings-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.session-launcher-modal {
+  width: min(860px, 94vw);
+  max-height: min(88vh, 900px);
+  animation: modal-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.session-launcher-content {
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-blue) 18%, transparent), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-sidebar) 92%, white 8%), var(--bg-sidebar));
+}
+
+.session-launcher-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.session-launcher-kicker {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.session-launcher-providers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.session-launcher-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  color: var(--text-primary);
+  text-align: left;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.session-launcher-provider:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-color));
+}
+
+.session-launcher-provider.active {
+  border-color: color-mix(in srgb, var(--accent-blue) 64%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-elevated));
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow-color-lg) 72%, transparent);
+}
+
+.session-launcher-provider-title {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+}
+
+.session-launcher-provider-description {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.session-launcher-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 360px;
+}
+
+.session-launcher-toolbar {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.session-launcher-path {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-launcher-roots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.session-launcher-root {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.session-launcher-root.active {
+  border-color: color-mix(in srgb, var(--accent-blue) 56%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.session-launcher-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-launcher-selection-label {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.session-launcher-selection-value {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-elevated) 80%, transparent);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.session-launcher-status {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--text-secondary);
+}
+
+.session-launcher-status.error {
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  color: var(--accent-red);
+}
+
+.session-launcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 190px;
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.session-launcher-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+}
+
+.session-launcher-row.selected {
+  border-color: color-mix(in srgb, var(--accent-blue) 56%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-elevated));
+}
+
+.session-launcher-row-main,
+.session-launcher-row-open {
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+
+.session-launcher-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  min-width: 0;
+}
+
+.session-launcher-row-icon {
+  color: var(--accent-blue);
+  font-size: var(--fs-xl);
+}
+
+.session-launcher-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-launcher-row-open {
+  padding: 0 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--btn-secondary) 72%, transparent);
+}
+
+.session-launcher-empty {
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px dashed var(--border-color);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.session-launcher-footer {
+  align-items: center;
+}
+
+@media (max-width: 760px) {
+  .session-launcher-modal {
+    width: min(94vw, 94vw);
+    max-height: min(92vh, 92vh);
+  }
+
+  .session-launcher-providers {
+    grid-template-columns: 1fr;
+  }
+
+  .session-launcher-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .session-launcher-path {
+    grid-column: 1 / -1;
+  }
+
+  .session-launcher-row {
+    grid-template-columns: 1fr;
+  }
+
+  .session-launcher-row-open {
+    justify-self: flex-start;
+    padding: 8px 14px;
+  }
+}
+
 .dev-error-modal {
   width: min(920px, 94vw);
   max-height: min(85vh, 960px);

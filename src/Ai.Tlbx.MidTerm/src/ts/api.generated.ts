@@ -4547,6 +4547,10 @@ export interface components {
       /** Format: int32 */
       defaultRows: number;
       defaultWorkingDirectory: string;
+      codexYoloDefault: boolean;
+      codexEnvironmentVariables: string;
+      claudeDangerouslySkipPermissionsDefault: boolean;
+      claudeEnvironmentVariables: string;
       /** Format: int32 */
       fontSize: number;
       fontFamily: string;

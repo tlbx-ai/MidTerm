@@ -6058,6 +6058,10 @@
           "defaultCols",
           "defaultRows",
           "defaultWorkingDirectory",
+          "codexYoloDefault",
+          "codexEnvironmentVariables",
+          "claudeDangerouslySkipPermissionsDefault",
+          "claudeEnvironmentVariables",
           "fontSize",
           "fontFamily",
           "lineHeight",
@@ -6128,6 +6132,18 @@
             "format": "int32"
           },
           "defaultWorkingDirectory": {
+            "type": "string"
+          },
+          "codexYoloDefault": {
+            "type": "boolean"
+          },
+          "codexEnvironmentVariables": {
+            "type": "string"
+          },
+          "claudeDangerouslySkipPermissionsDefault": {
+            "type": "boolean"
+          },
+          "claudeEnvironmentVariables": {
             "type": "string"
           },
           "fontSize": {

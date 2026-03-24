@@ -57,7 +57,7 @@ public static class Program
 
             Current scope:
               - stdio JSON transport
-              - real Codex app-server runtime
+              - real Codex and Claude runtimes
               - synthetic provider mode for protocol/integration testing
             """);
     }

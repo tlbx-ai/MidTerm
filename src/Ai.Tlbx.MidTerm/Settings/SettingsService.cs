@@ -442,6 +442,10 @@ public sealed class SettingsService
         current.DefaultCols = old.DefaultCols;
         current.DefaultRows = old.DefaultRows;
         current.DefaultWorkingDirectory = old.DefaultWorkingDirectory;
+        current.CodexYoloDefault = old.CodexYoloDefault;
+        current.CodexEnvironmentVariables = old.CodexEnvironmentVariables;
+        current.ClaudeDangerouslySkipPermissionsDefault = old.ClaudeDangerouslySkipPermissionsDefault;
+        current.ClaudeEnvironmentVariables = old.ClaudeEnvironmentVariables;
         current.FontSize = old.FontSize;
         current.FontFamily = old.FontFamily;
         current.CursorStyle = old.CursorStyle;

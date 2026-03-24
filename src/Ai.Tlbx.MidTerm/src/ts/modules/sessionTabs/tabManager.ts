@@ -26,7 +26,7 @@ import {
   fitTerminalToContainer,
   refreshTerminalPresentation,
 } from '../terminal/scaling';
-import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
+import { onDevModeChanged } from '../sidebar/voiceSection';
 
 const log = createLogger('tabManager');
 
@@ -57,10 +57,6 @@ function isInteractiveAgentProfile(profile: string | null | undefined): boolean 
 }
 
 function shouldShowAgentTab(session: Session | null | undefined): boolean {
-  if (!isDevMode()) {
-    return false;
-  }
-
   return (
     session?.agentControlled === true ||
     session?.hasLensHistory === true ||

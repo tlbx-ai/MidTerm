@@ -1018,6 +1018,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             StartInfo = CreateProcessStartInfo(binaryPath, "app-server", workingDirectory),
             EnableRaisingEvents = true
         };
+        LensProviderRuntimeConfiguration.ApplyEnvironmentVariables(process.StartInfo, Provider);
 
         if (!process.Start())
         {

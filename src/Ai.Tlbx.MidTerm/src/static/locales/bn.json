@@ -1,5 +1,5 @@
 {
-  "sidebar.newTerminal": "নতুন টার্মিনাল",
+  "sidebar.newTerminal": "নতুন সেশন",
   "sidebar.settings": "সেটিংস",
   "sidebar.loadBookmarked": "বুকমার্ক",
   "sidebar.terminals": "টার্মিনাল",
@@ -61,8 +61,8 @@
   "terminal.searchFound": "পাওয়া গেছে",
   "terminal.searchNoMatches": "কোনো মিল নেই",
   "terminal.noTerminals": "কোনো টার্মিনাল খোলা নেই",
-  "terminal.createTerminal": "টার্মিনাল তৈরি করুন",
-  "terminal.createHint": "নতুন টার্মিনাল তৈরি করতে <kbd>Alt</kbd>+<kbd>T</kbd> চাপুন",
+  "terminal.createTerminal": "সেশন তৈরি করুন",
+  "terminal.createHint": "নতুন সেশন তৈরি করতে <kbd>Alt</kbd>+<kbd>T</kbd> চাপুন",
   "settings.general": "সাধারণ",
   "settings.appearance": "চেহারা",
   "settings.behavior": "আচরণ",

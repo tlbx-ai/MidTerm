@@ -1588,6 +1588,55 @@
                     </div>
                   </div>
 
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.behavior.agentDefaults">Agent Defaults</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-codex-yolo-default"
+                        data-i18n="settings.behavior.codexYoloDefault"
+                        >Enable Codex --yolo by default</label
+                      >
+                      <input type="checkbox" id="setting-codex-yolo-default" />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-codex-env" data-i18n="settings.behavior.codexEnv"
+                        >Codex Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-codex-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.behavior.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-claude-dangerously-skip-permissions-default"
+                        data-i18n="settings.behavior.claudeDangerouslySkipPermissionsDefault"
+                        >Enable Claude --dangerously-skip-permissions by default</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-claude-dangerously-skip-permissions-default"
+                      />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-claude-env" data-i18n="settings.behavior.claudeEnv"
+                        >Claude Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-claude-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.behavior.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                  </div>
+
                   <!-- Terminal Behavior -->
                   <div class="settings-section">
                     <h3 data-i18n="settings.behavior.terminalBehavior">Terminal Behavior</h3>

@@ -98,7 +98,11 @@ function applySettingsLocally(settings: MidTermSettingsPublic): void {
  * Set the value of a form element by ID
  */
 export function setElementValue(id: string, value: string | number): void {
-  const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+  const el = document.getElementById(id) as
+    | HTMLInputElement
+    | HTMLSelectElement
+    | HTMLTextAreaElement
+    | null;
   if (el) el.value = String(value);
 }
 
@@ -114,7 +118,11 @@ export function setElementChecked(id: string, checked: boolean): void {
  * Get the value of a form element by ID
  */
 export function getElementValue(id: string, defaultValue: string): string {
-  const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+  const el = document.getElementById(id) as
+    | HTMLInputElement
+    | HTMLSelectElement
+    | HTMLTextAreaElement
+    | null;
   return el ? el.value : defaultValue;
 }
 
@@ -192,6 +200,7 @@ function readRegistryControlValue(
       return VALID_SETTING_SHELLS.includes(rawValue as (typeof VALID_SETTING_SHELLS)[number])
         ? rawValue
         : null;
+    case 'textarea':
     case 'text':
     case 'select':
     default:
@@ -504,6 +513,10 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
  * Save all settings to the server
  */
 export function saveAllSettings(): void {
+  if (!validateAgentEnvironmentInputs()) {
+    return;
+  }
+
   const prevSettings = $currentSettings.get();
   const settings = buildSettingsUpdateFromRegistry(prevSettings);
   const nextSettings = prevSettings ? { ...prevSettings, ...settings } : null;
@@ -593,6 +606,28 @@ export function bindSettingsAutoSave(): void {
         { signal },
       );
     });
+
+  settingsView.querySelectorAll('textarea').forEach((el) => {
+    if (!(el instanceof HTMLTextAreaElement)) {
+      return;
+    }
+
+    el.addEventListener(
+      'change',
+      () => {
+        saveAllSettings();
+      },
+      { signal },
+    );
+
+    el.addEventListener(
+      'input',
+      () => {
+        el.setCustomValidity('');
+      },
+      { signal },
+    );
+  });
 
   const uiTransparencySlider = document.getElementById(
     'setting-ui-transparency',
@@ -1396,6 +1431,37 @@ function updateBackgroundImageUi(settings: MidTermSettingsPublic): void {
       enabledCheckbox.checked = false;
     }
   }
+}
+
+const ENVIRONMENT_VARIABLE_LINE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=.*$/;
+
+function validateAgentEnvironmentInputs(): boolean {
+  const textareas = [
+    document.getElementById('setting-codex-env') as HTMLTextAreaElement | null,
+    document.getElementById('setting-claude-env') as HTMLTextAreaElement | null,
+  ];
+
+  for (const textarea of textareas) {
+    if (!textarea) {
+      continue;
+    }
+
+    const invalidLine = textarea.value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0 && !ENVIRONMENT_VARIABLE_LINE_PATTERN.test(line));
+
+    if (invalidLine) {
+      textarea.setCustomValidity(t('settings.behavior.agentEnvInvalid'));
+      textarea.reportValidity();
+      textarea.focus();
+      return false;
+    }
+
+    textarea.setCustomValidity('');
+  }
+
+  return true;
 }
 
 async function handleBackgroundImageUpload(file: File): Promise<void> {

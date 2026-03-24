@@ -10,6 +10,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class SessionLensHostRuntimeServiceTests
 {
     private static SettingsService CreateSettingsService() => new();
+    private static SettingsService CreateSettingsService(string directory) => new(directory);
 
     [Fact]
     public async Task SessionLensRuntimeService_CanDelegateToMtAgentHostSyntheticMode()
@@ -158,6 +159,99 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.Equal("mtagenthost-stdio", runtimeSnapshot.TransportKey);
         Assert.Equal("ready", runtimeSnapshot.Status);
         Assert.Contains("images=1", runtimeSnapshot.AssistantText ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SessionLensRuntimeService_CanDelegateToMtAgentHostClaudeMode()
+    {
+        using var fakeClaude = FakeClaudePathScope.Create();
+        var settingsRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-claude-settings-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(settingsRoot);
+        var settingsService = CreateSettingsService(settingsRoot);
+        var settings = settingsService.Load();
+        settings.ClaudeDangerouslySkipPermissionsDefault = true;
+        settings.ClaudeEnvironmentVariables = "FAKE_CLAUDE_ENV=applied";
+        settingsService.Save(settings);
+
+        try
+        {
+            var pulse = new SessionLensPulseService();
+            var ingress = new SessionLensHostIngressService(pulse);
+            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, settingsService, mode: "codex");
+            await using var sessionManager = new TtyHostSessionManager();
+            var profileService = new AiCliProfileService();
+            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+            var attachmentPath = Path.Combine(fakeClaude.Root, "notes.txt");
+            await File.WriteAllTextAsync(attachmentPath, "attached text file");
+
+            var session = new SessionInfoDto
+            {
+                Id = "session-runtime-claude-1",
+                CurrentDirectory = fakeClaude.Root,
+                ForegroundName = "claude"
+            };
+
+            var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+            Assert.True(attached);
+            Assert.True(runtime.IsAttached(session.Id));
+
+            var firstTurn = await runtime.StartTurnAsync(
+                session.Id,
+                new LensTurnRequest
+                {
+                    Text = "Inspect the attached file.",
+                    Attachments =
+                    [
+                        new LensAttachmentReference { Kind = "file", Path = attachmentPath }
+                    ]
+                });
+
+            Assert.Equal("claude", firstTurn.Provider);
+            Assert.Equal("accepted", firstTurn.Status);
+
+            var firstSnapshot = await WaitForSnapshotAsync(
+                pulse,
+                session.Id,
+                current => current.CurrentTurn.State == "completed" &&
+                           current.Streams.AssistantText.Contains("attachments=1", StringComparison.Ordinal));
+            Assert.NotNull(firstSnapshot);
+            Assert.Equal("claude", firstSnapshot!.Provider);
+            Assert.Contains("danger=true", firstSnapshot.Streams.AssistantText, StringComparison.Ordinal);
+            Assert.Contains("env=applied", firstSnapshot.Streams.AssistantText, StringComparison.Ordinal);
+            Assert.NotEmpty(firstSnapshot.Thread.ThreadId);
+
+            var secondTurn = await runtime.StartTurnAsync(
+                session.Id,
+                new LensTurnRequest
+                {
+                    Text = "Continue in the same conversation.",
+                    Attachments = []
+                });
+
+            Assert.Equal(firstSnapshot.Thread.ThreadId, secondTurn.ThreadId);
+
+            var secondSnapshot = await WaitForSnapshotAsync(
+                pulse,
+                session.Id,
+                current => current.CurrentTurn.State == "completed" &&
+                           current.Streams.AssistantText.Contains("resumed=true", StringComparison.Ordinal));
+            Assert.NotNull(secondSnapshot);
+
+            Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+            Assert.Equal("mtagenthost-stdio", runtimeSnapshot.TransportKey);
+            Assert.Equal("mtagenthost claude stdio", runtimeSnapshot.TransportLabel);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(settingsRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
     }
 
     [Fact]

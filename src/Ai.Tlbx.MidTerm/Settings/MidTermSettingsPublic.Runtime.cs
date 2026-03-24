@@ -31,6 +31,10 @@ public sealed partial class MidTermSettingsPublic
             DefaultCols = settings.DefaultCols,
             DefaultRows = settings.DefaultRows,
             DefaultWorkingDirectory = settings.DefaultWorkingDirectory,
+            CodexYoloDefault = settings.CodexYoloDefault,
+            CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
+            ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
+            ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             LineHeight = settings.LineHeight,
@@ -102,6 +106,10 @@ public sealed partial class MidTermSettingsPublic
         settings.DefaultCols = DefaultCols;
         settings.DefaultRows = DefaultRows;
         settings.DefaultWorkingDirectory = DefaultWorkingDirectory;
+        settings.CodexYoloDefault = CodexYoloDefault;
+        settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
+        settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;
+        settings.ClaudeEnvironmentVariables = ClaudeEnvironmentVariables ?? string.Empty;
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.LineHeight = Math.Clamp(LineHeight, 0.8, 3.0);

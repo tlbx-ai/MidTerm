@@ -11,6 +11,10 @@ public sealed class MidTermSettings
     public int DefaultCols { get; set; } = 120;
     public int DefaultRows { get; set; } = 30;
     public string DefaultWorkingDirectory { get; set; } = "";
+    public bool CodexYoloDefault { get; set; } = false;
+    public string CodexEnvironmentVariables { get; set; } = "";
+    public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
+    public string ClaudeEnvironmentVariables { get; set; } = "";
 
     private static ShellType GetPlatformDefaultShell()
     {

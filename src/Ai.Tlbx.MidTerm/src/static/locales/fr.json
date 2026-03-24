@@ -1,5 +1,5 @@
 {
-  "sidebar.newTerminal": "Nouveau Terminal",
+  "sidebar.newTerminal": "Nouvelle session",
   "sidebar.settings": "Paramètres",
   "sidebar.loadBookmarked": "Favoris",
   "sidebar.terminals": "Terminaux",
@@ -61,8 +61,8 @@
   "terminal.searchFound": "Trouvé",
   "terminal.searchNoMatches": "Aucune correspondance",
   "terminal.noTerminals": "Aucun terminal ouvert",
-  "terminal.createTerminal": "Créer un Terminal",
-  "terminal.createHint": "Appuyez sur <kbd>Alt</kbd>+<kbd>T</kbd> pour créer un nouveau terminal",
+  "terminal.createTerminal": "Créer une session",
+  "terminal.createHint": "Appuyez sur <kbd>Alt</kbd>+<kbd>T</kbd> pour créer une nouvelle session",
   "settings.general": "Général",
   "settings.appearance": "Apparence",
   "settings.behavior": "Comportement",

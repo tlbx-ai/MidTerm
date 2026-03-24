@@ -1,5 +1,5 @@
 {
-  "sidebar.newTerminal": "नया टर्मिनल",
+  "sidebar.newTerminal": "नया सत्र",
   "sidebar.settings": "सेटिंग्स",
   "sidebar.loadBookmarked": "बुकमार्क",
   "sidebar.terminals": "टर्मिनल",
@@ -61,8 +61,8 @@
   "terminal.searchFound": "मिला",
   "terminal.searchNoMatches": "कोई परिणाम नहीं",
   "terminal.noTerminals": "कोई टर्मिनल खुला नहीं है",
-  "terminal.createTerminal": "टर्मिनल बनाएं",
-  "terminal.createHint": "नया टर्मिनल बनाने के लिए <kbd>Alt</kbd>+<kbd>T</kbd> दबाएं",
+  "terminal.createTerminal": "सत्र बनाएं",
+  "terminal.createHint": "नया सत्र बनाने के लिए <kbd>Alt</kbd>+<kbd>T</kbd> दबाएं",
   "settings.general": "सामान्य",
   "settings.appearance": "दिखावट",
   "settings.behavior": "व्यवहार",

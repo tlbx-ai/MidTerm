@@ -1,5 +1,5 @@
 {
-  "sidebar.newTerminal": "Новый терминал",
+  "sidebar.newTerminal": "Новая сессия",
   "sidebar.settings": "Настройки",
   "sidebar.loadBookmarked": "Закладки",
   "sidebar.terminals": "Терминалы",
@@ -61,8 +61,8 @@
   "terminal.searchFound": "Найдено",
   "terminal.searchNoMatches": "Нет совпадений",
   "terminal.noTerminals": "Нет открытых терминалов",
-  "terminal.createTerminal": "Создать терминал",
-  "terminal.createHint": "Нажмите <kbd>Alt</kbd>+<kbd>T</kbd>, чтобы создать новый терминал",
+  "terminal.createTerminal": "Создать сессию",
+  "terminal.createHint": "Нажмите <kbd>Alt</kbd>+<kbd>T</kbd>, чтобы создать новую сессию",
   "settings.general": "Общие",
   "settings.appearance": "Внешний вид",
   "settings.behavior": "Поведение",

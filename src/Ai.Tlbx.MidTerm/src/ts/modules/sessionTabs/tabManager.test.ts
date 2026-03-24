@@ -237,14 +237,14 @@ describe('tabManager', () => {
     expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
 
-  it('hides Lens when dev mode is disabled', async () => {
+  it('keeps Lens available for agent sessions even when dev mode is disabled', async () => {
     const { ensureSessionWrapper, isTabAvailable, switchTab, getActiveTab } = await import('./tabManager');
 
     devModeEnabled = false;
     ensureSessionWrapper('s1');
 
-    expect(isTabAvailable('s1', 'agent')).toBe(false);
+    expect(isTabAvailable('s1', 'agent')).toBe(true);
     switchTab('s1', 'agent');
-    expect(getActiveTab('s1')).toBe('terminal');
+    expect(getActiveTab('s1')).toBe('agent');
   });
 });

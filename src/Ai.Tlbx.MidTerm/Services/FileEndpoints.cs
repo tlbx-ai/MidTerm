@@ -1,5 +1,6 @@
 using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -8,9 +9,75 @@ public static class FileEndpoints
     public static void MapFileEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
-        SessionPathAllowlistService allowlistService)
+        SessionPathAllowlistService allowlistService,
+        SettingsService settingsService)
     {
         var fileService = new FileService(sessionManager, allowlistService);
+
+        app.MapGet("/api/files/picker/home", () =>
+        {
+            var homePath = ResolveLauncherHomePath(settingsService.Load());
+            return Results.Json(
+                new LauncherPathResponse { Path = homePath },
+                AppJsonContext.Default.LauncherPathResponse);
+        });
+
+        app.MapGet("/api/files/picker/roots", () =>
+        {
+            var roots = GetLauncherRootEntries().ToArray();
+            return Results.Json(
+                new LauncherDirectoryListResponse
+                {
+                    Path = string.Empty,
+                    ParentPath = null,
+                    Entries = roots
+                },
+                AppJsonContext.Default.LauncherDirectoryListResponse);
+        });
+
+        app.MapGet("/api/files/picker/directories", (string path) =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return Results.BadRequest("Path is required");
+            }
+
+            if (!TryNormalizeExistingDirectory(path, out var fullPath, out var errorResult))
+            {
+                return errorResult!;
+            }
+
+            try
+            {
+                var entries = Directory.EnumerateDirectories(fullPath)
+                    .Select(directory => new LauncherDirectoryEntry
+                    {
+                        Name = Path.GetFileName(directory),
+                        FullPath = directory,
+                        IsRoot = false
+                    })
+                    .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var parentPath = Directory.GetParent(fullPath)?.FullName;
+                return Results.Json(
+                    new LauncherDirectoryListResponse
+                    {
+                        Path = fullPath,
+                        ParentPath = parentPath,
+                        Entries = entries
+                    },
+                    AppJsonContext.Default.LauncherDirectoryListResponse);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.StatusCode(403);
+            }
+            catch (IOException ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        });
 
         app.MapPost("/api/files/register", (FileRegisterRequest request) =>
         {
@@ -412,5 +479,82 @@ public static class FileEndpoints
         {
             return Results.Problem(ex.Message);
         }
+    }
+
+    private static string ResolveLauncherHomePath(MidTermSettings settings)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var configuredProfile = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(
+                settings.RunAsUser,
+                settings.RunAsUserSid);
+
+            if (!string.IsNullOrWhiteSpace(configuredProfile) && Directory.Exists(configuredProfile))
+            {
+                return configuredProfile;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            var unixHome = Path.Combine("/home", settings.RunAsUser);
+            if (Directory.Exists(unixHome))
+            {
+                return unixHome;
+            }
+        }
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    private static IEnumerable<LauncherDirectoryEntry> GetLauncherRootEntries()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return DriveInfo.GetDrives()
+                .Select(static drive => new LauncherDirectoryEntry
+                {
+                    Name = drive.Name,
+                    FullPath = drive.RootDirectory.FullName,
+                    IsRoot = true
+                })
+                .OrderBy(static entry => entry.FullPath, StringComparer.OrdinalIgnoreCase);
+        }
+
+        return new[]
+        {
+            new LauncherDirectoryEntry
+            {
+                Name = "/",
+                FullPath = "/",
+                IsRoot = true
+            }
+        };
+    }
+
+    private static bool TryNormalizeExistingDirectory(
+        string path,
+        out string fullPath,
+        out IResult? errorResult)
+    {
+        fullPath = string.Empty;
+        errorResult = null;
+
+        try
+        {
+            fullPath = Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            errorResult = Results.BadRequest("Invalid path");
+            return false;
+        }
+
+        if (!Directory.Exists(fullPath))
+        {
+            errorResult = Results.NotFound("Directory not found");
+            return false;
+        }
+
+        return true;
     }
 }
