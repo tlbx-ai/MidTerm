@@ -162,7 +162,7 @@ public sealed class CommandService
         sessionManager.MarkHidden(session.Id);
 
         var readyTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnOutput(string sid, int _, int __, ReadOnlyMemory<byte> ___)
+        void OnOutput(string sid, ulong _, int __, int ___, ReadOnlyMemory<byte> ____)
         {
             if (sid == session.Id)
             {

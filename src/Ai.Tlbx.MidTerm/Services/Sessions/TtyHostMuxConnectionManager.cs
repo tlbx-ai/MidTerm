@@ -16,6 +16,7 @@ public sealed class TtyHostMuxConnectionManager
 {
     private readonly record struct PooledOutputItem(
         string SessionId,
+        ulong SequenceEndExclusive,
         int Cols,
         int Rows,
         SharedOutputBuffer Buffer);
@@ -30,7 +31,7 @@ public sealed class TtyHostMuxConnectionManager
             new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropWrite });
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
-    private readonly Action<string, int, int, ReadOnlyMemory<byte>> _outputHandler;
+    private readonly Action<string, ulong, int, int, ReadOnlyMemory<byte>> _outputHandler;
     private readonly Action<string> _sessionClosedHandler;
     private readonly Action<string, ForegroundChangePayload> _foregroundChangedHandler;
     private bool _disposed;
@@ -61,7 +62,7 @@ public sealed class TtyHostMuxConnectionManager
         }
     }
 
-    private void HandleOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
+    private void HandleOutput(string sessionId, ulong sequenceStart, int cols, int rows, ReadOnlyMemory<byte> data)
     {
         if (_inputTimestamps.TryRemove(sessionId, out var inputTicks))
         {
@@ -71,9 +72,17 @@ public sealed class TtyHostMuxConnectionManager
         var shared = SharedOutputBuffer.Rent(data.Length);
         data.Span.CopyTo(shared.WriteSpan);
 
-        if (!_outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, cols, rows, shared)))
+        var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
+        if (!_outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared)))
         {
             Log.Warn(() => $"[MuxManager] Output queue full, dropping frame for {sessionId} ({data.Length} bytes)");
+            foreach (var client in _clients.Values)
+            {
+                if (client.WebSocket.State == WebSocketState.Open)
+                {
+                    client.QueueFrame(MuxProtocol.CreateDataLossFrame(sessionId, data.Length, TerminalReplayReason.MuxOverflow), sessionId);
+                }
+            }
             shared.Release();
         }
     }
@@ -109,7 +118,7 @@ public sealed class TtyHostMuxConnectionManager
                     if (client.WebSocket.State == WebSocketState.Open)
                     {
                         item.Buffer.AddRef();
-                        client.QueueOutput(item.SessionId, item.Cols, item.Rows, item.Buffer);
+                        client.QueueOutput(item.SessionId, item.SequenceEndExclusive, item.Cols, item.Rows, item.Buffer);
                     }
                 }
             }
@@ -169,6 +178,7 @@ public sealed class TtyHostMuxConnectionManager
         var sessionInfo = _sessionManager.GetSession(sessionId);
         var cols = sessionInfo?.Cols ?? 80;
         var rows = sessionInfo?.Rows ?? 24;
+        var sequenceEndExclusive = _sessionManager.GetTransportRuntimeSnapshot(sessionId).SourceSeq;
 
         // Queue raw data to each client - clients handle buffering and framing
         var buffer = SharedOutputBuffer.Rent(data.Length);
@@ -178,7 +188,7 @@ public sealed class TtyHostMuxConnectionManager
             if (client.WebSocket.State == WebSocketState.Open)
             {
                 buffer.AddRef();
-                client.QueueOutput(sessionId, cols, rows, buffer);
+                client.QueueOutput(sessionId, sequenceEndExclusive, cols, rows, buffer);
             }
         }
         buffer.Release();

@@ -259,7 +259,7 @@ public class Program
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
-        sessionManager.OnOutput += (sessionId, _, _, data) =>
+        sessionManager.OnOutput += (sessionId, _, _, _, data) =>
         {
             sessionTelemetry.RecordOutput(sessionId, data.Span);
         };

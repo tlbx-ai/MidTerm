@@ -6973,6 +6973,7 @@
           "bufferEncoding",
           "bufferText",
           "bufferBase64",
+          "terminalTransport",
           "supervisor"
         ],
         "type": "object",
@@ -7003,6 +7004,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "terminalTransport": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TerminalTransportDiagnosticsDto"
+              }
             ]
           },
           "supervisor": {
@@ -7460,6 +7471,78 @@
           "default",
           "shiftEnterLineFeed"
         ]
+      },
+      "TerminalTransportDiagnosticsDto": {
+        "required": [
+          "sourceSeq",
+          "muxReceivedSeq",
+          "mthostIpcQueuedSeq",
+          "mthostIpcFlushedSeq",
+          "ipcBacklogFrames",
+          "ipcBacklogBytes",
+          "oldestBacklogAgeMs",
+          "scrollbackBytes",
+          "lastReplayBytes",
+          "lastReplayReason",
+          "reconnectCount",
+          "dataLossCount",
+          "lastDataLossReason"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceSeq": {
+            "type": "string"
+          },
+          "muxReceivedSeq": {
+            "type": "string"
+          },
+          "mthostIpcQueuedSeq": {
+            "type": "string"
+          },
+          "mthostIpcFlushedSeq": {
+            "type": "string"
+          },
+          "ipcBacklogFrames": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ipcBacklogBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "oldestBacklogAgeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scrollbackBytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastReplayBytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastReplayReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reconnectCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dataLossCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastDataLossReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "ThemeSetting": {
         "enum": [

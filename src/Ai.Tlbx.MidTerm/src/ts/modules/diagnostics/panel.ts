@@ -1,11 +1,12 @@
 /**
  * Diagnostics Panel Module
  *
- * Displays file paths, reload settings button, and latency measurements.
+ * Displays file paths, latency measurements, and terminal transport diagnostics.
  */
 
-import { getPaths, reloadSettings, restartServer } from '../../api/client';
-import { measureLatency, onOutputRtt } from '../comms';
+import { getPaths, getSessionState, reloadSettings, restartServer } from '../../api/client';
+import type { SessionStateResponse } from '../../api/types';
+import { getBrowserTransportSnapshot, measureLatency, onOutputRtt } from '../comms';
 import { $activeSessionId, getSession } from '../../stores';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
@@ -15,6 +16,7 @@ import { showConfirm } from '../../utils/dialog';
 import { createLogger } from '../logging';
 
 const log = createLogger('diagnostics');
+type TerminalTransportDiagnostics = NonNullable<SessionStateResponse['terminalTransport']>;
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -43,7 +45,10 @@ export function stopLatencyMeasurement(): void {
 
 async function runLatencyPing(): Promise<void> {
   const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
+  if (!sessionId) {
+    clearTerminalTransportDiagnostics();
+    return;
+  }
 
   const sessionEl = document.getElementById('diag-ping-session');
   const serverEl = document.getElementById('diag-server-rtt');
@@ -61,7 +66,13 @@ async function runLatencyPing(): Promise<void> {
     }
   }
 
-  const result = await measureLatency(sessionId);
+  const [result, stateResponse] = await Promise.all([
+    measureLatency(sessionId),
+    getSessionState(sessionId, false).catch((error: unknown) => {
+      log.warn(() => `Failed to load terminal transport diagnostics: ${String(error)}`);
+      return null;
+    }),
+  ]);
 
   if (serverEl) {
     serverEl.textContent =
@@ -71,6 +82,8 @@ async function runLatencyPing(): Promise<void> {
     mthostEl.textContent =
       result.mthostRtt !== null ? `${result.mthostRtt.toFixed(1)} ms` : 'timeout';
   }
+
+  updateTerminalTransportDiagnostics(sessionId, stateResponse?.terminalTransport ?? null);
 }
 
 async function loadPaths(): Promise<void> {
@@ -118,6 +131,73 @@ function bindOverlayToggle(): void {
       outputRttEl.textContent = `${rtt.toFixed(1)} ms`;
     });
   }
+}
+
+function updateTerminalTransportDiagnostics(
+  sessionId: string,
+  transport: TerminalTransportDiagnostics | null,
+): void {
+  const browser = getBrowserTransportSnapshot(sessionId);
+
+  setDiagValue('diag-source-seq', transport?.sourceSeq ?? '-');
+  setDiagValue('diag-mux-received-seq', transport?.muxReceivedSeq ?? '-');
+  setDiagValue('diag-browser-received-seq', formatSequence(browser?.receivedSeq ?? null));
+  setDiagValue('diag-browser-rendered-seq', formatSequence(browser?.renderedSeq ?? null));
+  setDiagValue('diag-mthost-ipc-queued-seq', transport?.mthostIpcQueuedSeq ?? '-');
+  setDiagValue('diag-mthost-ipc-flushed-seq', transport?.mthostIpcFlushedSeq ?? '-');
+
+  if (transport) {
+    const backlog = `${transport.ipcBacklogFrames}f, ${transport.ipcBacklogBytes}b, age ${transport.oldestBacklogAgeMs}ms`;
+    const replayReason = transport.lastReplayReason ?? 'none';
+    const replay = `${transport.lastReplayBytes}b (${replayReason})`;
+    const lossReason = browser?.lastDataLossReason ?? transport.lastDataLossReason ?? 'none';
+    const lossCount = Math.max(browser?.dataLossCount ?? 0, transport.dataLossCount);
+
+    setDiagValue('diag-ipc-backlog', backlog);
+    setDiagValue('diag-last-replay', replay);
+    setDiagValue('diag-reconnect-count', `${transport.reconnectCount}`);
+    setDiagValue('diag-data-loss', `${lossCount} (${lossReason})`);
+    return;
+  }
+
+  setDiagValue('diag-ipc-backlog', '-');
+  setDiagValue(
+    'diag-last-replay',
+    browser?.lastReplayReason ? `browser (${browser.lastReplayReason})` : '-',
+  );
+  setDiagValue('diag-reconnect-count', '-');
+  setDiagValue(
+    'diag-data-loss',
+    browser ? `${browser.dataLossCount} (${browser.lastDataLossReason ?? 'none'})` : '-',
+  );
+}
+
+function clearTerminalTransportDiagnostics(): void {
+  [
+    'diag-source-seq',
+    'diag-mux-received-seq',
+    'diag-browser-received-seq',
+    'diag-browser-rendered-seq',
+    'diag-mthost-ipc-queued-seq',
+    'diag-mthost-ipc-flushed-seq',
+    'diag-ipc-backlog',
+    'diag-last-replay',
+    'diag-reconnect-count',
+    'diag-data-loss',
+  ].forEach((id) => {
+    setDiagValue(id, '-');
+  });
+}
+
+function setDiagValue(id: string, value: string): void {
+  const element = document.getElementById(id);
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function formatSequence(value: bigint | null): string {
+  return value === null ? '-' : value.toString();
 }
 
 function bindReloadSettingsButton(): void {

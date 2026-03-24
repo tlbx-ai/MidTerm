@@ -132,6 +132,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LensPulseRuntimeNotice))]
 [JsonSerializable(typeof(List<LensPulseRuntimeNotice>))]
 [JsonSerializable(typeof(SessionBufferTextResponse))]
+[JsonSerializable(typeof(TerminalTransportDiagnosticsDto))]
 [JsonSerializable(typeof(SessionStateResponse))]
 
 // --- Files ---

@@ -54,8 +54,8 @@ public sealed class SessionAgentVibeService
         var now = DateTimeOffset.UtcNow;
 
         var activity = _sessionTelemetry.GetActivity(sessionId, activitySeconds, bellLimit);
-        var buffer = await _sessionManager.GetBufferAsync(sessionId, ct).ConfigureAwait(false);
-        var tailText = BuildTailText(buffer, tailLines);
+        var snapshot = await _sessionManager.GetBufferAsync(sessionId, ct: ct).ConfigureAwait(false);
+        var tailText = BuildTailText(snapshot?.Data, tailLines);
 
         if (_lensRuntime.TryGetSnapshot(sessionId, out var runtimeSnapshot))
         {

@@ -43,6 +43,7 @@ public static class Program
     private const int HandshakeTimeoutMs = 10000;
     private const int MinScrollbackBytes = 64 * 1024;
     private const int MaxScrollbackBytes = 64 * 1024 * 1024;
+    private const int MaxIpcQueuedFramesPerClient = 256;
 
     private static CancellationTokenSource? _shutdownCts;
 
@@ -348,19 +349,40 @@ public static class Program
         }
     }
 
-    private readonly record struct PooledFrame(byte[] Buffer, int Length);
+    private readonly record struct PooledFrame(
+        byte[] Buffer,
+        int Length,
+        int TerminalBytes,
+        ulong SequenceEndExclusive,
+        long EnqueuedAtMs);
 
-    private static void EnqueueFrame(ChannelWriter<PooledFrame> writer, ReadOnlySpan<byte> frame)
+    private static bool EnqueueFrame(
+        ChannelWriter<PooledFrame> writer,
+        ReadOnlySpan<byte> frame,
+        int terminalBytes = 0,
+        ulong sequenceEndExclusive = 0)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(frame.Length);
         frame.CopyTo(buffer);
-        if (!writer.TryWrite(new PooledFrame(buffer, frame.Length)))
+        if (!writer.TryWrite(new PooledFrame(
+            buffer,
+            frame.Length,
+            terminalBytes,
+            sequenceEndExclusive,
+            Environment.TickCount64)))
         {
             ArrayPool<byte>.Shared.Return(buffer);
+            return false;
         }
+
+        return true;
     }
 
-    private static async Task DrainWriteChannelAsync(Stream stream, ChannelReader<PooledFrame> reader, CancellationToken ct)
+    private static async Task DrainWriteChannelAsync(
+        TerminalSession session,
+        Stream stream,
+        ChannelReader<PooledFrame> reader,
+        CancellationToken ct)
     {
         try
         {
@@ -371,6 +393,7 @@ public static class Program
                     try
                     {
                         await stream.WriteAsync(frame.Buffer.AsMemory(0, frame.Length), ct).ConfigureAwait(false);
+                        session.RecordIpcFlushed(frame.SequenceEndExclusive, frame.TerminalBytes, frame.EnqueuedAtMs);
                     }
                     finally
                     {
@@ -408,12 +431,14 @@ public static class Program
         var stream = client.Stream;
         var handshakeCursor = session.GetOutputCursor();
 
-        var writeChannel = Channel.CreateUnbounded<PooledFrame>(new UnboundedChannelOptions
+        var writeChannel = Channel.CreateBounded<PooledFrame>(new BoundedChannelOptions(MaxIpcQueuedFramesPerClient)
         {
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropWrite
         });
         var channelWriter = writeChannel.Writer;
+        session.ResetIpcTransportState();
 
         // CTS that heartbeat can cancel to terminate message processing
         using var clientCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -430,12 +455,12 @@ public static class Program
             }
         });
 
-        var drainTask = DrainWriteChannelAsync(stream, writeChannel.Reader, clientCts.Token);
+        var drainTask = DrainWriteChannelAsync(session, stream, writeChannel.Reader, clientCts.Token);
         var heartbeatTask = HeartbeatLoopAsync(client, clientCts);
 
         try
         {
-            void OnOutput(ReadOnlyMemory<byte> data)
+            void OnOutput(ulong sequenceStart, ReadOnlyMemory<byte> data)
             {
                 try
                 {
@@ -446,9 +471,18 @@ public static class Program
 
                     if (client.IsConnected)
                     {
-                        TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, data.Span, frame =>
+                        var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
+                        TtyHostProtocol.WriteOutputMessage(sequenceStart, session.Cols, session.Rows, data.Span, frame =>
                         {
-                            EnqueueFrame(channelWriter, frame);
+                            if (EnqueueFrame(channelWriter, frame, data.Length, sequenceEndExclusive))
+                            {
+                                session.RecordIpcEnqueued(sequenceEndExclusive, data.Length);
+                                return;
+                            }
+
+                            session.RecordDataLoss(TerminalReplayReason.MthostIpcOverflow, data.Length);
+                            Log.Warn(() => $"IPC client backlog overflow for session {session.Id}, forcing reconnect");
+                            clientCts.Cancel();
                         });
                     }
                     else
@@ -470,7 +504,10 @@ public static class Program
                     if (client.IsConnected)
                     {
                         var msg = TtyHostProtocol.CreateStateChange(session.IsRunning, session.ExitCode);
-                        EnqueueFrame(channelWriter, msg);
+                        if (!EnqueueFrame(channelWriter, msg))
+                        {
+                            clientCts.Cancel();
+                        }
                     }
                 }
                 catch (Exception ex) { Log.Exception(ex, "OnStateChange"); }
@@ -491,7 +528,10 @@ public static class Program
                             AgentAttachPoint = SessionAgentAttachPointDetector.Detect(info.Name, info.CommandLine)
                         };
                         var msg = TtyHostProtocol.CreateForegroundChange(payload);
-                        EnqueueFrame(channelWriter, msg);
+                        if (!EnqueueFrame(channelWriter, msg))
+                        {
+                            clientCts.Cancel();
+                        }
                     }
                 }
                 catch (Exception ex) { Log.Exception(ex, "OnForegroundChanged"); }
@@ -527,16 +567,24 @@ public static class Program
                 // Replay buffered output BEFORE enabling live forwarding.
                 // While handshakeComplete is false, OnOutput callbacks return early,
                 // so replay frames won't interleave with live output on the IPC stream.
-                var replayed = session.TryReplayOutputSince(handshakeCursor, bufferedSegment =>
+                var replayed = session.TryReplayOutputSince(handshakeCursor, (sequenceStart, bufferedSegment) =>
                 {
                     if (!client.IsConnected)
                     {
                         return;
                     }
 
-                    TtyHostProtocol.WriteOutputMessage(session.Cols, session.Rows, bufferedSegment.Span, frame =>
+                    var sequenceEndExclusive = sequenceStart + (ulong)bufferedSegment.Length;
+                    TtyHostProtocol.WriteOutputMessage(sequenceStart, session.Cols, session.Rows, bufferedSegment.Span, frame =>
                     {
-                        EnqueueFrame(channelWriter, frame);
+                        if (EnqueueFrame(channelWriter, frame, bufferedSegment.Length, sequenceEndExclusive))
+                        {
+                            session.RecordIpcEnqueued(sequenceEndExclusive, bufferedSegment.Length);
+                            return;
+                        }
+
+                        session.RecordDataLoss(TerminalReplayReason.MthostIpcOverflow, bufferedSegment.Length);
+                        clientCts.Cancel();
                     });
                 });
 
@@ -803,10 +851,11 @@ public static class Program
                         byte[]? snapshot = null;
                         try
                         {
-                            var guess = session.GetBufferLength();
+                            var request = TtyHostProtocol.ParseGetBuffer(payload) ?? new TtyHostGetBufferRequest();
+                            var guess = session.GetBufferLength(request.MaxBytes);
                             if (guess <= 0)
                             {
-                                TtyHostProtocol.WriteBufferResponse(ReadOnlySpan<byte>.Empty, frame =>
+                                TtyHostProtocol.WriteBufferResponse(0, ReadOnlySpan<byte>.Empty, frame =>
                                 {
                                     EnqueueFrame(channelWriter, frame);
                                 });
@@ -816,11 +865,11 @@ public static class Program
                             while (true)
                             {
                                 snapshot = ArrayPool<byte>.Shared.Rent(Math.Max(guess, 1));
-                                var written = session.CopyBufferSnapshot(snapshot);
+                                var written = session.CopyBufferSnapshot(snapshot, request.MaxBytes, request.Reason, out var sequenceStart);
                                 if (written >= 0)
                                 {
                                     var payloadSlice = snapshot.AsSpan(0, written);
-                                    TtyHostProtocol.WriteBufferResponse(payloadSlice, frame =>
+                                    TtyHostProtocol.WriteBufferResponse(sequenceStart, payloadSlice, frame =>
                                     {
                                         EnqueueFrame(channelWriter, frame);
                                     });
@@ -1052,7 +1101,9 @@ internal sealed class TerminalSession : IDisposable
     private readonly IProcessMonitor? _processMonitor;
     private readonly CircularByteBuffer _outputBuffer;
     private readonly object _bufferLock = new();
+    private readonly object _transportLock = new();
     private readonly int _scrollbackBytes;
+    private TtyHostTransportInfo _transportInfo;
 
     public string Id { get; }
     public string? OwnerInstanceId { get; }
@@ -1069,7 +1120,7 @@ internal sealed class TerminalSession : IDisposable
     public bool IsRunning => _pty.IsRunning;
     public int? ExitCode => _pty.ExitCode;
 
-    public event Action<ReadOnlyMemory<byte>>? OnOutput;
+    public event Action<ulong, ReadOnlyMemory<byte>>? OnOutput;
     public event Action? OnStateChanged;
     public event Action<ForegroundProcessInfo>? OnForegroundChanged;
 
@@ -1094,6 +1145,10 @@ internal sealed class TerminalSession : IDisposable
         Rows = rows;
         _scrollbackBytes = scrollbackBytes;
         _outputBuffer = new CircularByteBuffer(scrollbackBytes);
+        _transportInfo = new TtyHostTransportInfo
+        {
+            ScrollbackBytes = scrollbackBytes
+        };
 
         if (_processMonitor is not null)
         {
@@ -1130,13 +1185,20 @@ internal sealed class TerminalSession : IDisposable
 
                 var data = buffer.AsMemory(0, bytesRead);
                 Log.Verbose(() => $"[PTY-READ] {bytesRead} bytes");
+                ulong sequenceStart;
 
                 lock (_bufferLock)
                 {
+                    sequenceStart = _outputBuffer.TotalBytesWritten;
                     _outputBuffer.Write(data.Span);
                 }
 
-                OnOutput?.Invoke(data);
+                lock (_transportLock)
+                {
+                    _transportInfo.SourceSeq = sequenceStart + (ulong)data.Length;
+                }
+
+                OnOutput?.Invoke(sequenceStart, data);
             }
         }
         finally
@@ -1173,35 +1235,60 @@ internal sealed class TerminalSession : IDisposable
         Order = order;
     }
 
-    public int GetBufferLength()
-    {
-        lock (_bufferLock)
-        {
-            return _outputBuffer.Count;
-        }
-    }
-
-    public int CopyBufferSnapshot(Span<byte> destination)
+    public int GetBufferLength(int? maxBytes = null)
     {
         lock (_bufferLock)
         {
             var length = _outputBuffer.Count;
+            if (maxBytes is int cap && cap > 0)
+            {
+                length = Math.Min(length, cap);
+            }
+
+            return length;
+        }
+    }
+
+    public int CopyBufferSnapshot(Span<byte> destination, int? maxBytes, TerminalReplayReason reason, out ulong sequenceStart)
+    {
+        lock (_bufferLock)
+        {
+            var length = _outputBuffer.Count;
+            if (maxBytes is int cap && cap > 0)
+            {
+                length = Math.Min(length, cap);
+            }
+
             if (length == 0)
             {
+                sequenceStart = 0;
+                RecordReplay(0, reason);
                 return 0;
             }
 
             if (destination.Length < length)
             {
+                sequenceStart = 0;
                 return -length;
             }
 
-            _outputBuffer.CopyTo(destination.Slice(0, length));
+            if (length == _outputBuffer.Count)
+            {
+                _outputBuffer.CopyTo(destination.Slice(0, length));
+                sequenceStart = _outputBuffer.TailPosition;
+            }
+            else
+            {
+                var written = _outputBuffer.CopyTailTo(destination.Slice(0, length), out sequenceStart);
+                length = written;
+            }
+
+            RecordReplay(length, reason);
             return length;
         }
     }
 
-    public long GetOutputCursor()
+    public ulong GetOutputCursor()
     {
         lock (_bufferLock)
         {
@@ -1209,7 +1296,7 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public bool TryReplayOutputSince(long cursor, Action<ReadOnlyMemory<byte>> consumer)
+    public bool TryReplayOutputSince(ulong cursor, Action<ulong, ReadOnlyMemory<byte>> consumer)
     {
         var chunkSize = Math.Min(_scrollbackBytes, 64 * 1024);
         if (chunkSize <= 0)
@@ -1220,7 +1307,7 @@ internal sealed class TerminalSession : IDisposable
         var scratch = ArrayPool<byte>.Shared.Rent(chunkSize);
         try
         {
-            long position = cursor;
+            ulong position = cursor;
             while (true)
             {
                 int copied;
@@ -1237,13 +1324,89 @@ internal sealed class TerminalSession : IDisposable
                     return true;
                 }
 
-                consumer(new ReadOnlyMemory<byte>(scratch, 0, copied));
-                position += copied;
+                consumer(position, new ReadOnlyMemory<byte>(scratch, 0, copied));
+                position += (ulong)copied;
             }
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(scratch);
+        }
+    }
+
+    public void ResetIpcTransportState()
+    {
+        lock (_transportLock)
+        {
+            _transportInfo.IpcQueuedSeq = _transportInfo.IpcFlushedSeq;
+            _transportInfo.IpcBacklogFrames = 0;
+            _transportInfo.IpcBacklogBytes = 0;
+            _transportInfo.OldestBacklogAgeMs = 0;
+        }
+    }
+
+    public void RecordIpcEnqueued(ulong sequenceEndExclusive, int terminalBytes)
+    {
+        if (terminalBytes <= 0)
+        {
+            return;
+        }
+
+        lock (_transportLock)
+        {
+            if (_transportInfo.IpcBacklogFrames == 0)
+            {
+                _transportInfo.OldestBacklogAgeMs = 0;
+            }
+
+            _transportInfo.IpcQueuedSeq = sequenceEndExclusive;
+            _transportInfo.IpcBacklogFrames++;
+            _transportInfo.IpcBacklogBytes += terminalBytes;
+        }
+    }
+
+    public void RecordIpcFlushed(ulong sequenceEndExclusive, int terminalBytes, long enqueuedAtMs)
+    {
+        if (terminalBytes <= 0)
+        {
+            return;
+        }
+
+        lock (_transportLock)
+        {
+            _transportInfo.IpcFlushedSeq = sequenceEndExclusive;
+            _transportInfo.IpcBacklogFrames = Math.Max(0, _transportInfo.IpcBacklogFrames - 1);
+            _transportInfo.IpcBacklogBytes = Math.Max(0, _transportInfo.IpcBacklogBytes - terminalBytes);
+            _transportInfo.OldestBacklogAgeMs = _transportInfo.IpcBacklogFrames > 0
+                ? Math.Max(0, Environment.TickCount64 - enqueuedAtMs)
+                : 0;
+        }
+    }
+
+    public void RecordReplay(int bytes, TerminalReplayReason reason)
+    {
+        lock (_transportLock)
+        {
+            _transportInfo.LastReplayBytes = bytes;
+            _transportInfo.LastReplayReason = reason;
+        }
+    }
+
+    public void RecordDataLoss(TerminalReplayReason reason, int droppedBytes)
+    {
+        lock (_transportLock)
+        {
+            _transportInfo.DataLossCount++;
+            _transportInfo.LastDataLossReason = reason;
+            _transportInfo.LastReplayReason = reason;
+            if (droppedBytes > 0)
+            {
+                _transportInfo.LastReplayBytes = droppedBytes;
+            }
+            _transportInfo.IpcBacklogFrames = 0;
+            _transportInfo.IpcBacklogBytes = 0;
+            _transportInfo.OldestBacklogAgeMs = 0;
+            _transportInfo.IpcQueuedSeq = _transportInfo.IpcFlushedSeq;
         }
     }
 
@@ -1268,7 +1431,8 @@ internal sealed class TerminalSession : IDisposable
             Order = Order,
             CreatedAt = CreatedAt,
             TtyHostVersion = VersionInfo.Version,
-            OwnerInstanceId = OwnerInstanceId
+            OwnerInstanceId = OwnerInstanceId,
+            Transport = GetTransportInfo()
         };
 
         if (_processMonitor is not null)
@@ -1290,5 +1454,26 @@ internal sealed class TerminalSession : IDisposable
     public void Kill()
     {
         _pty.Kill();
+    }
+
+    private TtyHostTransportInfo GetTransportInfo()
+    {
+        lock (_transportLock)
+        {
+            return new TtyHostTransportInfo
+            {
+                SourceSeq = _transportInfo.SourceSeq,
+                IpcQueuedSeq = _transportInfo.IpcQueuedSeq,
+                IpcFlushedSeq = _transportInfo.IpcFlushedSeq,
+                IpcBacklogFrames = _transportInfo.IpcBacklogFrames,
+                IpcBacklogBytes = _transportInfo.IpcBacklogBytes,
+                OldestBacklogAgeMs = _transportInfo.OldestBacklogAgeMs,
+                ScrollbackBytes = _transportInfo.ScrollbackBytes,
+                LastReplayBytes = _transportInfo.LastReplayBytes,
+                LastReplayReason = _transportInfo.LastReplayReason,
+                DataLossCount = _transportInfo.DataLossCount,
+                LastDataLossReason = _transportInfo.LastDataLossReason
+            };
+        }
     }
 }

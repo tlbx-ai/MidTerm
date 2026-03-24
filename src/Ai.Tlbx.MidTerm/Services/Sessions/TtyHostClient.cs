@@ -58,6 +58,9 @@ public sealed class TtyHostClient : IAsyncDisposable
     private bool _disposed;
     private bool _intentionalDisconnect;
     private int _reconnectAttempts;
+    private int _successfulReconnectCount;
+    private int _consecutiveRequestTimeouts;
+    private int _consecutiveReadTimeouts;
     private DateTime _lastDataReceived = DateTime.UtcNow;
 
     private TaskCompletionSource<(TtyHostMessageType type, byte[] payload)>? _pendingResponse;
@@ -82,11 +85,12 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
-    public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
+    public event Action<string, ulong, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnDisconnected;
     public event Action<string>? OnReconnected;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
+    public event Action<string, TtyHostDataLossPayload>? OnDataLoss;
 
     public TtyHostClient(string sessionId, int hostPid, string? instanceId = null, string? ownerToken = null, bool useLegacyEndpoint = false)
     {
@@ -299,7 +303,12 @@ public sealed class TtyHostClient : IAsyncDisposable
         return false;
     }
 
-    public async Task<byte[]?> GetBufferAsync(CancellationToken ct = default)
+    public int ReconnectCount => _successfulReconnectCount;
+
+    public async Task<TtyHostBufferSnapshot?> GetBufferAsync(
+        int? maxBytes = null,
+        TerminalReplayReason reason = TerminalReplayReason.Manual,
+        CancellationToken ct = default)
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -310,9 +319,9 @@ public sealed class TtyHostClient : IAsyncDisposable
 
             try
             {
-                var msg = TtyHostProtocol.CreateGetBuffer();
+                var msg = TtyHostProtocol.CreateGetBuffer(maxBytes, reason);
                 var response = await SendRequestAsync(msg, TtyHostMessageType.Buffer, ct).ConfigureAwait(false);
-                return response;
+                return response is null ? null : TtyHostProtocol.ParseBuffer(response);
             }
             catch
             {
@@ -432,7 +441,18 @@ public sealed class TtyHostClient : IAsyncDisposable
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-                var response = await tcs.Task.WaitAsync(linkedCts.Token).ConfigureAwait(false);
+                (TtyHostMessageType type, byte[] payload) response;
+                try
+                {
+                    response = await tcs.Task.WaitAsync(linkedCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    RegisterRequestTimeout();
+                    return null;
+                }
+
+                _consecutiveRequestTimeouts = 0;
                 return response.type == expectedType ? response.payload : null;
             }
             finally
@@ -554,14 +574,23 @@ public sealed class TtyHostClient : IAsyncDisposable
                     }
                     catch (OperationCanceledException) when (_readCancellation?.IsCancellationRequested == true && !ct.IsCancellationRequested)
                     {
+                        if (HasPendingResponse())
+                        {
+                            RegisterReadTimeout();
+                        }
                         continue;
                     }
                     catch (OperationCanceledException) when (_readTimeoutCts?.IsCancellationRequested == true && !ct.IsCancellationRequested)
                     {
+                        if (HasPendingResponse())
+                        {
+                            RegisterReadTimeout();
+                        }
                         continue;
                     }
 
                     _lastDataReceived = DateTime.UtcNow;
+                    _consecutiveReadTimeouts = 0;
                     if (bytesRead == 0)
                     {
                         HandleDisconnect();
@@ -651,8 +680,9 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.Output:
                 try
                 {
+                    var sequenceStart = TtyHostProtocol.ParseOutputSequenceStart(payload.Span);
                     var (cols, rows) = TtyHostProtocol.ParseOutputDimensions(payload.Span);
-                    OnOutput?.Invoke(_sessionId, cols, rows, payload.Slice(4));
+                    OnOutput?.Invoke(_sessionId, sequenceStart, cols, rows, payload.Slice(12));
                 }
                 catch (Exception ex)
                 {
@@ -698,6 +728,21 @@ public sealed class TtyHostClient : IAsyncDisposable
                 lock (_responseLock)
                 {
                     _pendingResponse?.TrySetResult((msgType, payload.ToArray()));
+                }
+                break;
+
+            case TtyHostMessageType.DataLoss:
+                try
+                {
+                    var dataLoss = TtyHostProtocol.ParseDataLoss(payload.Span);
+                    if (dataLoss is not null)
+                    {
+                        OnDataLoss?.Invoke(_sessionId, dataLoss);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Exception(ex, $"TtyHostClient.OnDataLoss({_sessionId})");
                 }
                 break;
 
@@ -777,6 +822,10 @@ public sealed class TtyHostClient : IAsyncDisposable
     private void HandleDisconnect()
     {
         if (_disposed || _intentionalDisconnect) return;
+        lock (_responseLock)
+        {
+            _pendingResponse?.TrySetCanceled();
+        }
         OnDisconnected?.Invoke(_sessionId);
         TriggerReconnect();
     }
@@ -786,6 +835,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         if (_disposed || _intentionalDisconnect) return;
         if (_reconnectTask is not null && !_reconnectTask.IsCompleted) return;
 
+        DisconnectCurrentStream();
         _reconnectTask = ReconnectAsync();
     }
 
@@ -846,6 +896,9 @@ public sealed class TtyHostClient : IAsyncDisposable
                 if (info is not null)
                 {
                     _reconnectAttempts = 0;
+                    _successfulReconnectCount++;
+                    _consecutiveReadTimeouts = 0;
+                    _consecutiveRequestTimeouts = 0;
                     OnReconnected?.Invoke(_sessionId);
                     return;
                 }
@@ -904,6 +957,54 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
 
         return (msgType, payload);
+    }
+
+    private bool HasPendingResponse()
+    {
+        lock (_responseLock)
+        {
+            return _pendingResponse is not null;
+        }
+    }
+
+    private void RegisterReadTimeout()
+    {
+        _consecutiveReadTimeouts++;
+        if (_consecutiveReadTimeouts < 3)
+        {
+            return;
+        }
+
+        Log.Warn(() => $"[IPC] {_sessionId}: { _consecutiveReadTimeouts } consecutive read timeouts while waiting for a response; reconnecting");
+        _consecutiveReadTimeouts = 0;
+        TriggerReconnect();
+        try
+        {
+            _readCancellation?.Cancel();
+        }
+        catch
+        {
+        }
+    }
+
+    private void RegisterRequestTimeout()
+    {
+        _consecutiveRequestTimeouts++;
+        if (_consecutiveRequestTimeouts < 2)
+        {
+            return;
+        }
+
+        Log.Warn(() => $"[IPC] {_sessionId}: {_consecutiveRequestTimeouts} consecutive request timeouts; reconnecting");
+        _consecutiveRequestTimeouts = 0;
+        TriggerReconnect();
+        try
+        {
+            _readCancellation?.Cancel();
+        }
+        catch
+        {
+        }
     }
 
     public async ValueTask DisposeAsync()

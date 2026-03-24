@@ -4781,6 +4781,7 @@ export interface components {
       bufferEncoding: string;
       bufferText: null | string;
       bufferBase64: null | string;
+      terminalTransport: null | components['schemas']['TerminalTransportDiagnosticsDto'];
       supervisor: components['schemas']['SessionSupervisorInfoDto'];
     };
     SessionSupervisorInfoDto: {
@@ -4902,6 +4903,28 @@ export interface components {
     };
     /** @enum {unknown} */
     TerminalEnterModeSetting: 'default' | 'shiftEnterLineFeed';
+    TerminalTransportDiagnosticsDto: {
+      sourceSeq: string;
+      muxReceivedSeq: string;
+      mthostIpcQueuedSeq: string;
+      mthostIpcFlushedSeq: string;
+      /** Format: int32 */
+      ipcBacklogFrames: number;
+      /** Format: int64 */
+      ipcBacklogBytes: number;
+      /** Format: int64 */
+      oldestBacklogAgeMs: number;
+      /** Format: int32 */
+      scrollbackBytes: number;
+      /** Format: int32 */
+      lastReplayBytes: number;
+      lastReplayReason: null | string;
+      /** Format: int32 */
+      reconnectCount: number;
+      /** Format: int32 */
+      dataLossCount: number;
+      lastDataLossReason: null | string;
+    };
     /** @enum {unknown} */
     ThemeSetting: 'dark' | 'light' | 'solarizedDark' | 'solarizedLight';
     TtyHostInfo: {

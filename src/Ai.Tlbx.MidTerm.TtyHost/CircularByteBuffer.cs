@@ -14,12 +14,12 @@ public sealed class CircularByteBuffer : IDisposable
     private int _head;  // next write position
     private int _tail;  // oldest data position
     private int _count; // bytes currently stored
-    private long _totalBytesWritten;
+    private ulong _totalBytesWritten;
 
     public int Count => _count;
     public int Capacity => _capacity;
-    public long TotalBytesWritten => _totalBytesWritten;
-    public long TailPosition => _totalBytesWritten - _count;
+    public ulong TotalBytesWritten => _totalBytesWritten;
+    public ulong TailPosition => _totalBytesWritten - (ulong)_count;
 
     public CircularByteBuffer(int capacity)
     {
@@ -51,7 +51,7 @@ public sealed class CircularByteBuffer : IDisposable
             _head = 0;
             _tail = 0;
             _count = capacity;
-            _totalBytesWritten += data.Length;
+            _totalBytesWritten += (ulong)data.Length;
             return;
         }
 
@@ -76,7 +76,7 @@ public sealed class CircularByteBuffer : IDisposable
 
         _head = (_head + data.Length) % capacity;
         _count += data.Length;
-        _totalBytesWritten += data.Length;
+        _totalBytesWritten += (ulong)data.Length;
     }
 
     public byte[] ToArray()
@@ -132,7 +132,31 @@ public sealed class CircularByteBuffer : IDisposable
         }
     }
 
-    public bool TryCopySince(long position, Span<byte> destination, out int bytesCopied)
+    public int CopyTailTo(Span<byte> destination, out ulong sequenceStart)
+    {
+        var bytesToCopy = Math.Min(destination.Length, _count);
+        sequenceStart = _totalBytesWritten - (ulong)bytesToCopy;
+        if (bytesToCopy == 0)
+        {
+            return 0;
+        }
+
+        var logicalOffset = _count - bytesToCopy;
+        var physical = (_tail + logicalOffset) % _capacity;
+
+        if (physical + bytesToCopy <= _capacity)
+        {
+            _buffer.AsSpan(physical, bytesToCopy).CopyTo(destination);
+            return bytesToCopy;
+        }
+
+        var firstChunk = _capacity - physical;
+        _buffer.AsSpan(physical, firstChunk).CopyTo(destination);
+        _buffer.AsSpan(0, bytesToCopy - firstChunk).CopyTo(destination[firstChunk..]);
+        return bytesToCopy;
+    }
+
+    public bool TryCopySince(ulong position, Span<byte> destination, out int bytesCopied)
     {
         var availableStart = TailPosition;
         if (position < availableStart)
@@ -141,7 +165,7 @@ public sealed class CircularByteBuffer : IDisposable
             return false;
         }
 
-        var offset = (int)(position - availableStart);
+        var offset = checked((int)(position - availableStart));
         if (offset >= _count)
         {
             bytesCopied = 0;
