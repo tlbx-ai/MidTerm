@@ -10,6 +10,7 @@ import { sessionTerminals } from '../../state';
 import { $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { applyCssTheme } from './cssThemes';
+import { getTerminalThemeByName } from './terminalColorSchemes';
 
 /**
  * Resolve the effective xterm color scheme.
@@ -28,7 +29,7 @@ export function getEffectiveXtermThemeForSettings(
   if (!fallbackTheme) {
     throw new Error("Theme 'dark' not found");
   }
-  const baseTheme = THEMES[key] ?? fallbackTheme;
+  const baseTheme = getTerminalThemeByName(settings, key) ?? fallbackTheme;
   const theme: TerminalTheme = Object.assign({}, baseTheme);
   const transparency = Math.min(
     Math.max(settings?.terminalTransparency ?? settings?.uiTransparency ?? 0, 0),

@@ -47,6 +47,8 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(ShellInfoDto))]
 [JsonSerializable(typeof(List<ShellInfoDto>))]
 [JsonSerializable(typeof(MidTermSettingsPublic))]
+[JsonSerializable(typeof(TerminalColorSchemeDefinition))]
+[JsonSerializable(typeof(List<TerminalColorSchemeDefinition>))]
 [JsonSerializable(typeof(UpdateInfo))]
 [JsonSerializable(typeof(LocalUpdateInfo))]
 [JsonSerializable(typeof(UpdateType))]

@@ -4561,7 +4561,8 @@ export interface components {
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];
       hideCursorOnInputBursts: boolean;
       theme: components['schemas']['ThemeSetting'];
-      terminalColorScheme: components['schemas']['TerminalColorSchemeSetting'];
+      terminalColorScheme: string;
+      terminalColorSchemes: components['schemas']['TerminalColorSchemeDefinition'][];
       backgroundImageEnabled: boolean;
       backgroundImageFileName: null | string;
       /** Format: int64 */
@@ -4872,16 +4873,33 @@ export interface components {
       | 'sessionName'
       | 'terminalTitle'
       | 'foregroundProcess';
-    /** @enum {unknown} */
-    TerminalColorSchemeSetting:
-      | 'auto'
-      | 'dark'
-      | 'light'
-      | 'macTerminalDark'
-      | 'macTerminalLight'
-      | 'solarizedDark'
-      | 'solarizedLight'
-      | 'matrix';
+    TerminalColorSchemeDefinition: {
+      name: string;
+      background: string;
+      foreground: string;
+      cursor: string;
+      cursorAccent: string;
+      selectionBackground: string;
+      scrollbarSliderBackground: string;
+      scrollbarSliderHoverBackground: string;
+      scrollbarSliderActiveBackground: string;
+      black: string;
+      red: string;
+      green: string;
+      yellow: string;
+      blue: string;
+      magenta: string;
+      cyan: string;
+      white: string;
+      brightBlack: string;
+      brightRed: string;
+      brightGreen: string;
+      brightYellow: string;
+      brightBlue: string;
+      brightMagenta: string;
+      brightCyan: string;
+      brightWhite: string;
+    };
     /** @enum {unknown} */
     TerminalEnterModeSetting: 'default' | 'shiftEnterLineFeed';
     /** @enum {unknown} */

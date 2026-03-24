@@ -6070,6 +6070,7 @@
           "hideCursorOnInputBursts",
           "theme",
           "terminalColorScheme",
+          "terminalColorSchemes",
           "backgroundImageEnabled",
           "backgroundImageFileName",
           "backgroundImageRevision",
@@ -6166,7 +6167,13 @@
             "$ref": "#/components/schemas/ThemeSetting"
           },
           "terminalColorScheme": {
-            "$ref": "#/components/schemas/TerminalColorSchemeSetting"
+            "type": "string"
+          },
+          "terminalColorSchemes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TerminalColorSchemeDefinition"
+            }
           },
           "backgroundImageEnabled": {
             "type": "boolean"
@@ -7341,17 +7348,112 @@
           "foregroundProcess"
         ]
       },
-      "TerminalColorSchemeSetting": {
-        "enum": [
-          "auto",
-          "dark",
-          "light",
-          "macTerminalDark",
-          "macTerminalLight",
-          "solarizedDark",
-          "solarizedLight",
-          "matrix"
-        ]
+      "TerminalColorSchemeDefinition": {
+        "required": [
+          "name",
+          "background",
+          "foreground",
+          "cursor",
+          "cursorAccent",
+          "selectionBackground",
+          "scrollbarSliderBackground",
+          "scrollbarSliderHoverBackground",
+          "scrollbarSliderActiveBackground",
+          "black",
+          "red",
+          "green",
+          "yellow",
+          "blue",
+          "magenta",
+          "cyan",
+          "white",
+          "brightBlack",
+          "brightRed",
+          "brightGreen",
+          "brightYellow",
+          "brightBlue",
+          "brightMagenta",
+          "brightCyan",
+          "brightWhite"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "background": {
+            "type": "string"
+          },
+          "foreground": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "cursorAccent": {
+            "type": "string"
+          },
+          "selectionBackground": {
+            "type": "string"
+          },
+          "scrollbarSliderBackground": {
+            "type": "string"
+          },
+          "scrollbarSliderHoverBackground": {
+            "type": "string"
+          },
+          "scrollbarSliderActiveBackground": {
+            "type": "string"
+          },
+          "black": {
+            "type": "string"
+          },
+          "red": {
+            "type": "string"
+          },
+          "green": {
+            "type": "string"
+          },
+          "yellow": {
+            "type": "string"
+          },
+          "blue": {
+            "type": "string"
+          },
+          "magenta": {
+            "type": "string"
+          },
+          "cyan": {
+            "type": "string"
+          },
+          "white": {
+            "type": "string"
+          },
+          "brightBlack": {
+            "type": "string"
+          },
+          "brightRed": {
+            "type": "string"
+          },
+          "brightGreen": {
+            "type": "string"
+          },
+          "brightYellow": {
+            "type": "string"
+          },
+          "brightBlue": {
+            "type": "string"
+          },
+          "brightMagenta": {
+            "type": "string"
+          },
+          "brightCyan": {
+            "type": "string"
+          },
+          "brightWhite": {
+            "type": "string"
+          }
+        }
       },
       "TerminalEnterModeSetting": {
         "enum": [

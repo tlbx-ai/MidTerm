@@ -185,6 +185,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Settings ---
 [JsonSerializable(typeof(MidTermSettings))]
 [JsonSerializable(typeof(MidTermSettingsPublic))]
+[JsonSerializable(typeof(TerminalColorSchemeDefinition))]
+[JsonSerializable(typeof(List<TerminalColorSchemeDefinition>))]
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]

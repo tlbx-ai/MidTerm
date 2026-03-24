@@ -87,6 +87,7 @@ export type LensUserInputAnswerRequest = Schemas['LensUserInputAnswerRequest'];
 
 // Settings
 export type MidTermSettingsPublic = Schemas['MidTermSettingsPublic'];
+export type TerminalColorSchemeDefinition = Schemas['TerminalColorSchemeDefinition'];
 export type MidTermSettingsUpdate = Omit<
   MidTermSettingsPublic,
   | 'authenticationEnabled'
@@ -168,7 +169,7 @@ export type BellStyleSetting = Schemas['BellStyleSetting'];
 export type ClipboardShortcutsSetting = Schemas['ClipboardShortcutsSetting'];
 export type TabTitleModeSetting = Schemas['TabTitleModeSetting'];
 export type ScrollbarStyleSetting = Schemas['ScrollbarStyleSetting'];
-export type TerminalColorSchemeSetting = Schemas['TerminalColorSchemeSetting'];
+export type TerminalColorSchemeSetting = MidTermSettingsPublic['terminalColorScheme'];
 export type LanguageSetting = Schemas['LanguageSetting'];
 
 // =============================================================================

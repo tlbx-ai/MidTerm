@@ -146,6 +146,56 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_CustomTerminalColorSchemes_ArePreserved()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "terminalColorScheme": "Ocean Copy",
+          "terminalColorSchemes": [
+            {
+              "name": "Ocean Copy",
+              "background": "#101820",
+              "foreground": "#F2F7FF",
+              "cursor": "#F2F7FF",
+              "cursorAccent": "#101820",
+              "selectionBackground": "#2A4C66",
+              "scrollbarSliderBackground": "rgba(242, 247, 255, 0.2)",
+              "scrollbarSliderHoverBackground": "rgba(242, 247, 255, 0.35)",
+              "scrollbarSliderActiveBackground": "rgba(242, 247, 255, 0.5)",
+              "black": "#18242E",
+              "red": "#FF6B6B",
+              "green": "#7EE787",
+              "yellow": "#F9E27D",
+              "blue": "#66B3FF",
+              "magenta": "#D2A8FF",
+              "cyan": "#7DE3FF",
+              "white": "#D8E7F5",
+              "brightBlack": "#5A7288",
+              "brightRed": "#FF8E8E",
+              "brightGreen": "#9CF0A4",
+              "brightYellow": "#FFEEA8",
+              "brightBlue": "#90CCFF",
+              "brightMagenta": "#E2C0FF",
+              "brightCyan": "#A1EEFF",
+              "brightWhite": "#F2F7FF"
+            }
+          ]
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.Equal("Ocean Copy", settings.TerminalColorScheme);
+        var customScheme = Assert.Single(settings.TerminalColorSchemes);
+        Assert.Equal("#66B3FF", customScheme.Blue);
+        Assert.Equal("#A1EEFF", customScheme.BrightCyan);
+    }
+
+    [Fact]
     public void Load_ExplicitTerminalEnterModeDefault_IsPreserved()
     {
         if (!OperatingSystem.IsWindows()) return;

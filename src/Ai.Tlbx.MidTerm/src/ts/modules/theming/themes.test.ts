@@ -19,6 +19,7 @@ function createSettings(
   return {
     theme: 'dark',
     terminalColorScheme: 'auto',
+    terminalColorSchemes: [],
     uiTransparency: 0,
     terminalTransparency: 0,
     backgroundImageEnabled: false,
@@ -84,5 +85,47 @@ describe('themes', () => {
     expect(theme.foreground).toBe('#000000');
     expect(theme.blue).toBe('#0000B2');
     expect(theme.brightBlue).toBe('#0000FF');
+  });
+
+  it('resolves a saved custom palette by name', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalColorScheme: 'Ocean Copy',
+        terminalColorSchemes: [
+          {
+            name: 'Ocean Copy',
+            background: '#101820',
+            foreground: '#F2F7FF',
+            cursor: '#F2F7FF',
+            cursorAccent: '#101820',
+            selectionBackground: '#2A4C66',
+            scrollbarSliderBackground: 'rgba(242, 247, 255, 0.2)',
+            scrollbarSliderHoverBackground: 'rgba(242, 247, 255, 0.35)',
+            scrollbarSliderActiveBackground: 'rgba(242, 247, 255, 0.5)',
+            black: '#18242E',
+            red: '#FF6B6B',
+            green: '#7EE787',
+            yellow: '#F9E27D',
+            blue: '#66B3FF',
+            magenta: '#D2A8FF',
+            cyan: '#7DE3FF',
+            white: '#D8E7F5',
+            brightBlack: '#5A7288',
+            brightRed: '#FF8E8E',
+            brightGreen: '#9CF0A4',
+            brightYellow: '#FFEEA8',
+            brightBlue: '#90CCFF',
+            brightMagenta: '#E2C0FF',
+            brightCyan: '#A1EEFF',
+            brightWhite: '#F2F7FF',
+          },
+        ],
+      }),
+    );
+
+    expect(theme.background).toBe('#101820');
+    expect(theme.foreground).toBe('#F2F7FF');
+    expect(theme.blue).toBe('#66B3FF');
+    expect(theme.brightCyan).toBe('#A1EEFF');
   });
 });

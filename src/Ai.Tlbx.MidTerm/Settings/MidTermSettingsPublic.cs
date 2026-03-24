@@ -23,7 +23,8 @@ public sealed partial class MidTermSettingsPublic
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
     public bool HideCursorOnInputBursts { get; set; } = false;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
-    public TerminalColorSchemeSetting TerminalColorScheme { get; set; } = TerminalColorSchemeSetting.Auto;
+    public string TerminalColorScheme { get; set; } = "auto";
+    public List<TerminalColorSchemeDefinition> TerminalColorSchemes { get; set; } = [];
     public bool BackgroundImageEnabled { get; set; } = false;
     public string? BackgroundImageFileName { get; set; }
     public long BackgroundImageRevision { get; set; } = 0;

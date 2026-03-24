@@ -3871,6 +3871,154 @@ body.has-app-background::after {
   box-shadow: 0 0 0 3px var(--accent-blue-15);
 }
 
+.terminal-color-scheme-editor {
+  margin: 14px 0 18px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--bg-surface) 50%, var(--bg-elevated-opaque) 50%);
+  display: grid;
+  gap: 14px;
+}
+
+.terminal-color-scheme-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.terminal-color-scheme-editor-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  color: var(--text-primary);
+}
+
+.terminal-color-scheme-editor-copy {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.terminal-color-scheme-editor-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.terminal-color-scheme-editor-toolbar-field {
+  display: grid;
+  gap: 8px;
+}
+
+.terminal-color-scheme-editor-toolbar-field label,
+.terminal-color-scheme-editor-field-label {
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+}
+
+.terminal-color-scheme-editor-source-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.terminal-color-scheme-editor-source-row select,
+.terminal-color-scheme-editor-toolbar-field input,
+.terminal-color-scheme-editor-field input {
+  min-width: 0;
+  padding: 8px 12px;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--btn-secondary);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
+  font: inherit;
+}
+
+.terminal-color-scheme-editor-source-row select {
+  flex: 1 1 220px;
+}
+
+.terminal-color-scheme-editor-toolbar-field input:focus,
+.terminal-color-scheme-editor-field input:focus,
+.terminal-color-scheme-editor-source-row select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-15);
+}
+
+.terminal-color-scheme-editor-status {
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+}
+
+.terminal-color-scheme-editor-status.is-error {
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  color: var(--accent-red);
+}
+
+.terminal-color-scheme-editor-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.terminal-color-scheme-editor-group {
+  display: grid;
+  gap: 10px;
+}
+
+.terminal-color-scheme-editor-group-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-blue);
+}
+
+.terminal-color-scheme-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.terminal-color-scheme-editor-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.terminal-color-scheme-editor-color {
+  min-height: 42px;
+  padding: 4px;
+}
+
+.terminal-color-scheme-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 820px) {
+  .terminal-color-scheme-editor-toolbar,
+  .terminal-color-scheme-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-color-scheme-editor-header {
+    flex-direction: column;
+  }
+
+  .terminal-color-scheme-editor-actions {
+    justify-content: stretch;
+  }
+}
+
 /* Path value display */
 .path-value {
   font-family: var(--font-mono);

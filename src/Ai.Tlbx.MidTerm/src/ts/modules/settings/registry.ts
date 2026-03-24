@@ -181,6 +181,13 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known terminal color scheme',
     applyMode: 'immediate',
   }),
+  preserveEntry('terminalColorSchemes', [], {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'array of custom terminal color scheme definitions',
+    applyMode: 'immediate',
+    specialWriter: 'terminal color scheme editor',
+  }),
   controlEntry('backgroundImageEnabled', 'setting-background-image-enabled', 'checkbox', false, {
     editable: true,
     storage: 'settings.json',

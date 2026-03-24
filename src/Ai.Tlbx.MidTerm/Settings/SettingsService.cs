@@ -450,6 +450,7 @@ public sealed class SettingsService
         current.HideCursorOnInputBursts = old.HideCursorOnInputBursts;
         current.Theme = old.Theme;
         current.TerminalColorScheme = old.TerminalColorScheme;
+        current.TerminalColorSchemes = old.TerminalColorSchemes;
         current.BackgroundImageEnabled = old.BackgroundImageEnabled;
         current.BackgroundImageFileName = old.BackgroundImageFileName;
         current.BackgroundImageRevision = old.BackgroundImageRevision;

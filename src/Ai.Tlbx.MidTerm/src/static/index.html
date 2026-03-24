@@ -980,7 +980,9 @@
                         <h3 id="hub-machine-modal-title" data-i18n="settings.hub.addHost">
                           Add Host
                         </h3>
-                        <button id="btn-close-hub-machine-modal" class="modal-close">&times;</button>
+                        <button id="btn-close-hub-machine-modal" class="modal-close">
+                          &times;
+                        </button>
                       </div>
                       <div class="modal-body hub-machine-modal-body">
                         <input id="hub-machine-id" type="hidden" />
@@ -1131,6 +1133,75 @@
                           Matrix
                         </option>
                       </select>
+                    </div>
+                    <div id="terminal-color-scheme-editor" class="terminal-color-scheme-editor">
+                      <div class="terminal-color-scheme-editor-header">
+                        <div>
+                          <h4 class="terminal-color-scheme-editor-title">Custom Scheme Editor</h4>
+                          <p class="terminal-color-scheme-editor-copy">
+                            Load a preset, rename it, then tune the palette without touching the
+                            built-ins.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          id="terminal-color-scheme-reset"
+                          class="settings-action-btn"
+                        >
+                          New Blank
+                        </button>
+                      </div>
+                      <div class="terminal-color-scheme-editor-toolbar">
+                        <div class="terminal-color-scheme-editor-toolbar-field">
+                          <label for="terminal-color-scheme-editor-source">Populate From</label>
+                          <div class="terminal-color-scheme-editor-source-row">
+                            <select id="terminal-color-scheme-editor-source"></select>
+                            <button
+                              type="button"
+                              id="terminal-color-scheme-load"
+                              class="settings-action-btn"
+                            >
+                              Load Into Editor
+                            </button>
+                          </div>
+                        </div>
+                        <div class="terminal-color-scheme-editor-toolbar-field">
+                          <label for="terminal-color-scheme-editor-name">Custom Scheme Name</label>
+                          <input
+                            type="text"
+                            id="terminal-color-scheme-editor-name"
+                            maxlength="64"
+                            placeholder="Midnight Copy"
+                            spellcheck="false"
+                          />
+                        </div>
+                      </div>
+                      <div
+                        id="terminal-color-scheme-editor-status"
+                        class="terminal-color-scheme-editor-status"
+                      >
+                        Enter a custom scheme name before saving.
+                      </div>
+                      <div
+                        id="terminal-color-scheme-editor-fields"
+                        class="terminal-color-scheme-editor-fields"
+                      ></div>
+                      <div class="terminal-color-scheme-editor-actions">
+                        <button
+                          type="button"
+                          id="terminal-color-scheme-save"
+                          class="settings-action-btn"
+                        >
+                          Save Custom Scheme
+                        </button>
+                        <button
+                          type="button"
+                          id="terminal-color-scheme-delete"
+                          class="settings-action-btn"
+                        >
+                          Delete Custom Scheme
+                        </button>
+                      </div>
                     </div>
                     <div class="setting-row">
                       <label for="setting-font-size" data-i18n="settings.appearance.fontSize"
@@ -2447,7 +2518,8 @@
               class="manager-action-context-note hidden"
               data-i18n="managerBar.modal.cooldownHint"
             >
-              Runs when the session heat drops below 25%. After each trigger, heat is ignored for 5 seconds.
+              Runs when the session heat drops below 25%. After each trigger, heat is ignored for 5
+              seconds.
             </div>
 
             <div
