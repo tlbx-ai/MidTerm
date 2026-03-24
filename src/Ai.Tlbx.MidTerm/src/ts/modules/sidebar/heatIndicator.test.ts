@@ -41,6 +41,7 @@ describe('heatIndicator', () => {
   let intervalCallbacks = new Map<number, () => void>();
   let nextIntervalId = 1;
   let visibilityChangeListeners: Array<() => void> = [];
+  let windowEventListeners = new Map<string, Array<() => void>>();
   let documentMock: { hidden: boolean; addEventListener: ReturnType<typeof vi.fn> };
   let getSessionsMock: ReturnType<typeof vi.fn>;
 
@@ -106,6 +107,7 @@ describe('heatIndicator', () => {
     intervalCallbacks = new Map<number, () => void>();
     nextIntervalId = 1;
     visibilityChangeListeners = [];
+    windowEventListeners = new Map<string, Array<() => void>>();
     nowMs = Date.parse('2026-03-24T12:00:00.000Z');
     vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
 
@@ -120,6 +122,11 @@ describe('heatIndicator', () => {
 
     vi.stubGlobal('window', {
       devicePixelRatio: 1,
+      addEventListener: vi.fn((event: string, callback: () => void) => {
+        const listeners = windowEventListeners.get(event) ?? [];
+        listeners.push(callback);
+        windowEventListeners.set(event, listeners);
+      }),
       matchMedia: vi.fn(() => ({
         matches: false,
         addEventListener: vi.fn(),

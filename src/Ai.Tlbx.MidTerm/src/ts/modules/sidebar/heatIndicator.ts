@@ -456,10 +456,10 @@ export function initHeatIndicator(): void {
     resumeHeatRendering();
   });
 
-  window.addEventListener?.('focus', () => {
+  window.addEventListener('focus', () => {
     resumeHeatRendering();
   });
-  window.addEventListener?.('pageshow', () => {
+  window.addEventListener('pageshow', () => {
     resumeHeatRendering();
   });
 }
