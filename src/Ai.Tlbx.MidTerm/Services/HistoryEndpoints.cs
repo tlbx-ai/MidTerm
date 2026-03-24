@@ -26,7 +26,9 @@ public static class HistoryEndpoints
                 request.CommandLine,
                 request.WorkingDirectory,
                 request.Label,
-                request.DedupeKey);
+                request.DedupeKey,
+                request.LaunchMode,
+                request.Profile);
 
             if (id is null)
             {

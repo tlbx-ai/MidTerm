@@ -4113,6 +4113,8 @@ export interface components {
       dedupeKey?: null | string;
       isStarred: boolean;
       label?: null | string;
+      launchMode: string;
+      profile?: null | string;
     };
     CreateSessionRequest: {
       /** Format: int32 */
@@ -4254,6 +4256,8 @@ export interface components {
       lastUsed: string;
       /** Format: int32 */
       order: number;
+      launchMode: string;
+      profile: null | string;
     };
     LensAttachmentReference: {
       kind: string;

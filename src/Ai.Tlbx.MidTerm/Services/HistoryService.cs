@@ -123,7 +123,9 @@ public sealed class HistoryService
             IsStarred = entry.IsStarred,
             Label = entry.Label,
             LastUsed = entry.LastUsed,
-            Order = entry.Order
+            Order = entry.Order,
+            LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
+            Profile = NormalizeProfile(entry.Profile)
         };
     }
 
@@ -133,9 +135,13 @@ public sealed class HistoryService
         string? commandLine,
         string workingDirectory,
         string? label = null,
-        string? dedupeKey = null)
+        string? dedupeKey = null,
+        string? launchMode = null,
+        string? profile = null)
     {
-        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}");
+        var normalizedLaunchMode = NormalizeLaunchMode(launchMode);
+        var normalizedProfile = NormalizeProfile(profile);
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -169,6 +175,8 @@ public sealed class HistoryService
                 existing.CommandLine = commandLine;
                 existing.WorkingDirectory = workingDirectory;
                 existing.LastUsed = DateTime.UtcNow;
+                existing.LaunchMode = normalizedLaunchMode;
+                existing.Profile = normalizedProfile;
                 if (!string.IsNullOrWhiteSpace(label))
                 {
                     existing.Label = label;
@@ -185,7 +193,9 @@ public sealed class HistoryService
                     WorkingDirectory = workingDirectory,
                     IsStarred = false,
                     Label = string.IsNullOrWhiteSpace(label) ? null : label,
-                    LastUsed = DateTime.UtcNow
+                    LastUsed = DateTime.UtcNow,
+                    LaunchMode = normalizedLaunchMode,
+                    Profile = normalizedProfile
                 };
                 _history.Entries.Add(entry);
             }
@@ -237,7 +247,9 @@ public sealed class HistoryService
                 IsStarred = entry.IsStarred,
                 Label = entry.Label,
                 LastUsed = entry.LastUsed,
-                Order = entry.Order
+                Order = entry.Order,
+                LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
+                Profile = NormalizeProfile(entry.Profile)
             };
         }
     }
@@ -406,5 +418,27 @@ public sealed class HistoryService
     private static string NormalizePath(string path)
     {
         return path.Replace('\\', '/').ToLowerInvariant().TrimEnd('/');
+    }
+
+    private static string NormalizeLaunchMode(string? launchMode)
+    {
+        return string.Equals(launchMode, LaunchEntryLaunchModes.Lens, StringComparison.OrdinalIgnoreCase)
+            ? LaunchEntryLaunchModes.Lens
+            : LaunchEntryLaunchModes.Terminal;
+    }
+
+    private static string? NormalizeProfile(string? profile)
+    {
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            return null;
+        }
+
+        return profile.Trim().ToLowerInvariant() switch
+        {
+            "codex" => "codex",
+            "claude" => "claude",
+            _ => null
+        };
     }
 }

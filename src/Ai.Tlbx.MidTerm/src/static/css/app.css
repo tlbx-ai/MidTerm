@@ -1208,6 +1208,20 @@ body.has-app-background::after {
   padding: 2px 0;
 }
 
+.history-item-mode {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-gold-muted) 42%, transparent);
+  background: color-mix(in srgb, var(--accent-gold-muted) 10%, transparent);
+  color: color-mix(in srgb, var(--accent-gold-muted) 86%, var(--text-primary));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
 .history-item-info .session-foreground {
   font-size: var(--fs-xs);
   overflow: hidden;

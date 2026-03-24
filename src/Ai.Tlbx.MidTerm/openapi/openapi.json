@@ -4122,7 +4122,8 @@
           "shellType",
           "executable",
           "workingDirectory",
-          "isStarred"
+          "isStarred",
+          "launchMode"
         ],
         "type": "object",
         "properties": {
@@ -4151,6 +4152,15 @@
             "type": "boolean"
           },
           "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "launchMode": {
+            "type": "string"
+          },
+          "profile": {
             "type": [
               "null",
               "string"
@@ -4694,7 +4704,9 @@
           "isStarred",
           "label",
           "lastUsed",
-          "order"
+          "order",
+          "launchMode",
+          "profile"
         ],
         "type": "object",
         "properties": {
@@ -4732,6 +4744,15 @@
           "order": {
             "type": "integer",
             "format": "int32"
+          },
+          "launchMode": {
+            "type": "string"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

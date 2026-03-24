@@ -2,6 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace Ai.Tlbx.MidTerm.Models.History;
 
+public static class LaunchEntryLaunchModes
+{
+    public const string Terminal = "terminal";
+    public const string Lens = "lens";
+}
+
 public sealed class LaunchEntry
 {
     public string Id { get; set; } = "";
@@ -13,6 +19,8 @@ public sealed class LaunchEntry
     public string? Label { get; set; }
     public DateTime LastUsed { get; set; }
     public int Order { get; set; }
+    public string LaunchMode { get; set; } = LaunchEntryLaunchModes.Terminal;
+    public string? Profile { get; set; }
 }
 
 public sealed class HistoryReorderRequest

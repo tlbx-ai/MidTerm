@@ -93,6 +93,11 @@ import {
   refreshHistory,
   type LaunchEntry,
 } from './modules/history';
+import {
+  isLensHistoryEntry,
+  normalizeHistoryLensProfile,
+  resolveSessionHistoryMode,
+} from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
 import { buildProcessCwdTuple, buildReplayCommand } from './modules/sidebar/processDisplay';
@@ -1013,6 +1018,11 @@ async function patchPinnedHistoryLabelIfMatchingTuple(
   const bookmarkId = currentSession?.bookmarkId;
   if (!bookmarkId) return;
 
+  if (currentSession.lensOnly) {
+    patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
+    return;
+  }
+
   const fgInfo = getForegroundInfo(sessionId);
   const currentTuple = buildProcessCwdTuple(
     fgInfo.name,
@@ -1124,30 +1134,56 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
     return;
   }
 
+  const historyMode = resolveSessionHistoryMode(session);
   const fgInfo = getForegroundInfo(sessionId);
-  const tupleKey = buildProcessCwdTuple(
-    fgInfo.name,
-    fgInfo.commandLine,
-    fgInfo.cwd,
-    fgInfo.processIdentity,
-  );
-  if (!fgInfo.name || !tupleKey) {
-    log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
-    return;
-  }
-
   const trimmedName = (session.name || '').trim();
   const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
   const previousBookmarkId = session.bookmarkId ?? null;
+  let executable: string;
+  let commandLine: string | null;
+  let workingDirectory: string;
+  let dedupeKey: string | null;
+
+  if (historyMode.launchMode === 'lens' && historyMode.profile) {
+    workingDirectory = fgInfo.cwd ?? session.currentDirectory ?? '';
+    if (!workingDirectory) {
+      log.info(
+        () => `pinSessionToHistory: missing working directory for lens session ${sessionId}`,
+      );
+      return;
+    }
+
+    executable = historyMode.profile;
+    commandLine = null;
+    dedupeKey = buildLensHistoryDedupeKey(historyMode.profile, workingDirectory);
+  } else {
+    const tupleKey = buildProcessCwdTuple(
+      fgInfo.name,
+      fgInfo.commandLine,
+      fgInfo.cwd,
+      fgInfo.processIdentity,
+    );
+    if (!fgInfo.name || !tupleKey) {
+      log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
+      return;
+    }
+
+    executable = fgInfo.name;
+    commandLine = fgInfo.commandLine;
+    workingDirectory = fgInfo.cwd ?? '';
+    dedupeKey = tupleKey;
+  }
 
   const id = await createHistoryEntry({
     shellType: session.shellType,
-    executable: fgInfo.name,
-    commandLine: fgInfo.commandLine,
-    workingDirectory: fgInfo.cwd ?? '',
+    executable,
+    commandLine,
+    workingDirectory,
     isStarred: true,
     label,
-    dedupeKey: tupleKey,
+    dedupeKey,
+    launchMode: historyMode.launchMode,
+    profile: historyMode.profile,
   });
 
   if (id) {
@@ -1196,6 +1232,62 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
   closeSidebar();
 
+  const attachBookmarkToSession = (sessionId: string): void => {
+    const applyBookmark = (): void => {
+      const session = getSession(sessionId);
+      if (!session) {
+        setTimeout(applyBookmark, 100);
+        return;
+      }
+      setSession({ ...session, bookmarkId: entry.id });
+      if (entry.id) {
+        setSessionBookmark(sessionId, entry.id).catch(() => {});
+      }
+      if (entry.label) {
+        renameSession(sessionId, entry.label);
+      }
+    };
+    applyBookmark();
+  };
+
+  if (isLensHistoryEntry(entry)) {
+    const profile = normalizeHistoryLensProfile(entry.profile);
+    if (profile) {
+      bootstrapWorker({
+        cols,
+        rows,
+        shell: resolveLauncherShell(),
+        workingDirectory: entry.workingDirectory || null,
+        agentControlled: false,
+        injectGuidance: true,
+        profile,
+        lensOnly: true,
+        launchDelayMs: 0,
+        slashCommands: [],
+        slashCommandDelayMs: 350,
+      })
+        .then(({ data }) => {
+          const session = data?.session;
+          if (!session) {
+            return;
+          }
+
+          setSession(session);
+          newlyCreatedSessions.add(session.id);
+          setSessionLensAvailability(session.id, true);
+          selectSession(session.id);
+          requestAnimationFrame(() => {
+            switchTab(session.id, 'agent');
+          });
+          attachBookmarkToSession(session.id);
+        })
+        .catch((e: unknown) => {
+          log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
+        });
+      return;
+    }
+  }
+
   apiCreateSession({
     cols,
     rows,
@@ -1207,23 +1299,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
-
-      // Link session to bookmark and apply label (deferred until session is in store)
-      const applyBookmark = (): void => {
-        const session = getSession(data.id);
-        if (!session) {
-          setTimeout(applyBookmark, 100);
-          return;
-        }
-        setSession({ ...session, bookmarkId: entry.id });
-        if (entry.id) {
-          setSessionBookmark(data.id, entry.id).catch(() => {});
-        }
-        if (entry.label) {
-          renameSession(data.id, entry.label);
-        }
-      };
-      applyBookmark();
+      attachBookmarkToSession(data.id);
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
@@ -1235,6 +1311,15 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
     .catch((e: unknown) => {
       log.error(() => `Failed to spawn from history: ${String(e)}`);
     });
+}
+
+function buildLensHistoryDedupeKey(profile: 'codex' | 'claude', workingDirectory: string): string {
+  const normalizedPath = workingDirectory
+    .replace(/\\/g, '/')
+    .trim()
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  return `lens|${profile}|${normalizedPath}`;
 }
 
 // =============================================================================
