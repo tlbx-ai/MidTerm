@@ -35,6 +35,7 @@
   "sidebar.voiceDefault": "デフォルト",
   "sidebar.voiceLoading": "読み込み中...",
   "sidebar.voiceNotConnected": "未接続",
+  "common.beta": "Beta",
   "sidebar.networkRemoteAccess": "ネットワークとリモートアクセス",
   "sidebar.trustCertificate": "証明書を信頼",
   "sidebar.trustCertificateHint": "このデバイスまたは他のデバイスで証明書を信頼する",

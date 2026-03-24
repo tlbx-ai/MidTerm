@@ -153,9 +153,15 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
       safeProvidersEl.innerHTML = getProviders()
         .map((definition) => {
           const active = definition.provider === state.provider ? ' active' : '';
+          const badge = definition.beta
+            ? `<span class="feature-beta-badge">${escapeHtml(t('common.beta'))}</span>`
+            : '';
           return `
             <button type="button" class="session-launcher-provider${active}" data-provider="${definition.provider}">
-              <span class="session-launcher-provider-title">${escapeHtml(definition.title)}</span>
+              <span class="session-launcher-provider-heading">
+                <span class="session-launcher-provider-title">${escapeHtml(definition.title)}</span>
+                ${badge}
+              </span>
               <span class="session-launcher-provider-description">${escapeHtml(definition.description)}</span>
             </button>
           `;
@@ -357,6 +363,7 @@ function getProviders(): ReadonlyArray<{
   provider: LauncherProvider;
   title: string;
   description: string;
+  beta?: boolean;
 }> {
   return [
     {
@@ -368,11 +375,13 @@ function getProviders(): ReadonlyArray<{
       provider: 'codex',
       title: t('sessionLauncher.codexTitle'),
       description: t('sessionLauncher.codexDescription'),
+      beta: true,
     },
     {
       provider: 'claude',
       title: t('sessionLauncher.claudeTitle'),
       description: t('sessionLauncher.claudeDescription'),
+      beta: true,
     },
   ];
 }

@@ -26,7 +26,6 @@ import {
   fitTerminalToContainer,
   refreshTerminalPresentation,
 } from '../terminal/scaling';
-import { onDevModeChanged } from '../sidebar/voiceSection';
 
 const log = createLogger('tabManager');
 
@@ -198,7 +197,7 @@ export function getActiveTab(sessionId: string): SessionTabId {
 
 /**
  * Centralizes capability checks so modules do not accidentally surface tabs the
- * current session or release channel is not supposed to expose.
+ * current session is not supposed to expose.
  */
 export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
   const state = sessionTabStates.get(sessionId);
@@ -214,8 +213,8 @@ export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
 }
 
 /**
- * Reconciles live session capabilities with visible tab chrome, including
- * keeping the experimental Lens tab hidden outside dev mode for now.
+ * Reconciles live session capabilities with visible tab chrome so Lens-backed
+ * sessions stay accessible as soon as the backend says they are eligible.
  */
 export function syncSessionTabCapabilities(
   sessionId: string,
@@ -373,17 +372,10 @@ export function updateGitIndicatorForSession(
 }
 
 /**
- * Binds session-tab state to live process, session, and dev-mode changes so
- * experimental surfaces appear and disappear without forcing a full reload.
+ * Binds session-tab state to live process and session changes so workflow
+ * surfaces appear and disappear without forcing a full reload.
  */
 export function initSessionTabs(): void {
-  onDevModeChanged(() => {
-    const sessions = $sessionList.get();
-    for (const session of sessions) {
-      syncSessionTabCapabilities(session.id, session);
-    }
-  });
-
   $processStates.subscribe((states) => {
     for (const [sessionId, processState] of Object.entries(states)) {
       if (processState.foregroundCwd) {

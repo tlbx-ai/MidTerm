@@ -35,6 +35,7 @@
   "sidebar.voiceDefault": "डिफ़ॉल्ट",
   "sidebar.voiceLoading": "लोड हो रहा है...",
   "sidebar.voiceNotConnected": "कनेक्ट नहीं है",
+  "common.beta": "Beta",
   "sidebar.networkRemoteAccess": "नेटवर्क और रिमोट एक्सेस",
   "sidebar.trustCertificate": "प्रमाणपत्र पर भरोसा करें",
   "sidebar.trustCertificateHint": "इस या अन्य डिवाइस पर प्रमाणपत्र पर भरोसा करें",

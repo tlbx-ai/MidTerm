@@ -5684,6 +5684,13 @@ body.has-app-background::after {
   box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow-color-lg) 72%, transparent);
 }
 
+.session-launcher-provider-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .session-launcher-provider-title {
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -7551,13 +7558,19 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
 }
 
+:root {
+  --smart-input-control-height: 40px;
+}
+
 .smart-input-textarea {
   flex: 1;
   resize: none;
+  box-sizing: border-box;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
+  min-height: var(--smart-input-control-height);
   padding: 8px 12px;
   font-family: inherit;
   font-size: 15px;
@@ -7609,8 +7622,8 @@ body.shared-session-mode .session-tab-bar {
 .smart-input-photo-btn,
 .smart-input-attach-btn {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: var(--smart-input-control-height);
+  height: var(--smart-input-control-height);
   border: none;
   border-radius: 50%;
   background: var(--btn-secondary);
@@ -7655,8 +7668,8 @@ body.shared-session-mode .session-tab-bar {
 
 .smart-input-autosend-btn {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: var(--smart-input-control-height);
+  height: var(--smart-input-control-height);
   border: none;
   border-radius: 50%;
   background: var(--btn-secondary);
@@ -7714,8 +7727,8 @@ body.shared-session-mode .session-tab-bar {
 /* Toggle keys chevron button */
 .smart-input-toggle-keys {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: var(--smart-input-control-height);
+  height: var(--smart-input-control-height);
   border: none;
   border-radius: 50%;
   background: var(--btn-secondary);
@@ -9634,6 +9647,7 @@ body.shared-session-mode .session-tab-bar {
   height: 100%;
   display: flex;
   align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -9651,6 +9665,11 @@ body.shared-session-mode .session-tab-bar {
       transparent 100%
     )
     1;
+}
+
+.session-tab-label {
+  display: inline-flex;
+  align-items: center;
 }
 
 .session-cwd {
@@ -9734,6 +9753,27 @@ body.shared-session-mode .session-tab-bar {
   font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+.feature-beta-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-gold-muted) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-gold-muted) 12%, transparent);
+  color: color-mix(in srgb, var(--accent-gold-muted) 82%, var(--text-primary));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.layout-leaf .feature-beta-badge {
+  padding: 2px 6px;
+  font-size: 9px;
 }
 
 .git-indicator {
@@ -10747,71 +10787,6 @@ body.shared-session-mode .session-tab-bar {
   line-height: 1.56;
 }
 
-.smart-input-docked.smart-input-lens-docked {
-  display: none;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  border-top: 0;
-}
-
-.smart-input-docked.smart-input-lens-docked.visible {
-  display: flex;
-}
-
-.smart-input-docked.smart-input-lens-docked .smart-input-row {
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  border-radius: 18px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--bg-secondary) 84%, transparent),
-      color-mix(in srgb, var(--bg-secondary) 72%, transparent)
-    ),
-    var(--terminal-ui-background, var(--terminal-bg));
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
-}
-
-.smart-input-docked.smart-input-lens-docked .smart-input-textarea {
-  min-height: 24px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.smart-input-docked.smart-input-lens-docked .smart-input-textarea:focus {
-  outline: none;
-  box-shadow: none;
-}
-
-.smart-input-docked.smart-input-lens-docked .smart-input-mic-btn,
-.smart-input-docked.smart-input-lens-docked .smart-input-photo-btn,
-.smart-input-docked.smart-input-lens-docked .smart-input-attach-btn,
-.smart-input-docked.smart-input-lens-docked .smart-input-autosend-btn,
-.smart-input-docked.smart-input-lens-docked .smart-input-toggle-keys {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--btn-secondary) 82%, transparent);
-}
-
-.smart-input-docked.smart-input-lens-docked .smart-input-send-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-blue) 88%, transparent);
-  color: var(--bg-primary);
-}
-
 .agent-transcript-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -11285,26 +11260,6 @@ body.shared-session-mode .session-tab-bar {
     flex-basis: 100%;
   }
 
-  .smart-input-docked.smart-input-lens-docked .smart-input-row {
-    gap: 6px;
-    padding: 10px 10px;
-    border-radius: 16px;
-  }
-
-  .smart-input-docked.smart-input-lens-docked .smart-input-textarea {
-    font-size: 0.9rem;
-    line-height: 1.42;
-  }
-
-  .smart-input-docked.smart-input-lens-docked .smart-input-mic-btn,
-  .smart-input-docked.smart-input-lens-docked .smart-input-photo-btn,
-  .smart-input-docked.smart-input-lens-docked .smart-input-attach-btn,
-  .smart-input-docked.smart-input-lens-docked .smart-input-autosend-btn,
-  .smart-input-docked.smart-input-lens-docked .smart-input-toggle-keys,
-  .smart-input-docked.smart-input-lens-docked .smart-input-send-btn {
-    width: 32px;
-    height: 32px;
-  }
 }
 
 /* File Browser layout (within files tab panel) */

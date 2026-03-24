@@ -73,6 +73,13 @@ function createTextNode(className: string, text: string): HTMLSpanElement {
   return node;
 }
 
+function createBetaBadge(): HTMLSpanElement {
+  const badge = document.createElement('span');
+  badge.className = 'feature-beta-badge';
+  badge.textContent = t('common.beta');
+  return badge;
+}
+
 function buildGitStatsMarkup(additions: number, deletions: number): string {
   return (
     `<span class="git-indicator-added">+${additions}</span>` +
@@ -242,7 +249,13 @@ export function createTabBar(
     btn.className = 'session-tab';
     if (tabId === 'terminal') btn.classList.add('active');
     btn.dataset.tab = tabId;
-    btn.textContent = label;
+    const labelNode = document.createElement('span');
+    labelNode.className = 'session-tab-label';
+    labelNode.textContent = label;
+    btn.appendChild(labelNode);
+    if (tabId === 'agent') {
+      btn.appendChild(createBetaBadge());
+    }
     btn.addEventListener('click', () => {
       onTabSelect(tabId);
     });

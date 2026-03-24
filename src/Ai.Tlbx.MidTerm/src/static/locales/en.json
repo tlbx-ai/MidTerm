@@ -40,6 +40,7 @@
   "sidebar.voiceDefault": "Default",
   "sidebar.voiceLoading": "Loading...",
   "sidebar.voiceNotConnected": "Not connected",
+  "common.beta": "Beta",
   "sessionLauncher.title": "Start a New Session",
   "sessionLauncher.terminalTitle": "Terminal",
   "sessionLauncher.terminalDescription": "Open a normal shell session.",

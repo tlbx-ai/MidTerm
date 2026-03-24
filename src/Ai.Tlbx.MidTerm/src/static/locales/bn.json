@@ -35,6 +35,7 @@
   "sidebar.voiceDefault": "ডিফল্ট",
   "sidebar.voiceLoading": "লোড হচ্ছে...",
   "sidebar.voiceNotConnected": "সংযুক্ত নয়",
+  "common.beta": "Beta",
   "sidebar.networkRemoteAccess": "নেটওয়ার্ক ও রিমোট অ্যাক্সেস",
   "sidebar.trustCertificate": "সার্টিফিকেট বিশ্বাস করুন",
   "sidebar.trustCertificateHint": "এই বা অন্য ডিভাইসে সার্টিফিকেট বিশ্বাস করুন",

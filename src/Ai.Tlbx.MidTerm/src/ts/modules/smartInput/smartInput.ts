@@ -98,7 +98,6 @@ export function initSmartInput(): void {
   onTabActivated('agent', (sessionId) => {
     if ($activeSessionId.get() === sessionId) {
       syncSmartInputVisibility(true);
-      scheduleLensComposerMount(sessionId, true);
     }
   });
 
@@ -190,11 +189,6 @@ function showDockedBar(focusTextarea: boolean = false): void {
   if (focusTextarea) {
     activeTextarea?.focus({ preventScroll: true });
   }
-
-  const activeSessionId = $activeSessionId.get();
-  if (activeSessionId && isLensActiveSession(activeSessionId) && !findActiveLensComposerHost()) {
-    scheduleLensComposerMount(activeSessionId, focusTextarea);
-  }
 }
 
 function hideDockedBar(): void {
@@ -251,6 +245,7 @@ function createInputElements(): {
   autoSendBtn.innerHTML =
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>';
   autoSendBtn.title = t('smartInput.autoSend');
+  autoSendBtn.hidden = !canUseSmartInputVoice();
   if (autoSendEnabled) autoSendBtn.classList.add('active');
 
   autoSendBtn.addEventListener('click', () => {
@@ -394,15 +389,6 @@ function createDockedDOM(): void {
 
 function relocateDockedBar(): void {
   if (!dockedBar) return;
-
-  const lensComposerHost = findActiveLensComposerHost();
-  if (lensComposerHost) {
-    lensComposerHost.appendChild(dockedBar);
-    dockedBar.classList.add('smart-input-lens-docked');
-    return;
-  }
-
-  dockedBar.classList.remove('smart-input-lens-docked');
   const managerBar = document.getElementById('manager-bar');
   if (managerBar?.parentElement) {
     managerBar.parentElement.insertBefore(dockedBar, managerBar.nextSibling);
@@ -410,48 +396,6 @@ function relocateDockedBar(): void {
   }
 
   document.querySelector('.main-content')?.appendChild(dockedBar);
-}
-
-function scheduleLensComposerMount(sessionId: string, focusTextarea: boolean): void {
-  window.requestAnimationFrame(() => {
-    if ($activeSessionId.get() !== sessionId || !isLensActiveSession(sessionId)) {
-      return;
-    }
-
-    if (!dockedBar) {
-      createDockedDOM();
-    }
-
-    relocateDockedBar();
-    dockedBar?.classList.add('visible');
-    activeTextarea = dockedBar?.querySelector(
-      '.smart-input-textarea',
-    ) as HTMLTextAreaElement | null;
-    activeMicBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
-    if (activeTextarea) {
-      applyDraftToTextarea(activeTextarea, sessionId);
-      resizeTextarea(activeTextarea);
-      if (focusTextarea) {
-        activeTextarea.focus({ preventScroll: true });
-      }
-    }
-  });
-}
-
-function findActiveLensComposerHost(): HTMLElement | null {
-  const activeSessionId = $activeSessionId.get();
-  if (!activeSessionId || !isLensActiveSession(activeSessionId)) {
-    return null;
-  }
-
-  const activePanel = document.querySelector<HTMLElement>(
-    `.session-wrapper[data-session-id="${CSS.escape(activeSessionId)}"] .agent-composer-host`,
-  );
-  if (activePanel) {
-    return activePanel;
-  }
-
-  return document.querySelector<HTMLElement>('.session-wrapper.active .agent-composer-host');
 }
 
 function sendText(ta: HTMLTextAreaElement): void {
@@ -526,8 +470,19 @@ function resizeTextarea(textarea: HTMLTextAreaElement): void {
   const lineHeight = Number.parseFloat(computedStyle.lineHeight);
   const fallbackFontSize = Number.parseFloat(computedStyle.fontSize) || 16;
   const effectiveLineHeight = Number.isFinite(lineHeight) ? lineHeight : fallbackFontSize * 1.2;
-  const maxHeight = effectiveLineHeight * MAX_TEXTAREA_LINES;
-  const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+  const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
+  const borderTop = Number.parseFloat(computedStyle.borderTopWidth) || 0;
+  const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
+  const minHeight = Number.parseFloat(computedStyle.minHeight) || 0;
+  const maxHeight =
+    effectiveLineHeight * MAX_TEXTAREA_LINES +
+    paddingTop +
+    paddingBottom +
+    borderTop +
+    borderBottom;
+  const contentHeight = textarea.scrollHeight + borderTop + borderBottom;
+  const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
 
   textarea.style.height = `${String(nextHeight)}px`;
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
@@ -578,21 +533,31 @@ function canUseSmartInputVoice(): boolean {
 
 function syncVoiceInputAvailability(): void {
   const micBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
-  if (!micBtn) {
+  const autoSendBtn = dockedBar?.querySelector(
+    '.smart-input-autosend-btn',
+  ) as HTMLButtonElement | null;
+  if (!micBtn && !autoSendBtn) {
     return;
   }
 
   const enabled = canUseSmartInputVoice();
-  micBtn.hidden = !enabled;
+  if (micBtn) {
+    micBtn.hidden = !enabled;
+  }
+  if (autoSendBtn) {
+    autoSendBtn.hidden = !enabled;
+  }
   if (!enabled && isRecording) {
     endRecording();
   }
+
+  updateAutoSendVisibility();
 }
 
 function updateAutoSendVisibility(): void {
   for (const container of [dockedBar]) {
     if (!container) continue;
-    container.classList.toggle('autosend-active', autoSendEnabled);
+    container.classList.toggle('autosend-active', autoSendEnabled && canUseSmartInputVoice());
   }
 }
 

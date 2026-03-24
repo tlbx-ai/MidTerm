@@ -37,6 +37,7 @@
   "sidebar.voiceDefault": "默认",
   "sidebar.voiceLoading": "加载中...",
   "sidebar.voiceNotConnected": "未连接",
+  "common.beta": "Beta",
   "sidebar.networkRemoteAccess": "网络与远程访问",
   "sidebar.trustCertificate": "信任证书",
   "sidebar.trustCertificateHint": "在此设备或其他设备上信任证书",

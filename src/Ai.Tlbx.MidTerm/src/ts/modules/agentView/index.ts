@@ -226,7 +226,7 @@ export function getLensDebugScenarioNames(): readonly LensDebugScenarioName[] {
 
 /**
  * Loads a representative Lens transcript into an existing session panel to
- * speed up conversation UX and CSS tuning while Lens remains dev-facing.
+ * speed up conversation UX and CSS tuning without depending on a live agent runtime.
  */
 export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): boolean {
   ensureSessionWrapper(sessionId);

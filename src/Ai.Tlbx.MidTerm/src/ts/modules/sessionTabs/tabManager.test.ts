@@ -11,7 +11,6 @@ const terminalContainer = {
 } as HTMLDivElement;
 
 const visibleTabs = new Map<string, Set<string>>();
-let devModeEnabled = true;
 
 function createMockElement(): HTMLDivElement {
   return {
@@ -103,14 +102,8 @@ vi.mock('../terminal/scaling', () => ({
   refreshTerminalPresentation: refreshTerminalPresentationSpy,
 }));
 
-vi.mock('../sidebar/voiceSection', () => ({
-  isDevMode: () => devModeEnabled,
-  onDevModeChanged: vi.fn(),
-}));
-
 describe('tabManager', () => {
   beforeEach(() => {
-    devModeEnabled = true;
     focusSpy.mockReset();
     refreshTerminalPresentationSpy.mockReset();
     terminalContainer.children.length = 0;
@@ -255,10 +248,9 @@ describe('tabManager', () => {
     expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Lens available for agent sessions even when dev mode is disabled', async () => {
+  it('keeps Lens available for agent sessions without any dev-mode gate', async () => {
     const { ensureSessionWrapper, isTabAvailable, switchTab, getActiveTab } = await import('./tabManager');
 
-    devModeEnabled = false;
     ensureSessionWrapper('s1');
 
     expect(isTabAvailable('s1', 'agent')).toBe(true);
