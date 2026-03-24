@@ -207,10 +207,10 @@ describe('heatIndicator', () => {
     expect(module.getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
 
     module.setSessionHeat('session-1', 0);
-    advanceAnimationFrames(30_000);
+    advanceAnimationFrames(42_000);
     expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(0.25, 1);
 
-    advanceAnimationFrames(90_000);
+    advanceAnimationFrames(126_000);
     expect(module.getDisplayedSessionHeat('session-1')).toBeLessThan(0.01);
     expect(module.getDisplayedSessionHeat('session-1')).toBeGreaterThan(0);
   });
@@ -228,11 +228,33 @@ describe('heatIndicator', () => {
     setDocumentHidden(true);
     expect(rafQueue).toHaveLength(0);
 
-    advanceTimeWithoutFrames(30_000);
+    advanceTimeWithoutFrames(42_000);
     setDocumentHidden(false);
 
     expect(module.getDisplayedSessionHeat('session-1')).toBeCloseTo(0.25, 1);
     expect(canvas.ctx.fill).toHaveBeenCalled();
+  });
+
+  it('does not create heat from zero-heat refreshes that only carry last output timestamps', async () => {
+    getSessionsMock.mockResolvedValue(
+      buildSessionsResponse([
+        {
+          id: 'session-1',
+          currentHeat: 0,
+          lastOutputAt: new Date(nowMs).toISOString(),
+        },
+      ]),
+    );
+
+    const module = await import('./heatIndicator');
+    const canvas = createCanvasMock();
+    module.registerHeatCanvas('session-1', canvas.canvas);
+    module.initHeatIndicator();
+    await flushPromises();
+
+    expect(module.getSessionHeat('session-1')).toBe(0);
+    expect(module.getDisplayedSessionHeat('session-1')).toBe(0);
+    expect(canvas.ctx.fill).not.toHaveBeenCalled();
   });
 
   it('continues polling while the document is hidden', async () => {

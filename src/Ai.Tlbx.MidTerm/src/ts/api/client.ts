@@ -165,7 +165,7 @@ export async function getBootstrapLogin() {
 // --- Sessions ---
 
 export async function getSessions() {
-  return client.GET('/api/sessions');
+  return client.GET('/api/sessions', { cache: 'no-store' });
 }
 
 export async function createSession(request?: CreateSessionRequest) {
