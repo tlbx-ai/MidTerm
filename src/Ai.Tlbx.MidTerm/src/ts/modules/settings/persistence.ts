@@ -26,7 +26,10 @@ import {
   suggestCustomTerminalColorSchemeName,
   themeToTerminalColorSchemeDefinition,
 } from '../theming/terminalColorSchemes';
-import { getEffectiveXtermThemeForSettings } from '../theming/themes';
+import {
+  getEffectiveXtermThemeForSettings,
+  syncEffectiveXtermThemeDomOverrides,
+} from '../theming/themes';
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
@@ -411,6 +414,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   if (!settings) return;
 
   applyBackgroundAppearance(settings);
+  syncEffectiveXtermThemeDomOverrides(settings);
   const theme = getEffectiveXtermThemeForSettings(settings);
   const fontFamily = buildTerminalFontStack(settings.fontFamily);
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
@@ -848,6 +852,7 @@ function resolvePreviewTransparencySettings(current: MidTermSettingsPublic): Mid
 
 function previewTransparencySettings(settings: MidTermSettingsPublic): void {
   applyBackgroundAppearance(settings);
+  syncEffectiveXtermThemeDomOverrides(settings);
   const theme = getEffectiveXtermThemeForSettings(settings);
 
   for (const [sessionId, state] of sessionTerminals.entries()) {

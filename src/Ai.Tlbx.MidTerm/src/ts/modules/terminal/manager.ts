@@ -6,7 +6,7 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { getEffectiveXtermTheme } from '../theming/themes';
+import { getEffectiveXtermTheme, syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
 import {
   sessionTerminals,
   pendingOutputFrames,
@@ -381,6 +381,7 @@ export function createTerminalForSession(
     }
 
     state.opened = true;
+    syncEffectiveXtermThemeDomOverrides($currentSettings.get());
 
     // Intercept xterm's internal textarea focus when Smart Input is active
     const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');

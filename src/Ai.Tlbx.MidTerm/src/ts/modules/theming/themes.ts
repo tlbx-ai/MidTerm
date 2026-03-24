@@ -12,17 +12,76 @@ import { setCookie } from '../../utils';
 import { applyCssTheme } from './cssThemes';
 import { getTerminalThemeByName } from './terminalColorSchemes';
 
+const ANSI_COLOR_KEYS = [
+  'black',
+  'red',
+  'green',
+  'yellow',
+  'blue',
+  'magenta',
+  'cyan',
+  'white',
+  'brightBlack',
+  'brightRed',
+  'brightGreen',
+  'brightYellow',
+  'brightBlue',
+  'brightMagenta',
+  'brightCyan',
+  'brightWhite',
+] as const satisfies readonly (keyof TerminalTheme)[];
+
+const DOM_ANSI_OVERRIDE_STYLE_ID = 'midterm-xterm-ansi-overrides';
+
+type ResolvedTerminalTheme = {
+  baseTheme: TerminalTheme;
+  theme: TerminalTheme;
+  alpha: number;
+};
+
 /**
  * Resolve the effective xterm color scheme.
  * If terminalColorScheme is 'auto', falls back to the UI theme.
  */
 export function getEffectiveXtermTheme(): TerminalTheme {
-  return getEffectiveXtermThemeForSettings($currentSettings.get());
+  const settings = $currentSettings.get();
+  syncEffectiveXtermThemeDomOverrides(settings);
+  return getEffectiveXtermThemeForSettings(settings);
 }
 
 export function getEffectiveXtermThemeForSettings(
   settings: MidTermSettingsPublic | null,
 ): TerminalTheme {
+  return resolveEffectiveXtermTheme(settings).theme;
+}
+
+export function syncEffectiveXtermThemeDomOverrides(settings: MidTermSettingsPublic | null): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const existing = document.getElementById(DOM_ANSI_OVERRIDE_STYLE_ID);
+  const { baseTheme, theme, alpha } = resolveEffectiveXtermTheme(settings);
+  if (alpha >= 1) {
+    existing?.remove();
+    return;
+  }
+
+  const style = existing instanceof HTMLStyleElement ? existing : document.createElement('style');
+  style.id = DOM_ANSI_OVERRIDE_STYLE_ID;
+  style.textContent = buildDomAnsiOverrideCss(baseTheme, theme);
+
+  const parent = document.body;
+  if (style.parentElement !== parent) {
+    style.remove();
+    parent.appendChild(style);
+    return;
+  }
+
+  parent.appendChild(style);
+}
+
+function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): ResolvedTerminalTheme {
   const colorScheme = settings?.terminalColorScheme ?? 'auto';
   const key = colorScheme === 'auto' ? (settings?.theme ?? 'dark') : colorScheme;
   const fallbackTheme = THEMES['dark'];
@@ -39,11 +98,13 @@ export function getEffectiveXtermThemeForSettings(
     settings !== null &&
     settings.backgroundImageEnabled &&
     settings.backgroundImageFileName !== null;
+  let alpha = 1;
   if (hasWallpaper || transparency > 0) {
-    const alpha = Math.max(0, 1 - transparency / 100);
+    alpha = Math.max(0, 1 - transparency / 100);
     theme.background = withAlpha(theme.background, alpha);
+    applyAnsiTransparency(theme, alpha);
   }
-  return theme;
+  return { baseTheme, theme, alpha };
 }
 
 /**
@@ -80,6 +141,31 @@ export function initThemeFromCookie(): void {
   if (savedTheme && THEMES[savedTheme]) {
     applyCssTheme(savedTheme);
   }
+}
+
+function applyAnsiTransparency(theme: TerminalTheme, alpha: number): void {
+  for (const key of ANSI_COLOR_KEYS) {
+    const color = theme[key];
+    if (typeof color === 'string' && color.length > 0) {
+      theme[key] = withAlpha(color, alpha);
+    }
+  }
+}
+
+function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: TerminalTheme): string {
+  return ANSI_COLOR_KEYS.map((key, index) => {
+    const opaque = baseTheme[key];
+    const transparent = effectiveTheme[key];
+    if (typeof opaque !== 'string' || typeof transparent !== 'string') {
+      return '';
+    }
+
+    return [
+      `.xterm .xterm-fg-${String(index)} { color: ${opaque}; }`,
+      `.xterm .xterm-fg-${String(index)}.xterm-dim { color: ${withAlpha(opaque, 0.5)}; }`,
+      `.xterm .xterm-bg-${String(index)} { background-color: ${transparent}; }`,
+    ].join('\n');
+  }).join('\n');
 }
 
 function withAlpha(color: string, alpha: number): string {
