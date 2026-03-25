@@ -108,7 +108,6 @@
   "settings.appearance.cursorStyle": "Estilo del Cursor",
   "settings.appearance.cursorBlink": "Parpadeo del Cursor",
   "settings.appearance.cursorUnfocused": "Cursor (Sin Foco)",
-  "settings.appearance.hideCursorOnInputBursts": "Ocultar brevemente el cursor durante ráfagas de entrada",
   "settings.appearance.theme": "Tema",
   "settings.appearance.terminalColorScheme": "Colores del Terminal",
   "settings.appearance.backgroundTitle": "Fondo y transparencia",

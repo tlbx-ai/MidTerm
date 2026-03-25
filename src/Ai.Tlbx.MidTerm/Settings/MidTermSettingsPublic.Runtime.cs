@@ -44,7 +44,6 @@ public sealed partial class MidTermSettingsPublic
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
             CursorInactiveStyle = settings.CursorInactiveStyle,
-            HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
             Theme = settings.Theme,
             TerminalColorScheme = IsKnownTerminalColorScheme(terminalColorScheme, terminalColorSchemes)
                 ? terminalColorScheme
@@ -125,7 +124,6 @@ public sealed partial class MidTermSettingsPublic
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
         settings.CursorInactiveStyle = CursorInactiveStyle;
-        settings.HideCursorOnInputBursts = HideCursorOnInputBursts;
         settings.Theme = Theme;
         var terminalColorSchemes = NormalizeTerminalColorSchemes(TerminalColorSchemes);
         settings.TerminalColorSchemes = terminalColorSchemes;

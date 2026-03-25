@@ -6092,7 +6092,6 @@
           "cursorStyle",
           "cursorBlink",
           "cursorInactiveStyle",
-          "hideCursorOnInputBursts",
           "theme",
           "terminalColorScheme",
           "terminalColorSchemes",
@@ -6196,9 +6195,6 @@
           },
           "cursorInactiveStyle": {
             "$ref": "#/components/schemas/CursorInactiveStyleSetting"
-          },
-          "hideCursorOnInputBursts": {
-            "type": "boolean"
           },
           "theme": {
             "$ref": "#/components/schemas/ThemeSetting"

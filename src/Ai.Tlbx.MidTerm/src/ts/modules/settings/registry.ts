@@ -188,18 +188,6 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known inactive cursor style',
     applyMode: 'immediate',
   }),
-  controlEntry(
-    'hideCursorOnInputBursts',
-    'setting-hide-cursor-on-input-bursts',
-    'checkbox',
-    false,
-    {
-      editable: true,
-      storage: 'settings.json',
-      validation: 'boolean',
-      applyMode: 'lazy',
-    },
-  ),
   controlEntry('theme', 'setting-theme', 'select', 'dark', {
     editable: true,
     storage: 'settings.json',

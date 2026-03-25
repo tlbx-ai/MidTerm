@@ -191,7 +191,6 @@
   "settings.appearance.cursorStyle": "Cursor Style",
   "settings.appearance.cursorBlink": "Cursor Blink",
   "settings.appearance.cursorUnfocused": "Cursor (Unfocused)",
-  "settings.appearance.hideCursorOnInputBursts": "Hide cursor briefly during input bursts",
   "settings.appearance.theme": "Theme",
   "settings.appearance.terminalColorScheme": "Terminal Colors",
   "settings.appearance.backgroundTitle": "Background & Transparency",

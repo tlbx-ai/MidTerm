@@ -4567,7 +4567,6 @@ export interface components {
       cursorStyle: components['schemas']['CursorStyleSetting'];
       cursorBlink: boolean;
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];
-      hideCursorOnInputBursts: boolean;
       theme: components['schemas']['ThemeSetting'];
       terminalColorScheme: string;
       terminalColorSchemes: components['schemas']['TerminalColorSchemeDefinition'][];

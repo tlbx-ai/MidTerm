@@ -108,7 +108,6 @@
   "settings.appearance.cursorStyle": "Стиль курсора",
   "settings.appearance.cursorBlink": "Мигание курсора",
   "settings.appearance.cursorUnfocused": "Курсор (вне фокуса)",
-  "settings.appearance.hideCursorOnInputBursts": "Кратко скрывать курсор во время всплесков ввода",
   "settings.appearance.theme": "Тема",
   "settings.appearance.terminalColorScheme": "Цвета терминала",
   "settings.appearance.backgroundTitle": "Фон и прозрачность",

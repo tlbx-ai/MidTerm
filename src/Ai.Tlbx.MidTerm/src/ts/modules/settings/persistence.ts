@@ -483,17 +483,6 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
 
     applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
 
-    if (!settings.hideCursorOnInputBursts && state.burstCursorHidden) {
-      if (state.burstCursorRestoreTimer != null) {
-        clearTimeout(state.burstCursorRestoreTimer);
-        state.burstCursorRestoreTimer = null;
-      }
-      state.burstCursorHidden = false;
-      if (state.remoteCursorVisible !== false) {
-        state.terminal.write('\x1b[?25h');
-      }
-    }
-
     refreshTerminalPresentation(sessionId, state);
   }
 

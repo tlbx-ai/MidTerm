@@ -108,7 +108,6 @@
   "settings.appearance.cursorStyle": "কার্সর স্টাইল",
   "settings.appearance.cursorBlink": "কার্সর ব্লিংক",
   "settings.appearance.cursorUnfocused": "কার্সর (আনফোকাসড)",
-  "settings.appearance.hideCursorOnInputBursts": "ইনপুট বার্স্টের সময় কার্সর অল্পক্ষণ লুকান",
   "settings.appearance.theme": "থিম",
   "settings.appearance.terminalColorScheme": "টার্মিনাল রং",
   "settings.appearance.backgroundTitle": "পটভূমি ও স্বচ্ছতা",

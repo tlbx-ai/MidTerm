@@ -111,7 +111,6 @@
   "settings.appearance.cursorStyle": "光标样式",
   "settings.appearance.cursorBlink": "光标闪烁",
   "settings.appearance.cursorUnfocused": "光标（未聚焦）",
-  "settings.appearance.hideCursorOnInputBursts": "在输入突发期间短暂隐藏光标",
   "settings.appearance.theme": "主题",
   "settings.appearance.terminalColorScheme": "终端配色",
   "settings.appearance.backgroundTitle": "背景与透明度",

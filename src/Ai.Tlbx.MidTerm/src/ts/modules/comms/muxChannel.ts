@@ -73,7 +73,6 @@ import {
   $muxWsConnected,
   $muxHasConnected,
   $activeSessionId,
-  $currentSettings,
   $stateWsConnected,
   $dataLossDetected,
 } from '../../stores';
@@ -741,10 +740,6 @@ export function isBracketedPasteEnabled(sessionId: string): boolean {
   return bracketedPasteState.get(sessionId) ?? false;
 }
 
-function isHideCursorOnInputBurstsEnabled(): boolean {
-  return $currentSettings.get()?.hideCursorOnInputBursts === true;
-}
-
 function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
   for (let i = 0; i < data.length; i++) {
     const byte = data[i];
@@ -771,10 +766,6 @@ function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
 }
 
 function hideBurstCursor(state: TerminalState): void {
-  if (!isHideCursorOnInputBurstsEnabled()) {
-    return;
-  }
-
   if (!state.burstCursorHidden) {
     if (!state.syncOutputCursorHidden) {
       state.terminal.write(HIDE_CURSOR_SEQ);
@@ -789,11 +780,7 @@ function hideBurstCursor(state: TerminalState): void {
 }
 
 function showBurstCursor(state: TerminalState): void {
-  if (
-    !isHideCursorOnInputBurstsEnabled() ||
-    state.remoteCursorVisible === false ||
-    state.syncOutputCursorHidden === true
-  ) {
+  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
     return;
   }
 
@@ -809,11 +796,7 @@ function showBurstCursor(state: TerminalState): void {
 }
 
 function scheduleBurstCursorShow(state: TerminalState): void {
-  if (
-    !isHideCursorOnInputBurstsEnabled() ||
-    state.remoteCursorVisible === false ||
-    state.syncOutputCursorHidden === true
-  ) {
+  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
     return;
   }
 

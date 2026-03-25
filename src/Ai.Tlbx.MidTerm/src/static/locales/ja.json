@@ -108,7 +108,6 @@
   "settings.appearance.cursorStyle": "カーソルスタイル",
   "settings.appearance.cursorBlink": "カーソル点滅",
   "settings.appearance.cursorUnfocused": "カーソル（非フォーカス時）",
-  "settings.appearance.hideCursorOnInputBursts": "入力バースト中はカーソルを短時間隠す",
   "settings.appearance.theme": "テーマ",
   "settings.appearance.terminalColorScheme": "ターミナルの配色",
   "settings.appearance.backgroundTitle": "背景と透明度",
