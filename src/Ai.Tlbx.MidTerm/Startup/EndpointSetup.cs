@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -28,6 +29,7 @@ namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class EndpointSetup
 {
+    private const string WindowsServiceName = "MidTerm";
     private static string? _cachedGitVersion;
     private static bool _gitVersionChecked;
     private static bool _codeSigned;
@@ -140,6 +142,90 @@ public static class EndpointSetup
         }
 
         Log.Info(() => $"Replacement process spawned (PID {proc?.Id})");
+    }
+
+    private static bool TryArmServiceRestart(SettingsService settingsService)
+    {
+        if (!settingsService.IsRunningAsService)
+        {
+            return true;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return TryScheduleWindowsServiceRestartHelper(WindowsServiceName);
+        }
+
+        return true;
+    }
+
+    internal static bool TryScheduleWindowsServiceRestartHelper(string serviceName)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = GetWindowsPowerShellPath(),
+                Arguments = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {EncodePowerShellScript(BuildWindowsServiceRestartScript(serviceName))}",
+                UseShellExecute = true,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            var process = Process.Start(psi);
+            if (process is null)
+            {
+                Log.Error(() => $"Failed to start Windows service restart helper for service '{serviceName}'");
+                return false;
+            }
+
+            Log.Info(() => $"Spawned Windows service restart helper (PID {process.Id}) for service '{serviceName}'");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(() => $"Failed to schedule Windows service restart helper: {ex.Message}");
+            return false;
+        }
+    }
+
+    internal static string BuildWindowsServiceRestartScript(string serviceName, int timeoutSeconds = 45)
+    {
+        var escapedServiceName = serviceName.Replace("'", "''", StringComparison.Ordinal);
+        return $$"""
+$serviceName = '{{escapedServiceName}}'
+$deadline = [DateTime]::UtcNow.AddSeconds({{timeoutSeconds}})
+
+while ($true) {
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($null -eq $service) {
+        exit 1
+    }
+
+    if ($service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Stopped) {
+        break
+    }
+
+    if ([DateTime]::UtcNow -ge $deadline) {
+        exit 2
+    }
+
+    Start-Sleep -Milliseconds 500
+}
+
+Start-Service -Name $serviceName -ErrorAction Stop
+""";
+    }
+
+    internal static string EncodePowerShellScript(string script)
+    {
+        return Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+    }
+
+    private static string GetWindowsPowerShellPath()
+    {
+        var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        return Path.Combine(systemDir, "WindowsPowerShell", "v1.0", "powershell.exe");
     }
 
     public static void MapBootstrapEndpoints(
@@ -395,6 +481,11 @@ public static class EndpointSetup
                 return Results.Problem($"Failed to regenerate certificate: {ex.Message}");
             }
 
+            if (!TryArmServiceRestart(settingsService))
+            {
+                return Results.Problem("Failed to schedule service restart after certificate regeneration.");
+            }
+
             DelayedActionScheduler.Schedule(TimeSpan.FromMilliseconds(1500), () =>
             {
                 if (!settingsService.IsRunningAsService)
@@ -410,7 +501,9 @@ public static class EndpointSetup
                 }
                 else
                 {
-                    Log.Info(() => "Service mode: stopping after certificate regeneration");
+                    Log.Info(() => OperatingSystem.IsWindows()
+                        ? "Windows service restart helper armed; stopping after certificate regeneration"
+                        : "Service mode: stopping after certificate regeneration");
                 }
 
                 lifetime.StopApplication();
@@ -487,6 +580,11 @@ public static class EndpointSetup
         {
             Log.Info(() => "Server restart requested via API");
 
+            if (!TryArmServiceRestart(settingsService))
+            {
+                return Results.Problem("Failed to schedule service restart.");
+            }
+
             // Fire-and-forget: return response first, then exit after delay
             DelayedActionScheduler.Schedule(TimeSpan.FromMilliseconds(1500), () =>
             {
@@ -503,7 +601,9 @@ public static class EndpointSetup
                 }
                 else
                 {
-                    Log.Info(() => "Service mode: exiting for service manager to respawn");
+                    Log.Info(() => OperatingSystem.IsWindows()
+                        ? "Windows service restart helper armed; stopping service"
+                        : "Service mode: exiting for service manager to respawn");
                 }
 
                 lifetime.StopApplication();
