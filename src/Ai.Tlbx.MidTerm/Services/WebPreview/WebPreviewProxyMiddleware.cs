@@ -16,6 +16,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string ProxyPrefix = "/webpreview";
     private const string PreviewBootstrapIdQueryParam = "__mtPreviewId";
     private const string PreviewBootstrapTokenQueryParam = "__mtPreviewToken";
+    private const string PreviewTargetRevisionQueryParam = "__mtTargetRevision";
     private const string InternalProxyRequestHeaderName = "X-MidTerm-Internal-Proxy";
     private const string InternalProxyRequestHeaderValue = "1";
     private const int WsBufferSize = 8192;
@@ -63,9 +64,10 @@ public sealed partial class WebPreviewProxyMiddleware
           function mtStripBootstrapQuery(){
             try{
               var url=new URL(location.href);
-              if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken"))return;
+              if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken")&&!url.searchParams.has("__mtTargetRevision"))return;
               url.searchParams.delete("__mtPreviewId");
               url.searchParams.delete("__mtPreviewToken");
+              url.searchParams.delete("__mtTargetRevision");
               history.replaceState(history.state,"",url.pathname+url.search+url.hash);
             }catch(e){}
           }
@@ -2288,7 +2290,8 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var parsed = QueryHelpers.ParseQuery(queryString);
         if (!parsed.ContainsKey(PreviewBootstrapIdQueryParam)
-            && !parsed.ContainsKey(PreviewBootstrapTokenQueryParam))
+            && !parsed.ContainsKey(PreviewBootstrapTokenQueryParam)
+            && !parsed.ContainsKey(PreviewTargetRevisionQueryParam))
         {
             return queryString ?? "";
         }
@@ -2297,7 +2300,8 @@ public sealed partial class WebPreviewProxyMiddleware
         foreach (var entry in parsed)
         {
             if (entry.Key.Equals(PreviewBootstrapIdQueryParam, StringComparison.Ordinal)
-                || entry.Key.Equals(PreviewBootstrapTokenQueryParam, StringComparison.Ordinal))
+                || entry.Key.Equals(PreviewBootstrapTokenQueryParam, StringComparison.Ordinal)
+                || entry.Key.Equals(PreviewTargetRevisionQueryParam, StringComparison.Ordinal))
             {
                 continue;
             }

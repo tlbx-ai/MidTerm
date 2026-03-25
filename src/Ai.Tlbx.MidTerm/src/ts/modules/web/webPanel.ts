@@ -25,7 +25,11 @@ import {
   PREVIEW_LOAD_TOKEN_DATASET_KEY,
   shouldReloadPreviewFrame,
 } from './previewLoadToken';
-import { buildProxyUrl, stripInternalPreviewQueryParams } from './previewProxyUrl';
+import {
+  buildProxyUrl,
+  sanitizePreviewDisplayUrl,
+  stripInternalPreviewQueryParams,
+} from './previewProxyUrl';
 import {
   getActiveDockedClient,
   getActivePreview,
@@ -367,18 +371,19 @@ function decodeIframeNavigationUrl(
 }
 
 function setCurrentPreviewUrl(url: string | null, updateInput = true): void {
-  const nextInputValue = url ?? '';
+  const sanitizedUrl = url ? sanitizePreviewDisplayUrl(url) : null;
+  const nextInputValue = sanitizedUrl ?? '';
   if (
-    loadedUrl === url &&
-    $webPreviewUrl.get() === url &&
+    loadedUrl === sanitizedUrl &&
+    $webPreviewUrl.get() === sanitizedUrl &&
     (!updateInput || !urlInput || urlInput.value === nextInputValue)
   ) {
     return;
   }
 
-  loadedUrl = url;
-  setActiveUrl(url);
-  $webPreviewUrl.set(url);
+  loadedUrl = sanitizedUrl;
+  setActiveUrl(sanitizedUrl);
+  $webPreviewUrl.set(sanitizedUrl);
   if (updateInput && urlInput) {
     urlInput.value = nextInputValue;
   }

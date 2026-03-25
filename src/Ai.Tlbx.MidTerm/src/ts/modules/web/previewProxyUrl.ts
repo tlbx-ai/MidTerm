@@ -29,3 +29,17 @@ export function stripInternalPreviewQueryParams(url: URL): void {
   url.searchParams.delete(PREVIEW_QUERY_TOKEN_PARAM);
   url.searchParams.delete(PREVIEW_QUERY_TARGET_REVISION_PARAM);
 }
+
+export function sanitizePreviewDisplayUrl(urlText: string): string {
+  if (!urlText.includes('__mt')) {
+    return urlText;
+  }
+
+  try {
+    const parsed = new URL(urlText);
+    stripInternalPreviewQueryParams(parsed);
+    return parsed.toString();
+  } catch {
+    return urlText;
+  }
+}

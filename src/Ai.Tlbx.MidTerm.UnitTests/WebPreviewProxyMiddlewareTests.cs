@@ -141,6 +141,8 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("decodeURIComponent(mtCookieCtx)", script, StringComparison.Ordinal);
         Assert.Contains("params.get(\"__mtPreviewId\")", script, StringComparison.Ordinal);
         Assert.Contains("params.get(\"__mtPreviewToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.has(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.delete(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
         Assert.Contains("history.replaceState(history.state,\"\",url.pathname+url.search+url.hash)", script, StringComparison.Ordinal);
         Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
         Assert.Contains("routeMatch=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
@@ -149,7 +151,9 @@ public class WebPreviewProxyMiddlewareTests
 
     [Theory]
     [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
+    [InlineData("?__mtTargetRevision=1", "")]
     [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
+    [InlineData("?foo=1&__mtTargetRevision=2&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
     [InlineData("", "")]
     public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
