@@ -91,14 +91,39 @@ function buildOutputMessage(
   rows = 24,
 ): ArrayBuffer {
   const payload = new TextEncoder().encode(text);
-  const frame = new Uint8Array(headerSize + 4 + payload.length);
+  return buildSequencedOutputMessage(
+    encodeSessionId,
+    outputType,
+    headerSize,
+    sessionId,
+    BigInt(payload.length),
+    text,
+    cols,
+    rows,
+  );
+}
+
+function buildSequencedOutputMessage(
+  encodeSessionId: (buffer: Uint8Array, offset: number, sessionId: string) => void,
+  outputType: number,
+  headerSize: number,
+  sessionId: string,
+  sequenceEnd: bigint,
+  text: string,
+  cols = 80,
+  rows = 24,
+): ArrayBuffer {
+  const payload = new TextEncoder().encode(text);
+  const frame = new Uint8Array(headerSize + 12 + payload.length);
+  const view = new DataView(frame.buffer);
   frame[0] = outputType;
   encodeSessionId(frame, 1, sessionId);
-  frame[headerSize] = cols & 0xff;
-  frame[headerSize + 1] = (cols >> 8) & 0xff;
-  frame[headerSize + 2] = rows & 0xff;
-  frame[headerSize + 3] = (rows >> 8) & 0xff;
-  frame.set(payload, headerSize + 4);
+  view.setBigUint64(headerSize, sequenceEnd, true);
+  frame[headerSize + 8] = cols & 0xff;
+  frame[headerSize + 9] = (cols >> 8) & 0xff;
+  frame[headerSize + 10] = rows & 0xff;
+  frame[headerSize + 11] = (rows >> 8) & 0xff;
+  frame.set(payload, headerSize + 12);
   return frame.buffer;
 }
 
@@ -113,6 +138,15 @@ function attachFakeTerminal(
     }
   });
 
+  const container = {
+    classList: {
+      contains: () => false,
+    },
+    getBoundingClientRect: () => ({ width: 640, height: 480 }),
+    appendChild: vi.fn(),
+    querySelector: vi.fn(() => null),
+  } as unknown as HTMLDivElement;
+
   sessionTerminals.set(sessionId, {
     terminal: {
       cols: 80,
@@ -123,7 +157,7 @@ function attachFakeTerminal(
       clear: vi.fn(),
     },
     fitAddon: {} as never,
-    container: {} as HTMLDivElement,
+    container,
     serverCols: 80,
     serverRows: 24,
     opened: true,
@@ -178,6 +212,18 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
 describe('muxChannel', () => {
   beforeEach(() => {
     vi.useRealTimers();
+    vi.stubGlobal('window', globalThis);
+    vi.stubGlobal('getComputedStyle', () => ({
+      backgroundColor: 'rgb(0, 0, 0)',
+    }));
+    vi.stubGlobal('document', {
+      createElement: () => ({
+        className: '',
+        style: {},
+        setAttribute: vi.fn(),
+        remove: vi.fn(),
+      }),
+    });
   });
 
   afterEach(() => {
@@ -253,5 +299,50 @@ describe('muxChannel', () => {
     await vi.runOnlyPendingTimersAsync();
 
     expect(terminal.writeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves open scrollback on reconnect and ignores duplicate tail replay frames', async () => {
+    const harness = await loadHarness([0, 0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
+    const state = harness.sessionTerminals.get(sessionId);
+    if (!state) {
+      throw new Error('missing terminal state');
+    }
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5n,
+        'first',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+
+    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+
+    harness.stores.$muxHasConnected.set(true);
+    harness.ws.onopen?.(new Event('open'));
+
+    expect(state.terminal.clear).not.toHaveBeenCalled();
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5n,
+        'first',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+
+    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
   });
 });

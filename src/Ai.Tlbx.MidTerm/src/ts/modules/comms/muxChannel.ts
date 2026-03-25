@@ -488,6 +488,34 @@ function maxSequence(current: bigint, candidate: bigint): bigint {
   return isSequenceNewer(candidate, current) ? candidate : current;
 }
 
+function trimFrameToUnseenSuffix(
+  data: Uint8Array,
+  sequenceEnd: bigint,
+  receivedSeq: bigint,
+): Uint8Array {
+  if (data.length === 0 || receivedSeq === 0n) {
+    return data;
+  }
+
+  if (!isSequenceNewer(sequenceEnd, receivedSeq)) {
+    return new Uint8Array(0);
+  }
+
+  const frameLength = BigInt(data.length);
+  const sequenceStart = (sequenceEnd - frameLength + SEQUENCE_MODULUS) % SEQUENCE_MODULUS;
+  const overlapBytes = (receivedSeq - sequenceStart + SEQUENCE_MODULUS) % SEQUENCE_MODULUS;
+
+  if (
+    isSequenceNewer(receivedSeq, sequenceStart) &&
+    overlapBytes > 0n &&
+    overlapBytes < frameLength
+  ) {
+    return data.subarray(Number(overlapBytes));
+  }
+
+  return data;
+}
+
 function getOrCreateBrowserTransportSnapshot(sessionId: string): BrowserTransportSnapshot {
   let snapshot = browserTransportSnapshots.get(sessionId);
   if (!snapshot) {
@@ -689,13 +717,16 @@ async function processOneFrame(item: OutputFrameItem, generation: number): Promi
     }
 
     const snapshot = getOrCreateBrowserTransportSnapshot(item.sessionId);
+    const trimmedData = trimFrameToUnseenSuffix(data, sequenceEnd, snapshot.receivedSeq);
     snapshot.receivedSeq = maxSequence(snapshot.receivedSeq, sequenceEnd);
 
     const state = sessionTerminals.get(item.sessionId);
     if (state && state.opened) {
-      writeToTerminal(item.sessionId, state, sequenceEnd, cols, rows, data, generation);
-    } else if (data.length > 0) {
-      bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, data);
+      if (trimmedData.length > 0) {
+        writeToTerminal(item.sessionId, state, sequenceEnd, cols, rows, trimmedData, generation);
+      }
+    } else if (trimmedData.length > 0) {
+      bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, trimmedData);
     }
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
@@ -1015,13 +1046,7 @@ export function connectMuxWebSocket(): void {
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
       clearQueuedOutput();
-      forEachLocalTerminal((state, sessionId) => {
-        if (state.opened) {
-          state.terminal.clear();
-          state.terminal.write('\x1b[0m');
-        }
-        state.serverCols = 0;
-        state.serverRows = 0;
+      forEachLocalTerminal((_, sessionId) => {
         const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
         snapshot.lastReplayReason = 'reconnect_tail_replay';
         // Server pushes all buffers on connect via SendInitialBuffersAsync
