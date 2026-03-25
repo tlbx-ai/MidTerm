@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const focusSpy = vi.fn();
 const refreshTerminalPresentationSpy = vi.fn();
+const applyTerminalScalingSyncSpy = vi.fn();
+const fitSessionToScreenSpy = vi.fn();
+let isMainBrowser = false;
 const terminalContainer = {
   children: [] as any[],
   appendChild(child: any) {
@@ -74,7 +77,7 @@ vi.mock('../../state', () => ({
 
 vi.mock('../../stores', () => ({
   $isMainBrowser: {
-    get: () => false,
+    get: () => isMainBrowser,
   },
   $processStates: {
     get: () => ({}),
@@ -97,7 +100,8 @@ vi.mock('../layout/layoutStore', () => ({
 }));
 
 vi.mock('../terminal/scaling', () => ({
-  applyTerminalScalingSync: vi.fn(),
+  applyTerminalScalingSync: applyTerminalScalingSyncSpy,
+  fitSessionToScreen: fitSessionToScreenSpy,
   fitTerminalToContainer: vi.fn(),
   refreshTerminalPresentation: refreshTerminalPresentationSpy,
 }));
@@ -106,6 +110,9 @@ describe('tabManager', () => {
   beforeEach(() => {
     focusSpy.mockReset();
     refreshTerminalPresentationSpy.mockReset();
+    applyTerminalScalingSyncSpy.mockReset();
+    fitSessionToScreenSpy.mockReset();
+    isMainBrowser = false;
     terminalContainer.children.length = 0;
     visibleTabs.clear();
     vi.resetModules();
@@ -139,7 +146,21 @@ describe('tabManager', () => {
 
     expect(getActiveTab('s1')).toBe('terminal');
     expect(refreshTerminalPresentationSpy).toHaveBeenCalledWith('s1', expect.anything());
+    expect(applyTerminalScalingSyncSpy).toHaveBeenCalledWith(expect.anything());
+    expect(fitSessionToScreenSpy).not.toHaveBeenCalled();
     expect(focusSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('refits standalone terminals when the main browser shows the terminal tab', async () => {
+    isMainBrowser = true;
+    const { ensureSessionWrapper, switchTab } = await import('./tabManager');
+
+    ensureSessionWrapper('s1');
+    switchTab('s1', 'agent');
+    switchTab('s1', 'terminal');
+
+    expect(fitSessionToScreenSpy).toHaveBeenCalledWith('s1');
+    expect(applyTerminalScalingSyncSpy).not.toHaveBeenCalled();
   });
 
   it('falls back to terminal when the agent tab disappears and ignores hidden tab switches', async () => {

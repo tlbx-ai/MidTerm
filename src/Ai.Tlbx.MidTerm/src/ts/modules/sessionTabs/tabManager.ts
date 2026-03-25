@@ -23,6 +23,7 @@ import type { Session } from '../../types';
 import { isSessionInLayout } from '../layout/layoutStore';
 import {
   applyTerminalScalingSync,
+  fitSessionToScreen,
   fitTerminalToContainer,
   refreshTerminalPresentation,
 } from '../terminal/scaling';
@@ -304,6 +305,12 @@ export function switchTab(
               applyTerminalScalingSync(termState);
             }
           }
+        } else if ($isMainBrowser.get()) {
+          // Standalone terminal tab re-entry may reveal a hidden terminal that was
+          // opened earlier. Only the leading browser may sync that viewport size.
+          fitSessionToScreen(sessionId);
+        } else {
+          applyTerminalScalingSync(termState);
         }
 
         termState.terminal.focus();

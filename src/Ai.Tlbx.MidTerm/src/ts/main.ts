@@ -24,6 +24,7 @@ import {
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
+  applyTerminalScalingSync,
   createTerminalForSession,
   destroyTerminalForSession,
   preloadTerminalFont,
@@ -37,6 +38,7 @@ import {
   refreshTerminalPresentation,
   setupGlobalFocusReclaim,
   calculateOptimalDimensions,
+  fitSessionToScreen,
   getEffectiveTerminalFontSize,
   handleClipboardPaste,
   pasteToTerminal,
@@ -180,6 +182,7 @@ import {
   $stateWsConnected,
   $muxWsConnected,
   $activeSessionId,
+  $isMainBrowser,
   $sessionList,
   $currentSettings,
   setSession,
@@ -828,6 +831,15 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
   requestAnimationFrame(() => {
     if (state) {
       refreshTerminalPresentation(sessionId, state);
+      if (activeTab === 'terminal') {
+        // Only the leading browser is allowed to change the server-side viewport.
+        // Followers may restyle/scalе locally, but must not send a resize.
+        if ($isMainBrowser.get()) {
+          fitSessionToScreen(sessionId);
+        } else {
+          applyTerminalScalingSync(state);
+        }
+      }
       if (activeTab !== 'agent') {
         state.terminal.focus();
       }
