@@ -591,7 +591,7 @@ function persistSettingsSnapshot(
  */
 export function bindSettingsAutoSave(): void {
   // Clean up previous listeners first
-  unbindSettingsAutoSave();
+  unbindSettingsAutoSave(false);
 
   const settingsView = dom.settingsView;
   if (!settingsView) return;
@@ -781,7 +781,7 @@ export function bindSettingsAutoSave(): void {
 /**
  * Clean up settings event listeners
  */
-export function unbindSettingsAutoSave(): void {
+export function unbindSettingsAutoSave(resetHydrationState = true): void {
   flushPendingSettingsChanges();
 
   if (settingsAbortController) {
@@ -789,8 +789,10 @@ export function unbindSettingsAutoSave(): void {
     settingsAbortController = null;
   }
 
-  settingsFormHydrated = false;
-  settingsSaveArmed = false;
+  if (resetHydrationState) {
+    settingsFormHydrated = false;
+    settingsSaveArmed = false;
+  }
 }
 
 function bindTransparencyPreview(

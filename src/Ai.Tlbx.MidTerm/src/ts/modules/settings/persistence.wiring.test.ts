@@ -114,6 +114,14 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain("settingsView.addEventListener('keydown', armSettingsSave");
   });
 
+  it('preserves hydration state when rebinding autosave listeners', () => {
+    expect(persistenceSource).toContain('unbindSettingsAutoSave(false);');
+    expect(persistenceSource).toContain(
+      'export function unbindSettingsAutoSave(resetHydrationState = true): void {',
+    );
+    expect(persistenceSource).toContain('if (resetHydrationState) {');
+  });
+
   it('uses non-submit inline save buttons for text and number settings', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
