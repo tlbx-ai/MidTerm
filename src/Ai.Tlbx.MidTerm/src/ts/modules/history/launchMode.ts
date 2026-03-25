@@ -63,3 +63,12 @@ export function getHistoryModeDisplayText(entry: HistoryModeEntry): string {
     profile === 'claude' ? t('sessionLauncher.claudeTitle') : t('sessionLauncher.codexTitle');
   return `${t('sessionTabs.agent')} · ${providerText}`;
 }
+
+export function getHistoryModeBadgeText(entry: HistoryModeEntry): string {
+  if (!isLensHistoryEntry(entry)) {
+    return 'TRM';
+  }
+
+  const profile = normalizeHistoryLensProfile(entry.profile);
+  return profile === 'claude' ? 'CLD' : 'CDX';
+}
