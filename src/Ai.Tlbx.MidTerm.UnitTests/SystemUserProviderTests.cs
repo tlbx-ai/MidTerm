@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Services.Security;
 using Xunit;
@@ -16,15 +17,24 @@ public sealed class SystemUserProviderTests
     }
 
     [Fact]
-    public void AddWindowsUser_DeduplicatesNamesAndPreservesSid()
+    public void AddWindowsUser_PreservesDomainQualifiedNameAndSid()
     {
         var users = new Dictionary<string, UserInfo>(StringComparer.OrdinalIgnoreCase);
 
-        SystemUserProvider.AddWindowsUser(users, @"ATURIS\johannes.schmidt");
-        SystemUserProvider.AddWindowsUser(users, "johannes.schmidt", "S-1-5-21-123");
+        SystemUserProvider.AddWindowsUser(users, @"ATURIS\johannes.schmidt", "S-1-5-21-123");
+        SystemUserProvider.AddWindowsUser(users, @"aturis\JOHANNES.SCHMIDT");
 
         var entry = Assert.Single(users);
-        Assert.Equal("johannes.schmidt", entry.Value.Username);
+        Assert.Equal(@"ATURIS\johannes.schmidt", entry.Value.Username);
         Assert.Equal("S-1-5-21-123", entry.Value.Sid);
+    }
+
+    [Theory]
+    [InlineData("ATURIS", "Johannes Schmidt", @"ATURIS\Johannes Schmidt")]
+    [InlineData(null, "adm.js", "adm.js")]
+    [SupportedOSPlatform("windows")]
+    public void BuildWindowsAccountName_CombinesDomainAndUsername(string? domain, string username, string expected)
+    {
+        Assert.Equal(expected, SystemUserProvider.BuildWindowsAccountName(domain, username));
     }
 }

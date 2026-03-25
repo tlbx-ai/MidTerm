@@ -6,6 +6,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static partial class UserValidationService
 {
     private const int MaxUsernameLength = 32;
+    private const int MaxWindowsAccountLength = 256;
 
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9._-]*$")]
     private static partial Regex UnixUsernamePattern();
@@ -20,12 +21,28 @@ public static partial class UserValidationService
             return true;
         }
 
+        if (OperatingSystem.IsWindows())
+        {
+            return IsValidWindowsUsernameFormat(username);
+        }
+
         if (username.Length > MaxUsernameLength)
         {
             return false;
         }
 
         return UnixUsernamePattern().IsMatch(username);
+    }
+
+    internal static bool IsValidWindowsUsernameFormat(string username)
+    {
+        var accountName = SystemUserProvider.NormalizeWindowsAccountName(username);
+        if (string.IsNullOrWhiteSpace(accountName) || accountName.Length > MaxWindowsAccountLength)
+        {
+            return false;
+        }
+
+        return accountName.All(static ch => !char.IsControl(ch));
     }
 
     public static bool IsSystemUser(string? username)

@@ -86,17 +86,17 @@ public static class SystemUserProvider
         string? username,
         string? sid = null)
     {
-        var normalized = NormalizeWindowsUsername(username);
-        if (string.IsNullOrWhiteSpace(normalized))
+        var accountName = NormalizeWindowsAccountName(username);
+        if (string.IsNullOrWhiteSpace(accountName))
         {
             return;
         }
 
-        if (usersByName.TryGetValue(normalized, out var existing))
+        if (usersByName.TryGetValue(accountName, out var existing))
         {
             if (string.IsNullOrWhiteSpace(existing.Sid) && !string.IsNullOrWhiteSpace(sid))
             {
-                usersByName[normalized] = new UserInfo
+                usersByName[accountName] = new UserInfo
                 {
                     Username = existing.Username,
                     Sid = sid
@@ -106,21 +106,28 @@ public static class SystemUserProvider
             return;
         }
 
-        usersByName[normalized] = new UserInfo
+        usersByName[accountName] = new UserInfo
         {
-            Username = normalized,
+            Username = accountName,
             Sid = sid
         };
     }
 
+    internal static string? NormalizeWindowsAccountName(string? username)
+    {
+        var trimmed = username?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
     internal static string? NormalizeWindowsUsername(string? username)
     {
-        if (string.IsNullOrWhiteSpace(username))
+        var normalizedAccountName = NormalizeWindowsAccountName(username);
+        if (string.IsNullOrWhiteSpace(normalizedAccountName))
         {
             return null;
         }
 
-        var normalized = username.Trim();
+        var normalized = normalizedAccountName;
         var slashIndex = normalized.LastIndexOf('\\');
         if (slashIndex >= 0 && slashIndex < normalized.Length - 1)
         {
@@ -180,7 +187,7 @@ public static class SystemUserProvider
                     continue;
                 }
 
-                AddWindowsUser(usersByName, GetSessionUsername(info.SessionId));
+                AddWindowsUser(usersByName, GetSessionAccountName(info.SessionId));
             }
         }
         finally
@@ -190,9 +197,32 @@ public static class SystemUserProvider
     }
 
     [SupportedOSPlatform("windows")]
-    private static string? GetSessionUsername(uint sessionId)
+    internal static string? BuildWindowsAccountName(string? domain, string? username)
     {
-        if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, WTS_INFO_CLASS.WTSUserName, out var buffer, out var bytesReturned))
+        var normalizedUsername = NormalizeWindowsAccountName(username);
+        if (string.IsNullOrWhiteSpace(normalizedUsername))
+        {
+            return null;
+        }
+
+        var normalizedDomain = NormalizeWindowsAccountName(domain);
+        return string.IsNullOrWhiteSpace(normalizedDomain)
+            ? normalizedUsername
+            : $"{normalizedDomain}\\{normalizedUsername}";
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? GetSessionAccountName(uint sessionId)
+    {
+        var username = GetSessionInformationString(sessionId, WTS_INFO_CLASS.WTSUserName);
+        var domain = GetSessionInformationString(sessionId, WTS_INFO_CLASS.WTSDomainName);
+        return BuildWindowsAccountName(domain, username);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? GetSessionInformationString(uint sessionId, WTS_INFO_CLASS infoClass)
+    {
+        if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, infoClass, out var buffer, out var bytesReturned))
         {
             return null;
         }
@@ -349,7 +379,7 @@ public static class SystemUserProvider
         out int pCount);
 
     [SupportedOSPlatform("windows")]
-    [DllImport("wtsapi32.dll", SetLastError = true)]
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool WTSQuerySessionInformation(
         IntPtr hServer,
         uint sessionId,
@@ -388,6 +418,7 @@ public static class SystemUserProvider
     [SupportedOSPlatform("windows")]
     private enum WTS_INFO_CLASS
     {
-        WTSUserName = 5
+        WTSUserName = 5,
+        WTSDomainName = 7
     }
 }
