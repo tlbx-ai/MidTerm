@@ -1212,7 +1212,6 @@ internal sealed class TerminalSession : IDisposable
     {
         Log.Verbose(() => $"[PTY-WRITE] {data.Length} bytes");
         await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
-        await _pty.WriterStream.FlushAsync(ct).ConfigureAwait(false);
     }
 
     public void Resize(int cols, int rows)

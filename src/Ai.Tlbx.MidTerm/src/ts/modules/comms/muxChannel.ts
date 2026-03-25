@@ -475,6 +475,14 @@ function compactSessionQueue(queue: SessionOutputQueue): void {
 }
 
 function yieldToMain(): Promise<void> {
+  const scheduler = (
+    globalThis as typeof globalThis & {
+      scheduler?: { yield?: () => Promise<void> };
+    }
+  ).scheduler;
+  if (typeof scheduler?.yield === 'function') {
+    return scheduler.yield();
+  }
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
@@ -994,7 +1002,13 @@ export function applyOutputFrameToTerminal(
 export function connectMuxWebSocket(): void {
   closeWebSocket(muxWs, setMuxWs);
 
-  const wsPath = isSharedSessionRoute() ? '/ws/share/mux' : '/ws/mux';
+  const activeId = $activeSessionId.get();
+  const query = new URLSearchParams();
+  if (activeId) {
+    query.set('activeSessionId', activeId);
+  }
+  const wsPathBase = isSharedSessionRoute() ? '/ws/share/mux' : '/ws/mux';
+  const wsPath = query.size > 0 ? `${wsPathBase}?${query.toString()}` : wsPathBase;
   const ws = new WebSocket(createWsUrl(wsPath));
   ws.binaryType = 'arraybuffer';
   setMuxWs(ws);
@@ -1045,9 +1059,9 @@ export function connectMuxWebSocket(): void {
     }
 
     // Send active session hint so server knows which session to prioritize
-    const activeId = $activeSessionId.get();
-    if (activeId) {
-      sendActiveSessionHint(activeId);
+    const activeSessionId = $activeSessionId.get();
+    if (activeSessionId) {
+      sendActiveSessionHint(activeSessionId);
     }
 
     // Flush any input buffered during disconnection

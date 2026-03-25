@@ -211,7 +211,9 @@ public sealed class WindowsPty : IPtyConnection
                 }
             }
 
-            _writerStream = new FileStream(_inputWriteHandle, FileAccess.Write, 16384, false);
+            // Keep PTY input writes effectively unbuffered so interactive keystrokes do not
+            // depend on explicit Stream.FlushAsync calls for visibility in the child shell.
+            _writerStream = new FileStream(_inputWriteHandle, FileAccess.Write, 1, false);
             _readerStream = new FileStream(_outputReadHandle, FileAccess.Read, 16384, false);
         }
         catch

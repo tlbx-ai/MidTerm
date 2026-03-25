@@ -62,6 +62,7 @@ public sealed class MuxClient : IAsyncDisposable
     private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
+    private const int MaxFrameChunkBytes = 32 * 1024;
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
     private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(2);
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
@@ -153,7 +154,7 @@ public sealed class MuxClient : IAsyncDisposable
             _position += data.Length;
         }
 
-        public ReadOnlySpan<byte> GetData() => _buffer.AsSpan(0, _position);
+        public ReadOnlyMemory<byte> GetData() => _buffer.AsMemory(0, _position);
 
         public void Reset() => _position = 0;
 
@@ -387,7 +388,8 @@ public sealed class MuxClient : IAsyncDisposable
 
     private async Task FlushBufferAsync(string sessionId, SessionBuffer buffer, bool compress)
     {
-        if (buffer.TotalBytes == 0) return;
+        var totalBytes = buffer.TotalBytes;
+        if (totalBytes == 0) return;
 
         // If data was dropped, notify client before sending (so client can request resync)
         if (buffer.DroppedBytes > 0)
@@ -400,26 +402,51 @@ public sealed class MuxClient : IAsyncDisposable
 
         // Get data directly from pooled buffer (zero-copy until frame creation)
         var data = buffer.GetData();
+        var sequenceStart = buffer.LastSequenceEndExclusive - (ulong)totalBytes;
 
-        // Active sessions skip compression to avoid client-side decompression latency
-        var useCompression = compress && data.Length > MuxProtocol.CompressionThreshold;
-        var maxFrameSize = useCompression
-            ? MuxProtocol.CompressedOutputHeaderSize + data.Length + 100
-            : MuxProtocol.OutputHeaderSize + data.Length;
-
-        var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
-        try
+        for (var offset = 0; offset < data.Length; offset += MaxFrameChunkBytes)
         {
-        var frameLength = useCompression
-                ? MuxProtocol.WriteCompressedOutputFrameInto(sessionId, buffer.LastSequenceEndExclusive, buffer.LastCols, buffer.LastRows, data, frameBuffer)
-                : MuxProtocol.WriteOutputFrameInto(sessionId, buffer.LastSequenceEndExclusive, buffer.LastCols, buffer.LastRows, data, frameBuffer);
+            var length = Math.Min(MaxFrameChunkBytes, data.Length - offset);
+            var chunk = data.Slice(offset, length);
+            var sequenceEndExclusive = sequenceStart + (ulong)offset + (ulong)length;
 
-            // Send first, reset after - prevents data loss on send failure
-            await SendFrameAsync(frameBuffer, frameLength).ConfigureAwait(false);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(frameBuffer);
+            // Active sessions skip compression to avoid client-side decompression latency.
+            var useCompression = compress && length > MuxProtocol.CompressionThreshold;
+            var maxFrameSize = useCompression
+                ? MuxProtocol.CompressedOutputHeaderSize + length + 100
+                : MuxProtocol.OutputHeaderSize + length;
+
+            var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
+            try
+            {
+                var frameLength = useCompression
+                    ? MuxProtocol.WriteCompressedOutputFrameInto(
+                        sessionId,
+                        sequenceEndExclusive,
+                        buffer.LastCols,
+                        buffer.LastRows,
+                        chunk.Span,
+                        frameBuffer)
+                    : MuxProtocol.WriteOutputFrameInto(
+                        sessionId,
+                        sequenceEndExclusive,
+                        buffer.LastCols,
+                        buffer.LastRows,
+                        chunk.Span,
+                        frameBuffer);
+
+                // Send first, reset after - prevents data loss on send failure.
+                await SendFrameAsync(frameBuffer, frameLength).ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameBuffer);
+            }
+
+            if (compress && offset + length < data.Length)
+            {
+                await Task.Yield();
+            }
         }
 
         buffer.Reset();

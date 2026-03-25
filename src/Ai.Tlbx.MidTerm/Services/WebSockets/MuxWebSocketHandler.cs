@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -12,6 +13,7 @@ namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 public sealed class MuxWebSocketHandler
 {
     private const int ReplayTailBytes = 256 * 1024;
+    private const int ReplayFrameChunkBytes = 32 * 1024;
     private readonly TtyHostSessionManager _sessionManager;
     private readonly TtyHostMuxConnectionManager _muxManager;
     private readonly SettingsService _settingsService;
@@ -64,6 +66,9 @@ public sealed class MuxWebSocketHandler
         Action<string>? revokeHandler = null;
 
         var client = _muxManager.AddClient(clientId, ws, shareAccess?.SessionId);
+        var initialPrioritySessionId = ResolveInitialPrioritySessionId(context, shareAccess);
+        Task? deferredReplayTask = null;
+        using var deferredReplayCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownService.Token);
 
         try
         {
@@ -103,15 +108,61 @@ public sealed class MuxWebSocketHandler
                 }, null, delay, Timeout.InfiniteTimeSpan);
             }
 
+            if (initialPrioritySessionId is not null)
+            {
+                client.SetActiveSession(initialPrioritySessionId);
+            }
+
             client.SuspendFlush();
             await SendInitFrameAsync(client, clientId);
-            await SendInitialBuffersAsync(client, shareAccess?.SessionId);
+            if (initialPrioritySessionId is null)
+            {
+                await SendInitialBuffersAsync(
+                    client,
+                    shareAccess?.SessionId,
+                    prioritySessionId: null,
+                    replayMode: InitialReplayMode.All,
+                    deferredReplayCts.Token);
+            }
+            else
+            {
+                await SendInitialBuffersAsync(
+                    client,
+                    shareAccess?.SessionId,
+                    initialPrioritySessionId,
+                    InitialReplayMode.PriorityOnly,
+                    deferredReplayCts.Token);
+            }
             await client.TrySendAsync(MuxProtocol.CreateSyncCompleteFrame());
             client.ResumeFlush();
+            if (initialPrioritySessionId is not null)
+            {
+                deferredReplayTask = SendInitialBuffersAsync(
+                    client,
+                    shareAccess?.SessionId,
+                    initialPrioritySessionId,
+                    InitialReplayMode.NonPriorityOnly,
+                    deferredReplayCts.Token);
+            }
             await ProcessMessagesAsync(ws, clientId, client, shareAccess);
         }
         finally
         {
+            deferredReplayCts.Cancel();
+            if (deferredReplayTask is not null)
+            {
+                try
+                {
+                    await deferredReplayTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn(() => $"[MuxHandler] Deferred replay ended with error: {ex.Message}");
+                }
+            }
             if (revokeHandler is not null)
             {
                 _shareGrantService.OnGrantRevoked -= revokeHandler;
@@ -141,9 +192,31 @@ public sealed class MuxWebSocketHandler
         await client.TrySendAsync(frame);
     }
 
-    private async Task SendInitialBuffersAsync(MuxClient client, string? allowedSessionId)
+    private enum InitialReplayMode
+    {
+        All,
+        PriorityOnly,
+        NonPriorityOnly
+    }
+
+    private static string? ResolveInitialPrioritySessionId(HttpContext context, ShareAccessContext? shareAccess)
+    {
+        if (shareAccess is not null)
+        {
+            return shareAccess.SessionId;
+        }
+
+        var sessionId = context.Request.Query["activeSessionId"].ToString();
+        return string.IsNullOrWhiteSpace(sessionId) ? null : sessionId;
+    }
+
+    private IEnumerable<SessionInfo> GetInitialReplaySessions(
+        string? allowedSessionId,
+        string? prioritySessionId,
+        InitialReplayMode replayMode)
     {
         var sessions = _sessionManager.GetAllSessions();
+        SessionInfo? prioritySession = null;
 
         foreach (var sessionInfo in sessions)
         {
@@ -152,6 +225,36 @@ public sealed class MuxWebSocketHandler
             {
                 continue;
             }
+
+            if (prioritySessionId is not null &&
+                string.Equals(sessionInfo.Id, prioritySessionId, StringComparison.Ordinal))
+            {
+                prioritySession = sessionInfo;
+                continue;
+            }
+
+            if (replayMode != InitialReplayMode.PriorityOnly)
+            {
+                yield return sessionInfo;
+            }
+        }
+
+        if (prioritySession is not null && replayMode != InitialReplayMode.NonPriorityOnly)
+        {
+            yield return prioritySession;
+        }
+    }
+
+    private async Task SendInitialBuffersAsync(
+        MuxClient client,
+        string? allowedSessionId,
+        string? prioritySessionId,
+        InitialReplayMode replayMode,
+        CancellationToken ct)
+    {
+        foreach (var sessionInfo in GetInitialReplaySessions(allowedSessionId, prioritySessionId, replayMode))
+        {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 var snapshot = await _sessionManager.GetBufferAsync(
@@ -162,43 +265,68 @@ public sealed class MuxWebSocketHandler
 
                 await SendSgrResetFrameAsync(client, sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows);
 
-                // Chunk large buffers and compress each chunk
-                for (var offset = 0; offset < snapshot.Data.Length; offset += MuxProtocol.CompressionChunkSize)
+                if (!await SendSnapshotAsync(client, sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows, snapshot, ct))
                 {
-                    var length = Math.Min(MuxProtocol.CompressionChunkSize, snapshot.Data.Length - offset);
-                    var chunk = snapshot.Data.AsSpan(offset, length);
-                    var sequenceEndExclusive = snapshot.SequenceStart + (ulong)offset + (ulong)length;
-
-                    // Use compression for chunks over threshold
-                    var useCompression = length > MuxProtocol.CompressionThreshold;
-                    var maxFrameSize = useCompression
-                        ? MuxProtocol.CompressedOutputHeaderSize + length + 100
-                        : MuxProtocol.OutputHeaderSize + length;
-
-                    var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
-                    try
-                    {
-                        var frameLength = useCompression
-                            ? MuxProtocol.WriteCompressedOutputFrameInto(sessionInfo.Id, sequenceEndExclusive, sessionInfo.Cols, sessionInfo.Rows, chunk, frameBuffer)
-                            : MuxProtocol.WriteOutputFrameInto(sessionInfo.Id, sequenceEndExclusive, sessionInfo.Cols, sessionInfo.Rows, chunk, frameBuffer);
-
-                        if (!await client.TrySendAsync(frameBuffer, frameLength))
-                        {
-                            Log.Warn(() => $"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
-                            return;
-                        }
-                    }
-                    finally
-                    {
-                        ArrayPool<byte>.Shared.Return(frameBuffer);
-                    }
+                    Log.Warn(() => $"[MuxHandler] Initial sync aborted for {sessionInfo.Id}: queue full");
+                    return;
                 }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
             }
             catch (Exception ex)
             {
                 Log.Error(() => $"[MuxHandler] Failed to get buffer for {sessionInfo.Id}: {ex.Message}");
             }
         }
+    }
+
+    private async Task<bool> SendSnapshotAsync(
+        MuxClient client,
+        string sessionId,
+        int cols,
+        int rows,
+        TtyHostBufferSnapshot snapshot,
+        CancellationToken ct)
+    {
+        for (var offset = 0; offset < snapshot.Data.Length; offset += ReplayFrameChunkBytes)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var length = Math.Min(ReplayFrameChunkBytes, snapshot.Data.Length - offset);
+            var chunk = snapshot.Data.AsSpan(offset, length);
+            var sequenceEndExclusive = snapshot.SequenceStart + (ulong)offset + (ulong)length;
+
+            var useCompression = length > MuxProtocol.CompressionThreshold;
+            var maxFrameSize = useCompression
+                ? MuxProtocol.CompressedOutputHeaderSize + length + 100
+                : MuxProtocol.OutputHeaderSize + length;
+
+            var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
+            try
+            {
+                var frameLength = useCompression
+                    ? MuxProtocol.WriteCompressedOutputFrameInto(sessionId, sequenceEndExclusive, cols, rows, chunk, frameBuffer)
+                    : MuxProtocol.WriteOutputFrameInto(sessionId, sequenceEndExclusive, cols, rows, chunk, frameBuffer);
+
+                if (!await client.TrySendAsync(frameBuffer, frameLength))
+                {
+                    return false;
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameBuffer);
+            }
+
+            if (offset + length < snapshot.Data.Length)
+            {
+                await Task.Yield();
+            }
+        }
+
+        return true;
     }
 
     private async Task ProcessMessagesAsync(
@@ -240,7 +368,7 @@ public sealed class MuxWebSocketHandler
             if (droppedSessions is not null)
             {
                 foreach (var sessionId in droppedSessions)
-                    {
+                {
                     var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, 0, TerminalReplayReason.MuxOverflow);
                     await client.TrySendAsync(lossFrame);
                 }
@@ -367,32 +495,7 @@ public sealed class MuxWebSocketHandler
             {
                 await SendSgrResetFrameAsync(client, sessionId, session.Cols, session.Rows);
 
-                // Chunk and compress buffer response
-                for (var offset = 0; offset < snapshot.Data.Length; offset += MuxProtocol.CompressionChunkSize)
-                {
-                    var length = Math.Min(MuxProtocol.CompressionChunkSize, snapshot.Data.Length - offset);
-                    var chunk = snapshot.Data.AsSpan(offset, length);
-                    var sequenceEndExclusive = snapshot.SequenceStart + (ulong)offset + (ulong)length;
-
-                    var useCompression = length > MuxProtocol.CompressionThreshold;
-                    var maxFrameSize = useCompression
-                        ? MuxProtocol.CompressedOutputHeaderSize + length + 100
-                        : MuxProtocol.OutputHeaderSize + length;
-
-                    var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
-                    try
-                    {
-                        var frameLength = useCompression
-                            ? MuxProtocol.WriteCompressedOutputFrameInto(sessionId, sequenceEndExclusive, session.Cols, session.Rows, chunk, frameBuffer)
-                            : MuxProtocol.WriteOutputFrameInto(sessionId, sequenceEndExclusive, session.Cols, session.Rows, chunk, frameBuffer);
-
-                        await client.TrySendAsync(frameBuffer, frameLength);
-                    }
-                    finally
-                    {
-                        ArrayPool<byte>.Shared.Return(frameBuffer);
-                    }
-                }
+                await SendSnapshotAsync(client, sessionId, session.Cols, session.Rows, snapshot, CancellationToken.None);
                 Log.Verbose(() => $"[MuxHandler] Sent buffer for {sessionId}: {snapshot.Data.Length} bytes");
             }
         }
