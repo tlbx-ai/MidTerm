@@ -106,6 +106,51 @@ let calibrationPromise: Promise<void> | null = null;
 // Debounce timer for focus operations
 let focusDebounceTimer: number | null = null;
 
+function getSessionEnterOverride(sessionId: string, event: KeyboardEvent): string | null {
+  const foreground = getForegroundInfo(sessionId);
+  const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
+  return getTerminalEnterOverride(
+    event,
+    $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
+    isPowerShellEnterTarget(foreground.name, foreground.commandLine, sessionShellType)
+      ? 'powershell'
+      : 'default',
+  );
+}
+
+function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLTextAreaElement &&
+    target.classList.contains('xterm-helper-textarea') &&
+    container.contains(target)
+  );
+}
+
+function tryHandleTerminalEnterOverride(
+  sessionId: string,
+  event: KeyboardEvent,
+  container?: HTMLDivElement,
+): boolean {
+  if (event.type !== 'keydown' || event.defaultPrevented || event.isComposing) {
+    return false;
+  }
+
+  if (container && !shouldCaptureTerminalKey(container, event.target)) {
+    return false;
+  }
+
+  const enterOverride = getSessionEnterOverride(sessionId, event);
+  if (enterOverride === null) {
+    return false;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  sendInput(sessionId, enterOverride);
+  return true;
+}
+
 /**
  * Reset the cursor blink timer on a terminal.
  * Toggling cursorBlink forces xterm.js to reinitialize its blink handler,
@@ -624,6 +669,11 @@ export function setupTerminalEvents(
     }),
   );
 
+  const enterOverrideHandler = (event: KeyboardEvent) => {
+    tryHandleTerminalEnterOverride(sessionId, event, container);
+  };
+  container.addEventListener('keydown', enterOverrideHandler, true);
+
   // Keyboard shortcuts for copy/paste
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.type !== 'keydown') return true;
@@ -631,20 +681,11 @@ export function setupTerminalEvents(
     // F12: let browser handle it (open DevTools)
     if (e.key === 'F12') return false;
 
-    const foreground = getForegroundInfo(sessionId);
-    const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
-    const enterOverride = getTerminalEnterOverride(
-      e,
-      $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
-      isPowerShellEnterTarget(foreground.name, foreground.commandLine, sessionShellType)
-        ? 'powershell'
-        : 'default',
-    );
-    if (enterOverride !== null) {
-      sendInput(sessionId, enterOverride);
+    if (tryHandleTerminalEnterOverride(sessionId, e)) {
       return false;
     }
 
+    const foreground = getForegroundInfo(sessionId);
     const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
 
     // Copy shortcut remains style-specific to preserve existing terminal behavior.
@@ -771,6 +812,7 @@ export function setupTerminalEvents(
   if (state) {
     state.contextMenuHandler = contextMenuHandler;
     state.pasteHandler = pasteHandler;
+    state.enterOverrideHandler = enterOverrideHandler;
     state.disposables = disposables;
     state.mouseMoveHandler = mouseMoveHandler;
     state.mouseLeaveHandler = mouseLeaveHandler;
@@ -805,6 +847,9 @@ export function destroyTerminalForSession(sessionId: string): void {
   }
   if (state.pasteHandler) {
     state.container.removeEventListener('paste', state.pasteHandler, true);
+  }
+  if (state.enterOverrideHandler) {
+    state.container.removeEventListener('keydown', state.enterOverrideHandler, true);
   }
   if (state.mouseMoveHandler) {
     state.container.removeEventListener('mousemove', state.mouseMoveHandler);
