@@ -1432,7 +1432,7 @@ public static class TtyHostSpawner
                         continue;
                     }
 
-                    if (string.Equals(sessionUser, runAsUser, StringComparison.OrdinalIgnoreCase))
+                    if (IsMatchingWindowsUsername(runAsUser, sessionUser))
                     {
                         if (WTSQueryUserToken(info.SessionId, out userToken))
                         {
@@ -1485,6 +1485,20 @@ public static class TtyHostSpawner
 
         Log.Error(() => "TtyHostSpawner: No session with accessible user token found");
         return false;
+    }
+
+    [SupportedOSPlatform("windows")]
+    internal static bool IsMatchingWindowsUsername(string? configuredUser, string? sessionUser)
+    {
+        var normalizedConfiguredUser = Services.Security.SystemUserProvider.NormalizeWindowsUsername(configuredUser);
+        var normalizedSessionUser = Services.Security.SystemUserProvider.NormalizeWindowsUsername(sessionUser);
+
+        if (string.IsNullOrWhiteSpace(normalizedConfiguredUser) || string.IsNullOrWhiteSpace(normalizedSessionUser))
+        {
+            return false;
+        }
+
+        return string.Equals(normalizedConfiguredUser, normalizedSessionUser, StringComparison.OrdinalIgnoreCase);
     }
 
     [SupportedOSPlatform("windows")]

@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
 
@@ -54,5 +55,15 @@ public sealed class TtyHostSpawnerTests : IDisposable
         var resolved = TtyHostSpawner.ResolveTtyHostPath(currentExePath);
 
         Assert.Equal(ttyHostPath, resolved);
+    }
+
+    [Theory]
+    [InlineData(@"ATURIS\johannes.schmidt", "johannes.schmidt")]
+    [InlineData("johannes.schmidt@aturis.local", "johannes.schmidt")]
+    [InlineData("johannes.schmidt", "johannes.schmidt")]
+    [SupportedOSPlatform("windows")]
+    public void IsMatchingWindowsUsername_NormalizesConfiguredIdentityFormats(string configuredUser, string sessionUser)
+    {
+        Assert.True(TtyHostSpawner.IsMatchingWindowsUsername(configuredUser, sessionUser));
     }
 }

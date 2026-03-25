@@ -122,6 +122,14 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain('if (resetHydrationState) {');
   });
 
+  it('keeps the saved run-as user selectable even if discovery misses it', () => {
+    expect(persistenceSource).toContain('selectedUser &&');
+    expect(persistenceSource).toContain('!users.some(');
+    expect(persistenceSource).toContain("option.value = selectedUser;");
+    expect(persistenceSource).toContain("option.textContent = selectedUser;");
+    expect(persistenceSource).toContain('option.selected = true;');
+  });
+
   it('uses non-submit inline save buttons for text and number settings', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),

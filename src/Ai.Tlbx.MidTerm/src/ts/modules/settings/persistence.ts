@@ -340,6 +340,20 @@ export function populateUserDropdown(
     }
     select.appendChild(option);
   });
+
+  if (
+    selectedUser &&
+    !users.some(
+      (user) =>
+        user.username.localeCompare(selectedUser, undefined, { sensitivity: 'accent' }) === 0,
+    )
+  ) {
+    const option = document.createElement('option');
+    option.value = selectedUser;
+    option.textContent = selectedUser;
+    option.selected = true;
+    select.appendChild(option);
+  }
 }
 
 /**

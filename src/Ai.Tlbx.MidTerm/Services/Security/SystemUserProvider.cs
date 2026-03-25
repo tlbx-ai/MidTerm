@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Runtime.Versioning;
 using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Services.Security;
 
@@ -18,17 +20,15 @@ public static class SystemUserProvider
 
     private static List<UserInfo> GetWindowsUsers()
     {
-        var users = new List<UserInfo>();
+        var usersByName = new Dictionary<string, UserInfo>(StringComparer.OrdinalIgnoreCase);
 
         if (!OperatingSystem.IsWindows())
         {
-            return users;
+            return [];
         }
 
         try
         {
-            // Use WMI via PowerShell to get local users
-            // This avoids complex P/Invoke for NetUserEnum
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "powershell",
@@ -41,7 +41,9 @@ public static class SystemUserProvider
             using var process = System.Diagnostics.Process.Start(psi);
             if (process is null)
             {
-                return users;
+                AddCurrentWindowsIdentity(usersByName);
+                AddSessionUsers(usersByName);
+                return usersByName.Values.OrderBy(user => user.Username, StringComparer.OrdinalIgnoreCase).ToList();
             }
 
             var output = process.StandardOutput.ReadToEnd();
@@ -49,71 +51,165 @@ public static class SystemUserProvider
 
             if (string.IsNullOrWhiteSpace(output))
             {
-                return users;
+                AddCurrentWindowsIdentity(usersByName);
+                AddSessionUsers(usersByName);
+                return usersByName.Values.OrderBy(user => user.Username, StringComparer.OrdinalIgnoreCase).ToList();
             }
 
-            // Parse JSON output
             using var doc = System.Text.Json.JsonDocument.Parse(output);
             var root = doc.RootElement;
 
-            // Handle single user (not array) vs multiple users (array)
             if (root.ValueKind == System.Text.Json.JsonValueKind.Array)
             {
                 foreach (var user in root.EnumerateArray())
                 {
-                    var name = user.GetProperty("Name").GetString();
-                    var sidObj = user.GetProperty("SID");
-                    var sid = sidObj.ValueKind == System.Text.Json.JsonValueKind.Object
-                        ? sidObj.GetProperty("Value").GetString()
-                        : sidObj.GetString();
-
-                    if (!string.IsNullOrEmpty(name))
-                    {
-                        users.Add(new UserInfo
-                        {
-                            Username = name,
-                            Sid = sid
-                        });
-                    }
+                    AddWindowsUser(usersByName, user.GetProperty("Name").GetString(), ReadSid(user));
                 }
             }
             else if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
             {
-                var name = root.GetProperty("Name").GetString();
-                var sidObj = root.GetProperty("SID");
-                var sid = sidObj.ValueKind == System.Text.Json.JsonValueKind.Object
-                    ? sidObj.GetProperty("Value").GetString()
-                    : sidObj.GetString();
-
-                if (!string.IsNullOrEmpty(name))
-                {
-                    users.Add(new UserInfo
-                    {
-                        Username = name,
-                        Sid = sid
-                    });
-                }
+                AddWindowsUser(usersByName, root.GetProperty("Name").GetString(), ReadSid(root));
             }
         }
         catch
         {
-            // Fall back to current user only
-            try
-            {
-                var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-                var userName = identity.Name.Split('\\').Last();
-                users.Add(new UserInfo
-                {
-                    Username = userName,
-                    Sid = identity.User?.Value
-                });
-            }
-            catch
-            {
-            }
         }
 
-        return users;
+        AddCurrentWindowsIdentity(usersByName);
+        AddSessionUsers(usersByName);
+
+        return usersByName.Values.OrderBy(user => user.Username, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    internal static void AddWindowsUser(
+        IDictionary<string, UserInfo> usersByName,
+        string? username,
+        string? sid = null)
+    {
+        var normalized = NormalizeWindowsUsername(username);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
+
+        if (usersByName.TryGetValue(normalized, out var existing))
+        {
+            if (string.IsNullOrWhiteSpace(existing.Sid) && !string.IsNullOrWhiteSpace(sid))
+            {
+                usersByName[normalized] = new UserInfo
+                {
+                    Username = existing.Username,
+                    Sid = sid
+                };
+            }
+
+            return;
+        }
+
+        usersByName[normalized] = new UserInfo
+        {
+            Username = normalized,
+            Sid = sid
+        };
+    }
+
+    internal static string? NormalizeWindowsUsername(string? username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return null;
+        }
+
+        var normalized = username.Trim();
+        var slashIndex = normalized.LastIndexOf('\\');
+        if (slashIndex >= 0 && slashIndex < normalized.Length - 1)
+        {
+            normalized = normalized[(slashIndex + 1)..];
+        }
+
+        var atIndex = normalized.IndexOf('@');
+        if (atIndex > 0)
+        {
+            normalized = normalized[..atIndex];
+        }
+
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static string? ReadSid(System.Text.Json.JsonElement element)
+    {
+        if (!element.TryGetProperty("SID", out var sidObj))
+        {
+            return null;
+        }
+
+        return sidObj.ValueKind == System.Text.Json.JsonValueKind.Object
+            ? sidObj.GetProperty("Value").GetString()
+            : sidObj.GetString();
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void AddCurrentWindowsIdentity(IDictionary<string, UserInfo> usersByName)
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            AddWindowsUser(usersByName, identity.Name, identity.User?.Value);
+        }
+        catch
+        {
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void AddSessionUsers(IDictionary<string, UserInfo> usersByName)
+    {
+        if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var pSessionInfo, out var sessionCount))
+        {
+            return;
+        }
+
+        try
+        {
+            var sessionInfoSize = Marshal.SizeOf<WTS_SESSION_INFO>();
+            for (var i = 0; i < sessionCount; i++)
+            {
+                var info = Marshal.PtrToStructure<WTS_SESSION_INFO>(pSessionInfo + i * sessionInfoSize);
+                if (info.State is not (WTS_CONNECTSTATE_CLASS.WTSActive or WTS_CONNECTSTATE_CLASS.WTSDisconnected))
+                {
+                    continue;
+                }
+
+                AddWindowsUser(usersByName, GetSessionUsername(info.SessionId));
+            }
+        }
+        finally
+        {
+            WTSFreeMemory(pSessionInfo);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? GetSessionUsername(uint sessionId)
+    {
+        if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, WTS_INFO_CLASS.WTSUserName, out var buffer, out var bytesReturned))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (bytesReturned <= 2)
+            {
+                return null;
+            }
+
+            return Marshal.PtrToStringUni(buffer);
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
+        }
     }
 
     private static List<UserInfo> GetUnixUsers()
@@ -242,4 +338,56 @@ public static class SystemUserProvider
 
     [DllImport("libc", EntryPoint = "getgid")]
     private static extern uint getgid();
+
+    [SupportedOSPlatform("windows")]
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSEnumerateSessions(
+        IntPtr hServer,
+        int reserved,
+        int version,
+        out IntPtr ppSessionInfo,
+        out int pCount);
+
+    [SupportedOSPlatform("windows")]
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSQuerySessionInformation(
+        IntPtr hServer,
+        uint sessionId,
+        WTS_INFO_CLASS wtsInfoClass,
+        out IntPtr ppBuffer,
+        out int pBytesReturned);
+
+    [SupportedOSPlatform("windows")]
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr pMemory);
+
+    [SupportedOSPlatform("windows")]
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WTS_SESSION_INFO
+    {
+        public uint SessionId;
+        public IntPtr pWinStationName;
+        public WTS_CONNECTSTATE_CLASS State;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private enum WTS_CONNECTSTATE_CLASS
+    {
+        WTSActive,
+        WTSConnected,
+        WTSConnectQuery,
+        WTSShadow,
+        WTSDisconnected,
+        WTSIdle,
+        WTSListen,
+        WTSReset,
+        WTSDown,
+        WTSInit
+    }
+
+    [SupportedOSPlatform("windows")]
+    private enum WTS_INFO_CLASS
+    {
+        WTSUserName = 5
+    }
 }
