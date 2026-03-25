@@ -301,7 +301,21 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!msg)return;
             try{_realParent.postMessage(msg,"*");}catch(e){}
           }
-          function ntfy(){postMt("mt-navigation",{url:location.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:curU()});}
+          var lastMtNavigationKey="",navNotifyTimer=0;
+          function ntfyNow(){
+            var upstreamUrl=curU();
+            var navKey=location.href+"\n"+upstreamUrl;
+            if(navKey===lastMtNavigationKey)return;
+            lastMtNavigationKey=navKey;
+            postMt("mt-navigation",{url:location.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:upstreamUrl});
+          }
+          function ntfy(){
+            if(navNotifyTimer)return;
+            navNotifyTimer=setTimeout(function(){
+              navNotifyTimer=0;
+              ntfyNow();
+            },50);
+          }
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
           history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
           history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
@@ -310,7 +324,7 @@ public sealed partial class WebPreviewProxyMiddleware
           location.replace=function(u){return lr(r(u));};
           window.addEventListener("popstate",ntfy);
           window.addEventListener("hashchange",ntfy);
-          setTimeout(ntfy,0);
+          setTimeout(ntfyNow,0);
           // === Cookie bridge ===
           var cc="",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
           window.addEventListener("message",function(ev){

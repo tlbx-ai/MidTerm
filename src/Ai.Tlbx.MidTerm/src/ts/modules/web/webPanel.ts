@@ -37,6 +37,7 @@ import {
   setActiveUrl,
   setSessionDockedClient,
 } from './webSessionState';
+import { shouldSandboxPreviewFrame } from './previewSandbox';
 
 interface UploadResponse {
   path?: string;
@@ -278,12 +279,17 @@ function getSandboxFlags(frameOrigin?: string): string {
   return flags.join(' ');
 }
 
-function applyIframeSandbox(frameOrigin?: string, targetFrame?: HTMLIFrameElement | null): void {
+function applyIframeSandbox(
+  frameOrigin?: string,
+  targetFrame?: HTMLIFrameElement | null,
+  targetUrl?: string | null,
+): void {
   const frame = targetFrame ?? getActiveIframe();
   if (!frame) {
     return;
   }
-  if (isDevMode()) {
+
+  if (shouldSandboxPreviewFrame(targetUrl ?? getActiveUrl(), isDevMode())) {
     frame.setAttribute('sandbox', getSandboxFlags(frameOrigin));
     return;
   }
@@ -361,11 +367,20 @@ function decodeIframeNavigationUrl(
 }
 
 function setCurrentPreviewUrl(url: string | null, updateInput = true): void {
+  const nextInputValue = url ?? '';
+  if (
+    loadedUrl === url &&
+    $webPreviewUrl.get() === url &&
+    (!updateInput || !urlInput || urlInput.value === nextInputValue)
+  ) {
+    return;
+  }
+
   loadedUrl = url;
   setActiveUrl(url);
   $webPreviewUrl.set(url);
   if (updateInput && urlInput) {
-    urlInput.value = url ?? '';
+    urlInput.value = nextInputValue;
   }
 }
 
@@ -616,7 +631,7 @@ export async function loadPreview(): Promise<void> {
       frame = replacementFrame;
     }
 
-    applyIframeSandbox(previewClient.origin, frame);
+    applyIframeSandbox(previewClient.origin, frame, currentUrl);
     setPreviewContextCookie(previewClient);
     frame.name = JSON.stringify(previewClient);
     const proxyUrl = buildProxyUrl(

@@ -113,6 +113,22 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_NavigationBridge_DeduplicatesAndCoalescesUpdates()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("var lastMtNavigationKey=\"\",navNotifyTimer=0;", script, StringComparison.Ordinal);
+        Assert.Contains("function ntfyNow()", script, StringComparison.Ordinal);
+        Assert.Contains("if(navKey===lastMtNavigationKey)return;", script, StringComparison.Ordinal);
+        Assert.Contains("navNotifyTimer=setTimeout(function(){", script, StringComparison.Ordinal);
+        Assert.Contains("setTimeout(ntfyNow,0);", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UrlRewriteScript_LoadsPreviewContextFromCookieFallback()
     {
         var field = typeof(WebPreviewProxyMiddleware).GetField(
