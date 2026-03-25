@@ -98,17 +98,31 @@ public class Program
         var (port, bindAddress) = ArgumentParser.Parse(args);
         var preflightSettings = new SettingsService();
         var instanceIdentity = MidTermInstanceIdentity.Load(preflightSettings.SettingsDirectory, port);
-        var instanceGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.GuardName, out var existingInfo);
-        if (instanceGuard is null)
+        var settingsGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.SettingsGuardName, out var settingsGuardInfo);
+        if (settingsGuard is null)
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"Error: {existingInfo}");
+            Console.WriteLine($"Error: {settingsGuardInfo}");
+            Console.ResetColor();
+            Console.WriteLine($"Another MidTerm instance is already using settings directory '{preflightSettings.SettingsDirectory}'.");
+            Console.WriteLine("Stop the other instance first, or launch this one with a separate MIDTERM_SETTINGS_DIR for isolated dev state.");
+            Environment.Exit(1);
+            return;
+        }
+        using var settingsGuardLifetime = settingsGuard;
+
+        var portGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.PortGuardName, out var portGuardInfo);
+        if (portGuard is null)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Error: {portGuardInfo}");
             Console.ResetColor();
             Console.WriteLine($"Another MidTerm instance is already running for port {port}.");
             Console.WriteLine("Use a different port or stop the existing instance first.");
             Environment.Exit(1);
             return;
         }
+        using var portGuardLifetime = portGuard;
 
         WriteEventLog("MainCore: Parsing args and creating builder");
         var builder = ServerSetup.CreateBuilder(args, WriteEventLogWrapper);
@@ -328,7 +342,6 @@ public class Program
                 BrowserScriptWriter.Cleanup();
                 tempCleanupService.CleanupAllMidTermFiles();
                 Log.Shutdown();
-                instanceGuard.Dispose();
                 shutdownService.Dispose();
             }
         }

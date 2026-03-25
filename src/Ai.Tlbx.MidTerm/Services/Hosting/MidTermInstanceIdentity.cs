@@ -30,7 +30,8 @@ public sealed class MidTermInstanceIdentity
     public string OwnerToken { get; }
     public string InstanceId { get; }
     public int Port { get; }
-    public string GuardName => $"midterm-{InstanceId}";
+    public string SettingsGuardName => $"midterm-settings-{InstallScopeId}";
+    public string PortGuardName => $"midterm-port-{InstanceId}";
     public string SessionRegistryPath => Path.Combine(_settingsDirectory, $"tty-sessions-{InstanceId}.json");
 
     public static MidTermInstanceIdentity Load(string settingsDirectory, int port)

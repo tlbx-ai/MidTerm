@@ -75,6 +75,8 @@ const log = createLogger('settings');
 let settingsAbortController: AbortController | null = null;
 let settingsSaveVersion = 0;
 let terminalFontSettingsSaveTimer: number | null = null;
+let settingsFormHydrated = false;
+let settingsSaveArmed = false;
 type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 type TerminalColorSchemeEditorGroup = 'Core' | 'Standard ANSI' | 'Bright ANSI' | 'Advanced';
 
@@ -237,6 +239,10 @@ function areSettingValuesEqual(a: unknown, b: unknown): boolean {
 }
 
 function hasPendingSettingsChanges(): boolean {
+  if (!settingsFormHydrated || !settingsSaveArmed) {
+    return false;
+  }
+
   const current = $currentSettings.get();
   if (!current) {
     return false;
@@ -340,6 +346,8 @@ export function populateUserDropdown(
  * Populate the settings form with current settings
  */
 export function populateSettingsForm(settings: MidTermSettingsPublic): void {
+  settingsFormHydrated = false;
+  settingsSaveArmed = false;
   syncTerminalColorSchemeOptions(settings);
   getSettingsRegistryControlEntries().forEach((entry) => {
     setRegistryControlValue(entry, settings[entry.key]);
@@ -353,6 +361,8 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   if (dom.settingsView) {
     syncInlineTextInputWrappers(dom.settingsView);
   }
+
+  settingsFormHydrated = true;
 }
 
 /**
@@ -518,6 +528,10 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
  * Save all settings to the server
  */
 export function saveAllSettings(): void {
+  if (!settingsFormHydrated || !settingsSaveArmed) {
+    return;
+  }
+
   if (!validateAgentEnvironmentInputs()) {
     return;
   }
@@ -584,6 +598,15 @@ export function bindSettingsAutoSave(): void {
 
   settingsAbortController = new AbortController();
   const { signal } = settingsAbortController;
+
+  const armSettingsSave = (): void => {
+    if (settingsFormHydrated) {
+      settingsSaveArmed = true;
+    }
+  };
+
+  settingsView.addEventListener('pointerdown', armSettingsSave, { capture: true, signal });
+  settingsView.addEventListener('keydown', armSettingsSave, { capture: true, signal });
 
   settingsView
     .querySelectorAll('select[id^="setting-"], input[type="checkbox"][id^="setting-"]')
@@ -765,6 +788,9 @@ export function unbindSettingsAutoSave(): void {
     settingsAbortController.abort();
     settingsAbortController = null;
   }
+
+  settingsFormHydrated = false;
+  settingsSaveArmed = false;
 }
 
 function bindTransparencyPreview(

@@ -106,6 +106,14 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain('flushPendingSettingsChanges();');
   });
 
+  it('blocks autosave until the settings form is hydrated and user interaction arms it', () => {
+    expect(persistenceSource).toContain('let settingsFormHydrated = false;');
+    expect(persistenceSource).toContain('let settingsSaveArmed = false;');
+    expect(persistenceSource).toContain('if (!settingsFormHydrated || !settingsSaveArmed) {');
+    expect(persistenceSource).toContain("settingsView.addEventListener('pointerdown', armSettingsSave");
+    expect(persistenceSource).toContain("settingsView.addEventListener('keydown', armSettingsSave");
+  });
+
   it('uses non-submit inline save buttons for text and number settings', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
