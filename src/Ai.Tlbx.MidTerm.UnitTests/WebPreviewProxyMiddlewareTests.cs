@@ -362,4 +362,27 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Equal(routeKey, resolvedRouteKey);
         Assert.Equal("https://example.com/", targetUri.ToString());
     }
+
+    [Fact]
+    public void TryResolvePreviewFromRequest_PrefersPreviewRefererOverRememberedLeakedRequestPath()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-a", "teacher", "https://teacher.example"));
+        Assert.True(service.SetTarget("session-b", "student", "https://student.example"));
+        Assert.True(service.TryGetPreviewRouteKey("session-a", "teacher", out var routeKeyA));
+        Assert.True(service.TryGetPreviewRouteKey("session-b", "student", out var routeKeyB));
+        service.RememberLeakedPathRoute(routeKeyA, "/js/login.js");
+        service.RememberLeakedPathRoute(routeKeyB, "/js/login.js");
+
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/js/login.js";
+        context.Request.Headers.Referer = $"https://midterm.local/webpreview/{routeKeyB}/teacher/tasks/123";
+
+        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
+
+        Assert.True(resolved);
+        Assert.Equal(routeKeyB, resolvedRouteKey);
+        Assert.Equal("https://student.example/", targetUri.ToString());
+    }
 }

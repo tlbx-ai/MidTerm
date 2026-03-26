@@ -47,7 +47,9 @@ function buildPreviewQuery(sessionId: string, previewName?: string): string {
 }
 
 /** List all named preview sessions for a terminal session. */
-export async function listWebPreviewSessions(sessionId: string): Promise<WebPreviewSessionInfo[]> {
+export async function listWebPreviewSessions(
+  sessionId: string,
+): Promise<WebPreviewSessionInfo[] | null> {
   if (!sessionId) {
     return [];
   }
@@ -55,12 +57,12 @@ export async function listWebPreviewSessions(sessionId: string): Promise<WebPrev
   try {
     const res = await fetch(`/api/webpreview/previews?${buildPreviewQuery(sessionId)}`);
     if (!res.ok) {
-      return [];
+      return null;
     }
     const data = (await res.json()) as WebPreviewSessionListResponse;
     return Array.isArray(data.previews) ? data.previews : [];
   } catch {
-    return [];
+    return null;
   }
 }
 

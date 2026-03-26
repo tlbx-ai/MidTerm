@@ -427,7 +427,20 @@ public static class MtcliScriptWriter
 
         # Direct execution: .midterm/mtcli.sh query ".error"
         if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
-          _cmd="$1"; shift 2>/dev/null; "mt_$_cmd" "$@"
+          _cmd="${1:-}"
+          shift 2>/dev/null
+          _normalized_cmd="${_cmd#mt_}"
+          if [ "$_normalized_cmd" = "$_cmd" ]; then
+            _normalized_cmd="${_cmd#mt-}"
+          fi
+          if [ -n "$_cmd" ] && command -v "$_cmd" >/dev/null 2>&1; then
+            "$_cmd" "$@"
+          elif [ -n "$_normalized_cmd" ] && command -v "mt_$_normalized_cmd" >/dev/null 2>&1; then
+            "mt_$_normalized_cmd" "$@"
+          else
+            printf 'Unknown MidTerm CLI command: %s\n' "$_cmd" >&2
+            exit 1
+          fi
         fi
         """;
 
@@ -982,7 +995,23 @@ public static class MtcliScriptWriter
         if ($args.Count -gt 0) {
             $cmd = $args[0]
             $cmdArgs = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
-            & "Mt-$($cmd.Substring(0,1).ToUpper() + $cmd.Substring(1))" @cmdArgs
+            $normalizedCmd = if ($cmd -match '^(?i)mt[_-](.+)$') { $Matches[1] } else { $cmd }
+            $pascalCmd = if ($normalizedCmd.Length -gt 0) { $normalizedCmd.Substring(0,1).ToUpper() + $normalizedCmd.Substring(1) } else { $normalizedCmd }
+            $candidates = @(
+                $cmd,
+                $normalizedCmd,
+                "mt_$normalizedCmd",
+                "Mt-$pascalCmd"
+            ) | Select-Object -Unique
+
+            foreach ($candidate in $candidates) {
+                if (Get-Command $candidate -ErrorAction SilentlyContinue) {
+                    & $candidate @cmdArgs
+                    return
+                }
+            }
+
+            throw "Unknown MidTerm CLI command: $cmd"
         }
         """;
 }

@@ -7,15 +7,38 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class BrowserCommandServiceTests
 {
     [Fact]
-    public void TryRegisterClient_RejectsDuplicatePreviewIds()
+    public async Task TryRegisterClient_ReplacesExistingPreviewClientOnReconnect()
     {
         var service = new BrowserCommandService();
+        BrowserWsMessage? captured = null;
 
         var first = service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { });
-        var duplicate = service.TryRegisterClient("c2", "session-a", "user1", "preview-a", _ => { });
+        var duplicate = service.TryRegisterClient("c2", "session-a", "user1", "preview-a", msg =>
+        {
+            captured = msg;
+            service.ReceiveResult(new BrowserWsResult
+            {
+                Id = msg.Id,
+                Success = true,
+                Result = "reconnected-ok",
+                PreviewId = "preview-a"
+            });
+        });
 
         Assert.True(first);
-        Assert.False(duplicate);
+        Assert.True(duplicate);
+        Assert.Equal(1, service.ConnectedClientCount);
+
+        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "url",
+            PreviewId = "preview-a"
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("reconnected-ok", result.Result);
+        Assert.NotNull(captured);
+        Assert.Equal("preview-a", captured!.PreviewId);
     }
 
     [Fact]

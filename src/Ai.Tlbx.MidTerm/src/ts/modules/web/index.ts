@@ -90,6 +90,9 @@ export async function syncActiveWebPreview(): Promise<void> {
   if (token !== syncToken) {
     return;
   }
+  if (previews === null) {
+    return;
+  }
 
   syncSessionPreviews(sessionId, previews);
   renderPreviewTabs();

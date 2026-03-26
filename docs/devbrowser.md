@@ -214,7 +214,7 @@ Leaked root-relative asset chains can lose the original `/webpreview/{routeKey}`
 | `WebPreviewProxyMiddleware.cs` | Core proxy: HTTP forwarding, WebSocket relay, injected JS |
 | `WebPreviewService.cs` | State: named preview sessions, target URLs, cookie jars, HTTP clients, proxy log ring buffers |
 | `WebPreviewEndpoints.cs` | REST API: target CRUD, cookie management, proxy log, snapshots |
-| `MtcliScriptWriter.cs` | CLI helpers: `mt_session`, `mt_preview`, `mt_previews`, `mt_proxylog`, `mt_navigate`, etc. |
+| `MtcliScriptWriter.cs` | CLI helpers: `mt_*` / `Mt-*` browser and session commands, including `mt_session`, `mt_preview`, `mt_previews`, `mt_proxylog`, `mt_navigate`, etc. |
 
 ## Key Design Decisions
 

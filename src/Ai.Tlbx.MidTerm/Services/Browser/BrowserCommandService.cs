@@ -30,12 +30,20 @@ public sealed class BrowserCommandService
         bool hasFocus = false,
         bool isTopLevel = false)
     {
+        var replacedConnectionIds = Array.Empty<string>();
         lock (_clientGate)
         {
-            if (!string.IsNullOrWhiteSpace(previewId)
-                && _clients.Values.Any(c => string.Equals(c.PreviewId, previewId, StringComparison.Ordinal)))
+            if (!string.IsNullOrWhiteSpace(previewId))
             {
-                return false;
+                replacedConnectionIds = _clients.Values
+                    .Where(c => string.Equals(c.PreviewId, previewId, StringComparison.Ordinal))
+                    .Select(c => c.ConnectionId)
+                    .ToArray();
+
+                foreach (var duplicateConnectionId in replacedConnectionIds)
+                {
+                    _clients.TryRemove(duplicateConnectionId, out _);
+                }
             }
 
             _clients[connectionId] = new BrowserClient
@@ -51,8 +59,14 @@ public sealed class BrowserCommandService
                 Listener = listener,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
-            return true;
         }
+
+        foreach (var replacedConnectionId in replacedConnectionIds)
+        {
+            CancelPendingForClient(replacedConnectionId);
+        }
+
+        return true;
     }
 
     public void UnregisterClient(string connectionId)

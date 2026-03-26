@@ -896,6 +896,41 @@ public sealed partial class WebPreviewProxyMiddleware
             return true;
         }
 
+        if (!request.Headers.TryGetValue("Referer", out var refererValues))
+        {   
+            return TryResolvePreviewFromLeakedRequestPath(request, out routeKey, out targetUri);
+        }
+
+        if (Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
+        {
+            if (!TryParseProxyRoute(refererUri.AbsolutePath, out routeKey, out _))
+            {
+                if (!_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out routeKey))
+                {
+                    routeKey = "";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(routeKey)
+                && _service.TryGetTargetUriByRouteKey(routeKey, out var refererTargetUri)
+                && refererTargetUri is not null)
+            {
+                targetUri = refererTargetUri;
+                return true;
+            }
+        }
+
+        return TryResolvePreviewFromLeakedRequestPath(request, out routeKey, out targetUri);
+    }
+
+    private bool TryResolvePreviewFromLeakedRequestPath(
+        HttpRequest request,
+        out string routeKey,
+        out Uri targetUri)
+    {
+        routeKey = "";
+        targetUri = null!;
+
         var requestPath = request.Path.Value ?? "/";
         if (_service.TryGetRouteKeyByLeakedPath(requestPath, out var leakedRouteKey)
             && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
@@ -906,32 +941,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return true;
         }
 
-        if (!request.Headers.TryGetValue("Referer", out var refererValues))
-        {
-            return false;
-        }
-
-        if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
-        {
-            return false;
-        }
-
-        if (!TryParseProxyRoute(refererUri.AbsolutePath, out routeKey, out _))
-        {
-            if (!_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out routeKey))
-            {
-                return false;
-            }
-        }
-
-        if (!_service.TryGetTargetUriByRouteKey(routeKey, out var refererTargetUri) || refererTargetUri is null)
-        {
-            routeKey = "";
-            return false;
-        }
-
-        targetUri = refererTargetUri;
-        return true;
+        return false;
     }
 
     internal static bool TryParseProxyRoute(PathString path, out string routeKey, out string remainingPath)
