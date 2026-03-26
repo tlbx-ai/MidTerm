@@ -2,7 +2,7 @@
  * Session Tab Bar
  *
  * Creates and manages the session bar UI for each session.
- * Tabs: Terminal | Lens | Files
+ * Tabs: Primary session surface | Files
  * Right-aligned actions: WEB | Share | Git dock toggle
  */
 
@@ -306,6 +306,21 @@ export function setTabVisible(bar: HTMLDivElement, tabId: SessionTabId, visible:
   }
 
   btn.hidden = !visible;
+}
+
+export function setTabLabel(bar: HTMLDivElement, tabId: SessionTabId, label: string): void {
+  const btn = bar.querySelector<HTMLButtonElement>(`.session-tab[data-tab="${tabId}"]`);
+  if (!btn) {
+    return;
+  }
+
+  const labelNode = btn.querySelector<HTMLElement>('.session-tab-label');
+  if (labelNode) {
+    labelNode.textContent = label;
+  }
+
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
 }
 
 export function isTabVisible(bar: HTMLDivElement, tabId: SessionTabId): boolean {

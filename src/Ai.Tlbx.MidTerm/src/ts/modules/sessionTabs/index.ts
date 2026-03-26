@@ -12,6 +12,7 @@ export {
   getSessionWrapper,
   getTabPanel,
   getActiveTab,
+  getTabLabelForSession,
   isTabAvailable,
   getTabBarHeight,
   setActionButtonActive,

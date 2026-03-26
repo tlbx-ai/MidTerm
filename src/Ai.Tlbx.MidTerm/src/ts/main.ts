@@ -127,6 +127,7 @@ import {
   ensureSessionWrapper,
   destroySessionWrapper,
   getActiveTab,
+  getTabLabelForSession,
   isTabAvailable,
   reparentTerminalContainer,
   setSessionLensAvailability,
@@ -1529,9 +1530,10 @@ function syncMobileTabActionState(): void {
     options: {
       active: boolean;
       hidden?: boolean;
+      label?: string;
     },
   ): void => {
-    const button = document.getElementById(elementId);
+    const button = document.getElementById(elementId) as HTMLButtonElement | null;
     if (!button) {
       return;
     }
@@ -1540,7 +1542,23 @@ function syncMobileTabActionState(): void {
     if (typeof options.hidden === 'boolean') {
       button.toggleAttribute('hidden', options.hidden);
     }
+
+    if (typeof options.label === 'string') {
+      button.title = options.label;
+      button.setAttribute('aria-label', options.label);
+      const labelNode = button.querySelector<HTMLElement>('.mobile-actions-label, span');
+      if (labelNode) {
+        labelNode.textContent = options.label;
+      }
+    }
   };
+
+  const terminalLabel = activeSessionId
+    ? getTabLabelForSession(activeSessionId, 'terminal')
+    : t('session.terminal');
+  const agentLabel = activeSessionId
+    ? getTabLabelForSession(activeSessionId, 'agent')
+    : t('sessionTabs.agent');
 
   strip?.toggleAttribute('hidden', !activeSessionId);
   title?.toggleAttribute('hidden', Boolean(activeSessionId));
@@ -1548,15 +1566,31 @@ function syncMobileTabActionState(): void {
   syncButton('btn-mobile-tab-terminal', {
     active: activeTab === 'terminal',
     hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
+    label: terminalLabel,
   });
-  syncButton('btn-mobile-tab-agent', { active: activeTab === 'agent', hidden: !agentVisible });
-  syncButton('btn-mobile-tab-files', { active: activeTab === 'files' });
+  syncButton('btn-mobile-tab-agent', {
+    active: activeTab === 'agent',
+    hidden: !agentVisible,
+    label: agentLabel,
+  });
+  syncButton('btn-mobile-tab-files', {
+    active: activeTab === 'files',
+    label: t('sessionTabs.files'),
+  });
   syncButton('btn-mobile-strip-terminal', {
     active: activeTab === 'terminal',
     hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
+    label: terminalLabel,
   });
-  syncButton('btn-mobile-strip-agent', { active: activeTab === 'agent', hidden: !agentVisible });
-  syncButton('btn-mobile-strip-files', { active: activeTab === 'files' });
+  syncButton('btn-mobile-strip-agent', {
+    active: activeTab === 'agent',
+    hidden: !agentVisible,
+    label: agentLabel,
+  });
+  syncButton('btn-mobile-strip-files', {
+    active: activeTab === 'files',
+    label: t('sessionTabs.files'),
+  });
 }
 
 function activateMobileTab(tab: 'terminal' | 'agent' | 'files'): void {

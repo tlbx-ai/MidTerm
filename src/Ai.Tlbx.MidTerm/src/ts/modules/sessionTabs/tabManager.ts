@@ -12,6 +12,7 @@ import {
   isTabVisible,
   setActiveTab,
   setActionActive,
+  setTabLabel,
   setTabVisible,
   updateCwd,
   updateGitIndicator,
@@ -27,6 +28,8 @@ import {
   fitTerminalToContainer,
   refreshTerminalPresentation,
 } from '../terminal/scaling';
+import { t } from '../i18n';
+import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from '../sessionSurface';
 
 const log = createLogger('tabManager');
 
@@ -40,6 +43,7 @@ interface SessionTabState {
 }
 
 const sessionTabStates = new Map<string, SessionTabState>();
+const forcedLensAvailability = new Map<string, boolean>();
 
 const tabActivationCallbacks: Partial<
   Record<SessionTabId, Array<(sessionId: string, panel: HTMLDivElement) => void>>
@@ -47,25 +51,27 @@ const tabActivationCallbacks: Partial<
 const tabDeactivationCallbacks: Partial<Record<SessionTabId, Array<(sessionId: string) => void>>> =
   {};
 
-function isInteractiveAgentProfile(profile: string | null | undefined): boolean {
-  return (
-    profile === 'codex' ||
-    profile === 'claude' ||
-    profile === 'open-code' ||
-    profile === 'generic-ai'
-  );
+function getSessionById(sessionId: string): Session | null {
+  return $sessionList.get().find((session) => session.id === sessionId) ?? null;
 }
 
-function shouldShowAgentTab(session: Session | null | undefined): boolean {
-  return (
-    session?.agentControlled === true ||
-    session?.hasLensHistory === true ||
-    isInteractiveAgentProfile(session?.supervisor?.profile)
-  );
+function resolvePrimaryTab(
+  session: Session | null | undefined,
+  options?: { lensForcedVisible?: boolean },
+): Extract<SessionTabId, 'terminal' | 'agent'> {
+  return resolveSessionSurfaceMode(session, options) === 'agent' ? 'agent' : 'terminal';
 }
 
-function shouldShowTerminalTab(session: Session | null | undefined): boolean {
-  return session?.lensOnly !== true;
+function getTabDisplayLabel(session: Session | null | undefined, tab: SessionTabId): string {
+  if (tab === 'agent') {
+    return getAgentSurfaceLabel(session);
+  }
+
+  if (tab === 'files') {
+    return t('sessionTabs.files');
+  }
+
+  return t('session.terminal');
 }
 
 /**
@@ -94,6 +100,10 @@ export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string
 export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
   if (existing) return existing;
+  const session = getSessionById(sessionId);
+  const defaultTab = resolvePrimaryTab(session, {
+    lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
+  });
 
   const wrapper = document.createElement('div');
   wrapper.className = 'session-wrapper';
@@ -112,7 +122,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   for (const tabId of tabs) {
     const panel = document.createElement('div');
     panel.className = 'session-tab-panel';
-    if (tabId === 'terminal') panel.classList.add('active');
+    if (tabId === defaultTab) panel.classList.add('active');
     panel.dataset.panel = tabId;
 
     if (tabId === 'agent') {
@@ -135,9 +145,9 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     wrapper,
     tabBar,
     panels,
-    activeTab: 'terminal',
+    activeTab: defaultTab,
     lensAvailable: false,
-    lensForcedVisible: false,
+    lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
   };
 
   sessionTabStates.set(sessionId, state);
@@ -152,10 +162,8 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     updateCwd(tabBar, processState.foregroundCwd);
   }
 
-  syncSessionTabCapabilities(
-    sessionId,
-    $sessionList.get().find((session) => session.id === sessionId) ?? null,
-  );
+  setActiveTab(tabBar, defaultTab);
+  syncSessionTabCapabilities(sessionId, session);
 
   return state;
 }
@@ -170,6 +178,7 @@ export function destroySessionWrapper(sessionId: string): void {
 
   state.wrapper.remove();
   sessionTabStates.delete(sessionId);
+  forcedLensAvailability.delete(sessionId);
 }
 
 /**
@@ -193,7 +202,14 @@ export function getTabPanel(sessionId: string, tab: SessionTabId): HTMLDivElemen
  * based on whether the user is in Terminal, Files, or an experimental surface.
  */
 export function getActiveTab(sessionId: string): SessionTabId {
-  return sessionTabStates.get(sessionId)?.activeTab ?? 'terminal';
+  const existing = sessionTabStates.get(sessionId);
+  if (existing) {
+    return existing.activeTab;
+  }
+
+  return resolvePrimaryTab(getSessionById(sessionId), {
+    lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
+  });
 }
 
 /**
@@ -203,7 +219,16 @@ export function getActiveTab(sessionId: string): SessionTabId {
 export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
   const state = sessionTabStates.get(sessionId);
   if (!state) {
-    return tab !== 'agent';
+    if (tab === 'files') {
+      return true;
+    }
+
+    return (
+      tab ===
+      resolvePrimaryTab(getSessionById(sessionId), {
+        lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
+      })
+    );
   }
 
   if (tab === 'agent') {
@@ -226,19 +251,18 @@ export function syncSessionTabCapabilities(
     return;
   }
 
-  const showAgentTab = state.lensForcedVisible || shouldShowAgentTab(session);
-  const showTerminalTab = shouldShowTerminalTab(session);
-  state.lensAvailable = showAgentTab;
-  setTabVisible(state.tabBar, 'terminal', showTerminalTab);
-  setTabVisible(state.tabBar, 'agent', showAgentTab);
+  const primaryTab = resolvePrimaryTab(session, {
+    lensForcedVisible: state.lensForcedVisible,
+  });
 
-  if (!showTerminalTab && state.activeTab === 'terminal') {
-    switchTab(sessionId, showAgentTab ? 'agent' : 'files');
+  state.lensAvailable = primaryTab === 'agent';
+  setTabLabel(state.tabBar, 'agent', getAgentSurfaceLabel(session));
+  setTabVisible(state.tabBar, 'terminal', primaryTab === 'terminal');
+  setTabVisible(state.tabBar, 'agent', primaryTab === 'agent');
+
+  if (state.activeTab !== 'files' && state.activeTab !== primaryTab) {
+    switchTab(sessionId, primaryTab);
     return;
-  }
-
-  if (!showAgentTab && state.activeTab === 'agent') {
-    switchTab(sessionId, 'terminal');
   }
 }
 
@@ -247,14 +271,24 @@ export function syncSessionTabCapabilities(
  * exists, even before session-list metadata has caught up.
  */
 export function setSessionLensAvailability(sessionId: string, available: boolean): void {
+  if (available) {
+    forcedLensAvailability.set(sessionId, true);
+  } else {
+    forcedLensAvailability.delete(sessionId);
+  }
+
   const state = sessionTabStates.get(sessionId);
   if (!state) {
     return;
   }
 
   state.lensForcedVisible = available;
-  const session = $sessionList.get().find((entry) => entry.id === sessionId) ?? null;
+  const session = getSessionById(sessionId);
   syncSessionTabCapabilities(sessionId, session);
+}
+
+export function getTabLabelForSession(sessionId: string, tab: SessionTabId): string {
+  return getTabDisplayLabel(getSessionById(sessionId), tab);
 }
 
 /**
