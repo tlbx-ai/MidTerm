@@ -85,6 +85,19 @@ describe('themes', () => {
     expect(theme.brightBlue).toBe('#D09AF9');
   });
 
+  it('resolves the campbell palette', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalColorScheme: 'campbell',
+      }),
+    );
+
+    expect(theme.background).toBe('#0C0C0C');
+    expect(theme.foreground).toBe('#CCCCCC');
+    expect(theme.blue).toBe('#0037DA');
+    expect(theme.brightCyan).toBe('#61D6D6');
+  });
+
   it('resolves the mac terminal light palette', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({

@@ -14,6 +14,11 @@ export const BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS = [
     fallbackText: 'Light',
   },
   {
+    value: 'campbell',
+    translationKey: 'settings.options.colorSchemeCampbell',
+    fallbackText: 'Campbell',
+  },
+  {
     value: 'macTerminalDark',
     translationKey: 'settings.options.colorSchemeMacTerminalDark',
     fallbackText: 'Mac Terminal Dark',

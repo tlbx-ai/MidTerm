@@ -335,6 +335,7 @@
   "settings.options.themeSolarizedDark": "Solarized 深色",
   "settings.options.themeSolarizedLight": "Solarized 浅色",
   "settings.options.colorSchemeAuto": "自动（跟随主题）",
+  "settings.options.colorSchemeCampbell": "Campbell",
   "settings.options.colorSchemeMacTerminalDark": "Mac Terminal 深色",
   "settings.options.colorSchemeMacTerminalLight": "Mac Terminal 浅色",
   "settings.options.colorSchemeMatrix": "黑客帝国",

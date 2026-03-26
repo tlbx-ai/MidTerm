@@ -332,6 +332,7 @@
   "settings.options.themeSolarizedDark": "Solarized Oscuro",
   "settings.options.themeSolarizedLight": "Solarized Claro",
   "settings.options.colorSchemeAuto": "Automático (sigue el tema)",
+  "settings.options.colorSchemeCampbell": "Campbell",
   "settings.options.colorSchemeMacTerminalDark": "Mac Terminal oscuro",
   "settings.options.colorSchemeMacTerminalLight": "Mac Terminal claro",
   "settings.options.colorSchemeMatrix": "Matrix",

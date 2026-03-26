@@ -332,6 +332,7 @@
   "settings.options.themeSolarizedDark": "Solarized डार्क",
   "settings.options.themeSolarizedLight": "Solarized लाइट",
   "settings.options.colorSchemeAuto": "स्वचालित (थीम का अनुसरण)",
+  "settings.options.colorSchemeCampbell": "Campbell",
   "settings.options.colorSchemeMacTerminalDark": "Mac Terminal डार्क",
   "settings.options.colorSchemeMacTerminalLight": "Mac Terminal लाइट",
   "settings.options.colorSchemeMatrix": "मैट्रिक्स",

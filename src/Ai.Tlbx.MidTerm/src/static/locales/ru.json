@@ -332,6 +332,7 @@
   "settings.options.themeSolarizedDark": "Solarized тёмная",
   "settings.options.themeSolarizedLight": "Solarized светлая",
   "settings.options.colorSchemeAuto": "Авто (по теме)",
+  "settings.options.colorSchemeCampbell": "Campbell",
   "settings.options.colorSchemeMacTerminalDark": "Mac Terminal тёмная",
   "settings.options.colorSchemeMacTerminalLight": "Mac Terminal светлая",
   "settings.options.colorSchemeMatrix": "Матрица",
