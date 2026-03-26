@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Xunit;
 
@@ -213,6 +214,73 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Contains(resolveEvents, envelope => envelope.Event.Type == "user-input.resolved");
             Assert.Contains(resolveEvents, envelope => envelope.Event.Type == "item.completed");
             Assert.Contains(resolveEvents, envelope => envelope.Event.Type == "turn.completed");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_SpawnsFakeCodexAppServerWithExpectedColdAttachParameters()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-cold-launch",
+                SessionId = "session-cold-launch",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-cold-launch",
+                    Provider = "codex",
+                    WorkingDirectory = fakeCodex.Root
+                }
+            });
+
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-cold-launch");
+            Assert.Equal("accepted", attachResult.Status);
+
+            _ = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "session.ready",
+                maxEvents: 4);
+
+            var capture = await WaitForFakeCodexLaunchCaptureAsync(
+                fakeCodex.CapturePath,
+                static launch => launch.Arguments.Length > 0 &&
+                                 !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
+
+            Assert.Equal(["app-server"], capture.Arguments);
+            Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
+            Assert.Contains("initialize", capture.Methods);
+            Assert.Contains("initialized", capture.Methods);
+            Assert.Contains("thread/start", capture.Methods);
+            Assert.DoesNotContain("thread/resume", capture.Methods);
+            Assert.Equal("midterm", capture.InitializeClientName);
+            Assert.Equal("MidTerm Lens", capture.InitializeClientTitle);
+            Assert.False(string.IsNullOrWhiteSpace(capture.InitializeClientVersion));
+            Assert.True(capture.InitializeExperimentalApi);
+            Assert.Equal(fakeCodex.Root, capture.ThreadStartCwd);
+            Assert.Equal("never", capture.ThreadStartApprovalPolicy);
+            Assert.Equal("danger-full-access", capture.ThreadStartSandbox);
+            Assert.False(capture.ThreadStartExperimentalRawEvents);
         }
         finally
         {
@@ -555,5 +623,64 @@ public sealed class MtAgentHostCodexIntegrationTests
         };
 
         return candidates.First(File.Exists);
+    }
+
+    private static async Task<FakeCodexLaunchCapture> WaitForFakeCodexLaunchCaptureAsync(
+        string capturePath,
+        Func<FakeCodexLaunchCapture, bool> predicate)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (File.Exists(capturePath))
+            {
+                try
+                {
+                    var json = await File.ReadAllTextAsync(capturePath);
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var capture = JsonSerializer.Deserialize<FakeCodexLaunchCapture>(json);
+                        if (capture is not null && predicate(capture))
+                        {
+                            return capture;
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                }
+                catch (IOException)
+                {
+                }
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException($"Timed out waiting for fake Codex launch capture at '{capturePath}'.");
+    }
+
+    private sealed class FakeCodexLaunchCapture
+    {
+        public string[] Arguments { get; set; } = [];
+
+        public string? ProcessWorkingDirectory { get; set; }
+
+        public List<string> Methods { get; set; } = [];
+
+        public string? InitializeClientName { get; set; }
+
+        public string? InitializeClientTitle { get; set; }
+
+        public string? InitializeClientVersion { get; set; }
+
+        public bool? InitializeExperimentalApi { get; set; }
+
+        public string? ThreadStartCwd { get; set; }
+
+        public string? ThreadStartApprovalPolicy { get; set; }
+
+        public string? ThreadStartSandbox { get; set; }
+
+        public bool? ThreadStartExperimentalRawEvents { get; set; }
     }
 }

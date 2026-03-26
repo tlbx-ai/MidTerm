@@ -13,6 +13,16 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 {
+    internal delegate bool RedirectedProcessLauncher(
+        string fileName,
+        IReadOnlyList<string> args,
+        string workingDirectory,
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        IReadOnlyList<string>? pathPrependEntries,
+        string? runAsUser,
+        out TtyHostSpawner.RedirectedProcessHandle? launchedProcess,
+        out string? failure);
+
     private const string CodexMode = "codex";
     private const string OffMode = "off";
     private const string SyntheticMode = "synthetic";
@@ -24,6 +34,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private readonly SettingsService _settingsService;
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly string _mode;
+    private readonly RedirectedProcessLauncher _launcher;
 
     public SessionLensHostRuntimeService(
         SessionLensHostIngressService ingress,
@@ -31,6 +42,17 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,
         string? mode = null)
+        : this(ingress, pulse, settingsService, instanceIdentity, mode, null)
+    {
+    }
+
+    internal SessionLensHostRuntimeService(
+        SessionLensHostIngressService ingress,
+        SessionLensPulseService pulse,
+        SettingsService settingsService,
+        MidTermInstanceIdentity? instanceIdentity,
+        string? mode,
+        RedirectedProcessLauncher? launcher)
     {
         _ingress = ingress;
         _pulse = pulse;
@@ -39,6 +61,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
             0);
         _mode = NormalizeMode(mode ?? Environment.GetEnvironmentVariable(HostModeEnvironmentVariable));
+        _launcher = launcher ?? TtyHostSpawner.TryStartRedirectedProcess;
     }
 
     public bool IsEnabledFor(string? profile)
@@ -105,7 +128,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 out var environmentOverrides,
                 out var pathPrependEntries);
 
-            if (!TtyHostSpawner.TryStartRedirectedProcess(
+            if (!_launcher(
                     launch.FileName,
                     launch.Arguments,
                     workingDirectory,

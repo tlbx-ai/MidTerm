@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Common.Shells;
@@ -377,8 +378,16 @@ public static partial class SessionApiEndpoints
                 }
             }
 
-            var attached = await lensRuntime.EnsureAttachedAsync(id, session, resumeThreadId, ct).ConfigureAwait(false);
-            return attached ? Results.Ok() : Results.BadRequest("Lens native runtime is not available for this session.");
+            try
+            {
+                var attached = await lensRuntime.EnsureAttachedAsync(id, session, resumeThreadId, ct).ConfigureAwait(false);
+                return attached ? Results.Ok() : Results.BadRequest("Lens native runtime is not available for this session.");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Lens attach failed for {id}: {ex.Message}");
+                return Results.Problem(title: "Lens attach failed", detail: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
         });
 
         app.MapPost("/api/sessions/{id}/lens/detach", async (string id, CancellationToken ct) =>
