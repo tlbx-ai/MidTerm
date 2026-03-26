@@ -19,8 +19,6 @@ describe('sessionSurface', () => {
     expect(
       resolveSessionSurfaceMode({
         lensOnly: false,
-        agentControlled: false,
-        hasLensHistory: false,
         supervisor: { profile: 'shell' },
       }),
     ).toBe('terminal');
@@ -50,19 +48,14 @@ describe('sessionSurface', () => {
     ).toBe('Claude');
   });
 
-  it('lets forced lens availability temporarily claim the primary surface', async () => {
+  it('keeps terminal sessions in Terminal even when codex metadata is present', async () => {
     const { resolveSessionSurfaceMode } = await import('./sessionSurface');
 
     expect(
-      resolveSessionSurfaceMode(
-        {
-          lensOnly: false,
-          agentControlled: false,
-          hasLensHistory: false,
-          supervisor: { profile: 'shell' },
-        },
-        { lensForcedVisible: true },
-      ),
-    ).toBe('agent');
+      resolveSessionSurfaceMode({
+        lensOnly: false,
+        supervisor: { profile: 'codex' },
+      }),
+    ).toBe('terminal');
   });
 });

@@ -219,7 +219,7 @@ describe('tabManager', () => {
     expect(getTabLabelForSession('s1', 'agent')).toBe('Codex');
   });
 
-  it('lets forced lens availability claim the primary surface before metadata catches up', async () => {
+  it('does not expose Lens for ordinary terminal sessions even if Lens availability is forced', async () => {
     const { ensureSessionWrapper, getActiveTab, isTabAvailable, setSessionLensAvailability } =
       await import('./tabManager');
 
@@ -227,15 +227,9 @@ describe('tabManager', () => {
 
     setSessionLensAvailability('s1', true);
 
-    expect(isTabAvailable('s1', 'terminal')).toBe(false);
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    expect(getActiveTab('s1')).toBe('agent');
-
-    setSessionLensAvailability('s1', false);
-
-    expect(isTabAvailable('s1', 'agent')).toBe(false);
     expect(isTabAvailable('s1', 'terminal')).toBe(true);
     expect(getActiveTab('s1')).toBe('terminal');
+    expect(isTabAvailable('s1', 'agent')).toBe(false);
   });
 
   it('invokes every registered callback for tab activation and deactivation', async () => {
@@ -271,7 +265,7 @@ describe('tabManager', () => {
     expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Lens available for agent sessions without any dev-mode gate', async () => {
+  it('keeps ordinary terminal sessions terminal-only even with agent metadata', async () => {
     sessionListMock = [
       {
         id: 's1',
@@ -285,8 +279,8 @@ describe('tabManager', () => {
 
     ensureSessionWrapper('s1');
 
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    expect(getActiveTab('s1')).toBe('agent');
-    expect(isTabAvailable('s1', 'terminal')).toBe(false);
+    expect(isTabAvailable('s1', 'agent')).toBe(false);
+    expect(getActiveTab('s1')).toBe('terminal');
+    expect(isTabAvailable('s1', 'terminal')).toBe(true);
   });
 });

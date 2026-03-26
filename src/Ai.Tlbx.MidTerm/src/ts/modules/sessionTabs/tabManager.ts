@@ -39,11 +39,9 @@ interface SessionTabState {
   panels: Record<SessionTabId, HTMLDivElement>;
   activeTab: SessionTabId;
   lensAvailable: boolean;
-  lensForcedVisible: boolean;
 }
 
 const sessionTabStates = new Map<string, SessionTabState>();
-const forcedLensAvailability = new Map<string, boolean>();
 
 const tabActivationCallbacks: Partial<
   Record<SessionTabId, Array<(sessionId: string, panel: HTMLDivElement) => void>>
@@ -57,9 +55,8 @@ function getSessionById(sessionId: string): Session | null {
 
 function resolvePrimaryTab(
   session: Session | null | undefined,
-  options?: { lensForcedVisible?: boolean },
 ): Extract<SessionTabId, 'terminal' | 'agent'> {
-  return resolveSessionSurfaceMode(session, options) === 'agent' ? 'agent' : 'terminal';
+  return resolveSessionSurfaceMode(session) === 'agent' ? 'agent' : 'terminal';
 }
 
 function getTabDisplayLabel(session: Session | null | undefined, tab: SessionTabId): string {
@@ -101,9 +98,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
   if (existing) return existing;
   const session = getSessionById(sessionId);
-  const defaultTab = resolvePrimaryTab(session, {
-    lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
-  });
+  const defaultTab = resolvePrimaryTab(session);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'session-wrapper';
@@ -147,7 +142,6 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     panels,
     activeTab: defaultTab,
     lensAvailable: false,
-    lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
   };
 
   sessionTabStates.set(sessionId, state);
@@ -178,7 +172,6 @@ export function destroySessionWrapper(sessionId: string): void {
 
   state.wrapper.remove();
   sessionTabStates.delete(sessionId);
-  forcedLensAvailability.delete(sessionId);
 }
 
 /**
@@ -207,9 +200,7 @@ export function getActiveTab(sessionId: string): SessionTabId {
     return existing.activeTab;
   }
 
-  return resolvePrimaryTab(getSessionById(sessionId), {
-    lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
-  });
+  return resolvePrimaryTab(getSessionById(sessionId));
 }
 
 /**
@@ -223,12 +214,7 @@ export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
       return true;
     }
 
-    return (
-      tab ===
-      resolvePrimaryTab(getSessionById(sessionId), {
-        lensForcedVisible: forcedLensAvailability.get(sessionId) === true,
-      })
-    );
+    return tab === resolvePrimaryTab(getSessionById(sessionId));
   }
 
   if (tab === 'agent') {
@@ -251,9 +237,7 @@ export function syncSessionTabCapabilities(
     return;
   }
 
-  const primaryTab = resolvePrimaryTab(session, {
-    lensForcedVisible: state.lensForcedVisible,
-  });
+  const primaryTab = resolvePrimaryTab(session);
 
   state.lensAvailable = primaryTab === 'agent';
   setTabLabel(state.tabBar, 'agent', getAgentSurfaceLabel(session));
@@ -270,21 +254,16 @@ export function syncSessionTabCapabilities(
  * Lets Lens-driven flows expose the tab as soon as real conversation content
  * exists, even before session-list metadata has caught up.
  */
-export function setSessionLensAvailability(sessionId: string, available: boolean): void {
-  if (available) {
-    forcedLensAvailability.set(sessionId, true);
-  } else {
-    forcedLensAvailability.delete(sessionId);
-  }
-
+export function setSessionLensAvailability(sessionId: string, _available: boolean): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) {
     return;
   }
 
-  state.lensForcedVisible = available;
   const session = getSessionById(sessionId);
-  syncSessionTabCapabilities(sessionId, session);
+  state.lensAvailable = session?.lensOnly === true;
+  setTabVisible(state.tabBar, 'agent', state.lensAvailable);
+  setTabVisible(state.tabBar, 'terminal', session?.lensOnly !== true);
 }
 
 export function getTabLabelForSession(sessionId: string, tab: SessionTabId): string {
