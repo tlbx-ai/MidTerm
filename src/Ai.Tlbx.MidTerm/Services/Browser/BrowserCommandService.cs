@@ -297,6 +297,7 @@ public sealed class BrowserCommandService
         string? sessionId = null,
         string? previewName = null,
         string? previewId = null,
+        DateTimeOffset? requireClientConnectedAfterUtc = null,
         Func<int>? connectedUiClientCountProvider = null,
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
@@ -310,14 +311,19 @@ public sealed class BrowserCommandService
         while (true)
         {
             var connectedUiClientCount = connectedUiClientCountProvider?.Invoke() ?? 0;
-            latest = GetStatus(
+            var snapshot = GetStatusSnapshot(
                 targetUrl,
                 sessionId,
                 previewName,
                 previewId,
                 connectedUiClientCount);
+            latest = snapshot.Response;
 
-            if (latest.Controllable)
+            var hasFreshClient = requireClientConnectedAfterUtc is null
+                || (snapshot.DefaultClientConnectedAtUtc is { } connectedAt
+                    && connectedAt >= requireClientConnectedAfterUtc.Value);
+
+            if (latest.Controllable && hasFreshClient)
             {
                 return latest;
             }
@@ -421,6 +427,7 @@ public sealed class BrowserCommandService
         return new BrowserStatusSnapshot
         {
             IsScoped = isScoped,
+            DefaultClientConnectedAtUtc = resolved ? client.ConnectedAtUtc : null,
             Response = new BrowserStatusResponse
             {
                 Connected = true,
@@ -819,5 +826,6 @@ public sealed class BrowserCommandService
     {
         public required BrowserStatusResponse Response { get; init; }
         public bool IsScoped { get; init; }
+        public DateTimeOffset? DefaultClientConnectedAtUtc { get; init; }
     }
 }

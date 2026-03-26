@@ -394,4 +394,31 @@ public class BrowserCommandServiceTests
         Assert.True(status.HasTarget);
         Assert.True(status.HasUiClient);
     }
+
+    [Fact]
+    public async Task WaitForControllableAsync_IgnoresPreexistingClientUntilNewAttachmentArrives()
+    {
+        var service = new BrowserCommandService();
+
+        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
+        var notBefore = DateTimeOffset.UtcNow.AddMilliseconds(20);
+
+        var waitingTask = service.WaitForControllableAsync(
+            "https://example.com/",
+            sessionId: "session-a",
+            previewName: "default",
+            requireClientConnectedAfterUtc: notBefore,
+            timeout: TimeSpan.FromSeconds(1),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        await Task.Delay(50);
+        Assert.True(service.TryRegisterClient("c2", "session-a", "default", "preview-a", _ => { }));
+
+        var status = await waitingTask;
+
+        Assert.True(status.Connected);
+        Assert.True(status.Controllable);
+        Assert.NotNull(status.DefaultClient);
+        Assert.True(status.DefaultClient!.ConnectedAtUtc >= notBefore);
+    }
 }

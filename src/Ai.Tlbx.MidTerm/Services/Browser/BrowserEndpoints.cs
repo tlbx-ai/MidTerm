@@ -163,6 +163,7 @@ public static class BrowserEndpoints
                 url,
                 sessionId,
                 previewName,
+                requireClientConnectedAfterUtc: DateTimeOffset.UtcNow,
                 connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
                 cancellationToken: cancellationToken);
 
