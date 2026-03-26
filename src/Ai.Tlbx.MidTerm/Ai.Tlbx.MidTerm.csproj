@@ -151,7 +151,7 @@
   <!-- Debug: embed all wwwroot (uncompressed text + binary) -->
   <!-- DevWatch=true skips embedding — debug serves from disk via PhysicalFileProvider -->
   <ItemGroup Condition="'$(IsPublishing)' != 'true' And '$(DevWatch)' != 'true'">
-    <EmbeddedResource Include="wwwroot\**\*" />
+    <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\**\*.br" />
   </ItemGroup>
 
   <!-- Publish: embed .br for compressible files, originals for non-compressible binaries -->

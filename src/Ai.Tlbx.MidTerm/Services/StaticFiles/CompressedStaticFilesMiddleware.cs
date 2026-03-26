@@ -74,6 +74,13 @@ public sealed class CompressedStaticFilesMiddleware
             return;
         }
 
+        var originalFileInfo = _fileProvider.GetFileInfo(path.TrimStart('/'));
+        if (originalFileInfo.Exists && originalFileInfo.LastModified > fileInfo.LastModified)
+        {
+            await _next(context);
+            return;
+        }
+
         var eTag = StaticAssetCacheHeaders.CreateETag(path, fileInfo);
         var cacheControl = StaticAssetCacheHeaders.GetCacheControl(path);
         context.Response.Headers.ETag = eTag;
