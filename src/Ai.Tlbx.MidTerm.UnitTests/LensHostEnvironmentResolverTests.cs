@@ -40,6 +40,22 @@ public sealed class LensHostEnvironmentResolverTests
     }
 
     [Fact]
+    public void ResolveWindowsProfileDirectory_StripsWindowsDomainWhenFallingBackToUsersRoot()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(
+            @"ATURIS\johan",
+            userSid: null);
+
+        Assert.NotNull(profileDirectory);
+        Assert.EndsWith(Path.Combine("Users", "johan"), profileDirectory!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ApplyUserProfileEnvironment_PrependsCommonUserCliPaths()
     {
         if (!OperatingSystem.IsWindows())
