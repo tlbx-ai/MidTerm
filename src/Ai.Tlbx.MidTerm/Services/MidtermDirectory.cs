@@ -188,6 +188,7 @@ public static class MidtermDirectory
         | `mt_target` | Current named preview target |
         | `mt_cookies` | All cookies in the current named preview jar |
         | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
+        | `mt_clearstate` | Clear the current preview's cookies, storage, cache, and service workers |
         | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
         | `mt_apply_update [source]` | Apply pending update and wait for server |
         | `mt_sessions` | List terminal sessions |

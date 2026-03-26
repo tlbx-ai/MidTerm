@@ -271,6 +271,22 @@ public sealed class WebPreviewService
         return ClearCookiesInternal(GetOrCreateState(sessionId, previewName));
     }
 
+    public bool ClearState(string sessionId, string? previewName = null)
+    {
+        var state = GetOrCreateState(sessionId, previewName);
+        var target = state.TargetUri;
+        if (target is not null)
+        {
+            DeleteCookieFile(state, target);
+        }
+
+        ResetCookieJar(state);
+        ClearLog(state);
+        ClearLeakedPathRoutes(state.RouteKey);
+        state.TargetRevision++;
+        return true;
+    }
+
     public WebPreviewCookiesResponse GetCookies(string sessionId, string? previewName = null)
     {
         return TryGetState(sessionId, previewName, out var state)

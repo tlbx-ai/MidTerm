@@ -37,6 +37,42 @@ export interface BrowserPreviewClientResponse {
   origin?: string;
 }
 
+export interface BrowserClientInfo {
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+  browserId?: string | null;
+  connectedAtUtc: string;
+  isMainBrowser: boolean;
+  isVisible: boolean;
+  hasFocus: boolean;
+  isTopLevel: boolean;
+}
+
+export interface BrowserStatusResponse {
+  connected: boolean;
+  controllable: boolean;
+  hasTarget: boolean;
+  hasUiClient: boolean;
+  isScoped: boolean;
+  state: string;
+  scopeDescription?: string | null;
+  statusMessage?: string | null;
+  connectedClientCount: number;
+  totalConnectedClientCount: number;
+  connectedUiClientCount: number;
+  targetUrl?: string | null;
+  defaultClient?: BrowserClientInfo | null;
+  clients: BrowserClientInfo[];
+}
+
+export interface BrowserCommandResponse {
+  success: boolean;
+  result?: string | null;
+  error?: string | null;
+  matchCount?: number;
+}
+
 function buildPreviewQuery(sessionId: string, previewName?: string): string {
   const query = new URLSearchParams();
   query.set('sessionId', sessionId);
@@ -194,6 +230,31 @@ export async function clearWebPreviewCookies(
   }
 }
 
+/** Clear session-scoped server-side preview state while preserving the active target. */
+export async function clearWebPreviewState(
+  sessionId: string,
+  previewName: string,
+): Promise<WebPreviewTargetResponse | null> {
+  if (isEmbeddedWebPreviewContext() || !sessionId) {
+    return null;
+  }
+
+  try {
+    const res = await fetch(
+      `/api/webpreview/state/clear?${buildPreviewQuery(sessionId, previewName)}`,
+      {
+        method: 'POST',
+      },
+    );
+    if (!res.ok) {
+      return null;
+    }
+    return (await res.json()) as WebPreviewTargetResponse;
+  } catch {
+    return null;
+  }
+}
+
 /** Trigger a soft or hard reload for a named web preview. */
 export async function reloadWebPreview(
   sessionId: string,
@@ -235,6 +296,64 @@ export async function createBrowserPreviewClient(
       return null;
     }
     return (await res.json()) as BrowserPreviewClientResponse;
+  } catch {
+    return null;
+  }
+}
+
+/** Get scoped browser bridge status for the active preview. */
+export async function getBrowserPreviewStatus(
+  sessionId: string,
+  previewName: string,
+  previewId?: string,
+): Promise<BrowserStatusResponse | null> {
+  if (!sessionId) {
+    return null;
+  }
+
+  const query = new URLSearchParams();
+  query.set('sessionId', sessionId);
+  if (previewName) {
+    query.set('previewName', previewName);
+  }
+  if (previewId) {
+    query.set('previewId', previewId);
+  }
+
+  try {
+    const res = await fetch(`/api/browser/status?${query.toString()}`);
+    if (!res.ok) {
+      return null;
+    }
+    return (await res.json()) as BrowserStatusResponse;
+  } catch {
+    return null;
+  }
+}
+
+/** Run a scoped browser command through the MidTerm browser bridge. */
+export async function runBrowserCommand(
+  command: string,
+  sessionId: string,
+  previewName: string,
+  previewId?: string,
+): Promise<BrowserCommandResponse | null> {
+  if (isEmbeddedWebPreviewContext() || !sessionId) {
+    return null;
+  }
+
+  try {
+    const res = await fetch('/api/browser/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        command,
+        sessionId,
+        previewName,
+        ...(previewId ? { previewId } : {}),
+      }),
+    });
+    return (await res.json()) as BrowserCommandResponse;
   } catch {
     return null;
   }

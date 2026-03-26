@@ -9196,6 +9196,40 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
+.web-preview-status-banner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, black 12%);
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  pointer-events: none;
+}
+
+.web-preview-status-banner.hidden {
+  display: none;
+}
+
+.web-preview-status-banner[data-severity='info'] {
+  border-color: var(--accent-blue-25);
+  background: color-mix(in srgb, var(--accent-blue-10) 62%, var(--bg-elevated) 38%);
+}
+
+.web-preview-status-banner[data-severity='warn'] {
+  border-color: var(--accent-gold-25);
+  background: color-mix(in srgb, var(--accent-gold-10) 62%, var(--bg-elevated) 38%);
+}
+
+.web-preview-status-banner[data-severity='error'] {
+  border-color: color-mix(in srgb, #d95c5c 45%, var(--border-color) 55%);
+  background: color-mix(in srgb, #d95c5c 14%, var(--bg-elevated) 86%);
+}
+
 .web-preview-dock-body.viewport-constrained {
   display: flex;
   align-items: center;

@@ -634,6 +634,40 @@ public sealed partial class WebPreviewProxyMiddleware
                   for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
                   cc="";res.result="cleared";
                   break;}
+                case"clearstate":{
+                  (async function(){
+                    try{
+                      var all=document.cookie.split(";");
+                      for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
+                      cc="";
+                      try{localStorage.clear();}catch(e){}
+                      try{sessionStorage.clear();}catch(e){}
+                      try{
+                        if(window.indexedDB&&typeof indexedDB.databases==="function"){
+                          var dbs=await indexedDB.databases();
+                          for(var i=0;i<dbs.length;i++){
+                            var db=dbs[i];
+                            if(db&&db.name){try{indexedDB.deleteDatabase(db.name);}catch(e){}}
+                          }
+                        }
+                      }catch(e){}
+                      try{
+                        if(window.caches&&typeof caches.keys==="function"){
+                          var keys=await caches.keys();
+                          await Promise.all(keys.map(function(key){return caches.delete(key);}));
+                        }
+                      }catch(e){}
+                      try{
+                        if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
+                          var regs=await navigator.serviceWorker.getRegistrations();
+                          await Promise.all(regs.map(function(reg){return reg.unregister();}));
+                        }
+                      }catch(e){}
+                      res.result="cleared state";
+                    }catch(e){res.success=false;res.error=e.message||String(e);}
+                    bws.send(JSON.stringify(res));
+                  })();
+                  return;}
                 default:res.success=false;res.error="unknown command: "+msg.command;
               }
             }catch(e){res.success=false;res.error=e.message||String(e);}

@@ -258,4 +258,27 @@ public class WebPreviewServiceTests
         Assert.Equal(1, first!.TargetRevision);
         Assert.Equal(2, second!.TargetRevision);
     }
+
+    [Fact]
+    public void ClearState_PreservesTargetAndBumpsRevisionWhileResettingCookies()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", "default", "https://example.com/app"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", "default", out var routeKey));
+        Assert.True(service.SetCookieFromRaw(routeKey, "theme=dark; Path=/"));
+
+        var before = service.GetPreviewSession("session-1", "default");
+        Assert.NotNull(before);
+
+        Assert.True(service.ClearState("session-1", "default"));
+
+        var after = service.GetPreviewSession("session-1", "default");
+        var cookies = service.GetCookies("session-1", "default");
+
+        Assert.NotNull(after);
+        Assert.Equal("https://example.com/app", service.GetTargetUrl("session-1", "default"));
+        Assert.Equal(before!.TargetRevision + 1, after!.TargetRevision);
+        Assert.True(string.IsNullOrEmpty(cookies.Header));
+        Assert.Empty(cookies.Cookies);
+    }
 }

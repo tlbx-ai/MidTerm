@@ -334,7 +334,8 @@ public class BrowserCommandServiceTests
         Assert.Contains("state: waiting", status, StringComparison.Ordinal);
         Assert.Contains("ui clients: 0", status, StringComparison.Ordinal);
         Assert.Contains("/ws/state", status, StringComparison.Ordinal);
-        Assert.Contains("Reopen the owning MidTerm browser tab", status, StringComparison.Ordinal);
+        Assert.Contains("dev browser cannot work", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("owning MidTerm browser tab", status, StringComparison.Ordinal);
     }
 
     [Fact]
