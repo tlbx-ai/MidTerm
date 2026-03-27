@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CSS_THEMES } from './cssThemes';
+import { CSS_THEMES, getNativeColorScheme } from './cssThemes';
 
 const requiredCtaTokens = [
   '--cta-primary',
@@ -38,5 +38,12 @@ describe('CSS_THEMES CTA tokens', () => {
     expect(CSS_THEMES.solarizedLight['--cta-primary']).toBe(
       CSS_THEMES.solarizedLight['--accent-gold'],
     );
+  });
+
+  it('maps browser-native color scheme to the active UI brightness', () => {
+    expect(getNativeColorScheme('dark')).toBe('dark');
+    expect(getNativeColorScheme('solarizedDark')).toBe('dark');
+    expect(getNativeColorScheme('light')).toBe('light');
+    expect(getNativeColorScheme('solarizedLight')).toBe('light');
   });
 });

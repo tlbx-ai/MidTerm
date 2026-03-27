@@ -290,6 +290,8 @@
 
 /* Midnight Harbor Theme Variables */
 :root {
+  color-scheme: dark;
+
   /* === BACKGROUNDS (17-point luminance spread) === */
   --bg-terminal: #05050a; /* L: 1.8% - The void */
   --terminal-bg: #05050a; /* Alias for compatibility */
@@ -478,6 +480,17 @@
   --app-background-size: cover;
   --app-background-repeat: no-repeat;
   --app-background-position: center center;
+}
+
+select,
+option,
+optgroup {
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+}
+
+select {
+  color-scheme: inherit;
 }
 
 /* Global dark scrollbar styling */
