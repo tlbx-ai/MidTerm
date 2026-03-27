@@ -513,7 +513,7 @@ public sealed class SessionLensPulseServiceTests
 
         Assert.NotNull(snapshot);
         var transcript = snapshot!.Transcript;
-        Assert.Equal(4, transcript.Count);
+        Assert.Equal(5, transcript.Count);
         Assert.Collection(
             transcript,
             entry =>
@@ -538,12 +538,20 @@ public sealed class SessionLensPulseServiceTests
             {
                 Assert.Equal("assistant", entry.Kind);
                 Assert.Equal("turn-2", entry.TurnId);
+                Assert.Equal("assistant-stream:turn-2", entry.EntryId);
+                Assert.Equal("second answer", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("assistant", entry.Kind);
+                Assert.Equal("turn-2", entry.TurnId);
+                Assert.Equal("assistant:assistant-item-2", entry.EntryId);
                 Assert.Equal("second answer final", entry.Body);
             });
     }
 
     [Fact]
-    public void GetSnapshot_MergesAssistantStreamingAndFinalItemIntoOneTranscriptRow()
+    public void GetSnapshot_PreservesAssistantChronologyWhenFinalItemArrivesAfterToolWork()
     {
         var service = new SessionLensPulseService();
 
@@ -570,22 +578,25 @@ public sealed class SessionLensPulseServiceTests
             ContentDelta = new LensPulseContentDeltaPayload
             {
                 StreamKind = "assistant_text",
-                Delta = "Hello"
+                Delta = "I will inspect the directory first."
             }
         });
         service.Append(new LensPulseEvent
         {
-            EventId = "assistant-delta-2",
+            EventId = "tool-start",
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
+            ItemId = "tool-1",
             CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:02Z"),
-            Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            Type = "item.started",
+            Item = new LensPulseItemPayload
             {
-                StreamKind = "assistant_text",
-                Delta = " world"
+                ItemType = "command",
+                Status = "in_progress",
+                Title = "List files",
+                Detail = "Get-ChildItem"
             }
         });
         service.Append(new LensPulseEvent
@@ -602,7 +613,7 @@ public sealed class SessionLensPulseServiceTests
             {
                 ItemType = "assistant_message",
                 Status = "completed",
-                Detail = "Hello world!"
+                Detail = "Here is the final table."
             }
         });
 
@@ -610,11 +621,29 @@ public sealed class SessionLensPulseServiceTests
 
         Assert.NotNull(snapshot);
         var assistantEntries = snapshot!.Transcript.Where(entry => entry.Kind == "assistant").ToList();
-        var assistant = Assert.Single(assistantEntries);
-        Assert.Equal("assistant:turn-1", assistant.EntryId);
-        Assert.Equal("Hello world!", assistant.Body);
-        Assert.False(assistant.Streaming);
-        Assert.Equal("completed", assistant.Status);
+        Assert.Equal(2, assistantEntries.Count);
+        Assert.Collection(
+            snapshot.Transcript.Where(entry => entry.Kind is "assistant" or "tool"),
+            entry =>
+            {
+                Assert.Equal("assistant", entry.Kind);
+                Assert.Equal("assistant-stream:turn-1", entry.EntryId);
+                Assert.Equal("I will inspect the directory first.", entry.Body);
+                Assert.True(entry.Streaming);
+            },
+            entry =>
+            {
+                Assert.Equal("tool", entry.Kind);
+                Assert.Equal("tool:tool-1", entry.EntryId);
+            },
+            entry =>
+            {
+                Assert.Equal("assistant", entry.Kind);
+                Assert.Equal("assistant:assistant-item-1", entry.EntryId);
+                Assert.Equal("Here is the final table.", entry.Body);
+                Assert.False(entry.Streaming);
+                Assert.Equal("completed", entry.Status);
+            });
     }
 
     [Fact]

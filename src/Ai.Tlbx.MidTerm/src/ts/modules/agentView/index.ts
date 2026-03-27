@@ -61,7 +61,6 @@ interface SessionLensViewState {
   requestQuestionIndexById: Record<string, number>;
   transcriptAutoScrollPinned: boolean;
   transcriptRenderScheduled: number | null;
-  transcriptVisualOrderById: Map<string, number>;
   activationState:
     | 'idle'
     | 'opening'
@@ -575,7 +574,6 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     requestQuestionIndexById: {},
     transcriptAutoScrollPinned: true,
     transcriptRenderScheduled: null,
-    transcriptVisualOrderById: new Map<string, number>(),
     activationState: 'idle',
     activationDetail: '',
     activationTrace: [],
@@ -1249,7 +1247,6 @@ function renderAgentView(
   );
   state.optimisticTurns = optimistic.optimisticTurns;
   const renderedEntries = stabilizeTranscriptEntryOrder(
-    state,
     withLiveAssistantState(
       snapshot,
       withActivationIssueNotice(
@@ -1349,32 +1346,9 @@ function handleLensTurnFailed(event: Event): void {
 }
 
 function stabilizeTranscriptEntryOrder(
-  state: SessionLensViewState,
   entries: readonly LensTranscriptEntry[],
 ): LensTranscriptEntry[] {
-  const previousOrderById = state.transcriptVisualOrderById;
-  const nextOrderById = new Map<string, number>();
-  let nextVisualOrder =
-    Math.max(0, ...Array.from(previousOrderById.values(), (value) => Math.trunc(value))) + 1;
-
-  const stabilized = entries.map((entry) => {
-    if (entry.order < 0) {
-      nextOrderById.set(entry.id, entry.order);
-      return { ...entry };
-    }
-
-    const preservedOrder = previousOrderById.get(entry.id);
-    const visualOrder = preservedOrder ?? nextVisualOrder++;
-    nextOrderById.set(entry.id, visualOrder);
-    return {
-      ...entry,
-      order: visualOrder,
-      meta: entry.meta,
-    };
-  });
-
-  state.transcriptVisualOrderById = nextOrderById;
-  return stabilized.sort(
+  return [...entries].sort(
     (left, right) => left.order - right.order || left.id.localeCompare(right.id),
   );
 }
@@ -1998,8 +1972,11 @@ function createTranscriptEntry(
     body.className = 'agent-transcript-body';
     if (entry.kind === 'assistant') {
       body.classList.add('agent-transcript-markdown');
-      body.innerHTML = renderMarkdownFragment(entry.body);
-      collapseSingleParagraphMarkdownBody(body);
+      const content = document.createElement('div');
+      content.className = 'agent-transcript-markdown-content';
+      content.innerHTML = renderMarkdownFragment(entry.body);
+      collapseSingleParagraphMarkdownBody(content);
+      body.appendChild(content);
       if (entry.live) {
         const caret = document.createElement('span');
         caret.className = 'agent-transcript-caret';

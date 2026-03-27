@@ -57,7 +57,16 @@ import {
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
-import { getTerminalEnterOverride, isPowerShellEnterTarget } from './enterBehavior';
+import {
+  getTerminalEnterOverride,
+  isPowerShellEnterTarget,
+  type EnterOverrideInput,
+} from './enterBehavior';
+import {
+  applyEnterModifierLatch,
+  updateEnterModifierLatch,
+  type EnterModifierLatchState,
+} from './enterModifierLatch';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -105,8 +114,10 @@ let calibrationPromise: Promise<void> | null = null;
 
 // Debounce timer for focus operations
 let focusDebounceTimer: number | null = null;
+const ENTER_MODIFIER_LATCH_MAX_AGE_MS = 1500;
+const enterModifierLatches = new Map<string, EnterModifierLatchState>();
 
-function getSessionEnterOverride(sessionId: string, event: KeyboardEvent): string | null {
+function getSessionEnterOverride(sessionId: string, event: EnterOverrideInput): string | null {
   const foreground = getForegroundInfo(sessionId);
   const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
   return getTerminalEnterOverride(
@@ -116,6 +127,42 @@ function getSessionEnterOverride(sessionId: string, event: KeyboardEvent): strin
       ? 'powershell'
       : 'default',
   );
+}
+
+function updateSessionEnterModifierLatch(
+  sessionId: string,
+  event: KeyboardEvent,
+  container?: HTMLDivElement,
+): void {
+  if ((event.type !== 'keydown' && event.type !== 'keyup') || event.isComposing) {
+    return;
+  }
+
+  if (container && !shouldCaptureTerminalKey(container, event.target)) {
+    return;
+  }
+
+  const eventType = event.type;
+  const next = updateEnterModifierLatch(
+    enterModifierLatches.get(sessionId),
+    {
+      type: eventType,
+      key: event.key,
+      code: event.code,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+    },
+    performance.now(),
+  );
+  if (next) {
+    enterModifierLatches.set(sessionId, next);
+  } else {
+    enterModifierLatches.delete(sessionId);
+  }
+}
+
+function clearSessionEnterModifierLatch(sessionId: string): void {
+  enterModifierLatches.delete(sessionId);
 }
 
 function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget | null): boolean {
@@ -139,7 +186,15 @@ function tryHandleTerminalEnterOverride(
     return false;
   }
 
-  const enterOverride = getSessionEnterOverride(sessionId, event);
+  const enterOverride = getSessionEnterOverride(
+    sessionId,
+    applyEnterModifierLatch(
+      event,
+      enterModifierLatches.get(sessionId),
+      performance.now(),
+      ENTER_MODIFIER_LATCH_MAX_AGE_MS,
+    ),
+  );
   if (enterOverride === null) {
     return false;
   }
@@ -438,6 +493,9 @@ export function createTerminalForSession(
           showSmartInput();
         }
       });
+      xtermTextarea.addEventListener('blur', () => {
+        clearSessionEnterModifierLatch(sessionId);
+      });
     }
 
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
@@ -672,6 +730,24 @@ export function setupTerminalEvents(
   const enterOverrideHandler = (event: KeyboardEvent) => {
     tryHandleTerminalEnterOverride(sessionId, event, container);
   };
+  const enterModifierKeydownHandler = (event: KeyboardEvent) => {
+    updateSessionEnterModifierLatch(sessionId, event, container);
+  };
+  const enterModifierKeyupHandler = (event: KeyboardEvent) => {
+    updateSessionEnterModifierLatch(sessionId, event, container);
+  };
+  container.addEventListener('keydown', enterModifierKeydownHandler, true);
+  container.addEventListener('keyup', enterModifierKeyupHandler, true);
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keydown', enterModifierKeydownHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keyup', enterModifierKeyupHandler, true);
+    },
+  });
   container.addEventListener('keydown', enterOverrideHandler, true);
 
   // Keyboard shortcuts for copy/paste
@@ -828,6 +904,8 @@ export function setupTerminalEvents(
 export function destroyTerminalForSession(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
+
+  clearSessionEnterModifierLatch(sessionId);
 
   // Clean up xterm event disposables
   if (state.disposables) {

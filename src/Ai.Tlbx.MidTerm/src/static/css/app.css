@@ -10073,6 +10073,7 @@ body.shared-session-mode .session-tab-bar {
   background: transparent;
   box-shadow: none;
   margin: 0 auto;
+  isolation: isolate;
 }
 
 .agent-transcript-positive {
@@ -10319,6 +10320,8 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-transcript-body {
   font-family: var(--font-ui);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .agent-transcript-user .agent-transcript-body {
@@ -10382,11 +10385,29 @@ body.shared-session-mode .session-tab-bar {
   }
 }
 
+.agent-transcript-markdown {
+  overflow: hidden;
+}
+
+.agent-transcript-markdown-content {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
 .agent-transcript-markdown > :first-child {
   margin-top: 0;
 }
 
 .agent-transcript-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-transcript-markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.agent-transcript-markdown-content > :last-child {
   margin-bottom: 0;
 }
 

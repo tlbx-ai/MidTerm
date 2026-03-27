@@ -1514,6 +1514,127 @@ describe('agentView dev errors', () => {
     });
   });
 
+  it('keeps backend transcript order when a turn has both streamed and final assistant rows', async () => {
+    const { buildLensTranscriptEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-27T16:40:59Z',
+      latestSequence: 12,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-27T16:40:59Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-2',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: 'gpt-5',
+        effort: 'medium',
+        startedAt: '2026-03-27T16:40:24Z',
+        completedAt: '2026-03-27T16:40:59Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      transcript: [
+        {
+          entryId: 'user:turn-2',
+          order: 1,
+          kind: 'user',
+          turnId: 'turn-2',
+          itemId: 'local-user:turn-2',
+          requestId: null,
+          status: 'completed',
+          itemType: 'user_message',
+          title: null,
+          body: 'erstelle eine tabelle',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-27T16:40:24Z',
+          updatedAt: '2026-03-27T16:40:24Z',
+        },
+        {
+          entryId: 'assistant-stream:turn-2',
+          order: 2,
+          kind: 'assistant',
+          turnId: 'turn-2',
+          itemId: null,
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Ich lese kurz den Inhalt des aktuellen Arbeitsverzeichnisses.',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-03-27T16:40:25Z',
+          updatedAt: '2026-03-27T16:40:25Z',
+        },
+        {
+          entryId: 'tool:tool-1',
+          order: 3,
+          kind: 'tool',
+          turnId: 'turn-2',
+          itemId: 'tool-1',
+          requestId: null,
+          status: 'completed',
+          itemType: 'command',
+          title: 'Get-ChildItem',
+          body: 'Dateiliste abgefragt',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-27T16:40:32Z',
+          updatedAt: '2026-03-27T16:40:32Z',
+        },
+        {
+          entryId: 'assistant:assistant-item-2',
+          order: 4,
+          kind: 'assistant',
+          turnId: 'turn-2',
+          itemId: 'assistant-item-2',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_message',
+          title: null,
+          body: '| Name | Groesse |\n| --- | --- |\n| file.txt | 42 |',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-27T16:40:58Z',
+          updatedAt: '2026-03-27T16:40:59Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const transcript = buildLensTranscriptEntries(snapshot, []);
+
+    expect(transcript.map((entry) => entry.id)).toEqual([
+      'user:turn-2',
+      'assistant-stream:turn-2',
+      'tool:tool-1',
+      'assistant:assistant-item-2',
+    ]);
+    expect(transcript[1]?.live).toBe(true);
+    expect(transcript[3]?.live).toBe(false);
+  });
+
   it.skip('hides normal state-management events and merges tool updates', async () => {
     const { buildLensTranscriptEntries } = await import('./index');
 

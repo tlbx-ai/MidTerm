@@ -971,7 +971,6 @@ public sealed class SessionLensPulseService
     {
         return transcriptKind switch
         {
-            "assistant" when !string.IsNullOrWhiteSpace(lensEvent.TurnId) => $"assistant:{lensEvent.TurnId}",
             "assistant" => $"assistant:{canonicalItemId}",
             "user" when !string.IsNullOrWhiteSpace(lensEvent.TurnId) => $"user:{lensEvent.TurnId}",
             "user" => $"user:{canonicalItemId}",
@@ -989,8 +988,9 @@ public sealed class SessionLensPulseService
         var turnId = lensEvent.TurnId ?? state.CurrentTurn.TurnId;
         return transcriptKind switch
         {
-            "assistant" when !string.IsNullOrWhiteSpace(turnId) => $"assistant:{turnId}",
-            "assistant" => $"assistant:{lensEvent.ItemId ?? lensEvent.EventId}",
+            "assistant" when !string.IsNullOrWhiteSpace(lensEvent.ItemId) => $"assistant:{lensEvent.ItemId}",
+            "assistant" when !string.IsNullOrWhiteSpace(turnId) => $"assistant-stream:{turnId}",
+            "assistant" => $"assistant-stream:{lensEvent.EventId}",
             "tool" when !string.IsNullOrWhiteSpace(lensEvent.ItemId) => $"tool:{lensEvent.ItemId}",
             "tool" => $"tool:{streamKind}:{turnId ?? lensEvent.EventId}",
             "reasoning" => $"reasoning:{streamKind}:{turnId ?? lensEvent.ItemId ?? lensEvent.EventId}",
