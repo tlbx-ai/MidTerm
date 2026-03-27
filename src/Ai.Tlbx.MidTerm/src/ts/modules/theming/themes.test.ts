@@ -37,7 +37,7 @@ describe('themes', () => {
       }),
     );
 
-    expect(theme.background).toBe('rgba(5, 5, 10, 0.400)');
+    expect(theme.background).toBe('rgba(12, 12, 12, 0.400)');
   });
 
   it('applies terminal transparency to ANSI background palette colors', () => {
@@ -47,8 +47,8 @@ describe('themes', () => {
       }),
     );
 
-    expect(theme.red).toBe('rgba(240, 122, 141, 0.400)');
-    expect(theme.brightBlue).toBe('rgba(143, 181, 255, 0.400)');
+    expect(theme.red).toBe('rgba(197, 15, 31, 0.400)');
+    expect(theme.brightBlue).toBe('rgba(59, 120, 255, 0.400)');
   });
 
   it('allows the terminal transparency slider to reach a fully transparent xterm background', () => {
@@ -58,7 +58,7 @@ describe('themes', () => {
       }),
     );
 
-    expect(theme.background).toBe('rgba(5, 5, 10, 0.000)');
+    expect(theme.background).toBe('rgba(12, 12, 12, 0.000)');
   });
 
   it('falls back to ui transparency when terminal transparency is absent', () => {
@@ -69,7 +69,7 @@ describe('themes', () => {
       }),
     );
 
-    expect(theme.background).toBe('rgba(5, 5, 10, 0.650)');
+    expect(theme.background).toBe('rgba(12, 12, 12, 0.650)');
   });
 
   it('resolves the mac terminal dark palette', () => {

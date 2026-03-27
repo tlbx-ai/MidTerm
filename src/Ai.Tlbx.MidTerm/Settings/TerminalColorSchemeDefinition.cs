@@ -3,30 +3,30 @@ namespace Ai.Tlbx.MidTerm.Settings;
 public sealed class TerminalColorSchemeDefinition
 {
     public string Name { get; set; } = "";
-    public string Background { get; set; } = "#05050A";
-    public string Foreground { get; set; } = "#E0E2F0";
-    public string Cursor { get; set; } = "#E0E2F0";
-    public string CursorAccent { get; set; } = "#05050A";
+    public string Background { get; set; } = "#0C0C0C";
+    public string Foreground { get; set; } = "#CCCCCC";
+    public string Cursor { get; set; } = "#CCCCCC";
+    public string CursorAccent { get; set; } = "#0C0C0C";
     public string SelectionBackground { get; set; } = "#2D3044";
     public string ScrollbarSliderBackground { get; set; } = "rgba(58, 62, 82, 0.5)";
     public string ScrollbarSliderHoverBackground { get; set; } = "rgba(123, 162, 247, 0.5)";
     public string ScrollbarSliderActiveBackground { get; set; } = "rgba(123, 162, 247, 0.7)";
-    public string Black { get; set; } = "#1C1E2A";
-    public string Red { get; set; } = "#F07A8D";
-    public string Green { get; set; } = "#8FD694";
-    public string Yellow { get; set; } = "#E8B44C";
-    public string Blue { get; set; } = "#7BA2F7";
-    public string Magenta { get; set; } = "#9D8CFF";
-    public string Cyan { get; set; } = "#7DCFFF";
-    public string White { get; set; } = "#D4D7E8";
-    public string BrightBlack { get; set; } = "#767B94";
-    public string BrightRed { get; set; } = "#F5A962";
-    public string BrightGreen { get; set; } = "#A8E5AD";
-    public string BrightYellow { get; set; } = "#F5C97A";
-    public string BrightBlue { get; set; } = "#8FB5FF";
-    public string BrightMagenta { get; set; } = "#B5A8FF";
-    public string BrightCyan { get; set; } = "#9DDDFF";
-    public string BrightWhite { get; set; } = "#E0E2F0";
+    public string Black { get; set; } = "#0C0C0C";
+    public string Red { get; set; } = "#C50F1F";
+    public string Green { get; set; } = "#13A10E";
+    public string Yellow { get; set; } = "#C19C00";
+    public string Blue { get; set; } = "#0037DA";
+    public string Magenta { get; set; } = "#881798";
+    public string Cyan { get; set; } = "#3A96DD";
+    public string White { get; set; } = "#3A96DD";
+    public string BrightBlack { get; set; } = "#767676";
+    public string BrightRed { get; set; } = "#E74856";
+    public string BrightGreen { get; set; } = "#16C60C";
+    public string BrightYellow { get; set; } = "#F9F1A5";
+    public string BrightBlue { get; set; } = "#3B78FF";
+    public string BrightMagenta { get; set; } = "#B4009E";
+    public string BrightCyan { get; set; } = "#61D6D6";
+    public string BrightWhite { get; set; } = "#F2F2F2";
 
     internal static TerminalColorSchemeDefinition? Normalize(TerminalColorSchemeDefinition? scheme)
     {
@@ -44,30 +44,30 @@ public sealed class TerminalColorSchemeDefinition
         return new TerminalColorSchemeDefinition
         {
             Name = name,
-            Background = NormalizeRequiredString(scheme.Background, "#05050A"),
-            Foreground = NormalizeRequiredString(scheme.Foreground, "#E0E2F0"),
-            Cursor = NormalizeRequiredString(scheme.Cursor, "#E0E2F0"),
-            CursorAccent = NormalizeRequiredString(scheme.CursorAccent, "#05050A"),
+            Background = NormalizeRequiredString(scheme.Background, "#0C0C0C"),
+            Foreground = NormalizeRequiredString(scheme.Foreground, "#CCCCCC"),
+            Cursor = NormalizeRequiredString(scheme.Cursor, "#CCCCCC"),
+            CursorAccent = NormalizeRequiredString(scheme.CursorAccent, "#0C0C0C"),
             SelectionBackground = NormalizeRequiredString(scheme.SelectionBackground, "#2D3044"),
             ScrollbarSliderBackground = NormalizeRequiredString(scheme.ScrollbarSliderBackground, "rgba(58, 62, 82, 0.5)"),
             ScrollbarSliderHoverBackground = NormalizeRequiredString(scheme.ScrollbarSliderHoverBackground, "rgba(123, 162, 247, 0.5)"),
             ScrollbarSliderActiveBackground = NormalizeRequiredString(scheme.ScrollbarSliderActiveBackground, "rgba(123, 162, 247, 0.7)"),
-            Black = NormalizeRequiredString(scheme.Black, "#1C1E2A"),
-            Red = NormalizeRequiredString(scheme.Red, "#F07A8D"),
-            Green = NormalizeRequiredString(scheme.Green, "#8FD694"),
-            Yellow = NormalizeRequiredString(scheme.Yellow, "#E8B44C"),
-            Blue = NormalizeRequiredString(scheme.Blue, "#7BA2F7"),
-            Magenta = NormalizeRequiredString(scheme.Magenta, "#9D8CFF"),
-            Cyan = NormalizeRequiredString(scheme.Cyan, "#7DCFFF"),
-            White = NormalizeRequiredString(scheme.White, "#D4D7E8"),
-            BrightBlack = NormalizeRequiredString(scheme.BrightBlack, "#767B94"),
-            BrightRed = NormalizeRequiredString(scheme.BrightRed, "#F5A962"),
-            BrightGreen = NormalizeRequiredString(scheme.BrightGreen, "#A8E5AD"),
-            BrightYellow = NormalizeRequiredString(scheme.BrightYellow, "#F5C97A"),
-            BrightBlue = NormalizeRequiredString(scheme.BrightBlue, "#8FB5FF"),
-            BrightMagenta = NormalizeRequiredString(scheme.BrightMagenta, "#B5A8FF"),
-            BrightCyan = NormalizeRequiredString(scheme.BrightCyan, "#9DDDFF"),
-            BrightWhite = NormalizeRequiredString(scheme.BrightWhite, "#E0E2F0")
+            Black = NormalizeRequiredString(scheme.Black, "#0C0C0C"),
+            Red = NormalizeRequiredString(scheme.Red, "#C50F1F"),
+            Green = NormalizeRequiredString(scheme.Green, "#13A10E"),
+            Yellow = NormalizeRequiredString(scheme.Yellow, "#C19C00"),
+            Blue = NormalizeRequiredString(scheme.Blue, "#0037DA"),
+            Magenta = NormalizeRequiredString(scheme.Magenta, "#881798"),
+            Cyan = NormalizeRequiredString(scheme.Cyan, "#3A96DD"),
+            White = NormalizeRequiredString(scheme.White, "#3A96DD"),
+            BrightBlack = NormalizeRequiredString(scheme.BrightBlack, "#767676"),
+            BrightRed = NormalizeRequiredString(scheme.BrightRed, "#E74856"),
+            BrightGreen = NormalizeRequiredString(scheme.BrightGreen, "#16C60C"),
+            BrightYellow = NormalizeRequiredString(scheme.BrightYellow, "#F9F1A5"),
+            BrightBlue = NormalizeRequiredString(scheme.BrightBlue, "#3B78FF"),
+            BrightMagenta = NormalizeRequiredString(scheme.BrightMagenta, "#B4009E"),
+            BrightCyan = NormalizeRequiredString(scheme.BrightCyan, "#61D6D6"),
+            BrightWhite = NormalizeRequiredString(scheme.BrightWhite, "#F2F2F2")
         };
     }
 
