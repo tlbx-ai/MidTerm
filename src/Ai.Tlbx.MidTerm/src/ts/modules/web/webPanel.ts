@@ -9,7 +9,6 @@ import {
   clearWebPreviewState,
   getBrowserPreviewStatus,
   runBrowserCommand,
-  type BrowserStatusResponse,
   captureBrowserScreenshotRaw,
   clearWebPreviewCookies,
   createBrowserPreviewClient,
@@ -47,6 +46,7 @@ import {
   upsertSessionPreview,
 } from './webSessionState';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
+import { buildBrowserPreviewStatusIndicatorState } from './webPreviewStatus';
 
 interface UploadResponse {
   path?: string;
@@ -94,7 +94,7 @@ const PREVIEW_CONTEXT_COOKIE_NAME = 'mt-preview-ctx';
 let urlInput: HTMLInputElement | null = null;
 let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
-let statusBanner: HTMLElement | null = null;
+let statusIndicator: HTMLElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
@@ -164,7 +164,7 @@ export function initWebPanel(): void {
   urlInput = document.getElementById('web-preview-url-input') as HTMLInputElement | null;
   iframeHost = document.getElementById('web-preview-iframe-host');
   previewTabs = document.getElementById('web-preview-tabs');
-  statusBanner = document.getElementById('web-preview-status-banner');
+  statusIndicator = document.getElementById('web-preview-status-indicator');
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
@@ -628,7 +628,7 @@ export async function loadPreview(): Promise<void> {
   if (!currentUrl || !sessionId) {
     setVisiblePreviewFrame(null);
     loadedUrl = null;
-    hideStatusBanner();
+    hideStatusIndicator();
     return;
   }
 
@@ -927,7 +927,7 @@ async function handleClearState(): Promise<void> {
 
   const cleared = await clearWebPreviewState(sessionId, previewName);
   if (!cleared) {
-    setStatusBannerMessage('error', 'Failed to clear the session-scoped preview state.');
+    setStatusIndicatorMessage('error', 'Failed to clear the session-scoped preview state.');
     log.warn(() => 'Failed to clear session-scoped preview state');
     await refreshBrowserPreviewStatus();
     return;
@@ -947,7 +947,7 @@ async function handleClearState(): Promise<void> {
     const error =
       browserResult?.error?.trim() ||
       'Server-side preview state was cleared, but browser-side state could not be cleared.';
-    setStatusBannerMessage(
+    setStatusIndicatorMessage(
       'warn',
       `Server-side preview state cleared. Browser-side state could not be fully cleared: ${error}`,
     );
@@ -983,57 +983,30 @@ async function clearWebPreviewBrowserStateAsync(): Promise<void> {
   }
 }
 
-function hideStatusBanner(): void {
-  if (!statusBanner) {
+function hideStatusIndicator(): void {
+  if (!statusIndicator) {
     return;
   }
 
-  statusBanner.textContent = '';
-  statusBanner.classList.add('hidden');
-  statusBanner.dataset.severity = 'info';
+  statusIndicator.textContent = '!';
+  statusIndicator.title = '';
+  statusIndicator.classList.add('hidden');
+  statusIndicator.dataset.severity = 'info';
+  statusIndicator.setAttribute('aria-hidden', 'true');
+  statusIndicator.removeAttribute('aria-label');
 }
 
-function setStatusBannerMessage(severity: 'info' | 'warn' | 'error', message: string): void {
-  if (!statusBanner) {
+function setStatusIndicatorMessage(severity: 'info' | 'warn' | 'error', message: string): void {
+  if (!statusIndicator) {
     return;
   }
 
-  statusBanner.textContent = message;
-  statusBanner.dataset.severity = severity;
-  statusBanner.classList.remove('hidden');
-}
-
-function buildStatusBannerMessage(status: BrowserStatusResponse): {
-  severity: 'info' | 'warn' | 'error';
-  message: string;
-} | null {
-  if (!status.hasUiClient) {
-    return {
-      severity: 'error',
-      message:
-        'No MidTerm browser tab is connected to /ws/state. The dev browser cannot work until a live MidTerm tab is open.',
-    };
-  }
-
-  if (!status.controllable) {
-    return {
-      severity: 'warn',
-      message:
-        status.statusMessage ??
-        'The preview target is configured, but no attached browser preview is controllable yet.',
-    };
-  }
-
-  const client = status.defaultClient;
-  if (client && (!client.isVisible || !client.hasFocus)) {
-    return {
-      severity: 'info',
-      message:
-        'The attached browser preview is currently in a background tab or window. Automation may be slower or throttled there.',
-    };
-  }
-
-  return null;
+  statusIndicator.textContent = '!';
+  statusIndicator.title = message;
+  statusIndicator.dataset.severity = severity;
+  statusIndicator.classList.remove('hidden');
+  statusIndicator.setAttribute('aria-hidden', 'false');
+  statusIndicator.setAttribute('aria-label', message);
 }
 
 async function refreshBrowserPreviewStatus(): Promise<void> {
@@ -1044,14 +1017,14 @@ async function refreshBrowserPreviewStatus(): Promise<void> {
 
   const sessionId = $activeSessionId.get();
   if (!sessionId) {
-    hideStatusBanner();
+    hideStatusIndicator();
     return;
   }
 
   const previewName = getActivePreviewName();
   const preview = getActivePreview();
   if (!preview?.url && !getActiveDockedClient()?.previewId) {
-    hideStatusBanner();
+    hideStatusIndicator();
     return;
   }
 
@@ -1062,18 +1035,18 @@ async function refreshBrowserPreviewStatus(): Promise<void> {
   );
 
   if (!status) {
-    setStatusBannerMessage(
+    setStatusIndicatorMessage(
       'warn',
       'Browser status is currently unavailable, so the dev browser state cannot be verified honestly.',
     );
     return;
   }
 
-  const banner = buildStatusBannerMessage(status);
-  if (!banner) {
-    hideStatusBanner();
+  const indicatorState = buildBrowserPreviewStatusIndicatorState(status);
+  if (!indicatorState) {
+    hideStatusIndicator();
     return;
   }
 
-  setStatusBannerMessage(banner.severity, banner.message);
+  setStatusIndicatorMessage(indicatorState.severity, indicatorState.message);
 }
