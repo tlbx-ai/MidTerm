@@ -12,7 +12,6 @@ namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 
 public sealed class MuxWebSocketHandler
 {
-    private const int ReplayTailBytes = 256 * 1024;
     private const int ReplayFrameChunkBytes = 32 * 1024;
     private readonly TtyHostSessionManager _sessionManager;
     private readonly TtyHostMuxConnectionManager _muxManager;
@@ -259,7 +258,7 @@ public sealed class MuxWebSocketHandler
             {
                 var snapshot = await _sessionManager.GetBufferAsync(
                     sessionInfo.Id,
-                    ReplayTailBytes,
+                    maxBytes: null,
                     TerminalReplayReason.ReconnectTailReplay);
                 if (snapshot is null || snapshot.Data.Length == 0) continue;
 
@@ -484,7 +483,7 @@ public sealed class MuxWebSocketHandler
 
             var snapshot = await _sessionManager.GetBufferAsync(
                 sessionId,
-                ReplayTailBytes,
+                maxBytes: null,
                 TerminalReplayReason.BufferRefreshTailReplay);
             if (snapshot is null)
             {
