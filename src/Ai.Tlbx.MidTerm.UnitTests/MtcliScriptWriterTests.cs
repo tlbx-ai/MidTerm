@@ -173,7 +173,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
     }
 
     [Fact]
-    public void WriteScripts_WritesAnonymousBrowserFallbackForImplicitSessionScope()
+    public void WriteScripts_DoesNotRetryBrowserCommandsAnonymously()
     {
         Directory.CreateDirectory(_tempDir);
 
@@ -182,20 +182,20 @@ public sealed class MtcliScriptWriterTests : IDisposable
         var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
         var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
 
-        Assert.Contains("_MNOSESSION()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_status()     { _MSTATUS", shell, StringComparison.Ordinal);
         Assert.Contains("open_out=$(_MJR -d", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("status=$(_MWAITCONTROLLABLE 25)", shell, StringComparison.Ordinal);
-        Assert.Contains("output=$(_MB \"${original[@]}\")", shell, StringComparison.Ordinal);
-        Assert.DoesNotContain("[ $exitCode -ne 0 ] && [ $injectedSession -eq 1 ] && _MNOSESSION", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("_MNOSESSION()", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("original=(", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("output=$(_MB \"${original[@]}\")", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("if [ -n \"$(_MPREVIEW)\" ] && ! _MHAS \"--preview\" \"${args[@]}\"; then", shell, StringComparison.Ordinal);
 
-        Assert.Contains("function script:_MShouldRetryAnonymous", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Status     { try { _MStatus }", powershell, StringComparison.Ordinal);
         Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("$status = _MWaitForControllableStatus", powershell, StringComparison.Ordinal);
-        Assert.Contains("$output = _MB @originalArgs", powershell, StringComparison.Ordinal);
-        Assert.DoesNotContain("$exitCode -ne 0 -and $injectedSession -and (_MShouldRetryAnonymous $output)", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("function script:_MShouldRetryAnonymous", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("$originalArgs = @($args)", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("$output = _MB @originalArgs", powershell, StringComparison.Ordinal);
         Assert.Contains("elseif ($env:MT_PREVIEW_NAME -and -not ($allArgs -contains \"--preview\"))", powershell, StringComparison.Ordinal);
     }
 
