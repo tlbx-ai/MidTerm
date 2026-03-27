@@ -317,6 +317,59 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_ReconcilesProviderUserMessageWithSubmittedLocalUserTurn()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "local-user",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "local-user:turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-22T02:00:00Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "user_message",
+                Status = "completed",
+                Title = "User message",
+                Detail = "which working dir are you in"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "provider-user",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "provider-item-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-22T02:00:01Z"),
+            Type = "item.started",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "usermessage",
+                Status = "in_progress",
+                Title = "Tool started",
+                Detail = string.Empty
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s1");
+
+        Assert.NotNull(snapshot);
+        var userItems = snapshot!.Items.Where(item => item.ItemType == "user_message").ToList();
+        var userItem = Assert.Single(userItems);
+        Assert.Equal("local-user:turn-1", userItem.ItemId);
+        Assert.Equal("turn-1", userItem.TurnId);
+        Assert.Equal("completed", userItem.Status);
+        Assert.Equal("which working dir are you in", userItem.Detail);
+    }
+
+    [Fact]
     public async Task Subscribe_ReplaysBacklogAndStreamsFutureEvents()
     {
         var service = new SessionLensPulseService();

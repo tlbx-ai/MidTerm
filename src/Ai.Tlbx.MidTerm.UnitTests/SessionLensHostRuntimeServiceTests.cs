@@ -583,8 +583,35 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.True(runtime.IsAttached(session.Id));
         Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
         Assert.Equal("codex-app-server", runtimeSnapshot.TransportKey);
-        Assert.Equal("Codex app-server sidecar", runtimeSnapshot.TransportLabel);
+        Assert.Equal("Codex app-server runtime", runtimeSnapshot.TransportLabel);
         Assert.Equal("ready", runtimeSnapshot.Status);
+
+        var turn = await runtime.StartTurnAsync(
+            session.Id,
+            new LensTurnRequest
+            {
+                Text = "Confirm the fallback runtime keeps turn ids on transcript events.",
+                Attachments = []
+            });
+
+        Assert.Equal("accepted", turn.Status);
+        Assert.NotNull(turn.TurnId);
+
+        var events = await WaitForEventsAsync(
+            pulse,
+            session.Id,
+            current => current.Events.Any(lensEvent => lensEvent.Type == "content.delta"));
+
+        Assert.Contains(
+            events.Events,
+            lensEvent => lensEvent.Type == "item.completed" &&
+                         string.Equals(lensEvent.ItemId, $"local-user:{turn.TurnId}", StringComparison.Ordinal) &&
+                         string.Equals(lensEvent.TurnId, turn.TurnId, StringComparison.Ordinal));
+        Assert.Contains(
+            events.Events,
+            lensEvent => lensEvent.Type == "content.delta" &&
+                         string.Equals(lensEvent.TurnId, turn.TurnId, StringComparison.Ordinal) &&
+                         string.Equals(lensEvent.ContentDelta?.StreamKind, "assistant_text", StringComparison.Ordinal));
     }
 
     private static async Task<LensPulseEventListResponse> WaitForEventsAsync(

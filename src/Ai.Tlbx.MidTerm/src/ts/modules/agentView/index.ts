@@ -19,8 +19,6 @@ import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { renderMarkdownFragment } from '../../utils/markdown';
 import type { LensAttachmentReference } from '../../api/types';
 import {
-  getSessionState,
-  getSessionBufferTail,
   attachSessionLens,
   detachSessionLens,
   getLensSnapshot,
@@ -32,7 +30,6 @@ import {
   type LensPulseEvent,
   type LensPulseRequestSummary,
   type LensPulseSnapshotResponse,
-  type SessionStateResponse,
   LensHttpError,
 } from '../../api/client';
 
@@ -61,7 +58,6 @@ interface SessionLensViewState {
   requestQuestionIndexById: Record<string, number>;
   transcriptAutoScrollPinned: boolean;
   transcriptRenderScheduled: number | null;
-  terminalFallback: SessionStateResponse | null;
   activationState:
     | 'idle'
     | 'opening'
@@ -260,7 +256,6 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   state.activationError = null;
   state.activationIssue = null;
   state.activationActionBusy = false;
-  state.terminalFallback = null;
   state.requestBusyIds.clear();
   state.transcriptAutoScrollPinned = true;
   renderCurrentAgentView(sessionId);
@@ -295,14 +290,13 @@ async function activateAgentView(sessionId: string): Promise<void> {
   state.activationError = null;
   state.activationIssue = null;
   state.activationActionBusy = false;
-  state.terminalFallback = null;
 
   setActivationState(
     state,
     'opening',
     'Lens pane opened. Preparing transcript runtime attach.',
     'Lens pane opened.',
-    'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
+    'MidTerm is opening the Lens conversation surface for this session.',
   );
   setActivationState(
     state,
@@ -391,7 +385,6 @@ async function activateAgentView(sessionId: string): Promise<void> {
 
     state.activationError = describeError(error);
     state.activationIssue = classifyLensActivationIssue(error, false);
-    state.terminalFallback = await tryLoadTerminalSnapshotFallback(sessionId);
     setActivationState(
       state,
       'failed',
@@ -441,7 +434,6 @@ async function resumeLensFromHistory(
     log.warn(() => `Failed to resume Lens for ${sessionId}: ${String(error)}`);
     state.activationError = describeError(error);
     state.activationIssue = classifyLensActivationIssue(error, true);
-    state.terminalFallback = null;
     renderCurrentAgentView(sessionId);
   }
 }
@@ -476,7 +468,6 @@ async function tryLoadReadonlyLensHistory(
     state.events = events;
     state.streamConnected = false;
     state.activationTrace = [];
-    state.terminalFallback = null;
     return true;
   } catch (error) {
     log.warn(() => `Failed to load Lens snapshot fallback for ${sessionId}: ${String(error)}`);
@@ -527,7 +518,6 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     requestQuestionIndexById: {},
     transcriptAutoScrollPinned: true,
     transcriptRenderScheduled: null,
-    terminalFallback: null,
     activationState: 'idle',
     activationDetail: '',
     activationTrace: [],
@@ -2069,10 +2059,8 @@ function buildSystemEntryFromEvent(
 export function buildActivationTranscriptEntries(
   state: SessionLensViewState,
 ): LensTranscriptEntry[] {
-  const terminalFallbackEntry = buildTerminalFallbackEntry(state.terminalFallback);
-
   if (state.activationTrace.length === 0) {
-    const entries: LensTranscriptEntry[] = [
+    return [
       {
         id: 'activation:pending',
         order: 0,
@@ -2084,12 +2072,6 @@ export function buildActivationTranscriptEntries(
         meta: state.activationState === 'failed' ? 'Failed' : 'Connecting',
       },
     ];
-
-    if (terminalFallbackEntry) {
-      entries.unshift(terminalFallbackEntry);
-    }
-
-    return entries;
   }
 
   const traceEntries = shouldCompactActivationTrace(state.activationIssue)
@@ -2106,10 +2088,6 @@ export function buildActivationTranscriptEntries(
     body: entry.detail,
     meta: entry.meta,
   }));
-
-  if (terminalFallbackEntry) {
-    return [terminalFallbackEntry, ...entries];
-  }
 
   return entries;
 }
@@ -3503,102 +3481,6 @@ function describeError(error: unknown): string {
   }
 
   return typeof error === 'string' ? error : JSON.stringify(error, null, 2);
-}
-
-async function tryLoadTerminalSnapshotFallback(
-  sessionId: string,
-): Promise<SessionStateResponse | null> {
-  try {
-    const [response, bufferTail] = await Promise.all([
-      getSessionState(sessionId, false),
-      getSessionBufferTail(sessionId, 120, true),
-    ]);
-    if (!bufferTail.trim()) {
-      return null;
-    }
-
-    response.bufferText = bufferTail;
-    return response;
-  } catch (error) {
-    log.warn(() => `Failed to load terminal snapshot fallback for ${sessionId}: ${String(error)}`);
-    return null;
-  }
-}
-
-/**
- * Preserves useful context when live Lens attach fails by turning the current
- * terminal buffer into a read-only conversation artifact instead of a dead end.
- */
-export function buildTerminalFallbackEntry(
-  state: SessionStateResponse | null,
-): LensTranscriptEntry | null {
-  const body = summarizeTerminalFallbackBuffer(state?.bufferText);
-  if (!body) {
-    return null;
-  }
-
-  const session = state?.session;
-  const sessionLabel = [session?.shellType, session?.supervisor?.profile]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .join(' • ');
-
-  return {
-    id: 'terminal:fallback',
-    order: -1,
-    kind: 'tool',
-    tone: 'info',
-    label: 'Terminal',
-    title: resolveTerminalFallbackTitle(state),
-    body,
-    meta: sessionLabel ? `Read-only fallback • ${sessionLabel}` : 'Read-only fallback',
-  };
-}
-
-function resolveTerminalFallbackTitle(state: SessionStateResponse | null): string {
-  const session = state?.session;
-  return (
-    session?.foregroundDisplayName?.trim() ||
-    session?.foregroundCommandLine?.trim() ||
-    session?.terminalTitle?.trim() ||
-    'Current terminal buffer'
-  );
-}
-
-/**
- * Trims noisy terminal history into a compact fallback snapshot so Lens can
- * show enough context to recover without drowning the conversation surface.
- */
-export function summarizeTerminalFallbackBuffer(value: string | null | undefined): string {
-  const normalized = (value || '').replace(/\r\n/g, '\n').trimEnd();
-  if (!normalized.trim()) {
-    return '';
-  }
-
-  const lines = normalized.split('\n').map(compactRepeatedTerminalLine);
-  const truncatedLines = lines.length > 120 ? lines.slice(-120) : lines;
-  let truncated = truncatedLines.join('\n');
-  if (truncated.length > 12000) {
-    truncated = truncated.slice(-12000);
-  }
-
-  const omitted =
-    truncatedLines.length !== lines.length || truncated.length !== normalized.length
-      ? '... earlier terminal output omitted ...\n'
-      : '';
-
-  return `${omitted}${truncated}`.trimEnd();
-}
-
-function compactRepeatedTerminalLine(line: string): string {
-  const trimmed = line.trimEnd();
-  if (trimmed.length < 2 || trimmed.length % 2 !== 0) {
-    return trimmed;
-  }
-
-  const half = trimmed.length / 2;
-  const left = trimmed.slice(0, half);
-  const right = trimmed.slice(half);
-  return left === right ? left : trimmed;
 }
 
 async function retryLensActivation(sessionId: string): Promise<void> {

@@ -252,11 +252,33 @@ public sealed class SessionLensPulseService
                         if (lensEvent.Item is not null)
                         {
                             var itemId = lensEvent.ItemId ?? lensEvent.EventId;
+                            var normalizedItemType = NormalizeItemType(lensEvent.Item.ItemType);
+                            if (normalizedItemType == "user_message" &&
+                                !itemId.StartsWith("local-user:", StringComparison.Ordinal) &&
+                                TryFindLocalUserMessageItem(items, lensEvent.TurnId, out var existingUserItemId))
+                            {
+                                var existing = items[existingUserItemId];
+                                items[existingUserItemId] = new LensPulseItemSummary
+                                {
+                                    ItemId = existingUserItemId,
+                                    TurnId = lensEvent.TurnId ?? existing.TurnId,
+                                    ItemType = "user_message",
+                                    Status = ChoosePreferredUserMessageStatus(existing.Status, lensEvent.Item.Status),
+                                    Title = string.IsNullOrWhiteSpace(existing.Title) ? lensEvent.Item.Title : existing.Title,
+                                    Detail = string.IsNullOrWhiteSpace(existing.Detail) ? lensEvent.Item.Detail : existing.Detail,
+                                    Attachments = existing.Attachments.Count > 0
+                                        ? CloneAttachments(existing.Attachments)
+                                        : CloneAttachments(lensEvent.Item.Attachments),
+                                    UpdatedAt = lensEvent.CreatedAt
+                                };
+                                break;
+                            }
+
                             items[itemId] = new LensPulseItemSummary
                             {
                                 ItemId = itemId,
                                 TurnId = lensEvent.TurnId,
-                                ItemType = lensEvent.Item.ItemType,
+                                ItemType = normalizedItemType,
                                 Status = lensEvent.Item.Status,
                                 Title = lensEvent.Item.Title,
                                 Detail = lensEvent.Item.Detail,
@@ -586,6 +608,48 @@ public sealed class SessionLensPulseService
             QuestionId = source.QuestionId,
             Answers = [.. source.Answers]
         };
+    }
+
+    private static string NormalizeItemType(string? itemType)
+    {
+        return (itemType ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "usermessage" => "user_message",
+            _ => itemType ?? string.Empty
+        };
+    }
+
+    private static bool TryFindLocalUserMessageItem(
+        IReadOnlyDictionary<string, LensPulseItemSummary> items,
+        string? turnId,
+        out string itemId)
+    {
+        if (!string.IsNullOrWhiteSpace(turnId))
+        {
+            foreach (var pair in items)
+            {
+                if (pair.Key.StartsWith("local-user:", StringComparison.Ordinal) &&
+                    string.Equals(pair.Value.TurnId, turnId, StringComparison.Ordinal))
+                {
+                    itemId = pair.Key;
+                    return true;
+                }
+            }
+        }
+
+        itemId = string.Empty;
+        return false;
+    }
+
+    private static string ChoosePreferredUserMessageStatus(string? existingStatus, string? incomingStatus)
+    {
+        if (string.Equals(existingStatus, "completed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(incomingStatus, "completed", StringComparison.OrdinalIgnoreCase))
+        {
+            return "completed";
+        }
+
+        return string.IsNullOrWhiteSpace(incomingStatus) ? existingStatus ?? string.Empty : incomingStatus;
     }
 
     private static List<LensAttachmentReference> CloneAttachments(

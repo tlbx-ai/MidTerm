@@ -16,34 +16,35 @@ public sealed class AiCliCapabilityService
         _settingsService = settingsService;
     }
 
-    public async Task<AiCliCapabilitySnapshot> DescribeAsync(string profile, CancellationToken ct = default)
+    public async Task<AiCliCapabilitySnapshot> DescribeAsync(string profile, bool lensOnly = false, CancellationToken ct = default)
     {
+        var cacheKey = $"{profile}\n{(lensOnly ? "lens" : "terminal")}";
         CachedSnapshot? cached;
         lock (_syncRoot)
         {
-            if (_cache.TryGetValue(profile, out cached) &&
+            if (_cache.TryGetValue(cacheKey, out cached) &&
                 cached.ExpiresAt > DateTimeOffset.UtcNow)
             {
                 return cached.CloneSnapshot();
             }
         }
 
-        var snapshot = await BuildSnapshotAsync(profile, ResolveConfiguredUserProfileDirectory(), ct).ConfigureAwait(false);
+        var snapshot = await BuildSnapshotAsync(profile, lensOnly, ResolveConfiguredUserProfileDirectory(), ct).ConfigureAwait(false);
         var next = new CachedSnapshot(DateTimeOffset.UtcNow.Add(CacheLifetime), snapshot);
         lock (_syncRoot)
         {
-            _cache[profile] = next;
+            _cache[cacheKey] = next;
         }
 
         return next.CloneSnapshot();
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildSnapshotAsync(string profile, string? userProfileDirectory, CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildSnapshotAsync(string profile, bool lensOnly, string? userProfileDirectory, CancellationToken ct)
     {
         return profile switch
         {
-            AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(userProfileDirectory, ct).ConfigureAwait(false),
-            AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(userProfileDirectory, ct).ConfigureAwait(false),
+            AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(userProfileDirectory, lensOnly, ct).ConfigureAwait(false),
+            AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(userProfileDirectory, lensOnly, ct).ConfigureAwait(false),
             AiCliProfileService.OpenCodeProfile => BuildOpenCodeSnapshot(),
             AiCliProfileService.GenericAiProfile => BuildGenericSnapshot(),
             AiCliProfileService.ShellProfile => BuildShellSnapshot(),
@@ -51,11 +52,25 @@ public sealed class AiCliCapabilityService
         };
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildCodexSnapshotAsync(string? userProfileDirectory, CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildCodexSnapshotAsync(string? userProfileDirectory, bool lensOnly, CancellationToken ct)
     {
         var binaryPath = AiCliCommandLocator.FindExecutableInPath("codex", userProfileDirectory);
         if (binaryPath is null)
         {
+            if (lensOnly)
+            {
+                return BuildSnapshot(
+                    "native-required",
+                    "attention",
+                    "Lens runtime unavailable",
+                    "Explicit Codex Lens sessions require the Codex CLI plus its structured app-server runtime on this machine.",
+                    [
+                        CreateCapability("cli", "Codex CLI", "missing", "Missing", "MidTerm could not find `codex` on PATH."),
+                        CreateCapability("native", "Codex app-server", "missing", "Missing", "Without `codex app-server`, this explicit Lens session cannot become live."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                    ]);
+            }
+
             return BuildSnapshot(
                 "fallback-only",
                 "fallback",
@@ -71,6 +86,20 @@ public sealed class AiCliCapabilityService
         var probe = await ProbeAsync(binaryPath, "app-server --help", ct).ConfigureAwait(false);
         if (probe.Success)
         {
+            if (lensOnly)
+            {
+                return BuildSnapshot(
+                    "native-ready",
+                    "positive",
+                    "Lens runtime ready",
+                    "This explicit Codex Lens session can attach through `mtagenthost` to Codex's structured app-server runtime.",
+                    [
+                        CreateCapability("cli", "Codex CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                        CreateCapability("native", "Codex app-server", "ready", "Ready", "The structured Codex runtime is available for explicit Lens sessions."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                    ]);
+            }
+
             return BuildSnapshot(
                 "fallback-ready",
                 "positive",
@@ -80,6 +109,20 @@ public sealed class AiCliCapabilityService
                     CreateCapability("cli", "Codex CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                     CreateCapability("native", "Codex app-server", "ready", "Ready", "The native Codex lane can be wired in on this machine."),
                     CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm remains available beside the Agent view.")
+                ]);
+        }
+
+        if (lensOnly)
+        {
+            return BuildSnapshot(
+                "native-gated",
+                "warning",
+                "Lens runtime blocked",
+                "Codex CLI exists, but `codex app-server` did not answer cleanly, so this explicit Lens session cannot become live yet.",
+                [
+                    CreateCapability("cli", "Codex CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                    CreateCapability("native", "Codex app-server", "gated", "Gated", BuildProbeDetail(probe, "The structured Codex runtime is not reliably available yet.")),
+                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
                 ]);
         }
 
@@ -95,11 +138,25 @@ public sealed class AiCliCapabilityService
             ]);
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(string? userProfileDirectory, CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(string? userProfileDirectory, bool lensOnly, CancellationToken ct)
     {
         var binaryPath = AiCliCommandLocator.FindExecutableInPath("claude", userProfileDirectory);
         if (binaryPath is null)
         {
+            if (lensOnly)
+            {
+                return BuildSnapshot(
+                    "native-required",
+                    "attention",
+                    "Lens runtime unavailable",
+                    "Explicit Claude Lens sessions require the Claude CLI plus its structured runtime support on this machine.",
+                    [
+                        CreateCapability("cli", "Claude CLI", "missing", "Missing", "MidTerm could not find `claude` on PATH."),
+                        CreateCapability("native", "Claude structured runtime", "missing", "Missing", "Without structured Claude runtime support, this explicit Lens session cannot become live."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                    ]);
+            }
+
             return BuildSnapshot(
                 "fallback-only",
                 "fallback",
@@ -118,6 +175,20 @@ public sealed class AiCliCapabilityService
 
         if (probe.Success && advertisesSdk)
         {
+            if (lensOnly)
+            {
+                return BuildSnapshot(
+                    "native-ready",
+                    "positive",
+                    "Lens runtime ready",
+                    "This explicit Claude Lens session can attach through `mtagenthost` to Claude's structured runtime.",
+                    [
+                        CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                        CreateCapability("native", "Claude structured runtime", "ready", "Ready", "This machine advertises structured Claude runtime support."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                    ]);
+            }
+
             return BuildSnapshot(
                 "fallback-ready",
                 "positive",
@@ -127,6 +198,22 @@ public sealed class AiCliCapabilityService
                     CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                     CreateCapability("native", "Claude SDK lane", "ready", "Ready", "This machine advertises `--sdk-mode`."),
                     CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm remains available beside the Agent view.")
+                ]);
+        }
+
+        if (lensOnly)
+        {
+            return BuildSnapshot(
+                "native-gated",
+                "warning",
+                "Lens runtime blocked",
+                "Claude CLI exists, but structured runtime support is not available cleanly enough for this explicit Lens session yet.",
+                [
+                    CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                    CreateCapability("native", "Claude structured runtime", "gated", "Gated", advertisesSdk
+                        ? "The CLI mentions structured runtime support, but the probe did not complete cleanly."
+                        : "This CLI build does not clearly advertise structured runtime support yet."),
+                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
                 ]);
         }
 

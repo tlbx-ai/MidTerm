@@ -38,6 +38,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     private string? _sessionId;
     private string? _workingDirectory;
     private string? _binaryPath;
+    private string? _userProfileDirectory;
     private string? _providerThreadId;
     private string? _activeTurnId;
     private string? _activeTurnModel;
@@ -107,6 +108,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         _sessionId = command.SessionId;
         _workingDirectory = attach.WorkingDirectory;
         _binaryPath = binaryPath;
+        _userProfileDirectory = attach.UserProfileDirectory;
         if (!string.IsNullOrWhiteSpace(attach.ResumeThreadId))
         {
             _providerThreadId = attach.ResumeThreadId;
@@ -915,6 +917,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             StartInfo = CreateProcessStartInfo(_binaryPath!, BuildArguments(model, effort, addDirectories), _workingDirectory!),
             EnableRaisingEvents = true
         };
+        LensProviderRuntimeConfiguration.ApplyUserProfileEnvironment(process.StartInfo, _userProfileDirectory);
         LensProviderRuntimeConfiguration.ApplyEnvironmentVariables(process.StartInfo, Provider);
         if (!process.Start())
         {

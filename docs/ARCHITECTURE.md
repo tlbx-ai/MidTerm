@@ -214,6 +214,51 @@ The boundary between Terminal and Lens is a core design rule:
 - only sessions explicitly created as Lens sessions should expose provider-primary tabs such as `Codex` or `Claude`
 - the IDE bar is exclusive by surface: terminal sessions show `Terminal` plus `Files`, while explicit Lens sessions show the provider tab plus `Files`
 
+### Lens Provider Runtime Decision
+
+For provider-backed Lens sessions, MidTerm should treat the provider runtime as the source of truth instead of trying to reconstruct an agent conversation from PTY output.
+
+That means:
+
+- an explicit Codex or Claude Lens session owns a dedicated Lens runtime for that provider
+- `mtagenthost` is the intended MidTerm host/runtime boundary for those provider-backed Lens sessions
+- explicit Lens sessions do not use `mthost` and do not gain terminal access through the PTY layer
+- the runtime launches or attaches using the provider's supported structured protocol
+- MidTerm normalizes that provider traffic into canonical Lens turn, item, request, stream, and diff events
+- the Lens UI renders those canonical events and snapshots as a conversation surface
+- the terminal remains a separate surface with separate ownership and behavior
+
+This rule exists to prevent a class of design failures:
+
+- terminal transcripts are not a reliable protocol boundary
+- foreground process detection is not enough to define conversation identity
+- Lens is not a terminal transcript view and must not treat PTY stdout/stderr as its authoritative event stream
+- screen-scraping or buffer-parsing makes streaming, tool lifecycle, approvals, plan-mode questions, and diff state fragile
+- terminal behavior and Lens behavior become entangled unless the runtime boundary is explicit
+
+The correct architectural direction is therefore:
+
+- Terminal stays terminal-native
+- Lens stays provider-runtime-native through `mtagenthost` plus provider APIs and structured protocols intended for rich UI clients
+- `mthost` is for real terminals; `mtagenthost` is for explicit provider Lens sessions
+- canonical Lens events bridge the runtime and the web UI
+
+### Lens UX Target And DOD
+
+The intended Definition of Done for provider-backed Lens sessions is:
+
+1. A user can create a new session in MidTerm and explicitly choose `Codex` or `Claude`.
+2. The session opens on the provider Lens surface with the Smart Input / composer visible.
+3. MidTerm shows a subtle ready indication when the provider runtime is connected and able to accept a prompt.
+4. The user can submit a prompt from the Lens composer without switching to Terminal.
+5. Assistant output streams into the Lens transcript incrementally as it is generated, rather than appearing only after full completion.
+6. Tool activity is visible as it happens, including starts, updates, completions, approvals, and user-input questions.
+7. File edits and working diff updates are surfaced live in the Lens UI.
+8. Plan-mode or equivalent provider-driven question flows appear as first-class Lens interactions, not as raw terminal text.
+9. The full Lens experience is implemented without hijacking or reclassifying normal terminal sessions.
+
+In practical terms, the user should experience Lens as a polished web conversation surface for explicit provider sessions, with the same functional breadth as the provider CLI, while Terminal remains an independent real terminal.
+
 ## 5. Web Preview and Browser Automation
 
 Web preview is its own subsystem, not a simple iframe wrapper.

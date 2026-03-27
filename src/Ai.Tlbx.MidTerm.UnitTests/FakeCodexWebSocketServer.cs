@@ -19,12 +19,18 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         string endpoint,
         string loadedThreadId,
         string assistantReply,
-        bool emitRichTranscriptItems)
+        bool emitRichTranscriptItems,
+        bool emitTurnIds,
+        bool emitLateDiffAfterCompletion,
+        bool emitMcpToolProgress)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
         AssistantReply = assistantReply;
         EmitRichTranscriptItems = emitRichTranscriptItems;
+        EmitTurnIds = emitTurnIds;
+        EmitLateDiffAfterCompletion = emitLateDiffAfterCompletion;
+        EmitMcpToolProgress = emitMcpToolProgress;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
         _acceptLoopTask = Task.Run(AcceptLoopAsync);
@@ -38,13 +44,22 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitRichTranscriptItems { get; }
 
+    public bool EmitTurnIds { get; }
+
+    public bool EmitLateDiffAfterCompletion { get; }
+
+    public bool EmitMcpToolProgress { get; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
-        bool emitRichTranscriptItems = false)
+        bool emitRichTranscriptItems = false,
+        bool emitTurnIds = false,
+        bool emitLateDiffAfterCompletion = false,
+        bool emitMcpToolProgress = false)
     {
         var endpoint = $"ws://127.0.0.1:{GetFreePort()}/";
-        return new FakeCodexWebSocketServer(endpoint, loadedThreadId, assistantReply, emitRichTranscriptItems);
+        return new FakeCodexWebSocketServer(endpoint, loadedThreadId, assistantReply, emitRichTranscriptItems, emitTurnIds, emitLateDiffAfterCompletion, emitMcpToolProgress);
     }
 
     public async ValueTask DisposeAsync()
@@ -228,6 +243,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 method = "item/started",
                                 @params = new
                                 {
+                                    turnId = EmitTurnIds ? turnId : null,
                                     item = new
                                     {
                                         id = "item-user-1",
@@ -248,6 +264,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 method = "item/completed",
                                 @params = new
                                 {
+                                    turnId = EmitTurnIds ? turnId : null,
                                     item = new
                                     {
                                         id = "item-user-1",
@@ -263,11 +280,57 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                     }
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
+                            if (EmitMcpToolProgress)
+                            {
+                                await SendJsonAsync(socket, new
+                                {
+                                    method = "item/started",
+                                    @params = new
+                                    {
+                                        turnId = EmitTurnIds ? turnId : null,
+                                        item = new
+                                        {
+                                            id = "item-mcp-1",
+                                            type = "mcpToolCall",
+                                            title = "grep",
+                                            summary = "Searching the repo"
+                                        }
+                                    }
+                                }, _shutdown.Token).ConfigureAwait(false);
+                                await SendJsonAsync(socket, new
+                                {
+                                    method = "item/mcpToolCall/progress",
+                                    @params = new
+                                    {
+                                        turnId = EmitTurnIds ? turnId : null,
+                                        itemId = "item-mcp-1",
+                                        toolUseId = "item-mcp-1",
+                                        toolName = "grep",
+                                        summary = "Searching src for Lens runtime events"
+                                    }
+                                }, _shutdown.Token).ConfigureAwait(false);
+                                await SendJsonAsync(socket, new
+                                {
+                                    method = "item/completed",
+                                    @params = new
+                                    {
+                                        turnId = EmitTurnIds ? turnId : null,
+                                        item = new
+                                        {
+                                            id = "item-mcp-1",
+                                            type = "mcpToolCall",
+                                            title = "grep",
+                                            summary = "Found Lens runtime handlers"
+                                        }
+                                    }
+                                }, _shutdown.Token).ConfigureAwait(false);
+                            }
                             await SendJsonAsync(socket, new
                             {
                                 method = "item/started",
                                 @params = new
                                 {
+                                    turnId = EmitTurnIds ? turnId : null,
                                     item = new
                                     {
                                         id = "item-command-1",
@@ -281,6 +344,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 method = "item/completed",
                                 @params = new
                                 {
+                                    turnId = EmitTurnIds ? turnId : null,
                                     item = new
                                     {
                                         id = "item-command-1",
@@ -294,6 +358,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 method = "item/started",
                                 @params = new
                                 {
+                                    turnId = EmitTurnIds ? turnId : null,
                                     item = new
                                     {
                                         id = "item-agent-1",
@@ -315,6 +380,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                             method = "item/agentMessage/delta",
                             @params = new
                             {
+                                turnId = EmitTurnIds ? turnId : null,
                                 itemId = "item-agent-1",
                                 delta = AssistantReply
                             }
@@ -326,6 +392,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 method = "item/completed",
                                 @params = new
                                 {
+                                    turnId = EmitTurnIds ? turnId : null,
                                     item = new
                                     {
                                         id = "item-agent-1",
@@ -354,6 +421,19 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitLateDiffAfterCompletion)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "turn/diff/updated",
+                                @params = new
+                                {
+                                    turnId = turnId,
+                                    unifiedDiff = "--- a/remote.txt\n+++ b/remote.txt\n@@ -1 +1 @@\n-old\n+new"
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
+
                         break;
 
                     case "turn/interrupt" when id is not null:

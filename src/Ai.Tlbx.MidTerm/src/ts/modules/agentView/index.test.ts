@@ -790,7 +790,6 @@ describe('agentView dev errors', () => {
       requestBusyIds: new Set<string>(),
       transcriptAutoScrollPinned: true,
       transcriptRenderScheduled: null,
-      terminalFallback: null,
       activationState: 'failed',
       activationDetail: 'Lens startup failed.',
       activationError: 'HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.',
@@ -808,8 +807,7 @@ describe('agentView dev errors', () => {
           tone: 'info',
           meta: 'Opening • 03:16',
           summary: 'Lens pane opened.',
-          detail:
-            'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
+          detail: 'MidTerm is opening the Lens conversation surface for this session.',
         },
         {
           tone: 'info',
@@ -846,19 +844,6 @@ describe('agentView dev errors', () => {
       requestBusyIds: new Set<string>(),
       transcriptAutoScrollPinned: true,
       transcriptRenderScheduled: null,
-      terminalFallback: {
-        session: {
-          id: 's1',
-          shellType: 'Pwsh',
-          supervisor: { profile: 'codex' },
-          foregroundDisplayName: 'codex --yolo',
-        },
-        previews: [],
-        bufferByteLength: 39,
-        bufferEncoding: 'utf-8',
-        bufferText: 'PS> codex --yolo\r\nthinking...\r\nready',
-        bufferBase64: null,
-      } as any,
       activationState: 'failed',
       activationDetail: 'Lens startup failed.',
       activationError:
@@ -877,17 +862,14 @@ describe('agentView dev errors', () => {
           tone: 'info',
           meta: 'Opening • 03:16',
           summary: 'Lens pane opened.',
-          detail:
-            'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
+          detail: 'MidTerm is opening the Lens conversation surface for this session.',
         },
       ],
     });
 
-    expect(entries[0]?.label).toBe('Terminal');
-    expect(entries[0]?.title).toBe('codex --yolo');
-    expect(entries[0]?.meta).toBe('Read-only fallback • Pwsh • codex');
-    expect(entries[0]?.body).toContain('thinking...');
-    expect(entries[1]?.meta).toBe('Opening • 03:16');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe('system');
+    expect(entries[0]?.meta).toBe('Opening • 03:16');
   });
 
   it('adds optimistic user and assistant rows until canonical Lens entries arrive', async () => {
@@ -1034,33 +1016,6 @@ describe('agentView dev errors', () => {
 
     expect(result.entries).toHaveLength(2);
     expect(result.optimisticTurns).toHaveLength(0);
-  });
-
-  it('trims oversized terminal snapshots to the recent tail', async () => {
-    const { summarizeTerminalFallbackBuffer } = await import('./index');
-
-    const lines = Array.from({ length: 130 }, (_, index) => `line-${index + 1}`).join('\n');
-    const summarized = summarizeTerminalFallbackBuffer(lines);
-
-    expect(summarized.startsWith('... earlier terminal output omitted ...')).toBe(true);
-    expect(summarized).toContain('line-130');
-    expect(summarized).not.toContain('line-1\n');
-  });
-
-  it('compacts duplicated repaint lines inside the terminal fallback tail', async () => {
-    const { summarizeTerminalFallbackBuffer } = await import('./index');
-
-    const summarized = summarizeTerminalFallbackBuffer(
-      'PS Q:\\repos\\MidtermJpa>PS Q:\\repos\\MidtermJpa>\n' +
-        'codex --yolocodex --yolo\n' +
-        'unchanged line',
-    );
-
-    expect(summarized).toContain('PS Q:\\repos\\MidtermJpa>');
-    expect(summarized).not.toContain('PS Q:\\repos\\MidtermJpa>PS Q:\\repos\\MidtermJpa>');
-    expect(summarized).toContain('codex --yolo');
-    expect(summarized).not.toContain('codex --yolocodex --yolo');
-    expect(summarized).toContain('unchanged line');
   });
 
   it('builds transcript-first rows from canonical Lens events', async () => {

@@ -56,6 +56,20 @@ public sealed class LensHostEnvironmentResolverTests
     }
 
     [Fact]
+    public void ResolveWindowsProfileDirectoryFromExecutablePath_ReturnsOwningUserProfile()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(
+            @"C:\Users\johan\AppData\Roaming\npm\codex.cmd");
+
+        Assert.Equal(Path.Combine("C:\\", "Users", "johan"), profileDirectory);
+    }
+
+    [Fact]
     public void ApplyUserProfileEnvironment_PrependsCommonUserCliPaths()
     {
         if (!OperatingSystem.IsWindows())

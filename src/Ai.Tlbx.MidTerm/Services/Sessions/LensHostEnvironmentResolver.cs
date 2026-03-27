@@ -21,6 +21,12 @@ internal static class LensHostEnvironmentResolver
         }
 
         var profileDirectory = ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
+        ApplyProfileEnvironment(startInfo, profileDirectory);
+    }
+
+    internal static void ApplyProfileEnvironment(ProcessStartInfo startInfo, string? profileDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(startInfo);
         if (string.IsNullOrWhiteSpace(profileDirectory) || !Directory.Exists(profileDirectory))
         {
             return;
@@ -49,6 +55,55 @@ internal static class LensHostEnvironmentResolver
         {
             PrependPath(startInfo, directory);
         }
+    }
+
+    internal static string? ResolveCurrentWindowsProfileDirectory()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        var userProfile = Environment.GetEnvironmentVariable("USERPROFILE");
+        if (!string.IsNullOrWhiteSpace(userProfile) && Directory.Exists(userProfile))
+        {
+            return userProfile;
+        }
+
+        var currentUserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Directory.Exists(currentUserProfile) ? currentUserProfile : null;
+    }
+
+    internal static string? ResolveWindowsProfileDirectoryFromExecutablePath(string? executablePath)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(executablePath))
+        {
+            return null;
+        }
+
+        var normalizedPath = executablePath.Trim().Trim('"').Replace('/', Path.DirectorySeparatorChar);
+        if (!Path.IsPathRooted(normalizedPath))
+        {
+            return null;
+        }
+
+        var root = Path.GetPathRoot(normalizedPath);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return null;
+        }
+
+        var relative = normalizedPath[root.Length..];
+        var segments = relative.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length < 2 || !string.Equals(segments[0], "Users", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var profileDirectory = Path.Combine(root, segments[0], segments[1]);
+        return Directory.Exists(profileDirectory) ? profileDirectory : null;
     }
 
     internal static string? ResolveWindowsProfileDirectory(string? userName, string? userSid)

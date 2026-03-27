@@ -366,7 +366,8 @@ public static partial class SessionApiEndpoints
 
             var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id);
             string? resumeThreadId = null;
-            if (aiCliProfileService.NormalizeProfile(null, session) == AiCliProfileService.CodexProfile)
+            if (!session.LensOnly &&
+                aiCliProfileService.NormalizeProfile(null, session) == AiCliProfileService.CodexProfile)
             {
                 try
                 {
@@ -398,7 +399,8 @@ public static partial class SessionApiEndpoints
             }
 
             var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id);
-            if (aiCliProfileService.NormalizeProfile(null, session) != AiCliProfileService.CodexProfile)
+            if (session.LensOnly ||
+                aiCliProfileService.NormalizeProfile(null, session) != AiCliProfileService.CodexProfile)
             {
                 await lensRuntime.DetachAsync(id, ct).ConfigureAwait(false);
                 return Results.Ok();
@@ -695,7 +697,7 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            var feed = agentFeed.GetFeed(id, vibe.Activities, vibe.GeneratedAt);
+            var feed = agentFeed.GetFeed(id, vibe.Source, vibe.Activities, vibe.GeneratedAt);
             return Results.Json(feed, AppJsonContext.Default.AgentSessionFeedResponse);
         });
 

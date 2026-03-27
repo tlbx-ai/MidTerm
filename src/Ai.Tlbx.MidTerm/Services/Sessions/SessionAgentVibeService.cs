@@ -48,14 +48,18 @@ public sealed class SessionAgentVibeService
         session.Supervisor = _sessionSupervisor.Describe(session);
         var supervisor = session.Supervisor ?? new SessionSupervisorInfoDto();
         var profile = _profileService.NormalizeProfile(supervisor.Profile, session);
-        var capability = await _capabilityService.DescribeAsync(profile, ct).ConfigureAwait(false);
+        var capability = await _capabilityService.DescribeAsync(profile, session.LensOnly, ct).ConfigureAwait(false);
         var providerLabel = PrettifyProfile(profile);
         var stateLabel = PrettifySupervisorState(supervisor.State);
         var now = DateTimeOffset.UtcNow;
 
         var activity = _sessionTelemetry.GetActivity(sessionId, activitySeconds, bellLimit);
-        var snapshot = await _sessionManager.GetBufferAsync(sessionId, ct: ct).ConfigureAwait(false);
-        var tailText = BuildTailText(snapshot?.Data, tailLines);
+        var tailText = string.Empty;
+        if (!session.LensOnly)
+        {
+            var snapshot = await _sessionManager.GetBufferAsync(sessionId, ct: ct).ConfigureAwait(false);
+            tailText = BuildTailText(snapshot?.Data, tailLines);
+        }
 
         if (_lensRuntime.TryGetSnapshot(sessionId, out var runtimeSnapshot))
         {
@@ -75,7 +79,7 @@ public sealed class SessionAgentVibeService
         return new AgentSessionVibeResponse
         {
             SessionId = sessionId,
-            Source = "fallback",
+            Source = session.LensOnly ? "lens-pending" : "fallback",
             GeneratedAt = now,
             Header = new AgentSessionVibeHeader
             {
@@ -92,10 +96,12 @@ public sealed class SessionAgentVibeService
             },
             Lane = capability.Lane,
             Capabilities = capability.Capabilities,
-            Overview = new AgentSessionVibeOverview
+                Overview = new AgentSessionVibeOverview
             {
                 StateValue = stateLabel,
-                StateMeta = supervisor.NeedsAttention ? "Needs attention" : "Stable",
+                StateMeta = session.LensOnly
+                    ? capability.Lane.Label
+                    : supervisor.NeedsAttention ? "Needs attention" : "Stable",
                 ActivityValue = $"{FormatBytes(activity.CurrentBytesPerSecond)}/s",
                 ActivityMeta = $"Heat {FormatHeat(activity.CurrentHeat)}",
                 LastOutputValue = FormatRelativeTime(activity.LastOutputAt, now),
@@ -117,7 +123,9 @@ public sealed class SessionAgentVibeService
             {
                 TailLineCount = Math.Max(1, tailLines),
                 TailText = tailText,
-                EmptyMessage = "No recent output in the terminal buffer."
+                EmptyMessage = session.LensOnly
+                    ? "Explicit Lens sessions do not include a terminal surface."
+                    : "No recent output in the terminal buffer."
             }
         };
     }
@@ -134,7 +142,7 @@ public sealed class SessionAgentVibeService
         LensRuntimeSnapshot runtimeSnapshot,
         DateTimeOffset now)
     {
-        var transportSummary = $"{runtimeSnapshot.TransportLabel} is attached as a native Lens sidecar. The visible terminal remains separate and available beside Lens.";
+        var transportSummary = $"{runtimeSnapshot.TransportLabel} is attached as the native Lens runtime. Lens remains provider-owned and separate from any terminal surface.";
         var chips = new List<AgentSessionVibeChip>
         {
             new()
@@ -149,7 +157,7 @@ public sealed class SessionAgentVibeService
             },
             new()
             {
-                Text = "Native sidecar",
+                Text = "Native runtime",
                 Tone = "positive"
             }
         };
@@ -220,7 +228,7 @@ public sealed class SessionAgentVibeService
             Overview = new AgentSessionVibeOverview
             {
                 StateValue = runtimeSnapshot.StatusLabel,
-                StateMeta = runtimeSnapshot.PendingQuestion is null ? "Native sidecar active" : "Waiting for input",
+                StateMeta = runtimeSnapshot.PendingQuestion is null ? "Native runtime active" : "Waiting for input",
                 ActivityValue = $"{runtimeSnapshot.Activities.Count.ToString(CultureInfo.InvariantCulture)} events",
                 ActivityMeta = runtimeSnapshot.TransportLabel,
                 LastOutputValue = FormatRelativeTime(runtimeSnapshot.LastEventAt, now),

@@ -8,6 +8,39 @@ internal static class LensProviderRuntimeConfiguration
     private const string ClaudeEnvironmentVariablesEnvironmentVariable = "MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES";
     private const string ClaudeDangerouslySkipPermissionsEnvironmentVariable = "MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS";
 
+    public static void ApplyUserProfileEnvironment(ProcessStartInfo startInfo, string? profileDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(startInfo);
+
+        if (!OperatingSystem.IsWindows() ||
+            string.IsNullOrWhiteSpace(profileDirectory) ||
+            !Directory.Exists(profileDirectory))
+        {
+            return;
+        }
+
+        startInfo.Environment["USERPROFILE"] = profileDirectory;
+        startInfo.Environment["HOME"] = profileDirectory;
+        startInfo.Environment["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
+
+        var root = Path.GetPathRoot(profileDirectory);
+        if (!string.IsNullOrWhiteSpace(root))
+        {
+            startInfo.Environment["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            startInfo.Environment["HOMEPATH"] = profileDirectory[root.Length..];
+        }
+
+        var appDataDirectory = Path.Combine(profileDirectory, "AppData", "Roaming");
+        var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
+        startInfo.Environment["APPDATA"] = appDataDirectory;
+        startInfo.Environment["LOCALAPPDATA"] = localAppDataDirectory;
+
+        foreach (var directory in GetUserCommandDirectories(profileDirectory).Reverse())
+        {
+            PrependPath(startInfo, directory);
+        }
+    }
+
     public static void ApplyEnvironmentVariables(ProcessStartInfo startInfo, string provider)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
@@ -89,4 +122,34 @@ internal static class LensProviderRuntimeConfiguration
     }
 
     private static IReadOnlyDictionary<string, string> Empty { get; } = new Dictionary<string, string>(0, StringComparer.Ordinal);
+
+    private static IEnumerable<string> GetUserCommandDirectories(string profileDirectory)
+    {
+        yield return Path.Combine(profileDirectory, "AppData", "Roaming", "npm");
+        yield return Path.Combine(profileDirectory, "AppData", "Local", "Programs", "nodejs");
+        yield return Path.Combine(profileDirectory, ".local", "bin");
+    }
+
+    private static void PrependPath(ProcessStartInfo startInfo, string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var existingPath = startInfo.Environment.TryGetValue("PATH", out var currentPath)
+            ? currentPath ?? string.Empty
+            : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+
+        var parts = existingPath
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Contains(directory, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+            ? directory
+            : directory + Path.PathSeparator + existingPath;
+    }
 }

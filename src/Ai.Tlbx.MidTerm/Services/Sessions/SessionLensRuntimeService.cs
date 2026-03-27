@@ -108,17 +108,17 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             if (state.Claude is not null)
             {
                 state.TransportKey = "claude-stream-json";
-                state.TransportLabel = "Claude stream-json sidecar";
+                state.TransportLabel = "Claude stream-json runtime";
                 state.Status = state.Status == LensRuntimeStatus.None ? LensRuntimeStatus.Ready : state.Status;
                 return true;
             }
 
             state.Claude = new ClaudeLensRuntime();
             state.TransportKey = "claude-stream-json";
-            state.TransportLabel = "Claude stream-json sidecar";
-            SetStatus(state, LensRuntimeStatus.Ready, "Claude Lens sidecar is ready.");
-            AppendActivity(state, "positive", "session.started", "Claude Lens sidecar attached.", "Lens prompts now use Claude's structured stream-json output in this session's cwd.");
-            EmitPulseSessionState(state, "session.started", "ready", "Ready", "Claude Lens sidecar attached.");
+            state.TransportLabel = "Claude stream-json runtime";
+            SetStatus(state, LensRuntimeStatus.Ready, "Claude Lens runtime is ready.");
+            AppendActivity(state, "positive", "session.started", "Claude Lens runtime attached.", "Lens prompts now use Claude's structured stream-json output in this session's cwd.");
+            EmitPulseSessionState(state, "session.started", "ready", "Ready", "Claude Lens runtime attached.");
             return true;
         }
         finally
@@ -426,7 +426,11 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         var process = new Process
         {
-            StartInfo = CreateProcessStartInfo(binaryPath, "app-server", state.WorkingDirectory!),
+            StartInfo = CreateProcessStartInfo(
+                binaryPath,
+                "app-server",
+                state.WorkingDirectory!,
+                ResolvePreferredUserProfileDirectory(binaryPath)),
             EnableRaisingEvents = true
         };
 
@@ -446,10 +450,10 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             Input = process.StandardInput
         };
         state.TransportKey = "codex-app-server";
-        state.TransportLabel = "Codex app-server sidecar";
-        SetStatus(state, LensRuntimeStatus.Starting, "Starting Codex Lens sidecar.");
-        AppendActivity(state, "info", "session.started", "Codex Lens sidecar starting.", "Lens is launching a native Codex app-server in this session's cwd while the terminal stays separate.");
-        EmitPulseSessionState(state, "session.started", "starting", "Starting", "Starting Codex Lens sidecar.");
+        state.TransportLabel = "Codex app-server runtime";
+        SetStatus(state, LensRuntimeStatus.Starting, "Starting Codex Lens runtime.");
+        AppendActivity(state, "info", "session.started", "Codex Lens runtime starting.", "Lens is launching a native Codex app-server in this session's cwd while the terminal surface remains separate.");
+        EmitPulseSessionState(state, "session.started", "starting", "Starting", "Starting Codex Lens runtime.");
 
         state.Codex.ReaderTask = Task.Run(() => ReadCodexLoopAsync(state, state.Codex, CancellationToken.None), CancellationToken.None);
         state.Codex.ErrorTask = Task.Run(() => ReadCodexErrorLoopAsync(state, state.Codex, CancellationToken.None), CancellationToken.None);
@@ -464,13 +468,13 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
                 SetStatus(state, process.ExitCode == 0 ? LensRuntimeStatus.Stopped : LensRuntimeStatus.Error,
                     process.ExitCode == 0
-                        ? "Codex Lens sidecar exited."
-                        : $"Codex Lens sidecar exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
+                        ? "Codex Lens runtime exited."
+                        : $"Codex Lens runtime exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
                 AppendActivity(
                     state,
                     process.ExitCode == 0 ? "warning" : "attention",
                     "session.exited",
-                    "Codex Lens sidecar exited.",
+                    "Codex Lens runtime exited.",
                     $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
             }
         };
@@ -498,9 +502,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             }
 
             state.Codex.ProviderThreadId = providerThreadId;
-            SetStatus(state, LensRuntimeStatus.Ready, "Codex Lens sidecar ready.");
-            AppendActivity(state, "positive", "thread.started", "Codex Lens sidecar attached.", $"Connected to provider thread `{providerThreadId}`.");
-            EmitPulseSessionState(state, "session.ready", "ready", "Ready", "Codex Lens sidecar ready.");
+            SetStatus(state, LensRuntimeStatus.Ready, "Codex Lens runtime ready.");
+            AppendActivity(state, "positive", "thread.started", "Codex Lens runtime attached.", $"Connected to provider thread `{providerThreadId}`.");
+            EmitPulseSessionState(state, "session.ready", "ready", "Ready", "Codex Lens runtime ready.");
             EmitPulseThreadState(state, "thread.started", "active", "Active", providerThreadId);
             return true;
         }
@@ -549,7 +553,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         state.AssistantText = string.Empty;
         state.UnifiedDiff = null;
         SetStatus(state, LensRuntimeStatus.Running, "Codex is processing the Lens prompt.");
-        AppendActivity(state, "info", "turn.started", "Sent prompt to Codex Lens sidecar.", SummarizePrompt(request.Text));
+        AppendActivity(state, "info", "turn.started", "Sent prompt to Codex Lens runtime.", SummarizePrompt(request.Text));
         var turnInput = CreateCodexTurnInput(request.Text, []);
         var turnResult = await SendCodexRequestAsync(
             state,
@@ -590,7 +594,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         state.AssistantText = string.Empty;
         state.UnifiedDiff = null;
         SetStatus(state, LensRuntimeStatus.Running, "Codex is processing the Lens turn.");
-        AppendActivity(state, "info", "turn.started", "Sent turn to Codex Lens sidecar.", SummarizePrompt(request.Text));
+        AppendActivity(state, "info", "turn.started", "Sent turn to Codex Lens runtime.", SummarizePrompt(request.Text));
         var turnResult = await SendCodexRequestAsync(
             state,
             "turn/start",
@@ -646,7 +650,11 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         var process = new Process
         {
-            StartInfo = CreateProcessStartInfo(binaryPath, args, state.WorkingDirectory!),
+            StartInfo = CreateProcessStartInfo(
+                binaryPath,
+                args,
+                state.WorkingDirectory!,
+                ResolvePreferredUserProfileDirectory(binaryPath)),
             EnableRaisingEvents = true
         };
 
@@ -662,11 +670,11 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         claude.Error = process.StandardError;
         claude.Input = process.StandardInput;
         state.TransportKey = "claude-stream-json";
-        state.TransportLabel = "Claude stream-json sidecar";
+        state.TransportLabel = "Claude stream-json runtime";
         state.AssistantText = string.Empty;
         state.UnifiedDiff = null;
         SetStatus(state, LensRuntimeStatus.Running, "Claude is processing the Lens prompt.");
-        AppendActivity(state, "info", "turn.started", "Sent prompt to Claude Lens sidecar.", SummarizePrompt(request.Text));
+        AppendActivity(state, "info", "turn.started", "Sent prompt to Claude Lens runtime.", SummarizePrompt(request.Text));
 
         claude.ReaderTask = Task.Run(() => ReadClaudeLoopAsync(state, claude, CancellationToken.None), CancellationToken.None);
         claude.ErrorTask = Task.Run(() => ReadClaudeErrorLoopAsync(state, claude, CancellationToken.None), CancellationToken.None);
@@ -1425,7 +1433,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     var planText = BuildCodexPlanMarkdown(payload);
                     if (!string.IsNullOrWhiteSpace(planText))
                     {
-                        EmitPulsePlanCompleted(state, planText, "codex.app-server.notification", method, payload);
+                        EmitPulsePlanCompleted(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, planText, "codex.app-server.notification", method, payload);
                     }
                     break;
                 }
@@ -1434,7 +1442,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 {
                     state.UnifiedDiff = GetString(payload, "unifiedDiff") ?? GetString(payload, "diff") ?? GetString(payload, "patch");
                     AppendActivity(state, "info", "turn.diff.updated", "Codex updated the working diff.", SummarizeDiff(state.UnifiedDiff));
-                    EmitPulseDiffUpdated(state, state.UnifiedDiff ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseDiffUpdated(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, state.UnifiedDiff ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
                 }
 
@@ -1445,24 +1453,32 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     {
                         state.AssistantText = (state.AssistantText ?? string.Empty) + delta;
                     }
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "assistant_text", delta, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(
+                        state,
+                        GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId,
+                        GetString(payload, "itemId") ?? GetString(payload, "item", "id"),
+                        "assistant_text",
+                        delta,
+                        "codex.app-server.notification",
+                        method,
+                        payload);
                     break;
                 }
 
                 case "item/reasoning/textDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/reasoning/summaryTextDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_summary_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_summary_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/commandExecution/outputDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "command_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "command_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/fileChange/outputDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "file_change_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "file_change_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/plan/delta":
@@ -1470,7 +1486,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     var delta = GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty;
                     if (!string.IsNullOrEmpty(delta))
                     {
-                        EmitPulsePlanDelta(state, delta, "codex.app-server.notification", method, payload);
+                        EmitPulsePlanDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, delta, "codex.app-server.notification", method, payload);
                     }
                     break;
                 }
@@ -1478,25 +1494,63 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 case "item/started":
                 {
                     var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
+                    var turnId = GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId;
                     if (itemType is "command_execution" or "file_change" or "web_search" or "mcp_tool_call" or "dynamic_tool_call")
                     {
                         AppendActivity(state, "info", "tool.started", $"{PrettifyToolKind(itemType)} started.", BuildCodexItemDetail(payload));
                     }
-                    EmitPulseItem(state, "item.started", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", $"{PrettifyToolKind(itemType)} started", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
+                    EmitPulseItem(state, "item.started", turnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", $"{PrettifyToolKind(itemType)} started", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
                     break;
                 }
 
                 case "item/reasoning/summaryPartAdded":
                 case "item/commandExecution/terminalInteraction":
                 {
-                    var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
-                    EmitPulseItem(state, "item.updated", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", PrettifyToolKind(itemType), BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
+                    var itemType = method == "item/commandExecution/terminalInteraction"
+                        ? "command_execution"
+                        : NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
+                    var detail = method == "item/commandExecution/terminalInteraction"
+                        ? GetString(payload, "stdin") ?? BuildCodexItemDetail(payload)
+                        : BuildCodexItemDetail(payload);
+                    var title = method == "item/commandExecution/terminalInteraction"
+                        ? "Command running"
+                        : PrettifyToolKind(itemType);
+                    EmitPulseItem(state, "item.updated", GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", title, detail, null, "codex.app-server.notification", method, payload);
+                    break;
+                }
+
+                case "item/mcpToolCall/progress":
+                {
+                    var turnId = GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId;
+                    var itemId = GetString(payload, "item", "id") ?? GetString(payload, "itemId") ?? GetString(payload, "toolUseId");
+                    if (string.IsNullOrWhiteSpace(itemId))
+                    {
+                        break;
+                    }
+
+                    var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type") ?? "mcpToolCall");
+                    var title = GetString(payload, "toolName") ?? "MCP tool";
+                    var detail = GetString(payload, "summary") ?? BuildCodexItemDetail(payload);
+                    EmitPulseItem(
+                        state,
+                        "item.updated",
+                        turnId,
+                        itemId,
+                        itemType,
+                        "in_progress",
+                        title,
+                        detail,
+                        null,
+                        "codex.app-server.notification",
+                        method,
+                        payload);
                     break;
                 }
 
                 case "item/completed":
                 {
                     var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
+                    var turnId = GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId;
                     if (itemType is "assistant_message" or "agent_message")
                     {
                         var detail = BuildCodexItemDetail(payload);
@@ -1505,20 +1559,20 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                             state.AssistantText = detail;
                         }
                         AppendActivity(state, "positive", "item.completed", "Assistant message completed.", Trim(detail, 220));
-                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), "assistant_message", "completed", "Assistant message", detail, null, "codex.app-server.notification", method, payload);
+                        EmitPulseItem(state, "item.completed", turnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), "assistant_message", "completed", "Assistant message", detail, null, "codex.app-server.notification", method, payload);
                     }
                     else if (itemType is "plan")
                     {
                         var detail = BuildCodexItemDetail(payload);
                         if (!string.IsNullOrWhiteSpace(detail))
                         {
-                            EmitPulsePlanCompleted(state, detail, "codex.app-server.notification", method, payload);
+                            EmitPulsePlanCompleted(state, turnId, detail, "codex.app-server.notification", method, payload);
                         }
                     }
                     else if (itemType is "command_execution" or "file_change" or "web_search" or "mcp_tool_call" or "dynamic_tool_call")
                     {
                         AppendActivity(state, "positive", "tool.completed", $"{PrettifyToolKind(itemType)} completed.", BuildCodexItemDetail(payload));
-                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "completed", $"{PrettifyToolKind(itemType)} completed", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
+                        EmitPulseItem(state, "item.completed", turnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "completed", $"{PrettifyToolKind(itemType)} completed", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
                     }
                     break;
                 }
@@ -1549,8 +1603,8 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                         state,
                         exitCode == 0 ? LensRuntimeStatus.Ready : LensRuntimeStatus.Error,
                         exitCode == 0
-                            ? "Claude Lens sidecar is ready for the next prompt."
-                            : $"Claude Lens sidecar exited with code {exitCode.ToString(CultureInfo.InvariantCulture)}.");
+                            ? "Claude Lens runtime is ready for the next prompt."
+                            : $"Claude Lens runtime exited with code {exitCode.ToString(CultureInfo.InvariantCulture)}.");
                 }
             }
         }
@@ -1619,7 +1673,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 case "system":
                 {
                     claude.ResumeSessionId ??= GetString(root, "session_id");
-                    AppendActivity(state, "positive", "session.started", "Claude Lens sidecar attached.", "Claude is streaming structured JSON turn output for Lens.");
+                    AppendActivity(state, "positive", "session.started", "Claude Lens runtime attached.", "Claude is streaming structured JSON turn output for Lens.");
                     break;
                 }
 
@@ -1768,16 +1822,18 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     private static ProcessStartInfo CreateProcessStartInfo(
         string binaryPath,
         IReadOnlyList<string> arguments,
-        string workingDirectory)
+        string workingDirectory,
+        string? profileDirectory = null)
     {
         var argumentString = string.Join(" ", arguments.Select(QuoteArgument));
-        return CreateProcessStartInfo(binaryPath, argumentString, workingDirectory);
+        return CreateProcessStartInfo(binaryPath, argumentString, workingDirectory, profileDirectory);
     }
 
     private static ProcessStartInfo CreateProcessStartInfo(
         string binaryPath,
         string arguments,
-        string workingDirectory)
+        string workingDirectory,
+        string? profileDirectory = null)
     {
         ProcessStartInfo startInfo;
         var extension = Path.GetExtension(binaryPath);
@@ -1819,6 +1875,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             };
         }
 
+        LensHostEnvironmentResolver.ApplyProfileEnvironment(startInfo, profileDirectory);
         return startInfo;
     }
 
@@ -1837,6 +1894,18 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     private string? FindExecutableInPath(string commandName)
     {
         return AiCliCommandLocator.FindExecutableInPath(commandName, ResolveConfiguredUserProfileDirectory());
+    }
+
+    private string? ResolvePreferredUserProfileDirectory(string? executablePath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        return ResolveConfiguredUserProfileDirectory()
+               ?? LensHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(executablePath)
+               ?? LensHostEnvironmentResolver.ResolveCurrentWindowsProfileDirectory();
     }
 
     private string? ResolveConfiguredUserProfileDirectory()
@@ -2122,6 +2191,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulseContentDelta(
         LensRuntimeState state,
+        string? turnId,
         string? itemId,
         string streamKind,
         string delta,
@@ -2136,6 +2206,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         EmitPulseEvent(state, "content.delta", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.ItemId = itemId;
             lensEvent.ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -2147,6 +2218,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulsePlanDelta(
         LensRuntimeState state,
+        string? turnId,
         string delta,
         string rawSource,
         string rawMethod,
@@ -2154,6 +2226,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, "plan.delta", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.PlanDelta = new LensPulsePlanDeltaPayload
             {
                 Delta = delta
@@ -2163,6 +2236,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulsePlanCompleted(
         LensRuntimeState state,
+        string? turnId,
         string planMarkdown,
         string rawSource,
         string rawMethod,
@@ -2170,6 +2244,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, "plan.completed", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
             {
                 PlanMarkdown = planMarkdown
@@ -2179,6 +2254,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulseDiffUpdated(
         LensRuntimeState state,
+        string? turnId,
         string unifiedDiff,
         string rawSource,
         string rawMethod,
@@ -2186,6 +2262,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, "diff.updated", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.DiffUpdated = new LensPulseDiffUpdatedPayload
             {
                 UnifiedDiff = unifiedDiff
@@ -2196,6 +2273,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     private void EmitPulseItem(
         LensRuntimeState state,
         string eventType,
+        string? turnId,
         string? itemId,
         string itemType,
         string status,
@@ -2208,6 +2286,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, eventType, rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.ItemId = itemId;
             lensEvent.Item = new LensPulseItemPayload
             {
@@ -2233,6 +2312,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         EmitPulseItem(
             state,
             "item.completed",
+            turnId,
             $"local-user:{turnId ?? Guid.NewGuid().ToString("N")}",
             "user_message",
             "completed",
