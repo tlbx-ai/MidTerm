@@ -307,6 +307,7 @@ export function setTabVisible(bar: HTMLDivElement, tabId: SessionTabId, visible:
   }
 
   btn.hidden = !visible;
+  btn.style.display = visible ? '' : 'none';
 }
 
 export function setTabLabel(bar: HTMLDivElement, tabId: SessionTabId, label: string): void {
@@ -349,6 +350,7 @@ export function setActionVisible(
   }
 
   btn.hidden = !visible;
+  btn.style.display = visible ? '' : 'none';
 }
 
 export function updateCwd(bar: HTMLDivElement, cwd: string): void {
