@@ -3539,7 +3539,7 @@ describe('agentView dev errors', () => {
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 
-  it('disables transcript virtualization on compact mobile widths', async () => {
+  it('keeps transcript virtualization active on compact mobile widths too', async () => {
     const { computeTranscriptVirtualWindow } = await import('./index');
 
     const entries = Array.from({ length: 120 }, (_, index) => ({
@@ -3555,12 +3555,10 @@ describe('agentView dev errors', () => {
 
     const windowed = computeTranscriptVirtualWindow(entries, 1800, 900, 375);
 
-    expect(windowed).toEqual({
-      start: 0,
-      end: entries.length,
-      topSpacerPx: 0,
-      bottomSpacerPx: 0,
-    });
+    expect(windowed.start).toBeGreaterThan(0);
+    expect(windowed.end).toBeLessThan(entries.length);
+    expect(windowed.topSpacerPx).toBeGreaterThan(0);
+    expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 
   it('estimates taller transcript rows for narrow viewports', async () => {

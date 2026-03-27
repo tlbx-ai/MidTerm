@@ -32,12 +32,14 @@ import {
   type LensPulseSnapshotResponse,
   LensHttpError,
 } from '../../api/client';
+import { t } from '../i18n';
+import { buildTerminalFontStack, getConfiguredTerminalFontFamily } from '../terminal/fontConfig';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionLensViewState>();
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const TRANSCRIPT_OVERSCAN_PX = 800;
-const TRANSCRIPT_VIRTUALIZE_AFTER = 80;
+const TRANSCRIPT_VIRTUALIZE_AFTER = 50;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
 let lensTurnLifecycleBound = false;
 
@@ -58,6 +60,7 @@ interface SessionLensViewState {
   requestQuestionIndexById: Record<string, number>;
   transcriptAutoScrollPinned: boolean;
   transcriptRenderScheduled: number | null;
+  transcriptVisualOrderById: Map<string, number>;
   activationState:
     | 'idle'
     | 'opening'
@@ -170,6 +173,26 @@ interface ArtifactClusterInfo {
   label: string | null;
   count: number;
   onlyTools: boolean;
+}
+
+function lensText(key: string, fallback: string): string {
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return fallback;
+  }
+
+  return translated;
+}
+
+function lensFormat(
+  key: string,
+  fallback: string,
+  replacements: Record<string, string | number>,
+): string {
+  return Object.entries(replacements).reduce(
+    (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
+    lensText(key, fallback),
+  );
 }
 
 /**
@@ -294,16 +317,25 @@ async function activateAgentView(sessionId: string): Promise<void> {
   setActivationState(
     state,
     'opening',
-    'Lens pane opened. Preparing transcript runtime attach.',
-    'Lens pane opened.',
-    'MidTerm is opening the Lens conversation surface for this session.',
+    lensText(
+      'lens.activation.opening.detail',
+      'Lens pane opened. Preparing transcript runtime attach.',
+    ),
+    lensText('lens.activation.opening.summary', 'Lens pane opened.'),
+    lensText(
+      'lens.activation.opening.body',
+      'MidTerm is opening the Lens conversation surface for this session.',
+    ),
   );
   setActivationState(
     state,
     'attaching',
-    'Requesting Lens runtime attach.',
-    'Attaching Lens runtime.',
-    'Starting or reconnecting the backend-owned Lens runtime for this session.',
+    lensText('lens.activation.attaching.detail', 'Requesting Lens runtime attach.'),
+    lensText('lens.activation.attaching.summary', 'Attaching Lens runtime.'),
+    lensText(
+      'lens.activation.attaching.body',
+      'Starting or reconnecting the backend-owned Lens runtime for this session.',
+    ),
   );
   renderCurrentAgentView(sessionId);
 
@@ -325,9 +357,15 @@ async function activateAgentView(sessionId: string): Promise<void> {
     setActivationState(
       state,
       'waiting-snapshot',
-      'Lens runtime accepted the attach request.',
-      'Lens runtime attached.',
-      'Waiting for the first canonical Lens snapshot from MidTerm.',
+      lensText(
+        'lens.activation.waitingSnapshot.detail',
+        'Lens runtime accepted the attach request.',
+      ),
+      lensText('lens.activation.waitingSnapshot.summary', 'Lens runtime attached.'),
+      lensText(
+        'lens.activation.waitingSnapshot.body',
+        'Waiting for the first canonical Lens snapshot from MidTerm.',
+      ),
     );
     renderCurrentAgentView(sessionId);
 
@@ -337,9 +375,15 @@ async function activateAgentView(sessionId: string): Promise<void> {
     setActivationState(
       state,
       'loading-events',
-      'Lens snapshot is ready. Loading recent transcript events.',
-      'Lens snapshot ready.',
-      'Loading the canonical Lens event backlog for this session.',
+      lensText(
+        'lens.activation.loadingEvents.detail',
+        'Lens snapshot is ready. Loading recent transcript events.',
+      ),
+      lensText('lens.activation.loadingEvents.summary', 'Lens snapshot ready.'),
+      lensText(
+        'lens.activation.loadingEvents.body',
+        'Loading the canonical Lens event backlog for this session.',
+      ),
     );
     renderCurrentAgentView(sessionId);
 
@@ -352,9 +396,15 @@ async function activateAgentView(sessionId: string): Promise<void> {
     setActivationState(
       state,
       'connecting-stream',
-      'Lens data is loaded. Connecting the live stream.',
-      'Lens event backlog loaded.',
-      'Opening the live Lens event stream so the transcript updates in real time.',
+      lensText(
+        'lens.activation.connectingStream.detail',
+        'Lens data is loaded. Connecting the live stream.',
+      ),
+      lensText('lens.activation.connectingStream.summary', 'Lens event backlog loaded.'),
+      lensText(
+        'lens.activation.connectingStream.body',
+        'Opening the live Lens event stream so the transcript updates in real time.',
+      ),
     );
     renderCurrentAgentView(sessionId);
     openLiveLensStream(sessionId, snapshot.latestSequence);
@@ -376,8 +426,11 @@ async function activateAgentView(sessionId: string): Promise<void> {
         state,
         'warning',
         'history-restored',
-        'Canonical Lens history restored.',
-        'MidTerm recovered canonical Lens history after the initial attach failed, so it is retrying the live attach automatically.',
+        lensText('lens.activation.historyRestored.summary', 'Canonical Lens history restored.'),
+        lensText(
+          'lens.activation.historyRestored.body',
+          'MidTerm recovered canonical Lens history after the initial attach failed, so it is retrying the live attach automatically.',
+        ),
       );
       await resumeLensFromHistory(sessionId, state, activationRunId);
       return;
@@ -388,14 +441,17 @@ async function activateAgentView(sessionId: string): Promise<void> {
     setActivationState(
       state,
       'failed',
-      'Lens startup failed before the first stable snapshot became available.',
-      'Lens startup failed.',
+      lensText(
+        'lens.activation.startupFailed.detail',
+        'Lens startup failed before the first stable snapshot became available.',
+      ),
+      lensText('lens.activation.startupFailed.summary', 'Lens startup failed.'),
       state.activationError,
       'attention',
     );
     if (shouldShowLensDevErrorDialog(state.activationIssue)) {
       showDevErrorDialog({
-        title: 'Lens failed to open',
+        title: lensText('lens.error.openTitle', 'Lens failed to open'),
         context: `Lens activation failed for session ${sessionId}`,
         error,
       });
@@ -518,6 +574,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     requestQuestionIndexById: {},
     transcriptAutoScrollPinned: true,
     transcriptRenderScheduled: null,
+    transcriptVisualOrderById: new Map<string, number>(),
     activationState: 'idle',
     activationDetail: '',
     activationTrace: [],
@@ -799,6 +856,7 @@ function buildLensDebugScenario(
 }
 
 function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): void {
+  syncAgentViewPresentation(panel);
   if (panel.dataset.agentViewReady === 'true') {
     return;
   }
@@ -810,7 +868,7 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
       <div class="agent-chat-shell">
         <section class="agent-transcript-card">
           <div class="agent-transcript" data-agent-field="transcript"></div>
-          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>Jump to live</button>
+          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
         </section>
         <section class="agent-composer-shell">
           <div class="agent-composer-interruption" data-agent-field="composer-interruption" hidden></div>
@@ -819,6 +877,18 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
       </div>
     </section>
   `;
+}
+
+function syncAgentViewPresentation(panel: HTMLDivElement): void {
+  const style = (panel as unknown as { style?: CSSStyleDeclaration | null }).style;
+  if (!style || typeof style.setProperty !== 'function') {
+    return;
+  }
+
+  style.setProperty(
+    '--agent-transcript-mono-font-family',
+    buildTerminalFontStack(getConfiguredTerminalFontFamily()),
+  );
 }
 
 function bindTranscriptViewport(sessionId: string, state: SessionLensViewState): void {
@@ -896,9 +966,12 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
       setActivationState(
         current,
         'ready',
-        'Lens live stream connected.',
-        'Live Lens stream connected.',
-        'Realtime canonical Lens events are now flowing into the transcript.',
+        lensText('lens.activation.ready.detail', 'Lens live stream connected.'),
+        lensText('lens.activation.ready.summary', 'Live Lens stream connected.'),
+        lensText(
+          'lens.activation.ready.body',
+          'Realtime canonical Lens events are now flowing into the transcript.',
+        ),
         'positive',
       );
       renderCurrentAgentView(sessionId);
@@ -980,7 +1053,7 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
       'attention',
     );
     showDevErrorDialog({
-      title: 'Lens refresh failed',
+      title: lensText('lens.error.refreshTitle', 'Lens refresh failed'),
       context: `Lens snapshot refresh failed for session ${sessionId}`,
       error,
     });
@@ -1011,6 +1084,7 @@ function renderAgentView(
   streamConnected: boolean,
   state: SessionLensViewState,
 ): void {
+  syncAgentViewPresentation(panel);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncRequestInteractionState(state, snapshot.requests);
   const transcriptEntries = buildLensTranscriptEntries(snapshot, events);
@@ -1024,12 +1098,15 @@ function renderAgentView(
     state.optimisticTurns,
   );
   state.optimisticTurns = optimistic.optimisticTurns;
-  const renderedEntries = withActivationIssueNotice(
+  const renderedEntries = stabilizeTranscriptEntryOrder(
+    state,
     withLiveAssistantState(
       snapshot,
-      withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
+      withActivationIssueNotice(
+        withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
+        state.activationIssue,
+      ),
     ),
-    state.activationIssue,
   );
   renderTranscript(panel, renderedEntries, snapshot.sessionId);
   renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
@@ -1121,6 +1198,37 @@ function handleLensTurnFailed(event: Event): void {
   renderCurrentAgentView(detail.sessionId);
 }
 
+function stabilizeTranscriptEntryOrder(
+  state: SessionLensViewState,
+  entries: readonly LensTranscriptEntry[],
+): LensTranscriptEntry[] {
+  const previousOrderById = state.transcriptVisualOrderById;
+  const nextOrderById = new Map<string, number>();
+  let nextVisualOrder =
+    Math.max(0, ...Array.from(previousOrderById.values(), (value) => Math.trunc(value))) + 1;
+
+  const stabilized = entries.map((entry) => {
+    if (entry.order < 0) {
+      nextOrderById.set(entry.id, entry.order);
+      return { ...entry };
+    }
+
+    const preservedOrder = previousOrderById.get(entry.id);
+    const visualOrder = preservedOrder ?? nextVisualOrder++;
+    nextOrderById.set(entry.id, visualOrder);
+    return {
+      ...entry,
+      order: visualOrder,
+      meta: entry.meta,
+    };
+  });
+
+  state.transcriptVisualOrderById = nextOrderById;
+  return stabilized.sort(
+    (left, right) => left.order - right.order || left.id.localeCompare(right.id),
+  );
+}
+
 function renderActivationView(
   sessionId: string,
   panel: HTMLDivElement,
@@ -1153,7 +1261,7 @@ function renderTranscript(
   }
 
   if (entries.length === 0) {
-    renderEmptyContainer(container, 'No transcript entries yet.');
+    renderEmptyContainer(container, lensText('lens.emptyTranscript', 'No transcript entries yet.'));
     return;
   }
 
@@ -1243,6 +1351,7 @@ function renderScrollToBottomControl(panel: HTMLDivElement, state: SessionLensVi
     !state.transcriptAutoScrollPinned &&
     state.transcriptEntries.length > 0 &&
     state.activationState !== 'failed';
+  button.textContent = lensText('lens.scrollToBottom', 'Back to bottom');
   button.hidden = !shouldShow;
 }
 
@@ -1525,8 +1634,8 @@ export function buildLensTranscriptEntries(
         order,
         kind: 'plan',
         tone: 'info',
-        label: 'Plan',
-        title: 'Plan',
+        label: transcriptLabel('plan'),
+        title: lensText('lens.title.plan', 'Plan'),
         body: '',
         meta: formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt),
         sourceTurnId: lensEvent.turnId,
@@ -1549,7 +1658,7 @@ export function buildLensTranscriptEntries(
         kind: 'diff',
         tone: 'warning',
         label: 'Diff',
-        title: 'Working diff',
+        title: lensText('lens.title.workingDiff', 'Working diff'),
         body: lensEvent.diffUpdated?.unifiedDiff || '',
         meta: formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt),
         sourceTurnId: lensEvent.turnId,
@@ -1631,8 +1740,8 @@ export function buildLensTranscriptEntries(
         order: fallbackOrder,
         kind: 'assistant',
         tone: 'info',
-        label: 'Assistant',
-        title: 'Assistant',
+        label: transcriptLabel('assistant'),
+        title: transcriptLabel('assistant'),
         body: snapshot.streams.assistantText,
         meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
         sourceTurnId: snapshot.currentTurn.turnId,
@@ -1654,8 +1763,8 @@ export function buildLensTranscriptEntries(
         order: fallbackOrder,
         kind: 'assistant',
         tone: 'info',
-        label: 'Assistant',
-        title: 'Assistant',
+        label: transcriptLabel('assistant'),
+        title: transcriptLabel('assistant'),
         body: snapshot.streams.assistantText,
         meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
         sourceTurnId: snapshot.currentTurn.turnId,
@@ -1673,8 +1782,8 @@ export function buildLensTranscriptEntries(
       order: fallbackOrder,
       kind: 'reasoning',
       tone: 'info',
-      label: 'Reasoning',
-      title: 'Reasoning',
+      label: transcriptLabel('reasoning'),
+      title: lensText('lens.title.reasoning', 'Reasoning'),
       body: snapshot.streams.reasoningText,
       meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
     });
@@ -1682,7 +1791,11 @@ export function buildLensTranscriptEntries(
   }
 
   if (
-    !entries.some((entry) => entry.kind === 'reasoning' && entry.title === 'Reasoning summary') &&
+    !entries.some(
+      (entry) =>
+        entry.kind === 'reasoning' &&
+        entry.title === lensText('lens.title.reasoningSummary', 'Reasoning summary'),
+    ) &&
     snapshot.streams.reasoningSummaryText.trim()
   ) {
     entries.push({
@@ -1691,7 +1804,7 @@ export function buildLensTranscriptEntries(
       kind: 'reasoning',
       tone: 'info',
       label: 'Reasoning',
-      title: 'Reasoning summary',
+      title: lensText('lens.title.reasoningSummary', 'Reasoning summary'),
       body: snapshot.streams.reasoningSummaryText,
       meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
     });
@@ -1707,8 +1820,8 @@ export function buildLensTranscriptEntries(
       order: fallbackOrder,
       kind: 'plan',
       tone: 'info',
-      label: 'Plan',
-      title: 'Plan',
+      label: transcriptLabel('plan'),
+      title: lensText('lens.title.plan', 'Plan'),
       body: snapshot.streams.planText,
       meta: formatTranscriptMeta('plan', 'Snapshot', snapshot.generatedAt),
     });
@@ -1725,7 +1838,7 @@ export function buildLensTranscriptEntries(
       kind: 'diff',
       tone: 'warning',
       label: 'Diff',
-      title: 'Working diff',
+      title: lensText('lens.title.workingDiff', 'Working diff'),
       body: snapshot.streams.unifiedDiff,
       meta: formatTranscriptMeta('diff', 'Snapshot', snapshot.generatedAt),
     });
@@ -1733,7 +1846,11 @@ export function buildLensTranscriptEntries(
   }
 
   if (
-    !entries.some((entry) => entry.kind === 'tool' && entry.title === 'Command output') &&
+    !entries.some(
+      (entry) =>
+        entry.kind === 'tool' &&
+        entry.title === lensText('lens.title.commandOutput', 'Command output'),
+    ) &&
     snapshot.streams.commandOutput.trim()
   ) {
     entries.push({
@@ -1742,7 +1859,7 @@ export function buildLensTranscriptEntries(
       kind: 'tool',
       tone: 'warning',
       label: 'Tool',
-      title: 'Command output',
+      title: lensText('lens.title.commandOutput', 'Command output'),
       body: snapshot.streams.commandOutput,
       meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
     });
@@ -1750,7 +1867,11 @@ export function buildLensTranscriptEntries(
   }
 
   if (
-    !entries.some((entry) => entry.kind === 'tool' && entry.title === 'File change output') &&
+    !entries.some(
+      (entry) =>
+        entry.kind === 'tool' &&
+        entry.title === lensText('lens.title.fileChangeOutput', 'File change output'),
+    ) &&
     snapshot.streams.fileChangeOutput.trim()
   ) {
     entries.push({
@@ -1759,7 +1880,7 @@ export function buildLensTranscriptEntries(
       kind: 'tool',
       tone: 'warning',
       label: 'Tool',
-      title: 'File change output',
+      title: lensText('lens.title.fileChangeOutput', 'File change output'),
       body: snapshot.streams.fileChangeOutput,
       meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
     });
@@ -1827,7 +1948,7 @@ export function applyOptimisticLensTurns(
         order: nextOrder,
         kind: 'user',
         tone: 'info',
-        label: 'You',
+        label: transcriptLabel('user'),
         title: '',
         body: turn.text,
         meta: formatTranscriptMeta(
@@ -1847,7 +1968,7 @@ export function applyOptimisticLensTurns(
         order: nextOrder,
         kind: 'assistant',
         tone: 'info',
-        label: 'Assistant',
+        label: transcriptLabel('assistant'),
         title: '',
         body: turn.status === 'submitted' ? 'Starting…' : 'Thinking…',
         meta: formatTranscriptMeta(
@@ -1884,8 +2005,11 @@ function withInlineLensStatus(
     snapshot.session.lastError?.trim() ||
     snapshot.session.reason?.trim() ||
     (streamConnected
-      ? 'Lens is connected to MidTerm and waiting for transcript content.'
-      : 'Lens is reconnecting to MidTerm.');
+      ? lensText(
+          'lens.status.connectedWaiting',
+          'Lens is connected to MidTerm and waiting for transcript content.',
+        )
+      : lensText('lens.status.reconnecting', 'Lens is reconnecting to MidTerm.'));
 
   if ((!statusBody || hasConversation) && !snapshot.session.lastError) {
     return entries;
@@ -1897,10 +2021,10 @@ function withInlineLensStatus(
       order: Number.MIN_SAFE_INTEGER,
       kind: snapshot.session.lastError ? 'notice' : 'system',
       tone: snapshot.session.lastError ? 'attention' : streamConnected ? 'positive' : 'warning',
-      label: 'MidTerm',
+      label: lensText('lens.label.midterm', 'MidTerm'),
       title: '',
       body: statusBody,
-      meta: streamConnected ? '' : 'Connecting',
+      meta: streamConnected ? '' : lensText('lens.status.connecting', 'Connecting'),
     },
     ...entries,
   ];
@@ -1950,7 +2074,7 @@ export function withActivationIssueNotice(
       order: Number.MIN_SAFE_INTEGER,
       kind: issue.tone === 'attention' ? 'notice' : 'system',
       tone: issue.tone,
-      label: 'MidTerm',
+      label: lensText('lens.label.midterm', 'MidTerm'),
       title: issue.title,
       body: issue.body,
       meta: issue.meta,
@@ -1971,7 +2095,7 @@ function createRequestTranscriptEntry(
     order,
     kind: 'request',
     tone: request?.state === 'resolved' ? 'positive' : 'warning',
-    label: 'Request',
+    label: transcriptLabel('request'),
     title:
       request?.kindLabel ||
       lensEvent?.requestOpened?.requestTypeLabel ||
@@ -2042,7 +2166,7 @@ function buildSystemEntryFromEvent(
       order,
       kind: 'notice',
       tone: toneFromEvent(lensEvent.type),
-      label: 'Turn',
+      label: lensText('lens.label.midterm', 'MidTerm'),
       title: lensEvent.turnCompleted.stateLabel || prettify(lensEvent.type),
       body: lensEvent.turnCompleted.errorMessage,
       meta: formatTranscriptMeta('notice', prettify(lensEvent.type), lensEvent.createdAt),
@@ -2066,10 +2190,13 @@ export function buildActivationTranscriptEntries(
         order: 0,
         kind: 'system',
         tone: state.activationState === 'failed' ? 'attention' : 'warning',
-        label: 'MidTerm',
+        label: lensText('lens.label.midterm', 'MidTerm'),
         title: '',
         body: state.activationDetail || 'Waiting for Lens boot steps…',
-        meta: state.activationState === 'failed' ? 'Failed' : 'Connecting',
+        meta:
+          state.activationState === 'failed'
+            ? lensText('lens.status.failed', 'Failed')
+            : lensText('lens.status.connecting', 'Connecting'),
       },
     ];
   }
@@ -2083,7 +2210,7 @@ export function buildActivationTranscriptEntries(
     order: index,
     kind: entry.tone === 'attention' ? ('notice' as const) : ('system' as const),
     tone: entry.tone,
-    label: 'MidTerm',
+    label: lensText('lens.label.midterm', 'MidTerm'),
     title: '',
     body: entry.detail,
     meta: entry.meta,
@@ -2197,7 +2324,13 @@ function createTranscriptEntry(
 function createArtifactClusterLabel(cluster: ArtifactClusterInfo): HTMLElement {
   const label = document.createElement('div');
   label.className = 'agent-transcript-artifact-cluster-label';
-  label.textContent = `${cluster.label}${cluster.count > 1 ? ` (${cluster.count})` : ''}`;
+  label.textContent =
+    cluster.count > 1
+      ? lensFormat('lens.cluster.withCount', '{label} ({count})', {
+          label: cluster.label || '',
+          count: cluster.count,
+        })
+      : cluster.label || '';
   return label;
 }
 
@@ -2294,8 +2427,8 @@ function resolveArtifactCluster(
   const label =
     position === 'start' && (count > 1 || !onlyTools)
       ? onlyTools
-        ? 'Tool calls'
-        : 'Work log'
+        ? lensText('lens.cluster.toolCalls', 'Tool calls')
+        : lensText('lens.cluster.workLog', 'Work log')
       : null;
 
   return {
@@ -2484,7 +2617,7 @@ function createRequestActionBlock(
       back.type = 'button';
       back.className = 'agent-view-btn';
       back.disabled = busy;
-      back.textContent = 'Back';
+      back.textContent = lensText('lens.request.back', 'Back');
       back.addEventListener('click', () => {
         setActiveRequestQuestionIndex(sessionId, request.requestId, activeQuestionIndex - 1);
       });
@@ -2497,10 +2630,10 @@ function createRequestActionBlock(
     submit.disabled = busy || !hasDraftAnswerForQuestion(draftAnswers, activeQuestion);
     submit.textContent =
       activeQuestionIndex < request.questions.length - 1
-        ? 'Continue'
+        ? lensText('lens.request.continue', 'Continue')
         : busy
-          ? 'Sending…'
-          : 'Send answer';
+          ? lensText('lens.request.sending', 'Sending…')
+          : lensText('lens.request.sendAnswer', 'Send answer');
     controls.appendChild(submit);
     form.appendChild(controls);
 
@@ -2527,7 +2660,9 @@ function createRequestActionBlock(
   approve.type = 'button';
   approve.className = 'agent-view-btn agent-view-btn-primary';
   approve.disabled = busy;
-  approve.textContent = busy ? 'Working…' : 'Approve once';
+  approve.textContent = busy
+    ? lensText('lens.request.working', 'Working…')
+    : lensText('lens.request.approveOnce', 'Approve once');
   approve.addEventListener('click', () => {
     void handleApproveRequest(sessionId, request.requestId);
   });
@@ -2536,7 +2671,7 @@ function createRequestActionBlock(
   decline.type = 'button';
   decline.className = 'agent-view-btn';
   decline.disabled = busy;
-  decline.textContent = 'Decline';
+  decline.textContent = lensText('lens.request.decline', 'Decline');
   decline.addEventListener('click', () => {
     void handleDeclineRequest(sessionId, request.requestId);
   });
@@ -2560,7 +2695,9 @@ function createRequestPanelHeader(
   const eyebrow = document.createElement('span');
   eyebrow.className = 'agent-request-eyebrow';
   eyebrow.textContent =
-    request.kind === 'tool_user_input' ? 'Pending user input' : 'Pending approval';
+    request.kind === 'tool_user_input'
+      ? lensText('lens.request.pendingUserInput', 'Pending user input')
+      : lensText('lens.request.pendingApproval', 'Pending approval');
   topRow.appendChild(eyebrow);
 
   const summary = document.createElement('span');
@@ -2571,7 +2708,10 @@ function createRequestPanelHeader(
   if (request.kind === 'tool_user_input' && request.questions.length > 1) {
     const progress = document.createElement('span');
     progress.className = 'agent-request-progress';
-    progress.textContent = `${activeQuestionIndex + 1}/${request.questions.length}`;
+    progress.textContent = lensFormat('lens.request.progress', '{current}/{total}', {
+      current: activeQuestionIndex + 1,
+      total: request.questions.length,
+    });
     topRow.appendChild(progress);
   }
 
@@ -2592,17 +2732,33 @@ function summarizeRequestInterruption(request: LensPulseRequestSummary): string 
     const activeQuestion = request.questions[0];
     if (request.questions.length === 1 && activeQuestion?.options.length) {
       return activeQuestion.multiSelect
-        ? `Select one or more of ${activeQuestion.options.length} options to continue.`
-        : `Select 1 of ${activeQuestion.options.length} options to continue.`;
+        ? lensFormat(
+            'lens.request.selectManyToContinue',
+            'Select one or more of {count} options to continue.',
+            { count: activeQuestion.options.length },
+          )
+        : lensFormat(
+            'lens.request.selectOneToContinue',
+            'Select 1 of {count} options to continue.',
+            { count: activeQuestion.options.length },
+          );
     }
 
     return request.questions.length === 1
-      ? 'The agent needs one answer to continue.'
-      : `The agent needs ${request.questions.length} answers to continue.`;
+      ? lensText('lens.request.needsOneAnswer', 'The agent needs one answer to continue.')
+      : lensFormat(
+          'lens.request.needsManyAnswers',
+          'The agent needs {count} answers to continue.',
+          { count: request.questions.length },
+        );
   }
 
-  const label = request.kindLabel.trim() || 'Approval';
-  return `${label} required before the turn can continue.`;
+  const label = request.kindLabel.trim() || lensText('lens.request.approvalLabel', 'Approval');
+  return lensFormat(
+    'lens.request.requiredBeforeContinue',
+    '{label} required before the turn can continue.',
+    { label },
+  );
 }
 
 function createQuestionField(
@@ -2673,7 +2829,7 @@ function createQuestionField(
   input.type = 'text';
   input.name = question.id;
   input.className = 'agent-request-input';
-  input.placeholder = 'Type answer';
+  input.placeholder = lensText('lens.request.typeAnswer', 'Type answer');
   input.value = draftValue[0] || '';
   input.addEventListener('input', () => {
     updateRequestDraftAnswers(sessionId, request.requestId, question.id, [input.value.trim()]);
@@ -2899,9 +3055,8 @@ export function estimateTranscriptEntryHeight(
 }
 
 /**
- * Virtualizes long desktop transcripts while deliberately staying simpler on
- * mobile, where dense but predictable scrolling mattered more than big-history
- * optimization in the recent Lens UX pass.
+ * Virtualizes long transcripts across viewport sizes so Lens keeps a bounded
+ * DOM even during extended agent runs.
  */
 export function computeTranscriptVirtualWindow(
   entries: ReadonlyArray<LensTranscriptEntry>,
@@ -2909,7 +3064,7 @@ export function computeTranscriptVirtualWindow(
   clientHeight: number,
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
 ): TranscriptVirtualWindow {
-  if (entries.length <= TRANSCRIPT_VIRTUALIZE_AFTER || clientWidth <= 720) {
+  if (entries.length <= TRANSCRIPT_VIRTUALIZE_AFTER) {
     return {
       start: 0,
       end: entries.length,
@@ -3292,7 +3447,7 @@ async function runRequestAction(
       () => `Failed to resolve Lens request ${requestId} for ${sessionId}: ${String(error)}`,
     );
     showDevErrorDialog({
-      title: 'Lens request failed',
+      title: lensText('lens.error.requestTitle', 'Lens request failed'),
       context: `Lens request action failed for session ${sessionId}, request ${requestId}`,
       error,
     });
@@ -3318,8 +3473,12 @@ async function waitForInitialLensSnapshot(
           state,
           'positive',
           `snapshot retry ${attempt}`,
-          'Lens snapshot became available.',
-          `MidTerm produced the first canonical Lens snapshot on retry ${attempt}.`,
+          lensText('lens.activation.snapshotReady.summary', 'Lens snapshot became available.'),
+          lensFormat(
+            'lens.activation.snapshotReady.body',
+            'MidTerm produced the first canonical Lens snapshot on retry {attempt}.',
+            { attempt },
+          ),
         );
       }
       return snapshot;
@@ -3332,7 +3491,7 @@ async function waitForInitialLensSnapshot(
         state,
         attempt === 12 ? 'attention' : 'warning',
         `snapshot retry ${attempt}`,
-        'Lens snapshot not ready yet.',
+        lensText('lens.activation.snapshotPending', 'Lens snapshot not ready yet.'),
         describeError(error),
       );
       renderCurrentAgentView(sessionId);
@@ -3389,7 +3548,12 @@ export function classifyLensActivationIssue(
     error instanceof LensHttpError && error.detail.trim() ? error.detail.trim() : description;
   const normalizedDetail = detail.toLowerCase();
   const actions: LensTranscriptAction[] = [
-    { id: 'retry-lens', label: 'Retry Lens', style: 'primary', busyLabel: 'Retrying...' },
+    {
+      id: 'retry-lens',
+      label: lensText('lens.action.retry', 'Retry Lens'),
+      style: 'primary',
+      busyLabel: lensText('lens.action.retryBusy', 'Retrying...'),
+    },
   ];
 
   if (
@@ -3398,11 +3562,19 @@ export function classifyLensActivationIssue(
     return {
       kind: 'busy-terminal-turn',
       tone: 'warning',
-      meta: hasReadonlyHistory ? 'Read-only history' : 'Terminal busy',
-      title: 'Terminal owns the live Codex turn',
+      meta: hasReadonlyHistory
+        ? lensText('lens.issue.readonlyHistory', 'Read-only history')
+        : lensText('lens.issue.terminalBusy', 'Terminal busy'),
+      title: lensText('lens.issue.busyTerminalTurn.title', 'Terminal owns the live Codex turn'),
       body: hasReadonlyHistory
-        ? 'Lens is showing the last stable transcript while the terminal Codex turn is still running. Finish or interrupt that turn in Terminal, then retry live Lens attach.'
-        : 'Lens cannot take over while Terminal still owns the active Codex turn. Finish or interrupt that turn in Terminal, then retry.',
+        ? lensText(
+            'lens.issue.busyTerminalTurn.bodyReadonly',
+            'Lens is showing the last stable transcript while the terminal Codex turn is still running. Finish or interrupt that turn in Terminal, then retry live Lens attach.',
+          )
+        : lensText(
+            'lens.issue.busyTerminalTurn.body',
+            'Lens cannot take over while Terminal still owns the active Codex turn. Finish or interrupt that turn in Terminal, then retry.',
+          ),
       actions,
     };
   }
@@ -3411,11 +3583,19 @@ export function classifyLensActivationIssue(
     return {
       kind: 'missing-resume-id',
       tone: 'warning',
-      meta: hasReadonlyHistory ? 'Read-only history' : 'Live attach unavailable',
-      title: 'No resumable Codex thread is known yet',
+      meta: hasReadonlyHistory
+        ? lensText('lens.issue.readonlyHistory', 'Read-only history')
+        : lensText('lens.issue.liveAttachUnavailable', 'Live attach unavailable'),
+      title: lensText('lens.issue.missingResumeId.title', 'No resumable Codex thread is known yet'),
       body: hasReadonlyHistory
-        ? 'Lens can still show canonical history, but MidTerm does not yet know a resumable Codex thread id for live handoff in this session. Keep using Terminal for the live lane, or retry after the thread identity becomes known.'
-        : 'MidTerm cannot determine a resumable Codex thread id for this session yet, so live Lens attach is unavailable. Use Terminal for the live lane, or retry later.',
+        ? lensText(
+            'lens.issue.missingResumeId.bodyReadonly',
+            'Lens can still show canonical history, but MidTerm does not yet know a resumable Codex thread id for live handoff in this session. Keep using Terminal for the live lane, or retry after the thread identity becomes known.',
+          )
+        : lensText(
+            'lens.issue.missingResumeId.body',
+            'MidTerm cannot determine a resumable Codex thread id for this session yet, so live Lens attach is unavailable. Use Terminal for the live lane, or retry later.',
+          ),
       actions,
     };
   }
@@ -3424,9 +3604,15 @@ export function classifyLensActivationIssue(
     return {
       kind: 'shell-recovery-failed',
       tone: 'warning',
-      meta: 'Terminal recovery failed',
-      title: 'Terminal did not recover cleanly after handoff',
-      body: 'MidTerm stopped the foreground Codex process but the session did not settle back into a clean live lane. Retry Lens once the lane is stable again.',
+      meta: lensText('lens.issue.terminalRecoveryFailed', 'Terminal recovery failed'),
+      title: lensText(
+        'lens.issue.shellRecoveryFailed.title',
+        'Terminal did not recover cleanly after handoff',
+      ),
+      body: lensText(
+        'lens.issue.shellRecoveryFailed.body',
+        'MidTerm stopped the foreground Codex process but the session did not settle back into a clean live lane. Retry Lens once the lane is stable again.',
+      ),
       actions,
     };
   }
@@ -3435,9 +3621,15 @@ export function classifyLensActivationIssue(
     return {
       kind: 'native-runtime-unavailable',
       tone: 'warning',
-      meta: 'Native runtime unavailable',
-      title: 'This session cannot start a live Lens runtime yet',
-      body: 'MidTerm could not start the native Lens runtime for this session. Retry after the session becomes native-runtime-capable.',
+      meta: lensText('lens.issue.nativeRuntimeUnavailable', 'Native runtime unavailable'),
+      title: lensText(
+        'lens.issue.nativeRuntimeUnavailable.title',
+        'This session cannot start a live Lens runtime yet',
+      ),
+      body: lensText(
+        'lens.issue.nativeRuntimeUnavailable.body',
+        'MidTerm could not start the native Lens runtime for this session. Retry after the session becomes native-runtime-capable.',
+      ),
       actions,
     };
   }
@@ -3446,9 +3638,16 @@ export function classifyLensActivationIssue(
     return {
       kind: 'readonly-history',
       tone: 'warning',
-      meta: 'Read-only history',
-      title: 'Live Lens attach is unavailable right now',
-      body: `${detail} Lens is staying open on canonical history, so you can still inspect the last stable transcript while Terminal remains the live fallback.`,
+      meta: lensText('lens.issue.readonlyHistory', 'Read-only history'),
+      title: lensText(
+        'lens.issue.readonlyHistory.title',
+        'Live Lens attach is unavailable right now',
+      ),
+      body: lensFormat(
+        'lens.issue.readonlyHistory.body',
+        '{detail} Lens is staying open on canonical history, so you can still inspect the last stable transcript while Terminal remains the live fallback.',
+        { detail },
+      ),
       actions,
     };
   }
@@ -3456,11 +3655,16 @@ export function classifyLensActivationIssue(
   return {
     kind: 'startup-failed',
     tone: 'attention',
-    meta: 'Lens attach failed',
-    title: 'Lens could not open',
+    meta: lensText('lens.issue.attachFailed', 'Lens attach failed'),
+    title: lensText('lens.issue.startupFailed.title', 'Lens could not open'),
     body: detail,
     actions: [
-      { id: 'retry-lens', label: 'Retry Lens', style: 'primary', busyLabel: 'Retrying...' },
+      {
+        id: 'retry-lens',
+        label: lensText('lens.action.retry', 'Retry Lens'),
+        style: 'primary',
+        busyLabel: lensText('lens.action.retryBusy', 'Retrying...'),
+      },
     ],
   };
 }
@@ -3496,8 +3700,11 @@ async function retryLensActivation(sessionId: string): Promise<void> {
     state,
     'info',
     'retry',
-    'Retrying Lens attach.',
-    'MidTerm is retrying the live Lens attach for this session.',
+    lensText('lens.activation.retry.summary', 'Retrying Lens attach.'),
+    lensText(
+      'lens.activation.retry.detail',
+      'MidTerm is retrying the live Lens attach for this session.',
+    ),
   );
   renderCurrentAgentView(sessionId);
 
@@ -3565,7 +3772,9 @@ function formatRequestQuestions(
   return questions
     .map((question, index) => {
       const headingParts = [
-        questions.length > 1 ? `Question ${index + 1}` : 'Question',
+        questions.length > 1
+          ? lensFormat('lens.request.questionNumber', 'Question {index}', { index: index + 1 })
+          : lensText('lens.request.question', 'Question'),
         question.header.trim(),
       ].filter(Boolean);
       const optionLines =
@@ -3591,7 +3800,7 @@ function formatRequestAnswers(
   }
 
   return [
-    'Selected answers',
+    lensText('lens.request.selectedAnswers', 'Selected answers'),
     ...answers.map((answer) => `${answer.questionId}: ${answer.answers.join(', ')}`),
   ].join('\n');
 }
@@ -3707,36 +3916,36 @@ function resolveAttachmentLabel(attachment: LensAttachmentReference): string {
 function transcriptLabel(kind: TranscriptKind): string {
   switch (kind) {
     case 'user':
-      return 'You';
+      return lensText('lens.label.user', 'You');
     case 'assistant':
-      return 'Assistant';
+      return lensText('lens.label.assistant', 'Assistant');
     case 'reasoning':
-      return 'Reasoning';
+      return lensText('lens.label.reasoning', 'Reasoning');
     case 'tool':
-      return 'Tool';
+      return lensText('lens.label.tool', 'Tool');
     case 'request':
-      return 'Request';
+      return lensText('lens.label.request', 'Request');
     case 'plan':
-      return 'Plan';
+      return lensText('lens.label.plan', 'Plan');
     case 'diff':
-      return 'Diff';
+      return lensText('lens.label.diff', 'Diff');
     case 'notice':
-      return 'Error';
+      return lensText('lens.label.error', 'Error');
     default:
-      return 'System';
+      return lensText('lens.label.system', 'System');
   }
 }
 
 function transcriptStreamLabel(streamKind: string): string {
   switch (streamKind) {
     case 'assistant_text':
-      return 'Assistant';
+      return lensText('lens.label.assistant', 'Assistant');
     case 'reasoning_text':
     case 'reasoning_summary_text':
-      return 'Reasoning';
+      return lensText('lens.label.reasoning', 'Reasoning');
     case 'command_output':
     case 'file_change_output':
-      return 'Tool';
+      return lensText('lens.label.tool', 'Tool');
     default:
       return prettify(streamKind);
   }
@@ -3745,15 +3954,15 @@ function transcriptStreamLabel(streamKind: string): string {
 function transcriptStreamTitle(streamKind: string): string {
   switch (streamKind) {
     case 'assistant_text':
-      return 'Assistant response';
+      return lensText('lens.title.assistantResponse', 'Assistant response');
     case 'reasoning_text':
-      return 'Reasoning';
+      return lensText('lens.title.reasoning', 'Reasoning');
     case 'reasoning_summary_text':
-      return 'Reasoning summary';
+      return lensText('lens.title.reasoningSummary', 'Reasoning summary');
     case 'command_output':
-      return 'Command output';
+      return lensText('lens.title.commandOutput', 'Command output');
     case 'file_change_output':
-      return 'File change output';
+      return lensText('lens.title.fileChangeOutput', 'File change output');
     default:
       return prettify(streamKind);
   }

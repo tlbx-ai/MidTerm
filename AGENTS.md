@@ -8,6 +8,7 @@ If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 Do not run release, tag, publish, promote, or merge-to-main workflows unless the user explicitly authorizes that exact action in the current turn.
 
 Rules:
+
 - "Cut a dev/prerelease" does not imply "promote to stable".
 - If the user says "patch release", "minor release", or "major release" without specifying stable vs dev, default to a dev/prerelease.
 - Only treat it as a stable release when the user explicitly says stable, promote, or otherwise clearly asks for the stable path.
@@ -45,3 +46,10 @@ Rules:
 - Keep provider-specific plumbing deep in the C# runtime/host layer. Codex and Claude may expose completely different transports, event schemas, and lifecycle details, but the TypeScript Lens UI should consume a mostly provider-neutral canonical event model rather than branching on provider quirks.
 - When expanding Lens capabilities, prefer adapting provider events into MidTerm-owned canonical concepts such as turns, streams, items, requests, diffs, and task/tool progress instead of leaking raw provider event shapes into the frontend.
 - Preserve the surface boundary while improving Lens: making Codex or Claude work better in Lens must never break, hijack, or reclassify ordinary terminal sessions.
+
+## Lens Design Documentation
+
+- The visual and interaction design contract for Lens lives in [docs/LensDesign.md](docs/LensDesign.md).
+- Read that document before making Lens transcript, composer, item-rendering, layout, spacing, typography, scrolling, or hierarchy changes.
+- Treat `docs/LensDesign.md` as a maintained design contract, not a one-off note.
+- Any future Lens UI change that affects fundamentals must update `docs/LensDesign.md` in the same work so the current design understanding remains traceable for future sessions.

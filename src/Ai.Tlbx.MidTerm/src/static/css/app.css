@@ -9933,6 +9933,19 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-view-panel {
+  --agent-lens-max-width: min(100%, 68rem);
+  --agent-lens-content-width: min(100%, 62rem);
+  --agent-lens-user-width: min(100%, 38rem);
+  --agent-lens-rail: color-mix(in srgb, var(--border-color) 82%, transparent);
+  --agent-lens-rail-strong: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
+  --agent-lens-surface: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
+  --agent-lens-surface-strong: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+  --agent-lens-user-surface: color-mix(in srgb, var(--accent-blue) 9%, var(--bg-secondary));
+  --agent-lens-ready: color-mix(in srgb, var(--accent-green) 74%, white 10%);
+  --agent-lens-live: color-mix(in srgb, var(--accent-blue) 82%, white 10%);
+  --agent-lens-warning: color-mix(in srgb, var(--accent-gold) 84%, white 8%);
+  --agent-lens-attention: color-mix(in srgb, var(--accent-red) 82%, white 6%);
+  --agent-transcript-mono-font-family: var(--font-mono);
   background: var(--terminal-ui-background, var(--terminal-bg));
 }
 
@@ -9950,6 +9963,17 @@ body.shared-session-mode .session-tab-bar {
   flex: 1;
   min-height: 0;
   flex-direction: column;
+  background:
+    radial-gradient(
+      circle at top center,
+      color-mix(in srgb, var(--accent-blue) 8%, transparent),
+      transparent 42%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 86%, transparent),
+      var(--terminal-ui-background, var(--terminal-bg))
+    );
 }
 
 .agent-transcript-card {
@@ -9969,26 +9993,34 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 16px;
+  gap: 2px;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 16px 4px 24px;
+  padding: 18px 18px 32px;
   scroll-padding-bottom: 28px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 16%, transparent) transparent;
 }
 
 .agent-composer-shell {
   flex: 0 0 auto;
-  padding: 0;
+  padding: 14px 18px 18px;
   border-top: 0;
   background:
-    linear-gradient(180deg, rgba(6, 8, 13, 0), rgba(6, 8, 13, 0.48) 26%, rgba(6, 8, 13, 0.88)),
+    linear-gradient(
+      180deg,
+      rgba(6, 8, 13, 0),
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 40%, transparent) 18%,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, transparent)
+    ),
     var(--terminal-ui-background, var(--terminal-bg));
+  backdrop-filter: blur(14px);
 }
 
 .agent-composer-interruption {
-  width: min(100%, 48rem);
+  width: var(--agent-lens-content-width);
   margin: 0 auto 12px;
 }
 
@@ -9997,27 +10029,27 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-composer-host {
-  width: min(100%, 48rem);
+  width: var(--agent-lens-content-width);
   margin: 0 auto;
   min-height: 0;
 }
 
 .agent-scroll-to-bottom {
   position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
+  right: 20px;
+  bottom: 20px;
   z-index: 2;
-  min-height: 32px;
+  min-height: 34px;
   padding: 0 14px;
   border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-elevated-opaque) 90%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated-opaque) 94%, transparent);
   color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
   font-size: 0.76rem;
   font-weight: 600;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(10px);
+  cursor: pointer;
 }
 
 .agent-scroll-to-bottom:hover {
@@ -10029,50 +10061,14 @@ body.shared-session-mode .session-tab-bar {
   display: none;
 }
 
-.agent-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(15, 19, 30, 0.78);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.agent-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.agent-card-label {
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.agent-card-value {
-  color: var(--text-primary);
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-
-.agent-card-meta {
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
 .agent-transcript-entry {
   display: flex;
   flex-direction: column;
   gap: 6px;
   position: relative;
-  max-width: min(100%, 48rem);
-  padding: 0;
+  width: var(--agent-lens-content-width);
+  max-width: 100%;
+  padding: 12px 0;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -10093,28 +10089,26 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-transcript-user {
   align-self: flex-end;
-  width: min(80%, 36rem);
-  padding: 12px 14px;
-  border-radius: 18px;
-  border-bottom-right-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--accent-blue) 28%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--accent-blue) 18%, transparent),
-      color-mix(in srgb, var(--accent-blue) 8%, transparent)
-    ),
-    color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+  width: min(100%, var(--agent-lens-user-width));
+  padding: 10px 14px 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 20%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--agent-lens-user-surface) 92%, transparent),
+    color-mix(in srgb, var(--agent-lens-user-surface) 72%, transparent)
+  );
 }
 
 .agent-transcript-assistant {
   align-self: flex-start;
-  width: min(100%, 48rem);
-  padding: 4px 0 0;
+  width: var(--agent-lens-content-width);
+  padding: 12px 0 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
 }
 
 .agent-transcript-assistant.agent-transcript-live .agent-transcript-badge-assistant {
-  color: #ffd88f;
+  color: var(--agent-lens-live);
 }
 
 .agent-transcript-pending {
@@ -10128,25 +10122,25 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-transcript-assistant.agent-transcript-pending {
-  background: linear-gradient(180deg, rgba(255, 216, 143, 0.05), rgba(255, 216, 143, 0));
+  border-bottom-color: color-mix(in srgb, var(--agent-lens-warning) 24%, transparent);
 }
 
 .agent-transcript-assistant.agent-transcript-pending .agent-transcript-body {
-  color: #e9dfbb;
+  color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
 }
 
 .agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending) {
-  background: linear-gradient(180deg, rgba(130, 196, 255, 0.06), rgba(130, 196, 255, 0));
+  border-bottom-color: color-mix(in srgb, var(--agent-lens-live) 26%, transparent);
 }
 
 .agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending)
   .agent-transcript-body {
-  color: #f4f8ff;
+  color: var(--text-primary);
 }
 
 .agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending)
   .agent-transcript-meta {
-  color: rgba(164, 213, 255, 0.86);
+  color: color-mix(in srgb, var(--agent-lens-live) 74%, var(--text-secondary));
 }
 
 .agent-transcript-tool,
@@ -10156,45 +10150,33 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-request,
 .agent-transcript-system,
 .agent-transcript-notice {
-  width: min(100%, 48rem);
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-secondary) 52%, transparent);
+  width: var(--agent-lens-content-width);
+  padding: 10px 0 10px 16px;
+  border-left: 2px solid var(--agent-lens-rail);
+  border-radius: 0;
+  background: transparent;
 }
 
 .agent-transcript-artifact {
   gap: 5px;
-  background: color-mix(in srgb, var(--bg-secondary) 44%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 3%, transparent),
-    0 10px 20px rgba(0, 0, 0, 0.08);
 }
 
 .agent-transcript-reasoning {
-  border-color: color-mix(in srgb, var(--accent-blue) 26%, var(--border-color));
-  background:
-    linear-gradient(180deg, rgba(92, 150, 230, 0.1), rgba(92, 150, 230, 0.04)),
-    color-mix(in srgb, var(--bg-secondary) 54%, transparent);
+  border-left-color: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
 }
 
 .agent-transcript-artifact[data-artifact-position='start'] {
-  border-bottom-left-radius: 10px;
-  border-bottom-right-radius: 10px;
+  margin-top: 6px;
 }
 
 .agent-transcript-artifact[data-artifact-position='middle'] {
-  margin-top: -11px;
-  border-top-left-radius: 10px;
-  border-top-right-radius: 10px;
-  border-bottom-left-radius: 10px;
-  border-bottom-right-radius: 10px;
+  margin-top: 0;
+  padding-top: 4px;
 }
 
 .agent-transcript-artifact[data-artifact-position='end'] {
-  margin-top: -11px;
-  border-top-left-radius: 10px;
-  border-top-right-radius: 10px;
+  margin-top: 0;
+  padding-bottom: 12px;
 }
 
 .agent-transcript-artifact-cluster-label {
@@ -10203,11 +10185,16 @@ body.shared-session-mode .session-tab-bar {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  margin-bottom: 4px;
 }
 
 .agent-transcript-notice {
-  border-color: rgba(232, 103, 103, 0.22);
-  background: rgba(232, 103, 103, 0.08);
+  border-left-color: color-mix(in srgb, var(--accent-red) 72%, var(--border-color));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-red) 8%, transparent),
+    transparent 32%
+  );
 }
 
 .agent-transcript-header {
@@ -10219,9 +10206,9 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-transcript-user .agent-transcript-header,
 .agent-transcript-assistant .agent-transcript-header {
-  order: 3;
-  justify-content: flex-end;
-  margin-top: 4px;
+  order: 1;
+  justify-content: space-between;
+  margin-top: 0;
 }
 
 .agent-transcript-badge {
@@ -10252,7 +10239,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-transcript-badge-request {
-  color: #ffd9b2;
+  color: var(--agent-lens-warning);
 }
 
 .agent-transcript-badge-plan,
@@ -10324,8 +10311,8 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-empty {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.94rem;
-  line-height: 1.62;
+  font-size: 0.95rem;
+  line-height: 1.64;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -10335,16 +10322,16 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-transcript-user .agent-transcript-body {
-  color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
-  font-family: var(--font-mono);
-  font-size: 0.88rem;
-  line-height: 1.56;
+  color: color-mix(in srgb, var(--text-primary) 98%, white 2%);
+  font-family: var(--font-ui);
+  font-size: 0.92rem;
+  line-height: 1.58;
 }
 
 .agent-transcript-assistant .agent-transcript-body {
   color: var(--text-primary);
-  font-size: 0.98rem;
-  line-height: 1.68;
+  font-size: 1rem;
+  line-height: 1.7;
 }
 
 .agent-transcript-live-indicator {
@@ -10352,7 +10339,7 @@ body.shared-session-mode .session-tab-bar {
   align-items: center;
   gap: 8px;
   min-height: 1.35rem;
-  color: color-mix(in srgb, var(--accent-blue) 70%, var(--text-secondary));
+  color: color-mix(in srgb, var(--agent-lens-live) 82%, var(--text-secondary));
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -10426,23 +10413,23 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-transcript-markdown a {
-  color: #96c2ff;
+  color: color-mix(in srgb, var(--agent-lens-live) 88%, white 10%);
   text-decoration: underline;
-  text-decoration-color: rgba(150, 194, 255, 0.45);
+  text-decoration-color: color-mix(in srgb, var(--agent-lens-live) 42%, transparent);
   text-underline-offset: 2px;
 }
 
 .agent-transcript-markdown strong {
-  color: #f3f6ff;
+  color: var(--text-primary);
   font-weight: 700;
 }
 
 .agent-transcript-markdown code {
   padding: 1px 5px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.07);
-  color: #eef3ff;
-  font-family: var(--font-mono);
+  background: color-mix(in srgb, var(--bg-hover) 80%, transparent);
+  color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
+  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
   font-size: 0.92em;
 }
 
@@ -10450,17 +10437,18 @@ body.shared-session-mode .session-tab-bar {
   overflow-x: auto;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(7, 10, 17, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
 }
 
 .agent-transcript-markdown pre code {
   padding: 0;
   border-radius: 0;
   background: transparent;
-  color: #dce4f5;
+  color: color-mix(in srgb, var(--text-primary) 88%, transparent);
   font-size: 0.86rem;
   line-height: 1.55;
+  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
 }
 
 .agent-transcript-markdown blockquote {
@@ -10737,7 +10725,7 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-markdown td[data-col-kind='numeric'] {
   min-width: 5.25rem;
   text-align: right;
-  font-family: var(--font-mono);
+  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
   font-variant-numeric: tabular-nums;
 }
 
@@ -10762,7 +10750,7 @@ body.shared-session-mode .session-tab-bar {
 .agent-transcript-markdown th[data-align='right'],
 .agent-transcript-markdown td[data-align='right'] {
   text-align: right;
-  font-family: var(--font-mono);
+  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
   font-variant-numeric: tabular-nums;
 }
 
@@ -10840,7 +10828,7 @@ body.shared-session-mode .session-tab-bar {
   border-radius: 0;
   background: transparent;
   color: color-mix(in srgb, var(--text-primary) 88%, transparent);
-  font-family: var(--font-mono);
+  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
   font-size: 0.82rem;
   line-height: 1.52;
 }
@@ -10903,7 +10891,7 @@ body.shared-session-mode .session-tab-bar {
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-primary);
   font-size: 0.84rem;
-  font-family: var(--font-mono);
+  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
 }
 
 .agent-transcript-attachment-file:hover,
@@ -10930,7 +10918,7 @@ body.shared-session-mode .session-tab-bar {
   gap: 12px;
   padding: 14px 14px 12px;
   border: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
-  border-radius: 18px;
+  border-radius: 14px;
   background:
     linear-gradient(
       180deg,
@@ -11013,7 +11001,7 @@ body.shared-session-mode .session-tab-bar {
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-primary);
   font-size: 0.84rem;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   cursor: pointer;
   transition:
     border-color 0.12s ease,
@@ -11197,12 +11185,11 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .agent-transcript {
-    gap: 12px;
-    padding: 12px 2px 18px;
+    padding: 14px 14px 24px;
   }
 
   .agent-composer-shell {
-    padding: 0;
+    padding: 12px 14px 16px;
   }
 }
 
@@ -11212,8 +11199,7 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .agent-transcript {
-    gap: 8px;
-    padding: 10px 0 14px;
+    padding: 10px 12px 20px;
     scroll-padding-bottom: 20px;
   }
 
@@ -11230,12 +11216,12 @@ body.shared-session-mode .session-tab-bar {
   .agent-transcript-system,
   .agent-transcript-notice {
     width: 100%;
-    padding: 9px 10px;
+    padding: 10px 0 10px 12px;
   }
 
   .agent-transcript-artifact[data-artifact-position='middle'],
   .agent-transcript-artifact[data-artifact-position='end'] {
-    margin-top: -9px;
+    margin-top: 0;
   }
 
   .agent-transcript-header {
@@ -11262,18 +11248,17 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .agent-transcript-assistant .agent-transcript-body {
-    font-size: 0.93rem;
-    line-height: 1.58;
+    font-size: 0.95rem;
+    line-height: 1.6;
   }
 
   .agent-transcript-user {
     padding: 10px 12px;
-    border-radius: 16px;
-    border-bottom-right-radius: 6px;
+    border-radius: 12px;
   }
 
   .agent-composer-shell {
-    padding: 0 6px 6px;
+    padding: 10px 12px 14px;
   }
 
   .agent-composer-interruption {
@@ -11281,7 +11266,8 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .agent-scroll-to-bottom {
-    bottom: 10px;
+    right: 12px;
+    bottom: 12px;
     min-height: 28px;
     padding: 0 12px;
     font-size: 0.72rem;

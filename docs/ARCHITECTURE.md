@@ -259,6 +259,8 @@ The intended Definition of Done for provider-backed Lens sessions is:
 
 In practical terms, the user should experience Lens as a polished web conversation surface for explicit provider sessions, with the same functional breadth as the provider CLI, while Terminal remains an independent real terminal.
 
+The visual and interaction design rules for that Lens surface are maintained separately in [LensDesign.md](LensDesign.md). Architecture decisions belong here; the concrete Lens UX contract, hierarchy, transcript behavior, and performance-oriented rendering rules belong in that design document and should evolve alongside implementation.
+
 ## 5. Web Preview and Browser Automation
 
 Web preview is its own subsystem, not a simple iframe wrapper.
@@ -329,16 +331,16 @@ The frontend settings registry defines editability, apply mode, control ownershi
 
 MidTerm uses a mix of server-side and browser-side storage:
 
-| Area | Storage |
-| --- | --- |
-| Server settings | `settings.json` |
-| Secrets | platform-specific secret storage |
-| Certificates and keys | settings directory plus protected key storage |
-| History and share data | server-side files/services |
-| Split layout | browser `localStorage` |
-| Sidebar width/collapse | cookies |
-| Smart Input/chat/touch prefs | browser `localStorage` |
-| Preview snapshots | `.midterm/snapshot_*` under the working tree |
+| Area                         | Storage                                       |
+| ---------------------------- | --------------------------------------------- |
+| Server settings              | `settings.json`                               |
+| Secrets                      | platform-specific secret storage              |
+| Certificates and keys        | settings directory plus protected key storage |
+| History and share data       | server-side files/services                    |
+| Split layout                 | browser `localStorage`                        |
+| Sidebar width/collapse       | cookies                                       |
+| Smart Input/chat/touch prefs | browser `localStorage`                        |
+| Preview snapshots            | `.midterm/snapshot_*` under the working tree  |
 
 ## 7. Security and Remote Access
 
@@ -354,10 +356,10 @@ MidTerm assumes that anyone who reaches the UI could gain shell access, so the d
 
 ### Secret Storage
 
-| Platform | Secret storage |
-| --- | --- |
-| Windows | DPAPI-backed `secrets.bin` |
-| macOS user mode | Keychain-backed storage |
+| Platform                   | Secret storage                                         |
+| -------------------------- | ------------------------------------------------------ |
+| Windows                    | DPAPI-backed `secrets.bin`                             |
+| macOS user mode            | Keychain-backed storage                                |
 | macOS service mode / Linux | file-backed secret storage with restricted permissions |
 
 ### Certificates
@@ -413,11 +415,11 @@ That is how MidTerm can update installed systems without asking users to manuall
 
 ### WebSockets
 
-| Endpoint | Purpose |
-| --- | --- |
-| `/ws/mux` | Binary multiplexed terminal I/O |
-| `/ws/state` | Session list, update state, and related JSON state pushes |
-| `/ws/settings` | Live settings synchronization |
+| Endpoint       | Purpose                                                   |
+| -------------- | --------------------------------------------------------- |
+| `/ws/mux`      | Binary multiplexed terminal I/O                           |
+| `/ws/state`    | Session list, update state, and related JSON state pushes |
+| `/ws/settings` | Live settings synchronization                             |
 
 ### HTTP API Groups
 
