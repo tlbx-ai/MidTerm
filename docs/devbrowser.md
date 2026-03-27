@@ -40,7 +40,9 @@ The injected script sends `postMessage({type: "mt-navigation", url: location.hre
 
 - `history.pushState` / `history.replaceState` — SPA navigation
 - `popstate` / `hashchange` events — back/forward navigation
-- Initial page load (`setTimeout(ntfy, 0)`) — captures redirects
+- Initial page load (`setTimeout(ntfyNow, 0)`) — captures redirects
+
+Navigation notifications are now coalesced and deduplicated inside the injected runtime before they reach the parent shell. A preview that churns `history.replaceState` without actually changing its effective URL can no longer flood the owning MidTerm tab with redundant `postMessage` traffic.
 
 The parent `webPanel.ts` / detached popup listener accepts these messages only when the preview identity matches the current iframe. It prefers the injected `upstreamUrl` field, so redirects and `_ext` navigations no longer need to be reverse-engineered from the iframe URL bar.
 
@@ -118,9 +120,9 @@ When MidTerm itself is running inside `/webpreview/`, the nested MidTerm UI now 
 
 This prevents the previewed MidTerm app from clearing or repointing the host MidTerm dev-browser target during bootstrap.
 
-## Dev-Mode Sandbox
+## Preview Sandbox
 
-In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox:
+In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox for every target. Outside that mode, MidTerm still force-sandboxes external HTTP(S) sites and local `file:` previews so an arbitrary page cannot execute with full access to the owning MidTerm shell origin:
 
 - baseline flags: `allow-scripts allow-forms allow-popups allow-modals allow-downloads`
 - when the preview is loaded from the dedicated preview origin (`https://host:port+1`), MidTerm also adds `allow-same-origin`
@@ -129,7 +131,7 @@ In dev-mode and local-dev runs, the docked preview iframe and detached popup ifr
 
 The dedicated preview origin makes `allow-same-origin` safe for self-preview and similar apps that require `localStorage` or `navigator.serviceWorker`: the iframe becomes same-origin with `port + 1`, not with the main MidTerm shell on `port`.
 
-Because sandboxed preview frames are cross-site from the main app's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs. Production/stable-style runs keep `SameSite=Lax`.
+Because sandboxed preview frames are cross-site from the main app's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs where MidTerm itself needs to operate inside that sandbox. Production/stable-style runs keep `SameSite=Lax`.
 
 ## Dedicated Preview Origin
 
@@ -212,7 +214,7 @@ Leaked root-relative asset chains can lose the original `/webpreview/{routeKey}`
 | `WebPreviewProxyMiddleware.cs` | Core proxy: HTTP forwarding, WebSocket relay, injected JS |
 | `WebPreviewService.cs` | State: named preview sessions, target URLs, cookie jars, HTTP clients, proxy log ring buffers |
 | `WebPreviewEndpoints.cs` | REST API: target CRUD, cookie management, proxy log, snapshots |
-| `MtcliScriptWriter.cs` | CLI helpers: `mt_session`, `mt_preview`, `mt_previews`, `mt_proxylog`, `mt_navigate`, etc. |
+| `MtcliScriptWriter.cs` | CLI helpers: `mt_*` / `Mt-*` browser and session commands, including `mt_session`, `mt_preview`, `mt_previews`, `mt_proxylog`, `mt_navigate`, etc. |
 
 ## Key Design Decisions
 

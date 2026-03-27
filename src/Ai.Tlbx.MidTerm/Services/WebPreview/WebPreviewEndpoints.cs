@@ -121,6 +121,22 @@ public static partial class WebPreviewEndpoints
 
     private static void MapActionEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
     {
+        app.MapPost("/api/webpreview/state/clear", (string sessionId, string? previewName) =>
+        {
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (!service.ClearState(sessionId, previewName))
+            {
+                return Results.BadRequest("Failed to clear preview state.");
+            }
+
+            var response = BuildTargetResponse(service, sessionId, previewName);
+            return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
+        });
+
         app.MapPost("/api/webpreview/reload", (WebPreviewReloadRequest request) =>
         {
             if (request.Mode.Equals("hard", StringComparison.OrdinalIgnoreCase))

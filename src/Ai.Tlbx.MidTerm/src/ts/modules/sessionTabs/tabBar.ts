@@ -2,7 +2,7 @@
  * Session Tab Bar
  *
  * Creates and manages the session bar UI for each session.
- * Tabs: Terminal | Lens | Files
+ * Tabs: Primary session surface | Files
  * Right-aligned actions: WEB | Share | Git dock toggle
  */
 
@@ -225,6 +225,7 @@ export function setShareClickHandler(handler: (sessionId: string) => void): void
 export function createTabBar(
   sessionId: string,
   onTabSelect: (tab: SessionTabId) => void,
+  initialTab: SessionTabId = 'terminal',
 ): HTMLDivElement {
   const bar = document.createElement('div');
   bar.className = 'session-tab-bar';
@@ -247,7 +248,7 @@ export function createTabBar(
     const label = labels[tabId];
     const btn = document.createElement('button');
     btn.className = 'session-tab';
-    if (tabId === 'terminal') btn.classList.add('active');
+    if (tabId === initialTab) btn.classList.add('active');
     btn.dataset.tab = tabId;
     const labelNode = document.createElement('span');
     labelNode.className = 'session-tab-label';
@@ -306,6 +307,21 @@ export function setTabVisible(bar: HTMLDivElement, tabId: SessionTabId, visible:
   }
 
   btn.hidden = !visible;
+}
+
+export function setTabLabel(bar: HTMLDivElement, tabId: SessionTabId, label: string): void {
+  const btn = bar.querySelector<HTMLButtonElement>(`.session-tab[data-tab="${tabId}"]`);
+  if (!btn) {
+    return;
+  }
+
+  const labelNode = btn.querySelector<HTMLElement>('.session-tab-label');
+  if (labelNode) {
+    labelNode.textContent = label;
+  }
+
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
 }
 
 export function isTabVisible(bar: HTMLDivElement, tabId: SessionTabId): boolean {

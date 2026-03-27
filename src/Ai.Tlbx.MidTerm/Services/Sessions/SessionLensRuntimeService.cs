@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 
@@ -63,14 +64,22 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         if (_hostRuntime.IsEnabledFor(profile))
         {
-            if (await _hostRuntime.EnsureAttachedAsync(sessionId, profile, session, resumeThreadIdOverride, ct).ConfigureAwait(false))
+            try
             {
-                return true;
-            }
+                if (await _hostRuntime.EnsureAttachedAsync(sessionId, profile, session, resumeThreadIdOverride, ct).ConfigureAwait(false))
+                {
+                    return true;
+                }
 
-            if (IsAttached(sessionId))
+                if (IsAttached(sessionId))
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex)
             {
-                return true;
+                Log.Warn(() => $"Lens host attach failed for {sessionId}; falling back to legacy runtime. {ex.Message}");
+                await _hostRuntime.DetachAsync(sessionId, ct).ConfigureAwait(false);
             }
         }
 

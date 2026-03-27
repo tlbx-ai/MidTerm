@@ -113,6 +113,22 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_NavigationBridge_DeduplicatesAndCoalescesUpdates()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("var lastMtNavigationKey=\"\",navNotifyTimer=0;", script, StringComparison.Ordinal);
+        Assert.Contains("function ntfyNow()", script, StringComparison.Ordinal);
+        Assert.Contains("if(navKey===lastMtNavigationKey)return;", script, StringComparison.Ordinal);
+        Assert.Contains("navNotifyTimer=setTimeout(function(){", script, StringComparison.Ordinal);
+        Assert.Contains("setTimeout(ntfyNow,0);", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UrlRewriteScript_LoadsPreviewContextFromCookieFallback()
     {
         var field = typeof(WebPreviewProxyMiddleware).GetField(
@@ -125,6 +141,8 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("decodeURIComponent(mtCookieCtx)", script, StringComparison.Ordinal);
         Assert.Contains("params.get(\"__mtPreviewId\")", script, StringComparison.Ordinal);
         Assert.Contains("params.get(\"__mtPreviewToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.has(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.delete(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
         Assert.Contains("history.replaceState(history.state,\"\",url.pathname+url.search+url.hash)", script, StringComparison.Ordinal);
         Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
         Assert.Contains("routeMatch=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
@@ -133,7 +151,9 @@ public class WebPreviewProxyMiddlewareTests
 
     [Theory]
     [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
+    [InlineData("?__mtTargetRevision=1", "")]
     [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
+    [InlineData("?foo=1&__mtTargetRevision=2&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
     [InlineData("", "")]
     public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
@@ -341,5 +361,28 @@ public class WebPreviewProxyMiddlewareTests
         Assert.True(resolved);
         Assert.Equal(routeKey, resolvedRouteKey);
         Assert.Equal("https://example.com/", targetUri.ToString());
+    }
+
+    [Fact]
+    public void TryResolvePreviewFromRequest_PrefersPreviewRefererOverRememberedLeakedRequestPath()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-a", "teacher", "https://teacher.example"));
+        Assert.True(service.SetTarget("session-b", "student", "https://student.example"));
+        Assert.True(service.TryGetPreviewRouteKey("session-a", "teacher", out var routeKeyA));
+        Assert.True(service.TryGetPreviewRouteKey("session-b", "student", out var routeKeyB));
+        service.RememberLeakedPathRoute(routeKeyA, "/js/login.js");
+        service.RememberLeakedPathRoute(routeKeyB, "/js/login.js");
+
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/js/login.js";
+        context.Request.Headers.Referer = $"https://midterm.local/webpreview/{routeKeyB}/teacher/tasks/123";
+
+        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
+
+        Assert.True(resolved);
+        Assert.Equal(routeKeyB, resolvedRouteKey);
+        Assert.Equal("https://student.example/", targetUri.ToString());
     }
 }

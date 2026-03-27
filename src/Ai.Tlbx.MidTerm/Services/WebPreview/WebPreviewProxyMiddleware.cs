@@ -16,6 +16,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string ProxyPrefix = "/webpreview";
     private const string PreviewBootstrapIdQueryParam = "__mtPreviewId";
     private const string PreviewBootstrapTokenQueryParam = "__mtPreviewToken";
+    private const string PreviewTargetRevisionQueryParam = "__mtTargetRevision";
     private const string InternalProxyRequestHeaderName = "X-MidTerm-Internal-Proxy";
     private const string InternalProxyRequestHeaderValue = "1";
     private const int WsBufferSize = 8192;
@@ -63,9 +64,10 @@ public sealed partial class WebPreviewProxyMiddleware
           function mtStripBootstrapQuery(){
             try{
               var url=new URL(location.href);
-              if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken"))return;
+              if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken")&&!url.searchParams.has("__mtTargetRevision"))return;
               url.searchParams.delete("__mtPreviewId");
               url.searchParams.delete("__mtPreviewToken");
+              url.searchParams.delete("__mtTargetRevision");
               history.replaceState(history.state,"",url.pathname+url.search+url.hash);
             }catch(e){}
           }
@@ -301,7 +303,21 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!msg)return;
             try{_realParent.postMessage(msg,"*");}catch(e){}
           }
-          function ntfy(){postMt("mt-navigation",{url:location.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:curU()});}
+          var lastMtNavigationKey="",navNotifyTimer=0;
+          function ntfyNow(){
+            var upstreamUrl=curU();
+            var navKey=location.href+"\n"+upstreamUrl;
+            if(navKey===lastMtNavigationKey)return;
+            lastMtNavigationKey=navKey;
+            postMt("mt-navigation",{url:location.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:upstreamUrl});
+          }
+          function ntfy(){
+            if(navNotifyTimer)return;
+            navNotifyTimer=setTimeout(function(){
+              navNotifyTimer=0;
+              ntfyNow();
+            },50);
+          }
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
           history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
           history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
@@ -310,7 +326,7 @@ public sealed partial class WebPreviewProxyMiddleware
           location.replace=function(u){return lr(r(u));};
           window.addEventListener("popstate",ntfy);
           window.addEventListener("hashchange",ntfy);
-          setTimeout(ntfy,0);
+          setTimeout(ntfyNow,0);
           // === Cookie bridge ===
           var cc="",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
           window.addEventListener("message",function(ev){
@@ -618,6 +634,40 @@ public sealed partial class WebPreviewProxyMiddleware
                   for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
                   cc="";res.result="cleared";
                   break;}
+                case"clearstate":{
+                  (async function(){
+                    try{
+                      var all=document.cookie.split(";");
+                      for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
+                      cc="";
+                      try{localStorage.clear();}catch(e){}
+                      try{sessionStorage.clear();}catch(e){}
+                      try{
+                        if(window.indexedDB&&typeof indexedDB.databases==="function"){
+                          var dbs=await indexedDB.databases();
+                          for(var i=0;i<dbs.length;i++){
+                            var db=dbs[i];
+                            if(db&&db.name){try{indexedDB.deleteDatabase(db.name);}catch(e){}}
+                          }
+                        }
+                      }catch(e){}
+                      try{
+                        if(window.caches&&typeof caches.keys==="function"){
+                          var keys=await caches.keys();
+                          await Promise.all(keys.map(function(key){return caches.delete(key);}));
+                        }
+                      }catch(e){}
+                      try{
+                        if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
+                          var regs=await navigator.serviceWorker.getRegistrations();
+                          await Promise.all(regs.map(function(reg){return reg.unregister();}));
+                        }
+                      }catch(e){}
+                      res.result="cleared state";
+                    }catch(e){res.success=false;res.error=e.message||String(e);}
+                    bws.send(JSON.stringify(res));
+                  })();
+                  return;}
                 default:res.success=false;res.error="unknown command: "+msg.command;
               }
             }catch(e){res.success=false;res.error=e.message||String(e);}
@@ -880,6 +930,41 @@ public sealed partial class WebPreviewProxyMiddleware
             return true;
         }
 
+        if (!request.Headers.TryGetValue("Referer", out var refererValues))
+        {   
+            return TryResolvePreviewFromLeakedRequestPath(request, out routeKey, out targetUri);
+        }
+
+        if (Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
+        {
+            if (!TryParseProxyRoute(refererUri.AbsolutePath, out routeKey, out _))
+            {
+                if (!_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out routeKey))
+                {
+                    routeKey = "";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(routeKey)
+                && _service.TryGetTargetUriByRouteKey(routeKey, out var refererTargetUri)
+                && refererTargetUri is not null)
+            {
+                targetUri = refererTargetUri;
+                return true;
+            }
+        }
+
+        return TryResolvePreviewFromLeakedRequestPath(request, out routeKey, out targetUri);
+    }
+
+    private bool TryResolvePreviewFromLeakedRequestPath(
+        HttpRequest request,
+        out string routeKey,
+        out Uri targetUri)
+    {
+        routeKey = "";
+        targetUri = null!;
+
         var requestPath = request.Path.Value ?? "/";
         if (_service.TryGetRouteKeyByLeakedPath(requestPath, out var leakedRouteKey)
             && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
@@ -890,32 +975,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return true;
         }
 
-        if (!request.Headers.TryGetValue("Referer", out var refererValues))
-        {
-            return false;
-        }
-
-        if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
-        {
-            return false;
-        }
-
-        if (!TryParseProxyRoute(refererUri.AbsolutePath, out routeKey, out _))
-        {
-            if (!_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out routeKey))
-            {
-                return false;
-            }
-        }
-
-        if (!_service.TryGetTargetUriByRouteKey(routeKey, out var refererTargetUri) || refererTargetUri is null)
-        {
-            routeKey = "";
-            return false;
-        }
-
-        targetUri = refererTargetUri;
-        return true;
+        return false;
     }
 
     internal static bool TryParseProxyRoute(PathString path, out string routeKey, out string remainingPath)
@@ -2274,7 +2334,8 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var parsed = QueryHelpers.ParseQuery(queryString);
         if (!parsed.ContainsKey(PreviewBootstrapIdQueryParam)
-            && !parsed.ContainsKey(PreviewBootstrapTokenQueryParam))
+            && !parsed.ContainsKey(PreviewBootstrapTokenQueryParam)
+            && !parsed.ContainsKey(PreviewTargetRevisionQueryParam))
         {
             return queryString ?? "";
         }
@@ -2283,7 +2344,8 @@ public sealed partial class WebPreviewProxyMiddleware
         foreach (var entry in parsed)
         {
             if (entry.Key.Equals(PreviewBootstrapIdQueryParam, StringComparison.Ordinal)
-                || entry.Key.Equals(PreviewBootstrapTokenQueryParam, StringComparison.Ordinal))
+                || entry.Key.Equals(PreviewBootstrapTokenQueryParam, StringComparison.Ordinal)
+                || entry.Key.Equals(PreviewTargetRevisionQueryParam, StringComparison.Ordinal))
             {
                 continue;
             }

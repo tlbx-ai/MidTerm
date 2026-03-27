@@ -16,3 +16,8 @@ Rules:
 - Promotion path: use `scripts/promote.ps1` only with explicit approval.
 - Never run `scripts/promote.ps1`, create or push release tags, publish release artifacts, or merge release PRs without explicit approval.
 - For urgent fixes, implement and verify the change first, then stop before release or promotion unless the user explicitly says to continue.
+
+## Terminal Design Constraints
+
+- Do not suggest hiding, virtualizing, or lazily deactivating visible terminal sessions as a latency optimization.
+- In MidTerm, sessions that are shown are intentionally kept as genuinely active terminals; latency work must preserve that UX model.

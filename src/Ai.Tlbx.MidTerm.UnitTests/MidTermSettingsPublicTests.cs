@@ -236,7 +236,6 @@ public sealed class MidTermSettingsPublicTests
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
             CursorInactiveStyle = settings.CursorInactiveStyle,
-            HideCursorOnInputBursts = settings.HideCursorOnInputBursts,
             Theme = settings.Theme,
             TerminalColorScheme = settings.TerminalColorScheme,
             TerminalColorSchemes = settings.TerminalColorSchemes,

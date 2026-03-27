@@ -462,7 +462,6 @@ public sealed class SettingsServiceTests : IDisposable
         var old = new MidTermSettings
         {
             FontSize = 22,
-            HideCursorOnInputBursts = true,
             RightClickPaste = false,
             Theme = ThemeSetting.Light,
             BackgroundImageEnabled = true,
@@ -482,7 +481,6 @@ public sealed class SettingsServiceTests : IDisposable
         var loaded = service.Load();
 
         Assert.Equal(22, loaded.FontSize);
-        Assert.True(loaded.HideCursorOnInputBursts);
         Assert.False(loaded.RightClickPaste);
         Assert.Equal(ThemeSetting.Light, loaded.Theme);
         Assert.True(loaded.BackgroundImageEnabled);

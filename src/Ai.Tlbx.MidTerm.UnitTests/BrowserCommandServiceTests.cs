@@ -7,15 +7,38 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class BrowserCommandServiceTests
 {
     [Fact]
-    public void TryRegisterClient_RejectsDuplicatePreviewIds()
+    public async Task TryRegisterClient_ReplacesExistingPreviewClientOnReconnect()
     {
         var service = new BrowserCommandService();
+        BrowserWsMessage? captured = null;
 
         var first = service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { });
-        var duplicate = service.TryRegisterClient("c2", "session-a", "user1", "preview-a", _ => { });
+        var duplicate = service.TryRegisterClient("c2", "session-a", "user1", "preview-a", msg =>
+        {
+            captured = msg;
+            service.ReceiveResult(new BrowserWsResult
+            {
+                Id = msg.Id,
+                Success = true,
+                Result = "reconnected-ok",
+                PreviewId = "preview-a"
+            });
+        });
 
         Assert.True(first);
-        Assert.False(duplicate);
+        Assert.True(duplicate);
+        Assert.Equal(1, service.ConnectedClientCount);
+
+        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "url",
+            PreviewId = "preview-a"
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("reconnected-ok", result.Result);
+        Assert.NotNull(captured);
+        Assert.Equal("preview-a", captured!.PreviewId);
     }
 
     [Fact]
@@ -311,7 +334,8 @@ public class BrowserCommandServiceTests
         Assert.Contains("state: waiting", status, StringComparison.Ordinal);
         Assert.Contains("ui clients: 0", status, StringComparison.Ordinal);
         Assert.Contains("/ws/state", status, StringComparison.Ordinal);
-        Assert.Contains("Reopen the owning MidTerm browser tab", status, StringComparison.Ordinal);
+        Assert.Contains("dev browser cannot work", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("owning MidTerm browser tab", status, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -370,5 +394,32 @@ public class BrowserCommandServiceTests
         Assert.Equal("waiting", status.State);
         Assert.True(status.HasTarget);
         Assert.True(status.HasUiClient);
+    }
+
+    [Fact]
+    public async Task WaitForControllableAsync_IgnoresPreexistingClientUntilNewAttachmentArrives()
+    {
+        var service = new BrowserCommandService();
+
+        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
+        var notBefore = DateTimeOffset.UtcNow.AddMilliseconds(20);
+
+        var waitingTask = service.WaitForControllableAsync(
+            "https://example.com/",
+            sessionId: "session-a",
+            previewName: "default",
+            requireClientConnectedAfterUtc: notBefore,
+            timeout: TimeSpan.FromSeconds(1),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        await Task.Delay(50);
+        Assert.True(service.TryRegisterClient("c2", "session-a", "default", "preview-a", _ => { }));
+
+        var status = await waitingTask;
+
+        Assert.True(status.Connected);
+        Assert.True(status.Controllable);
+        Assert.NotNull(status.DefaultClient);
+        Assert.True(status.DefaultClient!.ConnectedAtUtc >= notBefore);
     }
 }

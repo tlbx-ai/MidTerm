@@ -75,6 +75,8 @@ const log = createLogger('settings');
 let settingsAbortController: AbortController | null = null;
 let settingsSaveVersion = 0;
 let terminalFontSettingsSaveTimer: number | null = null;
+let settingsFormHydrated = false;
+let settingsSaveArmed = false;
 type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 type TerminalColorSchemeEditorGroup = 'Core' | 'Standard ANSI' | 'Bright ANSI' | 'Advanced';
 
@@ -237,6 +239,10 @@ function areSettingValuesEqual(a: unknown, b: unknown): boolean {
 }
 
 function hasPendingSettingsChanges(): boolean {
+  if (!settingsFormHydrated || !settingsSaveArmed) {
+    return false;
+  }
+
   const current = $currentSettings.get();
   if (!current) {
     return false;
@@ -334,12 +340,28 @@ export function populateUserDropdown(
     }
     select.appendChild(option);
   });
+
+  if (
+    selectedUser &&
+    !users.some(
+      (user) =>
+        user.username.localeCompare(selectedUser, undefined, { sensitivity: 'accent' }) === 0,
+    )
+  ) {
+    const option = document.createElement('option');
+    option.value = selectedUser;
+    option.textContent = selectedUser;
+    option.selected = true;
+    select.appendChild(option);
+  }
 }
 
 /**
  * Populate the settings form with current settings
  */
 export function populateSettingsForm(settings: MidTermSettingsPublic): void {
+  settingsFormHydrated = false;
+  settingsSaveArmed = false;
   syncTerminalColorSchemeOptions(settings);
   getSettingsRegistryControlEntries().forEach((entry) => {
     setRegistryControlValue(entry, settings[entry.key]);
@@ -353,6 +375,8 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   if (dom.settingsView) {
     syncInlineTextInputWrappers(dom.settingsView);
   }
+
+  settingsFormHydrated = true;
 }
 
 /**
@@ -459,17 +483,6 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
 
     applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
 
-    if (!settings.hideCursorOnInputBursts && state.burstCursorHidden) {
-      if (state.burstCursorRestoreTimer != null) {
-        clearTimeout(state.burstCursorRestoreTimer);
-        state.burstCursorRestoreTimer = null;
-      }
-      state.burstCursorHidden = false;
-      if (state.remoteCursorVisible !== false) {
-        state.terminal.write('\x1b[?25h');
-      }
-    }
-
     refreshTerminalPresentation(sessionId, state);
   }
 
@@ -518,6 +531,10 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
  * Save all settings to the server
  */
 export function saveAllSettings(): void {
+  if (!settingsFormHydrated || !settingsSaveArmed) {
+    return;
+  }
+
   if (!validateAgentEnvironmentInputs()) {
     return;
   }
@@ -577,13 +594,22 @@ function persistSettingsSnapshot(
  */
 export function bindSettingsAutoSave(): void {
   // Clean up previous listeners first
-  unbindSettingsAutoSave();
+  unbindSettingsAutoSave(false);
 
   const settingsView = dom.settingsView;
   if (!settingsView) return;
 
   settingsAbortController = new AbortController();
   const { signal } = settingsAbortController;
+
+  const armSettingsSave = (): void => {
+    if (settingsFormHydrated) {
+      settingsSaveArmed = true;
+    }
+  };
+
+  settingsView.addEventListener('pointerdown', armSettingsSave, { capture: true, signal });
+  settingsView.addEventListener('keydown', armSettingsSave, { capture: true, signal });
 
   settingsView
     .querySelectorAll('select[id^="setting-"], input[type="checkbox"][id^="setting-"]')
@@ -758,12 +784,17 @@ export function bindSettingsAutoSave(): void {
 /**
  * Clean up settings event listeners
  */
-export function unbindSettingsAutoSave(): void {
+export function unbindSettingsAutoSave(resetHydrationState = true): void {
   flushPendingSettingsChanges();
 
   if (settingsAbortController) {
     settingsAbortController.abort();
     settingsAbortController = null;
+  }
+
+  if (resetHydrationState) {
+    settingsFormHydrated = false;
+    settingsSaveArmed = false;
   }
 }
 

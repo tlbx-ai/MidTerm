@@ -25,6 +25,7 @@ import {
   undockSession,
 } from '../layout/layoutStore';
 import { getHubSession, getHubSidebarSections, isHubSessionId } from '../hub/runtime';
+import { getPrimarySurfaceLabel, isAgentSurfaceSession } from '../sessionSurface';
 import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 
 // =============================================================================
@@ -433,7 +434,10 @@ function renderProcessTitle(
   } else {
     // Fallback: show shell type while process info is not yet available
     const session = getSession(sessionId);
-    const fallback = session?.shellType || t('session.terminal');
+    const fallback =
+      session && isAgentSurfaceSession(session)
+        ? getPrimarySurfaceLabel(session)
+        : session?.shellType || t('session.terminal');
     const title = document.createElement('span');
     title.className = 'session-title truncate';
     title.textContent = fallback;
@@ -612,9 +616,15 @@ interface SessionDisplayInfo {
  * Get display info for a session (primary title and optional secondary subtitle)
  */
 export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
-  const termTitle = session.terminalTitle || session.shellType || t('session.terminal');
+  const sessionSurfaceLabel = getPrimarySurfaceLabel(session);
+  const termTitle = isAgentSurfaceSession(session)
+    ? sessionSurfaceLabel
+    : session.terminalTitle || session.shellType || t('session.terminal');
   if (session.name) {
     return { primary: session.name, secondary: termTitle };
+  }
+  if (isAgentSurfaceSession(session)) {
+    return { primary: termTitle, secondary: null };
   }
   // Process set a console title — show it as the primary title with process info below
   if (session.terminalTitle && !isShellProcess(session.terminalTitle, session.id)) {

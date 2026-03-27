@@ -151,7 +151,9 @@ public sealed class UnixPty : IPtyConnection
         // isAsync: false — PTY fds don't support async I/O on macOS (.NET throws
         // "Arg_HandleNotAsync" when isAsync:true on non-pollable descriptors)
         _masterHandle = new Microsoft.Win32.SafeHandles.SafeFileHandle((IntPtr)_masterFd, ownsHandle: false);
-        _writerStream = new FileStream(_masterHandle, FileAccess.Write, bufferSize: 16384, isAsync: false);
+        // Keep PTY input writes effectively unbuffered so interactive keystrokes do not
+        // depend on explicit Stream.FlushAsync calls for visibility in the child shell.
+        _writerStream = new FileStream(_masterHandle, FileAccess.Write, bufferSize: 1, isAsync: false);
         _readerStream = new FileStream(_masterHandle, FileAccess.Read, bufferSize: 16384, isAsync: false);
 
         // Self-invoke mthost in PTY exec mode (unified for macOS and Linux)

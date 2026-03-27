@@ -189,17 +189,17 @@ public static class MtcliScriptWriter
         mt_previews()   { _MC "$_MT/api/webpreview/previews?sessionId=$(_MSID)"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
         mt_clearcookies() { _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
+        # mt_clearstate  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
+        mt_clearstate() { _MBB clearstate; _MC -X POST "$_MT/api/webpreview/state/clear$(_MQ)"; }
         # mt_hardreload  — clear cookies + reload (fresh session)
         mt_hardreload() { mt_clearcookies; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"; }
         # mt_preview_reset [URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
         mt_preview_reset() {
           local url="${1:-}"
-          local reset_script='(async () => { try { localStorage.clear(); sessionStorage.clear(); if (window.indexedDB && indexedDB.databases) { const dbs = await indexedDB.databases(); for (const db of dbs) { if (db && db.name) { try { indexedDB.deleteDatabase(db.name); } catch { } } } } return JSON.stringify({ ok: true }); } catch (error) { return JSON.stringify({ ok: false, error: String(error) }); } })()'
           if [ -n "$url" ]; then
             mt_navigate "$url" >/dev/null
           fi
-          mt_clearcookies >/dev/null
-          mt_exec "$reset_script" >/dev/null 2>&1 || true
+          mt_clearstate >/dev/null 2>&1 || true
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"
         }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
@@ -427,7 +427,20 @@ public static class MtcliScriptWriter
 
         # Direct execution: .midterm/mtcli.sh query ".error"
         if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
-          _cmd="$1"; shift 2>/dev/null; "mt_$_cmd" "$@"
+          _cmd="${1:-}"
+          shift 2>/dev/null
+          _normalized_cmd="${_cmd#mt_}"
+          if [ "$_normalized_cmd" = "$_cmd" ]; then
+            _normalized_cmd="${_cmd#mt-}"
+          fi
+          if [ -n "$_cmd" ] && command -v "$_cmd" >/dev/null 2>&1; then
+            "$_cmd" "$@"
+          elif [ -n "$_normalized_cmd" ] && command -v "mt_$_normalized_cmd" >/dev/null 2>&1; then
+            "mt_$_normalized_cmd" "$@"
+          else
+            printf 'Unknown MidTerm CLI command: %s\n' "$_cmd" >&2
+            exit 1
+          fi
         fi
         """;
 
@@ -660,6 +673,8 @@ public static class MtcliScriptWriter
         function Mt-Previews   { _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
         function Mt-ClearCookies { _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
+        # Mt-ClearState  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
+        function Mt-ClearState { _MBB clearstate; _MC -X POST "$script:_MT/api/webpreview/state/clear$(_MQuery)" }
         # Mt-HardReload  — clear cookies + reload (fresh session)
         function Mt-HardReload { Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
         # Mt-PreviewReset [-Url URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
@@ -668,13 +683,7 @@ public static class MtcliScriptWriter
             if ($Url) {
                 Mt-Navigate -Url $Url | Out-Null
             }
-            Mt-ClearCookies | Out-Null
-            try {
-                $script = "(async () => { try { localStorage.clear(); sessionStorage.clear(); if (window.indexedDB && indexedDB.databases) { const dbs = await indexedDB.databases(); for (const db of dbs) { if (db && db.name) { try { indexedDB.deleteDatabase(db.name); } catch { } } } } return { ok: true }; } catch (error) { return { ok: false, error: String(error) }; } })()"
-                $script | Mt-Exec | Out-Null
-            }
-            catch {
-            }
+            try { Mt-ClearState | Out-Null } catch {}
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload"
         }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
@@ -948,6 +957,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_cookies -Value Mt-Cookies
         Set-Alias -Name mt_previews -Value Mt-Previews
         Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
+        Set-Alias -Name mt_clearstate -Value Mt-ClearState
         Set-Alias -Name mt_hardreload -Value Mt-HardReload
         Set-Alias -Name mt_preview_reset -Value Mt-PreviewReset
         Set-Alias -Name mt_proxylog -Value Mt-ProxyLog
@@ -982,7 +992,23 @@ public static class MtcliScriptWriter
         if ($args.Count -gt 0) {
             $cmd = $args[0]
             $cmdArgs = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
-            & "Mt-$($cmd.Substring(0,1).ToUpper() + $cmd.Substring(1))" @cmdArgs
+            $normalizedCmd = if ($cmd -match '^(?i)mt[_-](.+)$') { $Matches[1] } else { $cmd }
+            $pascalCmd = if ($normalizedCmd.Length -gt 0) { $normalizedCmd.Substring(0,1).ToUpper() + $normalizedCmd.Substring(1) } else { $normalizedCmd }
+            $candidates = @(
+                $cmd,
+                $normalizedCmd,
+                "mt_$normalizedCmd",
+                "Mt-$pascalCmd"
+            ) | Select-Object -Unique
+
+            foreach ($candidate in $candidates) {
+                if (Get-Command $candidate -ErrorAction SilentlyContinue) {
+                    & $candidate @cmdArgs
+                    return
+                }
+            }
+
+            throw "Unknown MidTerm CLI command: $cmd"
         }
         """;
 }

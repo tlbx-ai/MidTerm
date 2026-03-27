@@ -73,7 +73,6 @@ import {
   $muxWsConnected,
   $muxHasConnected,
   $activeSessionId,
-  $currentSettings,
   $stateWsConnected,
   $dataLossDetected,
 } from '../../stores';
@@ -476,6 +475,14 @@ function compactSessionQueue(queue: SessionOutputQueue): void {
 }
 
 function yieldToMain(): Promise<void> {
+  const scheduler = (
+    globalThis as typeof globalThis & {
+      scheduler?: { yield?: () => Promise<void> };
+    }
+  ).scheduler;
+  if (typeof scheduler?.yield === 'function') {
+    return scheduler.yield();
+  }
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
@@ -486,6 +493,34 @@ function isSequenceNewer(candidate: bigint, current: bigint): boolean {
 
 function maxSequence(current: bigint, candidate: bigint): bigint {
   return isSequenceNewer(candidate, current) ? candidate : current;
+}
+
+function trimFrameToUnseenSuffix(
+  data: Uint8Array,
+  sequenceEnd: bigint,
+  receivedSeq: bigint,
+): Uint8Array {
+  if (data.length === 0 || receivedSeq === 0n) {
+    return data;
+  }
+
+  if (!isSequenceNewer(sequenceEnd, receivedSeq)) {
+    return new Uint8Array(0);
+  }
+
+  const frameLength = BigInt(data.length);
+  const sequenceStart = (sequenceEnd - frameLength + SEQUENCE_MODULUS) % SEQUENCE_MODULUS;
+  const overlapBytes = (receivedSeq - sequenceStart + SEQUENCE_MODULUS) % SEQUENCE_MODULUS;
+
+  if (
+    isSequenceNewer(receivedSeq, sequenceStart) &&
+    overlapBytes > 0n &&
+    overlapBytes < frameLength
+  ) {
+    return data.subarray(Number(overlapBytes));
+  }
+
+  return data;
 }
 
 function getOrCreateBrowserTransportSnapshot(sessionId: string): BrowserTransportSnapshot {
@@ -689,13 +724,16 @@ async function processOneFrame(item: OutputFrameItem, generation: number): Promi
     }
 
     const snapshot = getOrCreateBrowserTransportSnapshot(item.sessionId);
+    const trimmedData = trimFrameToUnseenSuffix(data, sequenceEnd, snapshot.receivedSeq);
     snapshot.receivedSeq = maxSequence(snapshot.receivedSeq, sequenceEnd);
 
     const state = sessionTerminals.get(item.sessionId);
     if (state && state.opened) {
-      writeToTerminal(item.sessionId, state, sequenceEnd, cols, rows, data, generation);
-    } else if (data.length > 0) {
-      bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, data);
+      if (trimmedData.length > 0) {
+        writeToTerminal(item.sessionId, state, sequenceEnd, cols, rows, trimmedData, generation);
+      }
+    } else if (trimmedData.length > 0) {
+      bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, trimmedData);
     }
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
@@ -708,10 +746,6 @@ const bracketedPasteState = new Map<string, boolean>();
 /** Check if session has bracketed paste mode enabled */
 export function isBracketedPasteEnabled(sessionId: string): boolean {
   return bracketedPasteState.get(sessionId) ?? false;
-}
-
-function isHideCursorOnInputBurstsEnabled(): boolean {
-  return $currentSettings.get()?.hideCursorOnInputBursts === true;
 }
 
 function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
@@ -740,10 +774,6 @@ function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
 }
 
 function hideBurstCursor(state: TerminalState): void {
-  if (!isHideCursorOnInputBurstsEnabled()) {
-    return;
-  }
-
   if (!state.burstCursorHidden) {
     if (!state.syncOutputCursorHidden) {
       state.terminal.write(HIDE_CURSOR_SEQ);
@@ -758,11 +788,7 @@ function hideBurstCursor(state: TerminalState): void {
 }
 
 function showBurstCursor(state: TerminalState): void {
-  if (
-    !isHideCursorOnInputBurstsEnabled() ||
-    state.remoteCursorVisible === false ||
-    state.syncOutputCursorHidden === true
-  ) {
+  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
     return;
   }
 
@@ -778,11 +804,7 @@ function showBurstCursor(state: TerminalState): void {
 }
 
 function scheduleBurstCursorShow(state: TerminalState): void {
-  if (
-    !isHideCursorOnInputBurstsEnabled() ||
-    state.remoteCursorVisible === false ||
-    state.syncOutputCursorHidden === true
-  ) {
+  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
     return;
   }
 
@@ -980,7 +1002,13 @@ export function applyOutputFrameToTerminal(
 export function connectMuxWebSocket(): void {
   closeWebSocket(muxWs, setMuxWs);
 
-  const wsPath = isSharedSessionRoute() ? '/ws/share/mux' : '/ws/mux';
+  const activeId = $activeSessionId.get();
+  const query = new URLSearchParams();
+  if (activeId) {
+    query.set('activeSessionId', activeId);
+  }
+  const wsPathBase = isSharedSessionRoute() ? '/ws/share/mux' : '/ws/mux';
+  const wsPath = query.size > 0 ? `${wsPathBase}?${query.toString()}` : wsPathBase;
   const ws = new WebSocket(createWsUrl(wsPath));
   ws.binaryType = 'arraybuffer';
   setMuxWs(ws);
@@ -1015,13 +1043,7 @@ export function connectMuxWebSocket(): void {
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
       clearQueuedOutput();
-      forEachLocalTerminal((state, sessionId) => {
-        if (state.opened) {
-          state.terminal.clear();
-          state.terminal.write('\x1b[0m');
-        }
-        state.serverCols = 0;
-        state.serverRows = 0;
+      forEachLocalTerminal((_, sessionId) => {
         const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
         snapshot.lastReplayReason = 'reconnect_tail_replay';
         // Server pushes all buffers on connect via SendInitialBuffersAsync
@@ -1037,9 +1059,9 @@ export function connectMuxWebSocket(): void {
     }
 
     // Send active session hint so server knows which session to prioritize
-    const activeId = $activeSessionId.get();
-    if (activeId) {
-      sendActiveSessionHint(activeId);
+    const activeSessionId = $activeSessionId.get();
+    if (activeSessionId) {
+      sendActiveSessionHint(activeSessionId);
     }
 
     // Flush any input buffered during disconnection

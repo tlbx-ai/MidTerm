@@ -106,7 +106,7 @@ type TranscriptKind =
   | 'system'
   | 'notice';
 type TranscriptTone = 'info' | 'positive' | 'warning' | 'attention';
-type LensTranscriptActionId = 'open-terminal' | 'retry-lens';
+type LensTranscriptActionId = 'retry-lens';
 export type LensDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
 
 const LENS_DEBUG_SCENARIO_NAMES: readonly LensDebugScenarioName[] = [
@@ -2361,13 +2361,8 @@ function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
 
 async function handleTranscriptAction(
   sessionId: string,
-  actionId: LensTranscriptActionId,
+  _actionId: LensTranscriptActionId,
 ): Promise<void> {
-  if (actionId === 'open-terminal') {
-    switchTab(sessionId, 'terminal');
-    return;
-  }
-
   await retryLensActivation(sessionId);
 }
 
@@ -3416,7 +3411,6 @@ export function classifyLensActivationIssue(
     error instanceof LensHttpError && error.detail.trim() ? error.detail.trim() : description;
   const normalizedDetail = detail.toLowerCase();
   const actions: LensTranscriptAction[] = [
-    { id: 'open-terminal', label: 'Open Terminal', style: 'secondary' },
     { id: 'retry-lens', label: 'Retry Lens', style: 'primary', busyLabel: 'Retrying...' },
   ];
 
@@ -3454,7 +3448,7 @@ export function classifyLensActivationIssue(
       tone: 'warning',
       meta: 'Terminal recovery failed',
       title: 'Terminal did not recover cleanly after handoff',
-      body: 'MidTerm stopped the foreground Codex process but the terminal did not settle back to a clean shell. Open Terminal to inspect the lane, then retry Lens once the shell is stable again.',
+      body: 'MidTerm stopped the foreground Codex process but the session did not settle back into a clean live lane. Retry Lens once the lane is stable again.',
       actions,
     };
   }
@@ -3465,7 +3459,7 @@ export function classifyLensActivationIssue(
       tone: 'warning',
       meta: 'Native runtime unavailable',
       title: 'This session cannot start a live Lens runtime yet',
-      body: 'MidTerm could not start the native Lens runtime for this session. Keep using Terminal for the live lane, or retry after the session becomes native-runtime-capable.',
+      body: 'MidTerm could not start the native Lens runtime for this session. Retry after the session becomes native-runtime-capable.',
       actions,
     };
   }

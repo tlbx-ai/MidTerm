@@ -159,6 +159,8 @@ Around the raw PTY stream, MidTerm adds:
 - File Radar path detection with a per-session allowlist boundary
 - scrollback protection and visibility-aware focus handling
 
+MidTerm intentionally keeps shown sessions as live terminals. Latency work is expected to optimize transport, scheduling, buffering, and rendering costs without proposing terminal virtualization or deactivation for visible sessions.
+
 ## 4. Workspace Surfaces Around the Terminal
 
 ### Sidebar and Layout

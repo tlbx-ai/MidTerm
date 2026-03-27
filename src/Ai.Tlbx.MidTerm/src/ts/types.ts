@@ -95,6 +95,7 @@ export interface TerminalState {
   reconnectFreezeOverlay?: HTMLDivElement | null;
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
+  enterOverrideHandler?: (e: KeyboardEvent) => void;
   hasWebgl?: boolean;
   webglAddon?: WebglAddon | null;
   disposables?: Array<{ dispose: () => void }>;

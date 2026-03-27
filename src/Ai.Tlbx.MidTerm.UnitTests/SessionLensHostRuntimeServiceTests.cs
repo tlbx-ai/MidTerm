@@ -540,6 +540,53 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
     }
 
+    [Fact]
+    public async Task SessionLensRuntimeService_FallsBackToLegacyCodexWhenMtAgentHostColdAttachThrows()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var pulse = new SessionLensPulseService();
+        var ingress = new SessionLensHostIngressService(pulse);
+        var hostRuntime = new SessionLensHostRuntimeService(
+            ingress,
+            pulse,
+            CreateSettingsService(),
+            instanceIdentity: null,
+            mode: "codex",
+            launcher: static (
+                string _fileName,
+                IReadOnlyList<string> _args,
+                string _workingDirectory,
+                IReadOnlyDictionary<string, string?>? _environmentOverrides,
+                IReadOnlyList<string>? _pathPrependEntries,
+                string? _runAsUser,
+                out TtyHostSpawner.RedirectedProcessHandle? launchedProcess,
+                out string? failure) =>
+            {
+                launchedProcess = null;
+                failure = null;
+                throw new InvalidOperationException("Injected mtagenthost cold-start failure.");
+            });
+        await using var sessionManager = new TtyHostSessionManager();
+        var profileService = new AiCliProfileService();
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+
+        var session = new SessionInfoDto
+        {
+            Id = "session-runtime-codex-host-fallback-1",
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "codex"
+        };
+
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+
+        Assert.True(attached);
+        Assert.True(runtime.IsAttached(session.Id));
+        Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+        Assert.Equal("codex-app-server", runtimeSnapshot.TransportKey);
+        Assert.Equal("Codex app-server sidecar", runtimeSnapshot.TransportLabel);
+        Assert.Equal("ready", runtimeSnapshot.Status);
+    }
+
     private static async Task<LensPulseEventListResponse> WaitForEventsAsync(
         SessionLensPulseService pulse,
         string sessionId,

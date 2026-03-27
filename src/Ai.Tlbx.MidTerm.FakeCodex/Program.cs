@@ -6,6 +6,9 @@ var turnId = "turn-fake-1";
 var approvalRequestId = "srv-approval-1";
 var userInputRequestId = "srv-user-input-1";
 var lastAssistant = string.Empty;
+var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CAPTURE_PATH");
+var launchCapture = CreateLaunchCapture();
+PersistLaunchCapture(capturePath, launchCapture);
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 {
@@ -36,6 +39,16 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             switch (method)
             {
                 case "initialize":
+                    RecordMethod(launchCapture, method);
+                    if (root.TryGetProperty("params", out var initializeParams) && initializeParams.ValueKind == JsonValueKind.Object)
+                    {
+                        launchCapture.InitializeClientName = GetString(initializeParams, "clientInfo", "name");
+                        launchCapture.InitializeClientTitle = GetString(initializeParams, "clientInfo", "title");
+                        launchCapture.InitializeClientVersion = GetString(initializeParams, "clientInfo", "version");
+                        launchCapture.InitializeExperimentalApi = GetBoolean(initializeParams, "capabilities", "experimentalApi");
+                    }
+
+                    PersistLaunchCapture(capturePath, launchCapture);
                     await WriteJsonAsync(new
                     {
                         jsonrpc = "2.0",
@@ -44,8 +57,50 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     }).ConfigureAwait(false);
                     continue;
                 case "initialized":
+                    RecordMethod(launchCapture, method);
+                    PersistLaunchCapture(capturePath, launchCapture);
                     continue;
                 case "thread/start":
+                    RecordMethod(launchCapture, method);
+                    if (root.TryGetProperty("params", out var threadStartParams) && threadStartParams.ValueKind == JsonValueKind.Object)
+                    {
+                        launchCapture.ThreadStartCwd = GetString(threadStartParams, "cwd");
+                        launchCapture.ThreadStartApprovalPolicy = GetString(threadStartParams, "approvalPolicy");
+                        launchCapture.ThreadStartSandbox = GetString(threadStartParams, "sandbox");
+                        launchCapture.ThreadStartExperimentalRawEvents = GetBoolean(threadStartParams, "experimentalRawEvents");
+                    }
+
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        method = "thread/started",
+                        @params = new
+                        {
+                            thread = new { id = threadId }
+                        }
+                    }).ConfigureAwait(false);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new
+                        {
+                            thread = new { id = threadId }
+                        }
+                    }).ConfigureAwait(false);
+                    continue;
+                case "thread/resume":
+                    RecordMethod(launchCapture, method);
+                    if (root.TryGetProperty("params", out var threadResumeParams) && threadResumeParams.ValueKind == JsonValueKind.Object)
+                    {
+                        launchCapture.ThreadResumeCwd = GetString(threadResumeParams, "cwd");
+                        launchCapture.ThreadResumeThreadId = GetString(threadResumeParams, "threadId");
+                        launchCapture.ThreadResumeApprovalPolicy = GetString(threadResumeParams, "approvalPolicy");
+                        launchCapture.ThreadResumeSandbox = GetString(threadResumeParams, "sandbox");
+                    }
+
+                    PersistLaunchCapture(capturePath, launchCapture);
                     await WriteJsonAsync(new
                     {
                         jsonrpc = "2.0",
@@ -67,6 +122,8 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     continue;
                 case "turn/start":
                 {
+                    RecordMethod(launchCapture, method);
+                    PersistLaunchCapture(capturePath, launchCapture);
                     var (imageCount, hasFileRef, textValue) = GetInputStats(root);
                     lastAssistant = $"Fake Codex reply. images={imageCount.ToString()} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
                     var requestUserInput = textValue.Contains("ask user", StringComparison.OrdinalIgnoreCase);
@@ -293,6 +350,47 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
     }
 }
 
+static FakeCodexLaunchCapture CreateLaunchCapture()
+{
+    var args = Environment.GetCommandLineArgs();
+    return new FakeCodexLaunchCapture
+    {
+        ExecutablePath = args.Length > 0 ? args[0] : null,
+        Arguments = args.Skip(1).ToArray(),
+        ProcessWorkingDirectory = Environment.CurrentDirectory
+    };
+}
+
+static void RecordMethod(FakeCodexLaunchCapture capture, string? method)
+{
+    if (!string.IsNullOrWhiteSpace(method))
+    {
+        capture.Methods.Add(method);
+    }
+}
+
+static void PersistLaunchCapture(string? capturePath, FakeCodexLaunchCapture capture)
+{
+    if (string.IsNullOrWhiteSpace(capturePath))
+    {
+        return;
+    }
+
+    try
+    {
+        var directory = Path.GetDirectoryName(capturePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(capturePath, JsonSerializer.Serialize(capture));
+    }
+    catch
+    {
+    }
+}
+
 static async Task WriteJsonAsync<T>(T payload)
 {
     await Console.Out.WriteLineAsync(JsonSerializer.Serialize(payload)).ConfigureAwait(false);
@@ -333,4 +431,69 @@ static (int ImageCount, bool HasFileRef, string TextValue) GetInputStats(JsonEle
     var hasFileRef = textValue.Contains("Attached file:", StringComparison.Ordinal) ||
                      textValue.Contains("Attached files (", StringComparison.Ordinal);
     return (imageCount, hasFileRef, textValue);
+}
+
+static string? GetString(JsonElement element, params string[] path)
+{
+    var current = element;
+    foreach (var segment in path)
+    {
+        if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out current))
+        {
+            return null;
+        }
+    }
+
+    return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
+}
+
+static bool? GetBoolean(JsonElement element, params string[] path)
+{
+    var current = element;
+    foreach (var segment in path)
+    {
+        if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out current))
+        {
+            return null;
+        }
+    }
+
+    return current.ValueKind == JsonValueKind.True || current.ValueKind == JsonValueKind.False
+        ? current.GetBoolean()
+        : null;
+}
+
+internal sealed class FakeCodexLaunchCapture
+{
+    public string? ExecutablePath { get; set; }
+
+    public string[] Arguments { get; set; } = [];
+
+    public string? ProcessWorkingDirectory { get; set; }
+
+    public List<string> Methods { get; set; } = [];
+
+    public string? InitializeClientName { get; set; }
+
+    public string? InitializeClientTitle { get; set; }
+
+    public string? InitializeClientVersion { get; set; }
+
+    public bool? InitializeExperimentalApi { get; set; }
+
+    public string? ThreadStartCwd { get; set; }
+
+    public string? ThreadStartApprovalPolicy { get; set; }
+
+    public string? ThreadStartSandbox { get; set; }
+
+    public bool? ThreadStartExperimentalRawEvents { get; set; }
+
+    public string? ThreadResumeCwd { get; set; }
+
+    public string? ThreadResumeThreadId { get; set; }
+
+    public string? ThreadResumeApprovalPolicy { get; set; }
+
+    public string? ThreadResumeSandbox { get; set; }
 }

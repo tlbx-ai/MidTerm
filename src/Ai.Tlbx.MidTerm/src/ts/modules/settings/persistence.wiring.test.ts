@@ -106,6 +106,30 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain('flushPendingSettingsChanges();');
   });
 
+  it('blocks autosave until the settings form is hydrated and user interaction arms it', () => {
+    expect(persistenceSource).toContain('let settingsFormHydrated = false;');
+    expect(persistenceSource).toContain('let settingsSaveArmed = false;');
+    expect(persistenceSource).toContain('if (!settingsFormHydrated || !settingsSaveArmed) {');
+    expect(persistenceSource).toContain("settingsView.addEventListener('pointerdown', armSettingsSave");
+    expect(persistenceSource).toContain("settingsView.addEventListener('keydown', armSettingsSave");
+  });
+
+  it('preserves hydration state when rebinding autosave listeners', () => {
+    expect(persistenceSource).toContain('unbindSettingsAutoSave(false);');
+    expect(persistenceSource).toContain(
+      'export function unbindSettingsAutoSave(resetHydrationState = true): void {',
+    );
+    expect(persistenceSource).toContain('if (resetHydrationState) {');
+  });
+
+  it('keeps the saved run-as user selectable even if discovery misses it', () => {
+    expect(persistenceSource).toContain('selectedUser &&');
+    expect(persistenceSource).toContain('!users.some(');
+    expect(persistenceSource).toContain("option.value = selectedUser;");
+    expect(persistenceSource).toContain("option.textContent = selectedUser;");
+    expect(persistenceSource).toContain('option.selected = true;');
+  });
+
   it('uses non-submit inline save buttons for text and number settings', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),

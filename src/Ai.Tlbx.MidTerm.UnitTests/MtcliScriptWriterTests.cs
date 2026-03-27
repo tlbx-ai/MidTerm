@@ -93,11 +93,17 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Open {", powershell, StringComparison.Ordinal);
         Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", powershell, StringComparison.Ordinal);
+        Assert.Contains("Get-Command $candidate -ErrorAction SilentlyContinue", powershell, StringComparison.Ordinal);
+        Assert.Contains("Unknown MidTerm CLI command: $cmd", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_SESSION_ID", powershell, StringComparison.Ordinal);
         Assert.Contains("previewName=(_MPreview)", powershell, StringComparison.Ordinal);
         Assert.Contains("activateSession=$true", powershell, StringComparison.Ordinal);
+        Assert.Contains("_normalized_cmd=\"${_cmd#mt_}\"", shell, StringComparison.Ordinal);
+        Assert.Contains("_normalized_cmd=\"${_cmd#mt-}\"", shell, StringComparison.Ordinal);
+        Assert.Contains("command -v \"mt_$_normalized_cmd\"", shell, StringComparison.Ordinal);
+        Assert.Contains("Unknown MidTerm CLI command: %s", shell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -144,6 +150,26 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("/api/sessions/attention", shell, StringComparison.Ordinal);
         Assert.Contains("/api/workers/bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("/activity?seconds=", powershell, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteScripts_WritesNormalizedDirectExecutionHelpers()
+    {
+        Directory.CreateDirectory(_tempDir);
+
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+
+        Assert.Contains("_normalized_cmd=\"${_cmd#mt_}\"", shell, StringComparison.Ordinal);
+        Assert.Contains("_normalized_cmd=\"${_cmd#mt-}\"", shell, StringComparison.Ordinal);
+        Assert.Contains("command -v \"mt_$_normalized_cmd\"", shell, StringComparison.Ordinal);
+
+        Assert.Contains("$normalizedCmd = if ($cmd -match '^(?i)mt[_-](.+)$') { $Matches[1] } else { $cmd }", powershell, StringComparison.Ordinal);
+        Assert.Contains("$pascalCmd = if ($normalizedCmd.Length -gt 0)", powershell, StringComparison.Ordinal);
+        Assert.Contains("\"mt_$normalizedCmd\"", powershell, StringComparison.Ordinal);
+        Assert.Contains("\"Mt-$pascalCmd\"", powershell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -203,6 +229,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_attention", agents, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
         Assert.Contains("mt_preview_reset", agents, StringComparison.Ordinal);
+        Assert.Contains("status` and `mt_status` both resolve", agents, StringComparison.Ordinal);
         Assert.Contains("atomically", agents, StringComparison.Ordinal);
         Assert.Contains("recreates and refreshes it automatically", agents, StringComparison.Ordinal);
     }

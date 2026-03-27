@@ -14,22 +14,35 @@ vi.mock('../i18n', () => ({
 
 describe('history launch mode helpers', () => {
   it('defaults legacy entries to terminal mode', async () => {
-    const { normalizeHistoryLaunchMode, isLensHistoryEntry, getHistoryModeDisplayText } =
+    const {
+      normalizeHistoryLaunchMode,
+      isLensHistoryEntry,
+      getHistoryModeDisplayText,
+      getHistoryModeBadgeText,
+    } =
       await import('./launchMode');
 
     expect(normalizeHistoryLaunchMode(undefined)).toBe('terminal');
     expect(isLensHistoryEntry({})).toBe(false);
     expect(getHistoryModeDisplayText({})).toBe('Terminal');
+    expect(getHistoryModeBadgeText({})).toBe('TRM');
   });
 
   it('keeps lens entries provider-specific', async () => {
-    const { isLensHistoryEntry, getHistoryModeDisplayText, resolveSessionHistoryMode } =
+    const {
+      isLensHistoryEntry,
+      getHistoryModeDisplayText,
+      getHistoryModeBadgeText,
+      resolveSessionHistoryMode,
+    } =
       await import('./launchMode');
 
     expect(isLensHistoryEntry({ launchMode: 'lens', profile: 'claude' })).toBe(true);
     expect(getHistoryModeDisplayText({ launchMode: 'lens', profile: 'claude' })).toBe(
       'Lens · Claude',
     );
+    expect(getHistoryModeBadgeText({ launchMode: 'lens', profile: 'claude' })).toBe('CLD');
+    expect(getHistoryModeBadgeText({ launchMode: 'lens', profile: 'codex' })).toBe('CDX');
     expect(
       resolveSessionHistoryMode({
         lensOnly: true,

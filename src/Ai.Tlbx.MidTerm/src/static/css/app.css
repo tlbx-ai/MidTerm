@@ -301,6 +301,9 @@
   --bg-dropdown: #242735; /* Alias for compatibility */
   --bg-elevated-opaque: #161821; /* Opaque modal/card shell */
   --bg-dropdown-opaque: #242735; /* Opaque dropdown/menu shell */
+  --bg-dialog: #161821; /* Dialog shell. Duplicate of bg-elevated; use for dialogs so dialogs stay opaque. */
+  --bg-dialog-muted: #242735; /* Dialog sub-surface. Duplicate of bg-surface; use inside dialogs, never transparent. */
+  --bg-dialog-chrome: #0d0e14; /* Dialog chrome. Duplicate of bg-sidebar; use for dialog framing, never transparent. */
   --bg-hover: #2d3044; /* L: 16% - Hover states */
   --bg-active: #363a50; /* L: 19% - Active/selected */
   --bg-session-hover: #1c1e2a; /* Subtle hover */
@@ -1210,15 +1213,15 @@ body.has-app-background::after {
 
 .history-item-mode {
   flex: 0 0 auto;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent-gold-muted) 42%, transparent);
   background: color-mix(in srgb, var(--accent-gold-muted) 10%, transparent);
   color: color-mix(in srgb, var(--accent-gold-muted) 86%, var(--text-primary));
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1.2;
+  letter-spacing: 0.04em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
@@ -4846,7 +4849,7 @@ body.has-app-background::after {
 
 .modal-content {
   position: relative;
-  background-color: var(--bg-elevated-opaque);
+  background-color: var(--bg-dialog, var(--bg-elevated-opaque));
   border: 1px solid var(--border-color);
   border-radius: 8px;
   max-width: 600px;
@@ -5596,6 +5599,7 @@ body.has-app-background::after {
 .dialog-content {
   max-width: 420px;
   width: 90%;
+  background: var(--bg-dialog, var(--bg-elevated-opaque));
   animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
@@ -5645,9 +5649,10 @@ body.has-app-background::after {
 }
 
 .session-launcher-content {
+  background-color: var(--bg-dialog, var(--bg-elevated-opaque));
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-blue) 18%, transparent), transparent 36%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-sidebar) 92%, white 8%), var(--bg-sidebar));
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-blue) 18%, var(--bg-dialog-chrome)), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-dialog-chrome) 92%, white 8%), var(--bg-dialog));
 }
 
 .session-launcher-body {
@@ -5677,7 +5682,7 @@ body.has-app-background::after {
   padding: 18px;
   border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  background: color-mix(in srgb, var(--bg-dialog-muted) 92%, var(--bg-dialog));
   color: var(--text-primary);
   text-align: left;
   transition:
@@ -5694,7 +5699,7 @@ body.has-app-background::after {
 
 .session-launcher-provider.active {
   border-color: color-mix(in srgb, var(--accent-blue) 64%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-dialog-muted));
   box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow-color-lg) 72%, transparent);
 }
 
@@ -5736,7 +5741,7 @@ body.has-app-background::after {
   padding: 0 14px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  background: color-mix(in srgb, var(--bg-dialog-muted) 82%, var(--bg-dialog));
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5753,13 +5758,13 @@ body.has-app-background::after {
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
-  background: transparent;
+  background: var(--bg-dialog-muted);
   color: var(--text-secondary);
 }
 
 .session-launcher-root.active {
   border-color: color-mix(in srgb, var(--accent-blue) 56%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-dialog-muted));
   color: var(--text-primary);
 }
 
@@ -5780,7 +5785,7 @@ body.has-app-background::after {
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-elevated) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-dialog-muted) 80%, var(--bg-dialog));
   color: var(--text-primary);
   word-break: break-all;
 }
@@ -5788,12 +5793,12 @@ body.has-app-background::after {
 .session-launcher-status {
   padding: 12px 14px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-dialog-muted));
   color: var(--text-secondary);
 }
 
 .session-launcher-status.error {
-  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-dialog-muted));
   color: var(--accent-red);
 }
 
@@ -5814,12 +5819,12 @@ body.has-app-background::after {
   padding: 10px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
-  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-dialog-muted) 72%, var(--bg-dialog));
 }
 
 .session-launcher-row.selected {
   border-color: color-mix(in srgb, var(--accent-blue) 56%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-dialog-muted));
 }
 
 .session-launcher-row-main,
@@ -5851,7 +5856,7 @@ body.has-app-background::after {
 .session-launcher-row-open {
   padding: 0 12px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--btn-secondary) 72%, transparent);
+  background: color-mix(in srgb, var(--btn-secondary) 72%, var(--bg-dialog-muted));
 }
 
 .session-launcher-empty {
@@ -9191,6 +9196,40 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
+.web-preview-status-banner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, black 12%);
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  pointer-events: none;
+}
+
+.web-preview-status-banner.hidden {
+  display: none;
+}
+
+.web-preview-status-banner[data-severity='info'] {
+  border-color: var(--accent-blue-25);
+  background: color-mix(in srgb, var(--accent-blue-10) 62%, var(--bg-elevated) 38%);
+}
+
+.web-preview-status-banner[data-severity='warn'] {
+  border-color: var(--accent-gold-25);
+  background: color-mix(in srgb, var(--accent-gold-10) 62%, var(--bg-elevated) 38%);
+}
+
+.web-preview-status-banner[data-severity='error'] {
+  border-color: color-mix(in srgb, #d95c5c 45%, var(--border-color) 55%);
+  background: color-mix(in srgb, #d95c5c 14%, var(--bg-elevated) 86%);
+}
+
 .web-preview-dock-body.viewport-constrained {
   display: flex;
   align-items: center;
@@ -9449,6 +9488,7 @@ body.shared-session-mode .session-tab-bar {
   width: min(820px, calc(100vw - 32px));
   max-height: min(88vh, 860px);
   border-radius: 18px;
+  background: var(--bg-dialog, var(--bg-elevated-opaque));
 }
 
 .manager-action-modal-body {
@@ -9486,7 +9526,7 @@ body.shared-session-mode .session-tab-bar {
 .manager-action-modal-body select,
 .manager-action-modal-body textarea {
   width: 100%;
-  background: var(--text-input-background, var(--bg-input));
+  background: var(--bg-dialog-muted, var(--text-input-background, var(--bg-input)));
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 12px;

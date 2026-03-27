@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Ai.Tlbx.MidTerm.Settings;
+using Ai.Tlbx.MidTerm.Services.Security;
 
 #if WINDOWS
 using Microsoft.Win32;
@@ -75,9 +76,38 @@ internal static class LensHostEnvironmentResolver
 
         var currentUserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var usersRoot = Directory.GetParent(currentUserProfile)?.FullName;
-        return string.IsNullOrWhiteSpace(usersRoot)
+        if (string.IsNullOrWhiteSpace(usersRoot))
+        {
+            return null;
+        }
+
+        var candidates = new List<string>();
+        var trimmedUserName = userName.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmedUserName))
+        {
+            candidates.Add(trimmedUserName);
+        }
+
+        var normalizedUserName = SystemUserProvider.NormalizeWindowsUsername(userName);
+        if (!string.IsNullOrWhiteSpace(normalizedUserName) &&
+            !candidates.Contains(normalizedUserName, StringComparer.OrdinalIgnoreCase))
+        {
+            candidates.Add(normalizedUserName);
+        }
+
+        foreach (var candidate in candidates)
+        {
+            var candidatePath = Path.Combine(usersRoot, candidate);
+            if (Directory.Exists(candidatePath))
+            {
+                return candidatePath;
+            }
+        }
+
+        var fallbackLeaf = candidates.LastOrDefault();
+        return string.IsNullOrWhiteSpace(fallbackLeaf)
             ? null
-            : Path.Combine(usersRoot, userName);
+            : Path.Combine(usersRoot, fallbackLeaf);
     }
 
     private static void PrependPath(ProcessStartInfo startInfo, string? directory)

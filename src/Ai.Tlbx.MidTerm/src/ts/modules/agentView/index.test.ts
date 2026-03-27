@@ -710,7 +710,7 @@ describe('agentView dev errors', () => {
     expect(issue.kind).toBe('busy-terminal-turn');
     expect(issue.meta).toBe('Read-only history');
     expect(issue.title).toContain('Terminal owns');
-    expect(issue.actions.map((action) => action.id)).toEqual(['open-terminal', 'retry-lens']);
+    expect(issue.actions.map((action) => action.id)).toEqual(['retry-lens']);
   });
 
   it('classifies shell recovery failure as an expected handoff issue', async () => {
@@ -723,7 +723,7 @@ describe('agentView dev errors', () => {
 
     expect(issue.kind).toBe('shell-recovery-failed');
     expect(issue.meta).toBe('Terminal recovery failed');
-    expect(issue.actions.map((action) => action.id)).toEqual(['open-terminal', 'retry-lens']);
+    expect(issue.actions.map((action) => action.id)).toEqual(['retry-lens']);
   });
 
   it('classifies native runtime unavailability as an expected Lens issue', async () => {
@@ -736,7 +736,7 @@ describe('agentView dev errors', () => {
 
     expect(issue.kind).toBe('native-runtime-unavailable');
     expect(issue.meta).toBe('Native runtime unavailable');
-    expect(issue.actions.map((action) => action.id)).toEqual(['open-terminal', 'retry-lens']);
+    expect(issue.actions.map((action) => action.id)).toEqual(['retry-lens']);
   });
 
   it('prepends a readable Lens issue row ahead of the transcript', async () => {
@@ -762,7 +762,6 @@ describe('agentView dev errors', () => {
         title: 'No resumable Codex thread is known yet',
         body: 'Lens can still show canonical history.',
         actions: [
-          { id: 'open-terminal', label: 'Open Terminal', style: 'secondary' },
           { id: 'retry-lens', label: 'Retry Lens', style: 'primary', busyLabel: 'Retrying...' },
         ],
       },
@@ -771,10 +770,7 @@ describe('agentView dev errors', () => {
     expect(entries).toHaveLength(2);
     expect(entries[0]?.kind).toBe('system');
     expect(entries[0]?.title).toBe('No resumable Codex thread is known yet');
-    expect(entries[0]?.actions?.map((action) => action.id)).toEqual([
-      'open-terminal',
-      'retry-lens',
-    ]);
+    expect(entries[0]?.actions?.map((action) => action.id)).toEqual(['retry-lens']);
     expect(entries[1]?.body).toBe('Transcript still visible.');
   });
 

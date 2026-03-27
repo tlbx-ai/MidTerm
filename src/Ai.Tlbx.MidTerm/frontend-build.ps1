@@ -32,6 +32,10 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $NodeModulesRoot = Join-Path $PSScriptRoot "node_modules"
 $AssetVersionPlaceholder = "__MIDTERM_ASSET_VERSION__"
 
+if (Test-Path $WwwRoot) {
+    Get-ChildItem -Path $WwwRoot -Filter "*.br" -File -Recurse | Remove-Item -Force
+}
+
 # ===========================================
 # PRECHECK: Required toolchain/dependencies
 # ===========================================

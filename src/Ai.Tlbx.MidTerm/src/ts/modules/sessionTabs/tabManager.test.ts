@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const focusSpy = vi.fn();
 const refreshTerminalPresentationSpy = vi.fn();
+const applyTerminalScalingSyncSpy = vi.fn();
+const fitSessionToScreenSpy = vi.fn();
+let isMainBrowser = false;
+let sessionListMock: any[] = [];
 const terminalContainer = {
   children: [] as any[],
   appendChild(child: any) {
@@ -43,10 +47,12 @@ vi.mock('./tabBar', () => ({
       offsetHeight: 42,
     } as HTMLDivElement;
   },
-  isTabVisible: (bar: HTMLDivElement, tab: string) => visibleTabs.get(bar.dataset.sessionId ?? '')?.has(tab) ?? false,
+  isTabVisible: (bar: HTMLDivElement, tab: string) =>
+    visibleTabs.get(bar.dataset.sessionId ?? '')?.has(tab) ?? false,
   setActiveTab: vi.fn(),
   setActionActive: vi.fn(),
   setActionVisible: vi.fn(),
+  setTabLabel: vi.fn(),
   setTabVisible: (bar: HTMLDivElement, tab: string, visible: boolean) => {
     const tabs = visibleTabs.get(bar.dataset.sessionId ?? '');
     if (!tabs) return;
@@ -74,22 +80,29 @@ vi.mock('../../state', () => ({
 
 vi.mock('../../stores', () => ({
   $isMainBrowser: {
-    get: () => false,
+    get: () => isMainBrowser,
   },
   $processStates: {
     get: () => ({}),
     subscribe: vi.fn(),
   },
   $sessionList: {
-    get: () => [
-      {
-        id: 's1',
-        agentControlled: true,
-        supervisor: { profile: 'codex' },
-      },
-    ],
+    get: () => sessionListMock,
     subscribe: vi.fn(),
   },
+}));
+
+vi.mock('../i18n', () => ({
+  t: (key: string) =>
+    (
+      ({
+        'session.terminal': 'Terminal',
+        'sessionTabs.agent': 'Lens',
+        'sessionTabs.files': 'Files',
+        'sessionLauncher.codexTitle': 'Codex',
+        'sessionLauncher.claudeTitle': 'Claude',
+      }) as Record<string, string>
+    )[key] ?? key,
 }));
 
 vi.mock('../layout/layoutStore', () => ({
@@ -97,7 +110,8 @@ vi.mock('../layout/layoutStore', () => ({
 }));
 
 vi.mock('../terminal/scaling', () => ({
-  applyTerminalScalingSync: vi.fn(),
+  applyTerminalScalingSync: applyTerminalScalingSyncSpy,
+  fitSessionToScreen: fitSessionToScreenSpy,
   fitTerminalToContainer: vi.fn(),
   refreshTerminalPresentation: refreshTerminalPresentationSpy,
 }));
@@ -106,6 +120,18 @@ describe('tabManager', () => {
   beforeEach(() => {
     focusSpy.mockReset();
     refreshTerminalPresentationSpy.mockReset();
+    applyTerminalScalingSyncSpy.mockReset();
+    fitSessionToScreenSpy.mockReset();
+    isMainBrowser = false;
+    sessionListMock = [
+      {
+        id: 's1',
+        agentControlled: false,
+        hasLensHistory: false,
+        lensOnly: false,
+        supervisor: { profile: 'shell' },
+      },
+    ];
     terminalContainer.children.length = 0;
     visibleTabs.clear();
     vi.resetModules();
@@ -118,43 +144,50 @@ describe('tabManager', () => {
     });
   });
 
-  it('keeps the terminal container inside the terminal panel while agent view is active', async () => {
-    const { ensureSessionWrapper, getTabPanel, switchTab, getActiveTab } = await import('./tabManager');
+  it('keeps the terminal container inside the terminal panel while files view is active', async () => {
+    const { ensureSessionWrapper, getTabPanel, switchTab, getActiveTab } =
+      await import('./tabManager');
 
     ensureSessionWrapper('s1');
     const terminalPanel = getTabPanel('s1', 'terminal');
-    const agentPanel = getTabPanel('s1', 'agent');
+    const filesPanel = getTabPanel('s1', 'files');
 
     expect(terminalPanel?.children).toContain(terminalContainer);
 
-    switchTab('s1', 'agent');
+    switchTab('s1', 'files');
 
-    expect(getActiveTab('s1')).toBe('agent');
+    expect(getActiveTab('s1')).toBe('files');
     expect(terminalPanel?.children).toContain(terminalContainer);
-    expect(agentPanel?.children).not.toContain(terminalContainer);
+    expect(filesPanel?.children).not.toContain(terminalContainer);
     expect(terminalPanel?.classList.remove).toHaveBeenCalledWith('active');
-    expect(agentPanel?.classList.add).toHaveBeenCalledWith('active');
+    expect(filesPanel?.classList.add).toHaveBeenCalledWith('active');
 
     switchTab('s1', 'terminal');
 
     expect(getActiveTab('s1')).toBe('terminal');
     expect(refreshTerminalPresentationSpy).toHaveBeenCalledWith('s1', expect.anything());
+    expect(applyTerminalScalingSyncSpy).toHaveBeenCalledWith(expect.anything());
+    expect(fitSessionToScreenSpy).not.toHaveBeenCalled();
     expect(focusSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to terminal when the agent tab disappears and ignores hidden tab switches', async () => {
-    const { ensureSessionWrapper, switchTab, syncSessionTabCapabilities, getActiveTab, isTabAvailable } =
+  it('refits standalone terminals when the main browser shows the terminal tab', async () => {
+    isMainBrowser = true;
+    const { ensureSessionWrapper, switchTab } = await import('./tabManager');
+
+    ensureSessionWrapper('s1');
+    switchTab('s1', 'files');
+    switchTab('s1', 'terminal');
+
+    expect(fitSessionToScreenSpy).toHaveBeenCalledWith('s1');
+    expect(applyTerminalScalingSyncSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps terminal sessions terminal-only and ignores hidden agent switches', async () => {
+    const { ensureSessionWrapper, switchTab, getActiveTab, isTabAvailable } =
       await import('./tabManager');
 
     ensureSessionWrapper('s1');
-    switchTab('s1', 'agent');
-    expect(getActiveTab('s1')).toBe('agent');
-
-    syncSessionTabCapabilities('s1', {
-      id: 's1',
-      agentControlled: false,
-      supervisor: { profile: 'shell' },
-    } as any);
 
     expect(isTabAvailable('s1', 'agent')).toBe(false);
     expect(getActiveTab('s1')).toBe('terminal');
@@ -162,66 +195,61 @@ describe('tabManager', () => {
     switchTab('s1', 'agent');
 
     expect(getActiveTab('s1')).toBe('terminal');
-    expect(focusSpy).toHaveBeenCalledTimes(1);
+    expect(focusSpy).not.toHaveBeenCalled();
   });
 
-  it('keeps Lens available when canonical Lens history exists', async () => {
-    const { ensureSessionWrapper, switchTab, syncSessionTabCapabilities, getActiveTab, isTabAvailable } =
+  it('makes lens-backed sessions agent-only and uses provider-specific labels', async () => {
+    sessionListMock = [
+      {
+        id: 's1',
+        agentControlled: true,
+        hasLensHistory: true,
+        lensOnly: true,
+        supervisor: { profile: 'codex' },
+      },
+    ];
+    const { ensureSessionWrapper, getActiveTab, getTabLabelForSession, isTabAvailable } =
       await import('./tabManager');
 
     ensureSessionWrapper('s1');
-
-    syncSessionTabCapabilities('s1', {
-      id: 's1',
-      agentControlled: false,
-      hasLensHistory: true,
-      supervisor: { profile: 'shell' },
-    } as any);
 
     expect(isTabAvailable('s1', 'agent')).toBe(true);
-    switchTab('s1', 'agent');
-
     expect(getActiveTab('s1')).toBe('agent');
-  });
-
-  it('hides the terminal tab and pivots lens-only sessions into the agent view', async () => {
-    const { ensureSessionWrapper, syncSessionTabCapabilities, getActiveTab, isTabAvailable } =
-      await import('./tabManager');
-
-    ensureSessionWrapper('s1');
-
-    syncSessionTabCapabilities('s1', {
-      id: 's1',
-      agentControlled: true,
-      lensOnly: true,
-      supervisor: { profile: 'codex' },
-    } as any);
-
     expect(isTabAvailable('s1', 'terminal')).toBe(false);
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    expect(getActiveTab('s1')).toBe('agent');
+    expect(getTabLabelForSession('s1', 'agent')).toBe('Codex');
   });
 
-  it('lets Lens force the agent tab visible before session metadata catches up', async () => {
-    const {
-      ensureSessionWrapper,
-      switchTab,
-      getActiveTab,
-      isTabAvailable,
-      setSessionLensAvailability,
-    } = await import('./tabManager');
+  it('activates the initial agent tab for lens-only sessions immediately', async () => {
+    sessionListMock = [
+      {
+        id: 's1',
+        agentControlled: true,
+        hasLensHistory: true,
+        lensOnly: true,
+        supervisor: { profile: 'codex' },
+      },
+    ];
+    const { ensureSessionWrapper, onTabActivated } = await import('./tabManager');
+    const activated = vi.fn();
+
+    onTabActivated('agent', activated);
+    ensureSessionWrapper('s1');
+
+    expect(activated).toHaveBeenCalledTimes(1);
+    expect(activated).toHaveBeenCalledWith('s1', expect.anything());
+  });
+
+  it('does not expose Lens for ordinary terminal sessions even if Lens availability is forced', async () => {
+    const { ensureSessionWrapper, getActiveTab, isTabAvailable, setSessionLensAvailability } =
+      await import('./tabManager');
 
     ensureSessionWrapper('s1');
 
     setSessionLensAvailability('s1', true);
 
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    switchTab('s1', 'agent');
-    expect(getActiveTab('s1')).toBe('agent');
-
-    setSessionLensAvailability('s1', false);
-
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
+    expect(isTabAvailable('s1', 'terminal')).toBe(true);
+    expect(getActiveTab('s1')).toBe('terminal');
+    expect(isTabAvailable('s1', 'agent')).toBe(false);
   });
 
   it('invokes every registered callback for tab activation and deactivation', async () => {
@@ -238,23 +266,41 @@ describe('tabManager', () => {
     onTabDeactivated('agent', deactivatedA);
     onTabDeactivated('agent', deactivatedB);
 
+    sessionListMock = [
+      {
+        id: 's1',
+        agentControlled: true,
+        hasLensHistory: true,
+        lensOnly: true,
+        supervisor: { profile: 'claude' },
+      },
+    ];
     ensureSessionWrapper('s1');
+    switchTab('s1', 'files');
     switchTab('s1', 'agent');
-    switchTab('s1', 'terminal');
 
-    expect(activatedA).toHaveBeenCalledTimes(1);
-    expect(activatedB).toHaveBeenCalledTimes(1);
+    expect(activatedA).toHaveBeenCalledTimes(2);
+    expect(activatedB).toHaveBeenCalledTimes(2);
     expect(deactivatedA).toHaveBeenCalledTimes(1);
     expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Lens available for agent sessions without any dev-mode gate', async () => {
-    const { ensureSessionWrapper, isTabAvailable, switchTab, getActiveTab } = await import('./tabManager');
+  it('keeps ordinary terminal sessions terminal-only even with agent metadata', async () => {
+    sessionListMock = [
+      {
+        id: 's1',
+        agentControlled: true,
+        hasLensHistory: true,
+        lensOnly: false,
+        supervisor: { profile: 'claude' },
+      },
+    ];
+    const { ensureSessionWrapper, isTabAvailable, getActiveTab } = await import('./tabManager');
 
     ensureSessionWrapper('s1');
 
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    switchTab('s1', 'agent');
-    expect(getActiveTab('s1')).toBe('agent');
+    expect(isTabAvailable('s1', 'agent')).toBe(false);
+    expect(getActiveTab('s1')).toBe('terminal');
+    expect(isTabAvailable('s1', 'terminal')).toBe(true);
   });
 });

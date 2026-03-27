@@ -12,6 +12,7 @@ import {
   isTabVisible,
   setActiveTab,
   setActionActive,
+  setTabLabel,
   setTabVisible,
   updateCwd,
   updateGitIndicator,
@@ -23,9 +24,12 @@ import type { Session } from '../../types';
 import { isSessionInLayout } from '../layout/layoutStore';
 import {
   applyTerminalScalingSync,
+  fitSessionToScreen,
   fitTerminalToContainer,
   refreshTerminalPresentation,
 } from '../terminal/scaling';
+import { t } from '../i18n';
+import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from '../sessionSurface';
 
 const log = createLogger('tabManager');
 
@@ -35,7 +39,6 @@ interface SessionTabState {
   panels: Record<SessionTabId, HTMLDivElement>;
   activeTab: SessionTabId;
   lensAvailable: boolean;
-  lensForcedVisible: boolean;
 }
 
 const sessionTabStates = new Map<string, SessionTabState>();
@@ -46,25 +49,38 @@ const tabActivationCallbacks: Partial<
 const tabDeactivationCallbacks: Partial<Record<SessionTabId, Array<(sessionId: string) => void>>> =
   {};
 
-function isInteractiveAgentProfile(profile: string | null | undefined): boolean {
-  return (
-    profile === 'codex' ||
-    profile === 'claude' ||
-    profile === 'open-code' ||
-    profile === 'generic-ai'
-  );
+function invokeTabActivated(sessionId: string, tab: SessionTabId, panel: HTMLDivElement): void {
+  for (const callback of tabActivationCallbacks[tab] ?? []) {
+    callback(sessionId, panel);
+  }
 }
 
-function shouldShowAgentTab(session: Session | null | undefined): boolean {
-  return (
-    session?.agentControlled === true ||
-    session?.hasLensHistory === true ||
-    isInteractiveAgentProfile(session?.supervisor?.profile)
-  );
+function invokeTabDeactivated(sessionId: string, tab: SessionTabId): void {
+  for (const callback of tabDeactivationCallbacks[tab] ?? []) {
+    callback(sessionId);
+  }
 }
 
-function shouldShowTerminalTab(session: Session | null | undefined): boolean {
-  return session?.lensOnly !== true;
+function getSessionById(sessionId: string): Session | null {
+  return $sessionList.get().find((session) => session.id === sessionId) ?? null;
+}
+
+function resolvePrimaryTab(
+  session: Session | null | undefined,
+): Extract<SessionTabId, 'terminal' | 'agent'> {
+  return resolveSessionSurfaceMode(session) === 'agent' ? 'agent' : 'terminal';
+}
+
+function getTabDisplayLabel(session: Session | null | undefined, tab: SessionTabId): string {
+  if (tab === 'agent') {
+    return getAgentSurfaceLabel(session);
+  }
+
+  if (tab === 'files') {
+    return t('sessionTabs.files');
+  }
+
+  return t('session.terminal');
 }
 
 /**
@@ -93,14 +109,20 @@ export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string
 export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
   if (existing) return existing;
+  const session = getSessionById(sessionId);
+  const defaultTab = resolvePrimaryTab(session);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'session-wrapper';
   wrapper.dataset.sessionId = sessionId;
 
-  const tabBar = createTabBar(sessionId, (tab) => {
-    switchTab(sessionId, tab);
-  });
+  const tabBar = createTabBar(
+    sessionId,
+    (tab) => {
+      switchTab(sessionId, tab);
+    },
+    defaultTab,
+  );
 
   const panelsContainer = document.createElement('div');
   panelsContainer.className = 'session-tab-panels';
@@ -111,7 +133,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   for (const tabId of tabs) {
     const panel = document.createElement('div');
     panel.className = 'session-tab-panel';
-    if (tabId === 'terminal') panel.classList.add('active');
+    if (tabId === defaultTab) panel.classList.add('active');
     panel.dataset.panel = tabId;
 
     if (tabId === 'agent') {
@@ -134,9 +156,8 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     wrapper,
     tabBar,
     panels,
-    activeTab: 'terminal',
+    activeTab: defaultTab,
     lensAvailable: false,
-    lensForcedVisible: false,
   };
 
   sessionTabStates.set(sessionId, state);
@@ -151,10 +172,9 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     updateCwd(tabBar, processState.foregroundCwd);
   }
 
-  syncSessionTabCapabilities(
-    sessionId,
-    $sessionList.get().find((session) => session.id === sessionId) ?? null,
-  );
+  setActiveTab(tabBar, defaultTab);
+  syncSessionTabCapabilities(sessionId, session);
+  invokeTabActivated(sessionId, state.activeTab, state.panels[state.activeTab]);
 
   return state;
 }
@@ -192,7 +212,12 @@ export function getTabPanel(sessionId: string, tab: SessionTabId): HTMLDivElemen
  * based on whether the user is in Terminal, Files, or an experimental surface.
  */
 export function getActiveTab(sessionId: string): SessionTabId {
-  return sessionTabStates.get(sessionId)?.activeTab ?? 'terminal';
+  const existing = sessionTabStates.get(sessionId);
+  if (existing) {
+    return existing.activeTab;
+  }
+
+  return resolvePrimaryTab(getSessionById(sessionId));
 }
 
 /**
@@ -202,7 +227,11 @@ export function getActiveTab(sessionId: string): SessionTabId {
 export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
   const state = sessionTabStates.get(sessionId);
   if (!state) {
-    return tab !== 'agent';
+    if (tab === 'files') {
+      return true;
+    }
+
+    return tab === resolvePrimaryTab(getSessionById(sessionId));
   }
 
   if (tab === 'agent') {
@@ -225,19 +254,16 @@ export function syncSessionTabCapabilities(
     return;
   }
 
-  const showAgentTab = state.lensForcedVisible || shouldShowAgentTab(session);
-  const showTerminalTab = shouldShowTerminalTab(session);
-  state.lensAvailable = showAgentTab;
-  setTabVisible(state.tabBar, 'terminal', showTerminalTab);
-  setTabVisible(state.tabBar, 'agent', showAgentTab);
+  const primaryTab = resolvePrimaryTab(session);
 
-  if (!showTerminalTab && state.activeTab === 'terminal') {
-    switchTab(sessionId, showAgentTab ? 'agent' : 'files');
+  state.lensAvailable = primaryTab === 'agent';
+  setTabLabel(state.tabBar, 'agent', getAgentSurfaceLabel(session));
+  setTabVisible(state.tabBar, 'terminal', primaryTab === 'terminal');
+  setTabVisible(state.tabBar, 'agent', primaryTab === 'agent');
+
+  if (state.activeTab !== 'files' && state.activeTab !== primaryTab) {
+    switchTab(sessionId, primaryTab);
     return;
-  }
-
-  if (!showAgentTab && state.activeTab === 'agent') {
-    switchTab(sessionId, 'terminal');
   }
 }
 
@@ -245,15 +271,20 @@ export function syncSessionTabCapabilities(
  * Lets Lens-driven flows expose the tab as soon as real conversation content
  * exists, even before session-list metadata has caught up.
  */
-export function setSessionLensAvailability(sessionId: string, available: boolean): void {
+export function setSessionLensAvailability(sessionId: string, _available: boolean): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) {
     return;
   }
 
-  state.lensForcedVisible = available;
-  const session = $sessionList.get().find((entry) => entry.id === sessionId) ?? null;
-  syncSessionTabCapabilities(sessionId, session);
+  const session = getSessionById(sessionId);
+  state.lensAvailable = session?.lensOnly === true;
+  setTabVisible(state.tabBar, 'agent', state.lensAvailable);
+  setTabVisible(state.tabBar, 'terminal', session?.lensOnly !== true);
+}
+
+export function getTabLabelForSession(sessionId: string, tab: SessionTabId): string {
+  return getTabDisplayLabel(getSessionById(sessionId), tab);
 }
 
 /**
@@ -277,17 +308,13 @@ export function switchTab(
   if (previousTab === tab) return;
 
   state.panels[previousTab].classList.remove('active');
-  for (const callback of tabDeactivationCallbacks[previousTab] ?? []) {
-    callback(sessionId);
-  }
+  invokeTabDeactivated(sessionId, previousTab);
 
   state.activeTab = tab;
   state.panels[tab].classList.add('active');
   setActiveTab(state.tabBar, tab);
 
-  for (const callback of tabActivationCallbacks[tab] ?? []) {
-    callback(sessionId, state.panels[tab]);
-  }
+  invokeTabActivated(sessionId, tab, state.panels[tab]);
 
   if (tab === 'terminal') {
     const termState = sessionTerminals.get(sessionId);
@@ -304,6 +331,12 @@ export function switchTab(
               applyTerminalScalingSync(termState);
             }
           }
+        } else if ($isMainBrowser.get()) {
+          // Standalone terminal tab re-entry may reveal a hidden terminal that was
+          // opened earlier. Only the leading browser may sync that viewport size.
+          fitSessionToScreen(sessionId);
+        } else {
+          applyTerminalScalingSync(termState);
         }
 
         termState.terminal.focus();

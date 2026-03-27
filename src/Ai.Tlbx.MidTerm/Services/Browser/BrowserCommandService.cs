@@ -30,12 +30,20 @@ public sealed class BrowserCommandService
         bool hasFocus = false,
         bool isTopLevel = false)
     {
+        var replacedConnectionIds = Array.Empty<string>();
         lock (_clientGate)
         {
-            if (!string.IsNullOrWhiteSpace(previewId)
-                && _clients.Values.Any(c => string.Equals(c.PreviewId, previewId, StringComparison.Ordinal)))
+            if (!string.IsNullOrWhiteSpace(previewId))
             {
-                return false;
+                replacedConnectionIds = _clients.Values
+                    .Where(c => string.Equals(c.PreviewId, previewId, StringComparison.Ordinal))
+                    .Select(c => c.ConnectionId)
+                    .ToArray();
+
+                foreach (var duplicateConnectionId in replacedConnectionIds)
+                {
+                    _clients.TryRemove(duplicateConnectionId, out _);
+                }
             }
 
             _clients[connectionId] = new BrowserClient
@@ -51,8 +59,14 @@ public sealed class BrowserCommandService
                 Listener = listener,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
-            return true;
         }
+
+        foreach (var replacedConnectionId in replacedConnectionIds)
+        {
+            CancelPendingForClient(replacedConnectionId);
+        }
+
+        return true;
     }
 
     public void UnregisterClient(string connectionId)
@@ -242,7 +256,7 @@ public sealed class BrowserCommandService
 
         if (!status.HasUiClient)
         {
-            lines.Add("hint: No MidTerm browser UI is attached to /ws/state. Reopen the owning MidTerm browser tab before blaming the preview target.");
+            lines.Add("hint: No MidTerm browser UI is attached to /ws/state. The dev browser cannot work until the owning MidTerm browser tab is open.");
         }
 
         if (status.State == "waiting" && status.HasTarget)
@@ -283,6 +297,7 @@ public sealed class BrowserCommandService
         string? sessionId = null,
         string? previewName = null,
         string? previewId = null,
+        DateTimeOffset? requireClientConnectedAfterUtc = null,
         Func<int>? connectedUiClientCountProvider = null,
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
@@ -296,14 +311,19 @@ public sealed class BrowserCommandService
         while (true)
         {
             var connectedUiClientCount = connectedUiClientCountProvider?.Invoke() ?? 0;
-            latest = GetStatus(
+            var snapshot = GetStatusSnapshot(
                 targetUrl,
                 sessionId,
                 previewName,
                 previewId,
                 connectedUiClientCount);
+            latest = snapshot.Response;
 
-            if (latest.Controllable)
+            var hasFreshClient = requireClientConnectedAfterUtc is null
+                || (snapshot.DefaultClientConnectedAtUtc is { } connectedAt
+                    && connectedAt >= requireClientConnectedAfterUtc.Value);
+
+            if (latest.Controllable && hasFreshClient)
             {
                 return latest;
             }
@@ -407,6 +427,7 @@ public sealed class BrowserCommandService
         return new BrowserStatusSnapshot
         {
             IsScoped = isScoped,
+            DefaultClientConnectedAtUtc = resolved ? client.ConnectedAtUtc : null,
             Response = new BrowserStatusResponse
             {
                 Connected = true,
@@ -502,7 +523,7 @@ public sealed class BrowserCommandService
 
         if (hasTarget)
         {
-            return $"Target is configured, but no MidTerm browser UI is currently attached to /ws/state. {reason}";
+            return $"Target is configured, but no MidTerm browser UI is currently attached to /ws/state, so the dev browser cannot work yet. {reason}";
         }
 
         if (hasUiClient)
@@ -530,7 +551,7 @@ public sealed class BrowserCommandService
             return $"No browser preview connected for session '{sessionId}'.";
         }
 
-        return "Open the web preview panel in MidTerm to enable browser commands.";
+        return "Open the web preview panel in a live MidTerm browser tab to enable browser commands.";
     }
 
     private static string BuildAmbiguousStatusMessage(string? sessionId, string? previewName, string? previewId)
@@ -609,7 +630,7 @@ public sealed class BrowserCommandService
         var clients = _clients.Values.ToArray();
         if (clients.Length == 0)
         {
-            error = "No browser connected. Open the web preview panel in MidTerm to enable browser commands.";
+            error = "No browser connected. The dev browser cannot work until a live MidTerm browser tab is attached to /ws/state.";
             return false;
         }
 
@@ -805,5 +826,6 @@ public sealed class BrowserCommandService
     {
         public required BrowserStatusResponse Response { get; init; }
         public bool IsScoped { get; init; }
+        public DateTimeOffset? DefaultClientConnectedAtUtc { get; init; }
     }
 }

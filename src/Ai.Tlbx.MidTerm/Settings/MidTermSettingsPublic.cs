@@ -25,7 +25,6 @@ public sealed partial class MidTermSettingsPublic
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
     public bool CursorBlink { get; set; } = true;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
-    public bool HideCursorOnInputBursts { get; set; } = false;
     public ThemeSetting Theme { get; set; } = ThemeSetting.Dark;
     public string TerminalColorScheme { get; set; } = "auto";
     public List<TerminalColorSchemeDefinition> TerminalColorSchemes { get; set; } = [];

@@ -451,7 +451,6 @@ public sealed class SettingsService
         current.CursorStyle = old.CursorStyle;
         current.CursorBlink = old.CursorBlink;
         current.CursorInactiveStyle = old.CursorInactiveStyle;
-        current.HideCursorOnInputBursts = old.HideCursorOnInputBursts;
         current.Theme = old.Theme;
         current.TerminalColorScheme = old.TerminalColorScheme;
         current.TerminalColorSchemes = old.TerminalColorSchemes;

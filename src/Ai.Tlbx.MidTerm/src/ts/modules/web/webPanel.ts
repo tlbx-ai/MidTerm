@@ -6,6 +6,10 @@
 
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
 import {
+  clearWebPreviewState,
+  getBrowserPreviewStatus,
+  runBrowserCommand,
+  type BrowserStatusResponse,
   captureBrowserScreenshotRaw,
   clearWebPreviewCookies,
   createBrowserPreviewClient,
@@ -25,7 +29,11 @@ import {
   PREVIEW_LOAD_TOKEN_DATASET_KEY,
   shouldReloadPreviewFrame,
 } from './previewLoadToken';
-import { buildProxyUrl, stripInternalPreviewQueryParams } from './previewProxyUrl';
+import {
+  buildProxyUrl,
+  sanitizePreviewDisplayUrl,
+  stripInternalPreviewQueryParams,
+} from './previewProxyUrl';
 import {
   getActiveDockedClient,
   getActivePreview,
@@ -36,7 +44,9 @@ import {
   setActiveMode,
   setActiveUrl,
   setSessionDockedClient,
+  upsertSessionPreview,
 } from './webSessionState';
+import { shouldSandboxPreviewFrame } from './previewSandbox';
 
 interface UploadResponse {
   path?: string;
@@ -84,10 +94,13 @@ const PREVIEW_CONTEXT_COOKIE_NAME = 'mt-preview-ctx';
 let urlInput: HTMLInputElement | null = null;
 let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
+let statusBanner: HTMLElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
+const STATUS_REFRESH_INTERVAL_MS = 4000;
+let statusRefreshTimer: number | null = null;
 
 const FRAME_ALLOW_ATTR = `
   camera *;
@@ -151,6 +164,7 @@ export function initWebPanel(): void {
   urlInput = document.getElementById('web-preview-url-input') as HTMLInputElement | null;
   iframeHost = document.getElementById('web-preview-iframe-host');
   previewTabs = document.getElementById('web-preview-tabs');
+  statusBanner = document.getElementById('web-preview-status-banner');
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
@@ -176,7 +190,24 @@ export function initWebPanel(): void {
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     void handleClearCookies();
   });
+  document.getElementById('web-preview-clear-state')?.addEventListener('click', () => {
+    void handleClearState();
+  });
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
+  document.addEventListener('visibilitychange', () => {
+    void refreshBrowserPreviewStatus();
+  });
+  window.addEventListener('focus', () => {
+    void refreshBrowserPreviewStatus();
+  });
+  window.addEventListener('blur', () => {
+    void refreshBrowserPreviewStatus();
+  });
+  if (statusRefreshTimer === null) {
+    statusRefreshTimer = window.setInterval(() => {
+      void refreshBrowserPreviewStatus();
+    }, STATUS_REFRESH_INTERVAL_MS);
+  }
 
   window.addEventListener('message', (e: MessageEvent<unknown>) => {
     if (!findPreviewIframeByWindow(e.source)) {
@@ -278,12 +309,17 @@ function getSandboxFlags(frameOrigin?: string): string {
   return flags.join(' ');
 }
 
-function applyIframeSandbox(frameOrigin?: string, targetFrame?: HTMLIFrameElement | null): void {
+function applyIframeSandbox(
+  frameOrigin?: string,
+  targetFrame?: HTMLIFrameElement | null,
+  targetUrl?: string | null,
+): void {
   const frame = targetFrame ?? getActiveIframe();
   if (!frame) {
     return;
   }
-  if (isDevMode()) {
+
+  if (shouldSandboxPreviewFrame(targetUrl ?? getActiveUrl(), isDevMode())) {
     frame.setAttribute('sandbox', getSandboxFlags(frameOrigin));
     return;
   }
@@ -361,11 +397,21 @@ function decodeIframeNavigationUrl(
 }
 
 function setCurrentPreviewUrl(url: string | null, updateInput = true): void {
-  loadedUrl = url;
-  setActiveUrl(url);
-  $webPreviewUrl.set(url);
+  const sanitizedUrl = url ? sanitizePreviewDisplayUrl(url) : null;
+  const nextInputValue = sanitizedUrl ?? '';
+  if (
+    loadedUrl === sanitizedUrl &&
+    $webPreviewUrl.get() === sanitizedUrl &&
+    (!updateInput || !urlInput || urlInput.value === nextInputValue)
+  ) {
+    return;
+  }
+
+  loadedUrl = sanitizedUrl;
+  setActiveUrl(sanitizedUrl);
+  $webPreviewUrl.set(sanitizedUrl);
   if (updateInput && urlInput) {
-    urlInput.value = url ?? '';
+    urlInput.value = nextInputValue;
   }
 }
 
@@ -582,6 +628,7 @@ export async function loadPreview(): Promise<void> {
   if (!currentUrl || !sessionId) {
     setVisiblePreviewFrame(null);
     loadedUrl = null;
+    hideStatusBanner();
     return;
   }
 
@@ -595,6 +642,7 @@ export async function loadPreview(): Promise<void> {
   if (!previewClient) {
     setVisiblePreviewFrame(null);
     log.warn(() => `Failed to create browser preview client for ${sessionId}/${previewName}`);
+    await refreshBrowserPreviewStatus();
     return;
   }
 
@@ -616,7 +664,7 @@ export async function loadPreview(): Promise<void> {
       frame = replacementFrame;
     }
 
-    applyIframeSandbox(previewClient.origin, frame);
+    applyIframeSandbox(previewClient.origin, frame, currentUrl);
     setPreviewContextCookie(previewClient);
     frame.name = JSON.stringify(previewClient);
     const proxyUrl = buildProxyUrl(
@@ -637,11 +685,13 @@ export async function loadPreview(): Promise<void> {
     );
     setVisiblePreviewFrame(frameKey);
     loadedUrl = currentUrl;
+    await refreshBrowserPreviewStatus();
   } catch {
     frame.name = '';
     frame.src = 'about:blank';
     frame.classList.add('hidden');
     frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
+    await refreshBrowserPreviewStatus();
   }
 }
 
@@ -864,7 +914,49 @@ async function handleClearCookies(): Promise<void> {
     await loadPreview();
   } else {
     log.warn(() => 'Failed to clear cookies');
+    await refreshBrowserPreviewStatus();
   }
+}
+
+async function handleClearState(): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  const previewName = getActivePreviewName();
+  if (!sessionId) {
+    return;
+  }
+
+  const cleared = await clearWebPreviewState(sessionId, previewName);
+  if (!cleared) {
+    setStatusBannerMessage('error', 'Failed to clear the session-scoped preview state.');
+    log.warn(() => 'Failed to clear session-scoped preview state');
+    await refreshBrowserPreviewStatus();
+    return;
+  }
+
+  upsertSessionPreview(cleared);
+  setCurrentPreviewUrl(cleared.url);
+
+  const browserResult = await runBrowserCommand(
+    'clearstate',
+    sessionId,
+    previewName,
+    getActiveDockedClient()?.previewId,
+  );
+
+  if (!browserResult?.success) {
+    const error =
+      browserResult?.error?.trim() ||
+      'Server-side preview state was cleared, but browser-side state could not be cleared.';
+    setStatusBannerMessage(
+      'warn',
+      `Server-side preview state cleared. Browser-side state could not be fully cleared: ${error}`,
+    );
+    log.warn(() => `Browser-side clearstate failed: ${error}`);
+  } else {
+    log.info(() => 'Preview state cleared');
+  }
+
+  await loadPreview();
 }
 
 async function clearWebPreviewBrowserStateAsync(): Promise<void> {
@@ -889,4 +981,99 @@ async function clearWebPreviewBrowserStateAsync(): Promise<void> {
       // ignore
     }
   }
+}
+
+function hideStatusBanner(): void {
+  if (!statusBanner) {
+    return;
+  }
+
+  statusBanner.textContent = '';
+  statusBanner.classList.add('hidden');
+  statusBanner.dataset.severity = 'info';
+}
+
+function setStatusBannerMessage(severity: 'info' | 'warn' | 'error', message: string): void {
+  if (!statusBanner) {
+    return;
+  }
+
+  statusBanner.textContent = message;
+  statusBanner.dataset.severity = severity;
+  statusBanner.classList.remove('hidden');
+}
+
+function buildStatusBannerMessage(status: BrowserStatusResponse): {
+  severity: 'info' | 'warn' | 'error';
+  message: string;
+} | null {
+  if (!status.hasUiClient) {
+    return {
+      severity: 'error',
+      message:
+        'No MidTerm browser tab is connected to /ws/state. The dev browser cannot work until a live MidTerm tab is open.',
+    };
+  }
+
+  if (!status.controllable) {
+    return {
+      severity: 'warn',
+      message:
+        status.statusMessage ??
+        'The preview target is configured, but no attached browser preview is controllable yet.',
+    };
+  }
+
+  const client = status.defaultClient;
+  if (client && (!client.isVisible || !client.hasFocus)) {
+    return {
+      severity: 'info',
+      message:
+        'The attached browser preview is currently in a background tab or window. Automation may be slower or throttled there.',
+    };
+  }
+
+  return null;
+}
+
+async function refreshBrowserPreviewStatus(): Promise<void> {
+  const dock = document.getElementById('web-preview-dock');
+  if (dock?.classList.contains('hidden')) {
+    return;
+  }
+
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    hideStatusBanner();
+    return;
+  }
+
+  const previewName = getActivePreviewName();
+  const preview = getActivePreview();
+  if (!preview?.url && !getActiveDockedClient()?.previewId) {
+    hideStatusBanner();
+    return;
+  }
+
+  const status = await getBrowserPreviewStatus(
+    sessionId,
+    previewName,
+    getActiveDockedClient()?.previewId,
+  );
+
+  if (!status) {
+    setStatusBannerMessage(
+      'warn',
+      'Browser status is currently unavailable, so the dev browser state cannot be verified honestly.',
+    );
+    return;
+  }
+
+  const banner = buildStatusBannerMessage(status);
+  if (!banner) {
+    hideStatusBanner();
+    return;
+  }
+
+  setStatusBannerMessage(banner.severity, banner.message);
 }

@@ -23,6 +23,7 @@ import {
 } from './webSessionState';
 import { createBrowserPreviewClient } from './webApi';
 import { isDevMode } from '../sidebar/voiceSection';
+import { shouldSandboxPreviewFrame } from './previewSandbox';
 
 const log = createLogger('webDetach');
 
@@ -147,7 +148,7 @@ export async function detachPreview(
       ? `&viewportWidth=${encodeURIComponent(String(activeViewport.width))}` +
         `&viewportHeight=${encodeURIComponent(String(activeViewport.height))}`
       : '') +
-    (isDevMode() ? '&sandbox=1' : '') +
+    (shouldSandboxPreviewFrame(url, isDevMode()) ? '&sandbox=1' : '') +
     (url ? `&url=${encodeURIComponent(url)}` : '');
 
   try {
