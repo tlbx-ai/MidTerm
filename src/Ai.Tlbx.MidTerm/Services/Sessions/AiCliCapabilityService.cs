@@ -46,7 +46,7 @@ public sealed class AiCliCapabilityService
 
     private static async Task<AiCliCapabilitySnapshot> BuildCodexSnapshotAsync(CancellationToken ct)
     {
-        var binaryPath = FindExecutableInPath("codex");
+        var binaryPath = AiCliCommandLocator.FindExecutableInPath("codex");
         if (binaryPath is null)
         {
             return BuildSnapshot(
@@ -90,7 +90,7 @@ public sealed class AiCliCapabilityService
 
     private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(CancellationToken ct)
     {
-        var binaryPath = FindExecutableInPath("claude");
+        var binaryPath = AiCliCommandLocator.FindExecutableInPath("claude");
         if (binaryPath is null)
         {
             return BuildSnapshot(
@@ -239,62 +239,6 @@ public sealed class AiCliCapabilityService
 
         var output = probe.Output.Trim();
         return output.Length <= 220 ? output : output[..217] + "...";
-    }
-
-    private static string? FindExecutableInPath(string commandName)
-    {
-        if (Path.IsPathRooted(commandName) && File.Exists(commandName))
-        {
-            return commandName;
-        }
-
-        var pathVar = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(pathVar))
-        {
-            return null;
-        }
-
-        var candidateNames = OperatingSystem.IsWindows()
-            ? GetWindowsExecutableNames(commandName)
-            : [commandName];
-
-        foreach (var rawDirectory in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var directory = rawDirectory.Trim().Trim('"');
-            if (string.IsNullOrWhiteSpace(directory))
-            {
-                continue;
-            }
-
-            foreach (var candidateName in candidateNames)
-            {
-                var fullPath = Path.Combine(directory, candidateName);
-                if (File.Exists(fullPath))
-                {
-                    return fullPath;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static string[] GetWindowsExecutableNames(string commandName)
-    {
-        if (!string.IsNullOrWhiteSpace(Path.GetExtension(commandName)))
-        {
-            return [commandName];
-        }
-
-        var pathext = Environment.GetEnvironmentVariable("PATHEXT");
-        var extensions = string.IsNullOrWhiteSpace(pathext)
-            ? [".exe", ".cmd", ".bat"]
-            : pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return extensions
-            .Select(ext => commandName + ext.ToLowerInvariant())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
     }
 
     private static async Task<ProbeResult> ProbeAsync(string fileName, string arguments, CancellationToken ct)

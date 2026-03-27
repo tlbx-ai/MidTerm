@@ -76,4 +76,55 @@ public sealed class AiCliCommandLocatorTests
             }
         }
     }
+
+    [Fact]
+    public void ResolveExecutablePath_FallsBackToStandardWindowsNpmDirectory_WhenPathIsMissing()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "midterm-codex-well-known-" + Guid.NewGuid().ToString("N"));
+        var appData = Path.Combine(root, "AppData", "Roaming");
+        var npmDirectory = Path.Combine(appData, "npm");
+        Directory.CreateDirectory(npmDirectory);
+
+        var wrapperPath = Path.Combine(npmDirectory, "codex.cmd");
+        File.WriteAllText(wrapperPath, "@echo off");
+
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        var originalAppData = Environment.GetEnvironmentVariable("APPDATA");
+        var originalLocalAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+        var originalUserProfile = Environment.GetEnvironmentVariable("USERPROFILE");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("PATH", string.Empty);
+            Environment.SetEnvironmentVariable("APPDATA", appData);
+            Environment.SetEnvironmentVariable("LOCALAPPDATA", Path.Combine(root, "AppData", "Local"));
+            Environment.SetEnvironmentVariable("USERPROFILE", root);
+
+            var resolved = AiCliCommandLocator.ResolveExecutablePath(
+                AiCliProfileService.CodexProfile,
+                new SessionInfoDto());
+
+            Assert.Equal(wrapperPath, resolved);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+            Environment.SetEnvironmentVariable("APPDATA", originalAppData);
+            Environment.SetEnvironmentVariable("LOCALAPPDATA", originalLocalAppData);
+            Environment.SetEnvironmentVariable("USERPROFILE", originalUserProfile);
+
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
 }

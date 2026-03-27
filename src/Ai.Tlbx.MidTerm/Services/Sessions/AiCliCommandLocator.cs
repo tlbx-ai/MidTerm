@@ -96,20 +96,8 @@ internal static partial class AiCliCommandLocator
             return commandName;
         }
 
-        var pathVar = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(pathVar))
+        foreach (var directory in EnumerateSearchDirectories())
         {
-            return null;
-        }
-
-        foreach (var rawDirectory in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var directory = rawDirectory.Trim().Trim('"');
-            if (string.IsNullOrWhiteSpace(directory))
-            {
-                continue;
-            }
-
             foreach (var candidateName in GetPreferredCommandNames(commandName))
             {
                 var fullPath = Path.Combine(directory, candidateName);
@@ -121,6 +109,47 @@ internal static partial class AiCliCommandLocator
         }
 
         return null;
+    }
+
+    internal static IReadOnlyList<string> GetWellKnownWindowsCommandDirectories(
+        string? appData = null,
+        string? localAppData = null,
+        string? userProfile = null)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return [];
+        }
+
+        var directories = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        static void AddDirectory(List<string> target, HashSet<string> seenDirectories, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var normalized = value.Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(normalized) || !seenDirectories.Add(normalized))
+            {
+                return;
+            }
+
+            target.Add(normalized);
+        }
+
+        AddDirectory(directories, seen, TryCombine(appData, "npm"));
+        AddDirectory(directories, seen, TryCombine(localAppData, "Programs", "nodejs"));
+
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            AddDirectory(directories, seen, Path.Combine(userProfile, "AppData", "Roaming", "npm"));
+            AddDirectory(directories, seen, Path.Combine(userProfile, "AppData", "Local", "Programs", "nodejs"));
+        }
+
+        return directories;
     }
 
     private static string? ResolveCodexExecutablePath(SessionInfoDto session)
@@ -144,6 +173,44 @@ internal static partial class AiCliCommandLocator
     private static string NormalizePath(string path)
     {
         return path.Trim().Trim('"').Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    private static IEnumerable<string> EnumerateSearchDirectories()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pathVar = Environment.GetEnvironmentVariable("PATH");
+        if (!string.IsNullOrWhiteSpace(pathVar))
+        {
+            foreach (var rawDirectory in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var directory = rawDirectory.Trim().Trim('"');
+                if (!string.IsNullOrWhiteSpace(directory) && seen.Add(directory))
+                {
+                    yield return directory;
+                }
+            }
+        }
+
+        foreach (var directory in GetWellKnownWindowsCommandDirectories(
+                     Environment.GetEnvironmentVariable("APPDATA"),
+                     Environment.GetEnvironmentVariable("LOCALAPPDATA"),
+                     Environment.GetEnvironmentVariable("USERPROFILE")))
+        {
+            if (seen.Add(directory))
+            {
+                yield return directory;
+            }
+        }
+    }
+
+    private static string? TryCombine(string? root, params string[] parts)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return null;
+        }
+
+        return Path.Combine([root, .. parts]);
     }
 
     private static string? TryResolveNpmBinDirectory(string scriptPath)

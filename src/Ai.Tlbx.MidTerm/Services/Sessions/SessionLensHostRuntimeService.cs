@@ -694,10 +694,34 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         environmentOverrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         pathPrependEntries = [];
 
+        static void AddPathEntry(List<string> entries, string? directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                return;
+            }
+
+            if (!entries.Exists(existing => string.Equals(existing, directory, StringComparison.OrdinalIgnoreCase)))
+            {
+                entries.Add(directory);
+            }
+        }
+
         var executableDirectory = Path.GetDirectoryName(executablePath);
         if (!string.IsNullOrWhiteSpace(executableDirectory))
         {
-            pathPrependEntries.Add(executableDirectory);
+            AddPathEntry(pathPrependEntries, executableDirectory);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            foreach (var directory in AiCliCommandLocator.GetWellKnownWindowsCommandDirectories(
+                         Environment.GetEnvironmentVariable("APPDATA"),
+                         Environment.GetEnvironmentVariable("LOCALAPPDATA"),
+                         Environment.GetEnvironmentVariable("USERPROFILE")))
+            {
+                AddPathEntry(pathPrependEntries, directory);
+            }
         }
 
         if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(settings.RunAsUser))
@@ -720,8 +744,13 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
                 environmentOverrides["APPDATA"] = appDataDirectory;
                 environmentOverrides["LOCALAPPDATA"] = localAppDataDirectory;
-                pathPrependEntries.Add(Path.Combine(appDataDirectory, "npm"));
-                pathPrependEntries.Add(Path.Combine(localAppDataDirectory, "Programs", "nodejs"));
+                foreach (var directory in AiCliCommandLocator.GetWellKnownWindowsCommandDirectories(
+                             appDataDirectory,
+                             localAppDataDirectory,
+                             profileDirectory))
+                {
+                    AddPathEntry(pathPrependEntries, directory);
+                }
             }
         }
 

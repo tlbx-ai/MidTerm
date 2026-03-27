@@ -48,7 +48,7 @@ describe('sessionSurface', () => {
     ).toBe('Claude');
   });
 
-  it('keeps terminal sessions in Terminal even when codex metadata is present', async () => {
+  it('treats codex metadata as provider-primary even before lensOnly is set', async () => {
     const { resolveSessionSurfaceMode } = await import('./sessionSurface');
 
     expect(
@@ -56,6 +56,6 @@ describe('sessionSurface', () => {
         lensOnly: false,
         supervisor: { profile: 'codex' },
       }),
-    ).toBe('terminal');
+    ).toBe('agent');
   });
 });
