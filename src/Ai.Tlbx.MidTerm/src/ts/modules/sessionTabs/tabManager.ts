@@ -49,6 +49,18 @@ const tabActivationCallbacks: Partial<
 const tabDeactivationCallbacks: Partial<Record<SessionTabId, Array<(sessionId: string) => void>>> =
   {};
 
+function invokeTabActivated(sessionId: string, tab: SessionTabId, panel: HTMLDivElement): void {
+  for (const callback of tabActivationCallbacks[tab] ?? []) {
+    callback(sessionId, panel);
+  }
+}
+
+function invokeTabDeactivated(sessionId: string, tab: SessionTabId): void {
+  for (const callback of tabDeactivationCallbacks[tab] ?? []) {
+    callback(sessionId);
+  }
+}
+
 function getSessionById(sessionId: string): Session | null {
   return $sessionList.get().find((session) => session.id === sessionId) ?? null;
 }
@@ -104,9 +116,13 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   wrapper.className = 'session-wrapper';
   wrapper.dataset.sessionId = sessionId;
 
-  const tabBar = createTabBar(sessionId, (tab) => {
-    switchTab(sessionId, tab);
-  });
+  const tabBar = createTabBar(
+    sessionId,
+    (tab) => {
+      switchTab(sessionId, tab);
+    },
+    defaultTab,
+  );
 
   const panelsContainer = document.createElement('div');
   panelsContainer.className = 'session-tab-panels';
@@ -158,6 +174,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
 
   setActiveTab(tabBar, defaultTab);
   syncSessionTabCapabilities(sessionId, session);
+  invokeTabActivated(sessionId, state.activeTab, state.panels[state.activeTab]);
 
   return state;
 }
@@ -291,17 +308,13 @@ export function switchTab(
   if (previousTab === tab) return;
 
   state.panels[previousTab].classList.remove('active');
-  for (const callback of tabDeactivationCallbacks[previousTab] ?? []) {
-    callback(sessionId);
-  }
+  invokeTabDeactivated(sessionId, previousTab);
 
   state.activeTab = tab;
   state.panels[tab].classList.add('active');
   setActiveTab(state.tabBar, tab);
 
-  for (const callback of tabActivationCallbacks[tab] ?? []) {
-    callback(sessionId, state.panels[tab]);
-  }
+  invokeTabActivated(sessionId, tab, state.panels[tab]);
 
   if (tab === 'terminal') {
     const termState = sessionTerminals.get(sessionId);

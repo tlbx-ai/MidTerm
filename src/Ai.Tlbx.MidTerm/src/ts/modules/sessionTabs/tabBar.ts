@@ -225,6 +225,7 @@ export function setShareClickHandler(handler: (sessionId: string) => void): void
 export function createTabBar(
   sessionId: string,
   onTabSelect: (tab: SessionTabId) => void,
+  initialTab: SessionTabId = 'terminal',
 ): HTMLDivElement {
   const bar = document.createElement('div');
   bar.className = 'session-tab-bar';
@@ -247,7 +248,7 @@ export function createTabBar(
     const label = labels[tabId];
     const btn = document.createElement('button');
     btn.className = 'session-tab';
-    if (tabId === 'terminal') btn.classList.add('active');
+    if (tabId === initialTab) btn.classList.add('active');
     btn.dataset.tab = tabId;
     const labelNode = document.createElement('span');
     labelNode.className = 'session-tab-label';

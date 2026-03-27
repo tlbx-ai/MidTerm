@@ -219,6 +219,26 @@ describe('tabManager', () => {
     expect(getTabLabelForSession('s1', 'agent')).toBe('Codex');
   });
 
+  it('activates the initial agent tab for lens-only sessions immediately', async () => {
+    sessionListMock = [
+      {
+        id: 's1',
+        agentControlled: true,
+        hasLensHistory: true,
+        lensOnly: true,
+        supervisor: { profile: 'codex' },
+      },
+    ];
+    const { ensureSessionWrapper, onTabActivated } = await import('./tabManager');
+    const activated = vi.fn();
+
+    onTabActivated('agent', activated);
+    ensureSessionWrapper('s1');
+
+    expect(activated).toHaveBeenCalledTimes(1);
+    expect(activated).toHaveBeenCalledWith('s1', expect.anything());
+  });
+
   it('does not expose Lens for ordinary terminal sessions even if Lens availability is forced', async () => {
     const { ensureSessionWrapper, getActiveTab, isTabAvailable, setSessionLensAvailability } =
       await import('./tabManager');
@@ -259,8 +279,8 @@ describe('tabManager', () => {
     switchTab('s1', 'files');
     switchTab('s1', 'agent');
 
-    expect(activatedA).toHaveBeenCalledTimes(1);
-    expect(activatedB).toHaveBeenCalledTimes(1);
+    expect(activatedA).toHaveBeenCalledTimes(2);
+    expect(activatedB).toHaveBeenCalledTimes(2);
     expect(deactivatedA).toHaveBeenCalledTimes(1);
     expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
