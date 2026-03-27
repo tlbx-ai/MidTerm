@@ -21,3 +21,13 @@ Rules:
 
 - Do not suggest hiding, virtualizing, or lazily deactivating visible terminal sessions as a latency optimization.
 - In MidTerm, sessions that are shown are intentionally kept as genuinely active terminals; latency work must preserve that UX model.
+
+## Session Surface Boundary
+
+- Treat Terminal and Lens as separate surfaces with an explicit boundary.
+- What happens in Terminal stays in Terminal unless the user explicitly launched a Lens session through the Lens-oriented flow.
+- Do not infer a Lens session from foreground process metadata alone. Running `codex`, `claude`, or another AI CLI inside a normal terminal must not auto-switch surfaces, surface Lens tabs, or reclassify the session as Lens-owned.
+- The IDE bar rule is exclusive, not additive:
+  - normal terminal session: `Terminal` + `Files`
+  - explicit Codex Lens session: `Codex` + `Files`
+  - explicit Claude Lens session: `Claude` + `Files`

@@ -207,6 +207,13 @@ Lens is MidTerm's conversation-first surface for agent-controlled sessions. Arch
 - when live attach is unavailable, Lens can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
 - Lens is currently dev-gated in the session tabs while the UX is still being refined
 
+The boundary between Terminal and Lens is a core design rule:
+
+- a plain terminal session remains terminal-owned even if its foreground process is `codex`, `claude`, or another AI CLI
+- foreground process detection may label, summarize, or describe a session, but it must not by itself promote that session into Lens
+- only sessions explicitly created as Lens sessions should expose provider-primary tabs such as `Codex` or `Claude`
+- the IDE bar is exclusive by surface: terminal sessions show `Terminal` plus `Files`, while explicit Lens sessions show the provider tab plus `Files`
+
 ## 5. Web Preview and Browser Automation
 
 Web preview is its own subsystem, not a simple iframe wrapper.

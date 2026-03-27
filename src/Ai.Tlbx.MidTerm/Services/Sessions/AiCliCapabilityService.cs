@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -8,6 +9,12 @@ public sealed class AiCliCapabilityService
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(10);
     private readonly Lock _syncRoot = new();
     private readonly Dictionary<string, CachedSnapshot> _cache = new(StringComparer.Ordinal);
+    private readonly SettingsService? _settingsService;
+
+    public AiCliCapabilityService(SettingsService? settingsService = null)
+    {
+        _settingsService = settingsService;
+    }
 
     public async Task<AiCliCapabilitySnapshot> DescribeAsync(string profile, CancellationToken ct = default)
     {
@@ -21,7 +28,7 @@ public sealed class AiCliCapabilityService
             }
         }
 
-        var snapshot = await BuildSnapshotAsync(profile, ct).ConfigureAwait(false);
+        var snapshot = await BuildSnapshotAsync(profile, ResolveConfiguredUserProfileDirectory(), ct).ConfigureAwait(false);
         var next = new CachedSnapshot(DateTimeOffset.UtcNow.Add(CacheLifetime), snapshot);
         lock (_syncRoot)
         {
@@ -31,12 +38,12 @@ public sealed class AiCliCapabilityService
         return next.CloneSnapshot();
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildSnapshotAsync(string profile, CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildSnapshotAsync(string profile, string? userProfileDirectory, CancellationToken ct)
     {
         return profile switch
         {
-            AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(ct).ConfigureAwait(false),
-            AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(ct).ConfigureAwait(false),
+            AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(userProfileDirectory, ct).ConfigureAwait(false),
+            AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(userProfileDirectory, ct).ConfigureAwait(false),
             AiCliProfileService.OpenCodeProfile => BuildOpenCodeSnapshot(),
             AiCliProfileService.GenericAiProfile => BuildGenericSnapshot(),
             AiCliProfileService.ShellProfile => BuildShellSnapshot(),
@@ -44,9 +51,9 @@ public sealed class AiCliCapabilityService
         };
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildCodexSnapshotAsync(CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildCodexSnapshotAsync(string? userProfileDirectory, CancellationToken ct)
     {
-        var binaryPath = AiCliCommandLocator.FindExecutableInPath("codex");
+        var binaryPath = AiCliCommandLocator.FindExecutableInPath("codex", userProfileDirectory);
         if (binaryPath is null)
         {
             return BuildSnapshot(
@@ -88,9 +95,9 @@ public sealed class AiCliCapabilityService
             ]);
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(string? userProfileDirectory, CancellationToken ct)
     {
-        var binaryPath = AiCliCommandLocator.FindExecutableInPath("claude");
+        var binaryPath = AiCliCommandLocator.FindExecutableInPath("claude", userProfileDirectory);
         if (binaryPath is null)
         {
             return BuildSnapshot(
@@ -336,6 +343,17 @@ public sealed class AiCliCapabilityService
                     .ToList()
             };
         }
+    }
+
+    private string? ResolveConfiguredUserProfileDirectory()
+    {
+        var settings = _settingsService?.Load();
+        if (settings is null || !OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            return null;
+        }
+
+        return LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
     }
 }
 

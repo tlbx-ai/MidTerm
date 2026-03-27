@@ -42,11 +42,13 @@ internal static class LensHostEnvironmentResolver
         startInfo.Environment["APPDATA"] = appDataDirectory;
         startInfo.Environment["LOCALAPPDATA"] = localAppDataDirectory;
 
-        // Lens runtimes often rely on per-user npm shims like %APPDATA%\npm\codex.cmd.
+        // Lens runtimes often rely on per-user command shims and local bins.
         // Service environments do not always inherit those PATH entries, so add the
-        // common user-local bin locations explicitly for standalone Lens sessions.
-        PrependPath(startInfo, Path.Combine(appDataDirectory, "npm"));
-        PrependPath(startInfo, Path.Combine(localAppDataDirectory, "Programs", "nodejs"));
+        // common user-local locations explicitly for standalone Lens sessions.
+        foreach (var directory in AiCliCommandLocator.GetUserCommandDirectories(profileDirectory).Reverse())
+        {
+            PrependPath(startInfo, directory);
+        }
     }
 
     internal static string? ResolveWindowsProfileDirectory(string? userName, string? userSid)

@@ -117,10 +117,11 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 return false;
             }
 
-            var executablePath = attachPoint is null
-                ? AiCliCommandLocator.ResolveExecutablePath(profile, session)
-                : null;
             var settings = _settingsService.Load();
+            var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
+            var executablePath = attachPoint is null
+                ? AiCliCommandLocator.ResolveExecutablePath(profile, session, userProfileDirectory)
+                : null;
             BuildLaunchEnvironment(
                 settings,
                 executablePath,
@@ -726,7 +727,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(settings.RunAsUser))
         {
-            var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
+            var profileDirectory = ResolveConfiguredUserProfileDirectory(settings);
             if (!string.IsNullOrWhiteSpace(profileDirectory) && Directory.Exists(profileDirectory))
             {
                 environmentOverrides["USERPROFILE"] = profileDirectory;
@@ -744,10 +745,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
                 environmentOverrides["APPDATA"] = appDataDirectory;
                 environmentOverrides["LOCALAPPDATA"] = localAppDataDirectory;
-                foreach (var directory in AiCliCommandLocator.GetWellKnownWindowsCommandDirectories(
-                             appDataDirectory,
-                             localAppDataDirectory,
-                             profileDirectory))
+                foreach (var directory in AiCliCommandLocator.GetUserCommandDirectories(profileDirectory).Reverse())
                 {
                     AddPathEntry(pathPrependEntries, directory);
                 }
@@ -757,6 +755,17 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         ApplyProviderSettings(environmentOverrides, settings);
         environmentOverrides["MIDTERM_INSTANCE_ID"] = instanceIdentity.InstanceId;
         environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
+    }
+
+    private static string? ResolveConfiguredUserProfileDirectory(MidTermSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            return null;
+        }
+
+        return LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
     }
 
     private static void ApplyProviderSettings(IDictionary<string, string?> environment, MidTermSettings settings)

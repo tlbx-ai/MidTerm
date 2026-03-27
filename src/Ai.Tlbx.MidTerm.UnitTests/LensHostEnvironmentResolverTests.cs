@@ -76,11 +76,15 @@ public sealed class LensHostEnvironmentResolverTests
         LensHostEnvironmentResolver.ApplyUserProfileEnvironment(startInfo, settings);
 
         Assert.StartsWith(
-            Path.Combine(currentProfile, "AppData", "Local", "Programs", "nodejs") + Path.PathSeparator,
+            Path.Combine(currentProfile, ".local", "bin") + Path.PathSeparator,
             startInfo.Environment["PATH"],
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
             Path.PathSeparator + Path.Combine(currentProfile, "AppData", "Roaming", "npm") + Path.PathSeparator,
+            startInfo.Environment["PATH"],
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            Path.PathSeparator + Path.Combine(currentProfile, "AppData", "Local", "Programs", "nodejs") + Path.PathSeparator,
             startInfo.Environment["PATH"],
             StringComparison.OrdinalIgnoreCase);
     }

@@ -8,14 +8,14 @@ internal static partial class AiCliCommandLocator
     [GeneratedRegex(@"(?ix)(?<path>[A-Z]:[^\r\n""']*?node_modules[\\/]@openai[\\/]codex[\\/]bin[\\/]codex\.js)")]
     private static partial Regex CodexScriptPathRegex();
 
-    public static string? ResolveExecutablePath(string profile, SessionInfoDto session)
+    public static string? ResolveExecutablePath(string profile, SessionInfoDto session, string? userProfileDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         return profile switch
         {
-            AiCliProfileService.CodexProfile => ResolveCodexExecutablePath(session),
+            AiCliProfileService.CodexProfile => ResolveCodexExecutablePath(session, userProfileDirectory),
             AiCliProfileService.ClaudeProfile => ResolveExecutablePathFromForegroundCommand(session.ForegroundCommandLine, "claude")
-                                               ?? FindExecutableInPath("claude"),
+                                               ?? FindExecutableInPath("claude", userProfileDirectory),
             _ => null
         };
     }
@@ -89,14 +89,14 @@ internal static partial class AiCliCommandLocator
         return null;
     }
 
-    internal static string? FindExecutableInPath(string commandName)
+    internal static string? FindExecutableInPath(string commandName, string? userProfileDirectory = null)
     {
         if (Path.IsPathRooted(commandName) && File.Exists(commandName))
         {
             return commandName;
         }
 
-        foreach (var directory in EnumerateSearchDirectories())
+        foreach (var directory in EnumerateSearchDirectories(userProfileDirectory))
         {
             foreach (var candidateName in GetPreferredCommandNames(commandName))
             {
@@ -109,6 +109,47 @@ internal static partial class AiCliCommandLocator
         }
 
         return null;
+    }
+
+    internal static IReadOnlyList<string> GetUserCommandDirectories(string? userProfileDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(userProfileDirectory))
+        {
+            return [];
+        }
+
+        var directories = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        static void AddDirectory(List<string> target, HashSet<string> seenDirectories, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var normalized = value.Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(normalized) || !seenDirectories.Add(normalized))
+            {
+                return;
+            }
+
+            target.Add(normalized);
+        }
+
+        AddDirectory(directories, seen, Path.Combine(userProfileDirectory, ".local", "bin"));
+
+        if (OperatingSystem.IsWindows())
+        {
+            var appDataDirectory = Path.Combine(userProfileDirectory, "AppData", "Roaming");
+            var localAppDataDirectory = Path.Combine(userProfileDirectory, "AppData", "Local");
+            foreach (var directory in GetWellKnownWindowsCommandDirectories(appDataDirectory, localAppDataDirectory, userProfileDirectory))
+            {
+                AddDirectory(directories, seen, directory);
+            }
+        }
+
+        return directories;
     }
 
     internal static IReadOnlyList<string> GetWellKnownWindowsCommandDirectories(
@@ -152,11 +193,11 @@ internal static partial class AiCliCommandLocator
         return directories;
     }
 
-    private static string? ResolveCodexExecutablePath(SessionInfoDto session)
+    private static string? ResolveCodexExecutablePath(SessionInfoDto session, string? userProfileDirectory)
     {
         return ResolveCodexWrapperFromScriptPath(session.ForegroundCommandLine)
                ?? ResolveExecutablePathFromForegroundCommand(session.ForegroundCommandLine, "codex")
-               ?? FindExecutableInPath("codex");
+               ?? FindExecutableInPath("codex", userProfileDirectory);
     }
 
     private static IEnumerable<string> ExtractAbsolutePathTokens(string commandLine)
@@ -175,9 +216,17 @@ internal static partial class AiCliCommandLocator
         return path.Trim().Trim('"').Replace('/', Path.DirectorySeparatorChar);
     }
 
-    private static IEnumerable<string> EnumerateSearchDirectories()
+    private static IEnumerable<string> EnumerateSearchDirectories(string? userProfileDirectory)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var directory in GetUserCommandDirectories(userProfileDirectory))
+        {
+            if (seen.Add(directory))
+            {
+                yield return directory;
+            }
+        }
+
         var pathVar = Environment.GetEnvironmentVariable("PATH");
         if (!string.IsNullOrWhiteSpace(pathVar))
         {

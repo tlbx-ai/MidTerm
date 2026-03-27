@@ -7,6 +7,7 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -26,16 +27,19 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     private readonly AiCliProfileService _profileService;
     private readonly SessionLensPulseService _pulse;
     private readonly SessionLensHostRuntimeService _hostRuntime;
+    private readonly SettingsService? _settingsService;
 
     public SessionLensRuntimeService(
         TtyHostSessionManager sessionManager,
         AiCliProfileService profileService,
         SessionLensPulseService pulse,
-        SessionLensHostRuntimeService hostRuntime)
+        SessionLensHostRuntimeService hostRuntime,
+        SettingsService? settingsService = null)
     {
         _profileService = profileService;
         _pulse = pulse;
         _hostRuntime = hostRuntime;
+        _settingsService = settingsService;
         sessionManager.OnSessionClosed += Forget;
     }
 
@@ -97,7 +101,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     return true;
                 }
 
-                var executablePath = AiCliCommandLocator.ResolveExecutablePath(profile, session);
+                var executablePath = AiCliCommandLocator.ResolveExecutablePath(profile, session, ResolveConfiguredUserProfileDirectory());
                 return await StartCodexAsync(state, executablePath, ct).ConfigureAwait(false);
             }
 
@@ -1830,9 +1834,20 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             : value;
     }
 
-    private static string? FindExecutableInPath(string commandName)
+    private string? FindExecutableInPath(string commandName)
     {
-        return AiCliCommandLocator.FindExecutableInPath(commandName);
+        return AiCliCommandLocator.FindExecutableInPath(commandName, ResolveConfiguredUserProfileDirectory());
+    }
+
+    private string? ResolveConfiguredUserProfileDirectory()
+    {
+        var settings = _settingsService?.Load();
+        if (settings is null || !OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            return null;
+        }
+
+        return LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
     }
 
     private static string BuildCodexItemDetail(JsonElement payload)

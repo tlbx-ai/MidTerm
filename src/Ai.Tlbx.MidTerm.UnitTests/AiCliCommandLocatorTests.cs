@@ -127,4 +127,41 @@ public sealed class AiCliCommandLocatorTests
             }
         }
     }
+
+    [Fact]
+    public void ResolveExecutablePath_UsesConfiguredUserProfileDirectories_WhenPathIsMissing()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "midterm-cli-user-profile-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        var commandDirectory = Path.Combine(root, ".local", "bin");
+        Directory.CreateDirectory(commandDirectory);
+        var executablePath = Path.Combine(commandDirectory, OperatingSystem.IsWindows() ? "claude.exe" : "claude");
+        File.WriteAllText(executablePath, "fake");
+
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("PATH", string.Empty);
+
+            var resolved = AiCliCommandLocator.ResolveExecutablePath(
+                AiCliProfileService.ClaudeProfile,
+                new SessionInfoDto(),
+                root);
+
+            Assert.Equal(executablePath, resolved);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
 }
