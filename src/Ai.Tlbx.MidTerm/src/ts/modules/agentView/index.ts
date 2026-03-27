@@ -30,6 +30,7 @@ import {
   type LensPulseEvent,
   type LensPulseRequestSummary,
   type LensPulseSnapshotResponse,
+  type LensPulseTranscriptEntry,
   LensHttpError,
 } from '../../api/client';
 import { t } from '../i18n';
@@ -847,12 +848,161 @@ function buildLensDebugScenario(
             ? 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE'
             : '',
       },
+      transcript: buildDebugScenarioTranscript({
+        generatedAt: at(0),
+        turnId: 'turn-debug',
+        currentTurnState,
+        currentTurnStateLabel,
+        items,
+        requests,
+        assistantText,
+        reasoningText:
+          scenario === 'workflow'
+            ? 'Need the operator choice before touching the file so the patch posture is explicit.'
+            : '',
+        reasoningSummaryText:
+          scenario === 'workflow'
+            ? 'Waiting on SAFE/FAST, then update report.md and show the working diff.'
+            : '',
+        planText:
+          scenario === 'workflow'
+            ? '1. Read the workspace.\n2. Ask for SAFE or FAST.\n3. Patch and summarize the diff.'
+            : '',
+        commandOutput: scenario === 'workflow' ? 'status: TODO\nowner: codex' : '',
+        fileChangeOutput:
+          scenario === 'workflow' ? 'Success. Updated the following files:\nM report.md' : '',
+        unifiedDiff:
+          scenario === 'workflow'
+            ? 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE'
+            : '',
+      }),
       items,
       requests,
       notices: [],
     },
     events: [],
   };
+}
+
+function buildDebugScenarioTranscript(args: {
+  generatedAt: string;
+  turnId: string;
+  currentTurnState: string;
+  currentTurnStateLabel: string;
+  items: Array<{
+    itemId: string;
+    turnId: string | null;
+    itemType: string;
+    status: string;
+    title: string | null;
+    detail: string | null;
+    attachments: LensAttachmentReference[];
+    updatedAt: string;
+  }>;
+  requests: Array<{
+    requestId: string;
+    turnId: string | null;
+    kind: string;
+    kindLabel: string;
+    state: string;
+    detail: string | null;
+    decision: string | null;
+    questions: Array<{
+      id: string;
+      question: string;
+      header: string;
+      multiSelect: boolean;
+      options: Array<{ label: string; description: string }>;
+    }>;
+    answers: Array<{ questionId: string; answers: string[] }>;
+    updatedAt: string;
+  }>;
+  assistantText: string;
+  reasoningText: string;
+  reasoningSummaryText: string;
+  planText: string;
+  commandOutput: string;
+  fileChangeOutput: string;
+  unifiedDiff: string;
+}): LensPulseTranscriptEntry[] {
+  const transcript: LensPulseTranscriptEntry[] = [];
+  let order = 1;
+
+  for (const item of args.items) {
+    transcript.push({
+      entryId: `${transcriptKindFromItem(item.itemType)}:${item.turnId || item.itemId}`,
+      order: order++,
+      kind: transcriptKindFromItem(item.itemType),
+      turnId: item.turnId,
+      itemId: item.itemId,
+      requestId: null,
+      status: item.status,
+      itemType: item.itemType,
+      title: item.title,
+      body: item.detail || '',
+      attachments: cloneTranscriptAttachments(item.attachments),
+      streaming: false,
+      createdAt: item.updatedAt,
+      updatedAt: item.updatedAt,
+    });
+  }
+
+  const pushStream = (kind: string, title: string | null, body: string): void => {
+    if (!body.trim()) {
+      return;
+    }
+
+    const status =
+      kind === 'assistant' && args.currentTurnState === 'running' ? 'streaming' : 'completed';
+
+    transcript.push({
+      entryId: `${kind}:${args.turnId}:${order}`,
+      order: order++,
+      kind,
+      turnId: args.turnId,
+      itemId: null,
+      requestId: null,
+      status,
+      itemType: kind,
+      title,
+      body,
+      attachments: [],
+      streaming: kind === 'assistant' && args.currentTurnState === 'running',
+      createdAt: args.generatedAt,
+      updatedAt: args.generatedAt,
+    });
+  };
+
+  pushStream('assistant', null, args.assistantText);
+  pushStream('reasoning', 'Reasoning', args.reasoningText);
+  pushStream('reasoning', 'Reasoning summary', args.reasoningSummaryText);
+  pushStream('plan', 'Plan', args.planText);
+  pushStream('tool', 'Command output', args.commandOutput);
+  pushStream('tool', 'File change output', args.fileChangeOutput);
+  pushStream('diff', 'Working diff', args.unifiedDiff);
+
+  for (const request of args.requests) {
+    transcript.push({
+      entryId: `request:${request.requestId}`,
+      order: order++,
+      kind: 'request',
+      turnId: request.turnId,
+      itemId: null,
+      requestId: request.requestId,
+      status: request.state,
+      itemType: request.kind,
+      title: request.kindLabel,
+      body: [request.detail, ...request.questions.map((question) => question.question)]
+        .filter(Boolean)
+        .join('\n\n'),
+      attachments: [],
+      streaming: false,
+      createdAt: request.updatedAt,
+      updatedAt: request.updatedAt,
+    });
+  }
+
+  return transcript;
 }
 
 function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): void {
@@ -1504,399 +1654,44 @@ function readTranscriptViewportMetrics(container: HTMLDivElement): TranscriptVie
  */
 export function buildLensTranscriptEntries(
   snapshot: LensPulseSnapshotResponse,
-  events: LensPulseEvent[],
+  _events: LensPulseEvent[],
 ): LensTranscriptEntry[] {
-  const entries: LensTranscriptEntry[] = [];
-  const byKey = new Map<string, LensTranscriptEntry>();
-  const requestSummaryById = new Map(
-    snapshot.requests.map((request) => [request.requestId, request]),
-  );
-  const sortedEvents = [...events].sort((left, right) => left.sequence - right.sequence);
+  return buildCanonicalSnapshotTranscriptEntries(snapshot);
+}
 
-  const ensureEntry = (
-    key: string,
-    create: () => LensTranscriptEntry,
-    orderOverride?: number,
-  ): LensTranscriptEntry => {
-    const existing = byKey.get(key);
-    if (existing) {
-      return existing;
-    }
+function buildCanonicalSnapshotTranscriptEntries(
+  snapshot: LensPulseSnapshotResponse,
+): LensTranscriptEntry[] {
+  const transcript = Array.isArray(snapshot.transcript) ? snapshot.transcript : [];
+  if (transcript.length === 0) {
+    return [];
+  }
 
-    const entry = create();
-    if (typeof orderOverride === 'number') {
-      entry.order = orderOverride;
-    }
-    byKey.set(key, entry);
-    entries.push(entry);
-    return entry;
-  };
-
-  for (const lensEvent of sortedEvents) {
-    const order = lensEvent.sequence;
-
-    if (lensEvent.item && lensEvent.itemId) {
-      const itemKind = transcriptKindFromItem(lensEvent.item.itemType);
-      const itemKey = resolveTranscriptEntryKey(itemKind, lensEvent);
-      const itemEntry = ensureEntry(itemKey, () => ({
-        id: itemKey,
-        order,
-        kind: itemKind,
-        tone: toneFromState(lensEvent.item?.status),
-        label: transcriptLabel(itemKind),
-        title:
-          itemKind === 'tool'
-            ? resolveToolTranscriptTitle(
-                lensEvent.item?.itemType,
-                lensEvent.item?.title,
-                lensEvent.item?.detail,
-              )
-            : transcriptLabel(itemKind),
-        body: resolveTranscriptItemBody(itemKind, lensEvent.item?.detail, lensEvent.item?.title),
-        meta: formatTranscriptMeta(
-          itemKind,
-          prettify(lensEvent.item?.status || 'updated'),
-          lensEvent.createdAt,
-        ),
-        attachments: cloneTranscriptAttachments(lensEvent.item?.attachments),
-        sourceItemId: lensEvent.itemId,
-        sourceTurnId: lensEvent.turnId,
-      }));
-      itemEntry.kind = itemKind;
-      itemEntry.tone = toneFromState(lensEvent.item.status);
-      itemEntry.label = transcriptLabel(itemKind);
-      itemEntry.title =
-        itemKind === 'tool'
-          ? resolveToolTranscriptTitle(
-              lensEvent.item.itemType,
-              lensEvent.item.title,
-              lensEvent.item.detail,
-            )
-          : transcriptLabel(itemKind);
-      const itemBody = resolveTranscriptItemBody(
-        itemKind,
-        lensEvent.item.detail,
-        lensEvent.item.title,
-      );
-      if (itemBody) {
-        itemEntry.body = mergeTranscriptBody(itemKind, itemEntry.body, itemBody);
+  return transcript
+    .map((entry) => {
+      const kind = normalizeSnapshotTranscriptKind(entry.kind);
+      const statusLabel = entry.streaming
+        ? lensText('lens.status.streaming', 'Streaming')
+        : prettify(entry.status || kind);
+      const mapped: LensTranscriptEntry = {
+        id: entry.entryId,
+        order: entry.order,
+        kind,
+        tone: toneFromState(entry.status),
+        label: transcriptLabel(kind),
+        title: entry.title || '',
+        body: entry.body || '',
+        meta: formatTranscriptMeta(kind, statusLabel, entry.updatedAt),
+        attachments: cloneTranscriptAttachments(entry.attachments),
+        live: entry.streaming,
+        sourceItemId: entry.itemId,
+        sourceTurnId: entry.turnId,
+      };
+      if (entry.requestId) {
+        mapped.requestId = entry.requestId;
       }
-      itemEntry.attachments = mergeTranscriptAttachments(
-        itemEntry.attachments,
-        lensEvent.item.attachments,
-      );
-      itemEntry.meta = formatTranscriptMeta(
-        itemKind,
-        prettify(lensEvent.item.status),
-        lensEvent.createdAt,
-      );
-      itemEntry.sourceItemId = lensEvent.itemId;
-      itemEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (lensEvent.contentDelta) {
-      const streamKind = lensEvent.contentDelta.streamKind;
-      const transcriptKind = transcriptKindFromStream(streamKind);
-      if (!transcriptKind) {
-        continue;
-      }
-      const key = resolveTranscriptEntryKey(transcriptKind, lensEvent, streamKind);
-      const contentEntry = ensureEntry(key, () => ({
-        id: key,
-        order,
-        kind: transcriptKind,
-        tone: transcriptKind === 'assistant' ? 'info' : 'warning',
-        label: transcriptStreamLabel(streamKind),
-        title: transcriptStreamTitle(streamKind),
-        body: '',
-        meta: formatTranscriptMeta(transcriptKind, prettify(streamKind), lensEvent.createdAt),
-        sourceItemId: lensEvent.itemId,
-        sourceTurnId: lensEvent.turnId,
-      }));
-      contentEntry.body = appendStreamDelta(
-        transcriptKind,
-        contentEntry.body,
-        lensEvent.contentDelta.delta,
-      );
-      contentEntry.meta = formatTranscriptMeta(
-        transcriptKind,
-        prettify(streamKind),
-        lensEvent.createdAt,
-      );
-      contentEntry.sourceItemId = lensEvent.itemId;
-      contentEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (lensEvent.planDelta || lensEvent.planCompleted) {
-      const key = `plan:${lensEvent.turnId || lensEvent.sequence}`;
-      const planEntry = ensureEntry(key, () => ({
-        id: key,
-        order,
-        kind: 'plan',
-        tone: 'info',
-        label: transcriptLabel('plan'),
-        title: lensText('lens.title.plan', 'Plan'),
-        body: '',
-        meta: formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt),
-        sourceTurnId: lensEvent.turnId,
-      }));
-      if (lensEvent.planDelta?.delta) {
-        planEntry.body += lensEvent.planDelta.delta;
-      }
-      if (lensEvent.planCompleted?.planMarkdown) {
-        planEntry.body = lensEvent.planCompleted.planMarkdown;
-      }
-      planEntry.meta = formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt);
-      planEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (lensEvent.diffUpdated) {
-      const key = `diff:${lensEvent.turnId || lensEvent.sequence}`;
-      const diffEntry = ensureEntry(key, () => ({
-        id: key,
-        order,
-        kind: 'diff',
-        tone: 'warning',
-        label: 'Diff',
-        title: lensText('lens.title.workingDiff', 'Working diff'),
-        body: lensEvent.diffUpdated?.unifiedDiff || '',
-        meta: formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt),
-        sourceTurnId: lensEvent.turnId,
-      }));
-      diffEntry.body = lensEvent.diffUpdated.unifiedDiff;
-      diffEntry.meta = formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt);
-      diffEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (
-      lensEvent.requestOpened ||
-      lensEvent.userInputRequested ||
-      lensEvent.requestResolved ||
-      lensEvent.userInputResolved
-    ) {
-      const requestId = lensEvent.requestId || `request:${lensEvent.sequence}`;
-      const summary = requestSummaryById.get(requestId);
-      const requestEntry = ensureEntry(`request:${requestId}`, () =>
-        createRequestTranscriptEntry(requestId, summary, lensEvent, order),
-      );
-      updateRequestTranscriptEntry(requestEntry, summary, lensEvent);
-    }
-
-    const eventEntry = buildSystemEntryFromEvent(lensEvent, order);
-    if (eventEntry) {
-      entries.push(eventEntry);
-    }
-  }
-
-  let fallbackOrder = snapshot.latestSequence + 1;
-  const sortedSnapshotItems = [...snapshot.items].sort(
-    (left, right) => new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime(),
-  );
-  for (const item of sortedSnapshotItems) {
-    const itemKind = transcriptKindFromItem(item.itemType);
-    const itemKey = resolveSnapshotItemEntryKey(itemKind, item, fallbackOrder);
-    const snapshotEntry = ensureEntry(itemKey, () => ({
-      id: itemKey,
-      order: fallbackOrder,
-      kind: itemKind,
-      tone: toneFromState(item.status),
-      label: transcriptLabel(itemKind),
-      title:
-        itemKind === 'tool'
-          ? resolveToolTranscriptTitle(item.itemType, item.title, item.detail)
-          : transcriptLabel(itemKind),
-      body: resolveTranscriptItemBody(itemKind, item.detail, item.title),
-      meta: formatTranscriptMeta(itemKind, prettify(item.status), item.updatedAt),
-      attachments: cloneTranscriptAttachments(item.attachments),
-      sourceItemId: item.itemId,
-      sourceTurnId: item.turnId,
-    }));
-    snapshotEntry.tone = toneFromState(item.status);
-    snapshotEntry.label = transcriptLabel(itemKind);
-    snapshotEntry.title =
-      itemKind === 'tool'
-        ? resolveToolTranscriptTitle(item.itemType, item.title, item.detail)
-        : transcriptLabel(itemKind);
-    snapshotEntry.body = mergeTranscriptBody(
-      itemKind,
-      snapshotEntry.body,
-      resolveTranscriptItemBody(itemKind, item.detail, item.title),
-    );
-    snapshotEntry.attachments = mergeTranscriptAttachments(
-      snapshotEntry.attachments,
-      item.attachments,
-    );
-    snapshotEntry.meta = formatTranscriptMeta(itemKind, prettify(item.status), item.updatedAt);
-    snapshotEntry.sourceItemId = item.itemId;
-    snapshotEntry.sourceTurnId = item.turnId;
-    fallbackOrder += 1;
-  }
-
-  const currentTurnAssistantKey = resolveCurrentTurnAssistantEntryKey(snapshot, entries);
-  if (snapshot.streams.assistantText.trim()) {
-    if (currentTurnAssistantKey) {
-      const currentAssistantEntry = ensureEntry(currentTurnAssistantKey, () => ({
-        id: currentTurnAssistantKey,
-        order: fallbackOrder,
-        kind: 'assistant',
-        tone: 'info',
-        label: transcriptLabel('assistant'),
-        title: transcriptLabel('assistant'),
-        body: snapshot.streams.assistantText,
-        meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
-        sourceTurnId: snapshot.currentTurn.turnId,
-      }));
-      currentAssistantEntry.body = mergeProgressiveMessage(
-        currentAssistantEntry.body,
-        snapshot.streams.assistantText,
-      );
-      currentAssistantEntry.meta = formatTranscriptMeta(
-        'assistant',
-        'Snapshot',
-        snapshot.generatedAt,
-      );
-      currentAssistantEntry.sourceTurnId = snapshot.currentTurn.turnId;
-      fallbackOrder += 1;
-    } else if (!entries.some((entry) => entry.kind === 'assistant' && entry.body.trim())) {
-      entries.push({
-        id: 'fallback-assistant',
-        order: fallbackOrder,
-        kind: 'assistant',
-        tone: 'info',
-        label: transcriptLabel('assistant'),
-        title: transcriptLabel('assistant'),
-        body: snapshot.streams.assistantText,
-        meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
-        sourceTurnId: snapshot.currentTurn.turnId,
-      });
-      fallbackOrder += 1;
-    }
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'reasoning' && entry.title === 'Reasoning') &&
-    snapshot.streams.reasoningText.trim()
-  ) {
-    entries.push({
-      id: 'fallback-reasoning',
-      order: fallbackOrder,
-      kind: 'reasoning',
-      tone: 'info',
-      label: transcriptLabel('reasoning'),
-      title: lensText('lens.title.reasoning', 'Reasoning'),
-      body: snapshot.streams.reasoningText,
-      meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some(
-      (entry) =>
-        entry.kind === 'reasoning' &&
-        entry.title === lensText('lens.title.reasoningSummary', 'Reasoning summary'),
-    ) &&
-    snapshot.streams.reasoningSummaryText.trim()
-  ) {
-    entries.push({
-      id: 'fallback-reasoning-summary',
-      order: fallbackOrder,
-      kind: 'reasoning',
-      tone: 'info',
-      label: 'Reasoning',
-      title: lensText('lens.title.reasoningSummary', 'Reasoning summary'),
-      body: snapshot.streams.reasoningSummaryText,
-      meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'plan' && entry.body.trim()) &&
-    snapshot.streams.planText.trim()
-  ) {
-    entries.push({
-      id: 'fallback-plan',
-      order: fallbackOrder,
-      kind: 'plan',
-      tone: 'info',
-      label: transcriptLabel('plan'),
-      title: lensText('lens.title.plan', 'Plan'),
-      body: snapshot.streams.planText,
-      meta: formatTranscriptMeta('plan', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'diff' && entry.body.trim()) &&
-    snapshot.streams.unifiedDiff.trim()
-  ) {
-    entries.push({
-      id: 'fallback-diff',
-      order: fallbackOrder,
-      kind: 'diff',
-      tone: 'warning',
-      label: 'Diff',
-      title: lensText('lens.title.workingDiff', 'Working diff'),
-      body: snapshot.streams.unifiedDiff,
-      meta: formatTranscriptMeta('diff', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some(
-      (entry) =>
-        entry.kind === 'tool' &&
-        entry.title === lensText('lens.title.commandOutput', 'Command output'),
-    ) &&
-    snapshot.streams.commandOutput.trim()
-  ) {
-    entries.push({
-      id: 'fallback-command-output',
-      order: fallbackOrder,
-      kind: 'tool',
-      tone: 'warning',
-      label: 'Tool',
-      title: lensText('lens.title.commandOutput', 'Command output'),
-      body: snapshot.streams.commandOutput,
-      meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some(
-      (entry) =>
-        entry.kind === 'tool' &&
-        entry.title === lensText('lens.title.fileChangeOutput', 'File change output'),
-    ) &&
-    snapshot.streams.fileChangeOutput.trim()
-  ) {
-    entries.push({
-      id: 'fallback-file-change-output',
-      order: fallbackOrder,
-      kind: 'tool',
-      tone: 'warning',
-      label: 'Tool',
-      title: lensText('lens.title.fileChangeOutput', 'File change output'),
-      body: snapshot.streams.fileChangeOutput,
-      meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
-    });
-  }
-
-  for (const request of snapshot.requests) {
-    const key = `request:${request.requestId}`;
-    const entry = ensureEntry(key, () =>
-      createRequestTranscriptEntry(request.requestId, request, null, fallbackOrder),
-    );
-    updateRequestTranscriptEntry(entry, request, null);
-    entry.order = Math.max(entry.order, fallbackOrder);
-    fallbackOrder += 1;
-  }
-
-  return entries
+      return mapped;
+    })
     .filter(
       (entry) =>
         entry.body.trim() ||
@@ -2082,98 +1877,6 @@ export function withActivationIssueNotice(
     },
     ...entries,
   ];
-}
-
-function createRequestTranscriptEntry(
-  requestId: string,
-  request: LensPulseRequestSummary | undefined,
-  lensEvent: LensPulseEvent | null,
-  order: number,
-): LensTranscriptEntry {
-  return {
-    id: `request:${requestId}`,
-    order,
-    kind: 'request',
-    tone: request?.state === 'resolved' ? 'positive' : 'warning',
-    label: transcriptLabel('request'),
-    title:
-      request?.kindLabel ||
-      lensEvent?.requestOpened?.requestTypeLabel ||
-      lensEvent?.type ||
-      'Request',
-    body: formatRequestTranscriptBody(request, lensEvent) || 'Action required.',
-    meta: request
-      ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
-      : formatTranscriptMeta(
-          'request',
-          'Request',
-          lensEvent?.createdAt || new Date().toISOString(),
-        ),
-    requestId,
-  };
-}
-
-function updateRequestTranscriptEntry(
-  entry: LensTranscriptEntry,
-  request: LensPulseRequestSummary | undefined,
-  lensEvent: LensPulseEvent | null,
-): void {
-  entry.kind = 'request';
-  entry.label = 'Request';
-  entry.tone = request?.state === 'resolved' ? 'positive' : 'warning';
-  entry.title =
-    request?.kindLabel ||
-    lensEvent?.requestOpened?.requestTypeLabel ||
-    lensEvent?.type ||
-    entry.title;
-  entry.body = formatRequestTranscriptBody(request, lensEvent) || entry.body;
-  entry.meta = request
-    ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
-    : lensEvent
-      ? formatTranscriptMeta('request', prettify(lensEvent.type), lensEvent.createdAt)
-      : entry.meta;
-}
-
-function buildSystemEntryFromEvent(
-  lensEvent: LensPulseEvent,
-  order: number,
-): LensTranscriptEntry | null {
-  if (lensEvent.runtimeMessage) {
-    if (lensEvent.type !== 'runtime.error' && lensEvent.type !== 'runtime.warning') {
-      return null;
-    }
-    return {
-      id: `runtime:${lensEvent.eventId}`,
-      order,
-      kind: lensEvent.type === 'runtime.error' ? 'notice' : 'system',
-      tone: lensEvent.type === 'runtime.error' ? 'attention' : toneFromEvent(lensEvent.type),
-      label: lensEvent.type === 'runtime.error' ? 'Error' : 'Runtime',
-      title: prettify(lensEvent.type),
-      body: [lensEvent.runtimeMessage.message, lensEvent.runtimeMessage.detail]
-        .filter(Boolean)
-        .join('\n\n'),
-      meta: formatTranscriptMeta(
-        lensEvent.type === 'runtime.error' ? 'notice' : 'system',
-        prettify(lensEvent.type),
-        lensEvent.createdAt,
-      ),
-    };
-  }
-
-  if (lensEvent.turnCompleted?.errorMessage) {
-    return {
-      id: `turn:${lensEvent.eventId}`,
-      order,
-      kind: 'notice',
-      tone: toneFromEvent(lensEvent.type),
-      label: lensText('lens.label.midterm', 'MidTerm'),
-      title: lensEvent.turnCompleted.stateLabel || prettify(lensEvent.type),
-      body: lensEvent.turnCompleted.errorMessage,
-      meta: formatTranscriptMeta('notice', prettify(lensEvent.type), lensEvent.createdAt),
-    };
-  }
-
-  return null;
 }
 
 /**
@@ -3119,292 +2822,14 @@ export function computeTranscriptVirtualWindow(
   };
 }
 
-function appendTranscriptChunk(existing: string, delta: string): string {
-  const trimmedDelta = normalizeTranscriptText(delta).trim();
-  if (!trimmedDelta) {
-    return existing;
-  }
-
-  const trimmedExisting = normalizeTranscriptText(existing).trimEnd();
-  if (!trimmedExisting) {
-    return trimmedDelta;
-  }
-
-  if (trimmedExisting.includes(trimmedDelta)) {
-    return trimmedExisting;
-  }
-
-  const separator = trimmedExisting.endsWith('\n') || trimmedDelta.startsWith('\n') ? '\n' : '\n\n';
-  return `${trimmedExisting}${separator}${trimmedDelta}`;
-}
-
-function mergeTranscriptBody(kind: TranscriptKind, existing: string, incoming: string): string {
-  const trimmedIncoming = normalizeTranscriptText(incoming).trim();
-  if (!trimmedIncoming) {
-    return existing;
-  }
-
-  if (kind === 'assistant' || kind === 'user') {
-    return mergeProgressiveMessage(existing, trimmedIncoming);
-  }
-
-  return appendTranscriptChunk(existing, trimmedIncoming);
-}
-
-function mergeTranscriptAttachments(
-  existing: readonly LensAttachmentReference[] | undefined,
-  incoming: readonly LensAttachmentReference[] | undefined,
-): LensAttachmentReference[] {
-  const merged = cloneTranscriptAttachments(existing);
-  if (!incoming || incoming.length === 0) {
-    return merged;
-  }
-
-  const seen = new Set(merged.map(attachmentIdentity));
-  for (const attachment of incoming) {
-    const identity = attachmentIdentity(attachment);
-    if (seen.has(identity)) {
-      continue;
-    }
-
-    seen.add(identity);
-    merged.push({ ...attachment });
-  }
-
-  return merged;
-}
-
 function cloneTranscriptAttachments(
   attachments: readonly LensAttachmentReference[] | undefined,
 ): LensAttachmentReference[] {
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
 }
 
-function attachmentIdentity(attachment: LensAttachmentReference): string {
-  return [
-    attachment.kind || '',
-    attachment.path || '',
-    attachment.mimeType || '',
-    attachment.displayName || '',
-  ].join('|');
-}
-
-function resolveTranscriptEntryKey(
-  kind: TranscriptKind,
-  lensEvent: LensPulseEvent,
-  discriminator: string | null = null,
-): string {
-  const itemIdentity = lensEvent.itemId || lensEvent.turnId || lensEvent.sequence;
-  if (kind === 'tool' || kind === 'reasoning') {
-    return `${kind}:${discriminator || 'default'}:${itemIdentity}`;
-  }
-
-  if (kind === 'assistant') {
-    return `${kind}:${itemIdentity}`;
-  }
-
-  if (kind === 'user') {
-    return `${kind}:${lensEvent.turnId || lensEvent.itemId || lensEvent.sequence}`;
-  }
-
-  return `${kind}:${itemIdentity}`;
-}
-
-function resolveSnapshotItemEntryKey(
-  kind: TranscriptKind,
-  item: {
-    itemId: string;
-    turnId: string | null;
-  },
-  fallbackOrder: number,
-): string {
-  if (kind === 'tool') {
-    return `tool:${item.itemId || item.turnId || fallbackOrder}`;
-  }
-
-  if (kind === 'assistant') {
-    return `${kind}:${item.itemId || item.turnId || fallbackOrder}`;
-  }
-
-  if (kind === 'user') {
-    return `${kind}:${item.turnId || item.itemId || fallbackOrder}`;
-  }
-
-  return `${kind}:${item.itemId || item.turnId || fallbackOrder}`;
-}
-
-function mergeProgressiveMessage(existing: string, incoming: string): string {
-  const normalizedExisting = normalizeTranscriptText(existing);
-  const normalizedIncoming = normalizeTranscriptText(incoming);
-  const trimmedExisting = normalizedExisting.trim();
-  if (!trimmedExisting) {
-    return normalizedIncoming;
-  }
-
-  if (trimmedExisting === normalizedIncoming) {
-    return trimmedExisting;
-  }
-
-  if (normalizedIncoming.includes(trimmedExisting)) {
-    return normalizedIncoming;
-  }
-
-  if (trimmedExisting.includes(normalizedIncoming)) {
-    return trimmedExisting;
-  }
-
-  const overlapLength = findMessageOverlap(trimmedExisting, normalizedIncoming);
-  if (overlapLength > 0) {
-    return `${trimmedExisting}${normalizedIncoming.slice(overlapLength)}`;
-  }
-
-  return appendTranscriptChunk(trimmedExisting, normalizedIncoming);
-}
-
-function findMessageOverlap(left: string, right: string): number {
-  const maxOverlap = Math.min(left.length, right.length);
-  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
-    if (left.slice(-overlap) === right.slice(0, overlap)) {
-      return overlap;
-    }
-  }
-
-  return 0;
-}
-
-function appendStreamDelta(kind: TranscriptKind, existing: string, delta: string): string {
-  if (kind === 'assistant') {
-    return `${normalizeTranscriptText(existing)}${normalizeTranscriptText(delta)}`;
-  }
-
-  return appendTranscriptChunk(existing, delta);
-}
-
-function normalizeTranscriptText(value: string | null | undefined): string {
-  return (value || '').replace(/\r\n?/g, '\n');
-}
-
 function normalizeComparableTranscriptText(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function resolveCurrentTurnAssistantEntryKey(
-  snapshot: LensPulseSnapshotResponse,
-  entries: readonly LensTranscriptEntry[],
-): string | null {
-  const turnId = snapshot.currentTurn.turnId;
-  if (!turnId) {
-    return null;
-  }
-
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.kind === 'assistant' && entry.sourceTurnId === turnId) {
-      return entry.id;
-    }
-  }
-
-  for (let index = snapshot.items.length - 1; index >= 0; index -= 1) {
-    const item = snapshot.items[index];
-    if (!item) {
-      continue;
-    }
-
-    if (transcriptKindFromItem(item.itemType) === 'assistant' && item.turnId === turnId) {
-      return resolveSnapshotItemEntryKey('assistant', item, snapshot.latestSequence + 1);
-    }
-  }
-
-  return `assistant:${turnId}`;
-}
-
-function resolveTranscriptItemBody(
-  kind: TranscriptKind,
-  detail: string | null | undefined,
-  title: string | null | undefined,
-): string {
-  if (kind === 'tool') {
-    return normalizeTranscriptText(detail || '').trim();
-  }
-
-  const trimmedDetail = normalizeTranscriptText(detail || '').trim();
-  if (trimmedDetail) {
-    return trimmedDetail;
-  }
-
-  const trimmedTitle = title?.trim() || '';
-  if (!trimmedTitle || isGenericTranscriptPlaceholder(kind, trimmedTitle)) {
-    return '';
-  }
-
-  return trimmedTitle;
-}
-
-function isGenericTranscriptPlaceholder(kind: TranscriptKind, value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  const genericValues = new Set([
-    transcriptLabel(kind).toLowerCase(),
-    'assistant message',
-    'user message',
-    'user input',
-    'agent message',
-    'message',
-    'tool started',
-    'tool completed',
-    'started',
-    'completed',
-  ]);
-  return genericValues.has(normalized);
-}
-
-function compactToolTitle(value: string): string {
-  return value
-    .replace(/\s+(?:complete|completed)\s*$/i, '')
-    .replace(/^tool[:\s-]*/i, '')
-    .trim();
-}
-
-function resolveToolTranscriptTitle(
-  itemType: string | null | undefined,
-  title: string | null | undefined,
-  detail: string | null | undefined,
-): string {
-  const compactTitle = compactToolTitle(title || itemType || 'tool');
-  if (compactTitle && !isGenericToolTitle(compactTitle)) {
-    return compactTitle;
-  }
-
-  const detailSummary = summarizeToolDetail(detail);
-  if (detailSummary) {
-    return detailSummary;
-  }
-
-  return compactTitle || transcriptLabel('tool');
-}
-
-function isGenericToolTitle(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return new Set([
-    'tool',
-    'command',
-    'command execution',
-    'file change',
-    'web search',
-    'dynamic tool call',
-    'mcp tool call',
-  ]).has(normalized);
-}
-
-function summarizeToolDetail(detail: string | null | undefined): string {
-  const firstLine = detail
-    ?.split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  if (!firstLine) {
-    return '';
-  }
-
-  return firstLine.length > 84 ? `${firstLine.slice(0, 81)}...` : firstLine;
 }
 
 async function handleApproveRequest(sessionId: string, requestId: string): Promise<void> {
@@ -3734,98 +3159,6 @@ function isStaleLensActivationError(error: unknown): boolean {
   return error instanceof Error && error.message === STALE_LENS_ACTIVATION;
 }
 
-function formatRequestTranscriptBody(
-  request: LensPulseRequestSummary | undefined,
-  lensEvent: LensPulseEvent | null,
-): string {
-  if (request) {
-    return formatRequestSummaryBody(request);
-  }
-
-  const eventSections = [
-    lensEvent?.requestOpened?.detail?.trim() || '',
-    formatRequestQuestions(lensEvent?.userInputRequested?.questions),
-  ].filter(Boolean);
-  return eventSections.join('\n\n');
-}
-
-function formatRequestSummaryBody(request: LensPulseRequestSummary): string {
-  const sections = [
-    request.detail?.trim() || '',
-    formatRequestQuestions(request.questions),
-    formatRequestAnswers(request.answers),
-  ].filter(Boolean);
-  return sections.join('\n\n');
-}
-
-function formatRequestQuestions(
-  questions:
-    | ReadonlyArray<LensPulseRequestSummary['questions'][number]>
-    | NonNullable<LensPulseEvent['userInputRequested']>['questions']
-    | null
-    | undefined,
-): string {
-  if (!questions || questions.length === 0) {
-    return '';
-  }
-
-  return questions
-    .map((question, index) => {
-      const headingParts = [
-        questions.length > 1
-          ? lensFormat('lens.request.questionNumber', 'Question {index}', { index: index + 1 })
-          : lensText('lens.request.question', 'Question'),
-        question.header.trim(),
-      ].filter(Boolean);
-      const optionLines =
-        question.options.length > 0
-          ? question.options.map((option, optionIndex) => {
-              const description =
-                option.description && option.description !== option.label
-                  ? ` - ${option.description}`
-                  : '';
-              return `[${optionIndex + 1}] ${option.label}${description}`;
-            })
-          : [];
-      return [headingParts.join(' - '), question.question, ...optionLines].join('\n');
-    })
-    .join('\n\n');
-}
-
-function formatRequestAnswers(
-  answers: readonly LensPulseRequestSummary['answers'][number][] | null | undefined,
-): string {
-  if (!answers || answers.length === 0) {
-    return '';
-  }
-
-  return [
-    lensText('lens.request.selectedAnswers', 'Selected answers'),
-    ...answers.map((answer) => `${answer.questionId}: ${answer.answers.join(', ')}`),
-  ].join('\n');
-}
-
-function toneFromEvent(eventType: string): TranscriptTone {
-  if (eventType.endsWith('error')) {
-    return 'attention';
-  }
-  if (
-    eventType.endsWith('warning') ||
-    eventType.includes('request') ||
-    eventType.includes('aborted')
-  ) {
-    return 'warning';
-  }
-  if (
-    eventType.endsWith('completed') ||
-    eventType.endsWith('resolved') ||
-    eventType.endsWith('ready')
-  ) {
-    return 'positive';
-  }
-  return 'info';
-}
-
 function toneFromState(state: string | null | undefined): TranscriptTone {
   const normalized = (state || '').toLowerCase();
   if (
@@ -3865,23 +3198,22 @@ function transcriptKindFromItem(itemType: string): TranscriptKind {
   return 'tool';
 }
 
-function transcriptKindFromStream(streamKind: string): TranscriptKind | null {
-  const normalized = streamKind.toLowerCase();
-  if (normalized === 'assistant_text') {
-    return 'assistant';
+function normalizeSnapshotTranscriptKind(kind: string | null | undefined): TranscriptKind {
+  const normalized = (kind || '').toLowerCase();
+  switch (normalized) {
+    case 'user':
+    case 'assistant':
+    case 'reasoning':
+    case 'tool':
+    case 'request':
+    case 'plan':
+    case 'diff':
+    case 'system':
+    case 'notice':
+      return normalized as TranscriptKind;
+    default:
+      return 'system';
   }
-  if (normalized === 'reasoning_text' || normalized === 'reasoning_summary_text') {
-    return 'reasoning';
-  }
-  if (
-    normalized === 'command_output' ||
-    normalized === 'file_change_output' ||
-    normalized.endsWith('_output') ||
-    normalized.endsWith('_result')
-  ) {
-    return 'tool';
-  }
-  return null;
 }
 
 function isImageAttachment(attachment: LensAttachmentReference): boolean {
@@ -3933,38 +3265,6 @@ function transcriptLabel(kind: TranscriptKind): string {
       return lensText('lens.label.error', 'Error');
     default:
       return lensText('lens.label.system', 'System');
-  }
-}
-
-function transcriptStreamLabel(streamKind: string): string {
-  switch (streamKind) {
-    case 'assistant_text':
-      return lensText('lens.label.assistant', 'Assistant');
-    case 'reasoning_text':
-    case 'reasoning_summary_text':
-      return lensText('lens.label.reasoning', 'Reasoning');
-    case 'command_output':
-    case 'file_change_output':
-      return lensText('lens.label.tool', 'Tool');
-    default:
-      return prettify(streamKind);
-  }
-}
-
-function transcriptStreamTitle(streamKind: string): string {
-  switch (streamKind) {
-    case 'assistant_text':
-      return lensText('lens.title.assistantResponse', 'Assistant response');
-    case 'reasoning_text':
-      return lensText('lens.title.reasoning', 'Reasoning');
-    case 'reasoning_summary_text':
-      return lensText('lens.title.reasoningSummary', 'Reasoning summary');
-    case 'command_output':
-      return lensText('lens.title.commandOutput', 'Command output');
-    case 'file_change_output':
-      return lensText('lens.title.fileChangeOutput', 'File change output');
-    default:
-      return prettify(streamKind);
   }
 }
 

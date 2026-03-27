@@ -4418,6 +4418,7 @@ export interface components {
       thread: components['schemas']['LensPulseThreadSummary'];
       currentTurn: components['schemas']['LensPulseTurnSummary'];
       streams: components['schemas']['LensPulseStreamsSummary'];
+      transcript: components['schemas']['LensPulseTranscriptEntry'][];
       items: components['schemas']['LensPulseItemSummary'][];
       requests: components['schemas']['LensPulseRequestSummary'][];
       notices: components['schemas']['LensPulseRuntimeNotice'][];
@@ -4440,6 +4441,25 @@ export interface components {
       threadId: string;
       state: string;
       stateLabel: string;
+    };
+    LensPulseTranscriptEntry: {
+      entryId: string;
+      /** Format: int64 */
+      order: number;
+      kind: string;
+      turnId: null | string;
+      itemId: null | string;
+      requestId: null | string;
+      status: string;
+      itemType: null | string;
+      title: null | string;
+      body: string;
+      attachments: components['schemas']['LensAttachmentReference'][];
+      streaming: boolean;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
     };
     LensPulseTurnCompletedPayload: {
       state: string;

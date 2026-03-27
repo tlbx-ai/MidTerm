@@ -5510,6 +5510,7 @@
           "thread",
           "currentTurn",
           "streams",
+          "transcript",
           "items",
           "requests",
           "notices"
@@ -5541,6 +5542,12 @@
           },
           "streams": {
             "$ref": "#/components/schemas/LensPulseStreamsSummary"
+          },
+          "transcript": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensPulseTranscriptEntry"
+            }
           },
           "items": {
             "type": "array",
@@ -5634,6 +5641,90 @@
           },
           "stateLabel": {
             "type": "string"
+          }
+        }
+      },
+      "LensPulseTranscriptEntry": {
+        "required": [
+          "entryId",
+          "order",
+          "kind",
+          "turnId",
+          "itemId",
+          "requestId",
+          "status",
+          "itemType",
+          "title",
+          "body",
+          "attachments",
+          "streaming",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "entryId": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "requestId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "itemType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
+          },
+          "streaming": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

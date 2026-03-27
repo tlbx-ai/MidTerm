@@ -168,6 +168,7 @@ public sealed class LensPulseSnapshotResponse
     public LensPulseThreadSummary Thread { get; set; } = new();
     public LensPulseTurnSummary CurrentTurn { get; set; } = new();
     public LensPulseStreamsSummary Streams { get; set; } = new();
+    public List<LensPulseTranscriptEntry> Transcript { get; set; } = [];
     public List<LensPulseItemSummary> Items { get; set; } = [];
     public List<LensPulseRequestSummary> Requests { get; set; } = [];
     public List<LensPulseRuntimeNotice> Notices { get; set; } = [];
@@ -209,6 +210,24 @@ public sealed class LensPulseStreamsSummary
     public string CommandOutput { get; set; } = string.Empty;
     public string FileChangeOutput { get; set; } = string.Empty;
     public string UnifiedDiff { get; set; } = string.Empty;
+}
+
+public sealed class LensPulseTranscriptEntry
+{
+    public string EntryId { get; set; } = string.Empty;
+    public long Order { get; set; }
+    public string Kind { get; set; } = string.Empty;
+    public string? TurnId { get; set; }
+    public string? ItemId { get; set; }
+    public string? RequestId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? ItemType { get; set; }
+    public string? Title { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public List<LensAttachmentReference> Attachments { get; set; } = [];
+    public bool Streaming { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public sealed class LensPulseItemSummary
@@ -402,6 +421,8 @@ public sealed class LensHostEventEnvelope
 [JsonSerializable(typeof(LensPulseThreadSummary))]
 [JsonSerializable(typeof(LensPulseTurnSummary))]
 [JsonSerializable(typeof(LensPulseStreamsSummary))]
+[JsonSerializable(typeof(LensPulseTranscriptEntry))]
+[JsonSerializable(typeof(List<LensPulseTranscriptEntry>))]
 [JsonSerializable(typeof(LensPulseItemSummary))]
 [JsonSerializable(typeof(List<LensPulseItemSummary>))]
 [JsonSerializable(typeof(LensPulseRequestSummary))]

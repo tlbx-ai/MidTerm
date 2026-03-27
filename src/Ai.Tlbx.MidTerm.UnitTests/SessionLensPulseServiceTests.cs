@@ -370,6 +370,324 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_PreservesEarlierTurnsWhenALaterTurnCompletes()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-1-start",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-1-user",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "local-user:turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:01Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "user_message",
+                Status = "completed",
+                Detail = "first question"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-1-assistant",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:02Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "first answer"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-1-complete",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:03Z"),
+            Type = "turn.completed",
+            TurnCompleted = new LensPulseTurnCompletedPayload
+            {
+                State = "completed",
+                StateLabel = "Completed"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-start",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-user",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            ItemId = "local-user:turn-2",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:01Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "user_message",
+                Status = "completed",
+                Detail = "second question"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-assistant-delta",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:02Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "second answer"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-assistant-final",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            ItemId = "assistant-item-2",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:03Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "assistant_message",
+                Status = "completed",
+                Detail = "second answer final"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-complete",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:04Z"),
+            Type = "turn.completed",
+            TurnCompleted = new LensPulseTurnCompletedPayload
+            {
+                State = "completed",
+                StateLabel = "Completed"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s1");
+
+        Assert.NotNull(snapshot);
+        var transcript = snapshot!.Transcript;
+        Assert.Equal(4, transcript.Count);
+        Assert.Collection(
+            transcript,
+            entry =>
+            {
+                Assert.Equal("user", entry.Kind);
+                Assert.Equal("turn-1", entry.TurnId);
+                Assert.Equal("first question", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("assistant", entry.Kind);
+                Assert.Equal("turn-1", entry.TurnId);
+                Assert.Equal("first answer", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("user", entry.Kind);
+                Assert.Equal("turn-2", entry.TurnId);
+                Assert.Equal("second question", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("assistant", entry.Kind);
+                Assert.Equal("turn-2", entry.TurnId);
+                Assert.Equal("second answer final", entry.Body);
+            });
+    }
+
+    [Fact]
+    public void GetSnapshot_MergesAssistantStreamingAndFinalItemIntoOneTranscriptRow()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-start",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "assistant-delta-1",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:01Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "Hello"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "assistant-delta-2",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:02Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = " world"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "assistant-final",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "assistant-item-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:03Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "assistant_message",
+                Status = "completed",
+                Detail = "Hello world!"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s1");
+
+        Assert.NotNull(snapshot);
+        var assistantEntries = snapshot!.Transcript.Where(entry => entry.Kind == "assistant").ToList();
+        var assistant = Assert.Single(assistantEntries);
+        Assert.Equal("assistant:turn-1", assistant.EntryId);
+        Assert.Equal("Hello world!", assistant.Body);
+        Assert.False(assistant.Streaming);
+        Assert.Equal("completed", assistant.Status);
+    }
+
+    [Fact]
+    public void GetSnapshot_MergesToolLifecycleIntoSingleTranscriptRow()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "tool-start",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "tool-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T12:00:00Z"),
+            Type = "item.started",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "command",
+                Status = "in_progress",
+                Title = "Run tests",
+                Detail = "npm test"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "tool-output",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "tool-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T12:00:01Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "command_output",
+                Delta = "All green"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "tool-complete",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "tool-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-27T12:00:02Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "command",
+                Status = "completed",
+                Title = "Run tests",
+                Detail = "npm test"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s1");
+
+        Assert.NotNull(snapshot);
+        var toolEntries = snapshot!.Transcript.Where(entry => entry.Kind == "tool").ToList();
+        var tool = Assert.Single(toolEntries);
+        Assert.Equal("tool:tool-1", tool.EntryId);
+        Assert.Equal("Run tests", tool.Title);
+        Assert.Contains("npm test", tool.Body);
+        Assert.Contains("All green", tool.Body);
+        Assert.False(tool.Streaming);
+    }
+
+    [Fact]
     public async Task Subscribe_ReplaysBacklogAndStreamsFutureEvents()
     {
         var service = new SessionLensPulseService();

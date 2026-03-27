@@ -78,6 +78,7 @@ export type LensPulseRuntimeMessagePayload = Schemas['LensPulseRuntimeMessagePay
 export type LensPulseRuntimeNotice = Schemas['LensPulseRuntimeNotice'];
 export type LensPulseSessionStatePayload = Schemas['LensPulseSessionStatePayload'];
 export type LensPulseSessionSummary = Schemas['LensPulseSessionSummary'];
+export type LensPulseTranscriptEntry = Schemas['LensPulseTranscriptEntry'];
 export type LensPulseSnapshotResponse = Schemas['LensPulseSnapshotResponse'];
 export type LensPulseStreamsSummary = Schemas['LensPulseStreamsSummary'];
 export type LensPulseThreadStatePayload = Schemas['LensPulseThreadStatePayload'];

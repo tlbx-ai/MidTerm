@@ -84,6 +84,7 @@
   "lens.request.question": "Question",
   "lens.request.selectedAnswers": "Selected answers",
   "lens.status.connectedWaiting": "Lens is connected to MidTerm and waiting for transcript content.",
+  "lens.status.streaming": "Streaming",
   "lens.status.reconnecting": "Lens is reconnecting to MidTerm.",
   "lens.status.connecting": "Connecting",
   "lens.status.failed": "Failed",
