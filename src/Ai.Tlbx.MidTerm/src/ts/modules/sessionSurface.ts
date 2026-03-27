@@ -22,7 +22,7 @@ export function resolveSessionAgentProfile(
 }
 
 export function isAgentSurfaceSession(session: SessionSurfaceLike | null | undefined): boolean {
-  return session?.lensOnly === true || resolveSessionAgentProfile(session) !== null;
+  return session?.lensOnly === true;
 }
 
 export function resolveSessionSurfaceMode(

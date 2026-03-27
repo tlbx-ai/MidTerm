@@ -278,10 +278,9 @@ export function setSessionLensAvailability(sessionId: string, _available: boolea
   }
 
   const session = getSessionById(sessionId);
-  const primaryTab = resolvePrimaryTab(session);
-  state.lensAvailable = primaryTab === 'agent';
+  state.lensAvailable = session?.lensOnly === true;
   setTabVisible(state.tabBar, 'agent', state.lensAvailable);
-  setTabVisible(state.tabBar, 'terminal', primaryTab === 'terminal');
+  setTabVisible(state.tabBar, 'terminal', session?.lensOnly !== true);
 }
 
 export function getTabLabelForSession(sessionId: string, tab: SessionTabId): string {

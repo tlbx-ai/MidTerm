@@ -219,25 +219,6 @@ describe('tabManager', () => {
     expect(getTabLabelForSession('s1', 'agent')).toBe('Codex');
   });
 
-  it('treats codex-profile sessions as provider-primary even before lensOnly metadata arrives', async () => {
-    sessionListMock = [
-      {
-        id: 's1',
-        agentControlled: true,
-        hasLensHistory: true,
-        lensOnly: false,
-        supervisor: { profile: 'codex' },
-      },
-    ];
-    const { ensureSessionWrapper, getActiveTab, isTabAvailable } = await import('./tabManager');
-
-    ensureSessionWrapper('s1');
-
-    expect(getActiveTab('s1')).toBe('agent');
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    expect(isTabAvailable('s1', 'terminal')).toBe(false);
-  });
-
   it('activates the initial agent tab for lens-only sessions immediately', async () => {
     sessionListMock = [
       {
@@ -304,7 +285,7 @@ describe('tabManager', () => {
     expect(deactivatedB).toHaveBeenCalledTimes(1);
   });
 
-  it('treats claude-profile sessions as provider-primary even before lensOnly metadata arrives', async () => {
+  it('keeps ordinary terminal sessions terminal-only even with agent metadata', async () => {
     sessionListMock = [
       {
         id: 's1',
@@ -318,8 +299,8 @@ describe('tabManager', () => {
 
     ensureSessionWrapper('s1');
 
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    expect(getActiveTab('s1')).toBe('agent');
-    expect(isTabAvailable('s1', 'terminal')).toBe(false);
+    expect(isTabAvailable('s1', 'agent')).toBe(false);
+    expect(getActiveTab('s1')).toBe('terminal');
+    expect(isTabAvailable('s1', 'terminal')).toBe(true);
   });
 });
