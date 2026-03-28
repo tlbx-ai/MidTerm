@@ -7,6 +7,12 @@ If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 Do not run release, tag, publish, promote, or merge-to-main workflows unless the user explicitly authorizes that exact action in the current turn.
 
+- Midterm is programmed in c# and typescript -> all major data processing/protocol logic/business logic shall be handled in c#, the typescript frontend shall be held as lean as possible.
+- Use best practices for maintainable memory efficient code that uses the newest available .net features >= .net 10
+- Suggest removing dead code after feature changes 
+- always search if somthing exist first before implementing new features/api surfaces 
+- Midterm is in production, it is used by large teams and needs to be stable and performant 
+
 Rules:
 
 - "Cut a dev/prerelease" does not imply "promote to stable".
