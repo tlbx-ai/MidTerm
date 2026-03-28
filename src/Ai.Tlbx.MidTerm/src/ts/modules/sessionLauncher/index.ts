@@ -25,11 +25,9 @@ interface LauncherPathResponse {
 }
 
 interface LauncherState {
-  provider: LauncherProvider | null;
   homePath: string;
   currentPath: string;
   parentPath: string | null;
-  selectedPath: string;
   roots: LauncherDirectoryEntry[];
   entries: LauncherDirectoryEntry[];
   loading: boolean;
@@ -55,36 +53,38 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
             <button class="modal-close" type="button" data-role="cancel" aria-label="${escapeHtml(t('dialog.cancel'))}">&times;</button>
           </div>
           <div class="modal-body session-launcher-body">
-            <div class="session-launcher-providers" data-role="providers"></div>
-            <div class="session-launcher-browser hidden" data-role="browser">
+            <div class="session-launcher-browser" data-role="browser">
               <div class="session-launcher-toolbar">
-                <button type="button" class="btn-secondary" data-action="home">${escapeHtml(t('sessionLauncher.home'))}</button>
-                <button type="button" class="btn-secondary" data-action="up">${escapeHtml(t('sessionLauncher.up'))}</button>
-                <div class="session-launcher-path" data-role="path"></div>
+                <button type="button" class="btn-secondary session-launcher-nav-btn" data-action="home" title="${escapeHtml(t('sessionLauncher.home'))}">
+                  <span class="session-launcher-nav-icon" aria-hidden="true">&#8962;</span>
+                  <span>${escapeHtml(t('sessionLauncher.home'))}</span>
+                </button>
+                <button type="button" class="btn-secondary session-launcher-nav-btn" data-action="up" title="${escapeHtml(t('sessionLauncher.up'))}">
+                  <span class="session-launcher-nav-icon" aria-hidden="true">&#8593;</span>
+                  <span>${escapeHtml(t('sessionLauncher.up'))}</span>
+                </button>
+                <div class="session-launcher-path" data-role="path" title=""></div>
               </div>
               <div class="session-launcher-roots" data-role="roots"></div>
-              <div class="session-launcher-selection">
-                <div class="session-launcher-selection-label">${escapeHtml(t('sessionLauncher.startDir'))}</div>
-                <div class="session-launcher-selection-value" data-role="selection"></div>
-              </div>
               <div class="session-launcher-status hidden" data-role="status"></div>
               <div class="session-launcher-list" data-role="list"></div>
+            </div>
+            <div class="session-launcher-launch">
+              <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.chooseProvider'))}</div>
+              <div class="session-launcher-providers" data-role="providers"></div>
             </div>
           </div>
           <div class="modal-footer session-launcher-footer">
             <button type="button" class="btn-secondary" data-role="cancel">${escapeHtml(t('dialog.cancel'))}</button>
-            <button type="button" class="btn-primary" data-role="start" disabled>${escapeHtml(t('sessionLauncher.chooseProvider'))}</button>
           </div>
         </div>
       </div>
     `;
 
     const state: LauncherState = {
-      provider: null,
       homePath: home.path,
       currentPath: home.path,
       parentPath: null,
-      selectedPath: home.path,
       roots: roots.entries,
       entries: [],
       loading: false,
@@ -96,35 +96,21 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
     const browserEl = overlay.querySelector<HTMLElement>('[data-role="browser"]');
     const pathEl = overlay.querySelector<HTMLElement>('[data-role="path"]');
     const rootsEl = overlay.querySelector<HTMLElement>('[data-role="roots"]');
-    const selectionEl = overlay.querySelector<HTMLElement>('[data-role="selection"]');
     const statusEl = overlay.querySelector<HTMLElement>('[data-role="status"]');
     const listEl = overlay.querySelector<HTMLElement>('[data-role="list"]');
-    const startBtn = overlay.querySelector<HTMLButtonElement>('[data-role="start"]');
     const cancelButtons = overlay.querySelectorAll<HTMLElement>('[data-role="cancel"]');
 
-    if (
-      !providersEl ||
-      !browserEl ||
-      !pathEl ||
-      !rootsEl ||
-      !selectionEl ||
-      !statusEl ||
-      !listEl ||
-      !startBtn
-    ) {
+    if (!providersEl || !browserEl || !pathEl || !rootsEl || !statusEl || !listEl) {
       overlay.remove();
       resolve(null);
       return;
     }
 
     const safeProvidersEl = providersEl;
-    const safeBrowserEl = browserEl;
     const safePathEl = pathEl;
     const safeRootsEl = rootsEl;
-    const safeSelectionEl = selectionEl;
     const safeStatusEl = statusEl;
     const safeListEl = listEl;
-    const safeStartBtn = startBtn;
 
     function close(result: SessionLauncherSelection | null): void {
       document.removeEventListener('keydown', onKeyDown);
@@ -136,28 +122,24 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
       if (event.key === 'Escape') {
         event.preventDefault();
         close(null);
-      } else if (event.key === 'Enter' && !safeStartBtn.disabled) {
-        event.preventDefault();
-        if (!state.provider) {
-          return;
-        }
-
-        close({
-          provider: state.provider,
-          workingDirectory: state.selectedPath,
-        });
       }
     }
 
     function renderProviders(): void {
       safeProvidersEl.innerHTML = getProviders()
         .map((definition) => {
-          const active = definition.provider === state.provider ? ' active' : '';
           const badge = definition.beta
             ? `<span class="feature-beta-badge">${escapeHtml(t('common.beta'))}</span>`
             : '';
           return `
-            <button type="button" class="session-launcher-provider${active}" data-provider="${definition.provider}">
+            <button
+              type="button"
+              class="session-launcher-provider"
+              data-provider="${definition.provider}"
+              title="${escapeHtml(definition.launchLabel)}"
+              aria-label="${escapeHtml(definition.launchLabel)}"
+              ${state.loading || !state.currentPath ? 'disabled' : ''}
+            >
               <span class="session-launcher-provider-heading">
                 <span class="session-launcher-provider-title">${escapeHtml(definition.title)}</span>
                 ${badge}
@@ -202,17 +184,16 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
 
       safeListEl.innerHTML = state.entries
         .map((entry) => {
-          const selected = entry.fullPath === state.selectedPath ? ' selected' : '';
           return `
-            <div class="session-launcher-row${selected}" data-entry-path="${escapeHtml(entry.fullPath)}">
-              <button type="button" class="session-launcher-row-main" data-select-path="${escapeHtml(entry.fullPath)}">
-                <span class="session-launcher-row-icon">&#xea83;</span>
-                <span class="session-launcher-row-label">${escapeHtml(entry.name)}</span>
-              </button>
-              <button type="button" class="session-launcher-row-open" data-open-path="${escapeHtml(entry.fullPath)}">
-                ${escapeHtml(t('sessionLauncher.openFolder'))}
-              </button>
-            </div>
+            <button
+              type="button"
+              class="session-launcher-row"
+              data-open-path="${escapeHtml(entry.fullPath)}"
+              title="${escapeHtml(entry.fullPath)}"
+            >
+              <span class="session-launcher-row-icon" aria-hidden="true">&#xea83;</span>
+              <span class="session-launcher-row-label">${escapeHtml(entry.name)}</span>
+            </button>
           `;
         })
         .join('');
@@ -224,18 +205,8 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
       renderStatus();
       renderList();
 
-      safeBrowserEl.classList.toggle('hidden', state.provider === null);
       safePathEl.textContent = state.currentPath;
-      safeSelectionEl.textContent = state.selectedPath;
-      safeStartBtn.disabled = state.provider === null || state.loading || !state.selectedPath;
-      safeStartBtn.textContent =
-        state.provider === null
-          ? t('sessionLauncher.chooseProvider')
-          : state.provider === 'terminal'
-            ? t('sessionLauncher.startTerminal')
-            : state.provider === 'codex'
-              ? t('sessionLauncher.startCodex')
-              : t('sessionLauncher.startClaude');
+      safePathEl.title = state.currentPath;
     }
 
     async function loadDirectory(path: string): Promise<void> {
@@ -252,7 +223,6 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
 
         state.currentPath = response.path;
         state.parentPath = response.parentPath;
-        state.selectedPath = response.path;
         state.entries = response.entries;
       } catch (error) {
         if (requestToken !== state.requestToken) {
@@ -271,8 +241,18 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
     render();
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onKeyDown);
-    overlay.querySelector<HTMLButtonElement>('[data-provider="terminal"]')?.focus();
     void loadDirectory(state.homePath);
+
+    function launch(provider: LauncherProvider): void {
+      if (state.loading || !state.currentPath) {
+        return;
+      }
+
+      close({
+        provider,
+        workingDirectory: state.currentPath,
+      });
+    }
 
     safeProvidersEl.addEventListener('click', (event) => {
       const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-provider]');
@@ -280,8 +260,7 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
         return;
       }
 
-      state.provider = target.dataset.provider as LauncherProvider;
-      render();
+      launch(target.dataset.provider as LauncherProvider);
     });
 
     safeRootsEl.addEventListener('click', (event) => {
@@ -296,26 +275,9 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
 
     safeListEl.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
-      const selectPath = target?.closest<HTMLElement>('[data-select-path]')?.dataset.selectPath;
-      if (selectPath) {
-        state.selectedPath = selectPath;
-        render();
-        return;
-      }
-
       const openPath = target?.closest<HTMLElement>('[data-open-path]')?.dataset.openPath;
       if (openPath) {
         void loadDirectory(openPath);
-      }
-    });
-
-    safeListEl.addEventListener('dblclick', (event) => {
-      const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
-        '[data-entry-path]',
-      );
-      const entryPath = target?.dataset.entryPath;
-      if (entryPath) {
-        void loadDirectory(entryPath);
       }
     });
 
@@ -336,11 +298,6 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
         void loadDirectory(state.homePath);
       } else if (action === 'up' && state.parentPath) {
         void loadDirectory(state.parentPath);
-      } else if (target?.closest('[data-role="start"]') && state.provider && state.selectedPath) {
-        close({
-          provider: state.provider,
-          workingDirectory: state.selectedPath,
-        });
       }
     });
 
@@ -363,6 +320,7 @@ function getProviders(): ReadonlyArray<{
   provider: LauncherProvider;
   title: string;
   description: string;
+  launchLabel: string;
   beta?: boolean;
 }> {
   return [
@@ -370,17 +328,20 @@ function getProviders(): ReadonlyArray<{
       provider: 'terminal',
       title: t('sessionLauncher.terminalTitle'),
       description: t('sessionLauncher.terminalDescription'),
+      launchLabel: t('sessionLauncher.startTerminal'),
     },
     {
       provider: 'codex',
       title: t('sessionLauncher.codexTitle'),
       description: t('sessionLauncher.codexDescription'),
+      launchLabel: t('sessionLauncher.startCodex'),
       beta: true,
     },
     {
       provider: 'claude',
       title: t('sessionLauncher.claudeTitle'),
       description: t('sessionLauncher.claudeDescription'),
+      launchLabel: t('sessionLauncher.startClaude'),
       beta: true,
     },
   ];

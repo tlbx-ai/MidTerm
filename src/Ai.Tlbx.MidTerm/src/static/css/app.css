@@ -5687,7 +5687,7 @@ body.has-app-background::after {
 .session-launcher-body {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .session-launcher-kicker {
@@ -5700,20 +5700,22 @@ body.has-app-background::after {
 .session-launcher-providers {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .session-launcher-provider {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   align-items: flex-start;
-  padding: 18px;
+  min-height: 0;
+  padding: 14px 16px;
   border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  border-radius: 16px;
+  border-radius: 14px;
   background: color-mix(in srgb, var(--bg-dialog-muted) 92%, var(--bg-dialog));
   color: var(--text-primary);
   text-align: left;
+  cursor: pointer;
   transition:
     transform 0.16s ease,
     border-color 0.16s ease,
@@ -5726,10 +5728,10 @@ body.has-app-background::after {
   border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-color));
 }
 
-.session-launcher-provider.active {
-  border-color: color-mix(in srgb, var(--accent-blue) 64%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-dialog-muted));
-  box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow-color-lg) 72%, transparent);
+.session-launcher-provider:disabled {
+  cursor: wait;
+  opacity: 0.6;
+  transform: none;
 }
 
 .session-launcher-provider-heading {
@@ -5746,14 +5748,27 @@ body.has-app-background::after {
 
 .session-launcher-provider-description {
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .session-launcher-browser {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  min-height: 360px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.session-launcher-launch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.session-launcher-launch-label {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .session-launcher-toolbar {
@@ -5763,11 +5778,22 @@ body.has-app-background::after {
   align-items: center;
 }
 
+.session-launcher-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-launcher-nav-icon {
+  font-size: var(--fs-lg);
+  line-height: 1;
+}
+
 .session-launcher-path {
-  min-height: 42px;
+  min-height: 40px;
   display: flex;
   align-items: center;
-  padding: 0 14px;
+  padding: 0 12px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-dialog-muted) 82%, var(--bg-dialog));
@@ -5780,11 +5806,11 @@ body.has-app-background::after {
 .session-launcher-roots {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
 
 .session-launcher-root {
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
   background: var(--bg-dialog-muted);
@@ -5797,30 +5823,8 @@ body.has-app-background::after {
   color: var(--text-primary);
 }
 
-.session-launcher-selection {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.session-launcher-selection-label {
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.session-launcher-selection-value {
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-dialog-muted) 80%, var(--bg-dialog));
-  color: var(--text-primary);
-  word-break: break-all;
-}
-
 .session-launcher-status {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-dialog-muted));
   color: var(--text-secondary);
@@ -5834,58 +5838,47 @@ body.has-app-background::after {
 .session-launcher-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-height: 190px;
-  max-height: 320px;
+  gap: 4px;
+  min-height: 240px;
+  max-height: min(48vh, 420px);
   overflow: auto;
   padding-right: 4px;
 }
 
 .session-launcher-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
-  background: color-mix(in srgb, var(--bg-dialog-muted) 72%, var(--bg-dialog));
-}
-
-.session-launcher-row.selected {
-  border-color: color-mix(in srgb, var(--accent-blue) 56%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-dialog-muted));
-}
-
-.session-launcher-row-main,
-.session-launcher-row-open {
-  border: none;
-  background: transparent;
-  color: inherit;
-}
-
-.session-launcher-row-main {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-dialog-muted) 58%, transparent);
+  color: var(--text-primary);
   text-align: left;
-  min-width: 0;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.session-launcher-row:hover {
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-dialog-muted));
+  color: var(--text-primary);
+  transform: translateX(2px);
 }
 
 .session-launcher-row-icon {
   color: var(--accent-blue);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
 }
 
 .session-launcher-row-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.session-launcher-row-open {
-  padding: 0 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--btn-secondary) 72%, var(--bg-dialog-muted));
 }
 
 .session-launcher-empty {
@@ -5906,10 +5899,6 @@ body.has-app-background::after {
     max-height: min(92vh, 92vh);
   }
 
-  .session-launcher-providers {
-    grid-template-columns: 1fr;
-  }
-
   .session-launcher-toolbar {
     grid-template-columns: 1fr 1fr;
   }
@@ -5918,13 +5907,8 @@ body.has-app-background::after {
     grid-column: 1 / -1;
   }
 
-  .session-launcher-row {
+  .session-launcher-providers {
     grid-template-columns: 1fr;
-  }
-
-  .session-launcher-row-open {
-    justify-self: flex-start;
-    padding: 8px 14px;
   }
 }
 
