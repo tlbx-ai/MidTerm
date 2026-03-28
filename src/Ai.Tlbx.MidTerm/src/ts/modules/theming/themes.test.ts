@@ -47,8 +47,8 @@ describe('themes', () => {
       }),
     );
 
-    expect(theme.red).toBe('rgba(214, 29, 45, 0.400)');
-    expect(theme.brightBlue).toBe('rgba(90, 145, 255, 0.400)');
+    expect(theme.red).toBe('rgba(255, 64, 85, 0.400)');
+    expect(theme.brightBlue).toBe('rgba(125, 166, 255, 0.400)');
   });
 
   it('allows the terminal transparency slider to reach a fully transparent xterm background', () => {
