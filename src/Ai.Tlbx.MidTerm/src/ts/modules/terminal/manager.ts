@@ -193,14 +193,9 @@ function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget
 }
 
 function shouldCaptureTerminalDocumentKey(
-  sessionId: string,
   container: HTMLDivElement,
   target: EventTarget | null,
 ): boolean {
-  if ($activeSessionId.get() !== sessionId) {
-    return false;
-  }
-
   return shouldCaptureTerminalKey(container, target);
 }
 
@@ -762,7 +757,7 @@ export function setupTerminalEvents(
     tryHandleTerminalEnterOverride(sessionId, event, container);
   };
   const documentEnterOverrideHandler = (event: KeyboardEvent) => {
-    if (!shouldCaptureTerminalDocumentKey(sessionId, container, event.target)) {
+    if (!shouldCaptureTerminalDocumentKey(container, event.target)) {
       return;
     }
 
@@ -775,14 +770,14 @@ export function setupTerminalEvents(
     updateSessionEnterModifierLatch(sessionId, event, container);
   };
   const documentEnterModifierKeydownHandler = (event: KeyboardEvent) => {
-    if (!shouldCaptureTerminalDocumentKey(sessionId, container, event.target)) {
+    if (!shouldCaptureTerminalDocumentKey(container, event.target)) {
       return;
     }
 
     updateSessionEnterModifierLatch(sessionId, event);
   };
   const documentEnterModifierKeyupHandler = (event: KeyboardEvent) => {
-    if (!shouldCaptureTerminalDocumentKey(sessionId, container, event.target)) {
+    if (!shouldCaptureTerminalDocumentKey(container, event.target)) {
       return;
     }
 
