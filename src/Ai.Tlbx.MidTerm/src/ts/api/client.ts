@@ -21,11 +21,11 @@ import type {
   LensTurnStartResponse,
   LensInterruptRequest,
   LensCommandAcceptedResponse,
+  LensPulseDeltaResponse,
   LensRequestDecisionRequest,
   LensUserInputAnswerRequest,
   LensPulseSnapshotResponse,
   LensPulseEventListResponse,
-  LensPulseEvent,
   CreateHistoryRequest,
   HistoryPatchRequest,
   CreateShareLinkRequest,
@@ -357,7 +357,8 @@ export async function resolveLensUserInput(
 }
 
 export interface LensEventStreamCallbacks {
-  onEvent(event: LensPulseEvent): void;
+  onDelta(delta: LensPulseDeltaResponse): void;
+  onSnapshot?(snapshot: LensPulseSnapshotResponse): void;
   onOpen?(): void;
   onError?(error: Event): void;
 }
@@ -365,9 +366,11 @@ export interface LensEventStreamCallbacks {
 export function openLensEventStream(
   id: string,
   afterSequence: number,
+  startIndex: number | undefined,
+  count: number | undefined,
   callbacks: LensEventStreamCallbacks,
 ): () => void {
-  return openLensEventSocket(id, afterSequence, callbacks);
+  return openLensEventSocket(id, afterSequence, startIndex, count, callbacks);
 }
 
 // --- Settings ---

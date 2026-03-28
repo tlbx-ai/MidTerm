@@ -587,14 +587,14 @@ describe('agentView dev errors', () => {
       },
     } as Event);
 
-    const scheduledRefresh = (window.setTimeout as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as
-      | (() => void)
-      | undefined;
-    scheduledRefresh?.();
-
     await vi.waitFor(() => {
-      expect(getLensSnapshot.mock.calls.length).toBeGreaterThanOrEqual(2);
-      expect(openLensEventStream).toHaveBeenCalledWith('s1', expect.any(Number), expect.any(Object));
+      expect(openLensEventStream).toHaveBeenCalledWith(
+        's1',
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Object),
+      );
     });
   });
 
@@ -908,27 +908,71 @@ describe('agentView dev errors', () => {
 
     setActiveLensSession('s2');
 
-    const streamCallbacks = openLensEventStream.mock.calls[0]?.[2] as
-      | { onEvent(event: unknown): void }
+    const streamCallbacks = openLensEventStream.mock.calls[0]?.[4] as
+      | { onDelta(delta: unknown): void }
       | undefined;
     expect(streamCallbacks).toBeTruthy();
 
-    streamCallbacks?.onEvent({
-      sequence: 2,
-      eventId: 'evt-2',
+    streamCallbacks?.onDelta({
       sessionId: 's1',
       provider: 'codex',
-      threadId: 'thread-1',
-      turnId: 'turn-1',
-      itemId: 'assistant-1',
-      requestId: null,
-      createdAt: '2026-03-28T11:00:01Z',
-      type: 'content.delta',
-      raw: null,
-      contentDelta: {
-        streamKind: 'assistant_text',
-        delta: ' more',
+      generatedAt: '2026-03-28T11:00:01Z',
+      latestSequence: 2,
+      totalHistoryCount: 1,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: 'Codex turn started.',
+        lastError: null,
+        lastEventAt: '2026-03-28T11:00:01Z',
       },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'medium',
+        startedAt: '2026-03-28T11:00:00Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: 'partial answer',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      historyUpserts: [
+        {
+          entryId: 'assistant:assistant-1',
+          order: 1,
+          kind: 'assistant',
+          turnId: 'turn-1',
+          itemId: 'assistant-1',
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'partial answer',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-03-28T11:00:00Z',
+          updatedAt: '2026-03-28T11:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
     });
     await Promise.resolve();
 
@@ -1454,9 +1498,7 @@ describe('agentView dev errors', () => {
     expect(history.map((entry) => entry.kind)).toContain('assistant');
     expect(history.map((entry) => entry.kind)).toContain('tool');
     expect(history.map((entry) => entry.kind)).toContain('request');
-    expect(history.find((entry) => entry.kind === 'assistant')?.body).toContain(
-      'Working on it.',
-    );
+    expect(history.find((entry) => entry.kind === 'assistant')?.body).toContain('Working on it.');
     expect(history.find((entry) => entry.kind === 'request')?.requestId).toBe('req-1');
   });
 
@@ -4204,5 +4246,170 @@ describe('agentView dev errors', () => {
     const marked = withLiveAssistantState(snapshot, entries);
     expect(marked[0]?.live).toBeUndefined();
     expect(marked[1]?.live).toBe(true);
+  });
+
+  it('collapses long tool-style history bodies by default while keeping them monospace', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'tool-1',
+      order: 1,
+      kind: 'tool',
+      tone: 'info',
+      label: 'Tool',
+      title: 'git diff --stat',
+      body: Array.from({ length: 10 }, (_, index) => `line ${index + 1}: tool output`).join('\n'),
+      meta: 'Completed • 11:00:01',
+    });
+
+    expect(presentation.mode).toBe('monospace');
+    expect(presentation.collapsedByDefault).toBe(true);
+    expect(presentation.lineCount).toBe(10);
+    expect(presentation.preview).toBe('line 1: tool output');
+  });
+
+  it('applies canonical live deltas directly into the materialized history window', async () => {
+    const { applyCanonicalLensDelta } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:00Z',
+      latestSequence: 1,
+      totalHistoryCount: 1,
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-03-28T10:00:00Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: 'Hel',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      transcript: [
+        {
+          entryId: 'assistant:assistant-1',
+          order: 1,
+          kind: 'assistant',
+          turnId: 'turn-1',
+          itemId: 'assistant-1',
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Hel',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-03-28T10:00:00Z',
+          updatedAt: '2026-03-28T10:00:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const state = {
+      snapshot,
+      historyWindowStart: 0,
+      historyWindowCount: 80,
+    } as any;
+
+    applyCanonicalLensDelta(state, {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:01Z',
+      latestSequence: 2,
+      totalHistoryCount: 1,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: 'Codex turn started.',
+        lastError: null,
+        lastEventAt: '2026-03-28T10:00:01Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-03-28T10:00:00Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: 'Hello',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      historyUpserts: [
+        {
+          entryId: 'assistant:assistant-1',
+          order: 1,
+          kind: 'assistant',
+          turnId: 'turn-1',
+          itemId: 'assistant-1',
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Hello',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-03-28T10:00:00Z',
+          updatedAt: '2026-03-28T10:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    expect(snapshot.latestSequence).toBe(2);
+    expect(snapshot.generatedAt).toBe('2026-03-28T10:00:01Z');
+    expect(snapshot.streams.assistantText).toBe('Hello');
+    expect(snapshot.transcript).toHaveLength(1);
+    expect(snapshot.transcript[0]?.body).toBe('Hello');
+    expect(snapshot.transcript[0]?.streaming).toBe(true);
+    expect(snapshot.historyWindowStart).toBe(0);
+    expect(snapshot.historyWindowEnd).toBe(1);
+    expect(snapshot.hasNewerHistory).toBe(false);
   });
 });

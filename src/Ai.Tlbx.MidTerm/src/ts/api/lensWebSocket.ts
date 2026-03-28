@@ -1,6 +1,7 @@
 import {
   type LensCommandAcceptedResponse,
   type LensInterruptRequest,
+  type LensPulseDeltaResponse,
   type LensPulseEvent,
   type LensPulseEventListResponse,
   type LensPulseSnapshotResponse,
@@ -47,13 +48,18 @@ type LensWsPending =
     };
 
 type LensSubscriptionCallbacks = {
-  onEvent(event: LensPulseEvent): void;
+  onDelta(delta: LensPulseDeltaResponse): void;
+  onSnapshot?(snapshot: LensPulseSnapshotResponse): void;
   onOpen?(): void;
   onError?(error: Event): void;
 };
 
 type LensSessionSubscription = {
   afterSequence: number;
+  snapshotWindow?: {
+    startIndex?: number;
+    count?: number;
+  };
   listeners: Set<LensSubscriptionCallbacks>;
 };
 
@@ -63,6 +69,7 @@ type LensServerMessage =
   | { type: 'snapshot'; id?: string; sessionId: string; snapshot: LensPulseSnapshotResponse }
   | { type: 'events'; id?: string; sessionId: string; events: LensPulseEventListResponse }
   | { type: 'event'; sessionId: string; event: LensPulseEvent }
+  | { type: 'delta'; sessionId: string; delta: LensPulseDeltaResponse }
   | { type: 'turnStarted'; id: string; sessionId: string; response: LensTurnStartResponse }
   | {
       type: 'commandAccepted';
@@ -89,6 +96,20 @@ function createRequestId(): string {
   }
 
   return `lens-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildSnapshotWindow(
+  startIndex: number | undefined,
+  count: number | undefined,
+): LensSessionSubscription['snapshotWindow'] | undefined {
+  if (startIndex === undefined && count === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(startIndex === undefined ? {} : { startIndex }),
+    ...(count === undefined ? {} : { count }),
+  };
 }
 
 function rejectAllPending(error: Error): void {
@@ -121,6 +142,7 @@ function resubscribeAll(): void {
       type: 'subscribe',
       sessionId,
       afterSequence: subscription.afterSequence,
+      snapshotWindow: subscription.snapshotWindow,
     });
   }
 }
@@ -149,6 +171,18 @@ function handleServerMessage(message: LensServerMessage): void {
     }
     case 'snapshot': {
       if (!message.id) {
+        const subscription = subscriptions.get(message.sessionId);
+        if (!subscription) {
+          return;
+        }
+
+        subscription.afterSequence = Math.max(
+          subscription.afterSequence,
+          message.snapshot.latestSequence,
+        );
+        for (const listener of subscription.listeners) {
+          listener.onSnapshot?.(message.snapshot);
+        }
         return;
       }
 
@@ -194,8 +228,20 @@ function handleServerMessage(message: LensServerMessage): void {
       }
 
       subscription.afterSequence = Math.max(subscription.afterSequence, message.event.sequence);
+      return;
+    }
+    case 'delta': {
+      const subscription = subscriptions.get(message.sessionId);
+      if (!subscription) {
+        return;
+      }
+
+      subscription.afterSequence = Math.max(
+        subscription.afterSequence,
+        message.delta.latestSequence,
+      );
       for (const listener of subscription.listeners) {
-        listener.onEvent(message.event);
+        listener.onDelta(message.delta);
       }
       return;
     }
@@ -424,13 +470,22 @@ export async function resolveLensUserInputWs(
 export function openLensEventSocket(
   sessionId: string,
   afterSequence: number,
+  startIndex: number | undefined,
+  count: number | undefined,
   callbacks: LensSubscriptionCallbacks,
 ): () => void {
-  const subscription = subscriptions.get(sessionId) ?? {
-    afterSequence,
-    listeners: new Set<LensSubscriptionCallbacks>(),
-  };
+  let subscription = subscriptions.get(sessionId);
+  if (!subscription) {
+    subscription = {
+      afterSequence,
+      listeners: new Set<LensSubscriptionCallbacks>(),
+    };
+  }
   subscription.afterSequence = Math.max(subscription.afterSequence, afterSequence);
+  const nextSnapshotWindow = buildSnapshotWindow(startIndex, count);
+  if (nextSnapshotWindow) {
+    subscription.snapshotWindow = nextSnapshotWindow;
+  }
   subscription.listeners.add(callbacks);
   subscriptions.set(sessionId, subscription);
 
@@ -440,6 +495,7 @@ export function openLensEventSocket(
         type: 'subscribe',
         sessionId,
         afterSequence: subscription.afterSequence,
+        snapshotWindow: subscription.snapshotWindow,
       });
     })
     .catch(() => {

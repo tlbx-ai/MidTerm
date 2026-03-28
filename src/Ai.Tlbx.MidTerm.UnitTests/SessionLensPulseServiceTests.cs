@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -788,6 +789,154 @@ public sealed class SessionLensPulseServiceTests
         Assert.True(subscription.Reader.TryRead(out var liveEvent));
         Assert.Equal("e2", liveEvent!.EventId);
         Assert.Equal(2, liveEvent.Sequence);
+    }
+
+    [Fact]
+    public async Task SubscribeDeltas_StreamsCanonicalAssistantUpdates()
+    {
+        var service = new SessionLensPulseService();
+
+        using var subscription = service.SubscribeDeltas("s-delta");
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-start",
+            SessionId = "s-delta",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-28T10:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload
+            {
+                Model = "gpt-5.4",
+                Effort = "high"
+            }
+        });
+
+        Assert.True(await subscription.Reader.WaitToReadAsync());
+        Assert.True(subscription.Reader.TryRead(out _));
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "assistant-delta",
+            SessionId = "s-delta",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "assistant-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-28T10:00:01Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "Hello"
+            }
+        });
+
+        Assert.True(await subscription.Reader.WaitToReadAsync());
+        Assert.True(subscription.Reader.TryRead(out var delta));
+        Assert.NotNull(delta);
+        Assert.Equal("s-delta", delta!.SessionId);
+        Assert.Equal(2, delta.LatestSequence);
+        Assert.Equal("running", delta.CurrentTurn.State);
+        Assert.Equal("Hello", delta.Streams.AssistantText);
+        Assert.Equal(1, delta.TotalHistoryCount);
+        var historyEntry = Assert.Single(delta.HistoryUpserts);
+        Assert.Equal("assistant:assistant-1", historyEntry.EntryId);
+        Assert.Equal("assistant", historyEntry.Kind);
+        Assert.Equal("Hello", historyEntry.Body);
+        Assert.True(historyEntry.Streaming);
+    }
+
+    [Fact]
+    public void Append_WritesGuidNamedScreenLogWithRenderHintsInDevMode()
+    {
+        var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));
+        var screenLogDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-screen-log-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storeDirectory);
+        Directory.CreateDirectory(screenLogDirectory);
+
+        try
+        {
+            var service = new SessionLensPulseService(
+                storeDirectory: storeDirectory,
+                enableScreenLogging: true,
+                screenLogDirectory: screenLogDirectory);
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "turn-start",
+                SessionId = "s-log",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                CreatedAt = DateTimeOffset.Parse("2026-03-28T11:00:00Z"),
+                Type = "turn.started",
+                TurnStarted = new LensPulseTurnStartedPayload
+                {
+                    Model = "gpt-5.4",
+                    Effort = "high"
+                }
+            });
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "tool-output",
+                SessionId = "s-log",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                ItemId = "tool-1",
+                CreatedAt = DateTimeOffset.Parse("2026-03-28T11:00:01Z"),
+                Type = "item.completed",
+                Item = new LensPulseItemPayload
+                {
+                    ItemType = "command_output",
+                    Status = "completed",
+                    Title = "git diff --stat",
+                    Detail = string.Join(
+                        '\n',
+                        Enumerable.Range(1, 10).Select(index => $"line {index}: tool output"))
+                }
+            });
+
+            var logPath = Assert.Single(Directory.GetFiles(screenLogDirectory, "*.lenslog.jsonl"));
+            Assert.Matches(@"[0-9a-f]{32}\.lenslog\.jsonl$", Path.GetFileName(logPath));
+
+            var lines = File.ReadAllLines(logPath);
+            Assert.True(lines.Length >= 3);
+
+            using var header = JsonDocument.Parse(lines[0]);
+            Assert.Equal("midterm-lens-screen-log-v1", header.RootElement.GetProperty("format").GetString());
+            Assert.Equal("header", header.RootElement.GetProperty("recordType").GetString());
+            Assert.Equal("s-log", header.RootElement.GetProperty("sessionId").GetString());
+
+            using var delta = JsonDocument.Parse(lines[^1]);
+            Assert.Equal("screen_delta", delta.RootElement.GetProperty("recordType").GetString());
+            Assert.Equal(2, delta.RootElement.GetProperty("latestSequence").GetInt64());
+            var historyUpserts = delta.RootElement.GetProperty("historyUpserts");
+            var toolEntry = historyUpserts.EnumerateArray().Single();
+            Assert.Equal("tool", toolEntry.GetProperty("kind").GetString());
+            Assert.Equal("Tool", toolEntry.GetProperty("label").GetString());
+            Assert.Equal("monospace", toolEntry.GetProperty("renderMode").GetString());
+            Assert.True(toolEntry.GetProperty("collapsedByDefault").GetBoolean());
+            Assert.Equal(10, toolEntry.GetProperty("lineCount").GetInt32());
+            Assert.Equal("line 1: tool output", toolEntry.GetProperty("preview").GetString());
+            Assert.Contains("line 10: tool output", toolEntry.GetProperty("body").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(storeDirectory))
+            {
+                Directory.Delete(storeDirectory, recursive: true);
+            }
+
+            if (Directory.Exists(screenLogDirectory))
+            {
+                Directory.Delete(screenLogDirectory, recursive: true);
+            }
+        }
     }
 
     [Fact]

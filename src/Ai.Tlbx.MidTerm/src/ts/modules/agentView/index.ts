@@ -23,11 +23,11 @@ import {
   attachSessionLens,
   detachSessionLens,
   getLensSnapshot,
-  getLensEvents,
   approveLensRequest,
   declineLensRequest,
   resolveLensUserInput,
   openLensEventStream,
+  type LensPulseDeltaResponse,
   type LensPulseEvent,
   type LensPulseRequestSummary,
   type LensPulseSnapshotResponse,
@@ -46,8 +46,9 @@ const HISTORY_VIRTUALIZE_AFTER = 50;
 const LENS_HISTORY_WINDOW_SIZE = 80;
 const LENS_HISTORY_PAGE_SIZE = 40;
 const LENS_HISTORY_FETCH_THRESHOLD_PX = 240;
-const FOREGROUND_SNAPSHOT_REFRESH_DELAY_MS = 120;
-const BACKGROUND_SNAPSHOT_REFRESH_DELAY_MS = 450;
+const COLLAPSIBLE_HISTORY_BODY_MIN_LINES = 8;
+const COLLAPSIBLE_HISTORY_BODY_MIN_CHARS = 320;
+const COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS = 160;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
@@ -64,7 +65,6 @@ interface SessionLensViewState {
   historyWindowCount: number;
   disconnectStream: (() => void) | null;
   streamConnected: boolean;
-  refreshScheduled: number | null;
   refreshInFlight: boolean;
   requestBusyIds: Set<string>;
   requestDraftAnswersById: Record<string, Record<string, string[]>>;
@@ -93,6 +93,7 @@ interface SessionLensViewState {
   historyBottomSpacer: HTMLDivElement | null;
   historyEmptyState: HTMLDivElement | null;
   pendingHistoryPrependOffsetPx: number;
+  historyExpandedEntries: Set<string>;
 }
 
 interface PendingLensTurn {
@@ -207,6 +208,15 @@ interface HistoryRenderPlan {
 interface HistoryRenderedNode {
   node: HTMLElement;
   signature: string;
+  entry: LensHistoryEntry;
+  cluster: ArtifactClusterInfo | null;
+}
+
+export interface HistoryBodyPresentation {
+  mode: 'plain' | 'monospace' | 'markdown' | 'streaming';
+  collapsedByDefault: boolean;
+  lineCount: number;
+  preview: string;
 }
 
 interface ArtifactClusterInfo {
@@ -274,9 +284,6 @@ export function destroyAgentView(sessionId: string): void {
     log.warn(() => `Failed to detach Lens for ${sessionId}: ${String(error)}`);
   });
   const state = viewStates.get(sessionId);
-  if (state && state.refreshScheduled !== null) {
-    window.clearTimeout(state.refreshScheduled);
-  }
   if (state && state.historyRenderScheduled !== null) {
     window.cancelAnimationFrame(state.historyRenderScheduled);
   }
@@ -285,6 +292,7 @@ export function destroyAgentView(sessionId: string): void {
     state.historyTopSpacer = null;
     state.historyBottomSpacer = null;
     state.historyEmptyState = null;
+    state.historyExpandedEntries.clear();
   }
 
   viewStates.delete(sessionId);
@@ -429,39 +437,21 @@ async function activateAgentView(sessionId: string): Promise<void> {
 
     setActivationState(
       state,
-      'loading-events',
-      lensText(
-        'lens.activation.loadingEvents.detail',
-        'Lens snapshot is ready. Loading recent history events.',
-      ),
-      lensText('lens.activation.loadingEvents.summary', 'Lens snapshot ready.'),
-      lensText(
-        'lens.activation.loadingEvents.body',
-        'Loading the canonical Lens event backlog for this session.',
-      ),
-    );
-    renderCurrentAgentView(sessionId);
-
-    const eventFeed = await getLensEvents(sessionId);
-    ensureLensActivationIsCurrent(state, activationRunId);
-    state.snapshot = snapshot;
-    state.events = eventFeed.events.slice(-200);
-    state.streamConnected = false;
-
-    setActivationState(
-      state,
       'connecting-stream',
       lensText(
         'lens.activation.connectingStream.detail',
-        'Lens data is loaded. Connecting the live stream.',
+        'Lens snapshot is ready. Connecting the live stream.',
       ),
-      lensText('lens.activation.connectingStream.summary', 'Lens event backlog loaded.'),
+      lensText('lens.activation.connectingStream.summary', 'Lens snapshot ready.'),
       lensText(
         'lens.activation.connectingStream.body',
-        'Opening the live Lens event stream so the history updates in real time.',
+        'Opening the live Lens stream so the history updates in real time.',
       ),
     );
     renderCurrentAgentView(sessionId);
+    state.snapshot = snapshot;
+    state.events = [];
+    state.streamConnected = false;
     openLiveLensStream(sessionId, snapshot.latestSequence);
   } catch (error) {
     if (isStaleLensActivationError(error)) {
@@ -527,16 +517,9 @@ async function resumeLensFromHistory(
   try {
     await attachSessionLens(sessionId);
     ensureLensActivationIsCurrent(state, activationRunId);
-    const afterSequence =
-      state.events.length > 0 ? (state.events[state.events.length - 1]?.sequence ?? 0) : 0;
-    const eventFeed = await getLensEvents(sessionId, afterSequence);
-    ensureLensActivationIsCurrent(state, activationRunId);
-    if (eventFeed.events.length > 0) {
-      state.events = [...state.events, ...eventFeed.events].slice(-200);
-    }
     await refreshLensSnapshot(sessionId);
     ensureLensActivationIsCurrent(state, activationRunId);
-    openLiveLensStream(sessionId, state.snapshot?.latestSequence ?? eventFeed.latestSequence);
+    openLiveLensStream(sessionId, state.snapshot?.latestSequence ?? 0);
   } catch (error) {
     if (isStaleLensActivationError(error)) {
       return;
@@ -559,25 +542,12 @@ async function tryLoadReadonlyLensHistory(
     applyLensSnapshotWindowState(state, snapshot);
     ensureLensActivationIsCurrent(state, activationRunId);
     const hasSnapshotHistory = hasRenderableLensHistory(snapshot);
-    let events: LensPulseEvent[] = [];
-
-    try {
-      const eventFeed = await getLensEvents(sessionId);
-      ensureLensActivationIsCurrent(state, activationRunId);
-      events = eventFeed.events.slice(-200);
-    } catch (error) {
-      if (isStaleLensActivationError(error)) {
-        return false;
-      }
-      log.warn(() => `Failed to load Lens events fallback for ${sessionId}: ${String(error)}`);
-    }
-
-    if (!hasSnapshotHistory && events.length === 0) {
+    if (!hasSnapshotHistory) {
       return false;
     }
 
     state.snapshot = snapshot;
-    state.events = events;
+    state.events = [];
     state.streamConnected = false;
     state.activationTrace = [];
     return true;
@@ -625,7 +595,6 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyWindowCount: LENS_HISTORY_WINDOW_SIZE,
     disconnectStream: null,
     streamConnected: false,
-    refreshScheduled: null,
     refreshInFlight: false,
     requestBusyIds: new Set<string>(),
     requestDraftAnswersById: {},
@@ -646,6 +615,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyBottomSpacer: null,
     historyEmptyState: null,
     pendingHistoryPrependOffsetPx: 0,
+    historyExpandedEntries: new Set<string>(),
   };
 
   viewStates.set(sessionId, created);
@@ -1152,48 +1122,64 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
   }
 
   closeLensStream(sessionId);
-  state.disconnectStream = openLensEventStream(sessionId, afterSequence, {
-    onOpen: () => {
-      const current = viewStates.get(sessionId);
-      if (!current) {
-        return;
-      }
+  state.disconnectStream = openLensEventStream(
+    sessionId,
+    afterSequence,
+    state.historyWindowStart,
+    state.historyWindowCount,
+    {
+      onOpen: () => {
+        const current = viewStates.get(sessionId);
+        if (!current) {
+          return;
+        }
 
-      current.streamConnected = true;
-      current.activationIssue = null;
-      current.activationError = null;
-      setActivationState(
-        current,
-        'ready',
-        lensText('lens.activation.ready.detail', 'Lens live stream connected.'),
-        lensText('lens.activation.ready.summary', 'Live Lens stream connected.'),
-        lensText(
-          'lens.activation.ready.body',
-          'Realtime canonical Lens events are now flowing into the history.',
-        ),
-        'positive',
-      );
-      renderCurrentAgentView(sessionId);
-    },
-    onEvent: (lensEvent) => {
-      const current = viewStates.get(sessionId);
-      if (!current) {
-        return;
-      }
+        current.streamConnected = true;
+        current.activationIssue = null;
+        current.activationError = null;
+        setActivationState(
+          current,
+          'ready',
+          lensText('lens.activation.ready.detail', 'Lens live stream connected.'),
+          lensText('lens.activation.ready.summary', 'Live Lens stream connected.'),
+          lensText(
+            'lens.activation.ready.body',
+            'Realtime canonical Lens events are now flowing into the history.',
+          ),
+          'positive',
+        );
+        renderCurrentAgentView(sessionId);
+      },
+      onSnapshot: (snapshot) => {
+        const current = viewStates.get(sessionId);
+        if (!current) {
+          return;
+        }
 
-      current.events = [...current.events, lensEvent].slice(-200);
-      scheduleSnapshotRefresh(sessionId);
-    },
-    onError: () => {
-      const current = viewStates.get(sessionId);
-      if (!current) {
-        return;
-      }
+        applyLensSnapshotWindowState(current, snapshot);
+        current.snapshot = snapshot;
+        scheduleHistoryRender(sessionId);
+      },
+      onDelta: (delta) => {
+        const current = viewStates.get(sessionId);
+        if (!current || !current.snapshot) {
+          return;
+        }
 
-      current.streamConnected = false;
-      renderCurrentAgentView(sessionId);
+        applyCanonicalLensDelta(current, delta);
+        scheduleHistoryRender(sessionId);
+      },
+      onError: () => {
+        const current = viewStates.get(sessionId);
+        if (!current) {
+          return;
+        }
+
+        current.streamConnected = false;
+        renderCurrentAgentView(sessionId);
+      },
     },
-  });
+  );
 }
 
 function closeLensStream(sessionId: string): void {
@@ -1205,21 +1191,6 @@ function closeLensStream(sessionId: string): void {
   state.disconnectStream?.();
   state.disconnectStream = null;
   state.streamConnected = false;
-}
-
-function scheduleSnapshotRefresh(sessionId: string): void {
-  const state = viewStates.get(sessionId);
-  if (!state || state.refreshScheduled !== null) {
-    return;
-  }
-
-  const delayMs = isLensViewVisible(sessionId, state)
-    ? FOREGROUND_SNAPSHOT_REFRESH_DELAY_MS
-    : BACKGROUND_SNAPSHOT_REFRESH_DELAY_MS;
-  state.refreshScheduled = window.setTimeout(() => {
-    state.refreshScheduled = null;
-    void refreshLensSnapshot(sessionId);
-  }, delayMs);
 }
 
 async function refreshLensSnapshot(sessionId: string): Promise<void> {
@@ -1341,6 +1312,267 @@ function applyLensSnapshotWindowState(
   const windowSize = Math.max(0, windowEnd - windowStart);
   state.historyWindowStart = windowStart;
   state.historyWindowCount = Math.max(windowSize, LENS_HISTORY_WINDOW_SIZE);
+}
+
+export function applyCanonicalLensDelta(
+  state: SessionLensViewState,
+  delta: LensPulseDeltaResponse,
+): void {
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  const previousTotalHistoryCount = snapshot.totalHistoryCount;
+  snapshot.provider = delta.provider || snapshot.provider;
+  snapshot.generatedAt = delta.generatedAt;
+  snapshot.latestSequence = Math.max(snapshot.latestSequence, delta.latestSequence);
+  snapshot.totalHistoryCount = Math.max(delta.totalHistoryCount, snapshot.totalHistoryCount);
+  snapshot.session = cloneSnapshotSessionSummary(delta.session);
+  snapshot.thread = cloneSnapshotThreadSummary(delta.thread);
+  snapshot.currentTurn = cloneSnapshotTurnSummary(delta.currentTurn);
+  snapshot.streams = cloneSnapshotStreamsSummary(delta.streams);
+  snapshot.items = upsertSnapshotItems(snapshot.items, delta.itemUpserts, delta.itemRemovals);
+  snapshot.requests = upsertSnapshotRequests(
+    snapshot.requests,
+    delta.requestUpserts,
+    delta.requestRemovals,
+  );
+  snapshot.notices = upsertSnapshotNotices(snapshot.notices, delta.noticeUpserts);
+  applyHistoryWindowDelta(
+    state,
+    snapshot,
+    previousTotalHistoryCount,
+    delta.historyUpserts,
+    delta.historyRemovals,
+  );
+}
+
+function applyHistoryWindowDelta(
+  state: SessionLensViewState,
+  snapshot: LensPulseSnapshotResponse,
+  previousTotalHistoryCount: number,
+  upserts: readonly LensPulseHistoryEntry[],
+  removals: readonly string[],
+): void {
+  const currentWindowStart = snapshot.historyWindowStart;
+  const currentWindowEnd = snapshot.historyWindowEnd;
+  const wasLiveEdge = currentWindowEnd >= previousTotalHistoryCount;
+  const nextEntries = snapshot.transcript.map(cloneSnapshotHistoryEntry);
+  const entryIndexById = new Map(nextEntries.map((entry, index) => [entry.entryId, index]));
+
+  for (const entryId of removals) {
+    const index = entryIndexById.get(entryId);
+    if (index === undefined) {
+      continue;
+    }
+
+    nextEntries.splice(index, 1);
+    entryIndexById.delete(entryId);
+    reindexHistoryEntryMap(entryIndexById, nextEntries);
+  }
+
+  for (const upsert of upserts) {
+    const cloned = cloneSnapshotHistoryEntry(upsert);
+    const existingIndex = entryIndexById.get(cloned.entryId);
+    if (existingIndex !== undefined) {
+      nextEntries.splice(existingIndex, 1, cloned);
+      continue;
+    }
+
+    if (wasLiveEdge) {
+      nextEntries.push(cloned);
+      entryIndexById.set(cloned.entryId, nextEntries.length - 1);
+      continue;
+    }
+
+    const absoluteIndex = Math.max(0, cloned.order - 1);
+    if (absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd) {
+      nextEntries.push(cloned);
+      entryIndexById.set(cloned.entryId, nextEntries.length - 1);
+    }
+  }
+
+  nextEntries.sort((left, right) => left.order - right.order);
+  const targetWindowCount = Math.max(1, state.historyWindowCount || LENS_HISTORY_WINDOW_SIZE);
+
+  if (wasLiveEdge) {
+    const trimmedEntries =
+      nextEntries.length > targetWindowCount
+        ? nextEntries.slice(-targetWindowCount)
+        : nextEntries.slice();
+    snapshot.transcript = trimmedEntries;
+    snapshot.historyWindowEnd = snapshot.totalHistoryCount;
+    snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - trimmedEntries.length);
+  } else {
+    snapshot.transcript = nextEntries.filter((entry) => {
+      const absoluteIndex = Math.max(0, entry.order - 1);
+      return absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd;
+    });
+    snapshot.historyWindowStart = currentWindowStart;
+    snapshot.historyWindowEnd = snapshot.historyWindowStart + snapshot.transcript.length;
+  }
+
+  snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
+  snapshot.hasNewerHistory = snapshot.historyWindowEnd < snapshot.totalHistoryCount;
+  state.historyWindowStart = snapshot.historyWindowStart;
+  state.historyWindowCount = Math.max(snapshot.transcript.length, targetWindowCount);
+}
+
+function reindexHistoryEntryMap(
+  entryIndexById: Map<string, number>,
+  entries: readonly LensPulseHistoryEntry[],
+): void {
+  entryIndexById.clear();
+  entries.forEach((entry, index) => {
+    entryIndexById.set(entry.entryId, index);
+  });
+}
+
+function upsertSnapshotItems(
+  current: readonly LensPulseSnapshotResponse['items'][number][],
+  upserts: readonly LensPulseSnapshotResponse['items'][number][],
+  removals: readonly string[],
+): LensPulseSnapshotResponse['items'] {
+  const next = new Map(current.map((item) => [item.itemId, cloneSnapshotItemSummary(item)]));
+
+  for (const itemId of removals) {
+    next.delete(itemId);
+  }
+
+  for (const item of upserts) {
+    next.set(item.itemId, cloneSnapshotItemSummary(item));
+  }
+
+  return Array.from(next.values()).sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+}
+
+function upsertSnapshotRequests(
+  current: readonly LensPulseSnapshotResponse['requests'][number][],
+  upserts: readonly LensPulseSnapshotResponse['requests'][number][],
+  removals: readonly string[],
+): LensPulseSnapshotResponse['requests'] {
+  const next = new Map(
+    current.map((request) => [request.requestId, cloneSnapshotRequestSummary(request)]),
+  );
+
+  for (const requestId of removals) {
+    next.delete(requestId);
+  }
+
+  for (const request of upserts) {
+    next.set(request.requestId, cloneSnapshotRequestSummary(request));
+  }
+
+  return Array.from(next.values()).sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+}
+
+function upsertSnapshotNotices(
+  current: readonly LensPulseSnapshotResponse['notices'][number][],
+  upserts: readonly LensPulseSnapshotResponse['notices'][number][],
+): LensPulseSnapshotResponse['notices'] {
+  const next = new Map(
+    current.map((notice) => [notice.eventId, cloneSnapshotRuntimeNotice(notice)]),
+  );
+
+  for (const notice of upserts) {
+    next.set(notice.eventId, cloneSnapshotRuntimeNotice(notice));
+  }
+
+  return Array.from(next.values()).sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  );
+}
+
+function cloneSnapshotHistoryEntry(entry: LensPulseHistoryEntry): LensPulseHistoryEntry {
+  return {
+    ...entry,
+    attachments: cloneHistoryAttachments(entry.attachments),
+  };
+}
+
+function cloneSnapshotItemSummary(
+  item: LensPulseSnapshotResponse['items'][number],
+): LensPulseSnapshotResponse['items'][number] {
+  return {
+    ...item,
+    turnId: item.turnId ?? null,
+    title: item.title ?? null,
+    detail: item.detail ?? null,
+    attachments: cloneHistoryAttachments(item.attachments),
+  };
+}
+
+function cloneSnapshotRequestSummary(
+  request: LensPulseSnapshotResponse['requests'][number],
+): LensPulseSnapshotResponse['requests'][number] {
+  return {
+    ...request,
+    turnId: request.turnId ?? null,
+    detail: request.detail ?? null,
+    decision: request.decision ?? null,
+    questions: request.questions.map((question) => ({
+      ...question,
+      options: question.options.map((option) => ({ ...option })),
+    })),
+    answers: request.answers.map((answer) => ({
+      questionId: answer.questionId,
+      answers: [...answer.answers],
+    })),
+  };
+}
+
+function cloneSnapshotRuntimeNotice(
+  notice: LensPulseSnapshotResponse['notices'][number],
+): LensPulseSnapshotResponse['notices'][number] {
+  return {
+    ...notice,
+    detail: notice.detail ?? null,
+  };
+}
+
+function cloneSnapshotSessionSummary(
+  session: LensPulseSnapshotResponse['session'],
+): LensPulseSnapshotResponse['session'] {
+  return {
+    ...session,
+    reason: session.reason ?? null,
+    lastError: session.lastError ?? null,
+    lastEventAt: session.lastEventAt ?? null,
+  };
+}
+
+function cloneSnapshotThreadSummary(
+  thread: LensPulseSnapshotResponse['thread'],
+): LensPulseSnapshotResponse['thread'] {
+  return {
+    ...thread,
+  };
+}
+
+function cloneSnapshotTurnSummary(
+  turn: LensPulseSnapshotResponse['currentTurn'],
+): LensPulseSnapshotResponse['currentTurn'] {
+  return {
+    ...turn,
+    turnId: turn.turnId ?? null,
+    model: turn.model ?? null,
+    effort: turn.effort ?? null,
+    startedAt: turn.startedAt ?? null,
+    completedAt: turn.completedAt ?? null,
+  };
+}
+
+function cloneSnapshotStreamsSummary(
+  streams: LensPulseSnapshotResponse['streams'],
+): LensPulseSnapshotResponse['streams'] {
+  return {
+    ...streams,
+  };
 }
 
 function renderCurrentAgentView(
@@ -1540,7 +1772,6 @@ function handleLensTurnAccepted(event: Event): void {
   }
 
   renderCurrentAgentView(detail.sessionId);
-  scheduleSnapshotRefresh(detail.sessionId);
 }
 
 function handleLensTurnFailed(event: Event): void {
@@ -1844,10 +2075,23 @@ function resolveRenderedHistoryNode(
     return existing.node;
   }
 
+  if (existing) {
+    updateHistoryEntryNode(existing.node, visibleEntry.entry, sessionId, visibleEntry.cluster);
+    state.historyRenderedNodes.set(visibleEntry.key, {
+      node: existing.node,
+      signature: visibleEntry.signature,
+      entry: visibleEntry.entry,
+      cluster: visibleEntry.cluster,
+    });
+    return existing.node;
+  }
+
   const node = createHistoryEntry(visibleEntry.entry, sessionId, visibleEntry.cluster);
   state.historyRenderedNodes.set(visibleEntry.key, {
     node,
     signature: visibleEntry.signature,
+    entry: visibleEntry.entry,
+    cluster: visibleEntry.cluster,
   });
   return node;
 }
@@ -2371,6 +2615,11 @@ function createHistoryEntry(
   }
   article.appendChild(header);
 
+  const liveIndicator = createHistoryLiveIndicator(entry);
+  if (liveIndicator) {
+    article.appendChild(liveIndicator);
+  }
+
   const titleText = normalizeHistoryTitle(entry);
   if (titleText) {
     const title = document.createElement('div');
@@ -2380,32 +2629,12 @@ function createHistoryEntry(
   }
 
   if (shouldRenderHistoryBody(entry)) {
-    const body = document.createElement(
-      entry.kind === 'diff' ||
-        entry.kind === 'tool' ||
-        entry.kind === 'reasoning' ||
-        entry.kind === 'plan'
-        ? 'pre'
-        : 'div',
+    const presentation = resolveHistoryBodyPresentation(entry);
+    article.appendChild(
+      presentation.collapsedByDefault
+        ? createCollapsedHistoryBody(entry, sessionId, presentation)
+        : createHistoryBodyContent(entry, sessionId, presentation),
     );
-    body.className = 'agent-history-body';
-    if (entry.kind === 'assistant') {
-      body.classList.add('agent-history-markdown');
-      const content = document.createElement('div');
-      content.className = 'agent-history-markdown-content';
-      content.innerHTML = getCachedAssistantMarkdownHtml(sessionId, entry);
-      collapseSingleParagraphMarkdownBody(content);
-      body.appendChild(content);
-      if (entry.live) {
-        const caret = document.createElement('span');
-        caret.className = 'agent-history-caret';
-        caret.setAttribute('aria-hidden', 'true');
-        body.appendChild(caret);
-      }
-    } else {
-      body.textContent = entry.body;
-    }
-    article.appendChild(body);
   }
 
   const attachmentBlock = createHistoryAttachmentBlock(sessionId, entry.attachments);
@@ -2418,6 +2647,161 @@ function createHistoryEntry(
   }
 
   return article;
+}
+
+function createHistoryBodyContent(
+  entry: LensHistoryEntry,
+  sessionId: string,
+  presentation: HistoryBodyPresentation,
+): HTMLElement {
+  const body = document.createElement(presentation.mode === 'monospace' ? 'pre' : 'div');
+  body.className = 'agent-history-body';
+
+  switch (presentation.mode) {
+    case 'streaming': {
+      body.classList.add('agent-history-streaming-body');
+      body.textContent = entry.body;
+      const caret = document.createElement('span');
+      caret.className = 'agent-history-caret';
+      caret.setAttribute('aria-hidden', 'true');
+      body.appendChild(caret);
+      return body;
+    }
+    case 'markdown': {
+      body.classList.add('agent-history-markdown');
+      const content = document.createElement('div');
+      content.className = 'agent-history-markdown-content';
+      content.innerHTML = getCachedAssistantMarkdownHtml(sessionId, entry);
+      collapseSingleParagraphMarkdownBody(content);
+      body.appendChild(content);
+      return body;
+    }
+    default:
+      body.textContent = entry.body;
+      return body;
+  }
+}
+
+function createCollapsedHistoryBody(
+  entry: LensHistoryEntry,
+  sessionId: string,
+  presentation: HistoryBodyPresentation,
+): HTMLElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'agent-history-disclosure-shell';
+
+  const details = document.createElement('details');
+  details.className = 'agent-history-disclosure';
+  details.open = isHistoryEntryExpanded(sessionId, entry.id);
+
+  const summary = document.createElement('summary');
+  summary.className = 'agent-history-disclosure-summary';
+
+  const label = document.createElement('span');
+  label.className = 'agent-history-disclosure-label';
+  label.textContent = lensText('lens.panel.details', 'Details');
+  summary.appendChild(label);
+
+  const meta = document.createElement('span');
+  meta.className = 'agent-history-disclosure-meta';
+  meta.textContent = lensFormat('lens.panel.lines', '{count} lines', {
+    count: presentation.lineCount,
+  });
+  summary.appendChild(meta);
+
+  if (presentation.preview) {
+    const preview = document.createElement('span');
+    preview.className = 'agent-history-disclosure-preview';
+    preview.textContent = presentation.preview;
+    summary.appendChild(preview);
+  }
+
+  details.addEventListener('toggle', () => {
+    const state = viewStates.get(sessionId);
+    if (!state) {
+      return;
+    }
+
+    if (details.open) {
+      state.historyExpandedEntries.add(entry.id);
+    } else {
+      state.historyExpandedEntries.delete(entry.id);
+    }
+  });
+
+  details.appendChild(summary);
+  details.appendChild(createHistoryBodyContent(entry, sessionId, presentation));
+  wrapper.appendChild(details);
+  return wrapper;
+}
+
+function isHistoryEntryExpanded(sessionId: string, entryId: string): boolean {
+  return viewStates.get(sessionId)?.historyExpandedEntries.has(entryId) === true;
+}
+
+function updateHistoryEntryNode(
+  node: HTMLElement,
+  entry: LensHistoryEntry,
+  sessionId: string,
+  artifactCluster: ArtifactClusterInfo | null = null,
+): void {
+  const nextNode = createHistoryEntry(entry, sessionId, artifactCluster);
+  syncHistoryNodeAttributes(node, nextNode);
+  node.replaceChildren(...Array.from(nextNode.childNodes));
+}
+
+function syncHistoryNodeAttributes(target: HTMLElement, source: HTMLElement): void {
+  target.className = source.className;
+
+  const datasetTarget = target.dataset as Record<string, string | undefined>;
+  const datasetSource = source.dataset as Record<string, string | undefined>;
+  for (const key of Object.keys(datasetTarget)) {
+    if (!(key in datasetSource)) {
+      Reflect.deleteProperty(target.dataset, key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(datasetSource)) {
+    if (typeof value === 'string') {
+      datasetTarget[key] = value;
+    }
+  }
+}
+
+function createHistoryLiveIndicator(entry: LensHistoryEntry): HTMLElement | null {
+  if (!entry.live && !entry.pending) {
+    return null;
+  }
+
+  const indicator = document.createElement('div');
+  indicator.className = 'agent-history-live-indicator';
+  indicator.setAttribute('aria-hidden', 'true');
+
+  const dots = document.createElement('span');
+  dots.className = 'agent-history-live-dots';
+  for (let index = 0; index < 3; index += 1) {
+    const dot = document.createElement('span');
+    dot.className = 'agent-history-live-dot';
+    dots.appendChild(dot);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'agent-history-live-label';
+  label.textContent = resolveHistoryLiveLabel(entry);
+
+  indicator.appendChild(dots);
+  indicator.appendChild(label);
+  return indicator;
+}
+
+function resolveHistoryLiveLabel(entry: LensHistoryEntry): string {
+  if (entry.pending) {
+    return lensText('lens.status.starting', 'Starting');
+  }
+
+  return entry.kind === 'assistant'
+    ? lensText('lens.status.generating', 'Generating')
+    : lensText('lens.status.working', 'Working');
 }
 
 function createArtifactClusterLabel(cluster: ArtifactClusterInfo): HTMLElement {
@@ -3156,7 +3540,8 @@ export function estimateHistoryEntryHeight(entry: LensHistoryEntry, viewportWidt
       0,
     );
   const textLines = Math.max(1, wrappedLines);
-  const bodyHeight = Math.min(420, 18 * textLines);
+  const presentation = resolveHistoryBodyPresentation(entry);
+  const bodyHeight = presentation.collapsedByDefault ? 40 : Math.min(420, 18 * textLines);
 
   switch (entry.kind) {
     case 'tool':
@@ -3246,6 +3631,57 @@ function cloneHistoryAttachments(
   attachments: readonly LensAttachmentReference[] | undefined,
 ): LensAttachmentReference[] {
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
+}
+
+export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): HistoryBodyPresentation {
+  if (entry.kind === 'assistant') {
+    return {
+      mode: entry.live ? 'streaming' : 'markdown',
+      collapsedByDefault: false,
+      lineCount: countHistoryBodyLines(entry.body),
+      preview: '',
+    };
+  }
+
+  const mode = isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
+  const lineCount = countHistoryBodyLines(entry.body);
+  const collapsedByDefault =
+    mode === 'monospace' &&
+    !entry.live &&
+    !entry.pending &&
+    (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
+      entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS);
+
+  return {
+    mode,
+    collapsedByDefault,
+    lineCount,
+    preview: collapsedByDefault ? buildHistoryBodyPreview(entry.body) : '',
+  };
+}
+
+function isMachineHistoryKind(kind: HistoryKind): boolean {
+  return kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff';
+}
+
+function countHistoryBodyLines(body: string): number {
+  return body.trim() ? body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').length : 0;
+}
+
+function buildHistoryBodyPreview(body: string): string {
+  const firstContentLine =
+    body
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line) ?? '';
+  const singleLine = firstContentLine.replace(/\s+/g, ' ').trim();
+  if (singleLine.length <= COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS) {
+    return singleLine;
+  }
+
+  return `${singleLine.slice(0, COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS - 1)}…`;
 }
 
 function normalizeComparableHistoryText(value: string): string {

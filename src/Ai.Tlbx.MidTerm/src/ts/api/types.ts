@@ -205,6 +205,25 @@ export interface LensPulseEventListResponse {
   events: LensPulseEvent[];
 }
 
+export interface LensPulseDeltaResponse {
+  sessionId: string;
+  provider: string;
+  generatedAt: string;
+  latestSequence: number;
+  totalHistoryCount: number;
+  session: LensPulseSessionSummary;
+  thread: LensPulseThreadSummary;
+  currentTurn: LensPulseTurnSummary;
+  streams: LensPulseStreamsSummary;
+  historyUpserts: LensPulseHistoryEntry[];
+  historyRemovals: string[];
+  itemUpserts: LensPulseItemSummary[];
+  itemRemovals: string[];
+  requestUpserts: LensPulseRequestSummary[];
+  requestRemovals: string[];
+  noticeUpserts: LensPulseRuntimeNotice[];
+}
+
 export interface LensPulseSessionSummary {
   state: string;
   stateLabel: string;

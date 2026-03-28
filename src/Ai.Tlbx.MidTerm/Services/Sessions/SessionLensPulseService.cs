@@ -1,25 +1,50 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Channels;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Settings;
+using Ai.Tlbx.MidTerm.Services.Updates;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-public sealed class SessionLensPulseService
+public sealed partial class SessionLensPulseService
 {
     private const int DefaultHistoryWindowSize = 80;
+    private const string ScreenLogFormatVersion = "midterm-lens-screen-log-v1";
+    private const int CollapsibleHistoryBodyMinLines = 8;
+    private const int CollapsibleHistoryBodyMinChars = 320;
+    private const int HistoryPreviewMaxChars = 160;
     private readonly ConcurrentDictionary<string, SessionLensPulseLog> _logs = new(StringComparer.Ordinal);
     private readonly string _storeDirectory;
+    private readonly bool _screenLoggingEnabled;
+    private readonly string? _screenLogDirectory;
 
-    public SessionLensPulseService(SettingsService? settingsService = null, string? storeDirectory = null)
+    public SessionLensPulseService(
+        SettingsService? settingsService = null,
+        string? storeDirectory = null,
+        bool? enableScreenLogging = null,
+        string? screenLogDirectory = null)
     {
         _storeDirectory = storeDirectory ??
                           (settingsService is not null
                               ? Path.Combine(settingsService.SettingsDirectory, "lens-history")
                               : Path.Combine(Path.GetTempPath(), "midterm-lens-history", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(_storeDirectory);
+
+        _screenLoggingEnabled = enableScreenLogging ??
+                                (settingsService is not null &&
+                                 (UpdateService.IsDevEnvironment || settingsService.Load().DevMode));
+
+        if (!_screenLoggingEnabled)
+        {
+            return;
+        }
+
+        _screenLogDirectory = screenLogDirectory ?? ResolveScreenLogDirectory(settingsService);
+        Directory.CreateDirectory(_screenLogDirectory);
     }
 
     public void Append(LensPulseEvent lensEvent)
@@ -32,7 +57,9 @@ public sealed class SessionLensPulseService
             lensEvent.Sequence = ++log.NextSequence;
             log.Events.Add(lensEvent);
             ApplyEvent(log.State, lensEvent);
+            var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, lensEvent);
             PersistEvent(log.SessionId, lensEvent);
+            PersistScreenLogDelta(log, delta);
 
             var staleSubscribers = new List<LensPulseSubscriber>();
             foreach (var subscriber in log.Subscribers)
@@ -48,6 +75,23 @@ public sealed class SessionLensPulseService
                 foreach (var staleSubscriber in staleSubscribers)
                 {
                     log.Subscribers.Remove(staleSubscriber);
+                }
+            }
+
+            var staleDeltaSubscribers = new List<LensPulseDeltaSubscriber>();
+            foreach (var subscriber in log.DeltaSubscribers)
+            {
+                if (!subscriber.Writer.TryWrite(CloneDelta(delta)))
+                {
+                    staleDeltaSubscribers.Add(subscriber);
+                }
+            }
+
+            if (staleDeltaSubscribers.Count > 0)
+            {
+                foreach (var staleSubscriber in staleDeltaSubscribers)
+                {
+                    log.DeltaSubscribers.Remove(staleSubscriber);
                 }
             }
         }
@@ -133,6 +177,52 @@ public sealed class SessionLensPulseService
         }
     }
 
+    public LensPulseDeltaSubscription SubscribeDeltas(string sessionId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        var log = GetOrLoadLog(sessionId);
+        var channel = Channel.CreateUnbounded<LensPulseDeltaResponse>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+        var subscriber = new LensPulseDeltaSubscriber(channel.Writer);
+
+        lock (log.SyncRoot)
+        {
+            log.DeltaSubscribers.Add(subscriber);
+        }
+
+        CancellationTokenRegistration registration = default;
+
+        var subscription = new LensPulseDeltaSubscription(
+            channel.Reader,
+            () =>
+            {
+                registration.Dispose();
+                lock (log.SyncRoot)
+                {
+                    log.DeltaSubscribers.Remove(subscriber);
+                }
+
+                channel.Writer.TryComplete();
+            });
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            registration = cancellationToken.Register(static state =>
+            {
+                if (state is LensPulseDeltaSubscription subscription)
+                {
+                    subscription.Dispose();
+                }
+            }, subscription);
+        }
+
+        return subscription;
+    }
+
     public bool HasHistory(string sessionId)
     {
         if (!TryGetLog(sessionId, out var log))
@@ -196,7 +286,13 @@ public sealed class SessionLensPulseService
                     subscriber.Writer.TryComplete();
                 }
 
+                foreach (var subscriber in log.DeltaSubscribers)
+                {
+                    subscriber.Writer.TryComplete();
+                }
+
                 log.Subscribers.Clear();
+                log.DeltaSubscribers.Clear();
             }
 
             TryDeleteStore(sessionId);
@@ -281,10 +377,106 @@ public sealed class SessionLensPulseService
         }
     }
 
+    private static string ResolveScreenLogDirectory(SettingsService? settingsService)
+    {
+        if (settingsService is null)
+        {
+            return Path.Combine(Path.GetTempPath(), "midterm-lens-logs");
+        }
+
+        var isWindowsService = OperatingSystem.IsWindows() && settingsService.IsRunningAsService;
+        var isUnixService = !OperatingSystem.IsWindows() && settingsService.IsRunningAsService;
+        var logRoot = LogPaths.GetLogDirectory(isWindowsService, isUnixService);
+        return Path.Combine(logRoot, "lens");
+    }
+
     private string GetStorePath(string sessionId)
     {
         var safeName = Uri.EscapeDataString(sessionId);
         return Path.Combine(_storeDirectory, $"{safeName}.ndjson");
+    }
+
+    private void PersistScreenLogDelta(SessionLensPulseLog log, LensPulseDeltaResponse delta)
+    {
+        if (!_screenLoggingEnabled || string.IsNullOrWhiteSpace(_screenLogDirectory))
+        {
+            return;
+        }
+
+        var screenLogPath = EnsureScreenLogPath(log, delta.Provider, delta.GeneratedAt);
+        if (screenLogPath is null)
+        {
+            return;
+        }
+
+        var record = new LensScreenLogDeltaRecord
+        {
+            Format = ScreenLogFormatVersion,
+            RecordType = "screen_delta",
+            LogId = log.ScreenLogId ?? string.Empty,
+            SessionId = log.SessionId,
+            Provider = delta.Provider,
+            LatestSequence = delta.LatestSequence,
+            RecordedAt = delta.GeneratedAt,
+            Session = new LensScreenLogSessionState
+            {
+                State = delta.Session.State,
+                StateLabel = delta.Session.StateLabel,
+                Reason = delta.Session.Reason,
+                LastError = delta.Session.LastError
+            },
+            CurrentTurn = new LensScreenLogTurnState
+            {
+                TurnId = delta.CurrentTurn.TurnId,
+                State = delta.CurrentTurn.State,
+                StateLabel = delta.CurrentTurn.StateLabel,
+                Model = delta.CurrentTurn.Model,
+                Effort = delta.CurrentTurn.Effort
+            },
+            HistoryUpserts = delta.HistoryUpserts
+                .Select(BuildScreenLogHistoryEntry)
+                .OrderBy(entry => entry.Order)
+                .ToList(),
+            HistoryRemovals = [.. delta.HistoryRemovals]
+        };
+
+        File.AppendAllText(
+            screenLogPath,
+            JsonSerializer.Serialize(record, LensScreenLogJsonContext.Default.LensScreenLogDeltaRecord) + Environment.NewLine,
+            Encoding.UTF8);
+    }
+
+    private string? EnsureScreenLogPath(SessionLensPulseLog log, string provider, DateTimeOffset createdAt)
+    {
+        if (string.IsNullOrWhiteSpace(_screenLogDirectory))
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(log.ScreenLogPath))
+        {
+            return log.ScreenLogPath;
+        }
+
+        log.ScreenLogId = Guid.CreateVersion7().ToString("N");
+        log.ScreenLogPath = Path.Combine(_screenLogDirectory, $"{log.ScreenLogId}.lenslog.jsonl");
+
+        var header = new LensScreenLogHeaderRecord
+        {
+            Format = ScreenLogFormatVersion,
+            RecordType = "header",
+            LogId = log.ScreenLogId,
+            SessionId = log.SessionId,
+            Provider = provider,
+            CreatedAt = createdAt
+        };
+
+        File.AppendAllText(
+            log.ScreenLogPath,
+            JsonSerializer.Serialize(header, LensScreenLogJsonContext.Default.LensScreenLogHeaderRecord) + Environment.NewLine,
+            Encoding.UTF8);
+
+        return log.ScreenLogPath;
     }
 
     private static void ApplyEvent(LensConversationState state, LensPulseEvent lensEvent)
@@ -402,6 +594,55 @@ public sealed class SessionLensPulseService
             Notices = state.Notices
                 .OrderByDescending(notice => notice.CreatedAt)
                 .Select(CloneRuntimeNotice)
+                .ToList()
+        };
+    }
+
+    private static LensPulseDeltaResponse BuildDelta(
+        string sessionId,
+        long latestSequence,
+        LensConversationState state,
+        LensPulseEvent lensEvent)
+    {
+        var historyIds = CollectTouchedHistoryIds(state, lensEvent);
+        var itemIds = CollectTouchedItemIds(state, lensEvent);
+        var requestIds = CollectTouchedRequestIds(lensEvent);
+        var noticeIds = CollectTouchedNoticeIds(lensEvent);
+
+        return new LensPulseDeltaResponse
+        {
+            SessionId = sessionId,
+            Provider = state.Provider,
+            GeneratedAt = state.Session.LastEventAt ?? lensEvent.CreatedAt,
+            LatestSequence = latestSequence,
+            TotalHistoryCount = state.TranscriptEntries.Count,
+            Session = CloneSessionSummary(state.Session),
+            Thread = CloneThreadSummary(state.Thread),
+            CurrentTurn = CloneTurnSummary(state.CurrentTurn),
+            Streams = CloneStreamsSummary(state.Streams),
+            HistoryUpserts = historyIds
+                .Select(id => state.TranscriptEntries.TryGetValue(id, out var entry) ? CloneTranscriptEntry(entry) : null)
+                .Where(static entry => entry is not null)
+                .Select(static entry => entry!)
+                .OrderBy(entry => entry.Order)
+                .ToList(),
+            ItemUpserts = itemIds
+                .Select(id => state.Items.TryGetValue(id, out var item) ? CloneItemSummary(item) : null)
+                .Where(static item => item is not null)
+                .Select(static item => item!)
+                .OrderByDescending(item => item.UpdatedAt)
+                .ToList(),
+            RequestUpserts = requestIds
+                .Select(id => state.Requests.TryGetValue(id, out var request) ? CloneRequestSummary(request) : null)
+                .Where(static request => request is not null)
+                .Select(static request => request!)
+                .OrderByDescending(request => request.UpdatedAt)
+                .ToList(),
+            NoticeUpserts = noticeIds
+                .Select(id => state.Notices.LastOrDefault(notice => string.Equals(notice.EventId, id, StringComparison.Ordinal)))
+                .Where(static notice => notice is not null)
+                .Select(static notice => CloneRuntimeNotice(notice!))
+                .OrderByDescending(notice => notice.CreatedAt)
                 .ToList()
         };
     }
@@ -935,6 +1176,29 @@ public sealed class SessionLensPulseService
         };
     }
 
+    private static LensPulseDeltaResponse CloneDelta(LensPulseDeltaResponse source)
+    {
+        return new LensPulseDeltaResponse
+        {
+            SessionId = source.SessionId,
+            Provider = source.Provider,
+            GeneratedAt = source.GeneratedAt,
+            LatestSequence = source.LatestSequence,
+            TotalHistoryCount = source.TotalHistoryCount,
+            Session = CloneSessionSummary(source.Session),
+            Thread = CloneThreadSummary(source.Thread),
+            CurrentTurn = CloneTurnSummary(source.CurrentTurn),
+            Streams = CloneStreamsSummary(source.Streams),
+            HistoryUpserts = source.HistoryUpserts.Select(CloneTranscriptEntry).ToList(),
+            HistoryRemovals = [.. source.HistoryRemovals],
+            ItemUpserts = source.ItemUpserts.Select(CloneItemSummary).ToList(),
+            ItemRemovals = [.. source.ItemRemovals],
+            RequestUpserts = source.RequestUpserts.Select(CloneRequestSummary).ToList(),
+            RequestRemovals = [.. source.RequestRemovals],
+            NoticeUpserts = source.NoticeUpserts.Select(CloneRuntimeNotice).ToList()
+        };
+    }
+
     private static LensPulseQuestion CloneQuestion(LensPulseQuestion source)
     {
         return new LensPulseQuestion
@@ -1073,6 +1337,105 @@ public sealed class SessionLensPulseService
             Detail = source.Detail,
             CreatedAt = source.CreatedAt
         };
+    }
+
+    private static HashSet<string> CollectTouchedHistoryIds(
+        LensConversationState state,
+        LensPulseEvent lensEvent)
+    {
+        var historyIds = new HashSet<string>(StringComparer.Ordinal);
+
+        if (lensEvent.ContentDelta is not null)
+        {
+            var transcriptKind = TranscriptKindFromStream(lensEvent.ContentDelta.StreamKind);
+            if (transcriptKind is not null)
+            {
+                historyIds.Add(ResolveTranscriptEntryIdForStream(state, lensEvent, transcriptKind, lensEvent.ContentDelta.StreamKind));
+            }
+        }
+
+        if (lensEvent.PlanDelta is not null || lensEvent.PlanCompleted is not null)
+        {
+            historyIds.Add($"plan:{lensEvent.TurnId ?? state.CurrentTurn.TurnId ?? lensEvent.EventId}");
+        }
+
+        if (lensEvent.DiffUpdated is not null)
+        {
+            historyIds.Add($"diff:{lensEvent.TurnId ?? state.CurrentTurn.TurnId ?? lensEvent.EventId}");
+        }
+
+        if (lensEvent.Item is not null)
+        {
+            var normalizedType = NormalizeItemType(lensEvent.Item.ItemType);
+            var transcriptKind = TranscriptKindFromItem(normalizedType);
+            var canonicalItemId = ResolveCanonicalItemId(state.Items, lensEvent, transcriptKind);
+            historyIds.Add(ResolveTranscriptEntryIdForItem(lensEvent, transcriptKind, canonicalItemId));
+        }
+
+        if (lensEvent.RequestOpened is not null ||
+            lensEvent.RequestResolved is not null ||
+            lensEvent.UserInputRequested is not null ||
+            lensEvent.UserInputResolved is not null)
+        {
+            historyIds.Add($"request:{ResolveRequestId(lensEvent)}");
+        }
+
+        if (lensEvent.RuntimeMessage is not null &&
+            lensEvent.Type is "runtime.error" or "runtime.warning")
+        {
+            historyIds.Add($"runtime:{lensEvent.EventId}");
+        }
+
+        return historyIds;
+    }
+
+    private static HashSet<string> CollectTouchedItemIds(
+        LensConversationState state,
+        LensPulseEvent lensEvent)
+    {
+        var itemIds = new HashSet<string>(StringComparer.Ordinal);
+        if (lensEvent.Item is null)
+        {
+            return itemIds;
+        }
+
+        var normalizedType = NormalizeItemType(lensEvent.Item.ItemType);
+        var transcriptKind = TranscriptKindFromItem(normalizedType);
+        itemIds.Add(ResolveCanonicalItemId(state.Items, lensEvent, transcriptKind));
+        return itemIds;
+    }
+
+    private static HashSet<string> CollectTouchedRequestIds(LensPulseEvent lensEvent)
+    {
+        var requestIds = new HashSet<string>(StringComparer.Ordinal);
+        if (lensEvent.RequestOpened is null &&
+            lensEvent.RequestResolved is null &&
+            lensEvent.UserInputRequested is null &&
+            lensEvent.UserInputResolved is null)
+        {
+            return requestIds;
+        }
+
+        requestIds.Add(ResolveRequestId(lensEvent));
+        return requestIds;
+    }
+
+    private static HashSet<string> CollectTouchedNoticeIds(LensPulseEvent lensEvent)
+    {
+        var noticeIds = new HashSet<string>(StringComparer.Ordinal);
+        if (lensEvent.RuntimeMessage is not null)
+        {
+            noticeIds.Add(lensEvent.EventId);
+        }
+
+        return noticeIds;
+    }
+
+    private static string ResolveRequestId(LensPulseEvent lensEvent)
+    {
+        return string.IsNullOrWhiteSpace(lensEvent.RequestId)
+            ? $"request:{lensEvent.EventId}"
+            : lensEvent.RequestId;
     }
 
     private static string NormalizeItemType(string? itemType)
@@ -1517,6 +1880,160 @@ public sealed class SessionLensPulseService
         streams.UnifiedDiff = string.Empty;
     }
 
+    private static LensScreenLogHistoryEntry BuildScreenLogHistoryEntry(LensPulseTranscriptEntry entry)
+    {
+        var kind = NormalizeHistoryKind(entry.Kind);
+        var statusLabel = entry.Streaming
+            ? "Streaming"
+            : Prettify(entry.Status);
+        var collapsedByDefault = ShouldCollapseHistoryBodyByDefault(entry, kind);
+
+        return new LensScreenLogHistoryEntry
+        {
+            EntryId = entry.EntryId,
+            Order = entry.Order,
+            Kind = kind,
+            ItemType = entry.ItemType,
+            Status = entry.Status,
+            Label = ResolveHistoryLabel(kind),
+            Title = entry.Title ?? string.Empty,
+            Meta = FormatHistoryMeta(kind, statusLabel, entry.UpdatedAt),
+            Body = entry.Body,
+            RenderMode = ResolveHistoryRenderMode(kind, entry.Streaming),
+            CollapsedByDefault = collapsedByDefault,
+            Preview = BuildHistoryPreview(entry.Body),
+            LineCount = CountHistoryBodyLines(entry.Body),
+            Streaming = entry.Streaming,
+            UpdatedAt = entry.UpdatedAt,
+            Attachments = CloneAttachments(entry.Attachments)
+        };
+    }
+
+    private static string NormalizeHistoryKind(string? kind)
+    {
+        return string.IsNullOrWhiteSpace(kind) ? "system" : kind.Trim().ToLowerInvariant();
+    }
+
+    private static string ResolveHistoryLabel(string kind)
+    {
+        return kind switch
+        {
+            "user" => "You",
+            "assistant" => "Assistant",
+            "reasoning" => "Reasoning",
+            "tool" => "Tool",
+            "request" => "Request",
+            "plan" => "Plan",
+            "diff" => "Diff",
+            "notice" => "Error",
+            _ => "System"
+        };
+    }
+
+    private static string ResolveHistoryRenderMode(string kind, bool streaming)
+    {
+        if (kind == "assistant")
+        {
+            return streaming ? "streaming_text" : "markdown";
+        }
+
+        return kind is "tool" or "reasoning" or "plan" or "diff" ? "monospace" : "plain";
+    }
+
+    private static bool ShouldCollapseHistoryBodyByDefault(LensPulseTranscriptEntry entry, string kind)
+    {
+        if (entry.Streaming || kind is not ("tool" or "reasoning" or "plan" or "diff"))
+        {
+            return false;
+        }
+
+        var lineCount = CountHistoryBodyLines(entry.Body);
+        return lineCount >= CollapsibleHistoryBodyMinLines || entry.Body.Length >= CollapsibleHistoryBodyMinChars;
+    }
+
+    private static int CountHistoryBodyLines(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return 0;
+        }
+
+        return NormalizeTranscriptText(body).Split('\n').Length;
+    }
+
+    private static string BuildHistoryPreview(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return string.Empty;
+        }
+
+        var firstContentLine = NormalizeTranscriptText(body)
+            .Split('\n')
+            .Select(static line => line.Trim())
+            .FirstOrDefault(static line => !string.IsNullOrWhiteSpace(line))
+            ?? string.Empty;
+        var singleLine = string.Join(
+            " ",
+            firstContentLine.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (singleLine.Length <= HistoryPreviewMaxChars)
+        {
+            return singleLine;
+        }
+
+        return singleLine[..(HistoryPreviewMaxChars - 1)] + "…";
+    }
+
+    private static string Prettify(string? value)
+    {
+        return (value ?? string.Empty)
+            .Replace("_", " ", StringComparison.Ordinal)
+            .Replace(".", " ", StringComparison.Ordinal)
+            .Replace("/", " ", StringComparison.Ordinal)
+            .Replace("-", " ", StringComparison.Ordinal)
+            .Trim() switch
+        {
+            "" => string.Empty,
+            var normalized => string.Join(
+                ' ',
+                normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(static part => char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant()))
+        };
+    }
+
+    private static string FormatHistoryMeta(string kind, string statusLabel, DateTimeOffset value)
+    {
+        var timeText = value.ToString("HH:mm:ss");
+        var normalizedStatus = statusLabel.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedStatus) || ShouldHideStatusInMeta(kind, normalizedStatus))
+        {
+            return timeText;
+        }
+
+        return $"{normalizedStatus} • {timeText}";
+    }
+
+    private static bool ShouldHideStatusInMeta(string kind, string statusLabel)
+    {
+        var normalizedStatus = statusLabel.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedStatus))
+        {
+            return true;
+        }
+
+        if (kind is "user" or "assistant")
+        {
+            return normalizedStatus is "completed" or "updated" or "assistant text" or "snapshot";
+        }
+
+        if (kind is "tool" or "reasoning" or "plan" or "diff")
+        {
+            return normalizedStatus is "completed" or "updated";
+        }
+
+        return false;
+    }
+
     private sealed class SessionLensPulseLog
     {
         public SessionLensPulseLog(string sessionId)
@@ -1529,7 +2046,10 @@ public sealed class SessionLensPulseService
         public long NextSequence { get; set; }
         public List<LensPulseEvent> Events { get; } = [];
         public List<LensPulseSubscriber> Subscribers { get; } = [];
+        public List<LensPulseDeltaSubscriber> DeltaSubscribers { get; } = [];
         public LensConversationState State { get; } = new();
+        public string? ScreenLogId { get; set; }
+        public string? ScreenLogPath { get; set; }
     }
 
     private sealed class LensConversationState
@@ -1550,6 +2070,78 @@ public sealed class SessionLensPulseService
     {
         public ChannelWriter<LensPulseEvent> Writer { get; } = writer;
     }
+
+    private sealed class LensPulseDeltaSubscriber(ChannelWriter<LensPulseDeltaResponse> writer)
+    {
+        public ChannelWriter<LensPulseDeltaResponse> Writer { get; } = writer;
+    }
+
+    private sealed class LensScreenLogHeaderRecord
+    {
+        public string Format { get; init; } = ScreenLogFormatVersion;
+        public string RecordType { get; init; } = "header";
+        public string LogId { get; init; } = string.Empty;
+        public string SessionId { get; init; } = string.Empty;
+        public string Provider { get; init; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; init; }
+    }
+
+    private sealed class LensScreenLogDeltaRecord
+    {
+        public string Format { get; init; } = ScreenLogFormatVersion;
+        public string RecordType { get; init; } = "screen_delta";
+        public string LogId { get; init; } = string.Empty;
+        public string SessionId { get; init; } = string.Empty;
+        public string Provider { get; init; } = string.Empty;
+        public long LatestSequence { get; init; }
+        public DateTimeOffset RecordedAt { get; init; }
+        public LensScreenLogSessionState Session { get; init; } = new();
+        public LensScreenLogTurnState CurrentTurn { get; init; } = new();
+        public List<LensScreenLogHistoryEntry> HistoryUpserts { get; init; } = [];
+        public List<string> HistoryRemovals { get; init; } = [];
+    }
+
+    private sealed class LensScreenLogSessionState
+    {
+        public string State { get; init; } = string.Empty;
+        public string StateLabel { get; init; } = string.Empty;
+        public string? Reason { get; init; }
+        public string? LastError { get; init; }
+    }
+
+    private sealed class LensScreenLogTurnState
+    {
+        public string? TurnId { get; init; }
+        public string State { get; init; } = string.Empty;
+        public string StateLabel { get; init; } = string.Empty;
+        public string? Model { get; init; }
+        public string? Effort { get; init; }
+    }
+
+    private sealed class LensScreenLogHistoryEntry
+    {
+        public string EntryId { get; init; } = string.Empty;
+        public long Order { get; init; }
+        public string Kind { get; init; } = string.Empty;
+        public string? ItemType { get; init; }
+        public string Status { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+        public string Title { get; init; } = string.Empty;
+        public string Meta { get; init; } = string.Empty;
+        public string Body { get; init; } = string.Empty;
+        public string RenderMode { get; init; } = string.Empty;
+        public bool CollapsedByDefault { get; init; }
+        public string Preview { get; init; } = string.Empty;
+        public int LineCount { get; init; }
+        public bool Streaming { get; init; }
+        public DateTimeOffset UpdatedAt { get; init; }
+        public List<LensAttachmentReference> Attachments { get; init; } = [];
+    }
+
+    [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+    [JsonSerializable(typeof(LensScreenLogHeaderRecord))]
+    [JsonSerializable(typeof(LensScreenLogDeltaRecord))]
+    private sealed partial class LensScreenLogJsonContext : JsonSerializerContext;
 }
 
 public sealed class LensPulseSubscription : IDisposable
@@ -1564,6 +2156,28 @@ public sealed class LensPulseSubscription : IDisposable
     }
 
     public ChannelReader<LensPulseEvent> Reader { get; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _dispose();
+        }
+    }
+}
+
+public sealed class LensPulseDeltaSubscription : IDisposable
+{
+    private readonly Action _dispose;
+    private int _disposed;
+
+    public LensPulseDeltaSubscription(ChannelReader<LensPulseDeltaResponse> reader, Action dispose)
+    {
+        Reader = reader;
+        _dispose = dispose;
+    }
+
+    public ChannelReader<LensPulseDeltaResponse> Reader { get; }
 
     public void Dispose()
     {

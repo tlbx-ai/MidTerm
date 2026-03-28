@@ -158,6 +158,26 @@ public sealed class LensPulseEventListResponse
     public List<LensPulseEvent> Events { get; set; } = [];
 }
 
+public sealed class LensPulseDeltaResponse
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
+    public DateTimeOffset GeneratedAt { get; set; }
+    public long LatestSequence { get; set; }
+    public int TotalHistoryCount { get; set; }
+    public LensPulseSessionSummary Session { get; set; } = new();
+    public LensPulseThreadSummary Thread { get; set; } = new();
+    public LensPulseTurnSummary CurrentTurn { get; set; } = new();
+    public LensPulseStreamsSummary Streams { get; set; } = new();
+    public List<LensPulseTranscriptEntry> HistoryUpserts { get; set; } = [];
+    public List<string> HistoryRemovals { get; set; } = [];
+    public List<LensPulseItemSummary> ItemUpserts { get; set; } = [];
+    public List<string> ItemRemovals { get; set; } = [];
+    public List<LensPulseRequestSummary> RequestUpserts { get; set; } = [];
+    public List<string> RequestRemovals { get; set; } = [];
+    public List<LensPulseRuntimeNotice> NoticeUpserts { get; set; } = [];
+}
+
 public sealed class LensPulseSnapshotResponse
 {
     public string SessionId { get; set; } = string.Empty;
@@ -349,6 +369,7 @@ public sealed class LensWsSubscriptionMessage
     public string Type { get; set; } = "subscribe";
     public string SessionId { get; set; } = string.Empty;
     public long AfterSequence { get; set; }
+    public LensSnapshotWindowRequest? SnapshotWindow { get; set; }
 }
 
 public sealed class LensWsAckMessage
@@ -389,6 +410,13 @@ public sealed class LensWsEventMessage
     public string Type { get; set; } = "event";
     public string SessionId { get; set; } = string.Empty;
     public LensPulseEvent Event { get; set; } = new();
+}
+
+public sealed class LensWsDeltaMessage
+{
+    public string Type { get; set; } = "delta";
+    public string SessionId { get; set; } = string.Empty;
+    public LensPulseDeltaResponse Delta { get; set; } = new();
 }
 
 public sealed class LensWsTurnStartedMessage
@@ -495,10 +523,12 @@ public sealed class LensHostEventEnvelope
 [JsonSerializable(typeof(LensWsSnapshotMessage))]
 [JsonSerializable(typeof(LensWsEventsMessage))]
 [JsonSerializable(typeof(LensWsEventMessage))]
+[JsonSerializable(typeof(LensWsDeltaMessage))]
 [JsonSerializable(typeof(LensWsTurnStartedMessage))]
 [JsonSerializable(typeof(LensWsCommandAcceptedMessage))]
 [JsonSerializable(typeof(LensPulseEvent))]
 [JsonSerializable(typeof(List<LensPulseEvent>))]
+[JsonSerializable(typeof(LensPulseDeltaResponse))]
 [JsonSerializable(typeof(LensPulseEventRaw))]
 [JsonSerializable(typeof(LensPulseSessionStatePayload))]
 [JsonSerializable(typeof(LensPulseThreadStatePayload))]

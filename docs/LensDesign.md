@@ -158,12 +158,17 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Assistant content is the primary reading surface and should have the clearest typography.
 - Streaming text should appear incrementally in place.
 - The assistant row should not visually reset between deltas.
+- The live assistant row should carry a subtle generating indicator while the provider is still working.
+- When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 
 ### Tool activity
 
 - Tool activity should be visible, but compressed by default.
 - Starts, progress, completion, and failure should read as one evolving activity line or block where possible.
 - Raw transport noise must not leak into the UI.
+- Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
+- Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
+- Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
 
 ### Plan-mode questions and approvals
 
@@ -187,9 +192,16 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 ## Performance Rules
 
 - Streaming must not cause full history/timeline rerenders.
+- Live Lens transport should flow as `provider event -> mt canonical stream state -> /ws/lens delta -> visible row patch`.
 - Item updates should target stable DOM anchors keyed by canonical identity.
 - Virtual scrolling must remove old items from the live DOM when the history becomes large.
 - Rich items such as diffs or tool logs should support collapsed rendering by default.
+
+## Dev Diagnostics
+
+- In dev mode, MidTerm should write one GUID-named Lens screen log per session under the normal MidTerm log root.
+- The Lens screen log should be derived from canonical Lens history deltas, not raw provider transport payloads or frontend DOM scraping.
+- Screen-log records should include the rendered-history facts needed to discuss the UI: stable history identity, kind, label, title, meta, body, render mode, and whether the body collapses by default.
 
 ## Design Review Checklist
 
@@ -223,6 +235,9 @@ Status in this branch/work item:
 - implemented: Lens-specific themed CSS tokens layered onto the existing MidTerm theme system
 - implemented: i18n-backed MidTerm Lens labels, buttons, helper copy, ready-state text, and interruption text
 - implemented: hidden/background Lens sessions may continue ingesting runtime state, but history DOM work is deferred until that Lens surface is visible again
+- implemented: long machine-oriented Lens bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
+- implemented: tool-style titles and bodies use the configured terminal monospace stack consistently
+- implemented: dev mode writes one GUID-named per-session Lens screen log derived from canonical history deltas and render hints
 
 Still mandatory after this work whenever Lens evolves:
 

@@ -261,6 +261,15 @@ Lens sync is now owned by a dedicated `/ws/lens` channel rather than REST snapsh
 - reconnect starts from a fresh bounded history window, usually anchored at the live bottom, then resumes ordered live events
 - the frontend stays provider-neutral and does not reconstruct Lens state from PTY output or provider-specific raw transports
 
+### Lens Screen Logs
+
+For UI iteration and bug discussion, Lens also emits a dev-only per-session screen log derived from the same canonical backend history model that drives `/ws/lens`.
+
+- the screen log is written by MidTerm, not by the browser
+- one GUID-named log file is created per Lens session under the normal MidTerm log root
+- records are screen-oriented and capture rendered-history facts such as kind, label, title, meta, body, render mode, and collapsed-by-default hints
+- raw provider payloads and PTY output are not the screen log contract
+
 ### Lens UX Target And DOD
 
 The intended Definition of Done for provider-backed Lens sessions is:

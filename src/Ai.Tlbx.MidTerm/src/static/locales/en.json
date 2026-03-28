@@ -46,6 +46,8 @@
   "lens.cluster.withCount": "{label} ({count})",
   "lens.cluster.toolCalls": "Tool calls",
   "lens.cluster.workLog": "Work log",
+  "lens.panel.details": "Details",
+  "lens.panel.lines": "{count} lines",
   "lens.label.user": "You",
   "lens.label.assistant": "Assistant",
   "lens.label.reasoning": "Reasoning",
