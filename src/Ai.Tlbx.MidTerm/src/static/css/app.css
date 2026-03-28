@@ -10380,52 +10380,58 @@ body.shared-session-mode .session-tab-bar {
   line-height: 1.7;
 }
 
-.agent-history-live-indicator {
+.agent-history-busy-indicator {
+  align-self: flex-start;
+  width: var(--agent-lens-content-width);
+  padding: 8px 0 14px;
+  border-bottom: 0;
+}
+
+.agent-history-busy-bubble {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 1.35rem;
-  color: color-mix(in srgb, var(--agent-lens-live) 82%, var(--text-secondary));
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.88;
-  transition: opacity 140ms ease, transform 140ms ease;
+  gap: 10px;
+  min-height: 2.2rem;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--agent-lens-live) 24%, transparent);
+  background: color-mix(in srgb, var(--agent-lens-live) 8%, transparent);
+  color: color-mix(in srgb, var(--agent-lens-live) 82%, var(--text-primary));
+  box-shadow: 0 10px 22px var(--shadow-color-md);
 }
 
-.agent-history-assistant-placeholder .agent-history-live-indicator {
-  margin-bottom: 2px;
-}
-
-.agent-history-live-dots {
+.agent-history-busy-dots {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.agent-history-live-dot {
+.agent-history-busy-dot {
   width: 5px;
   height: 5px;
   border-radius: 999px;
   background: currentColor;
   opacity: 0.24;
-  animation: agent-history-live-dot 1.05s ease-in-out infinite;
+  animation: agent-history-busy-dot 1.05s ease-in-out infinite;
 }
 
-.agent-history-live-dot:nth-child(2) {
+.agent-history-busy-dot:nth-child(2) {
   animation-delay: 0.12s;
 }
 
-.agent-history-live-dot:nth-child(3) {
+.agent-history-busy-dot:nth-child(3) {
   animation-delay: 0.24s;
 }
 
-.agent-history-live-label {
+.agent-history-busy-label {
   color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-@keyframes agent-history-live-dot {
+@keyframes agent-history-busy-dot {
   0%,
   100% {
     opacity: 0.2;

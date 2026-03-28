@@ -4248,6 +4248,51 @@ describe('agentView dev errors', () => {
     expect(marked[1]?.live).toBe(true);
   });
 
+  it('adds a single trailing busy bubble only while the turn is actively running', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+
+    const baseEntries = [
+      {
+        id: 'assistant-1',
+        order: 1,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: 'Partial answer',
+        meta: 'now',
+        live: true,
+      },
+    ] as any;
+
+    const running = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-1', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: 'Partial answer' },
+      } as any,
+      baseEntries,
+      [],
+    );
+
+    expect(running).toHaveLength(2);
+    expect(running[1]?.busyIndicator).toBe(true);
+    expect(running[1]?.body).toBe('Generating');
+
+    const settled = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-1', state: 'completed' },
+        session: { state: 'ready' },
+        streams: { assistantText: 'Final answer' },
+      } as any,
+      running as any,
+      [],
+    );
+
+    expect(settled).toHaveLength(1);
+    expect(settled.some((entry: any) => entry.busyIndicator)).toBe(false);
+  });
+
   it('collapses long tool-style history bodies by default while keeping them monospace', async () => {
     const { resolveHistoryBodyPresentation } = await import('./index');
 

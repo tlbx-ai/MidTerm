@@ -17,6 +17,7 @@ public sealed partial class SessionLensPulseService
     private const int CollapsibleHistoryBodyMinLines = 8;
     private const int CollapsibleHistoryBodyMinChars = 320;
     private const int HistoryPreviewMaxChars = 160;
+    private const int MaxVisibleCommandOutputLines = 10;
     private readonly ConcurrentDictionary<string, SessionLensPulseLog> _logs = new(StringComparer.Ordinal);
     private readonly string _storeDirectory;
     private readonly bool _screenLoggingEnabled;
@@ -434,11 +435,20 @@ public sealed partial class SessionLensPulseService
                 Effort = delta.CurrentTurn.Effort
             },
             HistoryUpserts = delta.HistoryUpserts
+                .Where(ShouldIncludeInScreenHistoryLog)
                 .Select(BuildScreenLogHistoryEntry)
                 .OrderBy(entry => entry.Order)
                 .ToList(),
             HistoryRemovals = [.. delta.HistoryRemovals]
         };
+
+        var signature = BuildScreenLogSignature(record);
+        if (string.Equals(signature, log.LastScreenLogSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        log.LastScreenLogSignature = signature;
 
         File.AppendAllText(
             screenLogPath,
@@ -868,11 +878,34 @@ public sealed partial class SessionLensPulseService
         entry.ItemId = lensEvent.ItemId;
         entry.ItemType = lensEvent.ContentDelta.StreamKind;
         entry.Status = "streaming";
-        entry.Title = ResolveStreamTitle(transcriptKind, lensEvent.ContentDelta.StreamKind, entry.Title);
-        entry.Body = transcriptKind == "assistant"
-            ? AppendAssistantDelta(entry.Body, lensEvent.ContentDelta.Delta)
-            : AppendTranscriptChunk(entry.Body, lensEvent.ContentDelta.Delta);
-        entry.Streaming = true;
+        if (transcriptKind == "assistant")
+        {
+            entry.Title = ResolveStreamTitle(transcriptKind, lensEvent.ContentDelta.StreamKind, entry.Title);
+            entry.Body = AppendAssistantDelta(entry.Body, lensEvent.ContentDelta.Delta);
+            entry.Streaming = true;
+        }
+        else if (transcriptKind == "tool")
+        {
+            var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
+            toolState.RawOutput = AppendTranscriptChunk(toolState.RawOutput, lensEvent.ContentDelta.Delta);
+            entry.Title = ResolveToolEntryTitle(
+                lensEvent.ContentDelta.StreamKind,
+                entry.Title,
+                toolState.CommandText);
+            entry.Body = BuildToolScreenBody(
+                lensEvent.ContentDelta.StreamKind,
+                toolState.CommandText,
+                toolState.RawOutput,
+                streaming: true);
+            entry.Streaming = true;
+        }
+        else
+        {
+            entry.Title = ResolveStreamTitle(transcriptKind, lensEvent.ContentDelta.StreamKind, entry.Title);
+            entry.Body = AppendTranscriptChunk(entry.Body, lensEvent.ContentDelta.Delta);
+            entry.Streaming = true;
+        }
+
         entry.UpdatedAt = lensEvent.CreatedAt;
     }
 
@@ -924,6 +957,219 @@ public sealed partial class SessionLensPulseService
             "tool_user_input" => "User input",
             _ => requestType
         };
+    }
+
+    private static LensToolRenderState GetOrCreateToolRenderState(
+        LensConversationState state,
+        string entryId)
+    {
+        if (!state.ToolRenderStates.TryGetValue(entryId, out var toolState))
+        {
+            toolState = new LensToolRenderState();
+            state.ToolRenderStates[entryId] = toolState;
+        }
+
+        return toolState;
+    }
+
+    private static string? ResolveToolEntryTitle(
+        string? itemType,
+        string? incomingTitle,
+        string? commandText)
+    {
+        var normalizedType = NormalizeItemType(itemType);
+        var normalizedTitle = PreferMeaningfulText(null, incomingTitle);
+        var commandSummary = SummarizeCommandText(commandText);
+
+        return normalizedType switch
+        {
+            "command_execution" or "command_output"
+                => string.IsNullOrWhiteSpace(commandSummary) && !string.IsNullOrWhiteSpace(normalizedTitle)
+                    ? normalizedTitle
+                    : TryExtractReadFileTarget(commandSummary, out _) ? "Read file" : "Run command",
+            "file_change_output" => "File change output",
+            "reasoning" => "Reasoning",
+            "reasoning_summary_text" => "Reasoning summary",
+            _ => IsGenericToolTitle(normalizedTitle)
+                ? Prettify(normalizedType)
+                : normalizedTitle
+        };
+    }
+
+    private static bool IsGenericToolTitle(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized is "" or "tool started" or "tool completed" or "command running";
+    }
+
+    private static string BuildToolScreenBody(
+        string? itemType,
+        string? commandText,
+        string? detail,
+        bool streaming)
+    {
+        var normalizedType = NormalizeItemType(itemType);
+        return normalizedType switch
+        {
+            "command_execution" => BuildCommandInvocationBody(commandText, detail),
+            "command_output" => BuildCommandOutputBody(commandText, detail, streaming),
+            "file_change_output" => BuildFileChangeOutputBody(commandText, detail, streaming),
+            _ => NormalizeTranscriptText(detail).Trim()
+        };
+    }
+
+    private static string BuildCommandInvocationBody(string? commandText, string? detail)
+    {
+        var command = SummarizeCommandText(commandText);
+        if (!string.IsNullOrWhiteSpace(command))
+        {
+            return command;
+        }
+
+        return NormalizeTranscriptText(detail).Trim();
+    }
+
+    private static string BuildCommandOutputBody(string? commandText, string? rawOutput, bool streaming)
+    {
+        var normalizedOutput = NormalizeTranscriptText(rawOutput).Trim('\n');
+        var command = SummarizeCommandText(commandText);
+        if (TryExtractReadFileTarget(command, out var filePath))
+        {
+            return BuildWindowedOutputBody(
+                filePath,
+                normalizedOutput,
+                takeHead: true,
+                streaming: streaming);
+        }
+
+        return BuildWindowedOutputBody(command, normalizedOutput, takeHead: false, streaming: streaming);
+    }
+
+    private static string BuildFileChangeOutputBody(string? commandText, string? rawOutput, bool streaming)
+    {
+        return BuildWindowedOutputBody(
+            SummarizeCommandText(commandText),
+            NormalizeTranscriptText(rawOutput).Trim('\n'),
+            takeHead: false,
+            streaming: streaming);
+    }
+
+    private static string BuildWindowedOutputBody(
+        string? header,
+        string output,
+        bool takeHead,
+        bool streaming)
+    {
+        var lines = output.Length == 0 ? [] : output.Split('\n');
+        var visibleLines = lines;
+        var omittedLineCount = 0;
+        if (lines.Length > MaxVisibleCommandOutputLines)
+        {
+            omittedLineCount = lines.Length - MaxVisibleCommandOutputLines;
+            visibleLines = takeHead
+                ? lines.Take(MaxVisibleCommandOutputLines).ToArray()
+                : lines.Skip(lines.Length - MaxVisibleCommandOutputLines).ToArray();
+        }
+
+        var sections = new List<string>();
+        if (!string.IsNullOrWhiteSpace(header))
+        {
+            sections.Add(header.Trim());
+        }
+
+        if (visibleLines.Length > 0)
+        {
+            if (!string.IsNullOrWhiteSpace(header))
+            {
+                sections.Add(string.Empty);
+            }
+
+            if (omittedLineCount > 0 && !takeHead)
+            {
+                sections.Add($"... {omittedLineCount} earlier lines omitted ...");
+            }
+
+            sections.AddRange(visibleLines);
+
+            if (omittedLineCount > 0 && takeHead)
+            {
+                sections.Add(string.Empty);
+                sections.Add($"... {omittedLineCount} more lines omitted ...");
+            }
+        }
+        else if (streaming && !string.IsNullOrWhiteSpace(header))
+        {
+            sections.Add(string.Empty);
+            sections.Add("Waiting for output...");
+        }
+
+        return string.Join("\n", sections);
+    }
+
+    private static string SummarizeCommandText(string? value)
+    {
+        var normalized = NormalizeTranscriptText(value).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        if (TryExtractInlineCommand(normalized, out var inlineCommand))
+        {
+            normalized = inlineCommand;
+        }
+
+        return normalized;
+    }
+
+    private static string? ExtractCommandText(string? value)
+    {
+        var normalized = NormalizeTranscriptText(value).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        return TryExtractInlineCommand(normalized, out var inlineCommand)
+            ? inlineCommand
+            : normalized;
+    }
+
+    private static bool TryExtractInlineCommand(string value, out string command)
+    {
+        command = string.Empty;
+        var commandMatch = System.Text.RegularExpressions.Regex.Match(
+            value,
+            "-Command\\s+(?:'(?<cmd>[^']+)'|\"(?<cmd>[^\"]+)\"|(?<cmd>.+))",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (commandMatch.Success)
+        {
+            command = commandMatch.Groups["cmd"].Value.Trim();
+            return !string.IsNullOrWhiteSpace(command);
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractReadFileTarget(string? commandText, out string filePath)
+    {
+        filePath = string.Empty;
+        if (string.IsNullOrWhiteSpace(commandText))
+        {
+            return false;
+        }
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            commandText,
+            "^(?:Get-Content|cat|type)\\s+(?:-[^\\s]+\\s+)*(?:'(?<path>[^']+)'|\"(?<path>[^\"]+)\"|(?<path>\\S+))",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        filePath = match.Groups["path"].Value.Trim();
+        return !string.IsNullOrWhiteSpace(filePath);
     }
 
     private static void ApplyItemUpdate(LensConversationState state, LensPulseEvent lensEvent)
@@ -980,8 +1226,26 @@ public sealed partial class SessionLensPulseService
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 break;
             default:
-                entry.Title = PreferNonGenericText(entry.Title, lensEvent.Item.Title);
-                entry.Body = MergeTranscriptBody(entry.Body, lensEvent.Item.Detail);
+                var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
+                if (normalizedType == "command_execution")
+                {
+                    toolState.CommandText = PreferMeaningfulText(
+                        toolState.CommandText,
+                        ExtractCommandText(lensEvent.Item.Detail)) ?? string.Empty;
+                }
+                else if (normalizedType is "command_output" or "file_change_output")
+                {
+                    toolState.RawOutput = MergeTranscriptBody(toolState.RawOutput, lensEvent.Item.Detail);
+                }
+
+                entry.Title = ResolveToolEntryTitle(normalizedType, lensEvent.Item.Title, toolState.CommandText);
+                entry.Body = BuildToolScreenBody(
+                    normalizedType,
+                    toolState.CommandText,
+                    normalizedType is "command_output" or "file_change_output"
+                        ? toolState.RawOutput
+                        : MergeTranscriptBody(entry.Body, lensEvent.Item.Detail),
+                    streaming: !IsTerminalStatus(item.Status));
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 break;
         }
@@ -1909,6 +2173,46 @@ public sealed partial class SessionLensPulseService
         };
     }
 
+    private static bool ShouldIncludeInScreenHistoryLog(LensPulseTranscriptEntry entry)
+    {
+        return !string.IsNullOrWhiteSpace(entry.Body) ||
+               (entry.Attachments?.Count ?? 0) > 0 ||
+               entry.Kind is "request" or "system" or "notice";
+    }
+
+    private static string BuildScreenLogSignature(LensScreenLogDeltaRecord record)
+    {
+        var historySignature = string.Join(
+            "|",
+            record.HistoryUpserts.Select(static entry =>
+                string.Join(
+                    "::",
+                    entry.EntryId,
+                    entry.Kind,
+                    entry.ItemType ?? string.Empty,
+                    entry.Status,
+                    entry.Title,
+                    entry.Meta,
+                    entry.Body,
+                    entry.RenderMode,
+                    entry.CollapsedByDefault ? "1" : "0",
+                    entry.Streaming ? "1" : "0")));
+        var removalSignature = string.Join("|", record.HistoryRemovals);
+        return string.Join(
+            "||",
+            record.Session.State,
+            record.Session.StateLabel,
+            record.Session.Reason ?? string.Empty,
+            record.Session.LastError ?? string.Empty,
+            record.CurrentTurn.TurnId ?? string.Empty,
+            record.CurrentTurn.State,
+            record.CurrentTurn.StateLabel,
+            record.CurrentTurn.Model ?? string.Empty,
+            record.CurrentTurn.Effort ?? string.Empty,
+            historySignature,
+            removalSignature);
+    }
+
     private static string NormalizeHistoryKind(string? kind)
     {
         return string.IsNullOrWhiteSpace(kind) ? "system" : kind.Trim().ToLowerInvariant();
@@ -2050,6 +2354,7 @@ public sealed partial class SessionLensPulseService
         public LensConversationState State { get; } = new();
         public string? ScreenLogId { get; set; }
         public string? ScreenLogPath { get; set; }
+        public string? LastScreenLogSignature { get; set; }
     }
 
     private sealed class LensConversationState
@@ -2062,6 +2367,7 @@ public sealed partial class SessionLensPulseService
         public Dictionary<string, LensPulseTranscriptEntry> TranscriptEntries { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, LensPulseItemSummary> Items { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, LensPulseRequestSummary> Requests { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, LensToolRenderState> ToolRenderStates { get; } = new(StringComparer.Ordinal);
         public List<LensPulseRuntimeNotice> Notices { get; } = [];
         public long NextTranscriptOrder { get; set; }
     }
@@ -2074,6 +2380,12 @@ public sealed partial class SessionLensPulseService
     private sealed class LensPulseDeltaSubscriber(ChannelWriter<LensPulseDeltaResponse> writer)
     {
         public ChannelWriter<LensPulseDeltaResponse> Writer { get; } = writer;
+    }
+
+    private sealed class LensToolRenderState
+    {
+        public string CommandText { get; set; } = string.Empty;
+        public string RawOutput { get; set; } = string.Empty;
     }
 
     private sealed class LensScreenLogHeaderRecord

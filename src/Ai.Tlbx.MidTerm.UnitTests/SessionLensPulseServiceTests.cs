@@ -850,6 +850,72 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_SummarizesCommandAndFileReadOutputForScreenUse()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-start",
+            SessionId = "s-screen",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-29T09:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-start",
+            SessionId = "s-screen",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "cmd-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-29T09:00:01Z"),
+            Type = "item.started",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "command_execution",
+                Status = "in_progress",
+                Title = "Tool started",
+                Detail = "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'Get-Content .midterm/AGENTS.md'"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-out",
+            SessionId = "s-screen",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "cmd-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-29T09:00:02Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "command_output",
+                Delta = string.Join('\n', Enumerable.Range(1, 12).Select(index => $"line {index}"))
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-screen");
+        Assert.NotNull(snapshot);
+        var toolEntry = Assert.Single(snapshot!.Transcript, entry => entry.Kind == "tool");
+        Assert.Equal("Read file", toolEntry.Title);
+        Assert.Equal("command_output", toolEntry.ItemType);
+        Assert.Contains(".midterm/AGENTS.md", toolEntry.Body);
+        Assert.Contains("line 1", toolEntry.Body);
+        Assert.Contains("line 10", toolEntry.Body);
+        Assert.DoesNotContain("line 11", toolEntry.Body);
+        Assert.DoesNotContain("line 12", toolEntry.Body);
+        Assert.Contains("2 more lines omitted", toolEntry.Body);
+    }
+
+    [Fact]
     public void Append_WritesGuidNamedScreenLogWithRenderHintsInDevMode()
     {
         var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));
