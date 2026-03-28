@@ -583,6 +583,10 @@
                   <span class="icon">&#xe90d;</span>
                   <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
                 </button>
+                <button class="settings-tab" data-tab="agent-ui" role="tab" aria-selected="false">
+                  <span class="icon">&#xe925;</span>
+                  <span class="tab-label" data-i18n="settings.agentUi">Agent UI</span>
+                </button>
                 <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
                   <span class="icon">&#xe993;</span>
                   <span class="tab-label" data-i18n="settings.behavior">Behavior</span>
@@ -1546,6 +1550,60 @@
                   </div>
                 </section>
 
+                <!-- Agent UI Panel -->
+                <section class="settings-panel hidden" data-panel="agent-ui">
+                  <h2 data-i18n="settings.agentUi.title">Agent UI</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.agentUi.agentDefaults">Agent Defaults</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-codex-yolo-default"
+                        data-i18n="settings.agentUi.codexYoloDefault"
+                        >Enable Codex --yolo by default</label
+                      >
+                      <input type="checkbox" id="setting-codex-yolo-default" />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-codex-env" data-i18n="settings.agentUi.codexEnv"
+                        >Codex Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-codex-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-claude-dangerously-skip-permissions-default"
+                        data-i18n="settings.agentUi.claudeDangerouslySkipPermissionsDefault"
+                        >Enable Claude --dangerously-skip-permissions by default</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-claude-dangerously-skip-permissions-default"
+                      />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-claude-env" data-i18n="settings.agentUi.claudeEnv"
+                        >Claude Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-claude-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                  </div>
+                </section>
+
                 <!-- Behavior Panel -->
                 <section class="settings-panel hidden" data-panel="behavior">
                   <h2 data-i18n="settings.behavior.title">Behavior</h2>
@@ -1580,55 +1638,6 @@
                           <span class="icon">&#xe90f;</span>
                         </button>
                       </div>
-                    </div>
-                  </div>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.behavior.agentDefaults">Agent Defaults</h3>
-                    <div class="setting-row">
-                      <label
-                        for="setting-codex-yolo-default"
-                        data-i18n="settings.behavior.codexYoloDefault"
-                        >Enable Codex --yolo by default</label
-                      >
-                      <input type="checkbox" id="setting-codex-yolo-default" />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-codex-env" data-i18n="settings.behavior.codexEnv"
-                        >Codex Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-codex-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.behavior.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-claude-dangerously-skip-permissions-default"
-                        data-i18n="settings.behavior.claudeDangerouslySkipPermissionsDefault"
-                        >Enable Claude --dangerously-skip-permissions by default</label
-                      >
-                      <input
-                        type="checkbox"
-                        id="setting-claude-dangerously-skip-permissions-default"
-                      />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-claude-env" data-i18n="settings.behavior.claudeEnv"
-                        >Claude Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-claude-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.behavior.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
                     </div>
                   </div>
 

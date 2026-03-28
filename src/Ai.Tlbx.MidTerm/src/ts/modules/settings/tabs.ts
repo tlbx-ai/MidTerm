@@ -10,6 +10,7 @@ export type SettingsTab =
   | 'general'
   | 'hub'
   | 'appearance'
+  | 'agent-ui'
   | 'behavior'
   | 'security'
   | 'ide'
@@ -21,6 +22,7 @@ const VALID_TABS: SettingsTab[] = [
   'general',
   'hub',
   'appearance',
+  'agent-ui',
   'behavior',
   'security',
   'ide',

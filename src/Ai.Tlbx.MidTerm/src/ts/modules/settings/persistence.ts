@@ -1470,7 +1470,7 @@ function validateAgentEnvironmentInputs(): boolean {
       .find((line) => line.length > 0 && !ENVIRONMENT_VARIABLE_LINE_PATTERN.test(line));
 
     if (invalidLine) {
-      textarea.setCustomValidity(t('settings.behavior.agentEnvInvalid'));
+      textarea.setCustomValidity(t('settings.agentUi.agentEnvInvalid'));
       textarea.reportValidity();
       textarea.focus();
       return false;
