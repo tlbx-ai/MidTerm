@@ -205,39 +205,49 @@ function clearSessionEnterModifierLatch(sessionId: string): void {
   enterModifierLatches.delete(sessionId);
 }
 
-function getOwnedXtermTextarea(container: HTMLDivElement): HTMLTextAreaElement | null {
-  const activeElement = document.activeElement;
-  if (
-    activeElement instanceof HTMLTextAreaElement &&
-    activeElement.classList.contains('xterm-helper-textarea') &&
-    container.contains(activeElement)
-  ) {
-    return activeElement;
-  }
+function isTerminalInputOwnerElement(element: Element | null): element is HTMLTextAreaElement {
+  return (
+    element instanceof HTMLTextAreaElement &&
+    (element.classList.contains('xterm-helper-textarea') ||
+      element.classList.contains('midterm-terminal-input-proxy'))
+  );
+}
 
+function getOwnedXtermTextarea(container: HTMLDivElement): HTMLTextAreaElement | null {
   const textarea = container.querySelector('textarea.xterm-helper-textarea');
   return textarea instanceof HTMLTextAreaElement ? textarea : null;
 }
 
+function getOwnedTerminalInputProxy(container: HTMLDivElement): HTMLTextAreaElement | null {
+  const proxy = container.querySelector('textarea.midterm-terminal-input-proxy');
+  return proxy instanceof HTMLTextAreaElement ? proxy : null;
+}
+
+function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement | null {
+  const activeElement = document.activeElement;
+  if (isTerminalInputOwnerElement(activeElement) && container.contains(activeElement)) {
+    return activeElement;
+  }
+
+  if (isTerminalKeyAuditEnabled()) {
+    return getOwnedTerminalInputProxy(container) ?? getOwnedXtermTextarea(container);
+  }
+
+  return getOwnedXtermTextarea(container) ?? getOwnedTerminalInputProxy(container);
+}
+
 function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget | null): boolean {
-  if (
-    target instanceof HTMLTextAreaElement &&
-    target.classList.contains('xterm-helper-textarea') &&
-    container.contains(target)
-  ) {
+  if (isTerminalInputOwnerElement(target as Element | null) && container.contains(target as Node)) {
     return true;
   }
 
-  const ownedTextarea = getOwnedXtermTextarea(container);
-  return ownedTextarea !== null && document.activeElement === ownedTextarea;
+  const ownedInput = getOwnedTerminalInput(container);
+  return ownedInput !== null && document.activeElement === ownedInput;
 }
 
 function getFocusedTerminalSessionMatch(): { sessionId: string; container: HTMLDivElement } | null {
   const activeElement = document.activeElement;
-  if (
-    !(activeElement instanceof HTMLTextAreaElement) ||
-    !activeElement.classList.contains('xterm-helper-textarea')
-  ) {
+  if (!isTerminalInputOwnerElement(activeElement)) {
     return null;
   }
 
@@ -285,6 +295,21 @@ function tryHandleTerminalEnterOverride(
   event.stopImmediatePropagation();
   sendInput(sessionId, enterOverride);
   return true;
+}
+
+function focusTerminalInput(state: TerminalState): void {
+  if (isTerminalKeyAuditEnabled()) {
+    const proxy = state.inputProxy ?? getOwnedTerminalInputProxy(state.container);
+    if (proxy) {
+      proxy.focus({ preventScroll: true });
+      proxy.value = '';
+      refreshCursorBlink(state.terminal);
+      return;
+    }
+  }
+
+  state.terminal.focus();
+  refreshCursorBlink(state.terminal);
 }
 
 /**
@@ -381,8 +406,7 @@ export function focusActiveTerminal(): void {
 
     const state = sessionTerminals.get(activeId);
     if (state?.opened) {
-      state.terminal.focus();
-      refreshCursorBlink(state.terminal);
+      focusTerminalInput(state);
     }
   }, 16);
 }
@@ -575,6 +599,7 @@ export function createTerminalForSession(
     terminal: terminal,
     fitAddon: fitAddon,
     container: container,
+    inputProxy: null,
     serverCols: serverCols > 0 ? serverCols : 0,
     serverRows: serverRows > 0 ? serverRows : 0,
     opened: false,
@@ -603,6 +628,35 @@ export function createTerminalForSession(
     state.opened = true;
     syncEffectiveXtermThemeDomOverrides($currentSettings.get());
 
+    if (getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative';
+    }
+    const inputProxy = document.createElement('textarea');
+    inputProxy.className = 'midterm-terminal-input-proxy';
+    inputProxy.tabIndex = -1;
+    inputProxy.setAttribute('aria-label', 'Terminal input');
+    inputProxy.setAttribute('autocorrect', 'off');
+    inputProxy.autocapitalize = 'off';
+    inputProxy.spellcheck = false;
+    Object.assign(inputProxy.style, {
+      position: 'absolute',
+      inset: '0',
+      opacity: '0',
+      pointerEvents: 'none',
+      resize: 'none',
+      border: '0',
+      margin: '0',
+      padding: '0',
+      background: 'transparent',
+      color: 'transparent',
+      caretColor: 'transparent',
+      outline: 'none',
+      overflow: 'hidden',
+      zIndex: '5',
+    });
+    container.appendChild(inputProxy);
+    state.inputProxy = inputProxy;
+
     // Intercept xterm's internal textarea focus when Smart Input is active
     const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
     if (xtermTextarea) {
@@ -610,12 +664,21 @@ export function createTerminalForSession(
         if (isSmartInputMode()) {
           (xtermTextarea as HTMLTextAreaElement).blur();
           showSmartInput();
+          return;
+        }
+
+        if (isTerminalKeyAuditEnabled() && state.inputProxy) {
+          (xtermTextarea as HTMLTextAreaElement).blur();
+          state.inputProxy.focus({ preventScroll: true });
         }
       });
       xtermTextarea.addEventListener('blur', () => {
         clearSessionEnterModifierLatch(sessionId);
       });
     }
+    inputProxy.addEventListener('blur', () => {
+      clearSessionEnterModifierLatch(sessionId);
+    });
 
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
     // Other event handlers are set up later in setupTerminalEvents
@@ -1344,6 +1407,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   // Clean up file path allowlist
   clearPathAllowlist(sessionId);
 
+  state.inputProxy?.remove();
   state.terminal.dispose();
   state.container.remove();
   sessionTerminals.delete(sessionId);
