@@ -17,6 +17,7 @@ Rules:
 - Promotion path: use `scripts/promote.ps1` only with explicit approval.
 - Never run `scripts/promote.ps1`, create or push release tags, publish release artifacts, or merge release PRs without explicit approval.
 - For urgent fixes, implement and verify the change first, then stop before release or promotion unless the user explicitly says to continue.
+- For release tasks, the final stop message must end by showing the release contents. Prefer dumping the same changelog entries that were passed to the release script.
 
 ## Terminal Design Constraints
 
