@@ -1,30 +1,38 @@
 using System.Collections.Concurrent;
-using System.Threading.Channels;
 using System.Text;
+using System.Text.Json;
+using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionLensPulseService
 {
-    private const int MaxEventsPerSession = 600;
+    private const int DefaultHistoryWindowSize = 80;
     private readonly ConcurrentDictionary<string, SessionLensPulseLog> _logs = new(StringComparer.Ordinal);
+    private readonly string _storeDirectory;
+
+    public SessionLensPulseService(SettingsService? settingsService = null, string? storeDirectory = null)
+    {
+        _storeDirectory = storeDirectory ??
+                          (settingsService is not null
+                              ? Path.Combine(settingsService.SettingsDirectory, "lens-history")
+                              : Path.Combine(Path.GetTempPath(), "midterm-lens-history", Guid.NewGuid().ToString("N")));
+        Directory.CreateDirectory(_storeDirectory);
+    }
 
     public void Append(LensPulseEvent lensEvent)
     {
         ArgumentNullException.ThrowIfNull(lensEvent);
 
-        var log = _logs.GetOrAdd(lensEvent.SessionId, static sessionId => new SessionLensPulseLog(sessionId));
+        var log = GetOrLoadLog(lensEvent.SessionId);
         lock (log.SyncRoot)
         {
             lensEvent.Sequence = ++log.NextSequence;
             log.Events.Add(lensEvent);
-            if (log.Events.Count > MaxEventsPerSession)
-            {
-                log.Events.RemoveRange(0, log.Events.Count - MaxEventsPerSession);
-            }
-
             ApplyEvent(log.State, lensEvent);
+            PersistEvent(log.SessionId, lensEvent);
 
             var staleSubscribers = new List<LensPulseSubscriber>();
             foreach (var subscriber in log.Subscribers)
@@ -49,7 +57,7 @@ public sealed class SessionLensPulseService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var log = _logs.GetOrAdd(sessionId, static id => new SessionLensPulseLog(id));
+        var log = GetOrLoadLog(sessionId);
         var channel = Channel.CreateUnbounded<LensPulseEvent>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -103,7 +111,7 @@ public sealed class SessionLensPulseService
 
     public LensPulseEventListResponse GetEvents(string sessionId, long afterSequence = 0)
     {
-        if (!_logs.TryGetValue(sessionId, out var log))
+        if (!TryGetLog(sessionId, out var log))
         {
             return new LensPulseEventListResponse
             {
@@ -127,7 +135,7 @@ public sealed class SessionLensPulseService
 
     public bool HasHistory(string sessionId)
     {
-        if (!_logs.TryGetValue(sessionId, out var log))
+        if (!TryGetLog(sessionId, out var log))
         {
             return false;
         }
@@ -140,7 +148,7 @@ public sealed class SessionLensPulseService
 
     public LensPulseSnapshotResponse? GetSnapshot(string sessionId)
     {
-        if (!_logs.TryGetValue(sessionId, out var log))
+        if (!TryGetLog(sessionId, out var log))
         {
             return null;
         }
@@ -151,7 +159,29 @@ public sealed class SessionLensPulseService
             {
                 return null;
             }
-            return CloneSnapshot(sessionId, log.NextSequence, log.State);
+            return CloneSnapshot(sessionId, log.NextSequence, log.State, 0, null);
+        }
+    }
+
+    public LensPulseSnapshotResponse? GetSnapshotWindow(string sessionId, int? startIndex = null, int? count = null)
+    {
+        if (!TryGetLog(sessionId, out var log))
+        {
+            return null;
+        }
+
+        lock (log.SyncRoot)
+        {
+            if (log.Events.Count == 0)
+            {
+                return null;
+            }
+
+            var totalCount = log.State.TranscriptEntries.Count;
+            var boundedCount = Math.Max(1, count ?? DefaultHistoryWindowSize);
+            var effectiveStart = startIndex ?? Math.Max(0, totalCount - boundedCount);
+            effectiveStart = Math.Clamp(effectiveStart, 0, Math.Max(0, totalCount - 1));
+            return CloneSnapshot(sessionId, log.NextSequence, log.State, effectiveStart, boundedCount);
         }
     }
 
@@ -168,7 +198,93 @@ public sealed class SessionLensPulseService
 
                 log.Subscribers.Clear();
             }
+
+            TryDeleteStore(sessionId);
         }
+    }
+
+    private bool TryGetLog(string sessionId, out SessionLensPulseLog log)
+    {
+        if (_logs.TryGetValue(sessionId, out log!))
+        {
+            return true;
+        }
+
+        if (TryLoadLog(sessionId, out var loaded))
+        {
+            log = _logs.GetOrAdd(sessionId, loaded);
+            return true;
+        }
+
+        log = null!;
+        return false;
+    }
+
+    private SessionLensPulseLog GetOrLoadLog(string sessionId)
+    {
+        return _logs.GetOrAdd(sessionId, LoadLog);
+    }
+
+    private SessionLensPulseLog LoadLog(string sessionId)
+    {
+        if (TryLoadLog(sessionId, out var log))
+        {
+            return log;
+        }
+
+        return new SessionLensPulseLog(sessionId);
+    }
+
+    private bool TryLoadLog(string sessionId, out SessionLensPulseLog log)
+    {
+        log = new SessionLensPulseLog(sessionId);
+        var path = GetStorePath(sessionId);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        foreach (var line in File.ReadLines(path, Encoding.UTF8))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var lensEvent = JsonSerializer.Deserialize(line, LensHostJsonContext.Default.LensPulseEvent);
+            if (lensEvent is null)
+            {
+                continue;
+            }
+
+            log.Events.Add(lensEvent);
+            log.NextSequence = Math.Max(log.NextSequence, lensEvent.Sequence);
+            ApplyEvent(log.State, lensEvent);
+        }
+
+        return log.Events.Count > 0;
+    }
+
+    private void PersistEvent(string sessionId, LensPulseEvent lensEvent)
+    {
+        var path = GetStorePath(sessionId);
+        var payload = JsonSerializer.Serialize(lensEvent, LensHostJsonContext.Default.LensPulseEvent);
+        File.AppendAllText(path, payload + Environment.NewLine, Encoding.UTF8);
+    }
+
+    private void TryDeleteStore(string sessionId)
+    {
+        var path = GetStorePath(sessionId);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+
+    private string GetStorePath(string sessionId)
+    {
+        var safeName = Uri.EscapeDataString(sessionId);
+        return Path.Combine(_storeDirectory, $"{safeName}.ndjson");
     }
 
     private static void ApplyEvent(LensConversationState state, LensPulseEvent lensEvent)
@@ -231,22 +347,50 @@ public sealed class SessionLensPulseService
         }
     }
 
-    private static LensPulseSnapshotResponse CloneSnapshot(string sessionId, long latestSequence, LensConversationState state)
+    private static LensPulseSnapshotResponse CloneSnapshot(
+        string sessionId,
+        long latestSequence,
+        LensConversationState state,
+        int historyWindowStart,
+        int? historyWindowCount)
     {
+        var orderedHistory = state.TranscriptEntries.Values
+            .OrderBy(entry => entry.Order)
+            .ToList();
+        var totalHistoryCount = orderedHistory.Count;
+        var boundedStart = Math.Clamp(historyWindowStart, 0, totalHistoryCount == 0 ? 0 : totalHistoryCount - 1);
+        var boundedCount = historyWindowCount is null
+            ? totalHistoryCount
+            : Math.Max(1, historyWindowCount.Value);
+        if (totalHistoryCount == 0)
+        {
+            boundedStart = 0;
+            boundedCount = 0;
+        }
+
+        var historySlice = orderedHistory
+            .Skip(boundedStart)
+            .Take(boundedCount)
+            .Select(CloneTranscriptEntry)
+            .ToList();
+        var historyWindowEnd = boundedStart + historySlice.Count;
+
         return new LensPulseSnapshotResponse
         {
             SessionId = sessionId,
             Provider = state.Provider,
             GeneratedAt = state.Session.LastEventAt ?? DateTimeOffset.UtcNow,
             LatestSequence = latestSequence,
+            TotalHistoryCount = totalHistoryCount,
+            HistoryWindowStart = boundedStart,
+            HistoryWindowEnd = historyWindowEnd,
+            HasOlderHistory = boundedStart > 0,
+            HasNewerHistory = historyWindowEnd < totalHistoryCount,
             Session = CloneSessionSummary(state.Session),
             Thread = CloneThreadSummary(state.Thread),
             CurrentTurn = CloneTurnSummary(state.CurrentTurn),
             Streams = CloneStreamsSummary(state.Streams),
-            Transcript = state.TranscriptEntries.Values
-                .OrderBy(entry => entry.Order)
-                .Select(CloneTranscriptEntry)
-                .ToList(),
+            Transcript = historySlice,
             Items = state.Items.Values
                 .OrderByDescending(item => item.UpdatedAt)
                 .Select(CloneItemSummary)

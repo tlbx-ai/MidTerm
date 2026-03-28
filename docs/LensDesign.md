@@ -80,6 +80,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Lens must not retain thousands of history nodes in the live DOM.
 - Once the visible history grows beyond roughly 50 rendered items, older items should be virtualized out of the active DOM window.
 - Virtualization must preserve stable scroll behavior and not break streaming updates at the bottom.
+- Lens history transport should be window-aware: MidTerm may deliver only the currently materialized history slice plus total-count/window metadata, and the UI should request older or newer slices on demand instead of assuming the full history is resident in the browser.
 
 ### 7. Responsive behavior
 
@@ -103,6 +104,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Lens should auto-follow the live edge by default.
 - If the user scrolls away from the bottom, automatic scrolling must stop immediately.
 - Automatic scrolling may resume only after the user reaches the bottom again or explicitly presses a "back to bottom" control.
+- When the user seeks into older history, Lens should expand or shift the history window deterministically without resetting the live Lens session or replaying the entire history from scratch.
 
 ### 11. Terminal-font monospace usage
 

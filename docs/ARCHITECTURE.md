@@ -249,6 +249,18 @@ The correct architectural direction is therefore:
 - `mthost` is for real terminals; `mtagenthost` is for explicit provider Lens sessions
 - canonical Lens events bridge the runtime and the web UI
 
+### Lens Sync Transport
+
+Lens sync is now owned by a dedicated `/ws/lens` channel rather than REST snapshot polling plus SSE.
+
+- HTTP remains for explicit Lens session creation/bootstrap only
+- after session start, Lens attach, snapshot reads, history window reads, turn submission, interrupts, approvals, and user-input answers all flow through `/ws/lens`
+- `mt` remains the state master and durable owner of canonical Lens history plus the derived live read model
+- the browser keeps one multiplexed Lens socket and can subscribe to many Lens sessions at once
+- Lens history is synchronized as a windowed read model, not as a full-history replay on every reconnect
+- reconnect starts from a fresh bounded history window, usually anchored at the live bottom, then resumes ordered live events
+- the frontend stays provider-neutral and does not reconstruct Lens state from PTY output or provider-specific raw transports
+
 ### Lens UX Target And DOD
 
 The intended Definition of Done for provider-backed Lens sessions is:

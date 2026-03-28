@@ -164,6 +164,11 @@ public sealed class LensPulseSnapshotResponse
     public string Provider { get; set; } = string.Empty;
     public DateTimeOffset GeneratedAt { get; set; }
     public long LatestSequence { get; set; }
+    public int TotalHistoryCount { get; set; }
+    public int HistoryWindowStart { get; set; }
+    public int HistoryWindowEnd { get; set; }
+    public bool HasOlderHistory { get; set; }
+    public bool HasNewerHistory { get; set; }
     public LensPulseSessionSummary Session { get; set; } = new();
     public LensPulseThreadSummary Thread { get; set; } = new();
     public LensPulseTurnSummary CurrentTurn { get; set; } = new();
@@ -313,6 +318,95 @@ public sealed class LensCommandAcceptedResponse
     public string? TurnId { get; set; }
 }
 
+public sealed class LensSnapshotWindowRequest
+{
+    public int? StartIndex { get; set; }
+    public int? Count { get; set; }
+}
+
+public sealed class LensEventsRequest
+{
+    public long AfterSequence { get; set; }
+}
+
+public sealed class LensWsRequestMessage
+{
+    public string Type { get; set; } = "request";
+    public string Id { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string SessionId { get; set; } = string.Empty;
+    public long? AfterSequence { get; set; }
+    public string? RequestId { get; set; }
+    public LensSnapshotWindowRequest? SnapshotWindow { get; set; }
+    public LensTurnRequest? Turn { get; set; }
+    public LensInterruptRequest? Interrupt { get; set; }
+    public LensRequestDecisionRequest? RequestDecision { get; set; }
+    public LensUserInputAnswerRequest? UserInputAnswer { get; set; }
+}
+
+public sealed class LensWsSubscriptionMessage
+{
+    public string Type { get; set; } = "subscribe";
+    public string SessionId { get; set; } = string.Empty;
+    public long AfterSequence { get; set; }
+}
+
+public sealed class LensWsAckMessage
+{
+    public string Type { get; set; } = "ack";
+    public string Id { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string SessionId { get; set; } = string.Empty;
+}
+
+public sealed class LensWsErrorMessage
+{
+    public string Type { get; set; } = "error";
+    public string? Id { get; set; }
+    public string? Action { get; set; }
+    public string? SessionId { get; set; }
+    public string Message { get; set; } = string.Empty;
+}
+
+public sealed class LensWsSnapshotMessage
+{
+    public string Type { get; set; } = "snapshot";
+    public string? Id { get; set; }
+    public string SessionId { get; set; } = string.Empty;
+    public LensPulseSnapshotResponse Snapshot { get; set; } = new();
+}
+
+public sealed class LensWsEventsMessage
+{
+    public string Type { get; set; } = "events";
+    public string? Id { get; set; }
+    public string SessionId { get; set; } = string.Empty;
+    public LensPulseEventListResponse Events { get; set; } = new();
+}
+
+public sealed class LensWsEventMessage
+{
+    public string Type { get; set; } = "event";
+    public string SessionId { get; set; } = string.Empty;
+    public LensPulseEvent Event { get; set; } = new();
+}
+
+public sealed class LensWsTurnStartedMessage
+{
+    public string Type { get; set; } = "turnStarted";
+    public string Id { get; set; } = string.Empty;
+    public string SessionId { get; set; } = string.Empty;
+    public LensTurnStartResponse Response { get; set; } = new();
+}
+
+public sealed class LensWsCommandAcceptedMessage
+{
+    public string Type { get; set; } = "commandAccepted";
+    public string Id { get; set; } = string.Empty;
+    public string SessionId { get; set; } = string.Empty;
+    public LensCommandAcceptedResponse Response { get; set; } = new();
+}
+
 public sealed class LensHostHello
 {
     public string ProtocolVersion { get; set; } = LensHostProtocol.CurrentVersion;
@@ -392,6 +486,17 @@ public sealed class LensHostEventEnvelope
 [JsonSerializable(typeof(LensRequestDecisionRequest))]
 [JsonSerializable(typeof(LensUserInputAnswerRequest))]
 [JsonSerializable(typeof(LensCommandAcceptedResponse))]
+[JsonSerializable(typeof(LensSnapshotWindowRequest))]
+[JsonSerializable(typeof(LensEventsRequest))]
+[JsonSerializable(typeof(LensWsRequestMessage))]
+[JsonSerializable(typeof(LensWsSubscriptionMessage))]
+[JsonSerializable(typeof(LensWsAckMessage))]
+[JsonSerializable(typeof(LensWsErrorMessage))]
+[JsonSerializable(typeof(LensWsSnapshotMessage))]
+[JsonSerializable(typeof(LensWsEventsMessage))]
+[JsonSerializable(typeof(LensWsEventMessage))]
+[JsonSerializable(typeof(LensWsTurnStartedMessage))]
+[JsonSerializable(typeof(LensWsCommandAcceptedMessage))]
 [JsonSerializable(typeof(LensPulseEvent))]
 [JsonSerializable(typeof(List<LensPulseEvent>))]
 [JsonSerializable(typeof(LensPulseEventRaw))]

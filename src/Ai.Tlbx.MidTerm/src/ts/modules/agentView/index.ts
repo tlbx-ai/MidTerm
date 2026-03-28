@@ -43,6 +43,9 @@ const viewStates = new Map<string, SessionLensViewState>();
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const HISTORY_OVERSCAN_PX = 800;
 const HISTORY_VIRTUALIZE_AFTER = 50;
+const LENS_HISTORY_WINDOW_SIZE = 80;
+const LENS_HISTORY_PAGE_SIZE = 40;
+const LENS_HISTORY_FETCH_THRESHOLD_PX = 240;
 const FOREGROUND_SNAPSHOT_REFRESH_DELAY_MS = 120;
 const BACKGROUND_SNAPSHOT_REFRESH_DELAY_MS = 450;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
@@ -57,6 +60,8 @@ interface SessionLensViewState {
   activationRunId: number;
   historyViewport: HTMLDivElement | null;
   historyEntries: LensHistoryEntry[];
+  historyWindowStart: number;
+  historyWindowCount: number;
   disconnectStream: (() => void) | null;
   streamConnected: boolean;
   refreshScheduled: number | null;
@@ -87,6 +92,7 @@ interface SessionLensViewState {
   historyTopSpacer: HTMLDivElement | null;
   historyBottomSpacer: HTMLDivElement | null;
   historyEmptyState: HTMLDivElement | null;
+  pendingHistoryPrependOffsetPx: number;
 }
 
 interface PendingLensTurn {
@@ -550,6 +556,7 @@ async function tryLoadReadonlyLensHistory(
 ): Promise<boolean> {
   try {
     const snapshot = await getLensSnapshot(sessionId);
+    applyLensSnapshotWindowState(state, snapshot);
     ensureLensActivationIsCurrent(state, activationRunId);
     const hasSnapshotHistory = hasRenderableLensHistory(snapshot);
     let events: LensPulseEvent[] = [];
@@ -614,6 +621,8 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     activationRunId: 0,
     historyViewport: null,
     historyEntries: [],
+    historyWindowStart: 0,
+    historyWindowCount: LENS_HISTORY_WINDOW_SIZE,
     disconnectStream: null,
     streamConnected: false,
     refreshScheduled: null,
@@ -636,6 +645,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyTopSpacer: null,
     historyBottomSpacer: null,
     historyEmptyState: null,
+    pendingHistoryPrependOffsetPx: 0,
   };
 
   viewStates.set(sessionId, created);
@@ -855,6 +865,11 @@ function buildLensDebugScenario(
       provider: 'codex',
       generatedAt: at(0),
       latestSequence: 500,
+      totalHistoryCount: items.length,
+      historyWindowStart: 0,
+      historyWindowEnd: items.length,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
       session: {
         state: currentTurnState === 'running' ? 'running' : 'ready',
         stateLabel: currentTurnState === 'running' ? 'Running' : 'Ready',
@@ -944,34 +959,8 @@ function buildDebugScenarioHistory(args: {
   turnId: string;
   currentTurnState: string;
   currentTurnStateLabel: string;
-  items: Array<{
-    itemId: string;
-    turnId: string | null;
-    itemType: string;
-    status: string;
-    title: string | null;
-    detail: string | null;
-    attachments: LensAttachmentReference[];
-    updatedAt: string;
-  }>;
-  requests: Array<{
-    requestId: string;
-    turnId: string | null;
-    kind: string;
-    kindLabel: string;
-    state: string;
-    detail: string | null;
-    decision: string | null;
-    questions: Array<{
-      id: string;
-      question: string;
-      header: string;
-      multiSelect: boolean;
-      options: Array<{ label: string; description: string }>;
-    }>;
-    answers: Array<{ questionId: string; answers: string[] }>;
-    updatedAt: string;
-  }>;
+  items: LensPulseSnapshotResponse['items'];
+  requests: LensPulseSnapshotResponse['requests'];
   assistantText: string;
   reasoningText: string;
   reasoningSummaryText: string;
@@ -988,12 +977,12 @@ function buildDebugScenarioHistory(args: {
       entryId: `${historyKindFromItem(item.itemType)}:${item.turnId || item.itemId}`,
       order: order++,
       kind: historyKindFromItem(item.itemType),
-      turnId: item.turnId,
+      turnId: item.turnId ?? null,
       itemId: item.itemId,
       requestId: null,
       status: item.status,
       itemType: item.itemType,
-      title: item.title,
+      title: item.title ?? null,
       body: item.detail || '',
       attachments: cloneHistoryAttachments(item.attachments),
       streaming: false,
@@ -1041,7 +1030,7 @@ function buildDebugScenarioHistory(args: {
       entryId: `request:${request.requestId}`,
       order: order++,
       kind: 'request',
-      turnId: request.turnId,
+      turnId: request.turnId ?? null,
       itemId: null,
       requestId: request.requestId,
       status: request.state,
@@ -1117,6 +1106,24 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       scrollHeight: currentViewport.scrollHeight,
     });
     renderScrollToBottomControl(current.panel, current);
+
+    if (
+      current.snapshot?.hasOlderHistory &&
+      currentViewport.scrollTop <= LENS_HISTORY_FETCH_THRESHOLD_PX
+    ) {
+      void loadOlderLensHistoryWindow(sessionId, current);
+    }
+
+    if (
+      current.snapshot?.hasNewerHistory &&
+      isScrollContainerNearBottom({
+        scrollTop: currentViewport.scrollTop,
+        clientHeight: currentViewport.clientHeight,
+        scrollHeight: currentViewport.scrollHeight,
+      })
+    ) {
+      void loadLatestLensHistoryWindow(sessionId, current);
+    }
 
     if (current.historyEntries.length > HISTORY_VIRTUALIZE_AFTER) {
       scheduleHistoryRender(sessionId);
@@ -1223,7 +1230,13 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
 
   state.refreshInFlight = true;
   try {
-    state.snapshot = await getLensSnapshot(sessionId);
+    const nextSnapshot = await getLensSnapshot(
+      sessionId,
+      state.historyWindowStart,
+      state.historyWindowCount,
+    );
+    applyLensSnapshotWindowState(state, nextSnapshot);
+    state.snapshot = nextSnapshot;
     if (state.activationState !== 'ready') {
       setActivationState(
         state,
@@ -1255,6 +1268,79 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
   } finally {
     state.refreshInFlight = false;
   }
+}
+
+async function loadOlderLensHistoryWindow(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<void> {
+  if (state.refreshInFlight || !state.snapshot?.hasOlderHistory) {
+    return;
+  }
+
+  const nextStart = Math.max(0, state.historyWindowStart - LENS_HISTORY_PAGE_SIZE);
+  const existingWindowStart = state.historyWindowStart;
+  if (nextStart === existingWindowStart) {
+    return;
+  }
+
+  state.refreshInFlight = true;
+  try {
+    const nextWindowCount = state.historyWindowCount + (existingWindowStart - nextStart);
+    const nextSnapshot = await getLensSnapshot(sessionId, nextStart, nextWindowCount);
+    const nextWindowStart = nextSnapshot.historyWindowStart;
+    const prependedEntries = nextSnapshot.transcript.slice(
+      0,
+      Math.max(0, existingWindowStart - nextWindowStart),
+    );
+    state.pendingHistoryPrependOffsetPx = prependedEntries.reduce(
+      (sum, entry) => sum + estimateHistoryEntryHeight(mapSnapshotEntryToHistoryEntry(entry)),
+      0,
+    );
+    applyLensSnapshotWindowState(state, nextSnapshot);
+    state.snapshot = nextSnapshot;
+    renderCurrentAgentView(sessionId);
+  } catch (error) {
+    log.warn(() => `Failed to load older Lens history for ${sessionId}: ${String(error)}`);
+  } finally {
+    state.refreshInFlight = false;
+  }
+}
+
+async function loadLatestLensHistoryWindow(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<void> {
+  if (state.refreshInFlight || !state.snapshot?.hasNewerHistory) {
+    return;
+  }
+
+  state.refreshInFlight = true;
+  try {
+    const nextSnapshot = await getLensSnapshot(sessionId, undefined, state.historyWindowCount);
+    applyLensSnapshotWindowState(state, nextSnapshot);
+    state.snapshot = nextSnapshot;
+    renderCurrentAgentView(sessionId);
+  } catch (error) {
+    log.warn(() => `Failed to load latest Lens history for ${sessionId}: ${String(error)}`);
+  } finally {
+    state.refreshInFlight = false;
+  }
+}
+
+function applyLensSnapshotWindowState(
+  state: SessionLensViewState,
+  snapshot: LensPulseSnapshotResponse,
+): void {
+  const windowStart =
+    typeof snapshot.historyWindowStart === 'number' ? snapshot.historyWindowStart : 0;
+  const windowEnd =
+    typeof snapshot.historyWindowEnd === 'number'
+      ? snapshot.historyWindowEnd
+      : windowStart + snapshot.transcript.length;
+  const windowSize = Math.max(0, windowEnd - windowStart);
+  state.historyWindowStart = windowStart;
+  state.historyWindowCount = Math.max(windowSize, LENS_HISTORY_WINDOW_SIZE);
 }
 
 function renderCurrentAgentView(
@@ -1513,6 +1599,14 @@ function renderHistory(
   const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
   reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
 
+  if (state && state.pendingHistoryPrependOffsetPx > 0 && !state.historyAutoScrollPinned) {
+    const restoreOffset = state.pendingHistoryPrependOffsetPx;
+    state.pendingHistoryPrependOffsetPx = 0;
+    window.requestAnimationFrame(() => {
+      viewport.scrollTop += restoreOffset;
+    });
+  }
+
   if (state?.historyAutoScrollPinned) {
     window.requestAnimationFrame(() => {
       const viewport = state.historyViewport;
@@ -1594,11 +1688,26 @@ function buildHistoryRenderPlan(
     metrics.clientHeight,
     metrics.clientWidth,
   );
+  const remoteAverageHeight =
+    entries.length > 0
+      ? entries.reduce(
+          (sum, entry) => sum + estimateHistoryEntryHeight(entry, metrics.clientWidth),
+          0,
+        ) / entries.length
+      : 92;
+  const remoteTopSpacerPx = Math.max(
+    0,
+    Math.round((state?.snapshot?.historyWindowStart ?? 0) * remoteAverageHeight),
+  );
+  const totalHistoryCount = state?.snapshot?.totalHistoryCount ?? entries.length;
+  const historyWindowEnd = state?.snapshot?.historyWindowEnd ?? entries.length;
+  const remoteBottomCount = Math.max(0, totalHistoryCount - historyWindowEnd);
+  const remoteBottomSpacerPx = Math.max(0, Math.round(remoteBottomCount * remoteAverageHeight));
 
   return {
     emptyStateText: null,
-    topSpacerPx: virtualWindow.topSpacerPx,
-    bottomSpacerPx: virtualWindow.bottomSpacerPx,
+    topSpacerPx: remoteTopSpacerPx + virtualWindow.topSpacerPx,
+    bottomSpacerPx: remoteBottomSpacerPx + virtualWindow.bottomSpacerPx,
     visibleEntries: entries
       .slice(virtualWindow.start, virtualWindow.end)
       .map((entry, visibleIndex) => {
@@ -1951,30 +2060,7 @@ function buildCanonicalSnapshotHistoryEntries(
   }
 
   return historyEntries
-    .map((entry) => {
-      const kind = normalizeSnapshotHistoryKind(entry.kind);
-      const statusLabel = entry.streaming
-        ? lensText('lens.status.streaming', 'Streaming')
-        : prettify(entry.status || kind);
-      const mapped: LensHistoryEntry = {
-        id: entry.entryId,
-        order: entry.order,
-        kind,
-        tone: toneFromState(entry.status),
-        label: historyLabel(kind),
-        title: entry.title || '',
-        body: entry.body || '',
-        meta: formatHistoryMeta(kind, statusLabel, entry.updatedAt),
-        attachments: cloneHistoryAttachments(entry.attachments),
-        live: entry.streaming,
-        sourceItemId: entry.itemId,
-        sourceTurnId: entry.turnId,
-      };
-      if (entry.requestId) {
-        mapped.requestId = entry.requestId;
-      }
-      return mapped;
-    })
+    .map(mapSnapshotEntryToHistoryEntry)
     .filter(
       (entry) =>
         entry.body.trim() ||
@@ -1984,6 +2070,32 @@ function buildCanonicalSnapshotHistoryEntries(
         entry.kind === 'notice',
     )
     .sort((left, right) => left.order - right.order);
+}
+
+function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHistoryEntry {
+  const kind = normalizeSnapshotHistoryKind(entry.kind);
+  const statusLabel = entry.streaming
+    ? lensText('lens.status.streaming', 'Streaming')
+    : prettify(entry.status || kind);
+  const mapped: LensHistoryEntry = {
+    id: entry.entryId,
+    order: entry.order,
+    kind,
+    tone: toneFromState(entry.status),
+    label: historyLabel(kind),
+    title: entry.title || '',
+    body: entry.body || '',
+    meta: formatHistoryMeta(kind, statusLabel, entry.updatedAt),
+    attachments: cloneHistoryAttachments(entry.attachments),
+    live: entry.streaming,
+    sourceItemId: entry.itemId ?? null,
+    sourceTurnId: entry.turnId ?? null,
+  };
+  if (entry.requestId) {
+    mapped.requestId = entry.requestId;
+  }
+
+  return mapped;
 }
 
 /**
@@ -3199,7 +3311,10 @@ async function waitForInitialLensSnapshot(
   for (let attempt = 1; attempt <= 12; attempt += 1) {
     ensureLensActivationIsCurrent(state, activationRunId);
     try {
-      const snapshot = await getLensSnapshot(sessionId);
+      const snapshot = state.snapshot
+        ? await getLensSnapshot(sessionId, state.historyWindowStart, state.historyWindowCount)
+        : await getLensSnapshot(sessionId);
+      applyLensSnapshotWindowState(state, snapshot);
       ensureLensActivationIsCurrent(state, activationRunId);
       if (attempt > 1) {
         appendActivationTrace(

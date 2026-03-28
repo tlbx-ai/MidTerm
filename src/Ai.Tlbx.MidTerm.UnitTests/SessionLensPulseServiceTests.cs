@@ -237,6 +237,45 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshotWindow_ReturnsTailWindowMetadata()
+    {
+        var service = new SessionLensPulseService();
+
+        for (var i = 0; i < 12; i += 1)
+        {
+            service.Append(new LensPulseEvent
+            {
+                EventId = $"e{i}",
+                SessionId = "s-window",
+                Provider = "codex",
+                ThreadId = "thread-window",
+                ItemId = $"item-{i}",
+                CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:00Z").AddSeconds(i),
+                Type = "item.completed",
+                Item = new LensPulseItemPayload
+                {
+                    ItemType = i % 2 == 0 ? "user_message" : "assistant_message",
+                    Status = "completed",
+                    Title = "Message",
+                    Detail = $"entry-{i}"
+                }
+            });
+        }
+
+        var snapshot = service.GetSnapshotWindow("s-window", count: 5);
+
+        Assert.NotNull(snapshot);
+        Assert.Equal(12, snapshot!.TotalHistoryCount);
+        Assert.Equal(7, snapshot.HistoryWindowStart);
+        Assert.Equal(12, snapshot.HistoryWindowEnd);
+        Assert.True(snapshot.HasOlderHistory);
+        Assert.False(snapshot.HasNewerHistory);
+        Assert.Equal(5, snapshot.Transcript.Count);
+        Assert.Equal("entry-7", snapshot.Transcript[0].Body);
+        Assert.Equal("entry-11", snapshot.Transcript[^1].Body);
+    }
+
+    [Fact]
     public void GetSnapshot_ResetsStreamingBuffersWhenANewTurnStarts()
     {
         var service = new SessionLensPulseService();
