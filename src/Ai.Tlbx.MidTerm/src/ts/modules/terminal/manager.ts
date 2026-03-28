@@ -165,12 +165,43 @@ function clearSessionEnterModifierLatch(sessionId: string): void {
   enterModifierLatches.delete(sessionId);
 }
 
+function getOwnedXtermTextarea(container: HTMLDivElement): HTMLTextAreaElement | null {
+  const activeElement = document.activeElement;
+  if (
+    activeElement instanceof HTMLTextAreaElement &&
+    activeElement.classList.contains('xterm-helper-textarea') &&
+    container.contains(activeElement)
+  ) {
+    return activeElement;
+  }
+
+  const textarea = container.querySelector('textarea.xterm-helper-textarea');
+  return textarea instanceof HTMLTextAreaElement ? textarea : null;
+}
+
 function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget | null): boolean {
-  return (
+  if (
     target instanceof HTMLTextAreaElement &&
     target.classList.contains('xterm-helper-textarea') &&
     container.contains(target)
-  );
+  ) {
+    return true;
+  }
+
+  const ownedTextarea = getOwnedXtermTextarea(container);
+  return ownedTextarea !== null && document.activeElement === ownedTextarea;
+}
+
+function shouldCaptureTerminalDocumentKey(
+  sessionId: string,
+  container: HTMLDivElement,
+  target: EventTarget | null,
+): boolean {
+  if ($activeSessionId.get() !== sessionId) {
+    return false;
+  }
+
+  return shouldCaptureTerminalKey(container, target);
 }
 
 function tryHandleTerminalEnterOverride(
@@ -730,14 +761,37 @@ export function setupTerminalEvents(
   const enterOverrideHandler = (event: KeyboardEvent) => {
     tryHandleTerminalEnterOverride(sessionId, event, container);
   };
+  const documentEnterOverrideHandler = (event: KeyboardEvent) => {
+    if (!shouldCaptureTerminalDocumentKey(sessionId, container, event.target)) {
+      return;
+    }
+
+    tryHandleTerminalEnterOverride(sessionId, event);
+  };
   const enterModifierKeydownHandler = (event: KeyboardEvent) => {
     updateSessionEnterModifierLatch(sessionId, event, container);
   };
   const enterModifierKeyupHandler = (event: KeyboardEvent) => {
     updateSessionEnterModifierLatch(sessionId, event, container);
   };
+  const documentEnterModifierKeydownHandler = (event: KeyboardEvent) => {
+    if (!shouldCaptureTerminalDocumentKey(sessionId, container, event.target)) {
+      return;
+    }
+
+    updateSessionEnterModifierLatch(sessionId, event);
+  };
+  const documentEnterModifierKeyupHandler = (event: KeyboardEvent) => {
+    if (!shouldCaptureTerminalDocumentKey(sessionId, container, event.target)) {
+      return;
+    }
+
+    updateSessionEnterModifierLatch(sessionId, event);
+  };
   container.addEventListener('keydown', enterModifierKeydownHandler, true);
   container.addEventListener('keyup', enterModifierKeyupHandler, true);
+  document.addEventListener('keydown', documentEnterModifierKeydownHandler, true);
+  document.addEventListener('keyup', documentEnterModifierKeyupHandler, true);
   disposables.push({
     dispose: () => {
       container.removeEventListener('keydown', enterModifierKeydownHandler, true);
@@ -748,7 +802,23 @@ export function setupTerminalEvents(
       container.removeEventListener('keyup', enterModifierKeyupHandler, true);
     },
   });
+  disposables.push({
+    dispose: () => {
+      document.removeEventListener('keydown', documentEnterModifierKeydownHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      document.removeEventListener('keyup', documentEnterModifierKeyupHandler, true);
+    },
+  });
   container.addEventListener('keydown', enterOverrideHandler, true);
+  document.addEventListener('keydown', documentEnterOverrideHandler, true);
+  disposables.push({
+    dispose: () => {
+      document.removeEventListener('keydown', documentEnterOverrideHandler, true);
+    },
+  });
 
   // Keyboard shortcuts for copy/paste
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
