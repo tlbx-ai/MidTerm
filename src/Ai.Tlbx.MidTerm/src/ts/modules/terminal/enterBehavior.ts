@@ -20,9 +20,7 @@ export interface EnterOverrideInput {
   metaKey: boolean;
 }
 
-const PSREADLINE_SHIFT_ENTER = '\x1b[13;2u';
-const PSREADLINE_CTRL_ENTER = '\x1b[13;5u';
-const PSREADLINE_CTRL_SHIFT_ENTER = '\x1b[13;6u';
+const META_ENTER = '\x1b\r';
 
 export function isPowerShellEnterTarget(
   foregroundName?: string | null,
@@ -53,38 +51,20 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 export function getTerminalEnterOverride(
   input: EnterOverrideInput,
   mode: TerminalEnterMode,
-  target: TerminalEnterTarget = 'default',
+  _target: TerminalEnterTarget = 'default',
 ): string | null {
   if (!isEnterKey(input)) {
     return null;
   }
 
-  if (!input.altKey && !input.metaKey && target === 'powershell') {
-    if (input.ctrlKey && input.shiftKey) {
-      return PSREADLINE_CTRL_SHIFT_ENTER;
-    }
-
+  if (!input.altKey && !input.metaKey && (input.ctrlKey || input.shiftKey)) {
     if (input.ctrlKey) {
-      return PSREADLINE_CTRL_ENTER;
+      return META_ENTER;
     }
 
     if (mode === 'shiftEnterLineFeed' && input.shiftKey) {
-      return PSREADLINE_SHIFT_ENTER;
+      return META_ENTER;
     }
-  }
-
-  if (input.ctrlKey && !input.shiftKey && !input.altKey && !input.metaKey) {
-    return '\n';
-  }
-
-  if (
-    mode === 'shiftEnterLineFeed' &&
-    input.shiftKey &&
-    !input.ctrlKey &&
-    !input.altKey &&
-    !input.metaKey
-  ) {
-    return '\n';
   }
 
   return null;

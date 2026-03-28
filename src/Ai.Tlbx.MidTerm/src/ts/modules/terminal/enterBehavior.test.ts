@@ -24,17 +24,17 @@ function key(
 }
 
 describe('getTerminalEnterOverride', () => {
-  it('always maps Ctrl+Enter to line feed', () => {
-    expect(getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'default')).toBe('\n');
+  it('always maps Ctrl+Enter to Alt+Enter-compatible bytes', () => {
+    expect(getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'default')).toBe('\x1b\r');
     expect(getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed')).toBe(
-      '\n',
+      '\x1b\r',
     );
   });
 
-  it('maps Shift+Enter to line feed only when enabled', () => {
+  it('maps Shift+Enter to Alt+Enter-compatible bytes only when enabled', () => {
     expect(getTerminalEnterOverride(key('Enter', { shiftKey: true }), 'default')).toBeNull();
     expect(getTerminalEnterOverride(key('Enter', { shiftKey: true }), 'shiftEnterLineFeed')).toBe(
-      '\n',
+      '\x1b\r',
     );
   });
 
@@ -44,33 +44,33 @@ describe('getTerminalEnterOverride', () => {
         key(undefined, { shiftKey: true }, { keyCode: 13 }),
         'shiftEnterLineFeed',
       ),
-    ).toBe('\n');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(
         key('Process', { shiftKey: true }, { code: 'Enter' }),
         'shiftEnterLineFeed',
       ),
-    ).toBe('\n');
+    ).toBe('\x1b\r');
   });
 
-  it('uses PSReadLine VT sequences for modified Enter in PowerShell', () => {
+  it('uses Alt+Enter-compatible bytes for modified Enter in PowerShell too', () => {
     expect(
       getTerminalEnterOverride(
         key('Enter', { shiftKey: true }),
         'shiftEnterLineFeed',
         'powershell',
       ),
-    ).toBe('\x1b[13;2u');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed', 'powershell'),
-    ).toBe('\x1b[13;5u');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(
         key('Enter', { ctrlKey: true, shiftKey: true }),
         'shiftEnterLineFeed',
         'powershell',
       ),
-    ).toBe('\x1b[13;6u');
+    ).toBe('\x1b\r');
   });
 
   it('leaves Alt+Enter and plain Enter on the xterm default path', () => {
