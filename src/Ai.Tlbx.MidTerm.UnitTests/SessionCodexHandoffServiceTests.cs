@@ -87,6 +87,32 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     }
 
     [Fact]
+    public void ForegroundProcessService_UnwrapsPwshCodexWrapper()
+    {
+        var service = new SessionForegroundProcessService();
+        var descriptor = service.Describe(
+            processName: "pwsh.exe",
+            commandLine: "pwsh -NoLogo -File C:\\Users\\johan\\AppData\\Roaming\\npm\\codex.ps1 --yolo",
+            attachPoint: null);
+
+        Assert.Equal("codex --yolo", descriptor.DisplayName);
+        Assert.Equal("codex", descriptor.ProcessIdentity);
+    }
+
+    [Fact]
+    public void ForegroundProcessService_UnwrapsCmdCodexWrapper()
+    {
+        var service = new SessionForegroundProcessService();
+        var descriptor = service.Describe(
+            processName: "cmd.exe",
+            commandLine: "cmd /d /s /c C:\\Users\\johan\\AppData\\Roaming\\npm\\codex.cmd --yolo",
+            attachPoint: null);
+
+        Assert.Equal("codex --yolo", descriptor.DisplayName);
+        Assert.Equal("codex", descriptor.ProcessIdentity);
+    }
+
+    [Fact]
     public async Task ResolveResumeThreadIdAsync_UsesUniqueDiskMatchForSessionCwd()
     {
         var cwd = Path.Combine(_tempRoot, "repo");

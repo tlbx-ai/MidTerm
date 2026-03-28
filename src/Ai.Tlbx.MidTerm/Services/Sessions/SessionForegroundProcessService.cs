@@ -15,6 +15,18 @@ public sealed class SessionForegroundProcessService
         "bun"
     };
 
+    private static readonly HashSet<string> ShellWrapperNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cmd",
+        "pwsh",
+        "powershell",
+        "bash",
+        "sh",
+        "zsh",
+        "fish",
+        "nu"
+    };
+
     private static readonly HashSet<string> GenericScriptNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "main.js",
@@ -66,6 +78,12 @@ public sealed class SessionForegroundProcessService
         if (string.IsNullOrWhiteSpace(trimmed))
         {
             return string.Empty;
+        }
+
+        var wrapperDisplay = TryFormatShellWrapperDisplay(safeProcessName, trimmed);
+        if (!string.IsNullOrWhiteSpace(wrapperDisplay))
+        {
+            return wrapperDisplay;
         }
 
         var runtimeName = ExtractRuntimeName(safeProcessName);
@@ -174,6 +192,92 @@ public sealed class SessionForegroundProcessService
         return string.Equals(descriptor.ProcessIdentity, normalizedExpectedIdentity, StringComparison.Ordinal);
     }
 
+    private string? TryFormatShellWrapperDisplay(string processName, string commandLine)
+    {
+        if (!IsShellWrapper(processName))
+        {
+            return null;
+        }
+
+        var tokens = Tokenize(commandLine);
+        if (tokens.Count == 0)
+        {
+            return null;
+        }
+
+        var index = IsSameExecutableToken(tokens[0], processName) ? 1 : 0;
+        while (index < tokens.Count && IsShellWrapperControlToken(processName, tokens[index]))
+        {
+            index++;
+        }
+
+        if (index >= tokens.Count)
+        {
+            return null;
+        }
+
+        var nestedCommand = ReconstructNestedCommand(tokens, index);
+        if (string.IsNullOrWhiteSpace(nestedCommand))
+        {
+            return null;
+        }
+
+        var nestedProcessName = tokens[index];
+        if (string.Equals(
+            NormalizeIdentity(Basename(nestedProcessName)),
+            NormalizeIdentity(Basename(processName)),
+            StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return FormatRuntimeDisplay(nestedProcessName, nestedCommand);
+    }
+
+    private static bool IsShellWrapper(string processName)
+    {
+        return ShellWrapperNames.Contains(NormalizeIdentity(Basename(processName)));
+    }
+
+    private static bool IsSameExecutableToken(string token, string processName)
+    {
+        return string.Equals(
+            NormalizeIdentity(Basename(token)),
+            NormalizeIdentity(Basename(processName)),
+            StringComparison.Ordinal);
+    }
+
+    private static bool IsShellWrapperControlToken(string processName, string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return true;
+        }
+
+        if (token is "&" or "&&" or "||" or "|" or ";" or "--" or "--%")
+        {
+            return true;
+        }
+
+        if (token.StartsWith("-", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var normalizedWrapper = NormalizeIdentity(Basename(processName));
+        return normalizedWrapper == "cmd" && token.StartsWith("/", StringComparison.Ordinal);
+    }
+
+    private static string? ReconstructNestedCommand(IReadOnlyList<string> tokens, int startIndex)
+    {
+        if (startIndex >= tokens.Count)
+        {
+            return null;
+        }
+
+        return string.Join(" ", tokens.Skip(startIndex));
+    }
+
     private static string NormalizeIdentity(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -195,9 +299,7 @@ public sealed class SessionForegroundProcessService
         candidate = candidate.Replace('\\', '/');
         var basename = candidate.Split('/').LastOrDefault() ?? candidate;
         var token = basename.Trim().Split(' ', '\t').FirstOrDefault() ?? basename.Trim();
-        return token.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? token[..^4].ToLowerInvariant()
-            : token.ToLowerInvariant();
+        return TrimLauncherSuffix(token).ToLowerInvariant();
     }
 
     private static string StripExecutablePath(string commandLine)
@@ -282,6 +384,19 @@ public sealed class SessionForegroundProcessService
     {
         var dotIndex = filename.LastIndexOf('.');
         return dotIndex > 0 ? filename[..dotIndex] : filename;
+    }
+
+    private static string TrimLauncherSuffix(string token)
+    {
+        foreach (var suffix in new[] { ".exe", ".cmd", ".bat", ".ps1", ".psm1", ".sh" })
+        {
+            if (token.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return token[..^suffix.Length];
+            }
+        }
+
+        return token;
     }
 
     private static string FilterDisplayArgs(IEnumerable<string> tokens)
