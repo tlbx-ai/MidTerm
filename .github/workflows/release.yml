@@ -145,7 +145,11 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
-          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          if [[ -f src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} ]]; then
+            cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          else
+            echo "mthost${{ matrix.ext }} not found for ${{ matrix.rid }}; continuing with web-only artifact set"
+          fi
           cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
@@ -156,12 +160,14 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-              --options runtime \
-              --timestamp \
-              staging/${{ matrix.rid }}/mthost
-            codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
+              codesign --force \
+                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --options runtime \
+                --timestamp \
+                staging/${{ matrix.rid }}/mthost
+              codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            fi
             codesign --force \
               --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
               --options runtime \
@@ -174,7 +180,10 @@ jobs:
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
-          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }} mtagenthost${{ matrix.ext }})
+          files=(mt${{ matrix.ext }} mtagenthost${{ matrix.ext }})
+          if [[ -f mthost${{ matrix.ext }} ]]; then
+            files+=(mthost${{ matrix.ext }})
+          fi
           if command -v sha256sum &> /dev/null; then
             sha256sum "${files[@]}" > SHA256SUMS.txt
           else
@@ -190,7 +199,11 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost staging/${{ matrix.rid }}/mtagenthost
+          files=(staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mtagenthost)
+          if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
+            files+=(staging/${{ matrix.rid }}/mthost)
+          fi
+          zip -j "$RUNNER_TEMP/notarize.zip" "${files[@]}"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
@@ -287,7 +300,11 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
-          cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          if [[ -f src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} ]]; then
+            cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          else
+            echo "mthost${{ matrix.ext }} not found for ${{ matrix.rid }}; continuing with web-only artifact set"
+          fi
           cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
@@ -298,12 +315,14 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-              --options runtime \
-              --timestamp \
-              staging/${{ matrix.rid }}/mthost
-            codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
+              codesign --force \
+                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --options runtime \
+                --timestamp \
+                staging/${{ matrix.rid }}/mthost
+              codesign --verify --strict staging/${{ matrix.rid }}/mthost
+            fi
             codesign --force \
               --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
               --options runtime \
@@ -316,7 +335,10 @@ jobs:
         shell: bash
         run: |
           cd staging/${{ matrix.rid }}
-          files=(mt${{ matrix.ext }} mthost${{ matrix.ext }} mtagenthost${{ matrix.ext }})
+          files=(mt${{ matrix.ext }} mtagenthost${{ matrix.ext }})
+          if [[ -f mthost${{ matrix.ext }} ]]; then
+            files+=(mthost${{ matrix.ext }})
+          fi
           if command -v sha256sum &> /dev/null; then
             sha256sum "${files[@]}" > SHA256SUMS.txt
           else
@@ -332,7 +354,11 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          zip -j "$RUNNER_TEMP/notarize.zip" staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mthost staging/${{ matrix.rid }}/mtagenthost
+          files=(staging/${{ matrix.rid }}/mt staging/${{ matrix.rid }}/mtagenthost)
+          if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
+            files+=(staging/${{ matrix.rid }}/mthost)
+          fi
+          zip -j "$RUNNER_TEMP/notarize.zip" "${files[@]}"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
@@ -403,7 +429,12 @@ jobs:
           New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
           Copy-Item src/version.json staging/win-x64/
-          Copy-Item src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe staging/win-x64/
+          $mthostPath = 'src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe'
+          if (Test-Path $mthostPath) {
+            Copy-Item $mthostPath staging/win-x64/
+          } else {
+            Write-Host 'mthost.exe not found for win-x64; continuing with web-only artifact set'
+          }
           Copy-Item src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/win-x64/publish/mtagenthost.exe staging/win-x64/
 
       - name: Sign Windows binaries (Certum Authenticode)
@@ -414,7 +445,10 @@ jobs:
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mthost.exe', 'staging/win-x64/mtagenthost.exe')
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe')
+          if (Test-Path 'staging/win-x64/mthost.exe') {
+            $files += 'staging/win-x64/mthost.exe'
+          }
           $hashes = Get-ChildItem $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
