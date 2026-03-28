@@ -307,7 +307,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     editable: true,
     storage: 'settings.json',
     validation: 'off, or remap Shift/Ctrl+Enter to Alt+Enter bytes in terminal',
-    applyMode: 'lazy',
+    applyMode: 'immediate',
   }),
   controlEntry('scrollbackProtection', 'setting-scrollback-protection', 'checkbox', false, {
     editable: true,

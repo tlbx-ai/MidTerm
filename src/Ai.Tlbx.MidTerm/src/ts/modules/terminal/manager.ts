@@ -59,6 +59,7 @@ import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scr
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
 import {
   getTerminalEnterOverride,
+  isTerminalEnterRemapEnabled,
   isPowerShellEnterTarget,
   type EnterOverrideInput,
 } from './enterBehavior';
@@ -67,6 +68,7 @@ import {
   updateEnterModifierLatch,
   type EnterModifierLatchState,
 } from './enterModifierLatch';
+import { evaluateTerminalKeyAudit, isModifierKeyOnlyEvent, isThirdLevelShift } from './keyAudit';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -128,6 +130,43 @@ function getSessionEnterOverride(sessionId: string, event: EnterOverrideInput): 
       ? 'powershell'
       : 'default',
   );
+}
+
+function isTerminalKeyAuditEnabled(): boolean {
+  return isTerminalEnterRemapEnabled(
+    $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
+  );
+}
+
+function isMacPlatform(): boolean {
+  return /\bmac/i.test(navigator.userAgent);
+}
+
+function isWindowsPlatform(): boolean {
+  return /\bwindows/i.test(navigator.userAgent);
+}
+
+function getLegacyKeyboardNumbers(event: KeyboardEvent): {
+  charCode: number;
+  keyCode: number;
+  which: number;
+} {
+  /* eslint-disable @typescript-eslint/no-deprecated */
+  return {
+    charCode: event.charCode,
+    keyCode: event.keyCode,
+    which: event.which,
+  };
+  /* eslint-enable @typescript-eslint/no-deprecated */
+}
+
+function cancelTerminalInputEvent(event: Event): false {
+  event.preventDefault();
+  event.stopPropagation();
+  if ('stopImmediatePropagation' in event) {
+    event.stopImmediatePropagation();
+  }
+  return false;
 }
 
 function updateSessionEnterModifierLatch(
@@ -351,6 +390,13 @@ export function focusActiveTerminal(): void {
 function hasNonTerminalFocus(): boolean {
   const el = document.activeElement;
   if (!el) return false;
+  if (
+    el instanceof HTMLTextAreaElement &&
+    (el.classList.contains('xterm-helper-textarea') ||
+      el.classList.contains('midterm-terminal-input-proxy'))
+  ) {
+    return false;
+  }
   const tag = el.tagName;
   return (
     tag === 'INPUT' ||
@@ -719,7 +765,6 @@ export function setupTerminalEvents(
     window.isSecureContext &&
     typeof navigator.clipboard !== 'undefined' &&
     typeof navigator.clipboard.readText === 'function';
-
   // Collect disposables for cleanup
   const disposables: Array<{ dispose: () => void }> = [];
 
@@ -809,8 +854,243 @@ export function setupTerminalEvents(
   const enterModifierKeyupHandler = (event: KeyboardEvent) => {
     updateSessionEnterModifierLatch(sessionId, event, container);
   };
+  let keyDownHandled = false;
+  let keyDownSeen = false;
+  let keyPressHandled = false;
+  let unprocessedDeadKey = false;
+  const isMac = isMacPlatform();
+  const isWindows = isWindowsPlatform();
+  const macOptionIsMeta = terminal.options.macOptionIsMeta === true;
+  const isKeyAuditActive = (): boolean => isTerminalKeyAuditEnabled();
+  const resetKeyAuditState = (): void => {
+    keyDownHandled = false;
+    keyDownSeen = false;
+    keyPressHandled = false;
+    unprocessedDeadKey = false;
+  };
+  const terminalKeyAuditKeydownHandler = (event: KeyboardEvent) => {
+    if (
+      !isKeyAuditActive() ||
+      !shouldCaptureTerminalKey(container, event.target) ||
+      event.isComposing
+    ) {
+      return;
+    }
+
+    keyDownHandled = false;
+    keyDownSeen = true;
+
+    if (event.key === 'F12') {
+      return;
+    }
+
+    const foreground = getForegroundInfo(sessionId);
+    const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
+
+    if (isCopyShortcut(event, style)) {
+      if (terminal.hasSelection()) {
+        navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
+        terminal.clearSelection();
+        keyDownHandled = true;
+        cancelTerminalInputEvent(event);
+      }
+      return;
+    }
+
+    if (isNativeImagePasteShortcut(event)) {
+      void handleNativeImagePaste(sessionId, {
+        foregroundName: foreground.name,
+        foregroundCommandLine: foreground.commandLine,
+      }).then((result) => {
+        if (result === 'none') {
+          sendInput(sessionId, '\x1bv');
+        }
+      });
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (isPasteShortcut(event)) {
+      if (canUseAsyncClipboard()) {
+        void handleClipboardPaste(sessionId, {
+          foregroundName: foreground.name,
+          foregroundCommandLine: foreground.commandLine,
+        });
+        keyDownHandled = true;
+        cancelTerminalInputEvent(event);
+      }
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+      showSearch();
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (event.key === 'Escape' && isSearchVisible()) {
+      hideSearch();
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (event.key === 'Dead' || event.key === 'AltGraph') {
+      unprocessedDeadKey = true;
+    }
+
+    const legacyNumbers = getLegacyKeyboardNumbers(event);
+    const result = evaluateTerminalKeyAudit(
+      {
+        key: event.key,
+        code: event.code,
+        keyCode: legacyNumbers.keyCode,
+        which: legacyNumbers.which,
+        charCode: legacyNumbers.charCode,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+      },
+      terminal.modes.applicationCursorKeysMode,
+      isMac,
+      macOptionIsMeta,
+    );
+
+    if (result.type === 'pageUp' || result.type === 'pageDown') {
+      const scrollCount = terminal.rows - 1;
+      terminal.scrollLines(result.type === 'pageUp' ? -scrollCount : scrollCount);
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (result.type === 'selectAll') {
+      terminal.selectAll();
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (isThirdLevelShift(event, isMac, isWindows, macOptionIsMeta)) {
+      return;
+    }
+
+    if (!result.key) {
+      if (isModifierKeyOnlyEvent({ key: event.key })) {
+        cancelTerminalInputEvent(event);
+      }
+      return;
+    }
+
+    if (event.key && !event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
+      const charCode = event.key.charCodeAt(0);
+      if (charCode >= 65 && charCode <= 90) {
+        return;
+      }
+    }
+
+    if (unprocessedDeadKey) {
+      unprocessedDeadKey = false;
+      return;
+    }
+
+    sendInput(sessionId, result.key);
+    keyDownHandled = true;
+    cancelTerminalInputEvent(event);
+  };
+  const terminalKeyAuditKeypressHandler = (event: KeyboardEvent) => {
+    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
+      return;
+    }
+
+    keyPressHandled = false;
+
+    if (keyDownHandled) {
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    const legacyNumbers = getLegacyKeyboardNumbers(event);
+    const keyCode =
+      legacyNumbers.charCode !== 0
+        ? legacyNumbers.charCode
+        : legacyNumbers.which !== 0
+          ? legacyNumbers.which
+          : legacyNumbers.keyCode;
+
+    if (
+      keyCode === 0 ||
+      ((event.altKey || event.ctrlKey || event.metaKey) &&
+        !isThirdLevelShift(
+          {
+            altKey: event.altKey,
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            keyCode: legacyNumbers.keyCode,
+            type: 'keypress',
+            getModifierState: event.getModifierState.bind(event),
+          },
+          isMac,
+          isWindows,
+          macOptionIsMeta,
+        ))
+    ) {
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    sendInput(sessionId, String.fromCharCode(keyCode));
+    keyPressHandled = true;
+    unprocessedDeadKey = false;
+    cancelTerminalInputEvent(event);
+  };
+  const terminalKeyAuditInputHandler = (event: Event) => {
+    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
+      return;
+    }
+
+    const inputEvent = event as InputEvent;
+    if (
+      inputEvent.data &&
+      inputEvent.inputType === 'insertText' &&
+      (!inputEvent.isComposing || !keyDownSeen)
+    ) {
+      if (keyPressHandled) {
+        cancelTerminalInputEvent(event);
+        return;
+      }
+
+      unprocessedDeadKey = false;
+      sendInput(sessionId, inputEvent.data);
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (event.target instanceof HTMLTextAreaElement) {
+      event.target.value = '';
+    }
+  };
+  const terminalKeyAuditKeyupHandler = (event: KeyboardEvent) => {
+    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
+      return;
+    }
+
+    keyDownSeen = false;
+    keyPressHandled = false;
+
+    if (isModifierKeyOnlyEvent({ key: event.key })) {
+      cancelTerminalInputEvent(event);
+    }
+  };
   container.addEventListener('keydown', enterModifierKeydownHandler, true);
   container.addEventListener('keyup', enterModifierKeyupHandler, true);
+  container.addEventListener('keydown', terminalKeyAuditKeydownHandler, true);
+  container.addEventListener('keypress', terminalKeyAuditKeypressHandler, true);
+  container.addEventListener('input', terminalKeyAuditInputHandler, true);
+  container.addEventListener('keyup', terminalKeyAuditKeyupHandler, true);
   disposables.push({
     dispose: () => {
       container.removeEventListener('keydown', enterModifierKeydownHandler, true);
@@ -821,10 +1101,37 @@ export function setupTerminalEvents(
       container.removeEventListener('keyup', enterModifierKeyupHandler, true);
     },
   });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keydown', terminalKeyAuditKeydownHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keypress', terminalKeyAuditKeypressHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('input', terminalKeyAuditInputHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keyup', terminalKeyAuditKeyupHandler, true);
+    },
+  });
   container.addEventListener('keydown', enterOverrideHandler, true);
 
   // Keyboard shortcuts for copy/paste
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+    if (isKeyAuditActive()) {
+      if (e.type !== 'keydown') return false;
+      return e.key === 'F12';
+    }
+
+    resetKeyAuditState();
+
     if (e.type !== 'keydown') return true;
 
     // F12: let browser handle it (open DevTools)

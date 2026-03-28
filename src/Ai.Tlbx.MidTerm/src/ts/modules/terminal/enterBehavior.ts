@@ -36,7 +36,7 @@ export function isPowerShellEnterTarget(
   );
 }
 
-function isTerminalEnterRemapEnabled(mode: TerminalEnterMode): boolean {
+export function isTerminalEnterRemapEnabled(mode: TerminalEnterMode): boolean {
   return mode === 'shiftEnterLineFeed';
 }
 
