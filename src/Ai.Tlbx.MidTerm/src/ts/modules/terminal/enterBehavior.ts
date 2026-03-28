@@ -5,6 +5,8 @@
  * default keyboard translation.
  */
 
+// Keep the legacy persisted values for compatibility with existing settings.json
+// files, but treat them as a simple off/on remap toggle in the terminal UI.
 export type TerminalEnterMode = 'default' | 'shiftEnterLineFeed';
 export type TerminalEnterTarget = 'default' | 'powershell';
 
@@ -34,6 +36,10 @@ export function isPowerShellEnterTarget(
   );
 }
 
+function isTerminalEnterRemapEnabled(mode: TerminalEnterMode): boolean {
+  return mode === 'shiftEnterLineFeed';
+}
+
 function isEnterKey(input: EnterOverrideInput): boolean {
   return (
     input.key === 'Enter' ||
@@ -57,14 +63,13 @@ export function getTerminalEnterOverride(
     return null;
   }
 
-  if (!input.altKey && !input.metaKey && (input.ctrlKey || input.shiftKey)) {
-    if (input.ctrlKey) {
-      return META_ENTER;
-    }
-
-    if (mode === 'shiftEnterLineFeed' && input.shiftKey) {
-      return META_ENTER;
-    }
+  if (
+    isTerminalEnterRemapEnabled(mode) &&
+    !input.altKey &&
+    !input.metaKey &&
+    (input.ctrlKey || input.shiftKey)
+  ) {
+    return META_ENTER;
   }
 
   return null;

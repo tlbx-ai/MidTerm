@@ -116,6 +116,7 @@ let calibrationPromise: Promise<void> | null = null;
 let focusDebounceTimer: number | null = null;
 const ENTER_MODIFIER_LATCH_MAX_AGE_MS = 1500;
 const enterModifierLatches = new Map<string, EnterModifierLatchState>();
+let globalTerminalEnterOverrideInstalled = false;
 
 function getSessionEnterOverride(sessionId: string, event: EnterOverrideInput): string | null {
   const foreground = getForegroundInfo(sessionId);
@@ -192,11 +193,26 @@ function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget
   return ownedTextarea !== null && document.activeElement === ownedTextarea;
 }
 
-function shouldCaptureTerminalDocumentKey(
-  container: HTMLDivElement,
-  target: EventTarget | null,
-): boolean {
-  return shouldCaptureTerminalKey(container, target);
+function getFocusedTerminalSessionMatch(): { sessionId: string; container: HTMLDivElement } | null {
+  const activeElement = document.activeElement;
+  if (
+    !(activeElement instanceof HTMLTextAreaElement) ||
+    !activeElement.classList.contains('xterm-helper-textarea')
+  ) {
+    return null;
+  }
+
+  for (const [sessionId, state] of sessionTerminals.entries()) {
+    if (!state.opened) {
+      continue;
+    }
+
+    if (state.container.contains(activeElement)) {
+      return { sessionId, container: state.container };
+    }
+  }
+
+  return null;
 }
 
 function tryHandleTerminalEnterOverride(
@@ -351,6 +367,37 @@ const FOCUS_STEALING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
  * Skips refocus when the click lands on an element that needs its own keyboard input.
  */
 export function setupGlobalFocusReclaim(): void {
+  if (!globalTerminalEnterOverrideInstalled) {
+    globalTerminalEnterOverrideInstalled = true;
+
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        const match = getFocusedTerminalSessionMatch();
+        if (!match) {
+          return;
+        }
+
+        updateSessionEnterModifierLatch(match.sessionId, event, match.container);
+        tryHandleTerminalEnterOverride(match.sessionId, event, match.container);
+      },
+      true,
+    );
+
+    document.addEventListener(
+      'keyup',
+      (event) => {
+        const match = getFocusedTerminalSessionMatch();
+        if (!match) {
+          return;
+        }
+
+        updateSessionEnterModifierLatch(match.sessionId, event, match.container);
+      },
+      true,
+    );
+  }
+
   document.addEventListener('mouseup', (e) => {
     const target = e.target as HTMLElement;
     if (
@@ -756,37 +803,14 @@ export function setupTerminalEvents(
   const enterOverrideHandler = (event: KeyboardEvent) => {
     tryHandleTerminalEnterOverride(sessionId, event, container);
   };
-  const documentEnterOverrideHandler = (event: KeyboardEvent) => {
-    if (!shouldCaptureTerminalDocumentKey(container, event.target)) {
-      return;
-    }
-
-    tryHandleTerminalEnterOverride(sessionId, event);
-  };
   const enterModifierKeydownHandler = (event: KeyboardEvent) => {
     updateSessionEnterModifierLatch(sessionId, event, container);
   };
   const enterModifierKeyupHandler = (event: KeyboardEvent) => {
     updateSessionEnterModifierLatch(sessionId, event, container);
   };
-  const documentEnterModifierKeydownHandler = (event: KeyboardEvent) => {
-    if (!shouldCaptureTerminalDocumentKey(container, event.target)) {
-      return;
-    }
-
-    updateSessionEnterModifierLatch(sessionId, event);
-  };
-  const documentEnterModifierKeyupHandler = (event: KeyboardEvent) => {
-    if (!shouldCaptureTerminalDocumentKey(container, event.target)) {
-      return;
-    }
-
-    updateSessionEnterModifierLatch(sessionId, event);
-  };
   container.addEventListener('keydown', enterModifierKeydownHandler, true);
   container.addEventListener('keyup', enterModifierKeyupHandler, true);
-  document.addEventListener('keydown', documentEnterModifierKeydownHandler, true);
-  document.addEventListener('keyup', documentEnterModifierKeyupHandler, true);
   disposables.push({
     dispose: () => {
       container.removeEventListener('keydown', enterModifierKeydownHandler, true);
@@ -797,23 +821,7 @@ export function setupTerminalEvents(
       container.removeEventListener('keyup', enterModifierKeyupHandler, true);
     },
   });
-  disposables.push({
-    dispose: () => {
-      document.removeEventListener('keydown', documentEnterModifierKeydownHandler, true);
-    },
-  });
-  disposables.push({
-    dispose: () => {
-      document.removeEventListener('keyup', documentEnterModifierKeyupHandler, true);
-    },
-  });
   container.addEventListener('keydown', enterOverrideHandler, true);
-  document.addEventListener('keydown', documentEnterOverrideHandler, true);
-  disposables.push({
-    dispose: () => {
-      document.removeEventListener('keydown', documentEnterOverrideHandler, true);
-    },
-  });
 
   // Keyboard shortcuts for copy/paste
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {

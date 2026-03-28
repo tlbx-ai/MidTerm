@@ -24,8 +24,8 @@ function key(
 }
 
 describe('getTerminalEnterOverride', () => {
-  it('always maps Ctrl+Enter to Alt+Enter-compatible bytes', () => {
-    expect(getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'default')).toBe('\x1b\r');
+  it('maps Ctrl+Enter to Alt+Enter-compatible bytes only when enabled', () => {
+    expect(getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'default')).toBeNull();
     expect(getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed')).toBe(
       '\x1b\r',
     );
