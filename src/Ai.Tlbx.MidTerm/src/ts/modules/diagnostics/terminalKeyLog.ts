@@ -19,11 +19,13 @@ export type TerminalKeyLogEntryInput = Omit<TerminalKeyLogEntry, 'timestampMs'>;
 
 const STORAGE_KEY = 'diagnostics-terminal-key-log-enabled';
 const MAX_ENTRIES = 80;
+const CONSOLE_PREFIX = '[mtkey]';
 
 const entries: TerminalKeyLogEntry[] = [];
 const listeners = new Set<() => void>();
 
 let enabledCache: boolean | null = null;
+let storageSyncInstalled = false;
 
 function notifyListeners(): void {
   listeners.forEach((listener) => {
@@ -31,7 +33,26 @@ function notifyListeners(): void {
   });
 }
 
+function installStorageSync(): void {
+  if (storageSyncInstalled || typeof window === 'undefined') {
+    return;
+  }
+
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY) {
+      return;
+    }
+
+    enabledCache = event.newValue === 'true';
+    notifyListeners();
+  });
+
+  storageSyncInstalled = true;
+}
+
 function loadEnabledState(): boolean {
+  installStorageSync();
+
   if (enabledCache !== null) {
     return enabledCache;
   }
@@ -105,17 +126,28 @@ function formatEntry(entry: TerminalKeyLogEntry): string {
   return parts.join(' ');
 }
 
+function logToBrowserConsole(entry: TerminalKeyLogEntry): void {
+  // eslint-disable-next-line no-console
+  console.info(`${CONSOLE_PREFIX} ${formatEntry(entry)}`);
+}
+
 export function isTerminalKeyLogEnabled(): boolean {
   return loadEnabledState();
 }
 
 export function setTerminalKeyLogEnabled(enabled: boolean): void {
   persistEnabledState(enabled);
+  // eslint-disable-next-line no-console
+  console.info(`${CONSOLE_PREFIX} ${enabled ? 'enabled' : 'disabled'}`);
   notifyListeners();
 }
 
 export function clearTerminalKeyLog(): void {
   entries.length = 0;
+  if (loadEnabledState()) {
+    // eslint-disable-next-line no-console
+    console.info(`${CONSOLE_PREFIX} cleared`);
+  }
   notifyListeners();
 }
 
@@ -124,15 +156,18 @@ export function recordTerminalKeyLog(entry: TerminalKeyLogEntryInput): void {
     return;
   }
 
-  entries.push({
+  const nextEntry: TerminalKeyLogEntry = {
     ...entry,
     timestampMs: Date.now(),
-  });
+  };
+
+  entries.push(nextEntry);
 
   if (entries.length > MAX_ENTRIES) {
     entries.splice(0, entries.length - MAX_ENTRIES);
   }
 
+  logToBrowserConsole(nextEntry);
   notifyListeners();
 }
 
