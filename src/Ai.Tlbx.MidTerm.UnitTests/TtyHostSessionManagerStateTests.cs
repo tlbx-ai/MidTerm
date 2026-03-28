@@ -363,6 +363,34 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Equal("dotnet test", refreshed.ForegroundCommandLine);
     }
 
+    [Fact]
+    public void ApplyStartupWorkingDirectoryFallback_SeedsMissingCurrentDirectory()
+    {
+        var info = new SessionInfo
+        {
+            Id = "s1",
+            CurrentDirectory = null
+        };
+
+        InvokeApplyStartupWorkingDirectoryFallback(info, @"C:\Repo");
+
+        Assert.Equal(@"C:\Repo", info.CurrentDirectory);
+    }
+
+    [Fact]
+    public void ApplyStartupWorkingDirectoryFallback_DoesNotOverrideReportedCurrentDirectory()
+    {
+        var info = new SessionInfo
+        {
+            Id = "s1",
+            CurrentDirectory = @"C:\Actual"
+        };
+
+        InvokeApplyStartupWorkingDirectoryFallback(info, @"C:\Requested");
+
+        Assert.Equal(@"C:\Actual", info.CurrentDirectory);
+    }
+
     private static TtyHostSessionManager CreateManager(SessionControlStateService? sessionControlStateService = null)
     {
         return new TtyHostSessionManager(
@@ -407,7 +435,7 @@ public sealed class TtyHostSessionManagerStateTests
             "HandleClientOutput",
             BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-        method.Invoke(manager, [sessionId, 120, 30, new ReadOnlyMemory<byte>(output)]);
+        method.Invoke(manager, [sessionId, 0UL, 120, 30, new ReadOnlyMemory<byte>(output)]);
     }
 
     private static void InvokeMergeCachedFields(SessionInfo refreshed, SessionInfo existing)
@@ -417,6 +445,15 @@ public sealed class TtyHostSessionManagerStateTests
             BindingFlags.Static | BindingFlags.NonPublic)!;
 
         method.Invoke(null, [refreshed, existing]);
+    }
+
+    private static void InvokeApplyStartupWorkingDirectoryFallback(SessionInfo info, string? workingDirectory)
+    {
+        var method = typeof(TtyHostSessionManager).GetMethod(
+            "ApplyStartupWorkingDirectoryFallback",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        method.Invoke(null, [info, workingDirectory]);
     }
 
     private static T GetField<T>(TtyHostSessionManager manager, string name)

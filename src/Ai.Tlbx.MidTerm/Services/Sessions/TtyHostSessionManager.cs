@@ -378,6 +378,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);
+        ApplyStartupWorkingDirectoryFallback(info, workingDirectory);
 
         // Start read loop after handshake completes (avoids race condition with GetInfoAsync)
         SubscribeToClient(client);
@@ -640,6 +641,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
         return _registry.ClearBookmarksByHistoryId(bookmarkId);
+    }
+
+    private static void ApplyStartupWorkingDirectoryFallback(SessionInfo info, string? workingDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(info.CurrentDirectory) ||
+            string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            return;
+        }
+
+        info.CurrentDirectory = workingDirectory.Trim();
     }
 
     public bool ReorderSessions(IList<string> sessionIds)
